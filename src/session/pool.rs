@@ -40,6 +40,11 @@ impl SessionPool {
         }
     }
 
+    /// Get the max concurrent session limit.
+    pub fn max_concurrent(&self) -> usize {
+        self.max_concurrent
+    }
+
     /// Set the permission mode for new sessions.
     pub fn set_permission_mode(&mut self, mode: String) {
         self.permission_mode = mode;

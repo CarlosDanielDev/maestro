@@ -25,3 +25,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 futures = "0.3"
 tokio-stream = "0.1"
+regex = "1"
+async-trait = "0.1"
