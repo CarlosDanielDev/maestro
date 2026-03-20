@@ -11,7 +11,11 @@ use state::store::StateStore;
 use tui::app::App;
 
 #[derive(Parser)]
-#[command(name = "maestro", version, about = "Multi-session Claude Code orchestrator")]
+#[command(
+    name = "maestro",
+    version,
+    about = "Multi-session Claude Code orchestrator"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -202,7 +206,12 @@ async fn cmd_run(
 
     // Determine what to run
     if let Some(prompt_text) = prompt {
-        let session = Session::new(prompt_text, model, config.sessions.default_mode.clone(), None);
+        let session = Session::new(
+            prompt_text,
+            model,
+            config.sessions.default_mode.clone(),
+            None,
+        );
         app.add_session(session).await?;
     } else if let Some(issue_str) = issue {
         // Parse comma-separated issue numbers
@@ -235,6 +244,12 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
     let store = StateStore::new(StateStore::default_path());
     let repo_root = std::env::current_dir()?;
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
-    let app = App::new(store, 3, worktree_mgr, "bypassPermissions".into(), Vec::new());
+    let app = App::new(
+        store,
+        3,
+        worktree_mgr,
+        "bypassPermissions".into(),
+        Vec::new(),
+    );
     tui::run(app).await
 }

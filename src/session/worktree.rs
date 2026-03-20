@@ -46,7 +46,11 @@ impl WorktreeManager for GitWorktreeManager {
         std::fs::create_dir_all(self.worktree_dir())?;
 
         let output = std::process::Command::new("git")
-            .arg("worktree").arg("add").arg(&path).arg("-b").arg(&branch)
+            .arg("worktree")
+            .arg("add")
+            .arg(&path)
+            .arg("-b")
+            .arg(&branch)
             .current_dir(&self.repo_root)
             .output()?;
 
@@ -55,7 +59,10 @@ impl WorktreeManager for GitWorktreeManager {
             // If branch already exists, try without -b
             if stderr.contains("already exists") {
                 let output2 = std::process::Command::new("git")
-                    .arg("worktree").arg("add").arg(&path).arg(&branch)
+                    .arg("worktree")
+                    .arg("add")
+                    .arg(&path)
+                    .arg(&branch)
                     .current_dir(&self.repo_root)
                     .output()?;
                 if !output2.status.success() {
@@ -75,7 +82,10 @@ impl WorktreeManager for GitWorktreeManager {
     fn remove(&self, slug: &str) -> Result<()> {
         let path = self.worktree_path(slug);
         let output = std::process::Command::new("git")
-            .arg("worktree").arg("remove").arg(&path).arg("--force")
+            .arg("worktree")
+            .arg("remove")
+            .arg(&path)
+            .arg("--force")
             .current_dir(&self.repo_root)
             .output()?;
 

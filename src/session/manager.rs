@@ -120,10 +120,7 @@ impl ManagedSession {
                 if matches!(event, StreamEvent::Completed { .. }) {
                     got_result = true;
                 }
-                let _ = tx.send(SessionEvent {
-                    session_id,
-                    event,
-                });
+                let _ = tx.send(SessionEvent { session_id, event });
             }
 
             // Only send fallback completion if we didn't get a real result event
@@ -223,15 +220,17 @@ impl ManagedSession {
                     if self.session.last_message.len() > 10_000 {
                         let start = self.session.last_message.len() - 8_000;
                         let boundary = truncate_at_char_boundary(&self.session.last_message, start);
-                        self.session.last_message = self.session.last_message[boundary..].to_string();
+                        self.session.last_message =
+                            self.session.last_message[boundary..].to_string();
                     }
                 }
                 self.session.current_activity = "Thinking".into();
             }
-            StreamEvent::ToolUse { tool, file_path, .. } => {
+            StreamEvent::ToolUse {
+                tool, file_path, ..
+            } => {
                 self.session.current_activity = format!("Using {}", tool);
-                self.session
-                    .log_activity(format!("Tool: {}", tool));
+                self.session.log_activity(format!("Tool: {}", tool));
 
                 // Track files touched
                 if let Some(path) = file_path
@@ -243,8 +242,7 @@ impl ManagedSession {
             }
             StreamEvent::ToolResult { tool, is_error } => {
                 if *is_error {
-                    self.session
-                        .log_activity(format!("Tool {} errored", tool));
+                    self.session.log_activity(format!("Tool {} errored", tool));
                 }
             }
             StreamEvent::CostUpdate { cost_usd } => {
@@ -265,8 +263,7 @@ impl ManagedSession {
                 self.session.status = SessionStatus::Errored;
                 self.session.finished_at = Some(Utc::now());
                 self.session.current_activity = "Error".into();
-                self.session
-                    .log_activity(format!("Error: {}", message));
+                self.session.log_activity(format!("Error: {}", message));
             }
             StreamEvent::Unknown { .. } => {}
         }
