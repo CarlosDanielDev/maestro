@@ -1,0 +1,22 @@
+[project]
+repo = ""
+base_branch = "main"
+
+[sessions]
+max_concurrent = 3
+stall_timeout_secs = 300
+default_model = "opus"
+default_mode = "orchestrator"
+
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+
+[github]
+issue_filter_labels = ["maestro:ready"]
+auto_pr = true
+
+[notifications]
+desktop = true
+slack = false
