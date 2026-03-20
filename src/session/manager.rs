@@ -2,6 +2,7 @@ use super::parser::parse_stream_line;
 use super::types::{Session, SessionStatus, StreamEvent};
 use anyhow::{Context, Result};
 use chrono::Utc;
+use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -17,6 +18,14 @@ pub struct SessionEvent {
 pub struct ManagedSession {
     pub session: Session,
     child: Option<Child>,
+    /// Path to the git worktree for this session (Phase 1).
+    pub worktree_path: Option<PathBuf>,
+    /// System prompt appendix for file claims injection (Phase 1).
+    pub system_prompt_appendix: Option<String>,
+    /// Permission mode for Claude CLI (e.g., "bypassPermissions").
+    pub permission_mode: Option<String>,
+    /// Allowed tools whitelist.
+    pub allowed_tools: Vec<String>,
 }
 
 impl ManagedSession {
@@ -24,6 +33,26 @@ impl ManagedSession {
         Self {
             session,
             child: None,
+            worktree_path: None,
+            system_prompt_appendix: None,
+            permission_mode: None,
+            allowed_tools: Vec::new(),
+        }
+    }
+
+    /// Create a managed session with worktree and file claims context.
+    pub fn with_worktree(
+        session: Session,
+        worktree_path: Option<PathBuf>,
+        system_prompt_appendix: Option<String>,
+    ) -> Self {
+        Self {
+            session,
+            child: None,
+            worktree_path,
+            system_prompt_appendix,
+            permission_mode: None,
+            allowed_tools: Vec::new(),
         }
     }
 
@@ -33,10 +62,33 @@ impl ManagedSession {
         self.session.started_at = Some(Utc::now());
 
         let mut cmd = Command::new("claude");
-        cmd.args(["--print", "--output-format", "stream-json"]);
+        cmd.args(["--print", "--verbose", "--output-format", "stream-json"]);
 
         // Model selection
         cmd.args(["--model", &self.session.model]);
+
+        // Permission mode (default: bypassPermissions for unattended sessions)
+        if let Some(ref mode) = self.permission_mode
+            && !mode.is_empty()
+            && mode != "default"
+        {
+            cmd.args(["--permission-mode", mode]);
+        }
+
+        // Allowed tools whitelist
+        if !self.allowed_tools.is_empty() {
+            cmd.args(["--allowedTools", &self.allowed_tools.join(",")]);
+        }
+
+        // Inject file claims via --append-system-prompt
+        if let Some(ref appendix) = self.system_prompt_appendix {
+            cmd.args(["--append-system-prompt", appendix]);
+        }
+
+        // Set working directory to worktree if available
+        if let Some(ref wt_path) = self.worktree_path {
+            cmd.current_dir(wt_path);
+        }
 
         // Prompt is a positional argument (must be last)
         cmd.arg(&self.session.prompt);
@@ -54,27 +106,59 @@ impl ManagedSession {
             .log_activity(format!("Session spawned (pid: {})", pid));
 
         let stdout = child.stdout.take().context("No stdout from claude CLI")?;
+        let stderr = child.stderr.take();
         let session_id = self.session.id;
 
-        // Stream reader task
+        // Stream reader task (stdout)
+        let tx2 = tx.clone();
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
+            let mut got_result = false;
 
             while let Ok(Some(line)) = lines.next_line().await {
                 let event = parse_stream_line(&line);
-                let _ = tx.send(SessionEvent {
-                    session_id,
-                    event,
-                });
+                if matches!(event, StreamEvent::Completed { .. }) {
+                    got_result = true;
+                }
+                let _ = tx.send(SessionEvent { session_id, event });
             }
 
-            // Signal completion when stream ends
-            let _ = tx.send(SessionEvent {
-                session_id,
-                event: StreamEvent::Completed { cost_usd: 0.0 },
-            });
+            // Only send fallback completion if we didn't get a real result event
+            if !got_result {
+                let _ = tx.send(SessionEvent {
+                    session_id,
+                    event: StreamEvent::Completed { cost_usd: 0.0 },
+                });
+            }
         });
+
+        // Stderr reader task — capture errors from Claude CLI
+        if let Some(stderr) = stderr {
+            tokio::spawn(async move {
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                let mut stderr_buf = String::new();
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.trim().is_empty() {
+                        if !stderr_buf.is_empty() {
+                            stderr_buf.push('\n');
+                        }
+                        stderr_buf.push_str(&line);
+                    }
+                }
+
+                if !stderr_buf.is_empty() {
+                    let _ = tx2.send(SessionEvent {
+                        session_id,
+                        event: StreamEvent::Error {
+                            message: stderr_buf,
+                        },
+                    });
+                }
+            });
+        }
 
         self.child = Some(child);
         Ok(())
@@ -127,28 +211,39 @@ impl ManagedSession {
     pub fn handle_event(&mut self, event: &StreamEvent) {
         match event {
             StreamEvent::AssistantMessage { text } => {
-                let truncated = if text.len() > 120 {
-                    format!("{}…", &text[..120])
-                } else {
-                    text.clone()
-                };
-                self.session.last_message = truncated.clone();
+                // Accumulate the full response for display in panel
+                if !text.is_empty() {
+                    if !self.session.last_message.is_empty() {
+                        self.session.last_message.push('\n');
+                    }
+                    self.session.last_message.push_str(text);
+                    // Cap at 10KB to prevent unbounded growth
+                    if self.session.last_message.len() > 10_000 {
+                        let start = self.session.last_message.len() - 8_000;
+                        let boundary = truncate_at_char_boundary(&self.session.last_message, start);
+                        self.session.last_message =
+                            self.session.last_message[boundary..].to_string();
+                    }
+                }
                 self.session.current_activity = "Thinking".into();
             }
-            StreamEvent::ToolUse { tool, .. } => {
+            StreamEvent::ToolUse {
+                tool, file_path, ..
+            } => {
                 self.session.current_activity = format!("Using {}", tool);
-                self.session
-                    .log_activity(format!("Tool: {}", tool));
+                self.session.log_activity(format!("Tool: {}", tool));
 
-                // Track files
-                if matches!(tool.as_str(), "Read" | "Edit" | "Write" | "Glob" | "Grep") {
-                    // File tracking will be enhanced in Phase 1
+                // Track files touched
+                if let Some(path) = file_path
+                    && matches!(tool.as_str(), "Read" | "Edit" | "Write" | "Glob" | "Grep")
+                    && !self.session.files_touched.contains(path)
+                {
+                    self.session.files_touched.push(path.clone());
                 }
             }
             StreamEvent::ToolResult { tool, is_error } => {
                 if *is_error {
-                    self.session
-                        .log_activity(format!("Tool {} errored", tool));
+                    self.session.log_activity(format!("Tool {} errored", tool));
                 }
             }
             StreamEvent::CostUpdate { cost_usd } => {
@@ -169,10 +264,21 @@ impl ManagedSession {
                 self.session.status = SessionStatus::Errored;
                 self.session.finished_at = Some(Utc::now());
                 self.session.current_activity = "Error".into();
-                self.session
-                    .log_activity(format!("Error: {}", message));
+                self.session.log_activity(format!("Error: {}", message));
             }
             StreamEvent::Unknown { .. } => {}
         }
     }
+}
+
+/// Find the largest byte offset <= max_bytes that is a valid char boundary.
+fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
+    if s.len() <= max_bytes {
+        return s.len();
+    }
+    let mut end = max_bytes;
+    while !s.is_char_boundary(end) && end > 0 {
+        end -= 1;
+    }
+    end
 }
