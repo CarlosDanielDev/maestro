@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use serde::{Deserialize, Serialize};
 
 /// Sentinel string that Claude must emit when it detects a file conflict.
 pub const FILE_CONFLICT_SENTINEL: &str = "FILE_CONFLICT";
@@ -35,7 +35,9 @@ impl FileClaimManager {
             if existing_owner == session_id {
                 ClaimResult::AlreadyOwned
             } else {
-                ClaimResult::Conflict { owner: existing_owner }
+                ClaimResult::Conflict {
+                    owner: existing_owner,
+                }
             }
         } else {
             self.claims.insert(file_path.to_string(), session_id);
@@ -83,7 +85,8 @@ impl FileClaimManager {
     /// Lists all files currently claimed by OTHER sessions so the target
     /// session knows to avoid them.
     pub fn build_system_prompt(&self, session_id: Uuid) -> Option<String> {
-        let other_claims: Vec<&str> = self.claims
+        let other_claims: Vec<&str> = self
+            .claims
             .iter()
             .filter(|(_, owner)| **owner != session_id)
             .map(|(path, _)| path.as_str())
@@ -96,7 +99,7 @@ impl FileClaimManager {
         let mut prompt = String::from(
             "MAESTRO COORDINATION: The following files are being modified by other agents. \
              DO NOT modify them. If you need to modify a claimed file, \
-             output MAESTRO:FILE_CONFLICT:<path>\n\n"
+             output MAESTRO:FILE_CONFLICT:<path>\n\n",
         );
 
         for path in &other_claims {
@@ -151,9 +154,18 @@ mod tests {
     fn claim_multiple_files_for_same_session() {
         let mut mgr = FileClaimManager::new();
         let session = Uuid::new_v4();
-        assert!(matches!(mgr.claim("src/a.rs", session), ClaimResult::Granted));
-        assert!(matches!(mgr.claim("src/b.rs", session), ClaimResult::Granted));
-        assert!(matches!(mgr.claim("src/c.rs", session), ClaimResult::Granted));
+        assert!(matches!(
+            mgr.claim("src/a.rs", session),
+            ClaimResult::Granted
+        ));
+        assert!(matches!(
+            mgr.claim("src/b.rs", session),
+            ClaimResult::Granted
+        ));
+        assert!(matches!(
+            mgr.claim("src/c.rs", session),
+            ClaimResult::Granted
+        ));
         assert_eq!(mgr.total_claims(), 3);
     }
 
@@ -300,6 +312,9 @@ mod tests {
         let session = Uuid::new_v4();
         mgr.claim("src/toggle.rs", session);
         mgr.release("src/toggle.rs", session);
-        assert!(matches!(mgr.claim("src/toggle.rs", session), ClaimResult::Granted));
+        assert!(matches!(
+            mgr.claim("src/toggle.rs", session),
+            ClaimResult::Granted
+        ));
     }
 }

@@ -14,7 +14,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),  // status bar
-            Constraint::Min(10),   // agent panels
+            Constraint::Min(10),    // agent panels
             Constraint::Length(10), // activity log
             Constraint::Length(1),  // help bar
         ])

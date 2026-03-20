@@ -161,7 +161,15 @@ fn print_summary(app: &App) {
         }
         // Show recent activity log entries for errored sessions
         if session.status == crate::session::types::SessionStatus::Errored {
-            for entry in session.activity_log.iter().rev().take(3).collect::<Vec<_>>().into_iter().rev() {
+            for entry in session
+                .activity_log
+                .iter()
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
                 println!("    > {}", entry.message);
             }
         }
