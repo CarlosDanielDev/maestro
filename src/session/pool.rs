@@ -15,6 +15,10 @@ pub struct SessionPool {
     worktree_mgr: Box<dyn WorktreeManager + Send>,
     pub file_claims: FileClaimManager,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
+    /// Permission mode passed to Claude CLI sessions.
+    permission_mode: String,
+    /// Allowed tools whitelist passed to Claude CLI sessions.
+    allowed_tools: Vec<String>,
 }
 
 impl SessionPool {
@@ -31,7 +35,19 @@ impl SessionPool {
             worktree_mgr,
             file_claims: FileClaimManager::new(),
             event_tx,
+            permission_mode: "bypassPermissions".to_string(),
+            allowed_tools: Vec::new(),
         }
+    }
+
+    /// Set the permission mode for new sessions.
+    pub fn set_permission_mode(&mut self, mode: String) {
+        self.permission_mode = mode;
+    }
+
+    /// Set the allowed tools whitelist for new sessions.
+    pub fn set_allowed_tools(&mut self, tools: Vec<String>) {
+        self.allowed_tools = tools;
     }
 
     /// Enqueue a session. It will be promoted when capacity allows.
@@ -70,7 +86,9 @@ impl SessionPool {
             let system_prompt = self.file_claims.build_system_prompt(session.id);
 
             session.status = SessionStatus::Queued; // Still queued until spawned
-            let managed = ManagedSession::with_worktree(session, worktree_path, system_prompt);
+            let mut managed = ManagedSession::with_worktree(session, worktree_path, system_prompt);
+            managed.permission_mode = Some(self.permission_mode.clone());
+            managed.allowed_tools = self.allowed_tools.clone();
             let id = managed.session.id;
             self.active.push(managed);
             promoted.push(id);
