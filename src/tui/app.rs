@@ -1,21 +1,19 @@
-use crate::session::manager::{ManagedSession, SessionEvent};
-use crate::session::types::{Session, SessionStatus, StreamEvent};
+use crate::session::manager::SessionEvent;
+use crate::session::pool::SessionPool;
+use crate::session::types::{Session, StreamEvent};
+use crate::session::worktree::WorktreeManager;
+use crate::state::file_claims::{ClaimResult, FILE_CONFLICT_SENTINEL};
 use crate::state::store::StateStore;
 use crate::state::types::MaestroState;
+use crate::tui::activity_log::{ActivityLog, LogLevel};
+use crate::tui::panels::PanelView;
 use chrono::Utc;
 use tokio::sync::mpsc;
 
-/// Global activity log entry displayed in the bottom panel.
-#[derive(Debug, Clone)]
-pub struct LogEntry {
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-    pub session_label: String,
-    pub message: String,
-}
-
 pub struct App {
-    pub sessions: Vec<ManagedSession>,
-    pub activity_log: Vec<LogEntry>,
+    pub pool: SessionPool,
+    pub activity_log: ActivityLog,
+    pub panel_view: PanelView,
     pub state: MaestroState,
     pub store: StateStore,
     pub running: bool,
@@ -26,12 +24,18 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(store: StateStore) -> Self {
+    pub fn new(
+        store: StateStore,
+        max_concurrent: usize,
+        worktree_mgr: Box<dyn WorktreeManager + Send>,
+    ) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let state = store.load().unwrap_or_default();
+        let pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx.clone());
         Self {
-            sessions: Vec::new(),
-            activity_log: Vec::new(),
+            pool,
+            activity_log: ActivityLog::new(500),
+            panel_view: PanelView::new(),
             state,
             store,
             running: true,
@@ -42,144 +46,199 @@ impl App {
         }
     }
 
-    /// Add a session and spawn it.
+    /// Add a session and try to promote/spawn it.
     pub async fn add_session(&mut self, session: Session) -> anyhow::Result<()> {
         let label = session_label(&session);
-        let mut managed = ManagedSession::new(session);
+        self.activity_log
+            .push_simple(label.clone(), "Enqueuing session...".into(), LogLevel::Info);
 
-        self.push_log(&label, "Spawning session…");
+        self.pool.enqueue(session);
 
-        managed.spawn(self.event_tx.clone()).await?;
-        self.push_log(&label, "Session started");
+        // Try to promote and spawn
+        let promoted_ids = self.pool.try_promote();
+        let tx = self.pool.event_tx();
+        for id in promoted_ids {
+            if let Some(managed) = self.pool.get_active_mut(id) {
+                let session_label = session_label(&managed.session);
+                self.activity_log
+                    .push_simple(session_label.clone(), "Spawning session...".into(), LogLevel::Info);
+                if let Err(e) = managed.spawn(tx.clone()).await {
+                    self.activity_log.push_simple(
+                        session_label,
+                        format!("Spawn failed: {}", e),
+                        LogLevel::Error,
+                    );
+                } else {
+                    self.activity_log
+                        .push_simple(session_label, "Session started".into(), LogLevel::Info);
+                }
+            }
+        }
 
-        self.state.sessions.push(managed.session.clone());
-        self.sessions.push(managed);
-        self.save_state();
+        self.sync_state();
         Ok(())
     }
 
     /// Process a stream event from a session.
     pub fn handle_session_event(&mut self, evt: SessionEvent) {
-        // First: update the managed session and extract what we need for logging
-        let log_msg = {
-            let Some(managed) = self
-                .sessions
-                .iter_mut()
-                .find(|s| s.session.id == evt.session_id)
-            else {
-                return;
-            };
+        let session_id = evt.session_id;
 
+        // File claim processing for mutating tools
+        if let StreamEvent::ToolUse {
+            ref tool,
+            file_path: Some(ref path),
+            ..
+        } = evt.event
+            && matches!(tool.as_str(), "Write" | "Edit")
+        {
+            let result = self.pool.file_claims.claim(path, session_id);
+            if let ClaimResult::Conflict { owner } = result {
+                let label = format!("S-{}", &session_id.to_string()[..8]);
+                self.activity_log.push_simple(
+                    label,
+                    format!(
+                        "CONFLICT: {} claimed by S-{}",
+                        path,
+                        &owner.to_string()[..8]
+                    ),
+                    LogLevel::Error,
+                );
+            }
+        }
+
+        // Sentinel detection
+        if let StreamEvent::AssistantMessage { ref text } = evt.event
+            && text.contains(FILE_CONFLICT_SENTINEL)
+        {
+            let label = format!("S-{}", &session_id.to_string()[..8]);
+            self.activity_log.push_simple(
+                label,
+                "FILE_CONFLICT sentinel detected!".into(),
+                LogLevel::Error,
+            );
+        }
+
+        // Delegate event handling to pool's managed session
+        if let Some(managed) = self.pool.get_active_mut(session_id) {
             managed.handle_event(&evt.event);
-
             let label = session_label(&managed.session);
 
-            // Build log message
-            let msg = match &evt.event {
-                StreamEvent::ToolUse { tool, .. } => Some(format!("Using {}", tool)),
+            match &evt.event {
+                StreamEvent::ToolUse { tool, .. } => {
+                    self.activity_log
+                        .push_simple(label, format!("Using {}", tool), LogLevel::Tool);
+                }
                 StreamEvent::AssistantMessage { text } => {
                     let preview = if text.len() > 60 {
-                        format!("{}…", &text[..60])
+                        let end = truncate_at_char_boundary(text, 60);
+                        format!("{}…", &text[..end])
                     } else {
                         text.clone()
                     };
-                    if preview.is_empty() {
-                        None
-                    } else {
-                        Some(format!("\"{}\"", preview))
+                    if !preview.is_empty() {
+                        self.activity_log
+                            .push_simple(label, format!("\"{}\"", preview), LogLevel::Info);
                     }
                 }
                 StreamEvent::Completed { cost_usd } => {
-                    Some(format!("Completed (${:.2})", cost_usd))
+                    self.activity_log.push_simple(
+                        label,
+                        format!("Completed (${:.2})", cost_usd),
+                        LogLevel::Info,
+                    );
                 }
-                StreamEvent::Error { message } => Some(format!("ERROR: {}", message)),
-                _ => None,
-            };
-
-            msg.map(|m| (label, m))
-        };
-
-        // Second: push log (no longer borrowing self.sessions)
-        if let Some((label, message)) = log_msg {
-            self.push_log(&label, &message);
-        }
-
-        // Third: sync state snapshot
-        let session_id = evt.session_id;
-        if let Some(managed) = self
-            .sessions
-            .iter()
-            .find(|s| s.session.id == session_id)
-        {
-            let cloned = managed.session.clone();
-            if let Some(state_session) = self
-                .state
-                .sessions
-                .iter_mut()
-                .find(|s| s.id == session_id)
-            {
-                *state_session = cloned;
+                StreamEvent::Error { message } => {
+                    self.activity_log
+                        .push_simple(label, format!("ERROR: {}", message), LogLevel::Error);
+                }
+                _ => {}
             }
         }
-        self.state.update_total_cost();
-        self.total_cost = self.state.total_cost_usd;
+
+        self.sync_state();
+    }
+
+    /// Check for completed sessions and promote queued ones.
+    pub async fn check_completions(&mut self) -> anyhow::Result<()> {
+        // Find terminal sessions in the active list
+        let completed_ids: Vec<uuid::Uuid> = self
+            .pool
+            .all_sessions()
+            .iter()
+            .filter(|s| s.status.is_terminal())
+            .map(|s| s.id)
+            .collect();
+
+        // Only process sessions that are actually in the active list
+        for id in &completed_ids {
+            if self.pool.get_active_mut(*id).is_some() {
+                self.pool.on_session_completed(*id);
+            }
+        }
+
+        // Try to promote queued sessions
+        let promoted_ids = self.pool.try_promote();
+        if !promoted_ids.is_empty() {
+            let tx = self.pool.event_tx();
+            for id in promoted_ids {
+                if let Some(managed) = self.pool.get_active_mut(id) {
+                    let label = session_label(&managed.session);
+                    self.activity_log
+                        .push_simple(label.clone(), "Spawning session...".into(), LogLevel::Info);
+                    if let Err(e) = managed.spawn(tx.clone()).await {
+                        self.activity_log.push_simple(
+                            label,
+                            format!("Spawn failed: {}", e),
+                            LogLevel::Error,
+                        );
+                    } else {
+                        self.activity_log
+                            .push_simple(label, "Session started".into(), LogLevel::Info);
+                    }
+                }
+            }
+        }
+
+        self.sync_state();
+        Ok(())
     }
 
     /// Pause all running sessions.
     #[cfg(unix)]
     pub fn pause_all(&self) {
-        for managed in &self.sessions {
-            if managed.session.status == SessionStatus::Running {
-                let _ = managed.pause();
-            }
-        }
+        self.pool.pause_all();
     }
 
     /// Resume all paused sessions.
     #[cfg(unix)]
     pub fn resume_all(&self) {
-        for managed in &self.sessions {
-            if managed.session.status == SessionStatus::Paused {
-                let _ = managed.resume();
-            }
-        }
+        self.pool.resume_all();
     }
 
     /// Kill all sessions.
     pub async fn kill_all(&mut self) {
-        for managed in &mut self.sessions {
-            if !managed.session.status.is_terminal() {
-                let _ = managed.kill().await;
-            }
-        }
-        self.save_state();
+        self.pool.kill_all().await;
+        self.sync_state();
     }
 
     /// Check if all sessions are done.
     pub fn all_done(&self) -> bool {
-        !self.sessions.is_empty() && self.sessions.iter().all(|s| s.session.status.is_terminal())
+        self.pool.all_done()
     }
 
     pub fn active_count(&self) -> usize {
-        self.sessions
-            .iter()
-            .filter(|s| !s.session.status.is_terminal())
-            .count()
+        self.pool.active_count()
     }
 
-    fn push_log(&mut self, label: &str, message: &str) {
-        self.activity_log.push(LogEntry {
-            timestamp: Utc::now(),
-            session_label: label.to_string(),
-            message: message.to_string(),
-        });
-        // Keep last 200 entries
-        if self.activity_log.len() > 200 {
-            self.activity_log.drain(..self.activity_log.len() - 200);
-        }
-    }
-
-    fn save_state(&mut self) {
+    fn sync_state(&mut self) {
+        self.state.sessions = self
+            .pool
+            .all_sessions()
+            .into_iter()
+            .cloned()
+            .collect();
+        self.state.update_total_cost();
+        self.total_cost = self.state.total_cost_usd;
         self.state.last_updated = Some(Utc::now());
         let _ = self.store.save(&self.state);
     }
@@ -190,4 +249,16 @@ fn session_label(session: &Session) -> String {
         Some(n) => format!("#{}", n),
         None => format!("S-{}", &session.id.to_string()[..8]),
     }
+}
+
+/// Find the largest byte offset <= max_bytes that is a valid char boundary.
+fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
+    if s.len() <= max_bytes {
+        return s.len();
+    }
+    let mut end = max_bytes;
+    while !s.is_char_boundary(end) && end > 0 {
+        end -= 1;
+    }
+    end
 }
