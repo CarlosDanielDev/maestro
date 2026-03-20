@@ -12,9 +12,7 @@ use serde_json::Value;
 pub fn parse_stream_line(line: &str) -> StreamEvent {
     let line = line.trim();
     if line.is_empty() {
-        return StreamEvent::Unknown {
-            raw: String::new(),
-        };
+        return StreamEvent::Unknown { raw: String::new() };
     }
 
     let Ok(v) = serde_json::from_str::<Value>(line) else {
@@ -69,9 +67,16 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
                 }
                 None => String::new(),
             };
+            let file_path = input.and_then(|inp| {
+                inp.get("file_path")
+                    .or_else(|| inp.get("path"))
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.to_string())
+            });
             StreamEvent::ToolUse {
                 tool,
                 args_preview,
+                file_path,
             }
         }
         "text" => {
@@ -84,7 +89,10 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
         }
         _ => {
             // Try to extract text from content array
-            if let Some(content) = msg.and_then(|m| m.get("content")).and_then(|c| c.as_array()) {
+            if let Some(content) = msg
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_array())
+            {
                 for block in content {
                     if block.get("type").and_then(|t| t.as_str()) == Some("text") {
                         let text = block
@@ -102,25 +110,27 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
                             .and_then(|n| n.as_str())
                             .unwrap_or("unknown")
                             .to_string();
+                        let file_path = block.get("input").and_then(|inp| {
+                            inp.get("file_path")
+                                .or_else(|| inp.get("path"))
+                                .and_then(|p| p.as_str())
+                                .map(|s| s.to_string())
+                        });
                         return StreamEvent::ToolUse {
                             tool,
                             args_preview: String::new(),
+                            file_path,
                         };
                     }
                 }
             }
-            StreamEvent::Unknown {
-                raw: v.to_string(),
-            }
+            StreamEvent::Unknown { raw: v.to_string() }
         }
     }
 }
 
 fn parse_tool_result(v: &Value) -> StreamEvent {
-    let is_error = v
-        .get("is_error")
-        .and_then(|e| e.as_bool())
-        .unwrap_or(false);
+    let is_error = v.get("is_error").and_then(|e| e.as_bool()).unwrap_or(false);
     let tool = v
         .get("tool_name")
         .or_else(|| v.get("name"))
@@ -158,8 +168,7 @@ mod tests {
 
     #[test]
     fn parse_tool_use() {
-        let line =
-            r#"{"type":"assistant","message":{"type":"tool_use","name":"Read","input":{"path":"/foo"}}}"#;
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Read","input":{"path":"/foo"}}}"#;
         match parse_stream_line(line) {
             StreamEvent::ToolUse { tool, .. } => assert_eq!(tool, "Read"),
             other => panic!("Expected ToolUse, got {:?}", other),
@@ -188,5 +197,83 @@ mod tests {
     fn parse_garbage() {
         let event = parse_stream_line("not json at all");
         assert!(matches!(event, StreamEvent::Unknown { .. }));
+    }
+
+    #[test]
+    fn parse_tool_use_read_extracts_file_path() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Read","input":{"file_path":"/src/main.rs"}}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ToolUse {
+                tool, file_path, ..
+            } => {
+                assert_eq!(tool, "Read");
+                assert_eq!(file_path, Some("/src/main.rs".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_write_extracts_file_path() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Write","input":{"file_path":"/src/new.rs","content":"fn main() {}"}}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ToolUse {
+                tool, file_path, ..
+            } => {
+                assert_eq!(tool, "Write");
+                assert_eq!(file_path, Some("/src/new.rs".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_edit_extracts_file_path() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Edit","input":{"file_path":"/src/lib.rs","old_string":"foo","new_string":"bar"}}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ToolUse { file_path, .. } => {
+                assert_eq!(file_path, Some("/src/lib.rs".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_bash_has_no_file_path() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Bash","input":{"command":"cargo test"}}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ToolUse {
+                tool, file_path, ..
+            } => {
+                assert_eq!(tool, "Bash");
+                assert_eq!(file_path, None);
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_with_path_key_fallback() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Read","input":{"path":"/foo"}}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ToolUse {
+                tool, file_path, ..
+            } => {
+                assert_eq!(tool, "Read");
+                assert_eq!(file_path, Some("/foo".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_no_input_has_no_file_path() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Read"}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ToolUse { file_path, .. } => {
+                assert_eq!(file_path, None);
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
     }
 }

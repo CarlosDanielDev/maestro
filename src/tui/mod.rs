@@ -1,4 +1,6 @@
+pub mod activity_log;
 pub mod app;
+pub mod panels;
 pub mod ui;
 
 use app::App;
@@ -35,6 +37,9 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
         eprintln!("Warning: failed to save state: {}", e);
     }
 
+    // Print session summary to stdout after TUI exits
+    print_summary(&app);
+
     result
 }
 
@@ -51,36 +56,129 @@ async fn event_loop(
             app.handle_session_event(evt);
         }
 
+        // Check for completed sessions and promote queued ones
+        app.check_completions().await?;
+
         // Check for keyboard input (with timeout for responsive updates)
-        if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                match (key.code, key.modifiers) {
-                    (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                        app.running = false;
-                        return Ok(());
-                    }
-                    #[cfg(unix)]
-                    (KeyCode::Char('p'), _) => {
-                        app.pause_all();
-                    }
-                    #[cfg(unix)]
-                    (KeyCode::Char('r'), _) => {
-                        app.resume_all();
-                    }
-                    (KeyCode::Char('k'), _) => {
-                        app.kill_all().await;
-                    }
-                    _ => {}
+        if event::poll(Duration::from_millis(50))?
+            && let Event::Key(key) = event::read()?
+        {
+            match (key.code, key.modifiers) {
+                (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                    app.running = false;
+                    return Ok(());
                 }
+                #[cfg(unix)]
+                (KeyCode::Char('p'), _) => {
+                    app.pause_all();
+                }
+                #[cfg(unix)]
+                (KeyCode::Char('r'), _) => {
+                    app.resume_all();
+                }
+                (KeyCode::Char('k'), _) => {
+                    app.kill_all().await;
+                }
+                // Scroll activity log (Shift+arrows)
+                (KeyCode::Up, KeyModifiers::SHIFT) => {
+                    app.activity_log.scroll_down();
+                }
+                (KeyCode::Down, KeyModifiers::SHIFT) => {
+                    app.activity_log.scroll_up();
+                }
+                // Scroll agent panel output (plain arrows)
+                (KeyCode::Up, _) => {
+                    app.panel_view.scroll_up();
+                }
+                (KeyCode::Down, _) => {
+                    app.panel_view.scroll_down();
+                }
+                _ => {}
             }
         }
 
         // Auto-exit when all sessions complete
         if app.all_done() {
-            // Give user a moment to see the final state
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            // Draw final state, then wait for quit key or timeout
             terminal.draw(|f| ui::draw(f, app))?;
+
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                let remaining = deadline - tokio::time::Instant::now();
+                if remaining.is_zero() {
+                    break;
+                }
+                if event::poll(remaining.min(Duration::from_millis(100)))?
+                    && let Event::Key(key) = event::read()?
+                {
+                    match key.code {
+                        // Only these keys exit
+                        KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter => break,
+                        // Arrows scroll the agent panel output
+                        KeyCode::Up => app.panel_view.scroll_up(),
+                        KeyCode::Down => app.panel_view.scroll_down(),
+                        _ => {}
+                    }
+                    // Redraw after scroll
+                    terminal.draw(|f| ui::draw(f, app))?;
+                }
+            }
             return Ok(());
         }
     }
+}
+
+/// Print a summary of all sessions to stdout after the TUI exits.
+fn print_summary(app: &App) {
+    let sessions = app.pool.all_sessions();
+    if sessions.is_empty() {
+        return;
+    }
+
+    println!();
+    println!("=== Maestro Session Summary ===");
+    println!();
+
+    for session in &sessions {
+        let label = match session.issue_number {
+            Some(n) => format!("#{}", n),
+            None => session.id.to_string()[..8].to_string(),
+        };
+        println!(
+            "  {} {} {} ${:.2} {}",
+            session.status.symbol(),
+            label,
+            session.status.label(),
+            session.cost_usd,
+            session.elapsed_display(),
+        );
+
+        if !session.last_message.is_empty() {
+            println!("    Last: {}", session.last_message);
+        }
+        if !session.files_touched.is_empty() {
+            println!("    Files: {}", session.files_touched.join(", "));
+        }
+        // Show recent activity log entries for errored sessions
+        if session.status == crate::session::types::SessionStatus::Errored {
+            for entry in session
+                .activity_log
+                .iter()
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
+                println!("    > {}", entry.message);
+            }
+        }
+    }
+
+    println!();
+    println!(
+        "Total cost: ${:.2}",
+        sessions.iter().map(|s| s.cost_usd).sum::<f64>()
+    );
+    println!();
 }
