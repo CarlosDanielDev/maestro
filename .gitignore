@@ -1,0 +1,17 @@
+# Rust
+/target/
+Cargo.lock
+
+# Maestro runtime
+maestro-state.json
+maestro.log
+
+# OS
+.DS_Store
+*.swp
+*.swo
+
+# IDE
+.idea/
+.vscode/
+*.iml
