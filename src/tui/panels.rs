@@ -94,7 +94,7 @@ fn draw_single_panel(f: &mut Frame, session: &Session, area: Rect, is_selected: 
             Constraint::Length(1), // cost + files
             Constraint::Length(2), // context gauge
             Constraint::Length(1), // current activity
-            Constraint::Min(1),   // last message (scrollable)
+            Constraint::Min(1),    // last message (scrollable)
         ])
         .split(inner);
 
@@ -106,10 +106,7 @@ fn draw_single_panel(f: &mut Frame, session: &Session, area: Rect, is_selected: 
                 .fg(status_color)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            session.elapsed_display(),
-            Style::default().fg(Color::White),
-        ),
+        Span::styled(session.elapsed_display(), Style::default().fg(Color::White)),
     ]);
     f.render_widget(Paragraph::new(status_line), chunks[0]);
 
