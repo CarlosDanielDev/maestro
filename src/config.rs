@@ -54,6 +54,9 @@ pub struct GithubConfig {
     pub issue_filter_labels: Vec<String>,
     #[serde(default = "default_true")]
     pub auto_pr: bool,
+    /// Cache TTL for issue data in seconds. Default: 300 (5 min).
+    #[serde(default = "default_cache_ttl")]
+    pub cache_ttl_secs: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +96,9 @@ fn default_alert_threshold() -> u8 {
 }
 fn default_issue_labels() -> Vec<String> {
     vec!["maestro:ready".into()]
+}
+fn default_cache_ttl() -> u64 {
+    300
 }
 fn default_true() -> bool {
     true

@@ -66,9 +66,19 @@ impl PanelView {
 fn draw_single_panel(f: &mut Frame, session: &Session, area: Rect, is_selected: bool, scroll: u16) {
     let status_color = status_to_color(session.status);
 
-    let title = match session.issue_number {
-        Some(n) => format!(" #{} ", n),
-        None => format!(" {} ", &session.id.to_string()[..8]),
+    let title = match (session.issue_number, &session.issue_title) {
+        (Some(n), Some(t)) => {
+            let max_title_len = 30;
+            let short_title: String = if t.chars().count() > max_title_len {
+                let truncated: String = t.chars().take(max_title_len - 1).collect();
+                format!("{}…", truncated)
+            } else {
+                t.clone()
+            };
+            format!(" #{} — {} ", n, short_title)
+        }
+        (Some(n), None) => format!(" #{} ", n),
+        _ => format!(" {} ", &session.id.to_string()[..8]),
     };
 
     let border_style = if is_selected {
