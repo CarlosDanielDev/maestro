@@ -109,10 +109,7 @@ impl ActivityLog {
             .map(|entry| {
                 let time = entry.timestamp.format("%H:%M:%S");
                 ListItem::new(Line::from(vec![
-                    Span::styled(
-                        format!("{} ", time),
-                        Style::default().fg(Color::DarkGray),
-                    ),
+                    Span::styled(format!("{} ", time), Style::default().fg(Color::DarkGray)),
                     Span::styled(
                         format!("[{}] ", entry.session_label),
                         Style::default().fg(Color::Cyan),

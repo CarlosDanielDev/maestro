@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
-use uuid::Uuid;
 use tokio::sync::mpsc;
+use uuid::Uuid;
 
 use super::manager::{ManagedSession, SessionEvent};
 use super::types::{Session, SessionStatus};
@@ -138,7 +138,11 @@ impl SessionPool {
         if let Some(m) = self.active.iter_mut().find(|m| m.session.id == session_id) {
             return Some(&mut m.session);
         }
-        if let Some(m) = self.finished.iter_mut().find(|m| m.session.id == session_id) {
+        if let Some(m) = self
+            .finished
+            .iter_mut()
+            .find(|m| m.session.id == session_id)
+        {
             return Some(&mut m.session);
         }
         if let Some(s) = self.queue.iter_mut().find(|s| s.id == session_id) {
@@ -454,7 +458,14 @@ mod tests {
         // Verify worktree_path was set on the active session
         let managed = &pool.active[0];
         assert!(managed.worktree_path.is_some());
-        assert!(managed.worktree_path.as_ref().unwrap().to_string_lossy().contains("issue-42"));
+        assert!(
+            managed
+                .worktree_path
+                .as_ref()
+                .unwrap()
+                .to_string_lossy()
+                .contains("issue-42")
+        );
     }
 
     #[test]

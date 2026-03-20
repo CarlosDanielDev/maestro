@@ -64,8 +64,11 @@ impl App {
         for id in promoted_ids {
             if let Some(managed) = self.pool.get_active_mut(id) {
                 let session_label = session_label(&managed.session);
-                self.activity_log
-                    .push_simple(session_label.clone(), "Spawning session...".into(), LogLevel::Info);
+                self.activity_log.push_simple(
+                    session_label.clone(),
+                    "Spawning session...".into(),
+                    LogLevel::Info,
+                );
                 if let Err(e) = managed.spawn(tx.clone()).await {
                     self.activity_log.push_simple(
                         session_label,
@@ -73,8 +76,11 @@ impl App {
                         LogLevel::Error,
                     );
                 } else {
-                    self.activity_log
-                        .push_simple(session_label, "Session started".into(), LogLevel::Info);
+                    self.activity_log.push_simple(
+                        session_label,
+                        "Session started".into(),
+                        LogLevel::Info,
+                    );
                 }
             }
         }
@@ -140,8 +146,11 @@ impl App {
                         text.clone()
                     };
                     if !preview.is_empty() {
-                        self.activity_log
-                            .push_simple(label, format!("\"{}\"", preview), LogLevel::Info);
+                        self.activity_log.push_simple(
+                            label,
+                            format!("\"{}\"", preview),
+                            LogLevel::Info,
+                        );
                     }
                 }
                 StreamEvent::Completed { cost_usd } => {
@@ -152,8 +161,11 @@ impl App {
                     );
                 }
                 StreamEvent::Error { message } => {
-                    self.activity_log
-                        .push_simple(label, format!("ERROR: {}", message), LogLevel::Error);
+                    self.activity_log.push_simple(
+                        label,
+                        format!("ERROR: {}", message),
+                        LogLevel::Error,
+                    );
                 }
                 _ => {}
             }
@@ -187,8 +199,11 @@ impl App {
             for id in promoted_ids {
                 if let Some(managed) = self.pool.get_active_mut(id) {
                     let label = session_label(&managed.session);
-                    self.activity_log
-                        .push_simple(label.clone(), "Spawning session...".into(), LogLevel::Info);
+                    self.activity_log.push_simple(
+                        label.clone(),
+                        "Spawning session...".into(),
+                        LogLevel::Info,
+                    );
                     if let Err(e) = managed.spawn(tx.clone()).await {
                         self.activity_log.push_simple(
                             label,
@@ -196,8 +211,11 @@ impl App {
                             LogLevel::Error,
                         );
                     } else {
-                        self.activity_log
-                            .push_simple(label, "Session started".into(), LogLevel::Info);
+                        self.activity_log.push_simple(
+                            label,
+                            "Session started".into(),
+                            LogLevel::Info,
+                        );
                     }
                 }
             }
@@ -235,12 +253,7 @@ impl App {
     }
 
     fn sync_state(&mut self) {
-        self.state.sessions = self
-            .pool
-            .all_sessions()
-            .into_iter()
-            .cloned()
-            .collect();
+        self.state.sessions = self.pool.all_sessions().into_iter().cloned().collect();
         self.state.update_total_cost();
         self.total_cost = self.state.total_cost_usd;
         self.state.last_updated = Some(Utc::now());
