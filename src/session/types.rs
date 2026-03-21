@@ -131,7 +131,12 @@ pub enum StreamEvent {
     /// Assistant started producing a message
     AssistantMessage { text: String },
     /// A tool is being used
-    ToolUse { tool: String, args_preview: String },
+    ToolUse {
+        tool: String,
+        args_preview: String,
+        /// Extracted file path, if this is a file-touching tool.
+        file_path: Option<String>,
+    },
     /// Tool result received
     ToolResult { tool: String, is_error: bool },
     /// Cost update from usage data

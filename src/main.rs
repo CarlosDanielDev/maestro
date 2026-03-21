@@ -6,11 +6,16 @@ mod tui;
 use clap::{Parser, Subcommand};
 use config::Config;
 use session::types::Session;
+use session::worktree::GitWorktreeManager;
 use state::store::StateStore;
 use tui::app::App;
 
 #[derive(Parser)]
-#[command(name = "maestro", version, about = "Multi-session Claude Code orchestrator")]
+#[command(
+    name = "maestro",
+    version,
+    about = "Multi-session Claude Code orchestrator"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -31,6 +36,10 @@ enum Commands {
         /// Model to use (opus, sonnet, haiku)
         #[arg(short, long)]
         model: Option<String>,
+
+        /// Max concurrent sessions (overrides config)
+        #[arg(long)]
+        max_concurrent: Option<usize>,
     },
     /// Show current state without TUI
     Status,
@@ -69,7 +78,8 @@ async fn main() -> anyhow::Result<()> {
             prompt,
             issue,
             model,
-        }) => cmd_run(prompt, issue, model).await,
+            max_concurrent,
+        }) => cmd_run(prompt, issue, model, max_concurrent).await,
         // Default: launch TUI with no sessions (dashboard mode)
         None => cmd_dashboard().await,
     }
@@ -91,6 +101,8 @@ max_concurrent = 3
 stall_timeout_secs = 300
 default_model = "opus"
 default_mode = "orchestrator"
+permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
+allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
 
 [budget]
 per_session_usd = 5.0
@@ -174,16 +186,32 @@ async fn cmd_run(
     prompt: Option<String>,
     issue: Option<String>,
     model: Option<String>,
+    max_concurrent_override: Option<usize>,
 ) -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
     let model = model.unwrap_or(config.sessions.default_model.clone());
+    let max_concurrent = max_concurrent_override.unwrap_or(config.sessions.max_concurrent);
 
     let store = StateStore::new(StateStore::default_path());
-    let mut app = App::new(store);
+    let repo_root = std::env::current_dir()?;
+    let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
+
+    let mut app = App::new(
+        store,
+        max_concurrent,
+        worktree_mgr,
+        config.sessions.permission_mode.clone(),
+        config.sessions.allowed_tools.clone(),
+    );
 
     // Determine what to run
     if let Some(prompt_text) = prompt {
-        let session = Session::new(prompt_text, model, config.sessions.default_mode.clone(), None);
+        let session = Session::new(
+            prompt_text,
+            model,
+            config.sessions.default_mode.clone(),
+            None,
+        );
         app.add_session(session).await?;
     } else if let Some(issue_str) = issue {
         // Parse comma-separated issue numbers
@@ -214,6 +242,14 @@ async fn cmd_run(
 
 async fn cmd_dashboard() -> anyhow::Result<()> {
     let store = StateStore::new(StateStore::default_path());
-    let app = App::new(store);
+    let repo_root = std::env::current_dir()?;
+    let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
+    let app = App::new(
+        store,
+        3,
+        worktree_mgr,
+        "bypassPermissions".into(),
+        Vec::new(),
+    );
     tui::run(app).await
 }
