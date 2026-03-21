@@ -29,6 +29,13 @@ pub struct SessionsConfig {
     pub default_model: String,
     #[serde(default = "default_mode")]
     pub default_mode: String,
+    /// Permission mode for Claude CLI sessions.
+    /// Options: "default", "acceptEdits", "bypassPermissions", "dontAsk", "plan", "auto"
+    #[serde(default = "default_permission_mode")]
+    pub permission_mode: String,
+    /// Allowed tools whitelist (comma-separated). Empty = all tools allowed.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +78,9 @@ fn default_model() -> String {
 }
 fn default_mode() -> String {
     "orchestrator".into()
+}
+fn default_permission_mode() -> String {
+    "bypassPermissions".into()
 }
 fn default_per_session_usd() -> f64 {
     5.0

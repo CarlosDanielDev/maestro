@@ -22,6 +22,10 @@ pub struct ManagedSession {
     pub worktree_path: Option<PathBuf>,
     /// System prompt appendix for file claims injection (Phase 1).
     pub system_prompt_appendix: Option<String>,
+    /// Permission mode for Claude CLI (e.g., "bypassPermissions").
+    pub permission_mode: Option<String>,
+    /// Allowed tools whitelist.
+    pub allowed_tools: Vec<String>,
 }
 
 impl ManagedSession {
@@ -31,6 +35,8 @@ impl ManagedSession {
             child: None,
             worktree_path: None,
             system_prompt_appendix: None,
+            permission_mode: None,
+            allowed_tools: Vec::new(),
         }
     }
 
@@ -45,6 +51,8 @@ impl ManagedSession {
             child: None,
             worktree_path,
             system_prompt_appendix,
+            permission_mode: None,
+            allowed_tools: Vec::new(),
         }
     }
 
@@ -58,6 +66,18 @@ impl ManagedSession {
 
         // Model selection
         cmd.args(["--model", &self.session.model]);
+
+        // Permission mode (default: bypassPermissions for unattended sessions)
+        if let Some(ref mode) = self.permission_mode {
+            if !mode.is_empty() && mode != "default" {
+                cmd.args(["--permission-mode", mode]);
+            }
+        }
+
+        // Allowed tools whitelist
+        if !self.allowed_tools.is_empty() {
+            cmd.args(["--allowedTools", &self.allowed_tools.join(",")]);
+        }
 
         // Inject file claims via --append-system-prompt
         if let Some(ref appendix) = self.system_prompt_appendix {

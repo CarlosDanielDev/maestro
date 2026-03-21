@@ -28,10 +28,14 @@ impl App {
         store: StateStore,
         max_concurrent: usize,
         worktree_mgr: Box<dyn WorktreeManager + Send>,
+        permission_mode: String,
+        allowed_tools: Vec<String>,
     ) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let state = store.load().unwrap_or_default();
-        let pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx.clone());
+        let mut pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx.clone());
+        pool.set_permission_mode(permission_mode);
+        pool.set_allowed_tools(allowed_tools);
         Self {
             pool,
             activity_log: ActivityLog::new(500),

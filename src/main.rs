@@ -97,6 +97,8 @@ max_concurrent = 3
 stall_timeout_secs = 300
 default_model = "opus"
 default_mode = "orchestrator"
+permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
+allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
 
 [budget]
 per_session_usd = 5.0
@@ -190,7 +192,13 @@ async fn cmd_run(
     let repo_root = std::env::current_dir()?;
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
 
-    let mut app = App::new(store, max_concurrent, worktree_mgr);
+    let mut app = App::new(
+        store,
+        max_concurrent,
+        worktree_mgr,
+        config.sessions.permission_mode.clone(),
+        config.sessions.allowed_tools.clone(),
+    );
 
     // Determine what to run
     if let Some(prompt_text) = prompt {
@@ -227,6 +235,6 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
     let store = StateStore::new(StateStore::default_path());
     let repo_root = std::env::current_dir()?;
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
-    let app = App::new(store, 3, worktree_mgr);
+    let app = App::new(store, 3, worktree_mgr, "bypassPermissions".into(), Vec::new());
     tui::run(app).await
 }
