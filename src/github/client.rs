@@ -243,7 +243,7 @@ impl GitHubClient for GhCliClient {
                         "--color",
                         color,
                         "--description",
-                        &format!("Managed by Maestro"),
+                        "Managed by Maestro",
                         "--force",
                     ])
                     .await;
