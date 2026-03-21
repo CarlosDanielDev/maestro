@@ -428,34 +428,31 @@ impl App {
         }
 
         // Auto PR creation
-        if let (Some(client), Some(config)) = (&self.github_client, &self.config) {
-            if success && config.github.auto_pr {
-                if let Some(ref branch) = worktree_branch {
-                    if let Some(issue) = self.state.issue_cache.get(&issue_number) {
-                        let file_refs: Vec<&str> =
-                            files_touched.iter().map(|s| s.as_str()).collect();
-                        let pr_creator =
-                            PrCreator::new(client.as_ref(), config.project.base_branch.clone());
-                        match pr_creator
-                            .create_for_issue(issue, branch, &file_refs, cost_usd)
-                            .await
-                        {
-                            Ok(pr_num) => {
-                                self.activity_log.push_simple(
-                                    format!("#{}", issue_number),
-                                    format!("PR #{} created", pr_num),
-                                    LogLevel::Info,
-                                );
-                            }
-                            Err(e) => {
-                                self.activity_log.push_simple(
-                                    format!("#{}", issue_number),
-                                    format!("PR creation failed: {}", e),
-                                    LogLevel::Error,
-                                );
-                            }
-                        }
-                    }
+        if let (Some(client), Some(config)) = (&self.github_client, &self.config)
+            && success
+            && config.github.auto_pr
+            && let Some(ref branch) = worktree_branch
+            && let Some(issue) = self.state.issue_cache.get(&issue_number)
+        {
+            let file_refs: Vec<&str> = files_touched.iter().map(|s| s.as_str()).collect();
+            let pr_creator = PrCreator::new(client.as_ref(), config.project.base_branch.clone());
+            match pr_creator
+                .create_for_issue(issue, branch, &file_refs, cost_usd)
+                .await
+            {
+                Ok(pr_num) => {
+                    self.activity_log.push_simple(
+                        format!("#{}", issue_number),
+                        format!("PR #{} created", pr_num),
+                        LogLevel::Info,
+                    );
+                }
+                Err(e) => {
+                    self.activity_log.push_simple(
+                        format!("#{}", issue_number),
+                        format!("PR creation failed: {}", e),
+                        LogLevel::Error,
+                    );
                 }
             }
         }
