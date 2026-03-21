@@ -79,19 +79,19 @@ async fn event_loop(
                 (KeyCode::Char('k'), _) => {
                     app.kill_all().await;
                 }
-                // Scroll agent panel output
-                (KeyCode::Up, _) => {
-                    app.panel_view.scroll_up();
-                }
-                (KeyCode::Down, _) => {
-                    app.panel_view.scroll_down();
-                }
-                // Scroll activity log (with shift)
+                // Scroll activity log (Shift+arrows)
                 (KeyCode::Up, KeyModifiers::SHIFT) => {
                     app.activity_log.scroll_down();
                 }
                 (KeyCode::Down, KeyModifiers::SHIFT) => {
                     app.activity_log.scroll_up();
+                }
+                // Scroll agent panel output (plain arrows)
+                (KeyCode::Up, _) => {
+                    app.panel_view.scroll_up();
+                }
+                (KeyCode::Down, _) => {
+                    app.panel_view.scroll_down();
                 }
                 _ => {}
             }
@@ -108,19 +108,19 @@ async fn event_loop(
                 if remaining.is_zero() {
                     break;
                 }
-                if event::poll(remaining.min(Duration::from_millis(100)))? {
-                    if let Event::Key(key) = event::read()? {
-                        match key.code {
-                            // Only these keys exit
-                            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter => break,
-                            // Arrows scroll the agent panel output
-                            KeyCode::Up => app.panel_view.scroll_up(),
-                            KeyCode::Down => app.panel_view.scroll_down(),
-                            _ => {}
-                        }
-                        // Redraw after scroll
-                        terminal.draw(|f| ui::draw(f, app))?;
+                if event::poll(remaining.min(Duration::from_millis(100)))?
+                    && let Event::Key(key) = event::read()?
+                {
+                    match key.code {
+                        // Only these keys exit
+                        KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter => break,
+                        // Arrows scroll the agent panel output
+                        KeyCode::Up => app.panel_view.scroll_up(),
+                        KeyCode::Down => app.panel_view.scroll_down(),
+                        _ => {}
                     }
+                    // Redraw after scroll
+                    terminal.draw(|f| ui::draw(f, app))?;
                 }
             }
             return Ok(());

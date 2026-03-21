@@ -68,10 +68,11 @@ impl ManagedSession {
         cmd.args(["--model", &self.session.model]);
 
         // Permission mode (default: bypassPermissions for unattended sessions)
-        if let Some(ref mode) = self.permission_mode {
-            if !mode.is_empty() && mode != "default" {
-                cmd.args(["--permission-mode", mode]);
-            }
+        if let Some(ref mode) = self.permission_mode
+            && !mode.is_empty()
+            && mode != "default"
+        {
+            cmd.args(["--permission-mode", mode]);
         }
 
         // Allowed tools whitelist
