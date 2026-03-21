@@ -7,17 +7,14 @@ fn blocked_by_regex() -> &'static regex::Regex {
     BLOCKED_BY_RE.get_or_init(|| regex::Regex::new(r"(?i)blocked-by:\s*#(\d+)").unwrap())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub enum Priority {
     P0 = 0,
     P1 = 1,
+    #[default]
     P2 = 2,
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Self::P2
-    }
 }
 
 impl Priority {
