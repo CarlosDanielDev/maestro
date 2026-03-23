@@ -21,8 +21,9 @@ impl DependencyGraph {
         for item in items {
             let num = item.number();
             let blockers: HashSet<u64> = item
-                .blockers()
-                .into_iter()
+                .blocked_by
+                .iter()
+                .copied()
                 .filter(|b| known_issues.contains(b))
                 .collect();
 
@@ -97,7 +98,7 @@ impl DependencyGraph {
 
     /// Check if a work item has unresolved dependencies.
     pub fn has_unresolved_deps(item: &WorkItem, completed: &HashSet<u64>) -> bool {
-        item.blockers().iter().any(|d| !completed.contains(d))
+        item.blocked_by.iter().any(|d| !completed.contains(d))
     }
 }
 
