@@ -1,5 +1,12 @@
+mod budget;
 mod config;
+mod gates;
+mod git;
 mod github;
+mod models;
+mod notifications;
+mod prompts;
+mod review;
 mod session;
 mod state;
 mod tui;
@@ -50,6 +57,10 @@ enum Commands {
         /// Max concurrent sessions (overrides config)
         #[arg(long)]
         max_concurrent: Option<usize>,
+
+        /// Resume from previous state after a crash
+        #[arg(long)]
+        resume: bool,
     },
     /// Show queued/pending issues from GitHub
     Queue,
@@ -64,6 +75,21 @@ enum Commands {
     Cost,
     /// Initialize maestro.toml in current directory
     Init,
+    /// Clean orphaned worktrees left by crashed sessions
+    Clean {
+        /// Show what would be cleaned without actually doing it
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Show session transcript logs
+    Logs {
+        /// Show full log for a specific session ID
+        #[arg(long)]
+        session: Option<String>,
+        /// Export as JSON
+        #[arg(long)]
+        export: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -89,6 +115,8 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Commands::Init) => cmd_init(),
+        Some(Commands::Clean { dry_run }) => cmd_clean(dry_run),
+        Some(Commands::Logs { session, export }) => cmd_logs(session, export),
         Some(Commands::Status) => cmd_status(),
         Some(Commands::Cost) => cmd_cost(),
         Some(Commands::Queue) => cmd_queue().await,
@@ -99,7 +127,8 @@ async fn main() -> anyhow::Result<()> {
             milestone,
             model,
             max_concurrent,
-        }) => cmd_run(prompt, issue, milestone, model, max_concurrent).await,
+            resume,
+        }) => cmd_run(prompt, issue, milestone, model, max_concurrent, resume).await,
         // Default: launch TUI with no sessions (dashboard mode)
         None => cmd_dashboard().await,
     }
@@ -132,11 +161,34 @@ alert_threshold_pct = 80
 [github]
 issue_filter_labels = ["maestro:ready"]
 auto_pr = true
+auto_merge = false                      # Set to true to auto-merge PRs after CI + review pass
+merge_method = "squash"                 # Options: merge, squash, rebase
 cache_ttl_secs = 300
+
+[gates]
+enabled = true
+test_command = "cargo test"
+ci_poll_interval_secs = 30
+ci_max_wait_secs = 1800
 
 [notifications]
 desktop = true
 slack = false
+
+[review]
+enabled = false
+command = "gh pr review {pr_number} --comment --body 'Automated review by Maestro'"
+# reviewers = [
+#   { name = "claude", command = "claude --print 'review PR #{pr_number}'", required = true },
+#   { name = "codex", command = "codex review {pr_number}", required = false },
+# ]
+
+[concurrency]
+heavy_task_labels = []                  # Labels that mark a task as resource-intensive
+heavy_task_limit = 2                    # Max concurrent heavy tasks
+
+[monitoring]
+work_tick_interval_secs = 10
 "#;
 
     std::fs::write(&path, content)?;
@@ -282,12 +334,98 @@ async fn cmd_add(issue_number: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn cmd_logs(session: Option<String>, export: Option<String>) -> anyhow::Result<()> {
+    let logger = session::logger::SessionLogger::new(session::logger::SessionLogger::default_dir());
+
+    if let Some(session_id_str) = session {
+        let session_id: uuid::Uuid = session_id_str
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid session ID: {}", session_id_str))?;
+        let content = logger.read_log(session_id)?;
+
+        if export.as_deref() == Some("json") {
+            let lines: Vec<&str> = content.lines().collect();
+            let json = serde_json::json!({
+                "session_id": session_id_str,
+                "lines": lines,
+            });
+            println!("{}", serde_json::to_string_pretty(&json)?);
+        } else {
+            println!("{}", content);
+        }
+    } else {
+        let logs = logger.list_logs()?;
+        if logs.is_empty() {
+            println!("No session logs found.");
+            return Ok(());
+        }
+
+        if export.as_deref() == Some("json") {
+            let entries: Vec<serde_json::Value> = logs
+                .iter()
+                .map(|l| {
+                    serde_json::json!({
+                        "session_id": l.session_id,
+                        "size_bytes": l.size_bytes,
+                        "path": l.path.display().to_string(),
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&entries)?);
+        } else {
+            println!("{:<40} {:>10}", "Session ID", "Size");
+            println!("{}", "-".repeat(52));
+            for log in &logs {
+                println!("{:<40} {:>10}", log.session_id, format_bytes(log.size_bytes));
+            }
+            println!("\n{} log(s) found.", logs.len());
+        }
+    }
+    Ok(())
+}
+
+fn format_bytes(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{}B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1}KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
+    }
+}
+
+fn cmd_clean(dry_run: bool) -> anyhow::Result<()> {
+    let repo_root = std::env::current_dir()?;
+    let mgr = session::cleanup::CleanupManager::new(&repo_root);
+    let orphans = mgr.scan_orphans()?;
+
+    if orphans.is_empty() {
+        println!("No orphaned worktrees found.");
+        return Ok(());
+    }
+
+    println!("Found {} orphaned worktree(s):", orphans.len());
+    for orphan in &orphans {
+        println!("  {} ({})", orphan.name, orphan.path.display());
+    }
+
+    if dry_run {
+        println!("\nDry run — no changes made.");
+    } else {
+        let removed = mgr.remove_orphans(&orphans)?;
+        println!("\nRemoved {} worktree(s).", removed);
+    }
+
+    Ok(())
+}
+
 async fn cmd_run(
     prompt: Option<String>,
     issue: Option<String>,
     milestone: Option<String>,
     model: Option<String>,
     max_concurrent_override: Option<usize>,
+    resume: bool,
 ) -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
     let model = model.unwrap_or(config.sessions.default_model.clone());
@@ -295,6 +433,27 @@ async fn cmd_run(
 
     let store = StateStore::new(StateStore::default_path());
     let repo_root = std::env::current_dir()?;
+
+    // Startup cleanup: remove orphaned worktrees (non-blocking)
+    {
+        let cleanup_mgr = session::cleanup::CleanupManager::new(&repo_root);
+        if let Ok(orphans) = cleanup_mgr.scan_orphans() {
+            if !orphans.is_empty() {
+                tracing::info!("Cleaning {} orphaned worktrees on startup", orphans.len());
+                let _ = cleanup_mgr.remove_orphans(&orphans);
+            }
+        }
+    }
+
+    // Startup log cleanup: remove logs older than 30 days
+    {
+        let logger = session::logger::SessionLogger::new(session::logger::SessionLogger::default_dir());
+        if let Ok(removed) = logger.cleanup_old_logs(30) {
+            if removed > 0 {
+                tracing::info!("Cleaned {} old session logs", removed);
+            }
+        }
+    }
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
 
     let mut app = App::new(
@@ -304,6 +463,45 @@ async fn cmd_run(
         config.sessions.permission_mode.clone(),
         config.sessions.allowed_tools.clone(),
     );
+
+    // Wire up budget enforcer from config
+    app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
+        config.budget.per_session_usd,
+        config.budget.total_usd,
+        config.budget.alert_threshold_pct,
+    ));
+
+    // Wire up model router from config
+    app.model_router = Some(crate::models::ModelRouter::new(
+        config.models.routing.clone(),
+        config.sessions.default_model.clone(),
+    ));
+
+    // Wire up notification dispatcher from config
+    app.notifications = crate::notifications::dispatcher::NotificationDispatcher::new(
+        config.notifications.desktop,
+    );
+
+    // Resume from previous state if requested
+    if resume {
+        let mut recovered = 0;
+        for session in &mut app.state.sessions {
+            if matches!(
+                session.status,
+                session::types::SessionStatus::Running
+                    | session::types::SessionStatus::Spawning
+            ) {
+                session.status = session::types::SessionStatus::Errored;
+                recovered += 1;
+            }
+        }
+        if recovered > 0 {
+            tracing::info!(
+                "Resume: marked {} incomplete sessions as errored (retry will pick them up)",
+                recovered
+            );
+        }
+    }
 
     // Determine what to run
     if let Some(prompt_text) = prompt {

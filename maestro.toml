@@ -22,3 +22,16 @@ auto_pr = true
 [notifications]
 desktop = true
 slack = false
+
+[models]
+# Model routing rules: label pattern -> model name. First match wins.
+# routing = { "priority:P0" = "opus", "type:docs" = "haiku" }
+
+[gates]
+enabled = true
+test_command = "cargo test"
+
+[review]
+enabled = false
+command = "gh pr review {pr_number} --comment --body 'Automated review by Maestro'"
+auto_approve = false
