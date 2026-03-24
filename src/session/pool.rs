@@ -74,16 +74,17 @@ impl SessionPool {
             let slug = session_slug(&session);
 
             // Try to create worktree (non-fatal — runs in cwd if it fails)
-            let worktree_path = match self.worktree_mgr.create(&slug) {
+            let branch_name = format!("maestro/{}", slug);
+            let (worktree_path, branch) = match self.worktree_mgr.create(&slug) {
                 Ok(path) => {
                     session.log_activity(format!("Worktree created: {}", path.display()));
-                    Some(path)
+                    (Some(path), Some(branch_name))
                 }
                 Err(e) => {
                     let msg = format!("Worktree skipped (running in cwd): {}", e);
                     tracing::warn!("{}", msg);
                     session.log_activity(msg);
-                    None
+                    (None, None)
                 }
             };
 
@@ -91,7 +92,8 @@ impl SessionPool {
             let system_prompt = self.file_claims.build_system_prompt(session.id);
 
             session.status = SessionStatus::Queued; // Still queued until spawned
-            let mut managed = ManagedSession::with_worktree(session, worktree_path, system_prompt);
+            let mut managed =
+                ManagedSession::with_worktree(session, worktree_path, branch, system_prompt);
             managed.permission_mode = Some(self.permission_mode.clone());
             managed.allowed_tools = self.allowed_tools.clone();
             let id = managed.session.id;
