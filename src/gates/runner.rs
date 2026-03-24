@@ -66,10 +66,7 @@ fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
                 Ok(content) => match regex::Regex::new(pattern) {
                     Ok(re) => {
                         if re.is_match(&content) {
-                            GateResult::pass(
-                                "file_contains",
-                                format!("{} contains pattern", path),
-                            )
+                            GateResult::pass("file_contains", format!("{} contains pattern", path))
                         } else {
                             GateResult::fail(
                                 "file_contains",
@@ -77,13 +74,9 @@ fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
                             )
                         }
                     }
-                    Err(e) => {
-                        GateResult::fail("file_contains", format!("Invalid pattern: {}", e))
-                    }
+                    Err(e) => GateResult::fail("file_contains", format!("Invalid pattern: {}", e)),
                 },
-                Err(e) => {
-                    GateResult::fail("file_contains", format!("Cannot read {}: {}", path, e))
-                }
+                Err(e) => GateResult::fail("file_contains", format!("Cannot read {}: {}", path, e)),
             }
         }
 
@@ -134,19 +127,13 @@ mod tests {
 
     #[test]
     fn all_gates_passed_true_when_all_pass() {
-        let results = vec![
-            GateResult::pass("a", "ok"),
-            GateResult::pass("b", "ok"),
-        ];
+        let results = vec![GateResult::pass("a", "ok"), GateResult::pass("b", "ok")];
         assert!(all_gates_passed(&results));
     }
 
     #[test]
     fn all_gates_passed_false_when_any_fail() {
-        let results = vec![
-            GateResult::pass("a", "ok"),
-            GateResult::fail("b", "nope"),
-        ];
+        let results = vec![GateResult::pass("a", "ok"), GateResult::fail("b", "nope")];
         assert!(!all_gates_passed(&results));
     }
 
@@ -231,9 +218,7 @@ mod tests {
     #[test]
     fn tests_pass_gate_with_empty_command_fails() {
         let dir = tempfile::tempdir().unwrap();
-        let gate = CompletionGate::TestsPass {
-            command: "".into(),
-        };
+        let gate = CompletionGate::TestsPass { command: "".into() };
         let result = run_single_gate(&gate, dir.path());
         assert!(!result.passed);
     }
