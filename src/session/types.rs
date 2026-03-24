@@ -61,6 +61,9 @@ pub struct Session {
     pub activity_log: Vec<ActivityEntry>,
     pub files_touched: Vec<String>,
     pub pid: Option<u32>,
+    /// Issue title for display in TUI panels.
+    #[serde(default)]
+    pub issue_title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +90,7 @@ impl Session {
             activity_log: Vec::new(),
             files_touched: Vec::new(),
             pid: None,
+            issue_title: None,
         }
     }
 
