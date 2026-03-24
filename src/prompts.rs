@@ -61,46 +61,36 @@ impl PromptBuilder {
     /// Phase-specific instructions based on task type.
     fn phase_instructions(task_type: &str) -> String {
         match task_type {
-            "Documentation" => {
-                "Focus on documentation quality:\n\
+            "Documentation" => "Focus on documentation quality:\n\
                  - Read existing docs to understand the style and conventions\n\
                  - Update or create documentation files as needed\n\
                  - Ensure code examples are accurate and tested\n\
                  - Do NOT modify source code unless fixing doc comments"
-                    .into()
-            }
-            "Refactoring" => {
-                "Focus on preserving existing behavior:\n\
+                .into(),
+            "Refactoring" => "Focus on preserving existing behavior:\n\
                  - Run tests BEFORE making any changes to establish a baseline\n\
                  - Make incremental changes, running tests after each step\n\
                  - Do NOT change public API signatures unless explicitly requested\n\
                  - Do NOT add new features — only restructure existing code"
-                    .into()
-            }
-            "Bug Fix" => {
-                "Follow a reproduce-first approach:\n\
+                .into(),
+            "Bug Fix" => "Follow a reproduce-first approach:\n\
                  - First, understand the bug by reading related code and tests\n\
                  - Write a failing test that reproduces the bug\n\
                  - Fix the bug with the minimum change necessary\n\
                  - Verify the fix by running all tests\n\
                  - Do NOT refactor surrounding code — fix only the bug"
-                    .into()
-            }
-            "Testing" => {
-                "Focus on test coverage:\n\
+                .into(),
+            "Testing" => "Focus on test coverage:\n\
                  - Read the source code to understand the behavior to test\n\
                  - Write tests for edge cases and error conditions\n\
                  - Ensure tests are deterministic and do not depend on external state\n\
                  - Do NOT modify source code — only add or update tests"
-                    .into()
-            }
-            _ => {
-                "Follow standard development practices:\n\
+                .into(),
+            _ => "Follow standard development practices:\n\
                  - Read and understand the codebase before making changes\n\
                  - Write tests for new functionality\n\
                  - Keep changes focused on the issue scope"
-                    .into()
-            }
+                .into(),
         }
     }
 

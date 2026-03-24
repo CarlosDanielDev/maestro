@@ -23,9 +23,7 @@ pub fn draw_dep_graph(f: &mut Frame, assigner: Option<&WorkAssigner>, area: Rect
         .border_style(Style::default().fg(Color::Cyan))
         .title(" Dependency Graph ");
 
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: true });
+    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
 }
 
@@ -73,10 +71,7 @@ fn build_graph_lines(assigner: &WorkAssigner) -> Vec<Line<'static>> {
                 format!(" {:?} ", item.priority),
                 Style::default().fg(Color::Yellow),
             ),
-            Span::styled(
-                item.title().to_string(),
-                Style::default().fg(status_color),
-            ),
+            Span::styled(item.title().to_string(), Style::default().fg(status_color)),
             Span::styled(deps_str, Style::default().fg(Color::DarkGray)),
         ]));
     }

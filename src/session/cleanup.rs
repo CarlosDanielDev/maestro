@@ -51,10 +51,7 @@ impl CleanupManager {
                     let tp_canonical = tp.canonicalize().unwrap_or_else(|_| tp.clone());
                     tp_canonical == canonical
                 }) {
-                    let name = entry
-                        .file_name()
-                        .to_string_lossy()
-                        .to_string();
+                    let name = entry.file_name().to_string_lossy().to_string();
                     orphans.push(OrphanWorktree { path, name });
                 }
             }
