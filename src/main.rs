@@ -376,7 +376,11 @@ fn cmd_logs(session: Option<String>, export: Option<String>) -> anyhow::Result<(
             println!("{:<40} {:>10}", "Session ID", "Size");
             println!("{}", "-".repeat(52));
             for log in &logs {
-                println!("{:<40} {:>10}", log.session_id, format_bytes(log.size_bytes));
+                println!(
+                    "{:<40} {:>10}",
+                    log.session_id,
+                    format_bytes(log.size_bytes)
+                );
             }
             println!("\n{} log(s) found.", logs.len());
         }
@@ -437,21 +441,22 @@ async fn cmd_run(
     // Startup cleanup: remove orphaned worktrees (non-blocking)
     {
         let cleanup_mgr = session::cleanup::CleanupManager::new(&repo_root);
-        if let Ok(orphans) = cleanup_mgr.scan_orphans() {
-            if !orphans.is_empty() {
-                tracing::info!("Cleaning {} orphaned worktrees on startup", orphans.len());
-                let _ = cleanup_mgr.remove_orphans(&orphans);
-            }
+        if let Ok(orphans) = cleanup_mgr.scan_orphans()
+            && !orphans.is_empty()
+        {
+            tracing::info!("Cleaning {} orphaned worktrees on startup", orphans.len());
+            let _ = cleanup_mgr.remove_orphans(&orphans);
         }
     }
 
     // Startup log cleanup: remove logs older than 30 days
     {
-        let logger = session::logger::SessionLogger::new(session::logger::SessionLogger::default_dir());
-        if let Ok(removed) = logger.cleanup_old_logs(30) {
-            if removed > 0 {
-                tracing::info!("Cleaned {} old session logs", removed);
-            }
+        let logger =
+            session::logger::SessionLogger::new(session::logger::SessionLogger::default_dir());
+        if let Ok(removed) = logger.cleanup_old_logs(30)
+            && removed > 0
+        {
+            tracing::info!("Cleaned {} old session logs", removed);
         }
     }
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
@@ -478,9 +483,8 @@ async fn cmd_run(
     ));
 
     // Wire up notification dispatcher from config
-    app.notifications = crate::notifications::dispatcher::NotificationDispatcher::new(
-        config.notifications.desktop,
-    );
+    app.notifications =
+        crate::notifications::dispatcher::NotificationDispatcher::new(config.notifications.desktop);
 
     // Resume from previous state if requested
     if resume {
@@ -488,8 +492,7 @@ async fn cmd_run(
         for session in &mut app.state.sessions {
             if matches!(
                 session.status,
-                session::types::SessionStatus::Running
-                    | session::types::SessionStatus::Spawning
+                session::types::SessionStatus::Running | session::types::SessionStatus::Spawning
             ) {
                 session.status = session::types::SessionStatus::Errored;
                 recovered += 1;

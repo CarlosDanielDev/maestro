@@ -68,9 +68,19 @@ impl WorkAssigner {
 
         ready.sort_by(|a, b| {
             a.priority.cmp(&b.priority).then_with(|| {
-                let a_topo = self.topo_order.get(&a.number()).copied().unwrap_or(usize::MAX);
-                let b_topo = self.topo_order.get(&b.number()).copied().unwrap_or(usize::MAX);
-                a_topo.cmp(&b_topo).then_with(|| a.number().cmp(&b.number()))
+                let a_topo = self
+                    .topo_order
+                    .get(&a.number())
+                    .copied()
+                    .unwrap_or(usize::MAX);
+                let b_topo = self
+                    .topo_order
+                    .get(&b.number())
+                    .copied()
+                    .unwrap_or(usize::MAX);
+                a_topo
+                    .cmp(&b_topo)
+                    .then_with(|| a.number().cmp(&b.number()))
             })
         });
 
@@ -171,10 +181,10 @@ impl WorkAssigner {
 
         // Mark all transitive dependents as failed
         for &num in &visited {
-            if let Some(item) = self.items.iter_mut().find(|i| i.number() == num) {
-                if !matches!(item.status, WorkStatus::Done | WorkStatus::Failed) {
-                    item.status = WorkStatus::Failed;
-                }
+            if let Some(item) = self.items.iter_mut().find(|i| i.number() == num)
+                && !matches!(item.status, WorkStatus::Done | WorkStatus::Failed)
+            {
+                item.status = WorkStatus::Failed;
             }
         }
 
@@ -477,7 +487,17 @@ mod tests {
         assigner.mark_in_progress(1);
         let cascaded = assigner.mark_failed_cascade(1);
         // Item 2 is already done, should not be cascade-failed
-        assert!(cascaded.is_empty() || !cascaded.contains(&2) || assigner.items.iter().find(|i| i.number() == 2).unwrap().status == WorkStatus::Done);
+        assert!(
+            cascaded.is_empty()
+                || !cascaded.contains(&2)
+                || assigner
+                    .items
+                    .iter()
+                    .find(|i| i.number() == 2)
+                    .unwrap()
+                    .status
+                    == WorkStatus::Done
+        );
     }
 
     // all_terminal
