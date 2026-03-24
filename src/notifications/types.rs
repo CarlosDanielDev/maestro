@@ -45,7 +45,11 @@ pub struct Notification {
 }
 
 impl Notification {
-    pub fn new(level: InterruptLevel, title: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn new(
+        level: InterruptLevel,
+        title: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             level,
             title: title.into(),

@@ -67,8 +67,7 @@ impl ReviewCouncil {
                 let br = branch.to_string();
 
                 thread::spawn(move || {
-                    let result =
-                        ReviewDispatcher::run_review_command(&cmd, pr, &br, Some(&name));
+                    let result = ReviewDispatcher::run_review_command(&cmd, pr, &br, Some(&name));
                     (name, required, result)
                 })
             })
@@ -80,9 +79,9 @@ impl ReviewCouncil {
         let mut required_rejected = false;
 
         for handle in handles {
-            let (name, required, result) = handle.join().map_err(|_| {
-                anyhow::anyhow!("Reviewer thread panicked")
-            })?;
+            let (name, required, result) = handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("Reviewer thread panicked"))?;
 
             match result {
                 Ok(review_result) => {
@@ -111,7 +110,9 @@ impl ReviewCouncil {
         }
 
         let status = if required_rejected {
-            ReviewStatus::Rejected { reasons: rejections }
+            ReviewStatus::Rejected {
+                reasons: rejections,
+            }
         } else if rejections.is_empty() {
             ReviewStatus::Approved { approvals }
         } else {
@@ -135,10 +136,7 @@ impl ReviewCouncil {
         let mut body = format!("**Maestro Review Council** — {}\n\n", status_label);
 
         for review in &result.results {
-            let name = review
-                .reviewer_name
-                .as_deref()
-                .unwrap_or("unknown");
+            let name = review.reviewer_name.as_deref().unwrap_or("unknown");
             let icon = if review.success { "pass" } else { "fail" };
             body.push_str(&format!(
                 "### {} — {}\n```\n{}\n```\n\n",
