@@ -27,11 +27,10 @@ impl WorkAssigner {
     /// Get the next batch of ready work items (up to `count`),
     /// sorted by priority (P0 first), then by issue number.
     pub fn next_ready(&self, count: usize) -> Vec<&WorkItem> {
-        let completed: Vec<u64> = self.completed_issues.iter().copied().collect();
         let mut ready: Vec<&WorkItem> = self
             .items
             .iter()
-            .filter(|item| item.is_ready(&completed))
+            .filter(|item| item.is_ready(&self.completed_issues))
             .collect();
 
         ready.sort_by(|a, b| {
@@ -104,10 +103,9 @@ impl WorkAssigner {
 
     /// Find items that just became ready after a completion.
     fn get_newly_unblocked(&self) -> Vec<&WorkItem> {
-        let completed: Vec<u64> = self.completed_issues.iter().copied().collect();
         self.items
             .iter()
-            .filter(|item| item.is_ready(&completed) && item.status == WorkStatus::Pending)
+            .filter(|item| item.is_ready(&self.completed_issues))
             .collect()
     }
 }
