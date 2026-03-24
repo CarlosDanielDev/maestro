@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-03-20 (UTC)
+> Last updated: 2026-03-20 18:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -51,26 +51,37 @@ maestro/
 │       └── video-frame-extractor/
 │           └── SKILL.md                   # Video frame extraction patterns
 ├── src/
-│   ├── main.rs                            # CLI entry point (clap); --max-concurrent flag
-│   ├── config.rs                          # maestro.toml parsing
+│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init; --milestone flag
+│   ├── config.rs                          # maestro.toml parsing; GithubConfig.cache_ttl_secs
+│   ├── github/                            # GitHub API integration  [Phase 2]
+│   │   ├── mod.rs                         # Module exports
+│   │   ├── types.rs                       # GhIssue, Priority, MaestroLabel, SessionMode; label/body blocker parsing
+│   │   ├── client.rs                      # GitHubClient trait, GhCliClient (gh CLI), MockGitHubClient; parse_issues_json
+│   │   ├── labels.rs                      # LabelManager: ready→in-progress→done/failed lifecycle transitions
+│   │   └── pr.rs                          # PrCreator: build_pr_body, create_for_issue auto-PR creation
 │   ├── session/
 │   │   ├── mod.rs                         # Module exports (includes pool, worktree)
 │   │   ├── manager.rs                     # Claude CLI process management; worktree_path, system_prompt_appendix
 │   │   ├── parser.rs                      # stream-json output parser; extracts file_path from tool input
 │   │   ├── pool.rs                        # Session pool: max_concurrent, queue, auto-promote  [Phase 1]
-│   │   ├── types.rs                       # Session state machine; ToolUse with file_path
+│   │   ├── types.rs                       # Session state machine; ToolUse with file_path; issue_title field  [Phase 2]
 │   │   └── worktree.rs                    # Git worktree isolation: WorktreeManager trait, GitWorktreeManager, MockWorktreeManager  [Phase 1]
 │   ├── state/
 │   │   ├── mod.rs                         # Module exports (includes file_claims)
 │   │   ├── file_claims.rs                 # File claim system: FileClaimManager, conflict prevention  [Phase 1]
 │   │   ├── store.rs                       # JSON state persistence
-│   │   └── types.rs                       # State types
-│   └── tui/
-│       ├── mod.rs                         # Event loop with scroll keys and check_completions
-│       ├── app.rs                         # App state; uses SessionPool, ActivityLog, PanelView
-│       ├── activity_log.rs                # Scrollable activity log widget with LogLevel color coding  [Phase 1]
-│       ├── panels.rs                      # Split-pane panel view for multiple agent sessions  [Phase 1]
-│       └── ui.rs                          # ratatui rendering; delegates to panels and activity_log
+│   │   └── types.rs                       # State types; issue_cache, issue_cache_updated fields  [Phase 2]
+│   ├── tui/
+│   │   ├── mod.rs                         # Event loop with scroll keys and check_completions
+│   │   ├── app.rs                         # App state; WorkAssigner, GhCliClient, Config fields  [Phase 2]
+│   │   ├── activity_log.rs                # Scrollable activity log widget with LogLevel color coding  [Phase 1]
+│   │   ├── panels.rs                      # Split-pane panel view for multiple agent sessions  [Phase 1]
+│   │   └── ui.rs                          # ratatui rendering; delegates to panels and activity_log
+│   └── work/                              # Work queue and scheduling  [Phase 2]
+│       ├── mod.rs                         # Module exports
+│       ├── types.rs                       # WorkItem, WorkStatus; from_issue, is_ready
+│       ├── dependencies.rs               # DependencyGraph: topological sort, cycle detection
+│       └── assigner.rs                    # WorkAssigner: priority ordering, next_ready, mark_done/failed/in_progress
 ├── template/
 │   ├── README-TEMPLATE.md                 # Template usage instructions
 │   └── .claude/                           # Reproducible template for new projects
@@ -106,6 +117,11 @@ maestro/
 | `.claude/hooks/` | Pre/post command notification hooks |
 | `.claude/skills/` | Reusable knowledge bases for subagents |
 | `src/` | Rust source code |
+| `src/github/` | GitHub API integration (Phase 2) |
+| `src/github/types.rs` | GhIssue, Priority, MaestroLabel, SessionMode |
+| `src/github/client.rs` | GitHubClient trait, GhCliClient, MockGitHubClient |
+| `src/github/labels.rs` | Issue label lifecycle transitions |
+| `src/github/pr.rs` | Automated PR creation |
 | `src/session/` | Claude CLI process and session lifecycle management |
 | `src/session/pool.rs` | Concurrent session pool with queue and auto-promote |
 | `src/session/worktree.rs` | Git worktree isolation per session |
@@ -114,6 +130,10 @@ maestro/
 | `src/tui/` | Terminal UI (ratatui) |
 | `src/tui/activity_log.rs` | Scrollable log widget |
 | `src/tui/panels.rs` | Split-pane multi-session view |
+| `src/work/` | Work queue and dependency scheduling (Phase 2) |
+| `src/work/types.rs` | WorkItem and WorkStatus types |
+| `src/work/dependencies.rs` | Dependency graph, topological sort |
+| `src/work/assigner.rs` | Priority-ordered work assignment |
 | `template/` | Reproducible project template |
 | `directory-tree.md` | This file |
 | `maestro.toml` | Runtime configuration |
