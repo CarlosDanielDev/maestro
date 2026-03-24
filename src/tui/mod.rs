@@ -1,5 +1,7 @@
 pub mod activity_log;
 pub mod app;
+pub mod dep_graph;
+pub mod detail;
 pub mod panels;
 pub mod ui;
 
@@ -32,7 +34,10 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
     // Cleanup: kill any remaining sessions
     app.kill_all().await;
 
-    // Save final state
+    // Save final state (ensures state is persisted on exit/crash)
+    app.state.sessions = app.pool.all_sessions().into_iter().cloned().collect();
+    app.state.update_total_cost();
+    app.state.last_updated = Some(chrono::Utc::now());
     if let Err(e) = app.store.save(&app.state) {
         eprintln!("Warning: failed to save state: {}", e);
     }
@@ -78,6 +83,34 @@ async fn event_loop(
                 }
                 (KeyCode::Char('k'), _) => {
                     app.kill_all().await;
+                }
+                // Tab cycles TUI modes: Overview -> DependencyGraph -> Overview
+                (KeyCode::Tab, _) => {
+                    app.tui_mode = match app.tui_mode {
+                        app::TuiMode::Overview => app::TuiMode::DependencyGraph,
+                        app::TuiMode::DependencyGraph => app::TuiMode::Overview,
+                        app::TuiMode::Detail(_) => app::TuiMode::Overview,
+                    };
+                }
+                // Esc returns to overview from any mode
+                (KeyCode::Esc, _) => {
+                    app.tui_mode = app::TuiMode::Overview;
+                }
+                // Enter opens detail view for selected session
+                (KeyCode::Enter, _) => {
+                    let selected = app.panel_view.selected_index();
+                    app.tui_mode = app::TuiMode::Detail(selected);
+                }
+                // 1-9 jump to session detail by index
+                (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
+                    let idx = (c as usize) - ('1' as usize);
+                    if idx < app.pool.all_sessions().len() {
+                        app.tui_mode = app::TuiMode::Detail(idx);
+                    }
+                }
+                // Dismiss notification
+                (KeyCode::Char('d'), _) => {
+                    app.notifications.dismiss_latest();
                 }
                 // Scroll activity log (Shift+arrows)
                 (KeyCode::Up, KeyModifiers::SHIFT) => {
