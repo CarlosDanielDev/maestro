@@ -32,6 +32,10 @@ impl PanelView {
         self.scroll_offset = self.scroll_offset.saturating_add(1);
     }
 
+    pub fn selected_index(&self) -> usize {
+        self.selected.unwrap_or(0)
+    }
+
     pub fn draw(&self, f: &mut Frame, sessions: &[&Session], area: Rect) {
         if sessions.is_empty() {
             let block = Block::default()
@@ -173,5 +177,7 @@ fn status_to_color(status: SessionStatus) -> Color {
         SessionStatus::Killed => Color::Red,
         SessionStatus::Queued => Color::DarkGray,
         SessionStatus::Spawning => Color::Cyan,
+        SessionStatus::Stalled => Color::Yellow,
+        SessionStatus::Retrying => Color::Magenta,
     }
 }
