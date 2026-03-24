@@ -1,24 +1,24 @@
 use crate::budget::{BudgetAction, BudgetCheck, BudgetEnforcer};
-use crate::prompts::PromptBuilder;
 use crate::config::Config;
-use crate::gates::runner::{self, GateRunner, GateCheck};
+use crate::gates::runner::{self, GateCheck, GateRunner};
 use crate::gates::types::CompletionGate;
 use crate::git::GitOps;
 use crate::github::ci::{CiChecker, CiStatus, PendingPrCheck};
-use crate::notifications::dispatcher::NotificationDispatcher;
-use crate::state::progress::ProgressTracker;
 use crate::github::client::GitHubClient;
 use crate::github::labels::LabelManager;
 use crate::github::pr::PrCreator;
 use crate::models::ModelRouter;
+use crate::notifications::dispatcher::NotificationDispatcher;
+use crate::prompts::PromptBuilder;
 use crate::session::health::{HealthCheck, HealthMonitor};
 use crate::session::logger::SessionLogger;
-use crate::session::retry::RetryPolicy;
 use crate::session::manager::SessionEvent;
 use crate::session::pool::SessionPool;
+use crate::session::retry::RetryPolicy;
 use crate::session::types::{Session, SessionStatus, StreamEvent};
 use crate::session::worktree::WorktreeManager;
 use crate::state::file_claims::{ClaimResult, FILE_CONFLICT_SENTINEL};
+use crate::state::progress::ProgressTracker;
 use crate::state::store::StateStore;
 use crate::state::types::MaestroState;
 use crate::tui::activity_log::{ActivityLog, LogLevel};
@@ -220,7 +220,9 @@ impl App {
             let label = session_label(&managed.session);
 
             match &evt.event {
-                StreamEvent::ToolUse { tool, file_path, .. } => {
+                StreamEvent::ToolUse {
+                    tool, file_path, ..
+                } => {
                     self.activity_log
                         .push_simple(label, format!("Using {}", tool), LogLevel::Tool);
                     // Track progress phase
@@ -372,36 +374,35 @@ impl App {
         for mut completion in pending {
             // Run completion gates before accepting the result
             if completion.success
-                && let (Some(gates_cfg), Some(wt_path)) =
-                    (&gates_config, &completion.worktree_path)
+                && let (Some(gates_cfg), Some(wt_path)) = (&gates_config, &completion.worktree_path)
                 && gates_cfg.enabled
             {
-                        let gates = vec![CompletionGate::TestsPass {
-                            command: gates_cfg.test_command.clone(),
-                        }];
-                        let gate_runner = GateRunner;
-                        let results = gate_runner.run_gates(&gates, wt_path);
+                let gates = vec![CompletionGate::TestsPass {
+                    command: gates_cfg.test_command.clone(),
+                }];
+                let gate_runner = GateRunner;
+                let results = gate_runner.run_gates(&gates, wt_path);
 
-                        if !runner::all_gates_passed(&results) {
-                            let failures: Vec<String> = results
-                                .iter()
-                                .filter(|r| !r.passed)
-                                .map(|r| r.message.clone())
-                                .collect();
-                            self.activity_log.push_simple(
-                                format!("#{}", completion.issue_number),
-                                format!("Gate failed: {}", failures.join("; ")),
-                                LogLevel::Error,
-                            );
-                            // Mark as failed — retry system will pick it up
-                            completion.success = false;
-                        } else {
-                            self.activity_log.push_simple(
-                                format!("#{}", completion.issue_number),
-                                "All gates passed".into(),
-                                LogLevel::Info,
-                            );
-                        }
+                if !runner::all_gates_passed(&results) {
+                    let failures: Vec<String> = results
+                        .iter()
+                        .filter(|r| !r.passed)
+                        .map(|r| r.message.clone())
+                        .collect();
+                    self.activity_log.push_simple(
+                        format!("#{}", completion.issue_number),
+                        format!("Gate failed: {}", failures.join("; ")),
+                        LogLevel::Error,
+                    );
+                    // Mark as failed — retry system will pick it up
+                    completion.success = false;
+                } else {
+                    self.activity_log.push_simple(
+                        format!("#{}", completion.issue_number),
+                        "All gates passed".into(),
+                        LogLevel::Info,
+                    );
+                }
             }
 
             // If successful and we have a worktree, commit and push changes
@@ -409,27 +410,27 @@ impl App {
                 && let (Some(branch), Some(wt_path)) =
                     (&completion.worktree_branch, &completion.worktree_path)
             {
-                    let git_ops = crate::git::CliGitOps;
-                    let commit_msg = format!(
-                        "feat: implement changes for issue #{}",
-                        completion.issue_number
-                    );
-                    match git_ops.commit_and_push(wt_path, branch, &commit_msg) {
-                        Ok(()) => {
-                            self.activity_log.push_simple(
-                                format!("#{}", completion.issue_number),
-                                format!("Pushed to branch {}", branch),
-                                LogLevel::Info,
-                            );
-                        }
-                        Err(e) => {
-                            self.activity_log.push_simple(
-                                format!("#{}", completion.issue_number),
-                                format!("Git push failed: {}", e),
-                                LogLevel::Error,
-                            );
-                        }
+                let git_ops = crate::git::CliGitOps;
+                let commit_msg = format!(
+                    "feat: implement changes for issue #{}",
+                    completion.issue_number
+                );
+                match git_ops.commit_and_push(wt_path, branch, &commit_msg) {
+                    Ok(()) => {
+                        self.activity_log.push_simple(
+                            format!("#{}", completion.issue_number),
+                            format!("Pushed to branch {}", branch),
+                            LogLevel::Info,
+                        );
                     }
+                    Err(e) => {
+                        self.activity_log.push_simple(
+                            format!("#{}", completion.issue_number),
+                            format!("Git push failed: {}", e),
+                            LogLevel::Error,
+                        );
+                    }
+                }
             }
 
             self.on_issue_session_completed(
@@ -477,9 +478,7 @@ impl App {
             .pool
             .all_sessions()
             .iter()
-            .filter(|s| {
-                matches!(s.status, SessionStatus::Stalled | SessionStatus::Errored)
-            })
+            .filter(|s| matches!(s.status, SessionStatus::Stalled | SessionStatus::Errored))
             .map(|s| s.id)
             .collect();
 
@@ -509,8 +508,7 @@ impl App {
                     label,
                     format!(
                         "Retrying (attempt {}/{})",
-                        retry.retry_count,
-                        policy.max_retries
+                        retry.retry_count, policy.max_retries
                     ),
                     LogLevel::Warn,
                 );
@@ -667,7 +665,13 @@ impl App {
                 if is_heavy {
                     heavy_count_projected += 1;
                 }
-                items.push((item.issue.number, prompt, mode, item.issue.title.clone(), model));
+                items.push((
+                    item.issue.number,
+                    prompt,
+                    mode,
+                    item.issue.title.clone(),
+                    model,
+                ));
             }
 
             // Mark in-progress within this scope
@@ -847,8 +851,9 @@ impl App {
                     );
                     let comment =
                         crate::review::council::ReviewCouncil::format_comment(&council_result);
-                    let _ =
-                        crate::review::dispatch::ReviewDispatcher::post_comment(pr_number, &comment);
+                    let _ = crate::review::dispatch::ReviewDispatcher::post_comment(
+                        pr_number, &comment,
+                    );
                 }
                 Err(e) => {
                     self.activity_log.push_simple(
@@ -951,42 +956,36 @@ impl App {
                     completed_indices.push(i);
 
                     // Auto-merge if configured
-                    if let Some(ref config) = self.config {
-                        if config.github.auto_merge {
-                            let method_flag = config.github.merge_method.flag();
-                            let pr_str = check.pr_number.to_string();
-                            let result = std::process::Command::new("gh")
-                                .args([
-                                    "pr",
-                                    "merge",
-                                    &pr_str,
-                                    method_flag,
-                                    "--delete-branch",
-                                ])
-                                .output();
-                            match result {
-                                Ok(output) if output.status.success() => {
-                                    self.activity_log.push_simple(
-                                        format!("PR #{}", check.pr_number),
-                                        "Auto-merged".into(),
-                                        LogLevel::Info,
-                                    );
-                                }
-                                Ok(output) => {
-                                    let stderr = String::from_utf8_lossy(&output.stderr);
-                                    self.activity_log.push_simple(
-                                        format!("PR #{}", check.pr_number),
-                                        format!("Auto-merge failed: {}", stderr.trim()),
-                                        LogLevel::Error,
-                                    );
-                                }
-                                Err(e) => {
-                                    self.activity_log.push_simple(
-                                        format!("PR #{}", check.pr_number),
-                                        format!("Auto-merge error: {}", e),
-                                        LogLevel::Error,
-                                    );
-                                }
+                    if let Some(ref config) = self.config
+                        && config.github.auto_merge
+                    {
+                        let method_flag = config.github.merge_method.flag();
+                        let pr_str = check.pr_number.to_string();
+                        let result = std::process::Command::new("gh")
+                            .args(["pr", "merge", &pr_str, method_flag, "--delete-branch"])
+                            .output();
+                        match result {
+                            Ok(output) if output.status.success() => {
+                                self.activity_log.push_simple(
+                                    format!("PR #{}", check.pr_number),
+                                    "Auto-merged".into(),
+                                    LogLevel::Info,
+                                );
+                            }
+                            Ok(output) => {
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                self.activity_log.push_simple(
+                                    format!("PR #{}", check.pr_number),
+                                    format!("Auto-merge failed: {}", stderr.trim()),
+                                    LogLevel::Error,
+                                );
+                            }
+                            Err(e) => {
+                                self.activity_log.push_simple(
+                                    format!("PR #{}", check.pr_number),
+                                    format!("Auto-merge error: {}", e),
+                                    LogLevel::Error,
+                                );
                             }
                         }
                     }

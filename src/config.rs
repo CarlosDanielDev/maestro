@@ -89,18 +89,13 @@ pub struct NotificationsConfig {
     pub slack: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MergeMethod {
     Merge,
+    #[default]
     Squash,
     Rebase,
-}
-
-impl Default for MergeMethod {
-    fn default() -> Self {
-        Self::Squash
-    }
 }
 
 impl MergeMethod {
