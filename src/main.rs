@@ -3,6 +3,7 @@ mod github;
 mod session;
 mod state;
 mod tui;
+mod util;
 mod work;
 
 use clap::{Parser, Subcommand};
@@ -231,11 +232,10 @@ async fn cmd_queue() -> anyhow::Result<()> {
     println!("{}", "-".repeat(93));
 
     for item in assigner.all_items() {
-        let blockers = item.blockers();
-        let blocked_str = if blockers.is_empty() {
+        let blocked_str = if item.blocked_by.is_empty() {
             "-".to_string()
         } else {
-            blockers
+            item.blocked_by
                 .iter()
                 .map(|n| format!("#{}", n))
                 .collect::<Vec<_>>()
@@ -247,7 +247,8 @@ async fn cmd_queue() -> anyhow::Result<()> {
         } else {
             item.title().to_string()
         };
-        let ready_str = if item.is_ready(&[]) {
+        let no_completed = std::collections::HashSet::new();
+        let ready_str = if item.is_ready(&no_completed) {
             "Ready"
         } else {
             "Blocked"
