@@ -84,9 +84,7 @@ impl RetryPolicy {
             retry_context.push_str(&format!("\nLast error: {}", err));
         }
 
-        retry_context.push_str(
-            "\nPlease review the existing changes and fix the issues.",
-        );
+        retry_context.push_str("\nPlease review the existing changes and fix the issues.");
 
         let mut new_session = Session::new(
             format!("{}{}", original.prompt, retry_context),
@@ -235,7 +233,11 @@ mod tests {
         progress.phase = SessionPhase::Implementing;
         progress.tools_used_count = 47;
         progress.files_at_checkpoint = vec!["src/foo.rs".into(), "src/bar.rs".into()];
-        let retry = policy.prepare_retry(&original, Some(&progress), Some("tests failed with 3 failures"));
+        let retry = policy.prepare_retry(
+            &original,
+            Some(&progress),
+            Some("tests failed with 3 failures"),
+        );
         assert!(retry.prompt.contains("IMPLEMENTING"));
         assert!(retry.prompt.contains("src/foo.rs, src/bar.rs"));
         assert!(retry.prompt.contains("Tools used: 47"));

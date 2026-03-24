@@ -69,11 +69,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let total = app.pool.total_count();
 
     let budget_display = match &app.budget_enforcer {
-        Some(enforcer) => format!(
-            " ${:.2}/${:.2} ",
-            app.total_cost,
-            enforcer.total_limit()
-        ),
+        Some(enforcer) => format!(" ${:.2}/${:.2} ", app.total_cost, enforcer.total_limit()),
         None => format!(" ${:.2} spent ", app.total_cost),
     };
 
@@ -84,11 +80,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 0
             };
-            if pct >= 90 {
-                Color::Red
-            } else {
-                Color::Yellow
-            }
+            if pct >= 90 { Color::Red } else { Color::Yellow }
         }
         None => Color::Yellow,
     };
@@ -129,7 +121,11 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(paragraph, area);
 }
 
-fn draw_notification_banner(f: &mut Frame, notification: &crate::notifications::types::Notification, area: Rect) {
+fn draw_notification_banner(
+    f: &mut Frame,
+    notification: &crate::notifications::types::Notification,
+    area: Rect,
+) {
     let color = match notification.level {
         crate::notifications::types::InterruptLevel::Critical => Color::Red,
         crate::notifications::types::InterruptLevel::Blocker => Color::LightRed,
@@ -139,10 +135,16 @@ fn draw_notification_banner(f: &mut Frame, notification: &crate::notifications::
     let banner = Paragraph::new(Line::from(vec![
         Span::styled(
             format!(" {} ", notification.level.label()),
-            Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(color)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),
-        Span::styled(&notification.title, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            &notification.title,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(": "),
         Span::styled(&notification.message, Style::default().fg(Color::White)),
         Span::styled("  [d]ismiss", Style::default().fg(Color::DarkGray)),
