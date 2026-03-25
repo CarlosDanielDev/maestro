@@ -1,6 +1,9 @@
 use crate::tui::app::{App, TuiMode};
+use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
 use crate::tui::detail;
+use crate::tui::fullscreen;
+use crate::tui::help;
 use chrono::Utc;
 use ratatui::{
     Frame,
@@ -35,12 +38,30 @@ pub fn draw(f: &mut Frame, app: &App) {
             if let Some(session) = sessions.get(idx) {
                 detail::draw_detail(f, session, &app.progress_tracker, chunks[1]);
             } else {
-                // Invalid index, fall back to panels
                 app.panel_view.draw(f, &sessions, chunks[1]);
             }
         }
         TuiMode::DependencyGraph => {
             dep_graph::draw_dep_graph(f, app.work_assigner.as_ref(), chunks[1]);
+        }
+        TuiMode::Fullscreen(idx) => {
+            let sessions = app.pool.all_sessions();
+            if let Some(session) = sessions.get(idx) {
+                fullscreen::draw_fullscreen(f, session, &app.progress_tracker, chunks[1]);
+            } else {
+                app.panel_view.draw(f, &sessions, chunks[1]);
+            }
+        }
+        TuiMode::CostDashboard => {
+            let sessions = app.pool.all_sessions();
+            let budget_limit = app.budget_enforcer.as_ref().map(|e| e.total_limit());
+            cost_dashboard::draw_cost_dashboard(
+                f,
+                &sessions,
+                app.total_cost,
+                budget_limit,
+                chunks[1],
+            );
         }
     }
 
@@ -54,6 +75,11 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 
     draw_help_bar(f, app, chunks[3]);
+
+    // Draw help overlay on top of everything if active
+    if app.show_help {
+        help::draw_help_overlay(f, f.area());
+    }
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -157,6 +183,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::Overview => "Overview",
         TuiMode::Detail(_) => "Detail",
         TuiMode::DependencyGraph => "Dependencies",
+        TuiMode::Fullscreen(_) => "Fullscreen",
+        TuiMode::CostDashboard => "Costs",
     };
 
     let help = Line::from(vec![
@@ -169,8 +197,12 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("uit "),
         Span::styled("[Tab]", Style::default().fg(Color::Yellow)),
         Span::raw("mode "),
-        Span::styled("[1-9]", Style::default().fg(Color::Yellow)),
-        Span::raw("detail "),
+        Span::styled("[f]", Style::default().fg(Color::Yellow)),
+        Span::raw("ull "),
+        Span::styled("[$]", Style::default().fg(Color::Yellow)),
+        Span::raw("cost "),
+        Span::styled("[?]", Style::default().fg(Color::Yellow)),
+        Span::raw("help "),
         Span::styled("[Esc]", Style::default().fg(Color::Yellow)),
         Span::raw("back "),
         Span::styled("[p]", Style::default().fg(Color::Yellow)),

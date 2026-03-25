@@ -9,6 +9,8 @@ use crate::github::labels::LabelManager;
 use crate::github::pr::PrCreator;
 use crate::models::ModelRouter;
 use crate::notifications::dispatcher::NotificationDispatcher;
+use crate::plugins::hooks::{HookContext, HookPoint};
+use crate::plugins::runner::PluginRunner;
 use crate::prompts::PromptBuilder;
 use crate::session::health::{HealthCheck, HealthMonitor};
 use crate::session::logger::SessionLogger;
@@ -37,6 +39,15 @@ pub enum TuiMode {
     Detail(usize),
     /// Dependency graph visualization.
     DependencyGraph,
+    /// Full-screen agent view (expanded single agent output).
+    Fullscreen(usize),
+    /// Cost dashboard view.
+    CostDashboard,
+}
+
+struct PendingHook {
+    hook: HookPoint,
+    ctx: HookContext,
 }
 
 struct PendingIssueCompletion {
@@ -67,6 +78,8 @@ pub struct App {
     pub config: Option<Config>,
     /// Pending issue completions to process in the next async check_completions tick.
     pending_issue_completions: Vec<PendingIssueCompletion>,
+    /// Pending plugin hooks to fire in the next async tick.
+    pending_hooks: Vec<PendingHook>,
     /// Health monitor for stall detection.
     pub health_monitor: Box<dyn HealthCheck>,
     /// Budget enforcer for cost limits.
@@ -87,6 +100,10 @@ pub struct App {
     last_ci_poll: Instant,
     /// Last time work assigner was ticked.
     last_work_tick: Instant,
+    /// Plugin runner for hook-based plugin execution.
+    pub plugin_runner: Option<PluginRunner>,
+    /// Whether the help overlay is visible.
+    pub show_help: bool,
 }
 
 impl App {
@@ -117,6 +134,7 @@ impl App {
             github_client: None,
             config: None,
             pending_issue_completions: Vec::new(),
+            pending_hooks: Vec::new(),
             health_monitor: Box::new(HealthMonitor::new()),
             budget_enforcer: None,
             model_router: None,
@@ -127,6 +145,8 @@ impl App {
             pending_pr_checks: Vec::new(),
             last_ci_poll: Instant::now(),
             last_work_tick: Instant::now(),
+            plugin_runner: None,
+            show_help: false,
         }
     }
 
@@ -161,6 +181,12 @@ impl App {
                         "Session started".into(),
                         LogLevel::Info,
                     );
+                    // Fire session_started plugin hook
+                    let ctx = HookContext::new().with_session(
+                        &managed.session.id.to_string(),
+                        managed.session.issue_number,
+                    );
+                    self.fire_plugin_hook(HookPoint::SessionStarted, ctx).await;
                 }
             }
         }
@@ -199,6 +225,14 @@ impl App {
                     ),
                     LogLevel::Error,
                 );
+                // Queue file_conflict hook
+                self.pending_hooks.push(PendingHook {
+                    hook: HookPoint::FileConflict,
+                    ctx: HookContext::new()
+                        .with_session(&session_id.to_string(), None)
+                        .with_var("MAESTRO_CONFLICT_FILE", path)
+                        .with_var("MAESTRO_CONFLICT_OWNER", &owner.to_string()),
+                });
             }
         }
 
@@ -253,6 +287,17 @@ impl App {
                         format!("Completed (${:.2})", cost_usd),
                         LogLevel::Info,
                     );
+                    // Queue session_completed plugin hook
+                    self.pending_hooks.push(PendingHook {
+                        hook: HookPoint::SessionCompleted,
+                        ctx: HookContext::new()
+                            .with_session(
+                                &managed.session.id.to_string(),
+                                managed.session.issue_number,
+                            )
+                            .with_cost(*cost_usd)
+                            .with_files(&managed.session.files_touched),
+                    });
                     // Queue issue completion for async processing
                     if let Some(issue_num) = managed.session.issue_number {
                         self.pending_issue_completions.push(PendingIssueCompletion {
@@ -349,6 +394,12 @@ impl App {
                     ),
                     LogLevel::Error,
                 );
+                self.pending_hooks.push(PendingHook {
+                    hook: HookPoint::BudgetThreshold,
+                    ctx: HookContext::new()
+                        .with_cost(self.total_cost)
+                        .with_var("MAESTRO_BUDGET_EXCEEDED", "true"),
+                });
                 self.running = false;
             }
             BudgetAction::Alert(pct) => {
@@ -367,6 +418,12 @@ impl App {
 
     /// Check for completed sessions and promote queued ones.
     pub async fn check_completions(&mut self) -> anyhow::Result<()> {
+        // Fire pending plugin hooks
+        let pending_hooks = std::mem::take(&mut self.pending_hooks);
+        for ph in pending_hooks {
+            self.fire_plugin_hook(ph.hook, ph.ctx).await;
+        }
+
         // Process pending issue completions (gates, git push, label updates, PR creation)
         let pending = std::mem::take(&mut self.pending_issue_completions);
         let gates_config = self.config.as_ref().map(|c| c.gates.clone());
@@ -396,12 +453,20 @@ impl App {
                     );
                     // Mark as failed — retry system will pick it up
                     completion.success = false;
+                    // Fire tests_failed hook
+                    let ctx = HookContext::new()
+                        .with_session("", Some(completion.issue_number))
+                        .with_var("MAESTRO_GATE_FAILURES", &failures.join("; "));
+                    self.fire_plugin_hook(HookPoint::TestsFailed, ctx).await;
                 } else {
                     self.activity_log.push_simple(
                         format!("#{}", completion.issue_number),
                         "All gates passed".into(),
                         LogLevel::Info,
                     );
+                    // Fire tests_passed hook
+                    let ctx = HookContext::new().with_session("", Some(completion.issue_number));
+                    self.fire_plugin_hook(HookPoint::TestsPassed, ctx).await;
                 }
             }
 
@@ -807,6 +872,13 @@ impl App {
                         });
                     }
                     self.dispatch_review(pr_num, branch, issue_number);
+                    // Fire pr_created hook
+                    let ctx = HookContext::new()
+                        .with_session("", Some(issue_number))
+                        .with_pr(pr_num)
+                        .with_branch(branch)
+                        .with_cost(cost_usd);
+                    self.fire_plugin_hook(HookPoint::PrCreated, ctx).await;
                 }
                 Err(e) => {
                     self.activity_log.push_simple(
@@ -1029,6 +1101,34 @@ impl App {
         completed_indices.sort_unstable();
         for i in completed_indices.into_iter().rev() {
             self.pending_pr_checks.remove(i);
+        }
+    }
+
+    /// Fire a plugin hook asynchronously and log results.
+    pub async fn fire_plugin_hook(&mut self, hook: HookPoint, ctx: HookContext) {
+        let Some(ref runner) = self.plugin_runner else {
+            return;
+        };
+        let results = runner.fire(hook, &ctx).await;
+        for result in results {
+            let level = if result.success {
+                LogLevel::Info
+            } else {
+                LogLevel::Error
+            };
+            let msg = if result.success {
+                format!(
+                    "Plugin '{}' completed ({}ms)",
+                    result.plugin_name, result.duration_ms
+                )
+            } else {
+                format!(
+                    "Plugin '{}' failed: {}",
+                    result.plugin_name,
+                    result.output.lines().next().unwrap_or("unknown error")
+                )
+            };
+            self.activity_log.push_simple("PLUGIN".into(), msg, level);
         }
     }
 
