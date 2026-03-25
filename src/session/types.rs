@@ -12,6 +12,8 @@ pub enum SessionStatus {
     Errored,
     Paused,
     Killed,
+    Stalled,
+    Retrying,
 }
 
 impl SessionStatus {
@@ -24,6 +26,8 @@ impl SessionStatus {
             Self::Errored => "❌",
             Self::Paused => "⏸",
             Self::Killed => "💀",
+            Self::Stalled => "⚠",
+            Self::Retrying => "🔁",
         }
     }
 
@@ -36,6 +40,8 @@ impl SessionStatus {
             Self::Errored => "ERRORED",
             Self::Paused => "PAUSED",
             Self::Killed => "KILLED",
+            Self::Stalled => "STALLED",
+            Self::Retrying => "RETRYING",
         }
     }
 
@@ -64,6 +70,12 @@ pub struct Session {
     /// Issue title for display in TUI panels.
     #[serde(default)]
     pub issue_title: Option<String>,
+    /// Number of times this session has been retried.
+    #[serde(default)]
+    pub retry_count: u32,
+    /// Timestamp of the last retry attempt.
+    #[serde(default)]
+    pub last_retry_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +103,8 @@ impl Session {
             files_touched: Vec::new(),
             pid: None,
             issue_title: None,
+            retry_count: 0,
+            last_retry_at: None,
         }
     }
 

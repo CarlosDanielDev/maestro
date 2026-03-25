@@ -1,25 +1,51 @@
+use crate::budget::{BudgetAction, BudgetCheck, BudgetEnforcer};
 use crate::config::Config;
+use crate::gates::runner::{self, GateCheck, GateRunner};
+use crate::gates::types::CompletionGate;
+use crate::git::GitOps;
+use crate::github::ci::{CiChecker, CiStatus, PendingPrCheck};
 use crate::github::client::GitHubClient;
 use crate::github::labels::LabelManager;
 use crate::github::pr::PrCreator;
+use crate::models::ModelRouter;
+use crate::notifications::dispatcher::NotificationDispatcher;
+use crate::prompts::PromptBuilder;
+use crate::session::health::{HealthCheck, HealthMonitor};
+use crate::session::logger::SessionLogger;
 use crate::session::manager::SessionEvent;
 use crate::session::pool::SessionPool;
-use crate::session::types::{Session, StreamEvent};
+use crate::session::retry::RetryPolicy;
+use crate::session::types::{Session, SessionStatus, StreamEvent};
 use crate::session::worktree::WorktreeManager;
 use crate::state::file_claims::{ClaimResult, FILE_CONFLICT_SENTINEL};
+use crate::state::progress::ProgressTracker;
 use crate::state::store::StateStore;
 use crate::state::types::MaestroState;
 use crate::tui::activity_log::{ActivityLog, LogLevel};
 use crate::tui::panels::PanelView;
 use crate::work::assigner::WorkAssigner;
 use chrono::Utc;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+
+/// TUI display mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TuiMode {
+    /// Default overview with side-by-side panels.
+    Overview,
+    /// Detail view for a specific session (by index in the session list).
+    Detail(usize),
+    /// Dependency graph visualization.
+    DependencyGraph,
+}
 
 struct PendingIssueCompletion {
     issue_number: u64,
     success: bool,
     cost_usd: f64,
     files_touched: Vec<String>,
+    worktree_branch: Option<String>,
+    worktree_path: Option<std::path::PathBuf>,
 }
 
 pub struct App {
@@ -41,6 +67,26 @@ pub struct App {
     pub config: Option<Config>,
     /// Pending issue completions to process in the next async check_completions tick.
     pending_issue_completions: Vec<PendingIssueCompletion>,
+    /// Health monitor for stall detection.
+    pub health_monitor: Box<dyn HealthCheck>,
+    /// Budget enforcer for cost limits.
+    pub budget_enforcer: Option<BudgetEnforcer>,
+    /// Model router for task-based model selection.
+    pub model_router: Option<ModelRouter>,
+    /// Progress tracker for per-session phase tracking.
+    pub progress_tracker: ProgressTracker,
+    /// Notification dispatcher for interruption system.
+    pub notifications: NotificationDispatcher,
+    /// Current TUI display mode.
+    pub tui_mode: TuiMode,
+    /// Session transcript logger.
+    pub session_logger: SessionLogger,
+    /// PRs awaiting CI completion.
+    pub pending_pr_checks: Vec<PendingPrCheck>,
+    /// Last time CI status was polled.
+    last_ci_poll: Instant,
+    /// Last time work assigner was ticked.
+    last_work_tick: Instant,
 }
 
 impl App {
@@ -71,6 +117,16 @@ impl App {
             github_client: None,
             config: None,
             pending_issue_completions: Vec::new(),
+            health_monitor: Box::new(HealthMonitor::new()),
+            budget_enforcer: None,
+            model_router: None,
+            progress_tracker: ProgressTracker::new(),
+            notifications: NotificationDispatcher::new(false),
+            tui_mode: TuiMode::Overview,
+            session_logger: SessionLogger::new(SessionLogger::default_dir()),
+            pending_pr_checks: Vec::new(),
+            last_ci_poll: Instant::now(),
+            last_work_tick: Instant::now(),
         }
     }
 
@@ -117,6 +173,12 @@ impl App {
     pub fn handle_session_event(&mut self, evt: SessionEvent) {
         let session_id = evt.session_id;
 
+        // Log event to session transcript
+        let _ = self.session_logger.log_event(session_id, &evt.event);
+
+        // Record activity for stall detection
+        self.health_monitor.record_activity(session_id);
+
         // File claim processing for mutating tools
         if let StreamEvent::ToolUse {
             ref tool,
@@ -158,9 +220,14 @@ impl App {
             let label = session_label(&managed.session);
 
             match &evt.event {
-                StreamEvent::ToolUse { tool, .. } => {
+                StreamEvent::ToolUse {
+                    tool, file_path, ..
+                } => {
                     self.activity_log
                         .push_simple(label, format!("Using {}", tool), LogLevel::Tool);
+                    // Track progress phase
+                    let progress = self.progress_tracker.get_or_create(session_id);
+                    progress.on_tool_use(tool, file_path.as_deref());
                 }
                 StreamEvent::AssistantMessage { text } => {
                     let preview = if text.len() > 60 {
@@ -176,6 +243,9 @@ impl App {
                             LogLevel::Info,
                         );
                     }
+                    // Track progress phase from message content
+                    let progress = self.progress_tracker.get_or_create(session_id);
+                    progress.on_message(text);
                 }
                 StreamEvent::Completed { cost_usd } => {
                     self.activity_log.push_simple(
@@ -190,6 +260,8 @@ impl App {
                             success: true,
                             cost_usd: *cost_usd,
                             files_touched: managed.session.files_touched.clone(),
+                            worktree_branch: managed.branch_name.clone(),
+                            worktree_path: managed.worktree_path.clone(),
                         });
                     }
                 }
@@ -206,6 +278,8 @@ impl App {
                             success: false,
                             cost_usd: managed.session.cost_usd,
                             files_touched: managed.session.files_touched.clone(),
+                            worktree_branch: managed.branch_name.clone(),
+                            worktree_path: managed.worktree_path.clone(),
                         });
                     }
                 }
@@ -213,30 +287,246 @@ impl App {
             }
         }
 
+        // Budget enforcement on cost updates
+        self.check_budget(session_id);
+
         self.sync_state();
+    }
+
+    /// Check budget limits for a session and globally. Kill sessions if over budget.
+    fn check_budget(&mut self, session_id: uuid::Uuid) {
+        let Some(ref mut enforcer) = self.budget_enforcer else {
+            return;
+        };
+
+        // Per-session check
+        let session_cost = self
+            .pool
+            .get_active_mut(session_id)
+            .map(|m| m.session.cost_usd)
+            .unwrap_or(0.0);
+
+        match enforcer.check_session(session_cost) {
+            BudgetAction::Kill => {
+                if let Some(managed) = self.pool.get_active_mut(session_id) {
+                    managed.session.status = SessionStatus::Errored;
+                    let label = session_label(&managed.session);
+                    self.activity_log.push_simple(
+                        label,
+                        format!(
+                            "BUDGET EXCEEDED: ${:.2}/${:.2} per-session limit",
+                            session_cost,
+                            enforcer.per_session_limit()
+                        ),
+                        LogLevel::Error,
+                    );
+                }
+            }
+            BudgetAction::Alert(pct) => {
+                if enforcer.record_alert(session_id)
+                    && let Some(managed) = self.pool.get_active_mut(session_id)
+                {
+                    let label = session_label(&managed.session);
+                    self.activity_log.push_simple(
+                        label,
+                        format!("Budget warning: {}% of per-session limit used", pct),
+                        LogLevel::Warn,
+                    );
+                }
+            }
+            BudgetAction::Ok => {}
+        }
+
+        // Global check
+        match enforcer.check_global(self.total_cost) {
+            BudgetAction::Kill => {
+                self.activity_log.push_simple(
+                    "MAESTRO".into(),
+                    format!(
+                        "GLOBAL BUDGET EXCEEDED: ${:.2}/${:.2} — stopping all sessions",
+                        self.total_cost,
+                        enforcer.total_limit()
+                    ),
+                    LogLevel::Error,
+                );
+                self.running = false;
+            }
+            BudgetAction::Alert(pct) => {
+                if !enforcer.global_alert_sent() {
+                    enforcer.mark_global_alert_sent();
+                    self.activity_log.push_simple(
+                        "MAESTRO".into(),
+                        format!("Global budget warning: {}% used", pct),
+                        LogLevel::Warn,
+                    );
+                }
+            }
+            BudgetAction::Ok => {}
+        }
     }
 
     /// Check for completed sessions and promote queued ones.
     pub async fn check_completions(&mut self) -> anyhow::Result<()> {
-        // Process pending issue completions (label updates, PR creation)
+        // Process pending issue completions (gates, git push, label updates, PR creation)
         let pending = std::mem::take(&mut self.pending_issue_completions);
-        for completion in pending {
+        let gates_config = self.config.as_ref().map(|c| c.gates.clone());
+
+        for mut completion in pending {
+            // Run completion gates before accepting the result
+            if completion.success
+                && let (Some(gates_cfg), Some(wt_path)) = (&gates_config, &completion.worktree_path)
+                && gates_cfg.enabled
+            {
+                let gates = vec![CompletionGate::TestsPass {
+                    command: gates_cfg.test_command.clone(),
+                }];
+                let gate_runner = GateRunner;
+                let results = gate_runner.run_gates(&gates, wt_path);
+
+                if !runner::all_gates_passed(&results) {
+                    let failures: Vec<String> = results
+                        .iter()
+                        .filter(|r| !r.passed)
+                        .map(|r| r.message.clone())
+                        .collect();
+                    self.activity_log.push_simple(
+                        format!("#{}", completion.issue_number),
+                        format!("Gate failed: {}", failures.join("; ")),
+                        LogLevel::Error,
+                    );
+                    // Mark as failed — retry system will pick it up
+                    completion.success = false;
+                } else {
+                    self.activity_log.push_simple(
+                        format!("#{}", completion.issue_number),
+                        "All gates passed".into(),
+                        LogLevel::Info,
+                    );
+                }
+            }
+
+            // If successful and we have a worktree, commit and push changes
+            if completion.success
+                && let (Some(branch), Some(wt_path)) =
+                    (&completion.worktree_branch, &completion.worktree_path)
+            {
+                let git_ops = crate::git::CliGitOps;
+                let commit_msg = format!(
+                    "feat: implement changes for issue #{}",
+                    completion.issue_number
+                );
+                match git_ops.commit_and_push(wt_path, branch, &commit_msg) {
+                    Ok(()) => {
+                        self.activity_log.push_simple(
+                            format!("#{}", completion.issue_number),
+                            format!("Pushed to branch {}", branch),
+                            LogLevel::Info,
+                        );
+                    }
+                    Err(e) => {
+                        self.activity_log.push_simple(
+                            format!("#{}", completion.issue_number),
+                            format!("Git push failed: {}", e),
+                            LogLevel::Error,
+                        );
+                    }
+                }
+            }
+
             self.on_issue_session_completed(
                 completion.issue_number,
                 completion.success,
                 completion.cost_usd,
                 completion.files_touched,
-                None, // TODO: pass worktree branch when available
+                completion.worktree_branch,
             )
             .await;
         }
 
-        // Find terminal sessions in the active list
+        // Stall detection: check for sessions that haven't produced events
+        let stall_timeout = self
+            .config
+            .as_ref()
+            .map(|c| Duration::from_secs(c.sessions.stall_timeout_secs))
+            .unwrap_or(Duration::from_secs(300));
+
+        let stalled_ids = self.health_monitor.check_stalls(stall_timeout);
+        for id in &stalled_ids {
+            if let Some(managed) = self.pool.get_active_mut(*id)
+                && managed.session.status == SessionStatus::Running
+            {
+                managed.session.status = SessionStatus::Stalled;
+                let label = session_label(&managed.session);
+                self.activity_log.push_simple(
+                    label,
+                    format!(
+                        "Session stalled (no activity for {}s)",
+                        stall_timeout.as_secs()
+                    ),
+                    LogLevel::Error,
+                );
+            }
+        }
+
+        // Retry eligible sessions (stalled or errored) before finalizing
+        let retry_policy = self
+            .config
+            .as_ref()
+            .map(|c| RetryPolicy::new(c.sessions.max_retries, c.sessions.retry_cooldown_secs));
+
+        let retryable_ids: Vec<uuid::Uuid> = self
+            .pool
+            .all_sessions()
+            .iter()
+            .filter(|s| matches!(s.status, SessionStatus::Stalled | SessionStatus::Errored))
+            .map(|s| s.id)
+            .collect();
+
+        let mut retry_sessions = Vec::new();
+        for id in &retryable_ids {
+            if let Some(policy) = &retry_policy
+                && let Some(managed) = self.pool.get_active_mut(*id)
+                && policy.should_retry(&managed.session)
+            {
+                let label = session_label(&managed.session);
+                // Gather progress and last error for rich retry context
+                let progress = self.progress_tracker.get(id).cloned();
+                let last_error = managed
+                    .session
+                    .activity_log
+                    .iter()
+                    .rev()
+                    .find(|e| e.message.starts_with("ERROR:") || e.message.contains("failed"))
+                    .map(|e| e.message.clone());
+                let retry = policy.prepare_retry(
+                    &managed.session,
+                    progress.as_ref(),
+                    last_error.as_deref(),
+                );
+                managed.session.status = SessionStatus::Retrying;
+                self.activity_log.push_simple(
+                    label,
+                    format!(
+                        "Retrying (attempt {}/{})",
+                        retry.retry_count, policy.max_retries
+                    ),
+                    LogLevel::Warn,
+                );
+                retry_sessions.push(retry);
+            }
+        }
+
+        // Enqueue retry sessions
+        for session in retry_sessions {
+            self.add_session(session).await?;
+        }
+
+        // Find terminal sessions in the active list (including Retrying which is now done)
         let completed_ids: Vec<uuid::Uuid> = self
             .pool
             .all_sessions()
             .iter()
-            .filter(|s| s.status.is_terminal())
+            .filter(|s| s.status.is_terminal() || s.status == SessionStatus::Retrying)
             .map(|s| s.id)
             .collect();
 
@@ -244,11 +534,26 @@ impl App {
         for id in &completed_ids {
             if self.pool.get_active_mut(*id).is_some() {
                 self.pool.on_session_completed(*id);
+                self.health_monitor.remove(*id);
+                self.progress_tracker.remove(id);
             }
         }
 
-        // Tick the work assigner to fill available slots from GitHub issues
-        self.tick_work_assigner().await?;
+        // Medium tier: work assigner tick (every ~10s)
+        let work_tick_interval = self
+            .config
+            .as_ref()
+            .map(|c| Duration::from_secs(c.monitoring.work_tick_interval_secs))
+            .unwrap_or(Duration::from_secs(10));
+
+        if self.last_work_tick.elapsed() >= work_tick_interval {
+            self.last_work_tick = Instant::now();
+            // Tick the work assigner to fill available slots from GitHub issues
+            self.tick_work_assigner().await?;
+        }
+
+        // Slow tier: CI status polling (every ~30s)
+        self.poll_ci_status();
 
         // Try to promote queued sessions
         let promoted_ids = self.pool.try_promote();
@@ -329,31 +634,57 @@ impl App {
                 return Ok(());
             }
 
-            let items: Vec<(u64, String, String, String)> = assigner
-                .next_ready(available_slots)
-                .iter()
-                .map(|item| {
-                    let prompt = item.issue.unattended_prompt();
-                    let mode = item
-                        .mode
-                        .map(|m| m.as_config_str().to_string())
-                        .unwrap_or_else(|| config.sessions.default_mode.clone());
-                    (item.issue.number, prompt, mode, item.issue.title.clone())
-                })
-                .collect();
+            let heavy_labels = &config.concurrency.heavy_task_labels;
+            let heavy_limit = config.concurrency.heavy_task_limit;
+
+            // Get all ready items, then filter by heavy task limit
+            let all_ready = assigner.next_ready(available_slots);
+            let mut items: Vec<(u64, String, String, String, String)> = Vec::new();
+            let mut heavy_count_projected = 0usize;
+
+            for item in all_ready {
+                let is_heavy = !heavy_labels.is_empty()
+                    && item.issue.labels.iter().any(|l| heavy_labels.contains(l));
+
+                if is_heavy && heavy_count_projected >= heavy_limit {
+                    // Skip — heavy task limit reached
+                    continue;
+                }
+
+                let prompt = PromptBuilder::build_issue_prompt(&item.issue, config);
+                let mode = item
+                    .mode
+                    .map(|m| m.as_config_str().to_string())
+                    .unwrap_or_else(|| config.sessions.default_mode.clone());
+                let model = self
+                    .model_router
+                    .as_ref()
+                    .map(|r| r.resolve(&item.issue).to_string())
+                    .unwrap_or_else(|| config.sessions.default_model.clone());
+
+                if is_heavy {
+                    heavy_count_projected += 1;
+                }
+                items.push((
+                    item.issue.number,
+                    prompt,
+                    mode,
+                    item.issue.title.clone(),
+                    model,
+                ));
+            }
 
             // Mark in-progress within this scope
-            for (issue_number, _, _, _) in &items {
+            for (issue_number, _, _, _, _) in &items {
                 assigner.mark_in_progress(*issue_number);
             }
 
-            let model = config.sessions.default_model.clone();
-            (items, model)
+            items
         };
 
-        let (items, model) = ready_items;
+        let items = ready_items;
 
-        for (issue_number, prompt, mode, title) in items {
+        for (issue_number, prompt, mode, title, model) in items {
             // Update GitHub labels (non-fatal on error)
             if let Some(client) = &self.github_client {
                 let label_mgr = LabelManager::new(client.as_ref());
@@ -366,7 +697,7 @@ impl App {
                 }
             }
 
-            let mut session = Session::new(prompt, model.clone(), mode, Some(issue_number));
+            let mut session = Session::new(prompt, model, mode, Some(issue_number));
             session.issue_title = Some(title);
 
             self.activity_log.push_simple(
@@ -406,7 +737,26 @@ impl App {
                     );
                 }
             } else {
-                assigner.mark_failed(issue_number);
+                let cascaded = assigner.mark_failed_cascade(issue_number);
+                if !cascaded.is_empty() {
+                    let nums: Vec<String> = cascaded.iter().map(|n| format!("#{}", n)).collect();
+                    self.activity_log.push_simple(
+                        format!("#{}", issue_number),
+                        format!("Cascade failed: {}", nums.join(", ")),
+                        LogLevel::Error,
+                    );
+                    // Emit critical notification for cascaded failures
+                    self.notifications.notify(
+                        crate::notifications::types::InterruptLevel::Critical,
+                        &format!("#{} failed", issue_number),
+                        &format!(
+                            "Blocked {} dependent task{}: {}",
+                            cascaded.len(),
+                            if cascaded.len() != 1 { "s" } else { "" },
+                            nums.join(", ")
+                        ),
+                    );
+                }
             }
         }
 
@@ -446,6 +796,17 @@ impl App {
                         format!("PR #{} created", pr_num),
                         LogLevel::Info,
                     );
+                    // Track PR for CI polling
+                    if let Some(ref branch_name) = worktree_branch {
+                        self.pending_pr_checks.push(PendingPrCheck {
+                            pr_number: pr_num,
+                            issue_number,
+                            branch: branch_name.clone(),
+                            created_at: Instant::now(),
+                            check_count: 0,
+                        });
+                    }
+                    self.dispatch_review(pr_num, branch, issue_number);
                 }
                 Err(e) => {
                     self.activity_log.push_simple(
@@ -455,6 +816,219 @@ impl App {
                     );
                 }
             }
+        }
+    }
+
+    /// Dispatch review for a PR if review is configured.
+    fn dispatch_review(&mut self, pr_number: u64, branch: &str, issue_number: u64) {
+        let Some(config) = &self.config else { return };
+        let review_cfg = &config.review;
+        if !review_cfg.enabled {
+            return;
+        }
+
+        if !review_cfg.reviewers.is_empty() {
+            let reviewers: Vec<crate::review::council::ReviewerConfig> = review_cfg
+                .reviewers
+                .iter()
+                .map(|r| crate::review::council::ReviewerConfig {
+                    name: r.name.clone(),
+                    command: r.command.clone(),
+                    required: r.required,
+                })
+                .collect();
+            match crate::review::council::ReviewCouncil::convene(pr_number, branch, &reviewers) {
+                Ok(council_result) => {
+                    let status_label = match &council_result.status {
+                        crate::review::council::ReviewStatus::Approved { .. } => "Council approved",
+                        crate::review::council::ReviewStatus::Rejected { .. } => "Council rejected",
+                        crate::review::council::ReviewStatus::Partial { .. } => "Council partial",
+                    };
+                    self.activity_log.push_simple(
+                        format!("#{}", issue_number),
+                        format!("PR #{}: {}", pr_number, status_label),
+                        LogLevel::Info,
+                    );
+                    let comment =
+                        crate::review::council::ReviewCouncil::format_comment(&council_result);
+                    let _ = crate::review::dispatch::ReviewDispatcher::post_comment(
+                        pr_number, &comment,
+                    );
+                }
+                Err(e) => {
+                    self.activity_log.push_simple(
+                        format!("#{}", issue_number),
+                        format!("Council review failed: {}", e),
+                        LogLevel::Error,
+                    );
+                }
+            }
+        } else {
+            let review_config = crate::review::ReviewConfig {
+                enabled: review_cfg.enabled,
+                command: review_cfg.command.clone(),
+                auto_approve: review_cfg.auto_approve,
+            };
+            let dispatcher = crate::review::ReviewDispatcher::new(review_config);
+            match dispatcher.dispatch(pr_number, branch) {
+                Ok(result) => {
+                    let status = if result.success {
+                        "Review passed"
+                    } else {
+                        "Review failed"
+                    };
+                    self.activity_log.push_simple(
+                        format!("#{}", issue_number),
+                        format!("PR #{}: {}", pr_number, status),
+                        LogLevel::Info,
+                    );
+                    let comment_body = format!(
+                        "**Maestro Review**\n\nStatus: {}\n\n```\n{}\n```",
+                        status, result.output
+                    );
+                    let _ = crate::review::dispatch::ReviewDispatcher::post_comment(
+                        pr_number,
+                        &comment_body,
+                    );
+                }
+                Err(e) => {
+                    self.activity_log.push_simple(
+                        format!("#{}", issue_number),
+                        format!("Review dispatch failed: {}", e),
+                        LogLevel::Error,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Poll CI status for pending PR checks. Runs on slow-tier interval.
+    fn poll_ci_status(&mut self) {
+        let ci_poll_interval = self
+            .config
+            .as_ref()
+            .map(|c| Duration::from_secs(c.gates.ci_poll_interval_secs))
+            .unwrap_or(Duration::from_secs(30));
+
+        let ci_max_wait = self
+            .config
+            .as_ref()
+            .map(|c| Duration::from_secs(c.gates.ci_max_wait_secs))
+            .unwrap_or(Duration::from_secs(1800));
+
+        if self.last_ci_poll.elapsed() < ci_poll_interval || self.pending_pr_checks.is_empty() {
+            return;
+        }
+        self.last_ci_poll = Instant::now();
+
+        let checker = CiChecker::new();
+        let mut completed_indices = Vec::new();
+
+        for (i, check) in self.pending_pr_checks.iter_mut().enumerate() {
+            check.check_count += 1;
+
+            // Timeout check
+            if check.created_at.elapsed() > ci_max_wait {
+                self.activity_log.push_simple(
+                    format!("PR #{}", check.pr_number),
+                    format!(
+                        "CI timed out after {}s",
+                        check.created_at.elapsed().as_secs()
+                    ),
+                    LogLevel::Error,
+                );
+                completed_indices.push(i);
+                continue;
+            }
+
+            match checker.check_pr_status(check.pr_number) {
+                Ok(CiStatus::Passed) => {
+                    self.activity_log.push_simple(
+                        format!("PR #{}", check.pr_number),
+                        "CI passed".into(),
+                        LogLevel::Info,
+                    );
+                    self.notifications.notify(
+                        crate::notifications::types::InterruptLevel::Info,
+                        &format!("PR #{}", check.pr_number),
+                        "CI checks passed",
+                    );
+                    completed_indices.push(i);
+
+                    // Auto-merge if configured
+                    if let Some(ref config) = self.config
+                        && config.github.auto_merge
+                    {
+                        let method_flag = config.github.merge_method.flag();
+                        let pr_str = check.pr_number.to_string();
+                        let result = std::process::Command::new("gh")
+                            .args(["pr", "merge", &pr_str, method_flag, "--delete-branch"])
+                            .output();
+                        match result {
+                            Ok(output) if output.status.success() => {
+                                self.activity_log.push_simple(
+                                    format!("PR #{}", check.pr_number),
+                                    "Auto-merged".into(),
+                                    LogLevel::Info,
+                                );
+                            }
+                            Ok(output) => {
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                self.activity_log.push_simple(
+                                    format!("PR #{}", check.pr_number),
+                                    format!("Auto-merge failed: {}", stderr.trim()),
+                                    LogLevel::Error,
+                                );
+                            }
+                            Err(e) => {
+                                self.activity_log.push_simple(
+                                    format!("PR #{}", check.pr_number),
+                                    format!("Auto-merge error: {}", e),
+                                    LogLevel::Error,
+                                );
+                            }
+                        }
+                    }
+                }
+                Ok(CiStatus::Failed { summary }) => {
+                    self.activity_log.push_simple(
+                        format!("PR #{}", check.pr_number),
+                        format!("CI failed: {}", summary),
+                        LogLevel::Error,
+                    );
+                    self.notifications.notify(
+                        crate::notifications::types::InterruptLevel::Critical,
+                        &format!("PR #{} CI failed", check.pr_number),
+                        &summary,
+                    );
+                    completed_indices.push(i);
+                }
+                Ok(CiStatus::NoneConfigured) => {
+                    self.activity_log.push_simple(
+                        format!("PR #{}", check.pr_number),
+                        "No CI checks configured".into(),
+                        LogLevel::Info,
+                    );
+                    completed_indices.push(i);
+                }
+                Ok(CiStatus::Pending) => {
+                    // Still waiting, keep polling
+                }
+                Err(e) => {
+                    self.activity_log.push_simple(
+                        format!("PR #{}", check.pr_number),
+                        format!("CI check error: {}", e),
+                        LogLevel::Error,
+                    );
+                    // Don't remove — will retry next poll
+                }
+            }
+        }
+
+        // Remove completed checks in reverse order to preserve indices
+        completed_indices.sort_unstable();
+        for i in completed_indices.into_iter().rev() {
+            self.pending_pr_checks.remove(i);
         }
     }
 
