@@ -34,17 +34,16 @@ impl SessionLogger {
     pub fn log_event(&self, session_id: Uuid, event: &StreamEvent) -> Result<()> {
         self.ensure_dir()?;
         let path = self.log_path(session_id);
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
 
         let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
         let entry = match event {
             StreamEvent::AssistantMessage { text } => {
                 format!("[{}] ASSISTANT: {}\n", timestamp, text)
             }
-            StreamEvent::ToolUse { tool, file_path, .. } => {
+            StreamEvent::ToolUse {
+                tool, file_path, ..
+            } => {
                 let path_info = file_path
                     .as_deref()
                     .map(|p| format!(" ({})", p))
@@ -127,11 +126,11 @@ impl SessionLogger {
         for entry in fs::read_dir(&self.log_dir)? {
             let entry = entry?;
             let metadata = entry.metadata()?;
-            if let Ok(modified) = metadata.modified() {
-                if modified < cutoff {
-                    fs::remove_file(entry.path())?;
-                    removed += 1;
-                }
+            if let Ok(modified) = metadata.modified()
+                && modified < cutoff
+            {
+                fs::remove_file(entry.path())?;
+                removed += 1;
             }
         }
 
@@ -236,16 +235,10 @@ mod tests {
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
         logger
-            .log_event(
-                id1,
-                &StreamEvent::AssistantMessage { text: "a".into() },
-            )
+            .log_event(id1, &StreamEvent::AssistantMessage { text: "a".into() })
             .unwrap();
         logger
-            .log_event(
-                id2,
-                &StreamEvent::AssistantMessage { text: "b".into() },
-            )
+            .log_event(id2, &StreamEvent::AssistantMessage { text: "b".into() })
             .unwrap();
         let logs = logger.list_logs().unwrap();
         assert_eq!(logs.len(), 2);
