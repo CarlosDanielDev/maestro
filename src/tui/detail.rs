@@ -19,7 +19,7 @@ pub fn draw_detail(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(5), // header
-            Constraint::Min(5),   // activity log
+            Constraint::Min(5),    // activity log
             Constraint::Length(5), // files
         ])
         .split(area);

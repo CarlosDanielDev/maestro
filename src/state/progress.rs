@@ -120,9 +120,7 @@ impl ProgressTracker {
     }
 
     pub fn get_or_create(&mut self, session_id: Uuid) -> &mut SessionProgress {
-        self.progress
-            .entry(session_id)
-            .or_default()
+        self.progress.entry(session_id).or_default()
     }
 
     pub fn get(&self, session_id: &Uuid) -> Option<&SessionProgress> {
