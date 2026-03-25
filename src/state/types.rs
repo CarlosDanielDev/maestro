@@ -1,3 +1,4 @@
+use crate::github::types::GhIssue;
 use crate::session::types::Session;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,9 @@ pub struct MaestroState {
     pub total_cost_usd: f64,
     pub file_claims: HashMap<String, uuid::Uuid>,
     pub last_updated: Option<DateTime<Utc>>,
+    /// Cached GitHub issue data to avoid repeated API calls.
+    #[serde(default)]
+    pub issue_cache: HashMap<u64, GhIssue>,
 }
 
 impl MaestroState {

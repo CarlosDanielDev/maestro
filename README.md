@@ -33,14 +33,23 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Keyboard controls** — pause (SIGSTOP), resume, kill sessions from the dashboard
 - **State persistence** — session history and costs saved to `maestro-state.json`
 - **Cost tracking** — per-session and total spending displayed in real-time
+- **Multi-session pool** — run up to N concurrent Claude sessions with automatic queue promotion
+- **Git worktree isolation** — each session works in its own worktree to prevent file conflicts
+- **File claim system** — registry prevents two sessions from editing the same file simultaneously
+- **GitHub issue queue** — fetch `maestro:ready`-labeled issues and run them as sessions
+- **Milestone mode** — `--milestone <name>` runs all open issues in a milestone
+- **Label lifecycle** — issues are automatically transitioned: `ready` → `in-progress` → `done`/`failed`
+- **Automated PR creation** — on session completion, a PR is opened with cost report and file list
+- **Dependency scheduling** — `blocked-by:#N` labels and body references create an ordered work graph
+- **Priority ordering** — `priority:P0/P1/P2` labels determine scheduling order within the queue
 
 ### Roadmap
 
 | Phase | What | Status |
 |-------|------|--------|
-| **0** | Single-session TUI, stream parser, state persistence | ✅ Done |
-| **1** | Multi-session pool, split-pane TUI, file claim system, git worktrees | Planned |
-| **2** | GitHub integration — issue fetching, auto-PR, label lifecycle | Planned |
+| **0** | Single-session TUI, stream parser, state persistence | Done |
+| **1** | Multi-session pool, split-pane TUI, file claim system, git worktrees | Done |
+| **2** | GitHub integration — issue fetching, auto-PR, label lifecycle, dependency graph | Done |
 | **3** | Intelligence — context overflow detection, budget enforcement, stall detection | Planned |
 | **4** | Plugin system, mode system, cost dashboard, session resumption | Planned |
 
@@ -71,6 +80,15 @@ maestro run --prompt "Refactor the auth module to use async/await"
 
 # Run a session for a GitHub issue
 maestro run --issue 42
+
+# Run all open issues in a milestone (respects priority and dependencies)
+maestro run --milestone "v1.0"
+
+# Show all queued issues labelled maestro:ready
+maestro queue
+
+# Add a single issue to the work queue manually
+maestro add 42
 
 # Open the dashboard (empty, for monitoring)
 maestro
@@ -105,6 +123,7 @@ alert_threshold_pct = 80  # Warn at 80% of budget
 [github]
 issue_filter_labels = ["maestro:ready"]
 auto_pr = true
+cache_ttl_secs = 300        # How long issue data is cached (default: 5 min)
 
 [notifications]
 desktop = true
@@ -113,25 +132,64 @@ slack = false
 
 ## Architecture
 
+See [directory-tree.md](directory-tree.md) for the complete project structure.
+
 ```
 maestro (Rust binary)
 ├── src/
-│   ├── main.rs              # CLI entry point (clap)
+│   ├── main.rs              # CLI entry point (clap); Run/Queue/Add/Status/Cost/Init
 │   ├── config.rs            # maestro.toml parsing
+│   ├── github/              # GitHub API integration [Phase 2]
+│   │   ├── types.rs         # GhIssue, Priority, MaestroLabel, SessionMode
+│   │   ├── client.rs        # GitHubClient trait + GhCliClient (shells out to `gh`)
+│   │   ├── labels.rs        # Label lifecycle: ready→in-progress→done/failed
+│   │   └── pr.rs            # Auto PR creation with cost report
 │   ├── session/
-│   │   ├── types.rs         # Session state machine, StreamEvent
+│   │   ├── types.rs         # Session state machine, StreamEvent, issue_title
 │   │   ├── parser.rs        # Claude stream-json line parser
-│   │   └── manager.rs       # Process spawn, stdin/stdout, lifecycle
+│   │   ├── manager.rs       # Process spawn, stdin/stdout, lifecycle
+│   │   ├── pool.rs          # Concurrent session pool [Phase 1]
+│   │   └── worktree.rs      # Git worktree isolation [Phase 1]
 │   ├── state/
-│   │   ├── types.rs         # MaestroState, file claims
+│   │   ├── types.rs         # MaestroState, file claims, issue_cache
 │   │   └── store.rs         # JSON persistence (atomic writes)
+│   ├── work/                # Work queue and scheduling [Phase 2]
+│   │   ├── types.rs         # WorkItem, WorkStatus
+│   │   ├── dependencies.rs  # DAG: topological sort, cycle detection
+│   │   └── assigner.rs      # Priority-ordered queue assignment
 │   └── tui/
-│       ├── app.rs           # App state, event coordination
+│       ├── app.rs           # App state, WorkAssigner, GitHubClient integration
 │       ├── ui.rs            # ratatui rendering (panels, gauges, logs)
 │       └── mod.rs           # Terminal setup, async event loop
 ├── Cargo.toml
 └── maestro.toml             # Default config
 ```
+
+## GitHub Label System
+
+Maestro reads and writes GitHub labels to coordinate work. All label names are defined in `src/github/types.rs`.
+
+### Status Labels (managed by Maestro)
+
+| Label | Meaning |
+|-------|---------|
+| `maestro:ready` | Issue is queued and ready for a session to pick up |
+| `maestro:in-progress` | A session is currently working on this issue |
+| `maestro:done` | Session completed successfully; PR was opened |
+| `maestro:failed` | Session ended with an error |
+
+### Scheduling Labels (set by you)
+
+| Label | Meaning |
+|-------|---------|
+| `priority:P0` | Highest priority — scheduled first |
+| `priority:P1` | Medium priority |
+| `priority:P2` | Default priority |
+| `mode:orchestrator` | Run session in Orchestrator mode |
+| `mode:vibe` | Run session in Vibe Coding mode |
+| `blocked-by:#N` | This issue cannot start until issue #N is done |
+
+Dependencies can also be declared in the issue body as `blocked-by: #N` (case-insensitive).
 
 ## Keyboard Shortcuts
 
