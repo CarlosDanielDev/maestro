@@ -20,6 +20,8 @@ pub struct ManagedSession {
     child: Option<Child>,
     /// Path to the git worktree for this session (Phase 1).
     pub worktree_path: Option<PathBuf>,
+    /// Branch name for this session's worktree (e.g., "maestro/issue-42").
+    pub branch_name: Option<String>,
     /// System prompt appendix for file claims injection (Phase 1).
     pub system_prompt_appendix: Option<String>,
     /// Permission mode for Claude CLI (e.g., "bypassPermissions").
@@ -34,6 +36,7 @@ impl ManagedSession {
             session,
             child: None,
             worktree_path: None,
+            branch_name: None,
             system_prompt_appendix: None,
             permission_mode: None,
             allowed_tools: Vec::new(),
@@ -44,12 +47,14 @@ impl ManagedSession {
     pub fn with_worktree(
         session: Session,
         worktree_path: Option<PathBuf>,
+        branch_name: Option<String>,
         system_prompt_appendix: Option<String>,
     ) -> Self {
         Self {
             session,
             child: None,
             worktree_path,
+            branch_name,
             system_prompt_appendix,
             permission_mode: None,
             allowed_tools: Vec::new(),
