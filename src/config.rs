@@ -19,6 +19,10 @@ pub struct Config {
     pub concurrency: ConcurrencyConfig,
     #[serde(default)]
     pub monitoring: MonitoringConfig,
+    #[serde(default)]
+    pub plugins: Vec<PluginConfig>,
+    #[serde(default)]
+    pub modes: std::collections::HashMap<String, ModeConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,6 +222,34 @@ impl Default for MonitoringConfig {
             work_tick_interval_secs: default_work_tick_interval(),
         }
     }
+}
+
+/// Plugin configuration: shell commands triggered on hook events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginConfig {
+    /// Display name for the plugin.
+    pub name: String,
+    /// Hook point to trigger on (e.g., "session_completed", "pr_created").
+    pub on: String,
+    /// Shell command to execute.
+    pub run: String,
+    /// Per-plugin timeout override in seconds.
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+}
+
+/// Mode configuration: defines system prompt and allowed tools for a named mode.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModeConfig {
+    /// System prompt override for this mode.
+    #[serde(default)]
+    pub system_prompt: String,
+    /// Allowed tools whitelist. Empty = all tools.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    /// Permission mode override for this mode.
+    #[serde(default)]
+    pub permission_mode: Option<String>,
 }
 
 fn default_heavy_task_limit() -> usize {
