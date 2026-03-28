@@ -1,13 +1,18 @@
 pub mod activity_log;
 pub mod app;
+pub mod cost_dashboard;
 pub mod dep_graph;
 pub mod detail;
+pub mod fullscreen;
+pub mod help;
 pub mod panels;
 pub mod ui;
 
 use app::App;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEventKind,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -20,7 +25,7 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -28,7 +33,11 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 
     // Restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     // Cleanup: kill any remaining sessions
@@ -64,68 +73,105 @@ async fn event_loop(
         // Check for completed sessions and promote queued ones
         app.check_completions().await?;
 
-        // Check for keyboard input (with timeout for responsive updates)
-        if event::poll(Duration::from_millis(50))?
-            && let Event::Key(key) = event::read()?
-        {
-            match (key.code, key.modifiers) {
-                (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                    app.running = false;
-                    return Ok(());
-                }
-                #[cfg(unix)]
-                (KeyCode::Char('p'), _) => {
-                    app.pause_all();
-                }
-                #[cfg(unix)]
-                (KeyCode::Char('r'), _) => {
-                    app.resume_all();
-                }
-                (KeyCode::Char('k'), _) => {
-                    app.kill_all().await;
-                }
-                // Tab cycles TUI modes: Overview -> DependencyGraph -> Overview
-                (KeyCode::Tab, _) => {
-                    app.tui_mode = match app.tui_mode {
-                        app::TuiMode::Overview => app::TuiMode::DependencyGraph,
-                        app::TuiMode::DependencyGraph => app::TuiMode::Overview,
-                        app::TuiMode::Detail(_) => app::TuiMode::Overview,
-                    };
-                }
-                // Esc returns to overview from any mode
-                (KeyCode::Esc, _) => {
-                    app.tui_mode = app::TuiMode::Overview;
-                }
-                // Enter opens detail view for selected session
-                (KeyCode::Enter, _) => {
-                    let selected = app.panel_view.selected_index();
-                    app.tui_mode = app::TuiMode::Detail(selected);
-                }
-                // 1-9 jump to session detail by index
-                (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
-                    let idx = (c as usize) - ('1' as usize);
-                    if idx < app.pool.all_sessions().len() {
-                        app.tui_mode = app::TuiMode::Detail(idx);
+        // Check for keyboard/mouse input (with timeout for responsive updates)
+        if event::poll(Duration::from_millis(50))? {
+            match event::read()? {
+                Event::Key(key) => {
+                    // Help overlay intercepts all keys when visible
+                    if app.show_help {
+                        match key.code {
+                            KeyCode::Char('?') | KeyCode::Esc => app.show_help = false,
+                            _ => {}
+                        }
+                        continue;
+                    }
+
+                    match (key.code, key.modifiers) {
+                        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                            app.running = false;
+                            return Ok(());
+                        }
+                        #[cfg(unix)]
+                        (KeyCode::Char('p'), _) => {
+                            app.pause_all();
+                        }
+                        #[cfg(unix)]
+                        (KeyCode::Char('r'), _) => {
+                            app.resume_all();
+                        }
+                        (KeyCode::Char('k'), _) => {
+                            app.kill_all().await;
+                        }
+                        // Help overlay
+                        (KeyCode::Char('?'), _) => {
+                            app.show_help = true;
+                        }
+                        // Full-screen view for selected session
+                        (KeyCode::Char('f'), _) => {
+                            let selected = app.panel_view.selected_index();
+                            app.tui_mode = app::TuiMode::Fullscreen(selected);
+                        }
+                        // Cost dashboard
+                        (KeyCode::Char('$'), _) => {
+                            app.tui_mode = app::TuiMode::CostDashboard;
+                        }
+                        // Tab cycles TUI modes: Overview -> DependencyGraph -> CostDashboard -> Overview
+                        (KeyCode::Tab, _) => {
+                            app.tui_mode = match app.tui_mode {
+                                app::TuiMode::Overview => app::TuiMode::DependencyGraph,
+                                app::TuiMode::DependencyGraph => app::TuiMode::CostDashboard,
+                                app::TuiMode::CostDashboard => app::TuiMode::Overview,
+                                app::TuiMode::Detail(_) | app::TuiMode::Fullscreen(_) => {
+                                    app::TuiMode::Overview
+                                }
+                            };
+                        }
+                        // Esc returns to overview from any mode
+                        (KeyCode::Esc, _) => {
+                            app.tui_mode = app::TuiMode::Overview;
+                        }
+                        // Enter opens detail view for selected session
+                        (KeyCode::Enter, _) => {
+                            let selected = app.panel_view.selected_index();
+                            app.tui_mode = app::TuiMode::Detail(selected);
+                        }
+                        // 1-9 jump to session detail by index
+                        (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
+                            let idx = (c as usize) - ('1' as usize);
+                            if idx < app.pool.all_sessions().len() {
+                                app.tui_mode = app::TuiMode::Detail(idx);
+                            }
+                        }
+                        // Dismiss notification
+                        (KeyCode::Char('d'), _) => {
+                            app.notifications.dismiss_latest();
+                        }
+                        // Scroll activity log (Shift+arrows)
+                        (KeyCode::Up, KeyModifiers::SHIFT) => {
+                            app.activity_log.scroll_down();
+                        }
+                        (KeyCode::Down, KeyModifiers::SHIFT) => {
+                            app.activity_log.scroll_up();
+                        }
+                        // Scroll agent panel output (plain arrows)
+                        (KeyCode::Up, _) => {
+                            app.panel_view.scroll_up();
+                        }
+                        (KeyCode::Down, _) => {
+                            app.panel_view.scroll_down();
+                        }
+                        _ => {}
                     }
                 }
-                // Dismiss notification
-                (KeyCode::Char('d'), _) => {
-                    app.notifications.dismiss_latest();
-                }
-                // Scroll activity log (Shift+arrows)
-                (KeyCode::Up, KeyModifiers::SHIFT) => {
-                    app.activity_log.scroll_down();
-                }
-                (KeyCode::Down, KeyModifiers::SHIFT) => {
-                    app.activity_log.scroll_up();
-                }
-                // Scroll agent panel output (plain arrows)
-                (KeyCode::Up, _) => {
-                    app.panel_view.scroll_up();
-                }
-                (KeyCode::Down, _) => {
-                    app.panel_view.scroll_down();
-                }
+                Event::Mouse(mouse) => match mouse.kind {
+                    MouseEventKind::ScrollUp => {
+                        app.panel_view.scroll_up();
+                    }
+                    MouseEventKind::ScrollDown => {
+                        app.panel_view.scroll_down();
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
