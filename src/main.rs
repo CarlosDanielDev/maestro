@@ -4,7 +4,9 @@ mod gates;
 mod git;
 mod github;
 mod models;
+mod modes;
 mod notifications;
+mod plugins;
 mod prompts;
 mod review;
 mod session;
@@ -54,6 +56,10 @@ enum Commands {
         #[arg(short, long)]
         model: Option<String>,
 
+        /// Session mode (orchestrator, vibe, review, or custom)
+        #[arg(long)]
+        mode: Option<String>,
+
         /// Max concurrent sessions (overrides config)
         #[arg(long)]
         max_concurrent: Option<usize>,
@@ -90,6 +96,17 @@ enum Commands {
         #[arg(long)]
         export: Option<String>,
     },
+    /// Resume interrupted sessions from saved state
+    Resume {
+        /// Resume a specific session by ID
+        #[arg(long)]
+        session: Option<String>,
+    },
+    /// Generate shell completions
+    Completions {
+        /// Shell to generate completions for (bash, zsh, fish)
+        shell: String,
+    },
 }
 
 #[tokio::main]
@@ -117,6 +134,8 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Init) => cmd_init(),
         Some(Commands::Clean { dry_run }) => cmd_clean(dry_run),
         Some(Commands::Logs { session, export }) => cmd_logs(session, export),
+        Some(Commands::Resume { session }) => cmd_resume(session).await,
+        Some(Commands::Completions { shell }) => cmd_completions(&shell),
         Some(Commands::Status) => cmd_status(),
         Some(Commands::Cost) => cmd_cost(),
         Some(Commands::Queue) => cmd_queue().await,
@@ -126,9 +145,21 @@ async fn main() -> anyhow::Result<()> {
             issue,
             milestone,
             model,
+            mode,
             max_concurrent,
             resume,
-        }) => cmd_run(prompt, issue, milestone, model, max_concurrent, resume).await,
+        }) => {
+            cmd_run(
+                prompt,
+                issue,
+                milestone,
+                model,
+                mode,
+                max_concurrent,
+                resume,
+            )
+            .await
+        }
         // Default: launch TUI with no sessions (dashboard mode)
         None => cmd_dashboard().await,
     }
@@ -189,6 +220,20 @@ heavy_task_limit = 2                    # Max concurrent heavy tasks
 
 [monitoring]
 work_tick_interval_secs = 10
+
+# Plugin hooks — shell commands triggered on lifecycle events
+# [[plugins]]
+# name = "notify-team"
+# on = "session_completed"             # Hook points: session_started, session_completed, tests_passed,
+#                                      #   tests_failed, budget_threshold, file_conflict, pr_created
+# run = "curl -X POST https://slack.webhook/..."
+# timeout_secs = 30                    # Optional per-plugin timeout
+
+# Custom modes — define system prompt and allowed tools
+# [modes.review]
+# system_prompt = "You are a code reviewer. Review the PR and leave comments."
+# allowed_tools = ["Read", "Grep", "Glob"]
+# permission_mode = "plan"
 "#;
 
     std::fs::write(&path, content)?;
@@ -423,16 +468,125 @@ fn cmd_clean(dry_run: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
+    let config = Config::find_and_load()?;
+    let store = StateStore::new(StateStore::default_path());
+    let state = store.load()?;
+    let repo_root = std::env::current_dir()?;
+
+    // Find incomplete sessions
+    let incomplete: Vec<&Session> = state
+        .sessions
+        .iter()
+        .filter(|s| {
+            matches!(
+                s.status,
+                session::types::SessionStatus::Running
+                    | session::types::SessionStatus::Spawning
+                    | session::types::SessionStatus::Queued
+                    | session::types::SessionStatus::Stalled
+                    | session::types::SessionStatus::Errored
+                    | session::types::SessionStatus::Retrying
+            )
+        })
+        .filter(|s| {
+            if let Some(ref filter) = session_filter {
+                s.id.to_string().starts_with(filter)
+                    || s.issue_number
+                        .map(|n| n.to_string() == *filter)
+                        .unwrap_or(false)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    if incomplete.is_empty() {
+        println!("No incomplete sessions to resume.");
+        return Ok(());
+    }
+
+    println!("Resuming {} incomplete session(s)...", incomplete.len());
+
+    let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
+    let max_concurrent = config.sessions.max_concurrent;
+
+    let mut app = App::new(
+        store,
+        max_concurrent,
+        worktree_mgr,
+        config.sessions.permission_mode.clone(),
+        config.sessions.allowed_tools.clone(),
+    );
+
+    // Wire up from config
+    app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
+        config.budget.per_session_usd,
+        config.budget.total_usd,
+        config.budget.alert_threshold_pct,
+    ));
+    app.model_router = Some(crate::models::ModelRouter::new(
+        config.models.routing.clone(),
+        config.sessions.default_model.clone(),
+    ));
+    app.notifications =
+        crate::notifications::dispatcher::NotificationDispatcher::new(config.notifications.desktop);
+    if !config.plugins.is_empty() {
+        app.plugin_runner = Some(crate::plugins::runner::PluginRunner::new(
+            config.plugins.clone(),
+            30,
+        ));
+    }
+
+    // Re-enqueue incomplete sessions with their original prompts
+    for s in &incomplete {
+        let mut new_session = Session::new(
+            s.prompt.clone(),
+            s.model.clone(),
+            s.mode.clone(),
+            s.issue_number,
+        );
+        new_session.issue_title = s.issue_title.clone();
+        new_session.retry_count = s.retry_count;
+        app.add_session(new_session).await?;
+    }
+
+    // Set up GitHub client for label management
+    let client = GhCliClient::new();
+    app.github_client = Some(Box::new(client));
+    app.config = Some(config);
+
+    tui::run(app).await
+}
+
+fn cmd_completions(shell: &str) -> anyhow::Result<()> {
+    use clap::CommandFactory;
+    use clap_complete::{Shell, generate};
+
+    let shell = match shell.to_lowercase().as_str() {
+        "bash" => Shell::Bash,
+        "zsh" => Shell::Zsh,
+        "fish" => Shell::Fish,
+        other => anyhow::bail!("Unsupported shell: {}. Use bash, zsh, or fish.", other),
+    };
+
+    let mut cmd = Cli::command();
+    generate(shell, &mut cmd, "maestro", &mut std::io::stdout());
+    Ok(())
+}
+
 async fn cmd_run(
     prompt: Option<String>,
     issue: Option<String>,
     milestone: Option<String>,
     model: Option<String>,
+    mode: Option<String>,
     max_concurrent_override: Option<usize>,
     resume: bool,
 ) -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
     let model = model.unwrap_or(config.sessions.default_model.clone());
+    let session_mode = mode.unwrap_or(config.sessions.default_mode.clone());
     let max_concurrent = max_concurrent_override.unwrap_or(config.sessions.max_concurrent);
 
     let store = StateStore::new(StateStore::default_path());
@@ -486,6 +640,14 @@ async fn cmd_run(
     app.notifications =
         crate::notifications::dispatcher::NotificationDispatcher::new(config.notifications.desktop);
 
+    // Wire up plugin runner from config
+    if !config.plugins.is_empty() {
+        app.plugin_runner = Some(crate::plugins::runner::PluginRunner::new(
+            config.plugins.clone(),
+            30, // default timeout
+        ));
+    }
+
     // Resume from previous state if requested
     if resume {
         let mut recovered = 0;
@@ -508,12 +670,7 @@ async fn cmd_run(
 
     // Determine what to run
     if let Some(prompt_text) = prompt {
-        let session = Session::new(
-            prompt_text,
-            model,
-            config.sessions.default_mode.clone(),
-            None,
-        );
+        let session = Session::new(prompt_text, model, session_mode.clone(), None);
         app.add_session(session).await?;
     } else if let Some(milestone_name) = milestone {
         // Fetch all issues in the milestone
@@ -541,10 +698,13 @@ async fn cmd_run(
                 .map_err(|_| anyhow::anyhow!("Invalid issue number: {}", num_str.trim()))?;
 
             let gh_issue = client.get_issue(num).await?;
+            // Use mode from label (maestro:mode:X) or CLI --mode or config default
+            let issue_mode = crate::modes::mode_from_labels(&gh_issue.labels)
+                .unwrap_or_else(|| session_mode.clone());
             let mut session = Session::new(
                 gh_issue.unattended_prompt(),
                 model.clone(),
-                config.sessions.default_mode.clone(),
+                issue_mode,
                 Some(num),
             );
             session.issue_title = Some(gh_issue.title.clone());
@@ -590,7 +750,27 @@ async fn cmd_run(
 
 async fn cmd_dashboard() -> anyhow::Result<()> {
     let store = StateStore::new(StateStore::default_path());
+    let state = store.load().unwrap_or_default();
     let repo_root = std::env::current_dir()?;
+
+    // Check for incomplete sessions and offer auto-resume
+    let has_incomplete = state.sessions.iter().any(|s| {
+        matches!(
+            s.status,
+            session::types::SessionStatus::Running
+                | session::types::SessionStatus::Spawning
+                | session::types::SessionStatus::Queued
+                | session::types::SessionStatus::Stalled
+                | session::types::SessionStatus::Retrying
+        )
+    });
+
+    if has_incomplete {
+        eprintln!(
+            "Found incomplete sessions from previous run. Use `maestro resume` to continue them."
+        );
+    }
+
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
     let app = App::new(
         store,
