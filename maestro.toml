@@ -1,5 +1,5 @@
 [project]
-repo = ""
+repo = "CarlosDanielDev/maestro"
 base_branch = "main"
 
 [sessions]
