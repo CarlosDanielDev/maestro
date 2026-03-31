@@ -1,9 +1,23 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 /// Sentinel string that Claude must emit when it detects a file conflict.
 pub const FILE_CONFLICT_SENTINEL: &str = "FILE_CONFLICT";
+
+/// A record of a detected file conflict.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConflictRecord {
+    /// The file that was contended.
+    pub file_path: String,
+    /// The session that owns the file claim.
+    pub owner_session_id: Uuid,
+    /// The session that attempted to write to the claimed file.
+    pub offender_session_id: Uuid,
+    /// When the conflict was detected.
+    pub detected_at: DateTime<Utc>,
+}
 
 /// Manages exclusive file claims across sessions.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -12,6 +26,9 @@ pub struct FileClaimManager {
     claims: HashMap<String, Uuid>,
     /// session_id -> set of claimed files (reverse index for fast release)
     session_files: HashMap<Uuid, HashSet<String>>,
+    /// History of detected conflicts.
+    #[serde(default)]
+    conflict_history: Vec<ConflictRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,6 +129,42 @@ impl FileClaimManager {
     /// Total number of active claims.
     pub fn total_claims(&self) -> usize {
         self.claims.len()
+    }
+
+    /// Record a conflict in the history log.
+    pub fn record_conflict(
+        &mut self,
+        file_path: &str,
+        owner_session_id: Uuid,
+        offender_session_id: Uuid,
+    ) {
+        self.conflict_history.push(ConflictRecord {
+            file_path: file_path.to_string(),
+            owner_session_id,
+            offender_session_id,
+            detected_at: Utc::now(),
+        });
+    }
+
+    /// Get the full conflict history.
+    pub fn conflict_history(&self) -> &[ConflictRecord] {
+        &self.conflict_history
+    }
+
+    /// Get conflicts involving a specific session (as owner or offender).
+    pub fn conflicts_for_session(&self, session_id: Uuid) -> Vec<&ConflictRecord> {
+        self.conflict_history
+            .iter()
+            .filter(|c| c.owner_session_id == session_id || c.offender_session_id == session_id)
+            .collect()
+    }
+
+    /// Check whether a session has any active conflicts (is an offender on a currently-claimed file).
+    pub fn has_active_conflict(&self, session_id: Uuid) -> bool {
+        self.conflict_history.iter().any(|c| {
+            c.offender_session_id == session_id
+                && self.claims.get(&c.file_path) == Some(&c.owner_session_id)
+        })
     }
 }
 
@@ -316,5 +369,106 @@ mod tests {
             mgr.claim("src/toggle.rs", session),
             ClaimResult::Granted
         ));
+    }
+
+    #[test]
+    fn conflict_history_starts_empty() {
+        let mgr = FileClaimManager::new();
+        assert!(mgr.conflict_history().is_empty());
+    }
+
+    #[test]
+    fn record_conflict_adds_to_history() {
+        let mut mgr = FileClaimManager::new();
+        let owner = Uuid::new_v4();
+        let offender = Uuid::new_v4();
+        mgr.record_conflict("src/main.rs", owner, offender);
+        assert_eq!(mgr.conflict_history().len(), 1);
+        let record = &mgr.conflict_history()[0];
+        assert_eq!(record.file_path, "src/main.rs");
+        assert_eq!(record.owner_session_id, owner);
+        assert_eq!(record.offender_session_id, offender);
+    }
+
+    #[test]
+    fn record_multiple_conflicts() {
+        let mut mgr = FileClaimManager::new();
+        let s1 = Uuid::new_v4();
+        let s2 = Uuid::new_v4();
+        let s3 = Uuid::new_v4();
+        mgr.record_conflict("src/a.rs", s1, s2);
+        mgr.record_conflict("src/b.rs", s1, s3);
+        mgr.record_conflict("src/c.rs", s2, s3);
+        assert_eq!(mgr.conflict_history().len(), 3);
+    }
+
+    #[test]
+    fn conflicts_for_session_returns_matching() {
+        let mut mgr = FileClaimManager::new();
+        let s1 = Uuid::new_v4();
+        let s2 = Uuid::new_v4();
+        let s3 = Uuid::new_v4();
+        mgr.record_conflict("src/a.rs", s1, s2);
+        mgr.record_conflict("src/b.rs", s2, s3);
+        mgr.record_conflict("src/c.rs", s1, s3);
+
+        // s1 is involved in a.rs (owner) and c.rs (owner)
+        let s1_conflicts = mgr.conflicts_for_session(s1);
+        assert_eq!(s1_conflicts.len(), 2);
+
+        // s2 is involved in a.rs (offender) and b.rs (owner)
+        let s2_conflicts = mgr.conflicts_for_session(s2);
+        assert_eq!(s2_conflicts.len(), 2);
+
+        // s3 is involved in b.rs (offender) and c.rs (offender)
+        let s3_conflicts = mgr.conflicts_for_session(s3);
+        assert_eq!(s3_conflicts.len(), 2);
+    }
+
+    #[test]
+    fn conflicts_for_unknown_session_returns_empty() {
+        let mut mgr = FileClaimManager::new();
+        let s1 = Uuid::new_v4();
+        let s2 = Uuid::new_v4();
+        mgr.record_conflict("src/a.rs", s1, s2);
+        assert!(mgr.conflicts_for_session(Uuid::new_v4()).is_empty());
+    }
+
+    #[test]
+    fn has_active_conflict_true_when_claim_still_held() {
+        let mut mgr = FileClaimManager::new();
+        let owner = Uuid::new_v4();
+        let offender = Uuid::new_v4();
+        mgr.claim("src/main.rs", owner);
+        mgr.record_conflict("src/main.rs", owner, offender);
+        assert!(mgr.has_active_conflict(offender));
+    }
+
+    #[test]
+    fn has_active_conflict_false_when_claim_released() {
+        let mut mgr = FileClaimManager::new();
+        let owner = Uuid::new_v4();
+        let offender = Uuid::new_v4();
+        mgr.claim("src/main.rs", owner);
+        mgr.record_conflict("src/main.rs", owner, offender);
+        mgr.release_all(owner);
+        assert!(!mgr.has_active_conflict(offender));
+    }
+
+    #[test]
+    fn has_active_conflict_false_for_non_offender() {
+        let mut mgr = FileClaimManager::new();
+        let owner = Uuid::new_v4();
+        let offender = Uuid::new_v4();
+        mgr.claim("src/main.rs", owner);
+        mgr.record_conflict("src/main.rs", owner, offender);
+        // Owner is not an offender
+        assert!(!mgr.has_active_conflict(owner));
+    }
+
+    #[test]
+    fn has_active_conflict_false_when_no_conflicts() {
+        let mgr = FileClaimManager::new();
+        assert!(!mgr.has_active_conflict(Uuid::new_v4()));
     }
 }
