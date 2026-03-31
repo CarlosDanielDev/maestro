@@ -1,6 +1,5 @@
 use super::types::{Session, SessionStatus};
 use crate::state::progress::SessionProgress;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ForkReason {
@@ -10,7 +9,7 @@ pub enum ForkReason {
 #[derive(Debug)]
 pub enum ForkResult {
     Forked {
-        child: Session,
+        child: Box<Session>,
         continuation_prompt: String,
     },
     Denied {
@@ -81,7 +80,7 @@ impl SessionForker for ForkPolicy {
         child.issue_title = parent.issue_title.clone();
 
         ForkResult::Forked {
-            child,
+            child: Box::new(child),
             continuation_prompt: continuation,
         }
     }
@@ -108,10 +107,7 @@ fn build_continuation_prompt(
     }
 
     if let Some(prog) = progress {
-        prompt.push_str(&format!(
-            "\nPrevious session phase: {}",
-            prog.phase.label()
-        ));
+        prompt.push_str(&format!("\nPrevious session phase: {}", prog.phase.label()));
         if !prog.files_at_checkpoint.is_empty() {
             prompt.push_str(&format!(
                 "\nFiles modified: {}",
