@@ -45,10 +45,10 @@ Hardening, missing PRD features, test coverage, and distribution.
 
 ### Infrastructure & Docs
 
-| Issue | Title | Priority |
-|-------|-------|----------|
-| [#17] | Release workflow for binary builds and distribution | P2 |
-| [#18] | Man page and shell completion installation guide | P2 |
+| Issue | Title | Priority | Status |
+|-------|-------|----------|--------|
+| [#17] | Release workflow for binary builds and distribution | P2 | Done |
+| [#18] | Man page and shell completion installation guide | P2 | Planned |
 
 ---
 
@@ -83,7 +83,7 @@ v0.2.0 🔧 In Progress
   ├── #15 Integration tests ─────────┐
   ├── #16 TUI snapshot tests ────────┤ Quality (parallel)
   ├── #19 Parser benchmarks ─────────┘
-  ├── #17 Release workflow
+  ├── #17 Release workflow ─────────✅ Done
   └── #18 Completion docs
 
 v0.3.0 🌐 Planned

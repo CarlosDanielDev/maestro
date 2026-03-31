@@ -7,6 +7,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Homebrew Release Automation (#27)
+
+- `.github/workflows/release.yml`: on `v*` tag push, builds cross-platform release binaries for `aarch64-apple-darwin`, `x86_64-apple-darwin`, and `x86_64-unknown-linux-gnu` using a matrix strategy with Rust stable toolchain and `rust-cache`
+- Packages each binary as a `maestro-<tag>-<target>.tar.gz` tarball, uploads artifacts, then aggregates them in a dedicated `release` job that generates a `sha256sums.txt` and creates a GitHub Release with auto-generated release notes via `softprops/action-gh-release`
+- A follow-on `update-homebrew` job fires a `repository_dispatch` event (`formula-update`) against `CarlosDanielDev/homebrew-tap`, passing version and tag in the payload so the tap's `update-formula.yml` workflow can update the formula URL and sha256 automatically
+- `HOMEBREW_TAP_TOKEN` repository secret required for the cross-repo dispatch
+
 ## [0.2.0] - 2026-03-31
 
 ### Context Overflow Detection and Auto-Fork (#12)
