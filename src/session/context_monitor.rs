@@ -46,7 +46,8 @@ impl Default for ProductionContextMonitor {
 impl ContextMonitor for ProductionContextMonitor {
     fn record_context(&mut self, session_id: Uuid, context_pct: f64) {
         if context_pct.is_finite() && context_pct >= 0.0 {
-            self.context_map.insert(session_id, context_pct.clamp(0.0, 1.0));
+            self.context_map
+                .insert(session_id, context_pct.clamp(0.0, 1.0));
         }
     }
 
