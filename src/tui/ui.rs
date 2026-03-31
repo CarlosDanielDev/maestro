@@ -31,14 +31,26 @@ pub fn draw(f: &mut Frame, app: &App) {
     match app.tui_mode {
         TuiMode::Overview => {
             let sessions = app.pool.all_sessions();
-            app.panel_view.draw(f, &sessions, chunks[1]);
+            app.panel_view
+                .draw_with_claims(f, &sessions, Some(&app.pool.file_claims), chunks[1]);
         }
         TuiMode::Detail(idx) => {
             let sessions = app.pool.all_sessions();
             if let Some(session) = sessions.get(idx) {
-                detail::draw_detail(f, session, &app.progress_tracker, chunks[1]);
+                detail::draw_detail_with_claims(
+                    f,
+                    session,
+                    &app.progress_tracker,
+                    Some(&app.pool.file_claims),
+                    chunks[1],
+                );
             } else {
-                app.panel_view.draw(f, &sessions, chunks[1]);
+                app.panel_view.draw_with_claims(
+                    f,
+                    &sessions,
+                    Some(&app.pool.file_claims),
+                    chunks[1],
+                );
             }
         }
         TuiMode::DependencyGraph => {
