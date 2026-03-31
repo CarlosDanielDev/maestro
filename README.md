@@ -42,6 +42,8 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Automated PR creation** — on session completion, a PR is opened with cost report and file list
 - **Dependency scheduling** — `blocked-by:#N` labels and body references create an ordered work graph
 - **Priority ordering** — `priority:P0/P1/P2` labels determine scheduling order within the queue
+- **Context overflow detection** — monitors context window usage per session; automatically forks into a continuation session at a configurable threshold with a structured handoff prompt
+- **Fork depth limiting** — configurable maximum fork chain depth prevents runaway continuation loops
 
 ### Roadmap
 
@@ -50,8 +52,8 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 | **0** | Single-session TUI, stream parser, state persistence | Done |
 | **1** | Multi-session pool, split-pane TUI, file claim system, git worktrees | Done |
 | **2** | GitHub integration — issue fetching, auto-PR, label lifecycle, dependency graph | Done |
-| **3** | Intelligence — context overflow detection, budget enforcement, stall detection | Planned |
-| **4** | Plugin system, mode system, cost dashboard, session resumption | Planned |
+| **3** | Intelligence — context overflow detection, budget enforcement, stall detection | Done |
+| **4** | Plugin system, mode system, cost dashboard, session resumption | Done |
 
 ## Requirements
 
@@ -128,6 +130,12 @@ cache_ttl_secs = 300        # How long issue data is cached (default: 5 min)
 [notifications]
 desktop = true
 slack = false
+
+[sessions.context_overflow]
+overflow_threshold_pct = 70  # Auto-fork when context reaches this % (default: 70)
+auto_fork = true             # Spawn a continuation session on overflow
+commit_prompt_pct = 50       # Prompt an intermediate commit at this % (default: 50)
+max_fork_depth = 5           # Max chained forks before overflow is ignored
 ```
 
 ## Architecture
