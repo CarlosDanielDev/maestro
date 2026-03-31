@@ -10,6 +10,12 @@ default_mode = "orchestrator"
 permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
 allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
 
+[sessions.context_overflow]
+overflow_threshold_pct = 70             # Context % at which auto-fork triggers
+auto_fork = true                        # Whether to auto-fork on overflow
+commit_prompt_pct = 50                  # Context % at which to prompt a commit
+max_fork_depth = 5                      # Maximum fork chain depth
+
 [budget]
 per_session_usd = 5.0
 total_usd = 50.0

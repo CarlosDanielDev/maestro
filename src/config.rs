@@ -56,6 +56,48 @@ pub struct SessionsConfig {
     /// Cooldown in seconds between retries.
     #[serde(default = "default_retry_cooldown")]
     pub retry_cooldown_secs: u64,
+    /// Context overflow detection and auto-fork configuration.
+    #[serde(default)]
+    pub context_overflow: ContextOverflowConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextOverflowConfig {
+    /// Context usage percentage at which auto-fork triggers. Default: 70.
+    #[serde(default = "default_overflow_threshold_pct")]
+    pub overflow_threshold_pct: u8,
+    /// Whether auto-fork is enabled. Default: true.
+    #[serde(default = "default_true")]
+    pub auto_fork: bool,
+    /// Context percentage at which to prompt a periodic commit. Default: 50.
+    #[serde(default = "default_commit_prompt_pct")]
+    pub commit_prompt_pct: u8,
+    /// Maximum depth of fork chains to prevent runaway forking. Default: 5.
+    #[serde(default = "default_max_fork_depth")]
+    pub max_fork_depth: u8,
+}
+
+impl ContextOverflowConfig {
+    /// Overflow threshold as a 0.0-1.0 ratio.
+    pub fn overflow_ratio(&self) -> f64 {
+        self.overflow_threshold_pct as f64 / 100.0
+    }
+
+    /// Commit prompt threshold as a 0.0-1.0 ratio.
+    pub fn commit_prompt_ratio(&self) -> f64 {
+        self.commit_prompt_pct as f64 / 100.0
+    }
+}
+
+impl Default for ContextOverflowConfig {
+    fn default() -> Self {
+        Self {
+            overflow_threshold_pct: default_overflow_threshold_pct(),
+            auto_fork: true,
+            commit_prompt_pct: default_commit_prompt_pct(),
+            max_fork_depth: default_max_fork_depth(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,6 +349,15 @@ fn default_ci_poll_interval() -> u64 {
 fn default_ci_max_wait() -> u64 {
     1800
 }
+fn default_overflow_threshold_pct() -> u8 {
+    70
+}
+fn default_commit_prompt_pct() -> u8 {
+    50
+}
+fn default_max_fork_depth() -> u8 {
+    5
+}
 
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
@@ -326,5 +377,50 @@ impl Config {
             }
         }
         anyhow::bail!("No maestro.toml found. Run `maestro init` to create one.")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_overflow_config_defaults_are_correct() {
+        let cfg = ContextOverflowConfig::default();
+        assert_eq!(cfg.overflow_threshold_pct, 70);
+        assert!(cfg.auto_fork);
+        assert_eq!(cfg.commit_prompt_pct, 50);
+        assert_eq!(cfg.max_fork_depth, 5);
+    }
+
+    #[test]
+    fn context_overflow_config_deserializes_from_toml() {
+        let toml_str = r#"overflow_threshold_pct = 85"#;
+        let cfg: ContextOverflowConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.overflow_threshold_pct, 85);
+        assert!(cfg.auto_fork); // default untouched
+    }
+
+    #[test]
+    fn config_uses_context_overflow_defaults_when_section_absent() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+"#
+        )
+        .unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert_eq!(cfg.sessions.context_overflow.overflow_threshold_pct, 70);
     }
 }
