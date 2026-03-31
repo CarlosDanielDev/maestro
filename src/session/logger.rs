@@ -63,6 +63,9 @@ impl SessionLogger {
             StreamEvent::CostUpdate { cost_usd } => {
                 format!("[{}] COST: ${:.2}\n", timestamp, cost_usd)
             }
+            StreamEvent::ContextUpdate { context_pct } => {
+                format!("[{}] CONTEXT: {:.0}%\n", timestamp, context_pct * 100.0)
+            }
             StreamEvent::Unknown { raw } => {
                 format!("[{}] UNKNOWN: {}\n", timestamp, raw)
             }

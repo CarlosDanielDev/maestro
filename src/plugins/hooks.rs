@@ -12,6 +12,7 @@ pub enum HookPoint {
     BudgetThreshold,
     FileConflict,
     PrCreated,
+    ContextOverflow,
 }
 
 impl HookPoint {
@@ -24,6 +25,7 @@ impl HookPoint {
             Self::BudgetThreshold => "budget_threshold",
             Self::FileConflict => "file_conflict",
             Self::PrCreated => "pr_created",
+            Self::ContextOverflow => "context_overflow",
         }
     }
 
@@ -37,6 +39,7 @@ impl HookPoint {
             "budget_threshold" => Some(Self::BudgetThreshold),
             "file_conflict" => Some(Self::FileConflict),
             "pr_created" => Some(Self::PrCreated),
+            "context_overflow" => Some(Self::ContextOverflow),
             _ => None,
         }
     }
@@ -107,6 +110,7 @@ mod tests {
             HookPoint::BudgetThreshold,
             HookPoint::FileConflict,
             HookPoint::PrCreated,
+            HookPoint::ContextOverflow,
         ];
         for point in points {
             assert_eq!(HookPoint::from_str(point.as_str()), Some(point));
