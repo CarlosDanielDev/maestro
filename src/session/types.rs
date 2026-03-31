@@ -76,6 +76,15 @@ pub struct Session {
     /// Timestamp of the last retry attempt.
     #[serde(default)]
     pub last_retry_at: Option<DateTime<Utc>>,
+    /// Parent session ID if this is a forked continuation.
+    #[serde(default)]
+    pub parent_session_id: Option<Uuid>,
+    /// Child session IDs if this session was forked.
+    #[serde(default)]
+    pub child_session_ids: Vec<Uuid>,
+    /// Fork depth in the chain (0 = original, 1 = first fork, etc.)
+    #[serde(default)]
+    pub fork_depth: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +114,9 @@ impl Session {
             issue_title: None,
             retry_count: 0,
             last_retry_at: None,
+            parent_session_id: None,
+            child_session_ids: Vec::new(),
+            fork_depth: 0,
         }
     }
 
@@ -163,6 +175,32 @@ pub enum StreamEvent {
     Completed { cost_usd: f64 },
     /// Error occurred
     Error { message: String },
+    /// Context window usage update
+    ContextUpdate { context_pct: f64 },
     /// Raw line we couldn't parse
     Unknown { raw: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_new_initializes_fork_fields_to_defaults() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        assert_eq!(s.parent_session_id, None);
+        assert!(s.child_session_ids.is_empty());
+        assert_eq!(s.fork_depth, 0);
+    }
+
+    #[test]
+    fn stream_event_context_update_holds_value() {
+        let event = StreamEvent::ContextUpdate { context_pct: 72.5 };
+        match event {
+            StreamEvent::ContextUpdate { context_pct } => {
+                assert!((context_pct - 72.5).abs() < f64::EPSILON);
+            }
+            other => panic!("Expected ContextUpdate, got {:?}", other),
+        }
+    }
 }
