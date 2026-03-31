@@ -1,5 +1,6 @@
 use crate::budget::{BudgetAction, BudgetCheck, BudgetEnforcer};
 use crate::config::Config;
+use crate::config::ConflictPolicy;
 use crate::gates::runner::{self, GateCheck, GateRunner};
 use crate::gates::types::CompletionGate;
 use crate::git::GitOps;
@@ -232,22 +233,81 @@ impl App {
             let result = self.pool.file_claims.claim(path, session_id);
             if let ClaimResult::Conflict { owner } = result {
                 let label = format!("S-{}", &session_id.to_string()[..8]);
+                let owner_short = &owner.to_string()[..8];
+
+                // Record conflict in history
+                self.pool
+                    .file_claims
+                    .record_conflict(path, owner, session_id);
+
                 self.activity_log.push_simple(
                     label,
-                    format!(
-                        "CONFLICT: {} claimed by S-{}",
-                        path,
-                        &owner.to_string()[..8]
-                    ),
+                    format!("CONFLICT: {} claimed by S-{}", path, owner_short),
                     LogLevel::Error,
                 );
+
+                // Emit real-time TUI notification
+                self.notifications.notify(
+                    crate::notifications::types::InterruptLevel::Critical,
+                    "File Conflict",
+                    &format!(
+                        "S-{} tried to write {} (owned by S-{})",
+                        &session_id.to_string()[..8],
+                        path,
+                        owner_short
+                    ),
+                );
+
+                // Enforce conflict policy
+                let policy = self
+                    .config
+                    .as_ref()
+                    .map(|c| c.sessions.conflict.policy)
+                    .unwrap_or(ConflictPolicy::Warn);
+
+                match policy {
+                    ConflictPolicy::Warn => {
+                        // Already logged and notified above
+                    }
+                    ConflictPolicy::Pause => {
+                        #[cfg(unix)]
+                        if let Some(managed) = self.pool.get_active_mut(session_id) {
+                            let _ = managed.pause();
+                            managed.session.status = SessionStatus::Paused;
+                            managed
+                                .session
+                                .log_activity(format!("Paused due to conflict on {}", path));
+                            self.activity_log.push_simple(
+                                format!("S-{}", &session_id.to_string()[..8]),
+                                format!("Session paused (conflict policy) on {}", path),
+                                LogLevel::Warn,
+                            );
+                        }
+                    }
+                    ConflictPolicy::Kill => {
+                        if let Some(managed) = self.pool.get_active_mut(session_id) {
+                            managed.session.status = SessionStatus::Killed;
+                            managed.session.finished_at = Some(Utc::now());
+                            managed
+                                .session
+                                .log_activity(format!("Killed due to conflict on {}", path));
+                            self.activity_log.push_simple(
+                                format!("S-{}", &session_id.to_string()[..8]),
+                                format!("Session killed (conflict policy) on {}", path),
+                                LogLevel::Error,
+                            );
+                        }
+                    }
+                }
+
                 // Queue file_conflict hook
                 self.pending_hooks.push(PendingHook {
                     hook: HookPoint::FileConflict,
                     ctx: HookContext::new()
                         .with_session(&session_id.to_string(), None)
                         .with_var("MAESTRO_CONFLICT_FILE", path)
-                        .with_var("MAESTRO_CONFLICT_OWNER", &owner.to_string()),
+                        .with_var("MAESTRO_CONFLICT_OWNER", &owner.to_string())
+                        .with_var("MAESTRO_CONFLICT_POLICY", policy.label()),
                 });
             }
         }
