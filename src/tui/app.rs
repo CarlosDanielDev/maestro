@@ -12,6 +12,8 @@ use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::plugins::runner::PluginRunner;
 use crate::prompts::PromptBuilder;
+use crate::session::context_monitor::{ContextMonitor, ProductionContextMonitor};
+use crate::session::fork::{ForkPolicy, ForkReason, ForkResult, SessionForker};
 use crate::session::health::{HealthCheck, HealthMonitor};
 use crate::session::logger::SessionLogger;
 use crate::session::manager::SessionEvent;
@@ -104,6 +106,10 @@ pub struct App {
     pub plugin_runner: Option<PluginRunner>,
     /// Whether the help overlay is visible.
     pub show_help: bool,
+    /// Context overflow monitor.
+    pub context_monitor: Box<dyn ContextMonitor>,
+    /// Fork policy for auto-fork decisions.
+    pub fork_policy: Option<ForkPolicy>,
 }
 
 impl App {
@@ -147,7 +153,17 @@ impl App {
             last_work_tick: Instant::now(),
             plugin_runner: None,
             show_help: false,
+            context_monitor: Box::new(ProductionContextMonitor::new()),
+            fork_policy: None,
         }
+    }
+
+    /// Configure the app with a loaded Config, setting up fork policy and other config-dependent fields.
+    pub fn configure(&mut self, config: Config) {
+        self.fork_policy = Some(ForkPolicy::new(
+            config.sessions.context_overflow.max_fork_depth,
+        ));
+        self.config = Some(config);
     }
 
     /// Add a session and try to promote/spawn it.
@@ -328,14 +344,142 @@ impl App {
                         });
                     }
                 }
+                StreamEvent::ContextUpdate { context_pct } => {
+                    self.context_monitor.record_context(session_id, *context_pct);
+                }
                 _ => {}
             }
+        }
+
+        // Context overflow checks (only on context updates to avoid hot-path waste)
+        if matches!(evt.event, StreamEvent::ContextUpdate { .. }) {
+            self.check_context_overflow(session_id);
         }
 
         // Budget enforcement on cost updates
         self.check_budget(session_id);
 
         self.sync_state();
+    }
+
+    /// Check context overflow for a session and trigger auto-fork if needed.
+    fn check_context_overflow(&mut self, session_id: uuid::Uuid) {
+        let Some(ref config) = self.config else {
+            return;
+        };
+        let ctx_cfg = &config.sessions.context_overflow;
+
+        // Check commit prompt threshold
+        if self
+            .context_monitor
+            .check_commit_prompt(session_id, ctx_cfg.commit_prompt_ratio())
+        {
+            self.context_monitor.mark_commit_prompted(session_id);
+            let label = self
+                .pool
+                .get_active_mut(session_id)
+                .map(|m| session_label(&m.session))
+                .unwrap_or_else(|| format!("S-{}", &session_id.to_string()[..8]));
+            self.activity_log.push_simple(
+                label,
+                format!(
+                    "Context at {}%+ — consider committing work",
+                    ctx_cfg.commit_prompt_pct
+                ),
+                LogLevel::Warn,
+            );
+        }
+
+        // Check overflow threshold
+        if !ctx_cfg.auto_fork {
+            return;
+        }
+        let overflow = self
+            .context_monitor
+            .check_overflow(session_id, ctx_cfg.overflow_ratio());
+        let Some(overflow) = overflow else {
+            return;
+        };
+        let Some(ref fork_policy) = self.fork_policy else {
+            return;
+        };
+
+        // Get parent session info
+        let Some(managed) = self.pool.get_active_mut(session_id) else {
+            return;
+        };
+        let parent_session = managed.session.clone();
+        let progress = self.progress_tracker.get(&session_id);
+
+        let fork_result = fork_policy.prepare_fork(
+            &parent_session,
+            progress,
+            ForkReason::ContextOverflow {
+                context_pct: overflow.context_pct,
+            },
+        );
+
+        match fork_result {
+            ForkResult::Forked { child, .. } => {
+                let child_id = child.id;
+                let label = session_label(&parent_session);
+
+                self.activity_log.push_simple(
+                    label,
+                    format!(
+                        "Context overflow at {:.0}% — forking to new session",
+                        overflow.context_pct * 100.0
+                    ),
+                    LogLevel::Warn,
+                );
+
+                if let Some(managed) = self.pool.get_active_mut(session_id) {
+                    managed.session.child_session_ids.push(child_id);
+                }
+                self.state.record_fork(session_id, child_id);
+                self.pool.enqueue(child);
+
+                self.pending_hooks.push(PendingHook {
+                    hook: HookPoint::ContextOverflow,
+                    ctx: HookContext::new()
+                        .with_session(
+                            &session_id.to_string(),
+                            parent_session.issue_number,
+                        )
+                        .with_var("MAESTRO_FORK_CHILD_ID", &child_id.to_string())
+                        .with_var(
+                            "MAESTRO_FORK_DEPTH",
+                            &(parent_session.fork_depth + 1).to_string(),
+                        ),
+                });
+
+                // Mark overflow triggered to prevent re-forking
+                self.context_monitor.mark_overflow_triggered(session_id);
+
+                // Mark parent session as completed (forked) to stop resource waste
+                if let Some(managed) = self.pool.get_active_mut(session_id) {
+                    managed.session.status = SessionStatus::Completed;
+                    managed.session.finished_at = Some(Utc::now());
+                    managed.session.current_activity = "Forked".into();
+                    managed.session.log_activity(format!(
+                        "Session forked to child {}",
+                        &child_id.to_string()[..8]
+                    ));
+                }
+            }
+            ForkResult::Denied { reason } => {
+                let label = self
+                    .pool
+                    .get_active_mut(session_id)
+                    .map(|m| session_label(&m.session))
+                    .unwrap_or_else(|| format!("S-{}", &session_id.to_string()[..8]));
+                self.activity_log.push_simple(
+                    label,
+                    format!("Context overflow but fork denied: {}", reason),
+                    LogLevel::Error,
+                );
+            }
+        }
     }
 
     /// Check budget limits for a session and globally. Kill sessions if over budget.
