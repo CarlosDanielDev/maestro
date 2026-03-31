@@ -70,6 +70,12 @@ impl PanelView {
 fn draw_single_panel(f: &mut Frame, session: &Session, area: Rect, is_selected: bool, scroll: u16) {
     let status_color = status_to_color(session.status);
 
+    let fork_indicator = if session.parent_session_id.is_some() {
+        format!(" [fork:{}]", session.fork_depth)
+    } else {
+        String::new()
+    };
+
     let title = match (session.issue_number, &session.issue_title) {
         (Some(n), Some(t)) => {
             let max_title_len = 30;
@@ -79,10 +85,10 @@ fn draw_single_panel(f: &mut Frame, session: &Session, area: Rect, is_selected: 
             } else {
                 t.clone()
             };
-            format!(" #{} — {} ", n, short_title)
+            format!(" #{} — {}{} ", n, short_title, fork_indicator)
         }
-        (Some(n), None) => format!(" #{} ", n),
-        _ => format!(" {} ", &session.id.to_string()[..8]),
+        (Some(n), None) => format!(" #{}{} ", n, fork_indicator),
+        _ => format!(" {}{} ", &session.id.to_string()[..8], fork_indicator),
     };
 
     let border_style = if is_selected {
@@ -147,9 +153,14 @@ fn draw_single_panel(f: &mut Frame, session: &Session, area: Rect, is_selected: 
     } else {
         Color::Green
     };
+    let gauge_label = if ctx_pct > 70.0 {
+        format!("ctx: {:.0}% OVERFLOW", ctx_pct)
+    } else {
+        format!("ctx: {:.0}%", ctx_pct)
+    };
     let gauge = Gauge::default()
         .gauge_style(Style::default().fg(gauge_color))
-        .label(format!("ctx: {:.0}%", ctx_pct))
+        .label(gauge_label)
         .percent(ctx_pct as u16);
     f.render_widget(gauge, chunks[2]);
 

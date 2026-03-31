@@ -554,7 +554,7 @@ async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
     // Set up GitHub client for label management
     let client = GhCliClient::new();
     app.github_client = Some(Box::new(client));
-    app.config = Some(config);
+    app.configure(config);
 
     tui::run(app).await
 }
@@ -686,7 +686,7 @@ async fn cmd_run(
         // Store assigner and config in app for work management
         app.work_assigner = Some(assigner);
         app.github_client = Some(Box::new(client));
-        app.config = Some(config.clone());
+        app.configure(config.clone());
     } else if let Some(issue_str) = issue {
         let client = GhCliClient::new();
 
@@ -717,7 +717,7 @@ async fn cmd_run(
 
         // Set github client + config so label lifecycle and auto-PR work
         app.github_client = Some(Box::new(client));
-        app.config = Some(config.clone());
+        app.configure(config.clone());
     } else {
         // No prompt, issue, or milestone — auto-fetch maestro:ready issues
         let client = GhCliClient::new();
@@ -741,7 +741,7 @@ async fn cmd_run(
 
         app.work_assigner = Some(assigner);
         app.github_client = Some(Box::new(client));
-        app.config = Some(config.clone());
+        app.configure(config.clone());
     }
 
     // Launch TUI

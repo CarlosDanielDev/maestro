@@ -271,6 +271,11 @@ impl ManagedSession {
                 self.session.current_activity = "Error".into();
                 self.session.log_activity(format!("Error: {}", message));
             }
+            StreamEvent::ContextUpdate { context_pct } => {
+                self.session.context_pct = *context_pct;
+                self.session
+                    .log_activity(format!("Context: {:.0}%", context_pct * 100.0));
+            }
             StreamEvent::Unknown { .. } => {}
         }
     }
