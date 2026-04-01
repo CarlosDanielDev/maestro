@@ -59,8 +59,6 @@ Closes #<issue-number>
 
 ## Test plan
 - [ ] <testing checklist items>
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
 )"
 ```

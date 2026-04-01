@@ -8,6 +8,7 @@ mod modes;
 mod notifications;
 mod plugins;
 mod prompts;
+mod provider;
 mod review;
 mod session;
 mod state;
