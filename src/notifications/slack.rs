@@ -92,10 +92,7 @@ impl SlackEvent {
                 (
                     ":rotating_light:",
                     "File Conflict Detected",
-                    vec![
-                        ("File", file_path.clone()),
-                        ("Sessions", session_list),
-                    ],
+                    vec![("File", file_path.clone()), ("Sessions", session_list)],
                 )
             }
         };
@@ -305,11 +302,7 @@ pub fn level_to_slack_event(
 fn parse_pct(s: &str) -> Option<u8> {
     // Look for a number followed by '%'
     let re = regex::Regex::new(r"(\d+)%").ok()?;
-    re.captures(s)?
-        .get(1)?
-        .as_str()
-        .parse()
-        .ok()
+    re.captures(s)?.get(1)?.as_str().parse().ok()
 }
 
 #[derive(Debug)]
@@ -365,7 +358,12 @@ mod tests {
         };
         let payload = event.to_payload();
         let fields = payload["blocks"][1]["fields"].as_array().unwrap();
-        assert!(fields[2]["text"].as_str().unwrap().contains("process crashed"));
+        assert!(
+            fields[2]["text"]
+                .as_str()
+                .unwrap()
+                .contains("process crashed")
+        );
     }
 
     #[test]

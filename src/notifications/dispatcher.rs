@@ -35,10 +35,10 @@ impl NotificationDispatcher {
         }
 
         // Fire-and-forget Slack notification for Warning+
-        if self.slack_client.is_some() {
-            if let Some(event) = level_to_slack_event(level, title, message) {
-                self.send_slack_event(event);
-            }
+        if self.slack_client.is_some()
+            && let Some(event) = level_to_slack_event(level, title, message)
+        {
+            self.send_slack_event(event);
         }
 
         self.notifications.push(notification);
@@ -52,10 +52,7 @@ impl NotificationDispatcher {
     /// Send a test message to verify Slack webhook configuration.
     pub async fn test_slack(&mut self) -> Result<bool, String> {
         match self.slack_client.as_mut() {
-            Some(client) => client
-                .send_test()
-                .await
-                .map_err(|e| e.to_string()),
+            Some(client) => client.send_test().await.map_err(|e| e.to_string()),
             None => Err("Slack is not configured".into()),
         }
     }
@@ -81,10 +78,7 @@ impl NotificationDispatcher {
                 let http = reqwest::Client::new();
                 match http.post(&url).json(&payload).send().await {
                     Ok(resp) if !resp.status().is_success() => {
-                        tracing::error!(
-                            "Slack webhook returned HTTP {}",
-                            resp.status()
-                        );
+                        tracing::error!("Slack webhook returned HTTP {}", resp.status());
                     }
                     Err(e) => {
                         tracing::error!("Slack webhook error: {e}");
