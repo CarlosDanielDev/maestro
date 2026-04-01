@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-03-31 12:00 (UTC)
+> Last updated: 2026-03-31 14:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -57,8 +57,8 @@ maestro/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
-│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init; module declarations
-│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig (overflow_threshold_pct, auto_fork, commit_prompt_pct, max_fork_depth)
+│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init; module declarations (includes provider)  [Issue #29]
+│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project)  [Issue #29]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
 │   ├── git.rs                             # GitOps trait, CliGitOps: commit and push operations  [Phase 3]
 │   ├── models.rs                          # ModelRouter: label-based model routing  [Phase 3]
@@ -68,6 +68,10 @@ maestro/
 │   │   ├── mod.rs                         # Module exports
 │   │   ├── types.rs                       # Gate types: TestsPass, FileExists, FileContains, PrCreated
 │   │   └── runner.rs                      # Gate evaluation runner
+│   ├── provider/                          # Multi-provider abstraction layer  [Issue #29]
+│   │   ├── mod.rs                         # create_provider factory, detect_provider_from_remote
+│   │   ├── types.rs                       # ProviderKind enum (Github, AzureDevops); re-exports Issue/Priority/MaestroLabel/SessionMode
+│   │   └── azure_devops.rs               # AzDevOpsClient implementing GitHubClient trait; parse_work_items_json
 │   ├── github/                            # GitHub API integration  [Phase 2]
 │   │   ├── mod.rs                         # Module exports
 │   │   ├── types.rs                       # GhIssue, Priority, MaestroLabel, SessionMode; label/body blocker parsing
@@ -168,6 +172,10 @@ maestro/
 | `src/models.rs` | Label-based model routing (Phase 3) |
 | `src/prompts.rs` | Structured issue prompt builder with task-type detection (Phase 3) |
 | `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated (Phase 3) |
+| `src/provider/` | Multi-provider abstraction layer (Issue #29) |
+| `src/provider/mod.rs` | create_provider factory; detect_provider_from_remote |
+| `src/provider/types.rs` | ProviderKind enum; provider-agnostic type re-exports |
+| `src/provider/azure_devops.rs` | AzDevOpsClient (`az` CLI); parse_work_items_json |
 | `src/github/` | GitHub API integration (Phase 2) |
 | `src/github/client.rs` | GitHubClient trait, GhCliClient, MockGitHubClient |
 | `src/github/labels.rs` | Issue label lifecycle transitions |
