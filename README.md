@@ -44,6 +44,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Priority ordering** — `priority:P0/P1/P2` labels determine scheduling order within the queue
 - **Context overflow detection** — monitors context window usage per session; automatically forks into a continuation session at a configurable threshold with a structured handoff prompt
 - **Fork depth limiting** — configurable maximum fork chain depth prevents runaway continuation loops
+- **Multi-provider support** — works with GitHub (via `gh` CLI) or Azure DevOps (via `az` CLI); provider is auto-detected from the git remote or set explicitly in config
 
 ### Roadmap
 
@@ -54,11 +55,14 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 | **2** | GitHub integration — issue fetching, auto-PR, label lifecycle, dependency graph | Done |
 | **3** | Intelligence — context overflow detection, budget enforcement, stall detection | Done |
 | **4** | Plugin system, mode system, cost dashboard, session resumption | Done |
+| **5** | Multi-provider support — GitHub and Azure DevOps | Done |
 
 ## Requirements
 
 - **Rust 1.75+** (tested on 1.94)
 - **Claude Code CLI** (`claude`) installed and on your PATH
+- **GitHub CLI** (`gh`) — required when using the GitHub provider (default)
+- **Azure CLI** (`az`) — required when using the Azure DevOps provider; run `az login` to authenticate
 - macOS, Linux, or WSL
 
 ## Install
@@ -158,6 +162,16 @@ overflow_threshold_pct = 70  # Auto-fork when context reaches this % (default: 7
 auto_fork = true             # Spawn a continuation session on overflow
 commit_prompt_pct = 50       # Prompt an intermediate commit at this % (default: 50)
 max_fork_depth = 5           # Max chained forks before overflow is ignored
+
+# Optional: explicit provider configuration (auto-detected from git remote by default)
+[provider]
+kind = "github"              # "github" (default) or "azure_devops"
+
+# Azure DevOps example:
+# [provider]
+# kind = "azure_devops"
+# organization = "https://dev.azure.com/MyOrg"
+# az_project = "MyProject"
 ```
 
 ## Architecture
@@ -168,7 +182,11 @@ See [directory-tree.md](directory-tree.md) for the complete project structure.
 maestro (Rust binary)
 ├── src/
 │   ├── main.rs              # CLI entry point (clap); Run/Queue/Add/Status/Cost/Init
-│   ├── config.rs            # maestro.toml parsing
+│   ├── config.rs            # maestro.toml parsing; ProviderConfig
+│   ├── provider/            # Multi-provider abstraction [Issue #29]
+│   │   ├── mod.rs           # create_provider factory; detect_provider_from_remote
+│   │   ├── types.rs         # ProviderKind (Github, AzureDevops); type re-exports
+│   │   └── azure_devops.rs  # AzDevOpsClient (shells out to `az`)
 │   ├── github/              # GitHub API integration [Phase 2]
 │   │   ├── types.rs         # GhIssue, Priority, MaestroLabel, SessionMode
 │   │   ├── client.rs        # GitHubClient trait + GhCliClient (shells out to `gh`)
