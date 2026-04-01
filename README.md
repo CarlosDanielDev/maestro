@@ -45,6 +45,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Context overflow detection** — monitors context window usage per session; automatically forks into a continuation session at a configurable threshold with a structured handoff prompt
 - **Fork depth limiting** — configurable maximum fork chain depth prevents runaway continuation loops
 - **Multi-provider support** — works with GitHub (via `gh` CLI) or Azure DevOps (via `az` CLI); provider is auto-detected from the git remote or set explicitly in config
+- **Session prompt guardrails** — a language-specific pre-completion checklist (format, lint, test) is automatically detected from the project root and appended to every session's system prompt; can be overridden with a custom prompt via `guardrail_prompt` in `maestro.toml`
 
 ### Roadmap
 
@@ -144,6 +145,8 @@ max_concurrent = 3        # Max parallel Claude sessions
 stall_timeout_secs = 300  # Kill stalled sessions after 5 min
 default_model = "opus"    # opus, sonnet, haiku
 default_mode = "orchestrator"
+# guardrail_prompt = "..."  # Custom pre-completion checklist injected into every session prompt
+                            # Omit to auto-detect from project language (Rust/TS/Python/Go)
 
 [budget]
 per_session_usd = 5.0     # Max spend per session
@@ -184,7 +187,7 @@ See [directory-tree.md](directory-tree.md) for the complete project structure.
 maestro (Rust binary)
 ├── src/
 │   ├── main.rs              # CLI entry point (clap); Run/Queue/Add/Status/Cost/Init
-│   ├── config.rs            # maestro.toml parsing; ProviderConfig
+│   ├── config.rs            # maestro.toml parsing; ProviderConfig; guardrail_prompt in SessionsConfig
 │   ├── provider/            # Multi-provider abstraction [Issue #29]
 │   │   ├── mod.rs           # create_provider factory; detect_provider_from_remote
 │   │   ├── types.rs         # ProviderKind (Github, AzureDevops); type re-exports
@@ -198,7 +201,7 @@ maestro (Rust binary)
 │   │   ├── types.rs         # Session state machine, StreamEvent, issue_title
 │   │   ├── parser.rs        # Claude stream-json line parser
 │   │   ├── manager.rs       # Process spawn, stdin/stdout, lifecycle
-│   │   ├── pool.rs          # Concurrent session pool [Phase 1]
+│   │   ├── pool.rs          # Concurrent session pool; guardrail injected into system prompt [Phase 1, #43]
 │   │   └── worktree.rs      # Git worktree isolation [Phase 1]
 │   ├── state/
 │   │   ├── types.rs         # MaestroState, file claims, issue_cache

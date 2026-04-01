@@ -1,5 +1,82 @@
 use crate::config::Config;
 use crate::github::types::GhIssue;
+use std::path::Path;
+
+/// Detected project language for guardrail defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectLanguage {
+    Rust,
+    TypeScript,
+    Python,
+    Go,
+    Unknown,
+}
+
+/// Detect project language from manifest files in the given directory.
+pub fn detect_project_language(dir: &Path) -> ProjectLanguage {
+    if dir.join("Cargo.toml").exists() {
+        ProjectLanguage::Rust
+    } else if dir.join("package.json").exists() {
+        ProjectLanguage::TypeScript
+    } else if dir.join("pyproject.toml").exists() || dir.join("requirements.txt").exists() {
+        ProjectLanguage::Python
+    } else if dir.join("go.mod").exists() {
+        ProjectLanguage::Go
+    } else {
+        ProjectLanguage::Unknown
+    }
+}
+
+/// Return the default guardrail prompt for a given project language.
+pub fn default_guardrail(lang: ProjectLanguage) -> &'static str {
+    match lang {
+        ProjectLanguage::Rust => {
+            "BEFORE completing your work:\n\
+             1. Run `cargo fmt` to format all code\n\
+             2. Run `cargo clippy -- -D warnings` and fix any warnings\n\
+             3. Run `cargo test` and ensure all tests pass\n\
+             4. Only commit after all three pass"
+        }
+        ProjectLanguage::TypeScript => {
+            "BEFORE completing your work:\n\
+             1. Run the project linter (e.g., `npm run lint` or `npx eslint .`) and fix any issues\n\
+             2. Run the formatter (e.g., `npm run format` or `npx prettier --write .`)\n\
+             3. Run `npm test` and ensure all tests pass\n\
+             4. Only commit after all checks pass"
+        }
+        ProjectLanguage::Python => {
+            "BEFORE completing your work:\n\
+             1. Run the formatter (e.g., `black .` or `ruff format .`)\n\
+             2. Run the linter (e.g., `ruff check .` or `flake8`)\n\
+             3. Run `pytest` and ensure all tests pass\n\
+             4. Only commit after all checks pass"
+        }
+        ProjectLanguage::Go => {
+            "BEFORE completing your work:\n\
+             1. Run `gofmt -w .` to format all code\n\
+             2. Run `go vet ./...` and fix any issues\n\
+             3. Run `go test ./...` and ensure all tests pass\n\
+             4. Only commit after all checks pass"
+        }
+        ProjectLanguage::Unknown => {
+            "BEFORE completing your work:\n\
+             1. Run the project's formatter and linter if configured\n\
+             2. Run the test suite and ensure all tests pass\n\
+             3. Only commit after all checks pass"
+        }
+    }
+}
+
+/// Resolve the guardrail prompt: use custom if configured, otherwise auto-detect.
+pub fn resolve_guardrail(custom: Option<&str>, project_dir: &Path) -> String {
+    if let Some(prompt) = custom
+        && !prompt.is_empty()
+    {
+        return prompt.to_string();
+    }
+    let lang = detect_project_language(project_dir);
+    default_guardrail(lang).to_string()
+}
 
 /// Builds structured prompts for Claude sessions based on issue type and config.
 pub struct PromptBuilder;
@@ -230,5 +307,116 @@ mod tests {
         let config = make_config();
         let prompt = PromptBuilder::build_issue_prompt(&issue, &config);
         assert!(prompt.contains("Base branch: main"));
+    }
+
+    // Language detection tests
+
+    #[test]
+    fn detect_rust_from_cargo_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "").unwrap();
+        assert_eq!(detect_project_language(dir.path()), ProjectLanguage::Rust);
+    }
+
+    #[test]
+    fn detect_typescript_from_package_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("package.json"), "").unwrap();
+        assert_eq!(
+            detect_project_language(dir.path()),
+            ProjectLanguage::TypeScript
+        );
+    }
+
+    #[test]
+    fn detect_python_from_pyproject_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pyproject.toml"), "").unwrap();
+        assert_eq!(detect_project_language(dir.path()), ProjectLanguage::Python);
+    }
+
+    #[test]
+    fn detect_python_from_requirements_txt() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("requirements.txt"), "").unwrap();
+        assert_eq!(detect_project_language(dir.path()), ProjectLanguage::Python);
+    }
+
+    #[test]
+    fn detect_go_from_go_mod() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("go.mod"), "").unwrap();
+        assert_eq!(detect_project_language(dir.path()), ProjectLanguage::Go);
+    }
+
+    #[test]
+    fn detect_unknown_when_no_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            detect_project_language(dir.path()),
+            ProjectLanguage::Unknown
+        );
+    }
+
+    // Default guardrail tests
+
+    #[test]
+    fn default_guardrail_rust_mentions_cargo_fmt() {
+        let g = default_guardrail(ProjectLanguage::Rust);
+        assert!(g.contains("cargo fmt"));
+        assert!(g.contains("cargo clippy"));
+        assert!(g.contains("cargo test"));
+    }
+
+    #[test]
+    fn default_guardrail_typescript_mentions_lint() {
+        let g = default_guardrail(ProjectLanguage::TypeScript);
+        assert!(g.contains("lint"));
+        assert!(g.contains("npm test"));
+    }
+
+    #[test]
+    fn default_guardrail_python_mentions_pytest() {
+        let g = default_guardrail(ProjectLanguage::Python);
+        assert!(g.contains("pytest"));
+    }
+
+    #[test]
+    fn default_guardrail_go_mentions_gofmt() {
+        let g = default_guardrail(ProjectLanguage::Go);
+        assert!(g.contains("gofmt"));
+        assert!(g.contains("go test"));
+    }
+
+    #[test]
+    fn default_guardrail_unknown_is_generic() {
+        let g = default_guardrail(ProjectLanguage::Unknown);
+        assert!(g.contains("test suite"));
+    }
+
+    // resolve_guardrail tests
+
+    #[test]
+    fn resolve_guardrail_uses_custom_when_provided() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "").unwrap();
+        let result = resolve_guardrail(Some("Run my custom checks"), dir.path());
+        assert_eq!(result, "Run my custom checks");
+    }
+
+    #[test]
+    fn resolve_guardrail_auto_detects_when_none() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "").unwrap();
+        let result = resolve_guardrail(None, dir.path());
+        assert!(result.contains("cargo fmt"));
+    }
+
+    #[test]
+    fn resolve_guardrail_auto_detects_when_empty_string() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("go.mod"), "").unwrap();
+        let result = resolve_guardrail(Some(""), dir.path());
+        assert!(result.contains("gofmt"));
     }
 }

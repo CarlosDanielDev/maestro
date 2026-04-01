@@ -9,6 +9,8 @@ default_model = "opus"
 default_mode = "orchestrator"
 permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
 allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
+# guardrail_prompt = "..."              # Custom guardrail injected into every session prompt
+                                        # If unset, auto-detected from project language (Rust/TS/Python/Go)
 
 [sessions.context_overflow]
 overflow_threshold_pct = 70             # Context % at which auto-fork triggers
