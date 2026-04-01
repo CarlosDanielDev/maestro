@@ -1,3 +1,4 @@
+use crate::provider::types::ProviderKind;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -7,8 +8,11 @@ pub struct Config {
     pub project: ProjectConfig,
     pub sessions: SessionsConfig,
     pub budget: BudgetConfig,
+    #[serde(default)]
     pub github: GithubConfig,
     pub notifications: NotificationsConfig,
+    #[serde(default)]
+    pub provider: ProviderConfig,
     #[serde(default)]
     pub models: ModelsConfig,
     #[serde(default)]
@@ -171,6 +175,61 @@ pub struct GithubConfig {
     /// Merge method. Default: Squash.
     #[serde(default)]
     pub merge_method: MergeMethod,
+}
+
+impl Default for GithubConfig {
+    fn default() -> Self {
+        Self {
+            issue_filter_labels: default_issue_labels(),
+            auto_pr: true,
+            cache_ttl_secs: default_cache_ttl(),
+            auto_merge: false,
+            merge_method: MergeMethod::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    /// Provider type: "github" or "azure_devops". Default: github.
+    #[serde(default)]
+    pub kind: ProviderKind,
+    /// Issue/work-item filter labels/tags.
+    #[serde(default = "default_issue_labels")]
+    pub issue_filter_labels: Vec<String>,
+    /// Whether to auto-create PRs on session completion.
+    #[serde(default = "default_true")]
+    pub auto_pr: bool,
+    /// Whether to auto-merge PRs after gates pass.
+    #[serde(default)]
+    pub auto_merge: bool,
+    /// Merge method.
+    #[serde(default)]
+    pub merge_method: MergeMethod,
+    /// Cache TTL for issue data in seconds.
+    #[serde(default = "default_cache_ttl")]
+    pub cache_ttl_secs: u64,
+    /// Azure DevOps organization URL (e.g., "https://dev.azure.com/MyOrg").
+    #[serde(default)]
+    pub organization: Option<String>,
+    /// Azure DevOps project name.
+    #[serde(default)]
+    pub az_project: Option<String>,
+}
+
+impl Default for ProviderConfig {
+    fn default() -> Self {
+        Self {
+            kind: ProviderKind::default(),
+            issue_filter_labels: default_issue_labels(),
+            auto_pr: true,
+            auto_merge: false,
+            merge_method: MergeMethod::default(),
+            cache_ttl_secs: default_cache_ttl(),
+            organization: None,
+            az_project: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
