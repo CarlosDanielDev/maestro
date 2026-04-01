@@ -25,6 +25,7 @@ pub fn parse_stream_line(line: &str) -> StreamEvent {
         Some("assistant") => parse_assistant_event(&v),
         Some("tool_result") => parse_tool_result(&v),
         Some("result") => parse_result(&v),
+        Some("system") => parse_system_event(&v),
         Some("error") => {
             let msg = v
                 .get("error")
@@ -138,6 +139,31 @@ fn parse_tool_result(v: &Value) -> StreamEvent {
         .unwrap_or("unknown")
         .to_string();
     StreamEvent::ToolResult { tool, is_error }
+}
+
+fn parse_system_event(v: &Value) -> StreamEvent {
+    // Check for context usage percentage in system events
+    if let Some(pct) = v.get("context_pct").and_then(|p| p.as_f64()) {
+        return StreamEvent::ContextUpdate {
+            context_pct: pct / 100.0,
+        };
+    }
+    // Check usage sub-object for input_tokens and max context
+    if let Some(usage) = v.get("usage") {
+        if let (Some(input), Some(max)) = (
+            usage.get("input_tokens").and_then(|t| t.as_f64()),
+            usage.get("max_input_tokens").and_then(|t| t.as_f64()),
+        ) {
+            if max > 0.0 {
+                return StreamEvent::ContextUpdate {
+                    context_pct: input / max,
+                };
+            }
+        }
+    }
+    StreamEvent::Unknown {
+        raw: v.to_string(),
+    }
 }
 
 fn parse_result(v: &Value) -> StreamEvent {
@@ -275,5 +301,33 @@ mod tests {
             }
             other => panic!("Expected ToolUse, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn parse_system_event_context_update_from_context_pct() {
+        let line = r#"{"type":"system","context_pct":68.4}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ContextUpdate { context_pct } => {
+                assert!((context_pct - 0.684).abs() < 0.001);
+            }
+            other => panic!("Expected ContextUpdate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_system_event_context_update_from_usage_tokens() {
+        let line = r#"{"type":"system","usage":{"input_tokens":70000,"max_input_tokens":100000}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ContextUpdate { context_pct } => {
+                assert!((context_pct - 0.7).abs() < f64::EPSILON);
+            }
+            other => panic!("Expected ContextUpdate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_system_event_unknown_subtype_falls_through() {
+        let line = r#"{"type":"system","event":"something_new"}"#;
+        assert!(matches!(parse_stream_line(line), StreamEvent::Unknown { .. }));
     }
 }
