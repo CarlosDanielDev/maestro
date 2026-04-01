@@ -261,10 +261,7 @@ impl App {
                 // Send structured Slack notification for file conflict
                 self.notifications.notify_slack(SlackEvent::FileConflict {
                     file_path: path.to_string(),
-                    sessions: vec![
-                        session_id.to_string(),
-                        owner.to_string(),
-                    ],
+                    sessions: vec![session_id.to_string(), owner.to_string()],
                 });
 
                 // Enforce conflict policy
@@ -373,11 +370,12 @@ impl App {
                         LogLevel::Info,
                     );
                     // Send Slack notification for session completion
-                    self.notifications.notify_slack(SlackEvent::SessionCompleted {
-                        session_id: managed.session.id.to_string(),
-                        issue_number: managed.session.issue_number,
-                        cost_usd: *cost_usd,
-                    });
+                    self.notifications
+                        .notify_slack(SlackEvent::SessionCompleted {
+                            session_id: managed.session.id.to_string(),
+                            issue_number: managed.session.issue_number,
+                            cost_usd: *cost_usd,
+                        });
                     // Queue session_completed plugin hook
                     self.pending_hooks.push(PendingHook {
                         hook: HookPoint::SessionCompleted,
