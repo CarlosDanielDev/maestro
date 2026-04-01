@@ -345,7 +345,8 @@ impl App {
                     }
                 }
                 StreamEvent::ContextUpdate { context_pct } => {
-                    self.context_monitor.record_context(session_id, *context_pct);
+                    self.context_monitor
+                        .record_context(session_id, *context_pct);
                 }
                 _ => {}
             }
@@ -437,15 +438,12 @@ impl App {
                     managed.session.child_session_ids.push(child_id);
                 }
                 self.state.record_fork(session_id, child_id);
-                self.pool.enqueue(child);
+                self.pool.enqueue(*child);
 
                 self.pending_hooks.push(PendingHook {
                     hook: HookPoint::ContextOverflow,
                     ctx: HookContext::new()
-                        .with_session(
-                            &session_id.to_string(),
-                            parent_session.issue_number,
-                        )
+                        .with_session(&session_id.to_string(), parent_session.issue_number)
                         .with_var("MAESTRO_FORK_CHILD_ID", &child_id.to_string())
                         .with_var(
                             "MAESTRO_FORK_DEPTH",

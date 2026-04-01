@@ -149,21 +149,18 @@ fn parse_system_event(v: &Value) -> StreamEvent {
         };
     }
     // Check usage sub-object for input_tokens and max context
-    if let Some(usage) = v.get("usage") {
-        if let (Some(input), Some(max)) = (
+    if let Some(usage) = v.get("usage")
+        && let (Some(input), Some(max)) = (
             usage.get("input_tokens").and_then(|t| t.as_f64()),
             usage.get("max_input_tokens").and_then(|t| t.as_f64()),
-        ) {
-            if max > 0.0 {
-                return StreamEvent::ContextUpdate {
-                    context_pct: input / max,
-                };
-            }
-        }
+        )
+        && max > 0.0
+    {
+        return StreamEvent::ContextUpdate {
+            context_pct: input / max,
+        };
     }
-    StreamEvent::Unknown {
-        raw: v.to_string(),
-    }
+    StreamEvent::Unknown { raw: v.to_string() }
 }
 
 fn parse_result(v: &Value) -> StreamEvent {
@@ -328,6 +325,9 @@ mod tests {
     #[test]
     fn parse_system_event_unknown_subtype_falls_through() {
         let line = r#"{"type":"system","event":"something_new"}"#;
-        assert!(matches!(parse_stream_line(line), StreamEvent::Unknown { .. }));
+        assert!(matches!(
+            parse_stream_line(line),
+            StreamEvent::Unknown { .. }
+        ));
     }
 }
