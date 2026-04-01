@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-03-31 14:00 (UTC)
+> Last updated: 2026-03-31 15:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -58,11 +58,11 @@ maestro/
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init; module declarations (includes provider)  [Issue #29]
-│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project)  [Issue #29]
+│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig  [Issue #29, #43]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
 │   ├── git.rs                             # GitOps trait, CliGitOps: commit and push operations  [Phase 3]
 │   ├── models.rs                          # ModelRouter: label-based model routing  [Phase 3]
-│   ├── prompts.rs                         # PromptBuilder: structured issue prompts with task-type detection  [Phase 3]
+│   ├── prompts.rs                         # PromptBuilder: structured issue prompts with task-type detection; ProjectLanguage enum; detect_project_language(); default_guardrail(); resolve_guardrail()  [Phase 3, Issue #43]
 │   ├── util.rs                            # Shared utilities (truncate, etc.)
 │   ├── gates/                             # Completion gates framework  [Phase 3]
 │   │   ├── mod.rs                         # Module exports
@@ -96,7 +96,7 @@ maestro/
 │   │   ├── mod.rs                         # Module exports (includes pool, worktree, health, retry, context_monitor, fork)
 │   │   ├── manager.rs                     # Claude CLI process management; handles ContextUpdate events  [Phase 3]
 │   │   ├── parser.rs                      # stream-json output parser; parses system events for context usage  [Phase 3]
-│   │   ├── pool.rs                        # Session pool: max_concurrent, queue, auto-promote; branch tracking  [Phase 3]
+│   │   ├── pool.rs                        # Session pool: max_concurrent, queue, auto-promote; branch tracking; guardrail_prompt field; set_guardrail_prompt(); merged into system prompt in try_promote()  [Phase 3, Issue #43]
 │   │   ├── types.rs                       # Session state machine; fork fields (parent_session_id, child_session_ids, fork_depth); ContextUpdate StreamEvent  [Phase 3]
 │   │   ├── worktree.rs                    # Git worktree isolation: WorktreeManager trait, GitWorktreeManager, MockWorktreeManager  [Phase 1]
 │   │   ├── health.rs                      # HealthMonitor: stall detection, HealthCheck trait  [Phase 3]
@@ -113,7 +113,7 @@ maestro/
 │   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods  [Issue #12]
 │   ├── tui/
 │   │   ├── mod.rs                         # Event loop; keybindings: Tab, Esc, Enter, 1-9, d  [Phase 3]
-│   │   ├── app.rs                         # App state; context_monitor and fork_policy fields; check_context_overflow method  [Issue #12]
+│   │   ├── app.rs                         # App state; context_monitor and fork_policy fields; check_context_overflow method; configure() resolves and sets guardrail prompt  [Issue #12, #43]
 │   │   ├── activity_log.rs                # Scrollable activity log widget with LogLevel color coding  [Phase 1]
 │   │   ├── cost_dashboard.rs              # Cost dashboard widget: per-session and aggregate cost display  [Phase 3]
 │   │   ├── dep_graph.rs                   # ASCII dependency graph visualization  [Phase 3]
@@ -151,7 +151,7 @@ maestro/
 ├── ROADMAP.md                             # Project milestones and implementation order
 ├── directory-tree.md                      # This file — SINGLE SOURCE OF TRUTH for structure
 ├── maestro-state.json                     # Runtime state persistence file
-└── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section added  [Issue #12]
+└── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section; guardrail_prompt option (commented)  [Issue #12, #43]
 ```
 
 ## Quick Reference
@@ -170,7 +170,7 @@ maestro/
 | `src/budget.rs` | Per-session and global budget enforcement (Phase 3) |
 | `src/git.rs` | GitOps trait and CLI-backed commit+push (Phase 3) |
 | `src/models.rs` | Label-based model routing (Phase 3) |
-| `src/prompts.rs` | Structured issue prompt builder with task-type detection (Phase 3) |
+| `src/prompts.rs` | Structured issue prompt builder with task-type detection; ProjectLanguage detection; guardrail resolution (Phase 3, Issue #43) |
 | `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated (Phase 3) |
 | `src/provider/` | Multi-provider abstraction layer (Issue #29) |
 | `src/provider/mod.rs` | create_provider factory; detect_provider_from_remote |
@@ -191,7 +191,7 @@ maestro/
 | `src/session/` | Claude CLI process and session lifecycle management |
 | `src/session/health.rs` | Stall detection and HealthCheck trait (Phase 3) |
 | `src/session/retry.rs` | Configurable retry policy (Phase 3) |
-| `src/session/pool.rs` | Concurrent session pool with queue and auto-promote |
+| `src/session/pool.rs` | Concurrent session pool with queue and auto-promote; guardrail_prompt merged into system prompt (Issue #43) |
 | `src/session/worktree.rs` | Git worktree isolation per session |
 | `src/session/cleanup.rs` | Orphaned worktree detection and removal (Phase 3) |
 | `src/session/logger.rs` | Per-session file logging to .maestro/logs/ (Phase 3) |
