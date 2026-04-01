@@ -19,6 +19,8 @@ pub struct SessionPool {
     permission_mode: String,
     /// Allowed tools whitelist passed to Claude CLI sessions.
     allowed_tools: Vec<String>,
+    /// Guardrail prompt appended to every session's system prompt.
+    guardrail_prompt: Option<String>,
 }
 
 impl SessionPool {
@@ -37,6 +39,7 @@ impl SessionPool {
             event_tx,
             permission_mode: "bypassPermissions".to_string(),
             allowed_tools: Vec::new(),
+            guardrail_prompt: None,
         }
     }
 
@@ -48,6 +51,11 @@ impl SessionPool {
     /// Set the permission mode for new sessions.
     pub fn set_permission_mode(&mut self, mode: String) {
         self.permission_mode = mode;
+    }
+
+    /// Set the guardrail prompt appended to every session's system prompt.
+    pub fn set_guardrail_prompt(&mut self, prompt: String) {
+        self.guardrail_prompt = Some(prompt);
     }
 
     /// Set the allowed tools whitelist for new sessions.
@@ -88,8 +96,15 @@ impl SessionPool {
                 }
             };
 
-            // Build system prompt with file claims for other sessions
-            let system_prompt = self.file_claims.build_system_prompt(session.id);
+            // Build system prompt with file claims and guardrails
+            let mut system_prompt = self.file_claims.build_system_prompt(session.id);
+            if let Some(ref guardrail) = self.guardrail_prompt {
+                let combined = match system_prompt {
+                    Some(existing) => Some(format!("{}\n\n{}", existing, guardrail)),
+                    None => Some(guardrail.clone()),
+                };
+                system_prompt = combined;
+            }
 
             session.status = SessionStatus::Queued; // Still queued until spawned
             let mut managed =
