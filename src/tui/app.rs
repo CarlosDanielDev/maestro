@@ -10,6 +10,7 @@ use crate::github::labels::LabelManager;
 use crate::github::pr::PrCreator;
 use crate::models::ModelRouter;
 use crate::notifications::dispatcher::NotificationDispatcher;
+use crate::notifications::slack::SlackEvent;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::plugins::runner::PluginRunner;
 use crate::prompts::PromptBuilder;
@@ -257,6 +258,11 @@ impl App {
                         owner_short
                     ),
                 );
+                // Send structured Slack notification for file conflict
+                self.notifications.notify_slack(SlackEvent::FileConflict {
+                    file_path: path.to_string(),
+                    sessions: vec![session_id.to_string(), owner.to_string()],
+                });
 
                 // Enforce conflict policy
                 let policy = self
@@ -363,6 +369,13 @@ impl App {
                         format!("Completed (${:.2})", cost_usd),
                         LogLevel::Info,
                     );
+                    // Send Slack notification for session completion
+                    self.notifications
+                        .notify_slack(SlackEvent::SessionCompleted {
+                            session_id: managed.session.id.to_string(),
+                            issue_number: managed.session.issue_number,
+                            cost_usd: *cost_usd,
+                        });
                     // Queue session_completed plugin hook
                     self.pending_hooks.push(PendingHook {
                         hook: HookPoint::SessionCompleted,
@@ -392,6 +405,12 @@ impl App {
                         format!("ERROR: {}", message),
                         LogLevel::Error,
                     );
+                    // Send Slack notification for session error
+                    self.notifications.notify_slack(SlackEvent::SessionErrored {
+                        session_id: managed.session.id.to_string(),
+                        issue_number: managed.session.issue_number,
+                        error: message.clone(),
+                    });
                     // Queue issue failure for async processing
                     if let Some(issue_num) = managed.session.issue_number {
                         self.pending_issue_completions.push(PendingIssueCompletion {
