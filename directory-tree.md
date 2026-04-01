@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-03-31 00:00 (UTC)
+> Last updated: 2026-03-31 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -54,7 +54,8 @@ maestro/
 │           └── SKILL.md                   # Video frame extraction patterns
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                         # GitHub Actions CI pipeline
+│       ├── ci.yml                         # GitHub Actions CI pipeline
+│       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init; module declarations
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig (overflow_threshold_pct, auto_fork, commit_prompt_pct, max_fork_depth)
@@ -153,7 +154,8 @@ maestro/
 
 | Path | Description |
 |------|-------------|
-| `.github/workflows/` | GitHub Actions CI/CD pipelines |
+| `.github/workflows/ci.yml` | GitHub Actions CI pipeline |
+| `.github/workflows/release.yml` | Release automation: build binaries, create GitHub Release, update Homebrew tap |
 | `.claude/` | Claude Code agent configuration |
 | `.claude/agents/` | Subagent definitions |
 | `.claude/commands/` | Slash command definitions |

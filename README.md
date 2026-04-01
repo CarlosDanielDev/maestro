@@ -63,8 +63,30 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 
 ## Install
 
+### Homebrew (macOS and Linux)
+
 ```bash
-# From source
+brew tap CarlosDanielDev/tap
+brew install maestro
+```
+
+### Pre-built binary
+
+Download the tarball for your platform from the [latest GitHub Release](https://github.com/CarlosDanielDev/maestro/releases/latest), extract it, and place the `maestro` binary on your `PATH`.
+
+Supported targets:
+
+| Platform | Archive |
+|----------|---------|
+| macOS (Apple Silicon) | `maestro-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS (Intel) | `maestro-<version>-x86_64-apple-darwin.tar.gz` |
+| Linux (x86_64) | `maestro-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+
+A `sha256sums.txt` file is included in each release for checksum verification.
+
+### From source
+
+```bash
 git clone https://github.com/CarlosDanielDev/maestro.git
 cd maestro
 cargo build --release
