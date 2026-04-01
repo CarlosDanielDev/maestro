@@ -1,4 +1,5 @@
 use crate::session::types::{Session, SessionStatus};
+use crate::state::file_claims::FileClaimManager;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -37,6 +38,16 @@ impl PanelView {
     }
 
     pub fn draw(&self, f: &mut Frame, sessions: &[&Session], area: Rect) {
+        self.draw_with_claims(f, sessions, None, area);
+    }
+
+    pub fn draw_with_claims(
+        &self,
+        f: &mut Frame,
+        sessions: &[&Session],
+        file_claims: Option<&FileClaimManager>,
+        area: Rect,
+    ) {
         if sessions.is_empty() {
             let block = Block::default()
                 .borders(Borders::ALL)
@@ -62,12 +73,29 @@ impl PanelView {
 
         for (i, session) in sessions.iter().take(visible).enumerate() {
             let is_selected = self.selected == Some(i);
-            draw_single_panel(f, session, columns[i], is_selected, self.scroll_offset);
+            let has_conflict = file_claims
+                .map(|fc| fc.has_active_conflict(session.id))
+                .unwrap_or(false);
+            draw_single_panel(
+                f,
+                session,
+                columns[i],
+                is_selected,
+                has_conflict,
+                self.scroll_offset,
+            );
         }
     }
 }
 
-fn draw_single_panel(f: &mut Frame, session: &Session, area: Rect, is_selected: bool, scroll: u16) {
+fn draw_single_panel(
+    f: &mut Frame,
+    session: &Session,
+    area: Rect,
+    is_selected: bool,
+    has_conflict: bool,
+    scroll: u16,
+) {
     let status_color = status_to_color(session.status);
 
     let fork_indicator = if session.parent_session_id.is_some() {
@@ -75,6 +103,8 @@ fn draw_single_panel(f: &mut Frame, session: &Session, area: Rect, is_selected: 
     } else {
         String::new()
     };
+
+    let conflict_indicator = if has_conflict { " CONFLICT" } else { "" };
 
     let title = match (session.issue_number, &session.issue_title) {
         (Some(n), Some(t)) => {
@@ -85,13 +115,26 @@ fn draw_single_panel(f: &mut Frame, session: &Session, area: Rect, is_selected: 
             } else {
                 t.clone()
             };
-            format!(" #{} — {}{} ", n, short_title, fork_indicator)
+            format!(
+                " #{} — {}{}{} ",
+                n, short_title, fork_indicator, conflict_indicator
+            )
         }
-        (Some(n), None) => format!(" #{}{} ", n, fork_indicator),
-        _ => format!(" {}{} ", &session.id.to_string()[..8], fork_indicator),
+        (Some(n), None) => format!(" #{}{}{} ", n, fork_indicator, conflict_indicator),
+        _ => format!(
+            " {}{}{} ",
+            &session.id.to_string()[..8],
+            fork_indicator,
+            conflict_indicator
+        ),
     };
 
-    let border_style = if is_selected {
+    let border_style = if has_conflict {
+        // Flashing red border for conflict — uses RAPID_BLINK + bold red
+        Style::default()
+            .fg(Color::Red)
+            .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
+    } else if is_selected {
         Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD)
