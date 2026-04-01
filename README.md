@@ -71,8 +71,10 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 
 ```bash
 brew tap CarlosDanielDev/tap
-brew install maestro
+brew install carlosdanieldev/tap/maestro --formula
 ```
+
+> **Note:** The `--formula` flag is required because an unrelated cask named "maestro" exists in Homebrew core.
 
 ### Pre-built binary
 
