@@ -28,6 +28,8 @@ auto_pr = true
 [notifications]
 desktop = true
 slack = false
+# slack_webhook_url = "https://hooks.slack.com/services/T.../B.../xxx"
+# slack_rate_limit_per_min = 10
 
 [models]
 # Model routing rules: label pattern -> model name. First match wins.
