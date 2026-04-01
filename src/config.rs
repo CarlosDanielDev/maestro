@@ -59,6 +59,9 @@ pub struct SessionsConfig {
     /// Context overflow detection and auto-fork configuration.
     #[serde(default)]
     pub context_overflow: ContextOverflowConfig,
+    /// Conflict detection policy configuration.
+    #[serde(default)]
+    pub conflict: ConflictConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,6 +99,49 @@ impl Default for ContextOverflowConfig {
             auto_fork: true,
             commit_prompt_pct: default_commit_prompt_pct(),
             max_fork_depth: default_max_fork_depth(),
+        }
+    }
+}
+
+/// Policy to enforce when a file conflict is detected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConflictPolicy {
+    /// Log a warning but allow the session to continue.
+    #[default]
+    Warn,
+    /// Pause the offending session (SIGSTOP on Unix).
+    Pause,
+    /// Kill the offending session immediately.
+    Kill,
+}
+
+impl ConflictPolicy {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Warn => "warn",
+            Self::Pause => "pause",
+            Self::Kill => "kill",
+        }
+    }
+}
+
+/// Conflict detection configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConflictConfig {
+    /// Whether real-time conflict detection is enabled. Default: true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Policy to enforce on conflict. Default: warn.
+    #[serde(default)]
+    pub policy: ConflictPolicy,
+}
+
+impl Default for ConflictConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            policy: ConflictPolicy::Warn,
         }
     }
 }
@@ -399,6 +445,35 @@ mod tests {
         let cfg: ContextOverflowConfig = toml::from_str(toml_str).expect("parse failed");
         assert_eq!(cfg.overflow_threshold_pct, 85);
         assert!(cfg.auto_fork); // default untouched
+    }
+
+    #[test]
+    fn conflict_policy_default_is_warn() {
+        let cfg = ConflictConfig::default();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.policy, ConflictPolicy::Warn);
+    }
+
+    #[test]
+    fn conflict_policy_deserializes_pause() {
+        let toml_str = r#"policy = "pause""#;
+        let cfg: ConflictConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.policy, ConflictPolicy::Pause);
+        assert!(cfg.enabled); // default untouched
+    }
+
+    #[test]
+    fn conflict_policy_deserializes_kill() {
+        let toml_str = r#"policy = "kill""#;
+        let cfg: ConflictConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.policy, ConflictPolicy::Kill);
+    }
+
+    #[test]
+    fn conflict_policy_label_round_trips() {
+        assert_eq!(ConflictPolicy::Warn.label(), "warn");
+        assert_eq!(ConflictPolicy::Pause.label(), "pause");
+        assert_eq!(ConflictPolicy::Kill.label(), "kill");
     }
 
     #[test]
