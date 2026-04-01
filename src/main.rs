@@ -17,8 +17,9 @@ mod util;
 mod work;
 
 use clap::{Parser, Subcommand};
-use config::Config;
+use config::{Config, NotificationsConfig};
 use github::client::{GhCliClient, GitHubClient};
+use notifications::dispatcher::NotificationDispatcher;
 use session::types::Session;
 use session::worktree::GitWorktreeManager;
 use state::store::StateStore;
@@ -103,6 +104,8 @@ enum Commands {
         #[arg(long)]
         session: Option<String>,
     },
+    /// Test Slack webhook configuration
+    TestSlack,
     /// Generate shell completions
     Completions {
         /// Shell to generate completions for (bash, zsh, fish)
@@ -136,6 +139,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Clean { dry_run }) => cmd_clean(dry_run),
         Some(Commands::Logs { session, export }) => cmd_logs(session, export),
         Some(Commands::Resume { session }) => cmd_resume(session).await,
+        Some(Commands::TestSlack) => cmd_test_slack().await,
         Some(Commands::Completions { shell }) => cmd_completions(&shell),
         Some(Commands::Status) => cmd_status(),
         Some(Commands::Cost) => cmd_cost(),
@@ -164,6 +168,19 @@ async fn main() -> anyhow::Result<()> {
         // Default: launch TUI with no sessions (dashboard mode)
         None => cmd_dashboard().await,
     }
+}
+
+fn build_notification_dispatcher(cfg: &NotificationsConfig) -> NotificationDispatcher {
+    let mut dispatcher = NotificationDispatcher::new(cfg.desktop);
+    if cfg.slack {
+        if let Some(ref url) = cfg.slack_webhook_url {
+            dispatcher = dispatcher.with_slack(url.clone(), cfg.slack_rate_limit_per_min);
+            tracing::info!("Slack notifications enabled");
+        } else {
+            tracing::warn!("notifications.slack = true but no slack_webhook_url configured");
+        }
+    }
+    dispatcher
 }
 
 fn cmd_init() -> anyhow::Result<()> {
@@ -206,6 +223,8 @@ ci_max_wait_secs = 1800
 [notifications]
 desktop = true
 slack = false
+# slack_webhook_url = "https://hooks.slack.com/services/T.../B.../xxx"
+# slack_rate_limit_per_min = 10
 
 [review]
 enabled = false
@@ -530,8 +549,7 @@ async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
         config.models.routing.clone(),
         config.sessions.default_model.clone(),
     ));
-    app.notifications =
-        crate::notifications::dispatcher::NotificationDispatcher::new(config.notifications.desktop);
+    app.notifications = build_notification_dispatcher(&config.notifications);
     if !config.plugins.is_empty() {
         app.plugin_runner = Some(crate::plugins::runner::PluginRunner::new(
             config.plugins.clone(),
@@ -558,6 +576,31 @@ async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
     app.configure(config);
 
     tui::run(app).await
+}
+
+async fn cmd_test_slack() -> anyhow::Result<()> {
+    let config = Config::find_and_load()?;
+    let mut dispatcher = build_notification_dispatcher(&config.notifications);
+
+    if !dispatcher.has_slack() {
+        anyhow::bail!(
+            "Slack is not configured. Set notifications.slack = true and slack_webhook_url in maestro.toml"
+        );
+    }
+
+    println!("Sending test message to Slack webhook...");
+    match dispatcher.test_slack().await {
+        Ok(true) => {
+            println!("Slack webhook test successful!");
+            Ok(())
+        }
+        Ok(false) => {
+            anyhow::bail!("Test was rate-limited. Try again later.")
+        }
+        Err(e) => {
+            anyhow::bail!("Slack webhook test failed: {}", e)
+        }
+    }
 }
 
 fn cmd_completions(shell: &str) -> anyhow::Result<()> {
@@ -638,8 +681,7 @@ async fn cmd_run(
     ));
 
     // Wire up notification dispatcher from config
-    app.notifications =
-        crate::notifications::dispatcher::NotificationDispatcher::new(config.notifications.desktop);
+    app.notifications = build_notification_dispatcher(&config.notifications);
 
     // Wire up plugin runner from config
     if !config.plugins.is_empty() {
