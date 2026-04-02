@@ -66,6 +66,8 @@ mod tests {
             labels: labels.iter().map(|s| s.to_string()).collect(),
             state: "open".to_string(),
             html_url: format!("https://github.com/o/r/issues/{}", number),
+            milestone: None,
+            assignees: vec![],
         }
     }
 
