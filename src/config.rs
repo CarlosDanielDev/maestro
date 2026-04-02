@@ -66,6 +66,10 @@ pub struct SessionsConfig {
     /// Conflict detection policy configuration.
     #[serde(default)]
     pub conflict: ConflictConfig,
+    /// Custom guardrail prompt injected into every session's system prompt.
+    /// If unset, a default is auto-detected based on project language.
+    #[serde(default)]
+    pub guardrail_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
