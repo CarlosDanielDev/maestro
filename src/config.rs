@@ -238,6 +238,12 @@ pub struct NotificationsConfig {
     pub desktop: bool,
     #[serde(default)]
     pub slack: bool,
+    /// Slack webhook URL for sending notifications.
+    #[serde(default)]
+    pub slack_webhook_url: Option<String>,
+    /// Maximum Slack messages per minute (rate limiting). Default: 10.
+    #[serde(default = "default_slack_rate_limit")]
+    pub slack_rate_limit_per_min: u32,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -453,6 +459,9 @@ fn default_ci_poll_interval() -> u64 {
 }
 fn default_ci_max_wait() -> u64 {
     1800
+}
+fn default_slack_rate_limit() -> u32 {
+    10
 }
 fn default_overflow_threshold_pct() -> u8 {
     70
