@@ -48,6 +48,14 @@ impl IssueBrowserScreen {
         }
     }
 
+    pub fn set_issues(&mut self, issues: Vec<GhIssue>) {
+        self.issues = issues;
+        self.filtered_indices = (0..self.issues.len()).collect();
+        self.selected = 0;
+        self.scroll_offset = 0;
+        self.loading = false;
+    }
+
     pub fn handle_input(&mut self, event: &Event) -> ScreenAction {
         if let Event::Key(KeyEvent {
             code,
@@ -643,5 +651,33 @@ mod tests {
             screen.handle_input(&key_event(KeyCode::Char(c)));
         }
         assert!(screen.selected <= 1);
+    }
+
+    // ---- set_issues ----
+
+    #[test]
+    fn issue_browser_set_issues_replaces_and_resets() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')));
+        assert_eq!(screen.selected, 2);
+
+        screen.loading = true;
+        let new_issues = vec![make_issue(10, "New issue"), make_issue(11, "Another")];
+        screen.set_issues(new_issues);
+
+        assert_eq!(screen.issues.len(), 2);
+        assert_eq!(screen.filtered_indices.len(), 2);
+        assert_eq!(screen.selected, 0);
+        assert!(!screen.loading);
+    }
+
+    #[test]
+    fn issue_browser_set_issues_with_empty_list() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.set_issues(vec![]);
+        assert!(screen.issues.is_empty());
+        assert!(screen.filtered_indices.is_empty());
+        assert_eq!(screen.selected, 0);
     }
 }
