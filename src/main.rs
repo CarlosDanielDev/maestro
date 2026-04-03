@@ -858,7 +858,7 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
         .map(|s| tui::screens::home::SessionSummary {
             issue_number: s.issue_number.unwrap_or(0),
             title: s.last_message.clone(),
-            status: format!("{}", s.status.label()),
+            status: s.status.label().to_string(),
             cost_usd: s.cost_usd,
         })
         .collect();

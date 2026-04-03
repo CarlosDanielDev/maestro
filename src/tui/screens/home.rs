@@ -1,4 +1,4 @@
-use super::{ScreenAction, SessionConfig};
+use super::ScreenAction;
 use crate::tui::app::TuiMode;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
