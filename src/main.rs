@@ -907,6 +907,10 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
     ));
     app.tui_mode = tui::app::TuiMode::Dashboard;
 
+    // Queue suggestion data fetch for the home screen
+    app.pending_commands
+        .push(tui::app::TuiCommand::FetchSuggestionData);
+
     tui::run(app).await
 }
 
