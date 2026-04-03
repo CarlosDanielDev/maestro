@@ -316,6 +316,9 @@ pub struct GatesConfig {
     /// Maximum time in seconds to wait for CI to complete. Default: 1800 (30min).
     #[serde(default = "default_ci_max_wait")]
     pub ci_max_wait_secs: u64,
+    /// CI auto-fix loop configuration.
+    #[serde(default)]
+    pub ci_auto_fix: CiAutoFixConfig,
 }
 
 impl Default for GatesConfig {
@@ -325,8 +328,32 @@ impl Default for GatesConfig {
             test_command: default_test_command(),
             ci_poll_interval_secs: default_ci_poll_interval(),
             ci_max_wait_secs: default_ci_max_wait(),
+            ci_auto_fix: CiAutoFixConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CiAutoFixConfig {
+    /// Whether CI auto-fix is enabled. Default: true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Maximum number of fix attempts per PR. Default: 3.
+    #[serde(default = "default_ci_fix_max_retries")]
+    pub max_retries: u32,
+}
+
+impl Default for CiAutoFixConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_retries: default_ci_fix_max_retries(),
+        }
+    }
+}
+
+fn default_ci_fix_max_retries() -> u32 {
+    3
 }
 
 fn default_test_command() -> String {
@@ -650,5 +677,55 @@ run = "cargo clippy -- -D warnings"
         let cfg: CompletionGatesConfig = toml::from_str(toml_str).expect("parse failed");
         assert_eq!(cfg.commands[0].name, "fmt");
         assert_eq!(cfg.commands[1].name, "clippy");
+    }
+
+    #[test]
+    fn ci_auto_fix_config_defaults() {
+        let cfg = CiAutoFixConfig::default();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.max_retries, 3);
+    }
+
+    #[test]
+    fn ci_auto_fix_config_deserializes_from_toml() {
+        let toml_str = r#"
+enabled = false
+max_retries = 5
+"#;
+        let cfg: CiAutoFixConfig = toml::from_str(toml_str).expect("parse failed");
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.max_retries, 5);
+    }
+
+    #[test]
+    fn gates_config_ci_auto_fix_defaults_when_absent() {
+        let cfg: GatesConfig = toml::from_str("").expect("parse failed");
+        assert!(cfg.ci_auto_fix.enabled);
+        assert_eq!(cfg.ci_auto_fix.max_retries, 3);
+    }
+
+    #[test]
+    fn full_config_load_propagates_ci_auto_fix() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+[gates.ci_auto_fix]
+max_retries = 7
+"#
+        )
+        .unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert_eq!(cfg.gates.ci_auto_fix.max_retries, 7);
     }
 }
