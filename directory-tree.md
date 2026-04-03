@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-03-31 15:00 (UTC)
+> Last updated: 2026-04-02 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -70,12 +70,12 @@ maestro/
 │   │   └── runner.rs                      # Gate evaluation runner
 │   ├── provider/                          # Multi-provider abstraction layer  [Issue #29]
 │   │   ├── mod.rs                         # create_provider factory, detect_provider_from_remote
-│   │   ├── types.rs                       # ProviderKind enum (Github, AzureDevops); re-exports Issue/Priority/MaestroLabel/SessionMode
-│   │   └── azure_devops.rs               # AzDevOpsClient implementing GitHubClient trait; parse_work_items_json
+│   │   ├── types.rs                       # ProviderKind enum (Github, AzureDevops); re-exports Issue/Priority/MaestroLabel/SessionMode/Milestone  [Issue #31-33]
+│   │   └── azure_devops.rs               # AzDevOpsClient implementing GitHubClient trait; parse_work_items_json; updated for new GhIssue fields  [Issue #31-33]
 │   ├── github/                            # GitHub API integration  [Phase 2]
 │   │   ├── mod.rs                         # Module exports
-│   │   ├── types.rs                       # GhIssue, Priority, MaestroLabel, SessionMode; label/body blocker parsing
-│   │   ├── client.rs                      # GitHubClient trait, GhCliClient (gh CLI), MockGitHubClient; parse_issues_json
+│   │   ├── types.rs                       # GhIssue (+ milestone/assignees fields), GhMilestone, Priority, MaestroLabel, SessionMode; label/body blocker parsing  [Issue #31-33]
+│   │   ├── client.rs                      # GitHubClient trait, GhCliClient (gh CLI), MockGitHubClient; parse_issues_json updated for milestone/assignees  [Issue #31-33]
 │   │   ├── labels.rs                      # LabelManager: ready→in-progress→done/failed lifecycle transitions
 │   │   └── pr.rs                          # PrCreator: build_pr_body, create_for_issue auto-PR creation
 │   ├── modes/                             # Session mode definitions and resolution  [Phase 3]
@@ -112,8 +112,8 @@ maestro/
 │   │   ├── store.rs                       # JSON state persistence
 │   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods  [Issue #12]
 │   ├── tui/
-│   │   ├── mod.rs                         # Event loop; keybindings: Tab, Esc, Enter, 1-9, d  [Phase 3]
-│   │   ├── app.rs                         # App state; context_monitor and fork_policy fields; check_context_overflow method; configure() resolves and sets guardrail prompt  [Issue #12, #43]
+│   │   ├── mod.rs                         # Event loop; keybindings: Tab, Esc, Enter, 1-9, d; screen event delegation and handle_screen_action  [Phase 3, Issue #31-33]
+│   │   ├── app.rs                         # App state; TuiMode enum: Dashboard, IssueBrowser, MilestoneView added; screen fields; configure() resolves guardrail prompt  [Issue #12, #31-33, #43]
 │   │   ├── activity_log.rs                # Scrollable activity log widget with LogLevel color coding  [Phase 1]
 │   │   ├── cost_dashboard.rs              # Cost dashboard widget: per-session and aggregate cost display  [Phase 3]
 │   │   ├── dep_graph.rs                   # ASCII dependency graph visualization  [Phase 3]
@@ -121,7 +121,12 @@ maestro/
 │   │   ├── fullscreen.rs                  # Fullscreen session view with phase progress overlay  [Phase 3]
 │   │   ├── help.rs                        # Help overlay widget with keybinding reference  [Phase 3]
 │   │   ├── panels.rs                      # Split-pane panel view; fork depth indicator in title; overflow warning in context gauge  [Issue #12]
-│   │   └── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners  [Phase 3]
+│   │   ├── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners, screen rendering branches  [Phase 3, Issue #31-33]
+│   │   └── screens/                       # Interactive screen components  [Issue #31-33]
+│   │       ├── mod.rs                     # Screen types: ScreenAction enum, SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen
+│   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, recent sessions panel  [Issue #31]
+│   │       ├── issue_browser.rs           # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane  [Issue #32]
+│   │       └── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action  [Issue #33]
 │   └── work/                              # Work queue and scheduling  [Phase 2]
 │       ├── mod.rs                         # Module exports
 │       ├── types.rs                       # WorkItem, WorkStatus; from_issue, is_ready
@@ -174,10 +179,11 @@ maestro/
 | `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated (Phase 3) |
 | `src/provider/` | Multi-provider abstraction layer (Issue #29) |
 | `src/provider/mod.rs` | create_provider factory; detect_provider_from_remote |
-| `src/provider/types.rs` | ProviderKind enum; provider-agnostic type re-exports |
-| `src/provider/azure_devops.rs` | AzDevOpsClient (`az` CLI); parse_work_items_json |
+| `src/provider/types.rs` | ProviderKind enum; re-exports Issue/Priority/MaestroLabel/SessionMode/Milestone |
+| `src/provider/azure_devops.rs` | AzDevOpsClient (`az` CLI); parse_work_items_json; extended for milestone/assignees fields |
 | `src/github/` | GitHub API integration (Phase 2) |
-| `src/github/client.rs` | GitHubClient trait, GhCliClient, MockGitHubClient |
+| `src/github/types.rs` | GhIssue (milestone, assignees fields added), GhMilestone, Priority, MaestroLabel, SessionMode |
+| `src/github/client.rs` | GitHubClient trait, GhCliClient, MockGitHubClient; parse_issues_json updated |
 | `src/github/labels.rs` | Issue label lifecycle transitions |
 | `src/github/pr.rs` | Automated PR creation |
 | `src/modes/` | Session mode definitions: orchestrator, vibe, review (Phase 3) |
@@ -208,6 +214,11 @@ maestro/
 | `src/tui/fullscreen.rs` | Fullscreen session view with phase progress overlay (Phase 3) |
 | `src/tui/help.rs` | Help overlay widget with keybinding reference (Phase 3) |
 | `src/tui/panels.rs` | Split-pane multi-session view |
+| `src/tui/screens/` | Interactive TUI screen components (Issues #31-33) |
+| `src/tui/screens/mod.rs` | `ScreenAction` enum, `SessionConfig`; re-exports all screen types |
+| `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with logo, quick-actions, and recent activity (Issue #31) |
+| `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters (Issue #32) |
+| `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
 | `src/work/` | Work queue and dependency scheduling (Phase 2) |
 | `src/work/dependencies.rs` | Dependency graph, topological sort |
 | `src/work/assigner.rs` | Priority-ordered work assignment |

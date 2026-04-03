@@ -202,6 +202,8 @@ mod tests {
             labels: labels.iter().map(|s| s.to_string()).collect(),
             state: "open".into(),
             html_url: String::new(),
+            milestone: None,
+            assignees: vec![],
         }
     }
 
