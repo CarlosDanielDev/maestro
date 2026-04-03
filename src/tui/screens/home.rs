@@ -31,6 +31,7 @@ const LOGO: &str = r#"
 pub struct ProjectInfo {
     pub repo: String,
     pub branch: String,
+    pub username: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +157,8 @@ impl HomeScreen {
     }
 
     fn draw_project_info(&self, f: &mut Frame, area: Rect) {
+        let username_display = self.project_info.username.as_deref().unwrap_or("unknown");
+
         let info = Line::from(vec![
             Span::styled("  Repo: ", Style::default().fg(Color::DarkGray)),
             Span::styled(&self.project_info.repo, Style::default().fg(Color::Cyan)),
@@ -164,6 +167,12 @@ impl HomeScreen {
             Span::styled(
                 &self.project_info.branch,
                 Style::default().fg(Color::Yellow),
+            ),
+            Span::raw("  |  "),
+            Span::styled("User: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("@{}", username_display),
+                Style::default().fg(Color::Green),
             ),
         ]);
         let block = Block::default().borders(Borders::BOTTOM);
@@ -289,6 +298,15 @@ mod tests {
         ProjectInfo {
             repo: "owner/repo".to_string(),
             branch: "main".to_string(),
+            username: None,
+        }
+    }
+
+    fn make_project_info_with_user(name: &str) -> ProjectInfo {
+        ProjectInfo {
+            repo: "owner/repo".to_string(),
+            branch: "main".to_string(),
+            username: Some(name.to_string()),
         }
     }
 
@@ -433,5 +451,33 @@ mod tests {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Char('x')));
         assert_eq!(action, ScreenAction::None);
+    }
+
+    // --- Tests for ProjectInfo.username field (Issue #34) ---
+
+    #[test]
+    fn project_info_with_user_stores_username() {
+        let info = make_project_info_with_user("carlos");
+        assert_eq!(info.username, Some("carlos".to_string()));
+    }
+
+    #[test]
+    fn project_info_without_user_is_none() {
+        let info = make_project_info();
+        assert!(info.username.is_none());
+    }
+
+    #[test]
+    fn home_screen_stores_project_info_with_user() {
+        let info = make_project_info_with_user("testuser");
+        let screen = HomeScreen::new(info, vec![], vec![]);
+        assert_eq!(screen.project_info.username, Some("testuser".to_string()));
+    }
+
+    #[test]
+    fn home_screen_stores_project_info_without_user() {
+        let info = make_project_info();
+        let screen = HomeScreen::new(info, vec![], vec![]);
+        assert!(screen.project_info.username.is_none());
     }
 }
