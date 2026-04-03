@@ -69,6 +69,8 @@ mod tests {
             labels: vec!["maestro:in-progress".to_string()],
             state: "open".to_string(),
             html_url: format!("https://github.com/owner/repo/issues/{}", number),
+            milestone: None,
+            assignees: vec![],
         }
     }
 

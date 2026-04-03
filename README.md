@@ -46,6 +46,9 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Fork depth limiting** — configurable maximum fork chain depth prevents runaway continuation loops
 - **Multi-provider support** — works with GitHub (via `gh` CLI) or Azure DevOps (via `az` CLI); provider is auto-detected from the git remote or set explicitly in config
 - **Session prompt guardrails** — a language-specific pre-completion checklist (format, lint, test) is automatically detected from the project root and appended to every session's system prompt; can be overridden with a custom prompt via `guardrail_prompt` in `maestro.toml`
+- **Interactive home screen** — launching `maestro` opens an idle dashboard with a quick-actions menu, repo/branch info, and a recent activity panel; navigate with `j`/`k` or direct shortcut keys
+- **Interactive issue browser** — browse, filter, and launch GitHub issues directly from the TUI; supports single-launch (`Enter`) and multi-select batch-launch (`Space` + `Enter`); filter by text (`/`) or milestone (`m`)
+- **Milestone overview** — inspect milestone progress with real-time completion gauges; drill into issues or run all open issues in a milestone with a single key (`r`)
 
 ### Roadmap
 
@@ -246,13 +249,53 @@ Dependencies can also be declared in the issue body as `blocked-by: #N` (case-in
 
 ## Keyboard Shortcuts
 
+### Global
+
 | Key | Action |
 |-----|--------|
 | `q` | Quit maestro (kills all sessions) |
+| `Ctrl+C` | Emergency exit |
+
+### Overview / Session Panel
+
+| Key | Action |
+|-----|--------|
 | `p` | Pause all running sessions (SIGSTOP) |
 | `r` | Resume all paused sessions (SIGCONT) |
 | `k` | Kill all sessions |
-| `Ctrl+C` | Emergency exit |
+
+### Home Screen
+
+| Key | Action |
+|-----|--------|
+| `i` | Open issue browser |
+| `m` | Open milestone overview |
+| `c` | Open cost dashboard |
+| `j` / `Down` | Move selection down |
+| `k` / `Up` | Move selection up |
+| `Enter` | Execute selected action |
+
+### Issue Browser
+
+| Key | Action |
+|-----|--------|
+| `j` / `Down` | Move cursor down |
+| `k` / `Up` | Move cursor up |
+| `Space` | Toggle multi-select on current issue |
+| `Enter` | Launch session(s) for selected issue(s) |
+| `/` | Enter label text filter mode |
+| `m` | Enter milestone filter mode |
+| `Esc` | Exit filter mode / go back |
+
+### Milestone Overview
+
+| Key | Action |
+|-----|--------|
+| `j` / `Down` | Move cursor down |
+| `k` / `Up` | Move cursor up |
+| `Enter` | Browse issues in selected milestone |
+| `r` | Run all open issues in selected milestone |
+| `Esc` | Go back |
 
 ## How It Works
 
