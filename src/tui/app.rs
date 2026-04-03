@@ -58,10 +58,18 @@ pub enum TuiMode {
     MilestoneView,
 }
 
+/// Payload for suggestion data fetched from GitHub.
+pub struct SuggestionDataPayload {
+    pub ready_issue_count: usize,
+    pub failed_issue_count: usize,
+    pub milestones: Vec<(String, u32, u32)>,
+}
+
 /// Commands queued by synchronous screen action handlers for async processing.
 pub enum TuiCommand {
     FetchIssues,
     FetchMilestones,
+    FetchSuggestionData,
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
 }
@@ -72,6 +80,8 @@ pub enum TuiDataEvent {
     Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
     /// Single issue for session launch — ready to create session.
     Issue(anyhow::Result<GhIssue>),
+    /// Suggestion data for the home screen.
+    SuggestionData(SuggestionDataPayload),
 }
 
 struct PendingHook {
@@ -754,6 +764,18 @@ impl App {
                     format!("Failed to fetch issue: {}", e),
                     LogLevel::Error,
                 );
+            }
+            TuiDataEvent::SuggestionData(payload) => {
+                let active = self.pool.active_count();
+                let suggestions = crate::tui::screens::home::Suggestion::build_suggestions(
+                    payload.ready_issue_count,
+                    payload.failed_issue_count,
+                    &payload.milestones,
+                    active,
+                );
+                if let Some(ref mut screen) = self.home_screen {
+                    screen.set_suggestions(suggestions);
+                }
             }
         }
     }
