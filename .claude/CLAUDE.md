@@ -28,21 +28,24 @@
 
 **Orchestrator Mode workflow is ALWAYS (TDD ENFORCED):**
 1. Receive user request
-2. **Delegate to Architect for blueprint - MANDATORY:**
+2. **Verify DOR (Definition of Ready) - MANDATORY:**
+   - Check the issue has all required DOR fields (see section 3)
+   - If missing required fields → comment on issue, apply `needs-info` label, **STOP**
+3. **Delegate to Architect for blueprint - MANDATORY:**
    - `subagent-architect` - For all architecture decisions
    - **NEVER skip architecture step - the architect MUST be called**
-3. **CONTRACT VALIDATION (if task involves API endpoints) - MANDATORY:**
+4. **CONTRACT VALIDATION (if task involves API endpoints) - MANDATORY:**
    - Run `/validate-contracts` to check existing models against `docs/api-contracts/` schemas
    - If no contract schema exists for the endpoint → **STOP and ask user to provide the JSON schema**
    - If contract exists but models mismatch → fix models BEFORE proceeding
-4. **Delegate to QA for test blueprint - MANDATORY (TDD):**
+5. **Delegate to QA for test blueprint - MANDATORY (TDD):**
    - `subagent-qa` - Provides test cases, mocks, and expected behaviors
    - **Tests are designed BEFORE implementation**
-5. **Write tests FIRST (RED)** — verify they fail
-6. **Implement minimum code (GREEN)** — make tests pass
-7. **Refactor** — clean up while tests stay green
-8. Delegate to Security for review of implemented code
-9. Call docs-analyst at the end
+6. **Write tests FIRST (RED)** — verify they fail
+7. **Implement minimum code (GREEN)** — make tests pass
+8. **Refactor** — clean up while tests stay green
+9. Delegate to Security for review of implemented code
+10. Call docs-analyst at the end
 
 **In 🎸 Vibe Coding Mode - You work DIRECTLY:**
 - Research, plan, and execute yourself
@@ -55,7 +58,30 @@
 - You CANNOT modify any project files outside `.claude/` directory
 - This mode is for managing and improving the agent system itself
 
-### 3. TDD IS MANDATORY — NON-NEGOTIABLE
+### 3. DOR — Definition of Ready (Issue Quality Gate)
+
+**Before starting any issue, the orchestrator MUST verify the issue meets the Definition of Ready.**
+
+A conforming issue contains these sections (enforced by GitHub issue templates):
+
+| Section | Feature | Bug | Description |
+|---------|---------|-----|-------------|
+| Overview | Required | Required | What and why |
+| Current Behavior | — | Required | What is broken |
+| Expected Behavior | Required | Required | Desired outcome |
+| Steps to Reproduce | — | Required | How to trigger the bug |
+| Acceptance Criteria | Required | Required | Testable conditions |
+| Files to Modify | Required | Optional | Expected file changes |
+| Test Hints | Required | Optional | Mocking and edge-case guidance |
+| Blocked By | Optional | Optional | Dependency issues |
+| Definition of Done | Required | Required | Completion checklist |
+
+**If an issue is missing required DOR fields, the orchestrator MUST:**
+1. Comment on the issue requesting the missing information
+2. Apply the `needs-info` label
+3. NOT start implementation until the DOR is satisfied
+
+### 4. TDD IS MANDATORY — NON-NEGOTIABLE
 
 **Every implementation MUST follow Test-Driven Development. No exceptions.**
 
@@ -81,6 +107,9 @@
 
 **Orchestrator Mode TDD Flow:**
 ```
+VERIFY DOR (Definition of Ready) → STOP if missing required fields
+    │
+    ▼
 subagent-architect → Blueprint (includes testable interfaces)
     │
     ▼
@@ -181,14 +210,15 @@ Immediately after language selection, ask:
 
 **Mandatory Subagent Sequence (IN THIS ORDER — TDD ENFORCED):**
 
-1. `subagent-architect` → Architecture Blueprint (MANDATORY)
-2. `/validate-contracts` → Contract validation (if API endpoints)
-3. `subagent-qa` → Test Blueprint (TDD RED)
-4. YOU WRITE TESTS (RED — verify they fail)
-5. YOU IMPLEMENT (GREEN — minimum code to pass)
-6. YOU REFACTOR (tests stay green)
-7. `subagent-security-analyst` → Security review
-8. `subagent-docs-analyst` → Documentation (MANDATORY)
+1. VERIFY DOR → Check issue has all required fields (MANDATORY)
+2. `subagent-architect` → Architecture Blueprint (MANDATORY)
+3. `/validate-contracts` → Contract validation (if API endpoints)
+4. `subagent-qa` → Test Blueprint (TDD RED)
+5. YOU WRITE TESTS (RED — verify they fail)
+6. YOU IMPLEMENT (GREEN — minimum code to pass)
+7. YOU REFACTOR (tests stay green)
+8. `subagent-security-analyst` → Security review
+9. `subagent-docs-analyst` → Documentation (MANDATORY)
 
 ### 📚 Training Mode
 

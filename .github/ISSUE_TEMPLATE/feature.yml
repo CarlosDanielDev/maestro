@@ -1,0 +1,95 @@
+name: Feature Request
+description: Propose a new feature or enhancement for maestro
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Definition of Ready (DOR)
+        Please fill in all required fields. Issues missing required information will be closed.
+
+  - type: textarea
+    id: overview
+    attributes:
+      label: Overview
+      description: What is this feature and why is it needed? (2-3 sentences max)
+      placeholder: Describe the feature, its purpose, and the value it brings.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: How should this feature work when implemented?
+      placeholder: Describe the user-facing behavior, CLI output, TUI changes, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Testable conditions that must be true for this to be considered done.
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Criterion 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: files-to-modify
+    attributes:
+      label: Files to Modify
+      description: Which source files are expected to be created or changed? Reference directory-tree.md.
+      placeholder: |
+        - `src/session/manager.rs` — Add new method
+        - `src/tui/screens/home.rs` — Update rendering
+    validations:
+      required: true
+
+  - type: textarea
+    id: test-hints
+    attributes:
+      label: Test Hints
+      description: Guidance for writing tests (mocking strategy, edge cases, fixtures).
+      placeholder: |
+        - Mock the GitHubClient trait for unit tests
+        - Test edge case when no issues are returned
+    validations:
+      required: true
+
+  - type: textarea
+    id: blocked-by
+    attributes:
+      label: Blocked By
+      description: List any issues or PRs that must be completed before this one can start.
+      placeholder: |
+        - #42 (description)
+        - None
+    validations:
+      required: false
+
+  - type: textarea
+    id: definition-of-done
+    attributes:
+      label: Definition of Done
+      description: What constitutes completion? Include CI, docs, and review requirements.
+      placeholder: |
+        - [ ] Implementation complete
+        - [ ] All tests passing (cargo test)
+        - [ ] cargo clippy clean
+        - [ ] Documentation updated
+        - [ ] PR reviewed and merged
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Screenshots, mockups, links, or any other relevant information.
+    validations:
+      required: false
