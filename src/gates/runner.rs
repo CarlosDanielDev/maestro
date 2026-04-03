@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::types::{CompletionGate, GateResult};
+use crate::util::truncate_at_char_boundary;
 
 /// Trait for running completion gates, enabling mock injection in tests.
 pub trait GateCheck: Send {
@@ -39,12 +40,12 @@ fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
                         GateResult::pass("tests_pass", "All tests passed")
                     } else {
                         let stderr = String::from_utf8_lossy(&output.stderr);
-                        let preview = if stderr.len() > 200 {
-                            format!("{}...", &stderr[..200])
-                        } else {
-                            stderr.to_string()
-                        };
-                        GateResult::fail("tests_pass", format!("Tests failed: {}", preview))
+                        let end = truncate_at_char_boundary(&stderr, 200);
+                        let suffix = if end < stderr.len() { "..." } else { "" };
+                        GateResult::fail(
+                            "tests_pass",
+                            format!("Tests failed: {}{}", &stderr[..end], suffix),
+                        )
                     }
                 }
                 Err(e) => GateResult::fail("tests_pass", format!("Failed to run tests: {}", e)),
@@ -85,12 +86,46 @@ fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
             // If we reach here, it means PR hasn't been verified yet.
             GateResult::pass("pr_created", "PR gate deferred to pipeline")
         }
+
+        CompletionGate::Command { name, command, .. } => {
+            if command.trim().is_empty() {
+                return GateResult::fail(name, "Empty command");
+            }
+
+            let result = Command::new("sh")
+                .args(["-c", command])
+                .current_dir(worktree_path)
+                .output();
+
+            match result {
+                Ok(output) => {
+                    if output.status.success() {
+                        GateResult::pass(name, format!("{} passed", name))
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let end = truncate_at_char_boundary(&stderr, 200);
+                        let suffix = if end < stderr.len() { "..." } else { "" };
+                        GateResult::fail(
+                            name,
+                            format!("{} failed: {}{}", name, &stderr[..end], suffix),
+                        )
+                    }
+                }
+                Err(e) => GateResult::fail(name, format!("Failed to run {}: {}", name, e)),
+            }
+        }
     }
 }
 
 /// Check if all gate results passed.
 pub fn all_gates_passed(results: &[GateResult]) -> bool {
     results.iter().all(|r| r.passed)
+}
+
+/// Check if all *required* gate results passed.
+/// Non-required gate failures are advisory only.
+pub fn all_required_gates_passed(results: &[(GateResult, bool)]) -> bool {
+    results.iter().all(|(r, required)| r.passed || !required)
 }
 
 #[cfg(test)]
@@ -263,5 +298,71 @@ mod tests {
         let runner = MockGateRunner::with_failure();
         let results = runner.run_gates(&[], Path::new("/tmp"));
         assert!(!all_gates_passed(&results));
+    }
+
+    #[test]
+    fn command_gate_passes_when_exit_code_is_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = CompletionGate::Command {
+            name: "ok".into(),
+            command: "true".into(),
+            required: true,
+        };
+        let result = run_single_gate(&gate, dir.path());
+        assert!(result.passed);
+        assert_eq!(result.gate, "ok");
+    }
+
+    #[test]
+    fn command_gate_fails_when_exit_code_is_nonzero() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = CompletionGate::Command {
+            name: "bad".into(),
+            command: "false".into(),
+            required: true,
+        };
+        let result = run_single_gate(&gate, dir.path());
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn command_gate_fails_gracefully_with_empty_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = CompletionGate::Command {
+            name: "empty".into(),
+            command: "".into(),
+            required: true,
+        };
+        let result = run_single_gate(&gate, dir.path());
+        assert!(!result.passed);
+        assert!(result.message.contains("Empty"));
+    }
+
+    #[test]
+    fn all_required_gates_passed_ignores_optional_failure() {
+        let results = vec![
+            (GateResult::pass("required-ok", "ok"), true),
+            (GateResult::fail("optional-fail", "nope"), false),
+        ];
+        assert!(all_required_gates_passed(&results));
+    }
+
+    #[test]
+    fn all_required_gates_passed_fails_when_required_gate_fails() {
+        let results = vec![
+            (GateResult::pass("optional-ok", "ok"), false),
+            (GateResult::fail("required-fail", "nope"), true),
+        ];
+        assert!(!all_required_gates_passed(&results));
+    }
+
+    #[test]
+    fn all_required_gates_passed_true_when_all_required_pass() {
+        let results = vec![
+            (GateResult::pass("required-a", "ok"), true),
+            (GateResult::pass("required-b", "ok"), true),
+            (GateResult::fail("optional-c", "nope"), false),
+        ];
+        assert!(all_required_gates_passed(&results));
     }
 }

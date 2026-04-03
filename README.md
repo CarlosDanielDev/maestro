@@ -29,7 +29,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 
 - **Single-session TUI** — spawn a Claude Code session and watch it work in real-time
 - **Live stream parsing** — parses Claude CLI `stream-json` output for tool usage, messages, and costs
-- **Session lifecycle** — QUEUED → SPAWNING → RUNNING → COMPLETED/ERRORED/PAUSED/KILLED
+- **Session lifecycle** — QUEUED → SPAWNING → RUNNING → GATES_RUNNING → COMPLETED/NEEDS_REVIEW/ERRORED/PAUSED/KILLED
 - **Keyboard controls** — pause (SIGSTOP), resume, kill sessions from the dashboard
 - **State persistence** — session history and costs saved to `maestro-state.json`
 - **Cost tracking** — per-session and total spending displayed in real-time
@@ -46,6 +46,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Fork depth limiting** — configurable maximum fork chain depth prevents runaway continuation loops
 - **Multi-provider support** — works with GitHub (via `gh` CLI) or Azure DevOps (via `az` CLI); provider is auto-detected from the git remote or set explicitly in config
 - **Session prompt guardrails** — a language-specific pre-completion checklist (format, lint, test) is automatically detected from the project root and appended to every session's system prompt; can be overridden with a custom prompt via `guardrail_prompt` in `maestro.toml`
+- **Config-driven completion gates** — after a session finishes, maestro runs a configurable list of shell commands (fmt, clippy, test, or any custom command) before accepting the result; required gate failures transition the session to `NEEDS_REVIEW` and block PR creation; optional gates log warnings only; configured via `[sessions.completion_gates]` in `maestro.toml`
 - **Interactive home screen** — launching `maestro` opens an idle dashboard with a quick-actions menu, repo/branch info, and a recent activity panel; navigate with `j`/`k` or direct shortcut keys
 - **Interactive issue browser** — browse, filter, and launch GitHub issues directly from the TUI; supports single-launch (`Enter`) and multi-select batch-launch (`Space` + `Enter`); filter by text (`/`) or milestone (`m`)
 - **Milestone overview** — inspect milestone progress with real-time completion gauges; drill into issues or run all open issues in a milestone with a single key (`r`)
@@ -170,6 +171,25 @@ overflow_threshold_pct = 70  # Auto-fork when context reaches this % (default: 7
 auto_fork = true             # Spawn a continuation session on overflow
 commit_prompt_pct = 50       # Prompt an intermediate commit at this % (default: 50)
 max_fork_depth = 5           # Max chained forks before overflow is ignored
+
+# Completion gates — run after every session before PR creation
+[sessions.completion_gates]
+enabled = true               # Set to false to skip all gates
+
+[[sessions.completion_gates.commands]]
+name = "fmt"
+run = "cargo fmt --check"
+required = true              # true = failure blocks PR; false = warning only
+
+[[sessions.completion_gates.commands]]
+name = "clippy"
+run = "cargo clippy -- -D warnings"
+required = true
+
+[[sessions.completion_gates.commands]]
+name = "test"
+run = "cargo test"
+required = true
 
 # Optional: explicit provider configuration (auto-detected from git remote by default)
 [provider]
