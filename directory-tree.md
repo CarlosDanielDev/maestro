@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-03 18:00 (UTC)
+> Last updated: 2026-04-03 19:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -61,7 +61,7 @@ maestro/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
-│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; module declarations (includes doctor, provider); cmd_dashboard() fetches username from doctor report and passes it into ProjectInfo  [Issue #29, #49, #34]
+│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, and delegates App construction to setup_app_from_config(); cmd_run() refactored to use same helper  [Issue #29, #49, #34, #36]
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig  [Issue #29, #43]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
 │   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34]
@@ -180,6 +180,7 @@ maestro/
 | `.claude/skills/` | Reusable knowledge bases for subagents |
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
 | `src/` | Rust source code |
+| `src/main.rs` | CLI entry point; `setup_app_from_config()` shared App setup helper; `cmd_dashboard()` with startup cleanup and config-driven wiring; `cmd_run()` refactored to use shared helper (Issues #29, #34, #36, #49) |
 | `src/budget.rs` | Per-session and global budget enforcement (Phase 3) |
 | `src/doctor.rs` | Preflight check system: `CheckSeverity`, `CheckResult`, `DoctorReport`, `run_all_checks()`, `print_report()`; `build_gh_auth_result()` (pure/testable); `check_az_identity()` for Azure DevOps (Issues #49, #34) |
 | `src/git.rs` | GitOps trait and CLI-backed commit+push (Phase 3) |
