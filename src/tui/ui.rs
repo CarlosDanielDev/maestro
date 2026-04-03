@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 /// Render the entire TUI.
-pub fn draw(f: &mut Frame, app: &App) {
+pub fn draw(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -74,6 +74,21 @@ pub fn draw(f: &mut Frame, app: &App) {
                 budget_limit,
                 chunks[1],
             );
+        }
+        TuiMode::Dashboard => {
+            if let Some(ref screen) = app.home_screen {
+                screen.draw(f, chunks[1]);
+            }
+        }
+        TuiMode::IssueBrowser => {
+            if let Some(ref mut screen) = app.issue_browser_screen {
+                screen.draw(f, chunks[1]);
+            }
+        }
+        TuiMode::MilestoneView => {
+            if let Some(ref mut screen) = app.milestone_screen {
+                screen.draw(f, chunks[1]);
+            }
         }
     }
 
@@ -197,6 +212,9 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::DependencyGraph => "Dependencies",
         TuiMode::Fullscreen(_) => "Fullscreen",
         TuiMode::CostDashboard => "Costs",
+        TuiMode::Dashboard => "Dashboard",
+        TuiMode::IssueBrowser => "Issues",
+        TuiMode::MilestoneView => "Milestones",
     };
 
     let help = Line::from(vec![

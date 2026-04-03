@@ -119,6 +119,8 @@ mod tests {
             labels,
             state: "open".to_string(),
             html_url: String::new(),
+            milestone: None,
+            assignees: vec![],
         })
     }
 

@@ -6,6 +6,7 @@ pub mod detail;
 pub mod fullscreen;
 pub mod help;
 pub mod panels;
+pub mod screens;
 pub mod ui;
 
 use app::App;
@@ -17,6 +18,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
+use screens::ScreenAction;
 use std::io;
 use std::time::Duration;
 
@@ -86,6 +88,46 @@ async fn event_loop(
                         continue;
                     }
 
+                    // Delegate to active screen when in screen-based modes
+                    let event = Event::Key(key);
+                    let screen_handled = match app.tui_mode {
+                        app::TuiMode::Dashboard => {
+                            if let Some(ref mut screen) = app.home_screen {
+                                let action = screen.handle_input(&event);
+                                handle_screen_action(app, action);
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        app::TuiMode::IssueBrowser => {
+                            if let Some(ref mut screen) = app.issue_browser_screen {
+                                let action = screen.handle_input(&event);
+                                handle_screen_action(app, action);
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        app::TuiMode::MilestoneView => {
+                            if let Some(ref mut screen) = app.milestone_screen {
+                                let action = screen.handle_input(&event);
+                                handle_screen_action(app, action);
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+
+                    if screen_handled {
+                        if !app.running {
+                            return Ok(());
+                        }
+                        continue;
+                    }
+
                     match (key.code, key.modifiers) {
                         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                             app.running = false;
@@ -121,14 +163,21 @@ async fn event_loop(
                                 app::TuiMode::Overview => app::TuiMode::DependencyGraph,
                                 app::TuiMode::DependencyGraph => app::TuiMode::CostDashboard,
                                 app::TuiMode::CostDashboard => app::TuiMode::Overview,
-                                app::TuiMode::Detail(_) | app::TuiMode::Fullscreen(_) => {
-                                    app::TuiMode::Overview
-                                }
+                                app::TuiMode::Detail(_)
+                                | app::TuiMode::Fullscreen(_)
+                                | app::TuiMode::Dashboard
+                                | app::TuiMode::IssueBrowser
+                                | app::TuiMode::MilestoneView => app::TuiMode::Overview,
                             };
                         }
-                        // Esc returns to overview from any mode
+                        // Esc returns to dashboard when no sessions are running,
+                        // otherwise returns to overview
                         (KeyCode::Esc, _) => {
-                            app.tui_mode = app::TuiMode::Overview;
+                            if app.home_screen.is_some() && app.pool.total_count() == 0 {
+                                app.tui_mode = app::TuiMode::Dashboard;
+                            } else {
+                                app.tui_mode = app::TuiMode::Overview;
+                            }
                         }
                         // Enter opens detail view for selected session
                         (KeyCode::Enter, _) => {
@@ -176,8 +225,13 @@ async fn event_loop(
             }
         }
 
-        // Auto-exit when all sessions complete
-        if app.all_done() {
+        // Auto-exit when all sessions complete (skip if in dashboard mode)
+        if app.all_done() && !matches!(app.tui_mode, app::TuiMode::Dashboard) {
+            // If we have a home screen, return to dashboard instead of exiting
+            if app.home_screen.is_some() {
+                app.tui_mode = app::TuiMode::Dashboard;
+                continue;
+            }
             // Draw final state, then wait for quit key or timeout
             terminal.draw(|f| ui::draw(f, app))?;
 
@@ -203,6 +257,30 @@ async fn event_loop(
                 }
             }
             return Ok(());
+        }
+    }
+}
+
+/// Process a ScreenAction returned by a screen's input handler.
+fn handle_screen_action(app: &mut App, action: ScreenAction) {
+    match action {
+        ScreenAction::None => {}
+        ScreenAction::Push(mode) => {
+            app.tui_mode = mode;
+        }
+        ScreenAction::Pop => {
+            app.tui_mode = app::TuiMode::Dashboard;
+        }
+        ScreenAction::Quit => {
+            app.running = false;
+        }
+        ScreenAction::LaunchSession(_config) => {
+            // TODO: Wire session launch from screen config
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::LaunchSessions(_configs) => {
+            // TODO: Wire multi-session launch from screen configs
+            app.tui_mode = app::TuiMode::Overview;
         }
     }
 }
