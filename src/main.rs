@@ -845,7 +845,6 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
         .unwrap_or_else(|| "unknown".to_string());
 
     let project_info = tui::screens::home::ProjectInfo {
-        name: repo_name.clone(),
         repo: repo_name,
         branch,
     };

@@ -1,4 +1,4 @@
-use super::{ScreenAction, SessionConfig, sanitize_for_terminal};
+use super::{ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
 use crate::github::types::GhIssue;
 use crate::tui::app::TuiMode;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
@@ -19,16 +19,17 @@ pub enum FilterMode {
 }
 
 pub struct IssueBrowserScreen {
-    pub issues: Vec<GhIssue>,
-    pub filtered_indices: Vec<usize>,
-    pub selected: usize,
-    pub scroll_offset: usize,
-    pub selected_set: HashSet<u64>,
-    pub filter_mode: FilterMode,
-    pub filter_text: String,
-    pub milestone_filter: Option<u64>,
-    pub loading: bool,
-    pub error: Option<String>,
+    pub(crate) issues: Vec<GhIssue>,
+    pub(crate) filtered_indices: Vec<usize>,
+    pub(crate) selected: usize,
+    scroll_offset: usize,
+    pub(crate) selected_set: HashSet<u64>,
+    pub(crate) filter_mode: FilterMode,
+    pub(crate) filter_text: String,
+    milestone_filter: Option<u64>,
+    pub(crate) loading: bool,
+    /// Last known visible height from draw, used for scroll sync.
+    last_visible_height: usize,
 }
 
 impl IssueBrowserScreen {
@@ -44,7 +45,7 @@ impl IssueBrowserScreen {
             filter_text: String::new(),
             milestone_filter: None,
             loading: false,
-            error: None,
+            last_visible_height: 20,
         }
     }
 
@@ -97,7 +98,7 @@ impl IssueBrowserScreen {
         ScreenAction::None
     }
 
-    pub fn draw(&self, f: &mut Frame, area: Rect) {
+    pub fn draw(&mut self, f: &mut Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -109,7 +110,16 @@ impl IssueBrowserScreen {
 
         self.draw_issue_list(f, chunks[0]);
         self.draw_preview(f, chunks[1]);
-        self.draw_keybinds(f, chunks[2]);
+        draw_keybinds_bar(
+            f,
+            chunks[2],
+            &[
+                ("Enter", "Run"),
+                ("Space", "Select"),
+                ("/", "Filter"),
+                ("Esc", "Back"),
+            ],
+        );
     }
 
     pub fn tick(&mut self) {
@@ -121,14 +131,11 @@ impl IssueBrowserScreen {
         self.reapply_filters();
     }
 
-    /// Keep scroll_offset in sync so the selected item is always visible.
-    /// Uses a default visible height of 20 lines (actual height is only known at draw time).
     fn sync_scroll(&mut self) {
-        let visible_height = 20;
         if self.selected < self.scroll_offset {
             self.scroll_offset = self.selected;
-        } else if self.selected >= self.scroll_offset + visible_height {
-            self.scroll_offset = self.selected - visible_height + 1;
+        } else if self.selected >= self.scroll_offset + self.last_visible_height {
+            self.scroll_offset = self.selected - self.last_visible_height + 1;
         }
     }
 
@@ -222,7 +229,7 @@ impl IssueBrowserScreen {
         }
     }
 
-    fn draw_issue_list(&self, f: &mut Frame, area: Rect) {
+    fn draw_issue_list(&mut self, f: &mut Frame, area: Rect) {
         let title = if self.filter_mode != FilterMode::None {
             format!(" Issues — Filter: {} ", self.filter_text)
         } else {
@@ -256,6 +263,7 @@ impl IssueBrowserScreen {
         }
 
         let inner = block.inner(area);
+        self.last_visible_height = inner.height as usize;
         let visible_height = inner.height as usize;
 
         let lines: Vec<Line> = self
@@ -336,36 +344,13 @@ impl IssueBrowserScreen {
             f.render_widget(para, area);
         }
     }
-
-    fn draw_keybinds(&self, f: &mut Frame, area: Rect) {
-        let line = Line::from(vec![
-            Span::styled("[Enter]", Style::default().fg(Color::Green)),
-            Span::raw(" Run  "),
-            Span::styled("[Space]", Style::default().fg(Color::Green)),
-            Span::raw(" Select  "),
-            Span::styled("[/]", Style::default().fg(Color::Green)),
-            Span::raw(" Filter  "),
-            Span::styled("[Esc]", Style::default().fg(Color::Green)),
-            Span::raw(" Back"),
-        ]);
-        let para = Paragraph::new(line);
-        f.render_widget(para, area);
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent {
-            code,
-            modifiers: KeyModifiers::NONE,
-            kind: KeyEventKind::Press,
-            state: KeyEventState::NONE,
-        })
-    }
+    use crate::tui::screens::test_helpers::key_event;
+    use crossterm::event::KeyCode;
 
     fn make_issue(number: u64, title: &str) -> GhIssue {
         GhIssue {
