@@ -70,6 +70,39 @@ pub struct SessionsConfig {
     /// If unset, a default is auto-detected based on project language.
     #[serde(default)]
     pub guardrail_prompt: Option<String>,
+    /// Completion gates that run after session finishes, before PR creation.
+    #[serde(default)]
+    pub completion_gates: CompletionGatesConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionGatesConfig {
+    /// Whether completion gates are enabled. Default: true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Ordered list of gate commands to run.
+    #[serde(default)]
+    pub commands: Vec<CompletionGateEntry>,
+}
+
+impl Default for CompletionGatesConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            commands: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionGateEntry {
+    /// Display name for activity log (e.g., "fmt", "clippy").
+    pub name: String,
+    /// Shell command to execute. Exit code 0 = pass.
+    pub run: String,
+    /// If true, failure blocks PR creation. Default: true.
+    #[serde(default = "default_true")]
+    pub required: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -569,5 +602,53 @@ alert_threshold_pct = 80
         .unwrap();
         let cfg = Config::load(f.path()).expect("load failed");
         assert_eq!(cfg.sessions.context_overflow.overflow_threshold_pct, 70);
+    }
+
+    #[test]
+    fn completion_gates_config_defaults_when_section_absent() {
+        let cfg: CompletionGatesConfig = toml::from_str("").expect("parse failed");
+        assert!(cfg.enabled);
+        assert!(cfg.commands.is_empty());
+    }
+
+    #[test]
+    fn completion_gates_config_deserializes_full_entry() {
+        let toml_str = r#"
+enabled = true
+[[commands]]
+name = "fmt"
+run = "cargo fmt --check"
+required = false
+"#;
+        let cfg: CompletionGatesConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.commands.len(), 1);
+        assert_eq!(cfg.commands[0].name, "fmt");
+        assert_eq!(cfg.commands[0].run, "cargo fmt --check");
+        assert!(!cfg.commands[0].required);
+    }
+
+    #[test]
+    fn completion_gate_entry_required_defaults_to_true() {
+        let toml_str = r#"
+name = "fmt"
+run = "cargo fmt --check"
+"#;
+        let entry: CompletionGateEntry = toml::from_str(toml_str).expect("parse failed");
+        assert!(entry.required);
+    }
+
+    #[test]
+    fn completion_gates_config_multiple_entries_parse_in_order() {
+        let toml_str = r#"
+[[commands]]
+name = "fmt"
+run = "cargo fmt --check"
+[[commands]]
+name = "clippy"
+run = "cargo clippy -- -D warnings"
+"#;
+        let cfg: CompletionGatesConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.commands[0].name, "fmt");
+        assert_eq!(cfg.commands[1].name, "clippy");
     }
 }

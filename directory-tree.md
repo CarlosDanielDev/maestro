@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-03 21:00 (UTC)
+> Last updated: 2026-04-03 22:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -62,17 +62,17 @@ maestro/
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; cmd_run() refactored to use same helper  [Issue #29, #49, #34, #36, #35]
-│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig  [Issue #29, #43]
+│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry  [Issue #29, #40, #43]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
 │   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34]
 │   ├── git.rs                             # GitOps trait, CliGitOps: commit and push operations  [Phase 3]
 │   ├── models.rs                          # ModelRouter: label-based model routing  [Phase 3]
 │   ├── prompts.rs                         # PromptBuilder: structured issue prompts with task-type detection; ProjectLanguage enum; detect_project_language(); default_guardrail(); resolve_guardrail()  [Phase 3, Issue #43]
 │   ├── util.rs                            # Shared utilities (truncate, etc.)
-│   ├── gates/                             # Completion gates framework  [Phase 3]
+│   ├── gates/                             # Completion gates framework  [Phase 3, Issue #40]
 │   │   ├── mod.rs                         # Module exports
-│   │   ├── types.rs                       # Gate types: TestsPass, FileExists, FileContains, PrCreated
-│   │   └── runner.rs                      # Gate evaluation runner
+│   │   ├── types.rs                       # Gate types: TestsPass, FileExists, FileContains, PrCreated, Command; is_required(), display_name(), from_config_entry()
+│   │   └── runner.rs                      # Gate evaluation runner; all_required_gates_passed(); Command match arm
 │   ├── provider/                          # Multi-provider abstraction layer  [Issue #29]
 │   │   ├── mod.rs                         # create_provider factory, detect_provider_from_remote
 │   │   ├── types.rs                       # ProviderKind enum (Github, AzureDevops); re-exports Issue/Priority/MaestroLabel/SessionMode/Milestone  [Issue #31-33]
@@ -101,8 +101,8 @@ maestro/
 │   │   ├── mod.rs                         # Module exports (includes pool, worktree, health, retry, context_monitor, fork)
 │   │   ├── manager.rs                     # Claude CLI process management; handles ContextUpdate events  [Phase 3]
 │   │   ├── parser.rs                      # stream-json output parser; parses system events for context usage  [Phase 3]
-│   │   ├── pool.rs                        # Session pool: max_concurrent, queue, auto-promote; branch tracking; guardrail_prompt field; set_guardrail_prompt(); merged into system prompt in try_promote()  [Phase 3, Issue #43]
-│   │   ├── types.rs                       # Session state machine; fork fields (parent_session_id, child_session_ids, fork_depth); ContextUpdate StreamEvent  [Phase 3]
+│   │   ├── pool.rs                        # Session pool: max_concurrent, queue, auto-promote; branch tracking; guardrail_prompt field; set_guardrail_prompt(); merged into system prompt in try_promote(); find_by_issue_mut()  [Phase 3, Issue #40, #43]
+│   │   ├── types.rs                       # Session state machine; fork fields (parent_session_id, child_session_ids, fork_depth); ContextUpdate StreamEvent; GatesRunning and NeedsReview status variants  [Phase 3, Issue #40]
 │   │   ├── worktree.rs                    # Git worktree isolation: WorktreeManager trait, GitWorktreeManager, MockWorktreeManager  [Phase 1]
 │   │   ├── health.rs                      # HealthMonitor: stall detection, HealthCheck trait  [Phase 3]
 │   │   ├── retry.rs                       # RetryPolicy: configurable max retries and cooldown  [Phase 3]
@@ -118,14 +118,14 @@ maestro/
 │   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods  [Issue #12]
 │   ├── tui/
 │   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress  [Phase 3, Issue #31-33, #46-48, #35]
-│   │   ├── app.rs                         # App state; TuiMode; TuiCommand enum (FetchIssues, FetchMilestones, FetchSuggestionData, LaunchSession, LaunchSessions); TuiDataEvent enum (Issues, Milestones, Issue, SuggestionData); SuggestionDataPayload; handle_data_event(); data_tx/data_rx channel; pending_commands  [Issue #12, #31-33, #43, #46-48, #35]
+│   │   ├── app.rs                         # App state; TuiMode; TuiCommand enum (FetchIssues, FetchMilestones, FetchSuggestionData, LaunchSession, LaunchSessions); TuiDataEvent enum (Issues, Milestones, Issue, SuggestionData); SuggestionDataPayload; handle_data_event(); data_tx/data_rx channel; pending_commands; check_completions() uses config-driven gates with per-gate activity logging  [Issue #12, #31-33, #40, #43, #46-48, #35]
 │   │   ├── activity_log.rs                # Scrollable activity log widget with LogLevel color coding  [Phase 1]
 │   │   ├── cost_dashboard.rs              # Cost dashboard widget: per-session and aggregate cost display  [Phase 3]
 │   │   ├── dep_graph.rs                   # ASCII dependency graph visualization  [Phase 3]
 │   │   ├── detail.rs                      # Session detail view  [Phase 3]
 │   │   ├── fullscreen.rs                  # Fullscreen session view with phase progress overlay  [Phase 3]
 │   │   ├── help.rs                        # Help overlay widget with keybinding reference  [Phase 3]
-│   │   ├── panels.rs                      # Split-pane panel view; fork depth indicator in title; overflow warning in context gauge  [Issue #12]
+│   │   ├── panels.rs                      # Split-pane panel view; fork depth indicator in title; overflow warning in context gauge; GatesRunning (Cyan) and NeedsReview (LightYellow) status colors  [Issue #12, #40]
 │   │   ├── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners, screen rendering branches  [Phase 3, Issue #31-33]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum, SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen
@@ -161,7 +161,7 @@ maestro/
 ├── ROADMAP.md                             # Project milestones and implementation order
 ├── directory-tree.md                      # This file — SINGLE SOURCE OF TRUTH for structure
 ├── maestro-state.json                     # Runtime state persistence file
-└── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section; guardrail_prompt option (commented)  [Issue #12, #43]
+└── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section; guardrail_prompt option (commented); [sessions.completion_gates] with fmt, clippy, test defaults  [Issue #12, #40, #43]
 ```
 
 ## Quick Reference
@@ -186,7 +186,7 @@ maestro/
 | `src/git.rs` | GitOps trait and CLI-backed commit+push (Phase 3) |
 | `src/models.rs` | Label-based model routing (Phase 3) |
 | `src/prompts.rs` | Structured issue prompt builder with task-type detection; ProjectLanguage detection; guardrail resolution (Phase 3, Issue #43) |
-| `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated (Phase 3) |
+| `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated, Command (Phase 3, Issue #40) |
 | `src/provider/` | Multi-provider abstraction layer (Issue #29) |
 | `src/provider/mod.rs` | create_provider factory; detect_provider_from_remote |
 | `src/provider/types.rs` | ProviderKind enum; re-exports Issue/Priority/MaestroLabel/SessionMode/Milestone |
@@ -207,7 +207,7 @@ maestro/
 | `src/session/` | Claude CLI process and session lifecycle management |
 | `src/session/health.rs` | Stall detection and HealthCheck trait (Phase 3) |
 | `src/session/retry.rs` | Configurable retry policy (Phase 3) |
-| `src/session/pool.rs` | Concurrent session pool with queue and auto-promote; guardrail_prompt merged into system prompt (Issue #43) |
+| `src/session/pool.rs` | Concurrent session pool with queue and auto-promote; guardrail_prompt merged into system prompt; `find_by_issue_mut()` (Issue #40, #43) |
 | `src/session/worktree.rs` | Git worktree isolation per session |
 | `src/session/cleanup.rs` | Orphaned worktree detection and removal (Phase 3) |
 | `src/session/logger.rs` | Per-session file logging to .maestro/logs/ (Phase 3) |
@@ -218,14 +218,14 @@ maestro/
 | `src/state/progress.rs` | Session phase tracking (Phase 3) |
 | `src/tui/` | Terminal UI (ratatui) |
 | `src/tui/mod.rs` | Event loop; `handle_screen_action()`; command processing; `launch_session_from_config()`; `FetchSuggestionData` async handler for GitHub ready/failed counts and milestone progress (Issues #31-33, #35, #46-48) |
-| `src/tui/app.rs` | `App` struct; `TuiMode`; `TuiCommand` (adds `FetchSuggestionData`); `TuiDataEvent` (adds `SuggestionData`); `SuggestionDataPayload`; `handle_data_event()`; `data_tx`/`data_rx` channel (Issues #12, #31-33, #35, #43, #46-48) |
+| `src/tui/app.rs` | `App` struct; `TuiMode`; `TuiCommand` (adds `FetchSuggestionData`); `TuiDataEvent` (adds `SuggestionData`); `SuggestionDataPayload`; `handle_data_event()`; `data_tx`/`data_rx` channel; `check_completions()` config-driven gates with per-gate logging (Issues #12, #31-33, #35, #40, #43, #46-48) |
 | `src/tui/activity_log.rs` | Scrollable log widget |
 | `src/tui/cost_dashboard.rs` | Per-session and aggregate cost display (Phase 3) |
 | `src/tui/dep_graph.rs` | ASCII dependency graph visualization (Phase 3) |
 | `src/tui/detail.rs` | Session detail view (Phase 3) |
 | `src/tui/fullscreen.rs` | Fullscreen session view with phase progress overlay (Phase 3) |
 | `src/tui/help.rs` | Help overlay widget with keybinding reference (Phase 3) |
-| `src/tui/panels.rs` | Split-pane multi-session view |
+| `src/tui/panels.rs` | Split-pane multi-session view; `GatesRunning` (Cyan) and `NeedsReview` (LightYellow) status colors (Issue #40) |
 | `src/tui/screens/` | Interactive TUI screen components (Issues #31-33) |
 | `src/tui/screens/mod.rs` | `ScreenAction` enum, `SessionConfig`; re-exports all screen types |
 | `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
