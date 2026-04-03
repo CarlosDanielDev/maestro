@@ -15,6 +15,8 @@ pub enum ProviderKind {
 #[allow(unused_imports)]
 pub use crate::github::types::GhIssue as Issue;
 #[allow(unused_imports)]
+pub use crate::github::types::GhMilestone as Milestone;
+#[allow(unused_imports)]
 pub use crate::github::types::{MaestroLabel, Priority, SessionMode};
 
 #[cfg(test)]

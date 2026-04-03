@@ -54,6 +54,31 @@ pub fn parse_issues_json(json_str: &str) -> Result<Vec<GhIssue>> {
             })
             .unwrap_or_default();
 
+        let milestone = v.get("milestone").and_then(|m| {
+            if m.is_null() {
+                None
+            } else if let Some(n) = m.as_u64() {
+                Some(n)
+            } else {
+                m.get("number").and_then(|n| n.as_u64())
+            }
+        });
+
+        let assignees: Vec<String> = v
+            .get("assignees")
+            .and_then(|a| a.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|av| {
+                        av.get("login")
+                            .and_then(|l| l.as_str())
+                            .or_else(|| av.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         issues.push(GhIssue {
             number: v
                 .get("number")
@@ -81,6 +106,8 @@ pub fn parse_issues_json(json_str: &str) -> Result<Vec<GhIssue>> {
                 .and_then(|u| u.as_str())
                 .unwrap_or("")
                 .to_string(),
+            milestone,
+            assignees,
         });
     }
     Ok(issues)
@@ -461,6 +488,8 @@ mod tests {
             labels: labels.iter().map(|s| s.to_string()).collect(),
             state: "open".to_string(),
             html_url: format!("https://github.com/owner/repo/issues/{}", number),
+            milestone: None,
+            assignees: vec![],
         }
     }
 

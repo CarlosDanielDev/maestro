@@ -90,6 +90,23 @@ pub struct GhIssue {
     pub labels: Vec<String>,
     pub state: String,
     pub html_url: String,
+    #[serde(default)]
+    pub milestone: Option<u64>,
+    #[serde(default)]
+    pub assignees: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GhMilestone {
+    pub number: u64,
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    pub state: String,
+    #[serde(default)]
+    pub open_issues: u32,
+    #[serde(default)]
+    pub closed_issues: u32,
 }
 
 impl GhIssue {
@@ -164,6 +181,8 @@ mod tests {
             labels: labels.iter().map(|s| s.to_string()).collect(),
             state: "open".to_string(),
             html_url: format!("https://github.com/owner/repo/issues/{}", number),
+            milestone: None,
+            assignees: vec![],
         }
     }
 
