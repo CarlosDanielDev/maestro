@@ -9,6 +9,8 @@ pub enum SessionStatus {
     Spawning,
     Running,
     Completed,
+    GatesRunning,
+    NeedsReview,
     Errored,
     Paused,
     Killed,
@@ -23,6 +25,8 @@ impl SessionStatus {
             Self::Spawning => "🔄",
             Self::Running => "▶",
             Self::Completed => "✅",
+            Self::GatesRunning => "🔍",
+            Self::NeedsReview => "⚡",
             Self::Errored => "❌",
             Self::Paused => "⏸",
             Self::Killed => "💀",
@@ -37,6 +41,8 @@ impl SessionStatus {
             Self::Spawning => "SPAWNING",
             Self::Running => "RUNNING",
             Self::Completed => "COMPLETED",
+            Self::GatesRunning => "GATES_RUNNING",
+            Self::NeedsReview => "NEEDS_REVIEW",
             Self::Errored => "ERRORED",
             Self::Paused => "PAUSED",
             Self::Killed => "KILLED",
@@ -46,7 +52,10 @@ impl SessionStatus {
     }
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Completed | Self::Errored | Self::Killed)
+        matches!(
+            self,
+            Self::Completed | Self::Errored | Self::Killed | Self::NeedsReview
+        )
     }
 }
 
@@ -191,6 +200,42 @@ mod tests {
         assert_eq!(s.parent_session_id, None);
         assert!(s.child_session_ids.is_empty());
         assert_eq!(s.fork_depth, 0);
+    }
+
+    #[test]
+    fn needs_review_status_is_terminal() {
+        assert!(SessionStatus::NeedsReview.is_terminal());
+    }
+
+    #[test]
+    fn gates_running_status_is_not_terminal() {
+        assert!(!SessionStatus::GatesRunning.is_terminal());
+    }
+
+    #[test]
+    fn gates_running_has_symbol_and_label() {
+        let status = SessionStatus::GatesRunning;
+        assert!(!status.symbol().is_empty());
+        assert_eq!(status.label(), "GATES_RUNNING");
+    }
+
+    #[test]
+    fn needs_review_has_symbol_and_label() {
+        let status = SessionStatus::NeedsReview;
+        assert!(!status.symbol().is_empty());
+        assert_eq!(status.label(), "NEEDS_REVIEW");
+    }
+
+    #[test]
+    fn session_status_gates_running_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionStatus::GatesRunning).unwrap();
+        assert_eq!(json, r#""gates_running""#);
+    }
+
+    #[test]
+    fn session_status_needs_review_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionStatus::NeedsReview).unwrap();
+        assert_eq!(json, r#""needs_review""#);
     }
 
     #[test]

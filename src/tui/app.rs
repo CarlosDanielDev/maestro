@@ -2,7 +2,7 @@ use crate::budget::{BudgetAction, BudgetCheck, BudgetEnforcer};
 use crate::config::Config;
 use crate::config::ConflictPolicy;
 use crate::gates::runner::{self, GateCheck, GateRunner};
-use crate::gates::types::CompletionGate;
+use crate::gates::types::{CompletionGate, GateResult};
 use crate::git::GitOps;
 use crate::github::ci::{CiChecker, CiStatus, PendingPrCheck};
 use crate::github::client::GitHubClient;
@@ -790,45 +790,94 @@ impl App {
 
         // Process pending issue completions (gates, git push, label updates, PR creation)
         let pending = std::mem::take(&mut self.pending_issue_completions);
-        let gates_config = self.config.as_ref().map(|c| c.gates.clone());
+
+        // Build gates once from config (independent of individual completions)
+        let gates: Vec<CompletionGate> = if let Some(ref cfg) = self.config
+            && cfg.sessions.completion_gates.enabled
+            && !cfg.sessions.completion_gates.commands.is_empty()
+        {
+            cfg.sessions
+                .completion_gates
+                .commands
+                .iter()
+                .map(CompletionGate::from_config_entry)
+                .collect()
+        } else if let Some(ref cfg) = self.config
+            && cfg.gates.enabled
+        {
+            vec![CompletionGate::TestsPass {
+                command: cfg.gates.test_command.clone(),
+            }]
+        } else {
+            vec![]
+        };
 
         for mut completion in pending {
+            let issue_label = format!("#{}", completion.issue_number);
+
             // Run completion gates before accepting the result
             if completion.success
-                && let (Some(gates_cfg), Some(wt_path)) = (&gates_config, &completion.worktree_path)
-                && gates_cfg.enabled
+                && !gates.is_empty()
+                && let Some(wt_path) = &completion.worktree_path
             {
-                let gates = vec![CompletionGate::TestsPass {
-                    command: gates_cfg.test_command.clone(),
-                }];
+                if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
+                    managed.session.status = SessionStatus::GatesRunning;
+                }
+
                 let gate_runner = GateRunner;
                 let results = gate_runner.run_gates(&gates, wt_path);
 
-                if !runner::all_gates_passed(&results) {
-                    let failures: Vec<String> = results
-                        .iter()
-                        .filter(|r| !r.passed)
-                        .map(|r| r.message.clone())
-                        .collect();
+                let paired: Vec<(GateResult, bool)> = results
+                    .into_iter()
+                    .zip(gates.iter().map(|g| g.is_required()))
+                    .collect();
+
+                let all_required_passed = runner::all_required_gates_passed(&paired);
+
+                // Log individual gate results (failed-level differs by outcome)
+                let fail_level = if all_required_passed {
+                    LogLevel::Warn
+                } else {
+                    LogLevel::Error
+                };
+                for (result, _) in &paired {
+                    let level = if result.passed {
+                        LogLevel::Info
+                    } else {
+                        fail_level
+                    };
                     self.activity_log.push_simple(
-                        format!("#{}", completion.issue_number),
-                        format!("Gate failed: {}", failures.join("; ")),
-                        LogLevel::Error,
+                        issue_label.clone(),
+                        format!("Gate [{}]: {}", result.gate, result.message),
+                        level,
                     );
-                    // Mark as failed — retry system will pick it up
+                }
+
+                if !all_required_passed {
+                    let failures: Vec<String> = paired
+                        .iter()
+                        .filter(|(r, required)| !r.passed && *required)
+                        .map(|(r, _)| r.message.clone())
+                        .collect();
+
+                    if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
+                        managed.session.status = SessionStatus::NeedsReview;
+                        managed
+                            .session
+                            .log_activity(format!("Gates failed: {}", failures.join("; ")));
+                    }
+
                     completion.success = false;
-                    // Fire tests_failed hook
                     let ctx = HookContext::new()
                         .with_session("", Some(completion.issue_number))
                         .with_var("MAESTRO_GATE_FAILURES", &failures.join("; "));
                     self.fire_plugin_hook(HookPoint::TestsFailed, ctx).await;
                 } else {
                     self.activity_log.push_simple(
-                        format!("#{}", completion.issue_number),
-                        "All gates passed".into(),
+                        issue_label.clone(),
+                        "All required gates passed".into(),
                         LogLevel::Info,
                     );
-                    // Fire tests_passed hook
                     let ctx = HookContext::new().with_session("", Some(completion.issue_number));
                     self.fire_plugin_hook(HookPoint::TestsPassed, ctx).await;
                 }
