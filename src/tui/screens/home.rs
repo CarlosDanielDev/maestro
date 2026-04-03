@@ -29,7 +29,6 @@ const LOGO: &str = r#"
 
 #[derive(Debug, Clone)]
 pub struct ProjectInfo {
-    pub name: String,
     pub repo: String,
     pub branch: String,
 }
@@ -163,21 +162,21 @@ impl HomeScreen {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::DarkGray));
 
+        let selected_style = Style::default()
+            .fg(Color::Black)
+            .bg(Color::Green)
+            .add_modifier(Modifier::BOLD);
+
         let mut lines = Vec::new();
         for (idx, (label, key)) in QUICK_ACTIONS.iter().enumerate() {
-            let style = if idx == self.selected_action {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Green)
-                    .add_modifier(Modifier::BOLD)
+            let is_selected = idx == self.selected_action;
+            let style = if is_selected {
+                selected_style
             } else {
                 Style::default().fg(Color::White)
             };
-            let key_style = if idx == self.selected_action {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Green)
-                    .add_modifier(Modifier::BOLD)
+            let key_style = if is_selected {
+                selected_style
             } else {
                 Style::default().fg(Color::Green)
             };
@@ -245,20 +244,11 @@ impl HomeScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent {
-            code,
-            modifiers: KeyModifiers::NONE,
-            kind: KeyEventKind::Press,
-            state: KeyEventState::NONE,
-        })
-    }
+    use crate::tui::screens::test_helpers::key_event;
+    use crossterm::event::KeyCode;
 
     fn make_project_info() -> ProjectInfo {
         ProjectInfo {
-            name: "test-project".to_string(),
             repo: "owner/repo".to_string(),
             branch: "main".to_string(),
         }
