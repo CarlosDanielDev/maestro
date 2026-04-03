@@ -1,5 +1,6 @@
 mod budget;
 mod config;
+mod doctor;
 mod gates;
 mod git;
 mod github;
@@ -111,6 +112,8 @@ enum Commands {
         /// Shell to generate completions for (bash, zsh, fish)
         shell: String,
     },
+    /// Check environment setup and required tools
+    Doctor,
 }
 
 #[tokio::main]
@@ -141,6 +144,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Resume { session }) => cmd_resume(session).await,
         Some(Commands::TestSlack) => cmd_test_slack().await,
         Some(Commands::Completions { shell }) => cmd_completions(&shell),
+        Some(Commands::Doctor) => cmd_doctor(),
         Some(Commands::Status) => cmd_status(),
         Some(Commands::Cost) => cmd_cost(),
         Some(Commands::Queue) => cmd_queue().await,
@@ -619,6 +623,17 @@ fn cmd_completions(shell: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn cmd_doctor() -> anyhow::Result<()> {
+    let config = Config::find_and_load().ok();
+    let report = doctor::run_all_checks(config.as_ref());
+    doctor::print_report(&report);
+
+    if report.has_failures() {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
 async fn cmd_run(
     prompt: Option<String>,
     issue: Option<String>,
@@ -877,8 +892,25 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
         Vec::new(),
     );
 
+    // Run preflight checks on a blocking thread to avoid stalling async runtime
+    let config_clone = config.clone();
+    let doctor_warnings = tokio::task::spawn_blocking(move || {
+        let report = doctor::run_all_checks(config_clone.as_ref());
+        report
+            .failed_checks()
+            .iter()
+            .map(|c| format!("{}: {}", c.name, c.message))
+            .collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_default();
+
     // Set up home screen and start in Dashboard mode
-    app.home_screen = Some(tui::screens::HomeScreen::new(project_info, recent_sessions));
+    app.home_screen = Some(tui::screens::HomeScreen::new(
+        project_info,
+        recent_sessions,
+        doctor_warnings,
+    ));
     app.tui_mode = tui::app::TuiMode::Dashboard;
     app.config = config;
 

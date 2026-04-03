@@ -45,17 +45,23 @@ pub struct HomeScreen {
     pub selected_action: usize,
     pub recent_sessions: Vec<SessionSummary>,
     pub project_info: ProjectInfo,
+    pub warnings: Vec<String>,
 }
 
 impl HomeScreen {
     pub const NUM_ACTIONS: usize = QUICK_ACTIONS.len();
     pub const QUIT_ACTION_INDEX: usize = 5;
 
-    pub fn new(project_info: ProjectInfo, recent_sessions: Vec<SessionSummary>) -> Self {
+    pub fn new(
+        project_info: ProjectInfo,
+        recent_sessions: Vec<SessionSummary>,
+        warnings: Vec<String>,
+    ) -> Self {
         Self {
             selected_action: 0,
             recent_sessions,
             project_info,
+            warnings,
         }
     }
 
@@ -94,22 +100,33 @@ impl HomeScreen {
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect) {
+        let warning_height = if self.warnings.is_empty() {
+            0
+        } else {
+            (self.warnings.len() as u16 + 2).min(6)
+        };
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(8), // logo
-                Constraint::Length(3), // project info
-                Constraint::Min(8),    // quick actions + recent sessions
+                Constraint::Length(8),              // logo
+                Constraint::Length(3),              // project info
+                Constraint::Length(warning_height), // warnings (0 if none)
+                Constraint::Min(8),                 // quick actions + recent sessions
             ])
             .split(area);
 
         self.draw_logo(f, chunks[0]);
         self.draw_project_info(f, chunks[1]);
 
+        if !self.warnings.is_empty() {
+            self.draw_warnings(f, chunks[2]);
+        }
+
         let bottom = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-            .split(chunks[2]);
+            .split(chunks[3]);
 
         self.draw_quick_actions(f, bottom[0]);
         self.draw_recent_sessions(f, bottom[1]);
@@ -153,6 +170,27 @@ impl HomeScreen {
         let para = Paragraph::new(info)
             .block(block)
             .alignment(Alignment::Center);
+        f.render_widget(para, area);
+    }
+
+    fn draw_warnings(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .title(" Warnings ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow));
+
+        let lines: Vec<Line> = self
+            .warnings
+            .iter()
+            .map(|w| {
+                Line::from(vec![
+                    Span::styled("  ! ", Style::default().fg(Color::Yellow)),
+                    Span::styled(w.as_str(), Style::default().fg(Color::White)),
+                ])
+            })
+            .collect();
+
+        let para = Paragraph::new(lines).block(block);
         f.render_widget(para, area);
     }
 
@@ -265,13 +303,13 @@ mod tests {
 
     #[test]
     fn home_initial_selected_action_is_zero() {
-        let screen = HomeScreen::new(make_project_info(), vec![]);
+        let screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         assert_eq!(screen.selected_action, 0);
     }
 
     #[test]
     fn home_key_j_moves_selection_down() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Char('j')));
         assert_eq!(action, ScreenAction::None);
         assert_eq!(screen.selected_action, 1);
@@ -279,14 +317,14 @@ mod tests {
 
     #[test]
     fn home_key_down_moves_selection_down() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         screen.handle_input(&key_event(KeyCode::Down));
         assert_eq!(screen.selected_action, 1);
     }
 
     #[test]
     fn home_key_k_moves_selection_up() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         screen.handle_input(&key_event(KeyCode::Char('j')));
         screen.handle_input(&key_event(KeyCode::Char('j')));
         assert_eq!(screen.selected_action, 2);
@@ -296,7 +334,7 @@ mod tests {
 
     #[test]
     fn home_key_k_does_not_underflow_at_zero() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         screen.handle_input(&key_event(KeyCode::Char('k')));
         screen.handle_input(&key_event(KeyCode::Char('k')));
         assert_eq!(screen.selected_action, 0);
@@ -304,7 +342,7 @@ mod tests {
 
     #[test]
     fn home_key_j_does_not_overflow_past_last_action() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let num_actions = HomeScreen::NUM_ACTIONS;
         for _ in 0..num_actions + 5 {
             screen.handle_input(&key_event(KeyCode::Char('j')));
@@ -314,7 +352,7 @@ mod tests {
 
     #[test]
     fn home_key_up_moves_selection_up() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         screen.handle_input(&key_event(KeyCode::Down));
         screen.handle_input(&key_event(KeyCode::Up));
         assert_eq!(screen.selected_action, 0);
@@ -322,35 +360,35 @@ mod tests {
 
     #[test]
     fn home_key_i_returns_push_issue_browser() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Char('i')));
         assert_eq!(action, ScreenAction::Push(TuiMode::IssueBrowser));
     }
 
     #[test]
     fn home_key_m_returns_push_milestone_view() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Char('m')));
         assert_eq!(action, ScreenAction::Push(TuiMode::MilestoneView));
     }
 
     #[test]
     fn home_key_q_returns_quit() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Char('q')));
         assert_eq!(action, ScreenAction::Quit);
     }
 
     #[test]
     fn home_enter_on_issues_action_returns_push_issue_browser() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Enter));
         assert_eq!(action, ScreenAction::Push(TuiMode::IssueBrowser));
     }
 
     #[test]
     fn home_enter_on_milestones_action_returns_push_milestone_view() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         screen.handle_input(&key_event(KeyCode::Down));
         let action = screen.handle_input(&key_event(KeyCode::Enter));
         assert_eq!(action, ScreenAction::Push(TuiMode::MilestoneView));
@@ -358,7 +396,7 @@ mod tests {
 
     #[test]
     fn home_enter_on_quit_action_returns_quit() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         for _ in 0..HomeScreen::QUIT_ACTION_INDEX {
             screen.handle_input(&key_event(KeyCode::Down));
         }
@@ -368,14 +406,14 @@ mod tests {
 
     #[test]
     fn home_esc_returns_none() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Esc));
         assert_eq!(action, ScreenAction::None);
     }
 
     #[test]
     fn home_tick_does_not_panic() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         screen.tick();
         screen.tick();
         screen.tick();
@@ -384,7 +422,7 @@ mod tests {
     #[test]
     fn home_recent_sessions_stored() {
         let sessions = vec![make_session_summary(10), make_session_summary(11)];
-        let screen = HomeScreen::new(make_project_info(), sessions);
+        let screen = HomeScreen::new(make_project_info(), sessions, vec![]);
         assert_eq!(screen.recent_sessions.len(), 2);
         assert_eq!(screen.recent_sessions[0].issue_number, 10);
         assert_eq!(screen.recent_sessions[1].issue_number, 11);
@@ -392,7 +430,7 @@ mod tests {
 
     #[test]
     fn home_unknown_key_returns_none() {
-        let mut screen = HomeScreen::new(make_project_info(), vec![]);
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Char('x')));
         assert_eq!(action, ScreenAction::None);
     }
