@@ -155,6 +155,20 @@ impl SessionPool {
         self.active.iter_mut().find(|m| m.session.id == session_id)
     }
 
+    /// Mutable access to a managed session by issue number (active or finished).
+    pub fn find_by_issue_mut(&mut self, issue_number: u64) -> Option<&mut ManagedSession> {
+        if let Some(m) = self
+            .active
+            .iter_mut()
+            .find(|m| m.session.issue_number == Some(issue_number))
+        {
+            return Some(m);
+        }
+        self.finished
+            .iter_mut()
+            .find(|m| m.session.issue_number == Some(issue_number))
+    }
+
     /// Mutable access to a session by ID across all buckets.
     pub fn get_session_mut(&mut self, session_id: Uuid) -> Option<&mut Session> {
         if let Some(m) = self.active.iter_mut().find(|m| m.session.id == session_id) {
