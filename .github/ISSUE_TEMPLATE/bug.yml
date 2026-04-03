@@ -1,0 +1,145 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in maestro
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Definition of Ready (DOR) — Bug Report
+        Please fill in all required fields so we can reproduce and fix the issue.
+
+  - type: textarea
+    id: overview
+    attributes:
+      label: Overview
+      description: Brief summary of the bug.
+      placeholder: Describe what is broken and why it matters.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current Behavior
+      description: What is happening now? Include error messages, screenshots, or logs.
+      placeholder: |
+        When I run `maestro run`, the TUI crashes with:
+        ```
+        thread 'main' panicked at 'index out of bounds'
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What should happen instead?
+      placeholder: The TUI should display the session panel without crashing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Exact steps to trigger the bug.
+      placeholder: |
+        1. Run `maestro run`
+        2. Press `i` to open issue browser
+        3. Select an issue with no labels
+        4. Observe crash
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: maestro-version
+    attributes:
+      label: Maestro Version
+      description: Output of `maestro --version`
+      placeholder: "maestro 0.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: rust-version
+    attributes:
+      label: Rust Version (if building from source)
+      description: Output of `rustc --version`
+      placeholder: "rustc 1.78.0"
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Testable conditions that confirm the bug is fixed.
+      placeholder: |
+        - [ ] No crash when selecting an issue with no labels
+        - [ ] TUI renders correctly for empty label sets
+    validations:
+      required: true
+
+  - type: textarea
+    id: files-to-modify
+    attributes:
+      label: Files to Modify (if known)
+      description: Which files are likely involved? Leave blank if unsure.
+      placeholder: |
+        - `src/tui/screens/issue_browser.rs`
+    validations:
+      required: false
+
+  - type: textarea
+    id: test-hints
+    attributes:
+      label: Test Hints
+      description: Suggestions for regression tests.
+      placeholder: |
+        - Add a test case with an issue that has an empty labels array
+    validations:
+      required: false
+
+  - type: textarea
+    id: blocked-by
+    attributes:
+      label: Blocked By
+      description: Any issues or PRs that block this fix.
+    validations:
+      required: false
+
+  - type: textarea
+    id: definition-of-done
+    attributes:
+      label: Definition of Done
+      description: What constitutes this bug being resolved?
+      placeholder: |
+        - [ ] Bug no longer reproducible
+        - [ ] Regression test added
+        - [ ] cargo test passing
+        - [ ] cargo clippy clean
+        - [ ] PR reviewed and merged
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Logs, screenshots, related issues.
+    validations:
+      required: false
