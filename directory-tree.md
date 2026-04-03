@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-03 14:00 (UTC)
+> Last updated: 2026-04-03 18:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -61,10 +61,10 @@ maestro/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
-│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; module declarations (includes doctor, provider)  [Issue #29, #49]
+│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; module declarations (includes doctor, provider); cmd_dashboard() fetches username from doctor report and passes it into ProjectInfo  [Issue #29, #49, #34]
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig  [Issue #29, #43]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
-│   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(), 9 check functions  [Issue #49]
+│   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34]
 │   ├── git.rs                             # GitOps trait, CliGitOps: commit and push operations  [Phase 3]
 │   ├── models.rs                          # ModelRouter: label-based model routing  [Phase 3]
 │   ├── prompts.rs                         # PromptBuilder: structured issue prompts with task-type detection; ProjectLanguage enum; detect_project_language(); default_guardrail(); resolve_guardrail()  [Phase 3, Issue #43]
@@ -129,7 +129,7 @@ maestro/
 │   │   ├── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners, screen rendering branches  [Phase 3, Issue #31-33]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum, SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen
-│   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, recent sessions panel, doctor warnings banner  [Issue #31, #49]
+│   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, recent sessions panel, doctor warnings banner; ProjectInfo gains username field; draw_project_info() renders @username  [Issue #31, #49, #34]
 │   │       ├── issue_browser.rs           # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery  [Issue #32, #46]
 │   │       └── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action  [Issue #33]
 │   └── work/                              # Work queue and scheduling  [Phase 2]
@@ -181,7 +181,7 @@ maestro/
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
 | `src/` | Rust source code |
 | `src/budget.rs` | Per-session and global budget enforcement (Phase 3) |
-| `src/doctor.rs` | Preflight check system: `CheckSeverity`, `CheckResult`, `DoctorReport`, `run_all_checks()`, `print_report()` (Issue #49) |
+| `src/doctor.rs` | Preflight check system: `CheckSeverity`, `CheckResult`, `DoctorReport`, `run_all_checks()`, `print_report()`; `build_gh_auth_result()` (pure/testable); `check_az_identity()` for Azure DevOps (Issues #49, #34) |
 | `src/git.rs` | GitOps trait and CLI-backed commit+push (Phase 3) |
 | `src/models.rs` | Label-based model routing (Phase 3) |
 | `src/prompts.rs` | Structured issue prompt builder with task-type detection; ProjectLanguage detection; guardrail resolution (Phase 3, Issue #43) |
@@ -227,7 +227,7 @@ maestro/
 | `src/tui/panels.rs` | Split-pane multi-session view |
 | `src/tui/screens/` | Interactive TUI screen components (Issues #31-33) |
 | `src/tui/screens/mod.rs` | `ScreenAction` enum, `SessionConfig`; re-exports all screen types |
-| `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with logo, quick-actions, recent activity, and doctor warnings banner (Issues #31, #49) |
+| `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with logo, quick-actions, recent activity, doctor warnings banner, and `@username` display; `ProjectInfo` gains `username: Option<String>` (Issues #31, #49, #34) |
 | `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters; `set_issues()` (Issues #32, #46) |
 | `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
 | `src/work/` | Work queue and dependency scheduling (Phase 2) |
