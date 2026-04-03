@@ -140,7 +140,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let text = Line::from(vec![
         Span::styled(
-            " MAESTRO v0.1.0 ",
+            concat!(" MAESTRO v", env!("CARGO_PKG_VERSION"), " "),
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Green)
