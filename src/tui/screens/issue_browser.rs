@@ -1,6 +1,5 @@
 use super::{ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
 use crate::github::types::GhIssue;
-use crate::tui::app::TuiMode;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     Frame,
