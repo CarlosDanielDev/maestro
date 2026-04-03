@@ -51,6 +51,7 @@ Hardening, missing PRD features, test coverage, and distribution.
 | [#31] | Interactive home screen with idle dashboard | P1 | Done |
 | [#32] | Interactive issue browser with selection and launch | P1 | Done |
 | [#33] | Milestone overview with progress tracking | P1 | Done |
+| [#35] | Work suggestions and quick commands on home screen | P1 | Done |
 
 ### Testing & Quality
 

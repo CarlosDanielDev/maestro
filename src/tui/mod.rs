@@ -244,6 +244,34 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::Issues(result));
                     });
                 }
+                app::TuiCommand::FetchSuggestionData => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let (ready_result, failed_result, milestones_result) = tokio::join!(
+                            client.list_issues(&["maestro:ready"]),
+                            client.list_issues(&["maestro:failed"]),
+                            client.list_milestones("open"),
+                        );
+                        let ready_count = ready_result.map(|v| v.len()).unwrap_or(0);
+                        let failed_count = failed_result.map(|v| v.len()).unwrap_or(0);
+                        let milestones = milestones_result
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|ms| {
+                                let total = ms.open_issues + ms.closed_issues;
+                                (ms.title, ms.closed_issues, total)
+                            })
+                            .collect();
+                        let _ = tx.send(app::TuiDataEvent::SuggestionData(
+                            app::SuggestionDataPayload {
+                                ready_issue_count: ready_count,
+                                failed_issue_count: failed_count,
+                                milestones,
+                            },
+                        ));
+                    });
+                }
                 app::TuiCommand::FetchMilestones => {
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {

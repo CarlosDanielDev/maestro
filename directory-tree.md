@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-03 19:00 (UTC)
+> Last updated: 2026-04-03 21:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -61,7 +61,7 @@ maestro/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
-│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, and delegates App construction to setup_app_from_config(); cmd_run() refactored to use same helper  [Issue #29, #49, #34, #36]
+│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; cmd_run() refactored to use same helper  [Issue #29, #49, #34, #36, #35]
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig  [Issue #29, #43]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
 │   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34]
@@ -117,8 +117,8 @@ maestro/
 │   │   ├── store.rs                       # JSON state persistence
 │   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods  [Issue #12]
 │   ├── tui/
-│   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config()  [Phase 3, Issue #31-33, #46-48]
-│   │   ├── app.rs                         # App state; TuiMode; TuiCommand enum; TuiDataEvent enum; handle_data_event(); data_tx/data_rx channel; pending_commands  [Issue #12, #31-33, #43, #46-48]
+│   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress  [Phase 3, Issue #31-33, #46-48, #35]
+│   │   ├── app.rs                         # App state; TuiMode; TuiCommand enum (FetchIssues, FetchMilestones, FetchSuggestionData, LaunchSession, LaunchSessions); TuiDataEvent enum (Issues, Milestones, Issue, SuggestionData); SuggestionDataPayload; handle_data_event(); data_tx/data_rx channel; pending_commands  [Issue #12, #31-33, #43, #46-48, #35]
 │   │   ├── activity_log.rs                # Scrollable activity log widget with LogLevel color coding  [Phase 1]
 │   │   ├── cost_dashboard.rs              # Cost dashboard widget: per-session and aggregate cost display  [Phase 3]
 │   │   ├── dep_graph.rs                   # ASCII dependency graph visualization  [Phase 3]
@@ -129,7 +129,7 @@ maestro/
 │   │   ├── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners, screen rendering branches  [Phase 3, Issue #31-33]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum, SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen
-│   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, recent sessions panel, doctor warnings banner; ProjectInfo gains username field; draw_project_info() renders @username  [Issue #31, #49, #34]
+│   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; draw_suggestions() renders Suggestions panel; Tab-based focus navigation between QuickActions and Suggestions; ProjectInfo gains username field  [Issue #31, #49, #34, #35]
 │   │       ├── issue_browser.rs           # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery  [Issue #32, #46]
 │   │       └── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action  [Issue #33]
 │   └── work/                              # Work queue and scheduling  [Phase 2]
@@ -180,7 +180,7 @@ maestro/
 | `.claude/skills/` | Reusable knowledge bases for subagents |
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
 | `src/` | Rust source code |
-| `src/main.rs` | CLI entry point; `setup_app_from_config()` shared App setup helper; `cmd_dashboard()` with startup cleanup and config-driven wiring; `cmd_run()` refactored to use shared helper (Issues #29, #34, #36, #49) |
+| `src/main.rs` | CLI entry point; `setup_app_from_config()` shared App setup helper; `cmd_dashboard()` with startup cleanup, config-driven wiring, and `FetchSuggestionData` queued on startup; `cmd_run()` refactored to use shared helper (Issues #29, #34, #35, #36, #49) |
 | `src/budget.rs` | Per-session and global budget enforcement (Phase 3) |
 | `src/doctor.rs` | Preflight check system: `CheckSeverity`, `CheckResult`, `DoctorReport`, `run_all_checks()`, `print_report()`; `build_gh_auth_result()` (pure/testable); `check_az_identity()` for Azure DevOps (Issues #49, #34) |
 | `src/git.rs` | GitOps trait and CLI-backed commit+push (Phase 3) |
@@ -217,8 +217,8 @@ maestro/
 | `src/state/file_claims.rs` | Per-session file claim registry |
 | `src/state/progress.rs` | Session phase tracking (Phase 3) |
 | `src/tui/` | Terminal UI (ratatui) |
-| `src/tui/mod.rs` | Event loop; `handle_screen_action()`; command processing; `launch_session_from_config()` (Issues #31-33, #46-48) |
-| `src/tui/app.rs` | `App` struct; `TuiMode`; `TuiCommand`; `TuiDataEvent`; `handle_data_event()`; `data_tx`/`data_rx` channel (Issues #12, #31-33, #43, #46-48) |
+| `src/tui/mod.rs` | Event loop; `handle_screen_action()`; command processing; `launch_session_from_config()`; `FetchSuggestionData` async handler for GitHub ready/failed counts and milestone progress (Issues #31-33, #35, #46-48) |
+| `src/tui/app.rs` | `App` struct; `TuiMode`; `TuiCommand` (adds `FetchSuggestionData`); `TuiDataEvent` (adds `SuggestionData`); `SuggestionDataPayload`; `handle_data_event()`; `data_tx`/`data_rx` channel (Issues #12, #31-33, #35, #43, #46-48) |
 | `src/tui/activity_log.rs` | Scrollable log widget |
 | `src/tui/cost_dashboard.rs` | Per-session and aggregate cost display (Phase 3) |
 | `src/tui/dep_graph.rs` | ASCII dependency graph visualization (Phase 3) |
@@ -228,7 +228,7 @@ maestro/
 | `src/tui/panels.rs` | Split-pane multi-session view |
 | `src/tui/screens/` | Interactive TUI screen components (Issues #31-33) |
 | `src/tui/screens/mod.rs` | `ScreenAction` enum, `SessionConfig`; re-exports all screen types |
-| `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with logo, quick-actions, recent activity, doctor warnings banner, and `@username` display; `ProjectInfo` gains `username: Option<String>` (Issues #31, #49, #34) |
+| `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
 | `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters; `set_issues()` (Issues #32, #46) |
 | `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
 | `src/work/` | Work queue and dependency scheduling (Phase 2) |
