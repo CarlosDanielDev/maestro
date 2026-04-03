@@ -241,7 +241,7 @@ async fn event_loop(
                     tokio::spawn(async move {
                         let client = GhCliClient::new();
                         let result = client.list_issues(&[]).await;
-                        let _ = tx.send(app::TuiDataEvent::IssuesFetched(result));
+                        let _ = tx.send(app::TuiDataEvent::Issues(result));
                     });
                 }
                 app::TuiCommand::FetchMilestones => {
@@ -260,10 +260,10 @@ async fn event_loop(
                                     .zip(results)
                                     .map(|(ms, r)| (ms, r.unwrap_or_default()))
                                     .collect();
-                                let _ = tx.send(app::TuiDataEvent::MilestonesFetched(Ok(entries)));
+                                let _ = tx.send(app::TuiDataEvent::Milestones(Ok(entries)));
                             }
                             Err(e) => {
-                                let _ = tx.send(app::TuiDataEvent::MilestonesFetched(Err(e)));
+                                let _ = tx.send(app::TuiDataEvent::Milestones(Err(e)));
                             }
                         }
                     });
@@ -400,11 +400,11 @@ fn spawn_issue_fetch(
             tokio::spawn(async move {
                 let client = GhCliClient::new();
                 let result = client.get_issue(issue_number).await;
-                let _ = tx.send(app::TuiDataEvent::IssueFetched(result));
+                let _ = tx.send(app::TuiDataEvent::Issue(result));
             });
         }
         None => {
-            let _ = tx.send(app::TuiDataEvent::IssueFetched(Err(anyhow::anyhow!(
+            let _ = tx.send(app::TuiDataEvent::Issue(Err(anyhow::anyhow!(
                 "Cannot launch session without an issue number"
             ))));
         }
