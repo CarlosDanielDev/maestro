@@ -165,6 +165,12 @@ impl App {
         self.fork_policy = Some(ForkPolicy::new(
             config.sessions.context_overflow.max_fork_depth,
         ));
+        // Resolve guardrail prompt: custom from config or auto-detected default
+        let guardrail = crate::prompts::resolve_guardrail(
+            config.sessions.guardrail_prompt.as_deref(),
+            &std::path::PathBuf::from("."),
+        );
+        self.pool.set_guardrail_prompt(guardrail);
         self.config = Some(config);
     }
 
