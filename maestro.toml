@@ -37,6 +37,24 @@ slack = false
 # Model routing rules: label pattern -> model name. First match wins.
 # routing = { "priority:P0" = "opus", "type:docs" = "haiku" }
 
+[sessions.completion_gates]
+enabled = true
+
+[[sessions.completion_gates.commands]]
+name = "fmt"
+run = "cargo fmt --check"
+required = true
+
+[[sessions.completion_gates.commands]]
+name = "clippy"
+run = "cargo clippy -- -D warnings"
+required = true
+
+[[sessions.completion_gates.commands]]
+name = "test"
+run = "cargo test"
+required = true
+
 [gates]
 enabled = true
 test_command = "cargo test"

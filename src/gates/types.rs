@@ -1,3 +1,4 @@
+use crate::config::CompletionGateEntry;
 use serde::{Deserialize, Serialize};
 
 /// A gate that must pass before a session is considered truly complete.
@@ -12,6 +13,39 @@ pub enum CompletionGate {
     FileContains { path: String, pattern: String },
     /// Check that a PR was created (verified externally).
     PrCreated,
+    /// A named command gate from [sessions.completion_gates.commands].
+    Command {
+        name: String,
+        command: String,
+        required: bool,
+    },
+}
+
+impl CompletionGate {
+    pub fn from_config_entry(entry: &CompletionGateEntry) -> Self {
+        Self::Command {
+            name: entry.name.clone(),
+            command: entry.run.clone(),
+            required: entry.required,
+        }
+    }
+
+    pub fn is_required(&self) -> bool {
+        match self {
+            Self::Command { required, .. } => *required,
+            _ => true,
+        }
+    }
+
+    pub fn display_name(&self) -> &str {
+        match self {
+            Self::TestsPass { .. } => "tests",
+            Self::FileExists { .. } => "file_exists",
+            Self::FileContains { .. } => "file_contains",
+            Self::PrCreated => "pr_created",
+            Self::Command { name, .. } => name.as_str(),
+        }
+    }
 }
 
 /// Result of running a single gate.
@@ -94,5 +128,69 @@ mod tests {
             CompletionGate::TestsPass { command } => assert_eq!(command, "cargo test"),
             _ => panic!("expected TestsPass"),
         }
+    }
+
+    #[test]
+    fn command_gate_is_required_returns_true_when_required() {
+        let gate = CompletionGate::Command {
+            name: "fmt".into(),
+            command: "cargo fmt --check".into(),
+            required: true,
+        };
+        assert!(gate.is_required());
+    }
+
+    #[test]
+    fn command_gate_is_required_returns_false_when_optional() {
+        let gate = CompletionGate::Command {
+            name: "clippy".into(),
+            command: "cargo clippy".into(),
+            required: false,
+        };
+        assert!(!gate.is_required());
+    }
+
+    #[test]
+    fn command_gate_display_name_returns_name_field() {
+        let gate = CompletionGate::Command {
+            name: "lint".into(),
+            command: "cargo clippy".into(),
+            required: true,
+        };
+        assert_eq!(gate.display_name(), "lint");
+    }
+
+    #[test]
+    fn command_gate_from_config_entry_copies_all_fields() {
+        let entry = CompletionGateEntry {
+            name: "fmt".into(),
+            run: "cargo fmt --check".into(),
+            required: false,
+        };
+        let gate = CompletionGate::from_config_entry(&entry);
+        match gate {
+            CompletionGate::Command {
+                name,
+                command,
+                required,
+            } => {
+                assert_eq!(name, "fmt");
+                assert_eq!(command, "cargo fmt --check");
+                assert!(!required);
+            }
+            _ => panic!("expected Command variant"),
+        }
+    }
+
+    #[test]
+    fn command_gate_serializes_with_type_tag() {
+        let gate = CompletionGate::Command {
+            name: "fmt".into(),
+            command: "cargo fmt --check".into(),
+            required: true,
+        };
+        let json = serde_json::to_string(&gate).unwrap();
+        assert!(json.contains("command"));
+        assert!(json.contains("fmt"));
     }
 }
