@@ -1,7 +1,4 @@
 use crate::budget::{BudgetAction, BudgetCheck, BudgetEnforcer};
-use crate::github::types::{GhIssue, GhMilestone};
-use crate::tui::screens::SessionConfig;
-use crate::tui::screens::milestone::MilestoneEntry;
 use crate::config::Config;
 use crate::config::ConflictPolicy;
 use crate::gates::runner::{self, GateCheck, GateRunner};
@@ -11,6 +8,7 @@ use crate::github::ci::{CiChecker, CiStatus, PendingPrCheck};
 use crate::github::client::GitHubClient;
 use crate::github::labels::LabelManager;
 use crate::github::pr::PrCreator;
+use crate::github::types::{GhIssue, GhMilestone};
 use crate::models::ModelRouter;
 use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::notifications::slack::SlackEvent;
@@ -32,6 +30,8 @@ use crate::state::store::StateStore;
 use crate::state::types::MaestroState;
 use crate::tui::activity_log::{ActivityLog, LogLevel};
 use crate::tui::panels::PanelView;
+use crate::tui::screens::SessionConfig;
+use crate::tui::screens::milestone::MilestoneEntry;
 use crate::work::assigner::WorkAssigner;
 use chrono::Utc;
 use std::time::{Duration, Instant};
@@ -710,8 +710,7 @@ impl App {
             }
             TuiDataEvent::MilestonesFetched(Ok(entries)) => {
                 if let Some(ref mut screen) = self.milestone_screen {
-                    screen.milestones =
-                        entries.into_iter().map(MilestoneEntry::from).collect();
+                    screen.milestones = entries.into_iter().map(MilestoneEntry::from).collect();
                     screen.loading = false;
                 }
             }
@@ -736,8 +735,8 @@ impl App {
                     .as_ref()
                     .map(|c| c.sessions.default_mode.clone())
                     .unwrap_or_else(|| "orchestrator".to_string());
-                let issue_mode = crate::modes::mode_from_labels(&gh_issue.labels)
-                    .unwrap_or(default_mode);
+                let issue_mode =
+                    crate::modes::mode_from_labels(&gh_issue.labels).unwrap_or(default_mode);
                 let issue_number = gh_issue.number;
                 let mut session = Session::new(
                     gh_issue.unattended_prompt(),
