@@ -1,4 +1,4 @@
-use super::types::GhIssue;
+use super::types::{GhIssue, GhMilestone};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
@@ -21,6 +21,7 @@ pub struct PrResult {
 pub trait GitHubClient: Send + Sync {
     async fn list_issues(&self, labels: &[&str]) -> Result<Vec<GhIssue>>;
     async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>>;
+    async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>>;
     async fn get_issue(&self, number: u64) -> Result<GhIssue>;
     async fn add_label(&self, issue_number: u64, label: &str) -> Result<()>;
     async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()>;
@@ -113,6 +114,11 @@ pub fn parse_issues_json(json_str: &str) -> Result<Vec<GhIssue>> {
     Ok(issues)
 }
 
+/// Parse JSON output from `gh api repos/{owner}/{repo}/milestones`.
+pub fn parse_milestones_json(json_str: &str) -> Result<Vec<GhMilestone>> {
+    serde_json::from_str(json_str).context("Failed to parse milestones JSON")
+}
+
 /// Blanket impl: if T: GitHubClient, then &T is also a GitHubClient.
 #[async_trait]
 impl<T: GitHubClient + ?Sized> GitHubClient for &T {
@@ -121,6 +127,9 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     }
     async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>> {
         (**self).list_issues_by_milestone(milestone).await
+    }
+    async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>> {
+        (**self).list_milestones(state).await
     }
     async fn get_issue(&self, number: u64) -> Result<GhIssue> {
         (**self).get_issue(number).await
@@ -188,20 +197,21 @@ impl GitHubClient for GhCliClient {
             validate_gh_arg(label, "label")?;
         }
         let label_arg = labels.join(",");
-        let json_str = self
-            .run_gh(&[
-                "issue",
-                "list",
-                "--label",
-                &label_arg,
-                "--state",
-                "open",
-                "--limit",
-                "100",
-                "--json",
-                "number,title,body,labels,state,url",
-            ])
-            .await?;
+        let mut args = vec![
+            "issue",
+            "list",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,state,url",
+        ];
+        if !label_arg.is_empty() {
+            args.push("--label");
+            args.push(&label_arg);
+        }
+        let json_str = self.run_gh(&args).await?;
         parse_issues_json(&json_str)
     }
 
@@ -222,6 +232,19 @@ impl GitHubClient for GhCliClient {
             ])
             .await?;
         parse_issues_json(&json_str)
+    }
+
+    async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>> {
+        match state {
+            "open" | "closed" | "all" => {}
+            _ => anyhow::bail!(
+                "Invalid milestone state: {:?}. Must be open, closed, or all",
+                state
+            ),
+        }
+        let endpoint = format!("repos/{{owner}}/{{repo}}/milestones?state={}", state);
+        let json_str = self.run_gh(&["api", &endpoint, "--paginate"]).await?;
+        parse_milestones_json(&json_str)
     }
 
     async fn get_issue(&self, number: u64) -> Result<GhIssue> {
@@ -333,6 +356,7 @@ pub mod mock {
     #[derive(Default)]
     struct MockState {
         issues: Vec<GhIssue>,
+        milestones: Vec<GhMilestone>,
         add_label_error: Option<String>,
         remove_label_error: Option<String>,
         create_pr_response: Option<u64>,
@@ -360,6 +384,10 @@ pub mod mock {
 
         pub fn set_issues(&self, issues: Vec<GhIssue>) {
             self.inner.lock().unwrap().issues = issues;
+        }
+
+        pub fn set_milestones(&self, milestones: Vec<GhMilestone>) {
+            self.inner.lock().unwrap().milestones = milestones;
         }
 
         pub fn set_get_issue_error(&self, number: u64, msg: &str) {
@@ -418,6 +446,11 @@ pub mod mock {
         async fn list_issues_by_milestone(&self, _milestone: &str) -> Result<Vec<GhIssue>> {
             let state = self.inner.lock().unwrap();
             Ok(state.issues.clone())
+        }
+
+        async fn list_milestones(&self, _state: &str) -> Result<Vec<GhMilestone>> {
+            let state = self.inner.lock().unwrap();
+            Ok(state.milestones.clone())
         }
 
         async fn get_issue(&self, number: u64) -> Result<GhIssue> {
@@ -645,5 +678,77 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("branch not found"));
+    }
+
+    // parse_milestones_json
+
+    #[test]
+    fn parse_milestones_json_valid_array() {
+        let json = r#"[
+            {"number": 1, "title": "v1.0", "description": "First release", "state": "open", "open_issues": 3, "closed_issues": 7},
+            {"number": 2, "title": "v2.0", "description": "", "state": "open", "open_issues": 0, "closed_issues": 0}
+        ]"#;
+        let milestones = parse_milestones_json(json).unwrap();
+        assert_eq!(milestones.len(), 2);
+        assert_eq!(milestones[0].number, 1);
+        assert_eq!(milestones[0].title, "v1.0");
+        assert_eq!(milestones[0].open_issues, 3);
+        assert_eq!(milestones[0].closed_issues, 7);
+        assert_eq!(milestones[1].number, 2);
+    }
+
+    #[test]
+    fn parse_milestones_json_empty_array() {
+        let milestones = parse_milestones_json("[]").unwrap();
+        assert!(milestones.is_empty());
+    }
+
+    #[test]
+    fn parse_milestones_json_invalid_json_returns_err() {
+        assert!(parse_milestones_json("{not json}").is_err());
+    }
+
+    #[test]
+    fn parse_milestones_json_missing_optional_fields_default() {
+        let json = r#"[{"number": 5, "title": "v5", "state": "open"}]"#;
+        let milestones = parse_milestones_json(json).unwrap();
+        assert_eq!(milestones[0].description, "");
+        assert_eq!(milestones[0].open_issues, 0);
+        assert_eq!(milestones[0].closed_issues, 0);
+    }
+
+    // MockGitHubClient::list_milestones
+
+    #[tokio::test]
+    async fn mock_list_milestones_returns_stored_milestones() {
+        let client = MockGitHubClient::new();
+        client.set_milestones(vec![
+            GhMilestone {
+                number: 1,
+                title: "v1.0".to_string(),
+                description: String::new(),
+                state: "open".to_string(),
+                open_issues: 2,
+                closed_issues: 3,
+            },
+            GhMilestone {
+                number: 2,
+                title: "v2.0".to_string(),
+                description: String::new(),
+                state: "open".to_string(),
+                open_issues: 0,
+                closed_issues: 0,
+            },
+        ]);
+        let milestones = client.list_milestones("open").await.unwrap();
+        assert_eq!(milestones.len(), 2);
+        assert_eq!(milestones[0].title, "v1.0");
+    }
+
+    #[tokio::test]
+    async fn mock_list_milestones_returns_empty_when_none_set() {
+        let client = MockGitHubClient::new();
+        let milestones = client.list_milestones("open").await.unwrap();
+        assert!(milestones.is_empty());
     }
 }

@@ -9,6 +9,8 @@ pub mod panels;
 pub mod screens;
 pub mod ui;
 
+use crate::github::client::{GhCliClient, GitHubClient};
+use crate::tui::activity_log::LogLevel;
 use app::App;
 use crossterm::{
     event::{
@@ -225,6 +227,70 @@ async fn event_loop(
             }
         }
 
+        // Drain data events from background fetches
+        while let Ok(data_evt) = app.data_rx.try_recv() {
+            app.handle_data_event(data_evt);
+        }
+
+        // Process pending commands
+        let commands = std::mem::take(&mut app.pending_commands);
+        for cmd in commands {
+            match cmd {
+                app::TuiCommand::FetchIssues => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result = client.list_issues(&[]).await;
+                        let _ = tx.send(app::TuiDataEvent::Issues(result));
+                    });
+                }
+                app::TuiCommand::FetchMilestones => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        match client.list_milestones("open").await {
+                            Ok(milestones) => {
+                                let futures: Vec<_> = milestones
+                                    .iter()
+                                    .map(|ms| client.list_issues_by_milestone(&ms.title))
+                                    .collect();
+                                let results = futures::future::join_all(futures).await;
+                                let entries = milestones
+                                    .into_iter()
+                                    .zip(results)
+                                    .map(|(ms, r)| (ms, r.unwrap_or_default()))
+                                    .collect();
+                                let _ = tx.send(app::TuiDataEvent::Milestones(Ok(entries)));
+                            }
+                            Err(e) => {
+                                let _ = tx.send(app::TuiDataEvent::Milestones(Err(e)));
+                            }
+                        }
+                    });
+                }
+                app::TuiCommand::LaunchSession(config) => {
+                    spawn_issue_fetch(app.data_tx.clone(), config);
+                }
+                app::TuiCommand::LaunchSessions(configs) => {
+                    for config in configs {
+                        spawn_issue_fetch(app.data_tx.clone(), config);
+                    }
+                }
+            }
+        }
+
+        // Launch sessions that were prepared by IssueFetched data events
+        let sessions = std::mem::take(&mut app.pending_session_launches);
+        for session in sessions {
+            if let Err(e) = app.add_session(session).await {
+                app.activity_log.push_simple(
+                    "Session".into(),
+                    format!("Failed to launch: {}", e),
+                    LogLevel::Error,
+                );
+            }
+        }
+
         // Auto-exit when all sessions complete (skip if in dashboard mode)
         if app.all_done() && !matches!(app.tui_mode, app::TuiMode::Dashboard) {
             // If we have a home screen, return to dashboard instead of exiting
@@ -266,21 +332,81 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
     match action {
         ScreenAction::None => {}
         ScreenAction::Push(mode) => {
+            match mode {
+                app::TuiMode::IssueBrowser => {
+                    // If coming from milestone view, use that milestone's issues
+                    let from_milestone = app.milestone_screen.as_ref().and_then(|ms| {
+                        ms.selected_milestone()
+                            .filter(|entry| !entry.issues.is_empty())
+                            .map(|entry| entry.issues.clone())
+                    });
+
+                    if let Some(issues) = from_milestone {
+                        app.issue_browser_screen = Some(screens::IssueBrowserScreen::new(issues));
+                    } else if app.issue_browser_screen.is_none() {
+                        let mut screen = screens::IssueBrowserScreen::new(vec![]);
+                        screen.loading = true;
+                        app.issue_browser_screen = Some(screen);
+                        app.pending_commands.push(app::TuiCommand::FetchIssues);
+                    }
+                }
+                app::TuiMode::MilestoneView => {
+                    if app.milestone_screen.is_none() {
+                        let mut screen = screens::MilestoneScreen::new(vec![]);
+                        screen.loading = true;
+                        app.milestone_screen = Some(screen);
+                        app.pending_commands.push(app::TuiCommand::FetchMilestones);
+                    }
+                }
+                _ => {}
+            }
             app.tui_mode = mode;
         }
         ScreenAction::Pop => {
+            match app.tui_mode {
+                app::TuiMode::IssueBrowser => {
+                    app.issue_browser_screen = None;
+                }
+                app::TuiMode::MilestoneView => {
+                    app.milestone_screen = None;
+                }
+                _ => {}
+            }
             app.tui_mode = app::TuiMode::Dashboard;
         }
         ScreenAction::Quit => {
             app.running = false;
         }
-        ScreenAction::LaunchSession(_config) => {
-            // TODO: Wire session launch from screen config
+        ScreenAction::LaunchSession(config) => {
+            app.pending_commands
+                .push(app::TuiCommand::LaunchSession(config));
             app.tui_mode = app::TuiMode::Overview;
         }
-        ScreenAction::LaunchSessions(_configs) => {
-            // TODO: Wire multi-session launch from screen configs
+        ScreenAction::LaunchSessions(configs) => {
+            app.pending_commands
+                .push(app::TuiCommand::LaunchSessions(configs));
             app.tui_mode = app::TuiMode::Overview;
+        }
+    }
+}
+
+/// Spawn a background task to fetch an issue and send the result back for session creation.
+fn spawn_issue_fetch(
+    tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>,
+    config: screens::SessionConfig,
+) {
+    match config.issue_number {
+        Some(issue_number) => {
+            tokio::spawn(async move {
+                let client = GhCliClient::new();
+                let result = client.get_issue(issue_number).await;
+                let _ = tx.send(app::TuiDataEvent::Issue(result));
+            });
+        }
+        None => {
+            let _ = tx.send(app::TuiDataEvent::Issue(Err(anyhow::anyhow!(
+                "Cannot launch session without an issue number"
+            ))));
         }
     }
 }
