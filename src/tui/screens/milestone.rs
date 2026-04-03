@@ -1,4 +1,4 @@
-use super::{ScreenAction, SessionConfig, sanitize_for_terminal};
+use super::{ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
 use crate::github::types::GhIssue;
 use crate::tui::app::TuiMode;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
@@ -36,11 +36,12 @@ impl MilestoneEntry {
 }
 
 pub struct MilestoneScreen {
-    pub milestones: Vec<MilestoneEntry>,
-    pub selected: usize,
-    pub scroll_offset: usize,
-    pub loading: bool,
-    pub error: Option<String>,
+    pub(crate) milestones: Vec<MilestoneEntry>,
+    pub(crate) selected: usize,
+    scroll_offset: usize,
+    pub(crate) loading: bool,
+    /// Last known visible slots from draw, used for scroll sync.
+    last_visible_slots: usize,
 }
 
 impl MilestoneScreen {
@@ -50,7 +51,7 @@ impl MilestoneScreen {
             selected: 0,
             scroll_offset: 0,
             loading: false,
-            error: None,
+            last_visible_slots: 6,
         }
     }
 
@@ -88,7 +89,7 @@ impl MilestoneScreen {
         ScreenAction::None
     }
 
-    pub fn draw(&self, f: &mut Frame, area: Rect) {
+    pub fn draw(&mut self, f: &mut Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -100,7 +101,15 @@ impl MilestoneScreen {
 
         self.draw_milestone_list(f, chunks[0]);
         self.draw_detail(f, chunks[1]);
-        self.draw_keybinds(f, chunks[2]);
+        draw_keybinds_bar(
+            f,
+            chunks[2],
+            &[
+                ("Enter", "View Issues"),
+                ("r", "Run All Open"),
+                ("Esc", "Back"),
+            ],
+        );
     }
 
     pub fn tick(&mut self) {
@@ -111,14 +120,11 @@ impl MilestoneScreen {
         self.milestones.get(self.selected)
     }
 
-    /// Keep scroll_offset in sync so the selected milestone is always visible.
-    /// Each milestone entry uses 3 rows; default visible slots = 6.
     fn sync_scroll(&mut self) {
-        let visible_slots = 6;
         if self.selected < self.scroll_offset {
             self.scroll_offset = self.selected;
-        } else if self.selected >= self.scroll_offset + visible_slots {
-            self.scroll_offset = self.selected - visible_slots + 1;
+        } else if self.selected >= self.scroll_offset + self.last_visible_slots {
+            self.scroll_offset = self.selected - self.last_visible_slots + 1;
         }
     }
 
@@ -144,7 +150,7 @@ impl MilestoneScreen {
         ScreenAction::None
     }
 
-    fn draw_milestone_list(&self, f: &mut Frame, area: Rect) {
+    fn draw_milestone_list(&mut self, f: &mut Frame, area: Rect) {
         let block = Block::default()
             .title(" Milestones ")
             .borders(Borders::ALL)
@@ -171,6 +177,7 @@ impl MilestoneScreen {
 
         // Each milestone takes 3 lines: title, progress bar, status
         let visible_slots = (inner.height as usize) / 3;
+        self.last_visible_slots = visible_slots.max(1);
         let milestones_to_show: Vec<(usize, &MilestoneEntry)> = self
             .milestones
             .iter()
@@ -278,34 +285,13 @@ impl MilestoneScreen {
             f.render_widget(para, area);
         }
     }
-
-    fn draw_keybinds(&self, f: &mut Frame, area: Rect) {
-        let line = Line::from(vec![
-            Span::styled("[Enter]", Style::default().fg(Color::Green)),
-            Span::raw(" View Issues  "),
-            Span::styled("[r]", Style::default().fg(Color::Green)),
-            Span::raw(" Run All Open  "),
-            Span::styled("[Esc]", Style::default().fg(Color::Green)),
-            Span::raw(" Back"),
-        ]);
-        let para = Paragraph::new(line);
-        f.render_widget(para, area);
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent {
-            code,
-            modifiers: KeyModifiers::NONE,
-            kind: KeyEventKind::Press,
-            state: KeyEventState::NONE,
-        })
-    }
+    use crate::tui::screens::test_helpers::key_event;
+    use crossterm::event::KeyCode;
 
     fn make_issue(number: u64) -> GhIssue {
         GhIssue {

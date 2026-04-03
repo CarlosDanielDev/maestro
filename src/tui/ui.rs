@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 /// Render the entire TUI.
-pub fn draw(f: &mut Frame, app: &App) {
+pub fn draw(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -81,12 +81,12 @@ pub fn draw(f: &mut Frame, app: &App) {
             }
         }
         TuiMode::IssueBrowser => {
-            if let Some(ref screen) = app.issue_browser_screen {
+            if let Some(ref mut screen) = app.issue_browser_screen {
                 screen.draw(f, chunks[1]);
             }
         }
         TuiMode::MilestoneView => {
-            if let Some(ref screen) = app.milestone_screen {
+            if let Some(ref mut screen) = app.milestone_screen {
                 screen.draw(f, chunks[1]);
             }
         }
