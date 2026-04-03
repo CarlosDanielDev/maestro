@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-03 12:00 (UTC)
+> Last updated: 2026-04-03 14:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -53,6 +53,10 @@ maestro/
 │       └── video-frame-extractor/
 │           └── SKILL.md                   # Video frame extraction patterns
 ├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── config.yml                     # Template chooser config (blank issues disabled)
+│   │   ├── feature.yml                    # Feature request issue form with DOR
+│   │   └── bug.yml                        # Bug report issue form with DOR
 │   └── workflows/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
@@ -164,6 +168,9 @@ maestro/
 
 | Path | Description |
 |------|-------------|
+| `.github/ISSUE_TEMPLATE/config.yml` | Template chooser config — blank issues disabled |
+| `.github/ISSUE_TEMPLATE/feature.yml` | Feature request issue form with Definition of Ready fields |
+| `.github/ISSUE_TEMPLATE/bug.yml` | Bug report issue form with Definition of Ready fields |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline |
 | `.github/workflows/release.yml` | Release automation: build binaries, create GitHub Release, update Homebrew tap |
 | `.claude/` | Claude Code agent configuration |
