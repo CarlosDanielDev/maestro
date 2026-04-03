@@ -7,6 +7,27 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Onboarding Preflight Check — `maestro doctor` (#49)
+
+- New `src/doctor.rs` module with a self-contained preflight check system
+- `CheckSeverity` enum (`Required`, `Optional`) — distinguishes blocking failures from soft warnings
+- `CheckResult` struct with `pass()` and `fail()` constructors; `symbol()` returns `"OK"`, `"FAIL"`, or `"WARN"` based on severity and outcome
+- `DoctorReport` struct aggregating all check results; exposes `has_failures()`, `has_warnings()`, and `failed_checks()` helpers
+- `run_all_checks(config)` executes 9 individual checks in order:
+  - `check_gh_installed` — verifies `gh` CLI is on `$PATH` (Required)
+  - `check_gh_authenticated` — runs `gh auth status` (Required)
+  - `check_git_installed` — verifies `git` is on `$PATH` (Required)
+  - `check_git_user_config` — confirms `user.name` and `user.email` are set (Required)
+  - `check_git_remote` — ensures at least one remote is configured (Required)
+  - `check_config_exists` — looks for `maestro.toml` in the working directory (Required)
+  - `check_az_cli` — runs only when the configured provider is `AzureDevops` (Optional)
+  - `check_claude_cli` — verifies `claude` CLI is available; failure is a warning, not a hard block (Optional)
+  - `check_gh_repo_accessible` — runs `gh repo view` only when `gh auth` passed (Required)
+- `print_report(report)` renders a colour-coded table to stdout (green OK, red FAIL, yellow WARN) with a one-line summary at the end
+- `Commands::Doctor` variant added to the clap CLI in `src/main.rs`; `cmd_doctor()` handler loads config optionally (no error if `maestro.toml` is absent) and exits with a non-zero code when required checks fail
+- TUI dashboard integration: `cmd_dashboard()` in `src/main.rs` now runs `run_all_checks()` at startup and passes the list of failed/warned check messages into `HomeScreen`
+- `HomeScreen` in `src/tui/screens/home.rs` gains a `warnings: Vec<String>` field, a `draw_warnings()` method that renders a yellow bordered panel beneath the logo, and dynamic layout that hides the panel entirely when there are no warnings
+
 ### Live GitHub Data Fetching and Session Launch from TUI (#46, #47, #48)
 
 - **Issue browser live fetch (#46):** opening the issue browser now triggers an async GitHub fetch via `tokio::spawn` + `mpsc` channel; the screen shows a loading state while data arrives and calls `set_issues()` on the `IssueBrowserScreen` once the fetch completes
