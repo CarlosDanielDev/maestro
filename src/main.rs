@@ -174,6 +174,69 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
+const DEFAULT_MAX_CONCURRENT: usize = 3;
+const DEFAULT_PLUGIN_TIMEOUT_SECS: u64 = 30;
+
+/// Perform startup housekeeping: remove orphaned worktrees and old session logs.
+fn startup_cleanup(repo_root: &std::path::Path) {
+    let cleanup_mgr = session::cleanup::CleanupManager::new(repo_root);
+    if let Ok(orphans) = cleanup_mgr.scan_orphans()
+        && !orphans.is_empty()
+    {
+        tracing::info!("Cleaning {} orphaned worktrees on startup", orphans.len());
+        let _ = cleanup_mgr.remove_orphans(&orphans);
+    }
+
+    let logger =
+        session::logger::SessionLogger::new(session::logger::SessionLogger::default_dir());
+    if let Ok(removed) = logger.cleanup_old_logs(30)
+        && removed > 0
+    {
+        tracing::info!("Cleaned {} old session logs", removed);
+    }
+}
+
+/// Build a fully-configured App from a Config.
+fn setup_app_from_config(
+    config: Config,
+    store: StateStore,
+    worktree_mgr: Box<dyn session::worktree::WorktreeManager + Send>,
+    max_concurrent_override: Option<usize>,
+) -> App {
+    let max_concurrent = max_concurrent_override.unwrap_or(config.sessions.max_concurrent);
+
+    let mut app = App::new(
+        store,
+        max_concurrent,
+        worktree_mgr,
+        config.sessions.permission_mode.clone(),
+        config.sessions.allowed_tools.clone(),
+    );
+
+    app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
+        config.budget.per_session_usd,
+        config.budget.total_usd,
+        config.budget.alert_threshold_pct,
+    ));
+
+    app.model_router = Some(crate::models::ModelRouter::new(
+        config.models.routing.clone(),
+        config.sessions.default_model.clone(),
+    ));
+
+    app.notifications = build_notification_dispatcher(&config.notifications);
+
+    if !config.plugins.is_empty() {
+        app.plugin_runner = Some(crate::plugins::runner::PluginRunner::new(
+            config.plugins.clone(),
+            DEFAULT_PLUGIN_TIMEOUT_SECS,
+        ));
+    }
+
+    app.configure(config);
+    app
+}
+
 fn build_notification_dispatcher(cfg: &NotificationsConfig) -> NotificationDispatcher {
     let mut dispatcher = NotificationDispatcher::new(cfg.desktop);
     if cfg.slack {
@@ -533,33 +596,7 @@ async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
     println!("Resuming {} incomplete session(s)...", incomplete.len());
 
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
-    let max_concurrent = config.sessions.max_concurrent;
-
-    let mut app = App::new(
-        store,
-        max_concurrent,
-        worktree_mgr,
-        config.sessions.permission_mode.clone(),
-        config.sessions.allowed_tools.clone(),
-    );
-
-    // Wire up from config
-    app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
-        config.budget.per_session_usd,
-        config.budget.total_usd,
-        config.budget.alert_threshold_pct,
-    ));
-    app.model_router = Some(crate::models::ModelRouter::new(
-        config.models.routing.clone(),
-        config.sessions.default_model.clone(),
-    ));
-    app.notifications = build_notification_dispatcher(&config.notifications);
-    if !config.plugins.is_empty() {
-        app.plugin_runner = Some(crate::plugins::runner::PluginRunner::new(
-            config.plugins.clone(),
-            30,
-        ));
-    }
+    let mut app = setup_app_from_config(config, store, worktree_mgr, None);
 
     // Re-enqueue incomplete sessions with their original prompts
     for s in &incomplete {
@@ -575,9 +612,7 @@ async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
     }
 
     // Set up GitHub client for label management
-    let client = GhCliClient::new();
-    app.github_client = Some(Box::new(client));
-    app.configure(config);
+    app.github_client = Some(Box::new(GhCliClient::new()));
 
     tui::run(app).await
 }
@@ -646,65 +681,15 @@ async fn cmd_run(
     let config = Config::find_and_load()?;
     let model = model.unwrap_or(config.sessions.default_model.clone());
     let session_mode = mode.unwrap_or(config.sessions.default_mode.clone());
-    let max_concurrent = max_concurrent_override.unwrap_or(config.sessions.max_concurrent);
 
     let store = StateStore::new(StateStore::default_path());
     let repo_root = std::env::current_dir()?;
+    startup_cleanup(&repo_root);
 
-    // Startup cleanup: remove orphaned worktrees (non-blocking)
-    {
-        let cleanup_mgr = session::cleanup::CleanupManager::new(&repo_root);
-        if let Ok(orphans) = cleanup_mgr.scan_orphans()
-            && !orphans.is_empty()
-        {
-            tracing::info!("Cleaning {} orphaned worktrees on startup", orphans.len());
-            let _ = cleanup_mgr.remove_orphans(&orphans);
-        }
-    }
-
-    // Startup log cleanup: remove logs older than 30 days
-    {
-        let logger =
-            session::logger::SessionLogger::new(session::logger::SessionLogger::default_dir());
-        if let Ok(removed) = logger.cleanup_old_logs(30)
-            && removed > 0
-        {
-            tracing::info!("Cleaned {} old session logs", removed);
-        }
-    }
+    let issue_filter_labels = config.github.issue_filter_labels.clone();
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
 
-    let mut app = App::new(
-        store,
-        max_concurrent,
-        worktree_mgr,
-        config.sessions.permission_mode.clone(),
-        config.sessions.allowed_tools.clone(),
-    );
-
-    // Wire up budget enforcer from config
-    app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
-        config.budget.per_session_usd,
-        config.budget.total_usd,
-        config.budget.alert_threshold_pct,
-    ));
-
-    // Wire up model router from config
-    app.model_router = Some(crate::models::ModelRouter::new(
-        config.models.routing.clone(),
-        config.sessions.default_model.clone(),
-    ));
-
-    // Wire up notification dispatcher from config
-    app.notifications = build_notification_dispatcher(&config.notifications);
-
-    // Wire up plugin runner from config
-    if !config.plugins.is_empty() {
-        app.plugin_runner = Some(crate::plugins::runner::PluginRunner::new(
-            config.plugins.clone(),
-            30, // default timeout
-        ));
-    }
+    let mut app = setup_app_from_config(config, store, worktree_mgr, max_concurrent_override);
 
     // Resume from previous state if requested
     if resume {
@@ -741,10 +726,9 @@ async fn cmd_run(
         let items: Vec<WorkItem> = issues.into_iter().map(WorkItem::from_issue).collect();
         let assigner = WorkAssigner::new(items);
 
-        // Store assigner and config in app for work management
+        // Store assigner in app for work management
         app.work_assigner = Some(assigner);
         app.github_client = Some(Box::new(client));
-        app.configure(config.clone());
     } else if let Some(issue_str) = issue {
         let client = GhCliClient::new();
 
@@ -773,15 +757,12 @@ async fn cmd_run(
             app.add_session(session).await?;
         }
 
-        // Set github client + config so label lifecycle and auto-PR work
+        // Set github client so label lifecycle and auto-PR work
         app.github_client = Some(Box::new(client));
-        app.configure(config.clone());
     } else {
         // No prompt, issue, or milestone — auto-fetch maestro:ready issues
         let client = GhCliClient::new();
-        let label_refs: Vec<&str> = config
-            .github
-            .issue_filter_labels
+        let label_refs: Vec<&str> = issue_filter_labels
             .iter()
             .map(|s| s.as_str())
             .collect();
@@ -790,7 +771,7 @@ async fn cmd_run(
         if issues.is_empty() {
             anyhow::bail!(
                 "No issues found with labels {:?}. Use --prompt or --issue instead.",
-                config.github.issue_filter_labels
+                issue_filter_labels
             );
         }
 
@@ -799,7 +780,6 @@ async fn cmd_run(
 
         app.work_assigner = Some(assigner);
         app.github_client = Some(Box::new(client));
-        app.configure(config.clone());
     }
 
     // Launch TUI
@@ -807,9 +787,11 @@ async fn cmd_run(
 }
 
 async fn cmd_dashboard() -> anyhow::Result<()> {
+    let repo_root = std::env::current_dir()?;
+    startup_cleanup(&repo_root);
+
     let store = StateStore::new(StateStore::default_path());
     let state = store.load().unwrap_or_default();
-    let repo_root = std::env::current_dir()?;
 
     // Check for incomplete sessions and offer auto-resume
     let has_incomplete = state.sessions.iter().any(|s| {
@@ -905,19 +887,15 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
         })
         .collect();
 
-    let max_concurrent = config
-        .as_ref()
-        .map(|c| c.sessions.max_concurrent)
-        .unwrap_or(3);
-
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
-    let mut app = App::new(
-        store,
-        max_concurrent,
-        worktree_mgr,
-        "bypassPermissions".into(),
-        Vec::new(),
-    );
+
+    let mut app = if let Some(cfg) = config {
+        let mut app = setup_app_from_config(cfg, store, worktree_mgr, None);
+        app.github_client = Some(Box::new(GhCliClient::new()));
+        app
+    } else {
+        App::new(store, DEFAULT_MAX_CONCURRENT, worktree_mgr, "bypassPermissions".into(), Vec::new())
+    };
 
     // Set up home screen and start in Dashboard mode
     app.home_screen = Some(tui::screens::HomeScreen::new(
@@ -926,7 +904,197 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
         doctor_warnings,
     ));
     app.tui_mode = tui::app::TuiMode::Dashboard;
-    app.config = config;
 
     tui::run(app).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::worktree::MockWorktreeManager;
+
+    fn make_store() -> StateStore {
+        let tmp = std::env::temp_dir().join(format!(
+            "maestro-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        StateStore::new(tmp)
+    }
+
+    fn make_worktree_mgr() -> Box<dyn crate::session::worktree::WorktreeManager + Send> {
+        Box::new(MockWorktreeManager::new())
+    }
+
+    fn minimal_config() -> Config {
+        toml::from_str(
+            r#"
+            [project]
+            repo = "owner/repo"
+            base_branch = "main"
+            [sessions]
+            [budget]
+            per_session_usd = 5.0
+            total_usd = 50.0
+            alert_threshold_pct = 80
+            [notifications]
+            "#,
+        )
+        .unwrap()
+    }
+
+    fn config_with_sessions(extra: &str) -> Config {
+        let toml_str = format!(
+            r#"
+            [project]
+            repo = "owner/repo"
+            base_branch = "main"
+            [sessions]
+            {}
+            [budget]
+            per_session_usd = 5.0
+            total_usd = 50.0
+            alert_threshold_pct = 80
+            [notifications]
+            "#,
+            extra
+        );
+        toml::from_str(&toml_str).unwrap()
+    }
+
+    // --- Suite 1: budget, model router, configure() wiring ---
+
+    #[test]
+    fn budget_enforcer_is_wired_from_config() {
+        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        assert!(app.budget_enforcer.is_some());
+    }
+
+    #[test]
+    fn model_router_is_wired_from_config() {
+        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        assert!(app.model_router.is_some());
+    }
+
+    #[test]
+    fn configure_sets_fork_policy() {
+        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        assert!(app.fork_policy.is_some(), "configure() must set fork_policy");
+    }
+
+    #[test]
+    fn config_is_stored_on_app() {
+        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        assert!(app.config.is_some());
+    }
+
+    // --- Suite 2: plugin runner conditional ---
+
+    #[test]
+    fn plugin_runner_is_none_when_no_plugins() {
+        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        assert!(app.plugin_runner.is_none());
+    }
+
+    #[test]
+    fn plugin_runner_is_some_when_plugins_configured() {
+        let config: Config = toml::from_str(
+            r#"
+            [project]
+            repo = "owner/repo"
+            base_branch = "main"
+            [sessions]
+            [budget]
+            per_session_usd = 5.0
+            total_usd = 50.0
+            alert_threshold_pct = 80
+            [notifications]
+            [[plugins]]
+            name = "test-hook"
+            on = "session_completed"
+            run = "echo done"
+            "#,
+        )
+        .unwrap();
+        let app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        assert!(app.plugin_runner.is_some());
+    }
+
+    // --- Suite 3: permission mode from config ---
+
+    #[test]
+    fn permission_mode_from_config_is_preserved() {
+        let config = config_with_sessions(r#"permission_mode = "acceptEdits""#);
+        let app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        assert_eq!(
+            app.config.as_ref().unwrap().sessions.permission_mode,
+            "acceptEdits"
+        );
+    }
+
+    #[test]
+    fn default_permission_mode_is_bypass_permissions() {
+        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        assert_eq!(
+            app.config.as_ref().unwrap().sessions.permission_mode,
+            "bypassPermissions"
+        );
+    }
+
+    #[test]
+    fn allowed_tools_from_config_are_preserved() {
+        let config = config_with_sessions(r#"allowed_tools = ["Read", "Write"]"#);
+        let app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        assert_eq!(
+            app.config.as_ref().unwrap().sessions.allowed_tools,
+            vec!["Read", "Write"]
+        );
+    }
+
+    // --- Suite 4: max_concurrent override ---
+
+    #[test]
+    fn max_concurrent_override_takes_priority() {
+        let config = config_with_sessions("max_concurrent = 5");
+        let mut app =
+            setup_app_from_config(config, make_store(), make_worktree_mgr(), Some(1));
+        for i in 0..3 {
+            app.pool.enqueue(Session::new(
+                format!("prompt {i}"),
+                "opus".into(),
+                "orchestrator".into(),
+                None,
+            ));
+        }
+        app.pool.try_promote();
+        assert_eq!(app.pool.active_count(), 1);
+    }
+
+    #[test]
+    fn max_concurrent_from_config_when_no_override() {
+        let config = config_with_sessions("max_concurrent = 2");
+        let mut app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        for i in 0..3 {
+            app.pool.enqueue(Session::new(
+                format!("prompt {i}"),
+                "opus".into(),
+                "orchestrator".into(),
+                None,
+            ));
+        }
+        app.pool.try_promote();
+        assert_eq!(app.pool.active_count(), 2);
+    }
+
+    // --- Suite 5: regression guard ---
+
+    #[test]
+    fn dashboard_does_not_hardcode_permission_mode() {
+        let config = config_with_sessions(r#"permission_mode = "plan""#);
+        let app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        assert_eq!(
+            app.config.as_ref().unwrap().sessions.permission_mode,
+            "plan",
+            "cmd_dashboard must not override permission_mode with a hardcoded value"
+        );
+    }
 }
