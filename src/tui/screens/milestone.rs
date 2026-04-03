@@ -1,5 +1,5 @@
 use super::{ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
-use crate::github::types::GhIssue;
+use crate::github::types::{GhIssue, GhMilestone};
 use crate::tui::app::TuiMode;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -19,6 +19,20 @@ pub struct MilestoneEntry {
     pub open_issues: u32,
     pub closed_issues: u32,
     pub issues: Vec<GhIssue>,
+}
+
+impl From<(GhMilestone, Vec<GhIssue>)> for MilestoneEntry {
+    fn from((ms, issues): (GhMilestone, Vec<GhIssue>)) -> Self {
+        Self {
+            number: ms.number,
+            title: ms.title,
+            description: ms.description,
+            state: ms.state,
+            open_issues: ms.open_issues,
+            closed_issues: ms.closed_issues,
+            issues,
+        }
+    }
 }
 
 impl MilestoneEntry {
