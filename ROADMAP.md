@@ -21,6 +21,20 @@ All core orchestration features from Phases 0–4 of the PRD.
 
 ---
 
+## Milestone: v0.4.0 — Live TUI Data and Session Launch 🚀
+
+**Status:** In Progress
+
+Wiring the interactive TUI screens to real GitHub data and real Claude session launch.
+
+| Issue | Title | Priority | Status |
+|-------|-------|----------|--------|
+| [#46] | Issue browser fetches issues from GitHub on open | P1 | Done |
+| [#47] | Milestone screen fetches milestones from GitHub on open | P1 | Done |
+| [#48] | Session launch wired from issue browser and milestone screens | P1 | Done |
+
+---
+
 ## Milestone: v0.2.0 — Quality & Hardening 🔧
 
 **Status:** In Progress
@@ -79,6 +93,11 @@ Extend Maestro from single-project to multi-project orchestration (Phase 5).
 v0.1.0 ✅ Complete
   └── Phases 0-4 (all merged)
 
+v0.4.0 🚀 In Progress
+  ├── #46 Issue browser live fetch ──✅ Done
+  ├── #47 Milestone screen live fetch ✅ Done
+  └── #48 Session launch from screens ✅ Done
+
 v0.2.0 🔧 In Progress
   ├── #12 Context auto-fork ─────────✅ Done
   ├── #13 Conflict detection ────────┐ PRD gaps (parallel)
@@ -125,3 +144,6 @@ v0.3.0 🌐 Planned
 [#31]: https://github.com/CarlosDanielDev/maestro/issues/31
 [#32]: https://github.com/CarlosDanielDev/maestro/issues/32
 [#33]: https://github.com/CarlosDanielDev/maestro/issues/33
+[#46]: https://github.com/CarlosDanielDev/maestro/issues/46
+[#47]: https://github.com/CarlosDanielDev/maestro/issues/47
+[#48]: https://github.com/CarlosDanielDev/maestro/issues/48

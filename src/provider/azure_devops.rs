@@ -1,5 +1,6 @@
 use super::types::Issue;
 use crate::github::client::GitHubClient;
+use crate::github::types::GhMilestone;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
@@ -214,6 +215,11 @@ impl GitHubClient for AzDevOpsClient {
             .await?;
 
         parse_work_items_json(&details_str)
+    }
+
+    async fn list_milestones(&self, _state: &str) -> Result<Vec<GhMilestone>> {
+        // Azure DevOps uses iterations rather than milestones; not yet implemented.
+        Ok(vec![])
     }
 
     async fn get_issue(&self, number: u64) -> Result<Issue> {

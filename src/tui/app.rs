@@ -8,6 +8,7 @@ use crate::github::ci::{CiChecker, CiStatus, PendingPrCheck};
 use crate::github::client::GitHubClient;
 use crate::github::labels::LabelManager;
 use crate::github::pr::PrCreator;
+use crate::github::types::{GhIssue, GhMilestone};
 use crate::models::ModelRouter;
 use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::notifications::slack::SlackEvent;
@@ -29,6 +30,8 @@ use crate::state::store::StateStore;
 use crate::state::types::MaestroState;
 use crate::tui::activity_log::{ActivityLog, LogLevel};
 use crate::tui::panels::PanelView;
+use crate::tui::screens::SessionConfig;
+use crate::tui::screens::milestone::MilestoneEntry;
 use crate::work::assigner::WorkAssigner;
 use chrono::Utc;
 use std::time::{Duration, Instant};
@@ -53,6 +56,22 @@ pub enum TuiMode {
     IssueBrowser,
     /// Milestone overview with progress tracking.
     MilestoneView,
+}
+
+/// Commands queued by synchronous screen action handlers for async processing.
+pub enum TuiCommand {
+    FetchIssues,
+    FetchMilestones,
+    LaunchSession(SessionConfig),
+    LaunchSessions(Vec<SessionConfig>),
+}
+
+/// Data events delivered from background fetch tasks.
+pub enum TuiDataEvent {
+    Issues(anyhow::Result<Vec<GhIssue>>),
+    Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
+    /// Single issue for session launch — ready to create session.
+    Issue(anyhow::Result<GhIssue>),
 }
 
 struct PendingHook {
@@ -124,6 +143,14 @@ pub struct App {
     pub issue_browser_screen: Option<crate::tui::screens::IssueBrowserScreen>,
     /// Milestone screen state (for MilestoneView mode).
     pub milestone_screen: Option<crate::tui::screens::MilestoneScreen>,
+    /// Pending TUI commands to process in the next event loop tick.
+    pub pending_commands: Vec<TuiCommand>,
+    /// Sessions ready to be launched (created from background IssueFetched events).
+    pub pending_session_launches: Vec<Session>,
+    /// Sender for background data fetch results.
+    pub data_tx: mpsc::UnboundedSender<TuiDataEvent>,
+    /// Receiver for background data fetch results.
+    pub data_rx: mpsc::UnboundedReceiver<TuiDataEvent>,
 }
 
 impl App {
@@ -135,6 +162,7 @@ impl App {
         allowed_tools: Vec<String>,
     ) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (data_tx, data_rx) = mpsc::unbounded_channel();
         let state = store.load().unwrap_or_default();
         let mut pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx.clone());
         pool.set_permission_mode(permission_mode);
@@ -172,6 +200,10 @@ impl App {
             home_screen: None,
             issue_browser_screen: None,
             milestone_screen: None,
+            pending_commands: Vec::new(),
+            pending_session_launches: Vec::new(),
+            data_tx,
+            data_rx,
         }
     }
 
@@ -655,6 +687,74 @@ impl App {
                 }
             }
             BudgetAction::Ok => {}
+        }
+    }
+
+    /// Process a data event from a background fetch task.
+    pub fn handle_data_event(&mut self, evt: TuiDataEvent) {
+        match evt {
+            TuiDataEvent::Issues(Ok(issues)) => {
+                if let Some(ref mut screen) = self.issue_browser_screen {
+                    screen.set_issues(issues);
+                }
+            }
+            TuiDataEvent::Issues(Err(e)) => {
+                self.activity_log.push_simple(
+                    "Issues".into(),
+                    format!("Failed to fetch issues: {}", e),
+                    LogLevel::Error,
+                );
+                if let Some(ref mut screen) = self.issue_browser_screen {
+                    screen.loading = false;
+                }
+            }
+            TuiDataEvent::Milestones(Ok(entries)) => {
+                if let Some(ref mut screen) = self.milestone_screen {
+                    screen.milestones = entries.into_iter().map(MilestoneEntry::from).collect();
+                    screen.loading = false;
+                }
+            }
+            TuiDataEvent::Milestones(Err(e)) => {
+                self.activity_log.push_simple(
+                    "Milestones".into(),
+                    format!("Failed to fetch milestones: {}", e),
+                    LogLevel::Error,
+                );
+                if let Some(ref mut screen) = self.milestone_screen {
+                    screen.loading = false;
+                }
+            }
+            TuiDataEvent::Issue(Ok(gh_issue)) => {
+                let model = self
+                    .config
+                    .as_ref()
+                    .map(|c| c.sessions.default_model.clone())
+                    .unwrap_or_else(|| "opus".to_string());
+                let default_mode = self
+                    .config
+                    .as_ref()
+                    .map(|c| c.sessions.default_mode.clone())
+                    .unwrap_or_else(|| "orchestrator".to_string());
+                let issue_mode =
+                    crate::modes::mode_from_labels(&gh_issue.labels).unwrap_or(default_mode);
+                let issue_number = gh_issue.number;
+                let mut session = Session::new(
+                    gh_issue.unattended_prompt(),
+                    model,
+                    issue_mode,
+                    Some(issue_number),
+                );
+                session.issue_title = Some(gh_issue.title.clone());
+                self.state.issue_cache.insert(issue_number, gh_issue);
+                self.pending_session_launches.push(session);
+            }
+            TuiDataEvent::Issue(Err(e)) => {
+                self.activity_log.push_simple(
+                    "Session".into(),
+                    format!("Failed to fetch issue: {}", e),
+                    LogLevel::Error,
+                );
+            }
         }
     }
 
