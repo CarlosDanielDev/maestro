@@ -47,6 +47,12 @@ pub enum TuiMode {
     Fullscreen(usize),
     /// Cost dashboard view.
     CostDashboard,
+    /// Interactive home/dashboard screen.
+    Dashboard,
+    /// Interactive issue browser.
+    IssueBrowser,
+    /// Milestone overview with progress tracking.
+    MilestoneView,
 }
 
 struct PendingHook {
@@ -112,6 +118,12 @@ pub struct App {
     pub context_monitor: Box<dyn ContextMonitor>,
     /// Fork policy for auto-fork decisions.
     pub fork_policy: Option<ForkPolicy>,
+    /// Home screen state (for Dashboard mode).
+    pub home_screen: Option<crate::tui::screens::HomeScreen>,
+    /// Issue browser screen state (for IssueBrowser mode).
+    pub issue_browser_screen: Option<crate::tui::screens::IssueBrowserScreen>,
+    /// Milestone screen state (for MilestoneView mode).
+    pub milestone_screen: Option<crate::tui::screens::MilestoneScreen>,
 }
 
 impl App {
@@ -157,6 +169,9 @@ impl App {
             show_help: false,
             context_monitor: Box::new(ProductionContextMonitor::new()),
             fork_policy: None,
+            home_screen: None,
+            issue_browser_screen: None,
+            milestone_screen: None,
         }
     }
 

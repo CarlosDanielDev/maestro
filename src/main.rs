@@ -814,13 +814,74 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
         );
     }
 
+    // Load config for project info
+    let config = Config::find_and_load().ok();
+
+    // Build project info from config and git
+    let repo_name = config
+        .as_ref()
+        .map(|c| c.project.repo.clone())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            // Try to get repo name from git remote
+            std::process::Command::new("git")
+                .args(["remote", "get-url", "origin"])
+                .output()
+                .ok()
+                .and_then(|o| {
+                    let url = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    url.rsplit('/')
+                        .next()
+                        .map(|s| s.trim_end_matches(".git").to_string())
+                })
+                .unwrap_or_else(|| "unknown".to_string())
+        });
+
+    let branch = std::process::Command::new("git")
+        .args(["branch", "--show-current"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let project_info = tui::screens::home::ProjectInfo {
+        name: repo_name.clone(),
+        repo: repo_name,
+        branch,
+    };
+
+    // Build recent sessions from saved state
+    let recent_sessions: Vec<tui::screens::home::SessionSummary> = state
+        .sessions
+        .iter()
+        .rev()
+        .take(10)
+        .map(|s| tui::screens::home::SessionSummary {
+            issue_number: s.issue_number.unwrap_or(0),
+            title: s.last_message.clone(),
+            status: format!("{}", s.status.label()),
+            cost_usd: s.cost_usd,
+        })
+        .collect();
+
+    let max_concurrent = config
+        .as_ref()
+        .map(|c| c.sessions.max_concurrent)
+        .unwrap_or(3);
+
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
-    let app = App::new(
+    let mut app = App::new(
         store,
-        3,
+        max_concurrent,
         worktree_mgr,
         "bypassPermissions".into(),
         Vec::new(),
     );
+
+    // Set up home screen and start in Dashboard mode
+    app.home_screen = Some(tui::screens::HomeScreen::new(project_info, recent_sessions));
+    app.tui_mode = tui::app::TuiMode::Dashboard;
+    app.config = config;
+
     tui::run(app).await
 }

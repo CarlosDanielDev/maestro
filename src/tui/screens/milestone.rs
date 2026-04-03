@@ -1,0 +1,506 @@
+use super::{ScreenAction, SessionConfig, sanitize_for_terminal};
+use crate::github::types::GhIssue;
+use crate::tui::app::TuiMode;
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::{
+    Frame,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Gauge, Paragraph},
+};
+
+#[derive(Debug, Clone)]
+pub struct MilestoneEntry {
+    pub number: u64,
+    pub title: String,
+    pub description: String,
+    pub state: String,
+    pub open_issues: u32,
+    pub closed_issues: u32,
+    pub issues: Vec<GhIssue>,
+}
+
+impl MilestoneEntry {
+    pub fn progress_ratio(&self) -> f64 {
+        let total = self.open_issues as f64 + self.closed_issues as f64;
+        if total == 0.0 {
+            return 0.0;
+        }
+        self.closed_issues as f64 / total
+    }
+
+    pub fn total_issues(&self) -> u32 {
+        self.open_issues + self.closed_issues
+    }
+}
+
+pub struct MilestoneScreen {
+    pub milestones: Vec<MilestoneEntry>,
+    pub selected: usize,
+    pub scroll_offset: usize,
+    pub loading: bool,
+    pub error: Option<String>,
+}
+
+impl MilestoneScreen {
+    pub fn new(milestones: Vec<MilestoneEntry>) -> Self {
+        Self {
+            milestones,
+            selected: 0,
+            scroll_offset: 0,
+            loading: false,
+            error: None,
+        }
+    }
+
+    pub fn handle_input(&mut self, event: &Event) -> ScreenAction {
+        if let Event::Key(KeyEvent {
+            code,
+            kind: KeyEventKind::Press,
+            ..
+        }) = event
+        {
+            match code {
+                KeyCode::Esc => return ScreenAction::Pop,
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if !self.milestones.is_empty() && self.selected < self.milestones.len() - 1 {
+                        self.selected += 1;
+                        self.sync_scroll();
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.selected = self.selected.saturating_sub(1);
+                    self.sync_scroll();
+                }
+                KeyCode::Enter => {
+                    if self.milestones.is_empty() {
+                        return ScreenAction::None;
+                    }
+                    return ScreenAction::Push(TuiMode::IssueBrowser);
+                }
+                KeyCode::Char('r') => {
+                    return self.handle_run_all();
+                }
+                _ => {}
+            }
+        }
+        ScreenAction::None
+    }
+
+    pub fn draw(&self, f: &mut Frame, area: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(6),    // milestone list
+                Constraint::Length(8), // detail pane
+                Constraint::Length(1), // keybinds
+            ])
+            .split(area);
+
+        self.draw_milestone_list(f, chunks[0]);
+        self.draw_detail(f, chunks[1]);
+        self.draw_keybinds(f, chunks[2]);
+    }
+
+    pub fn tick(&mut self) {
+        // No-op; async data fetching would drain channel here
+    }
+
+    pub fn selected_milestone(&self) -> Option<&MilestoneEntry> {
+        self.milestones.get(self.selected)
+    }
+
+    /// Keep scroll_offset in sync so the selected milestone is always visible.
+    /// Each milestone entry uses 3 rows; default visible slots = 6.
+    fn sync_scroll(&mut self) {
+        let visible_slots = 6;
+        if self.selected < self.scroll_offset {
+            self.scroll_offset = self.selected;
+        } else if self.selected >= self.scroll_offset + visible_slots {
+            self.scroll_offset = self.selected - visible_slots + 1;
+        }
+    }
+
+    fn handle_run_all(&self) -> ScreenAction {
+        if let Some(entry) = self.milestones.get(self.selected) {
+            if entry.issues.is_empty() {
+                return ScreenAction::None;
+            }
+            let configs: Vec<SessionConfig> = entry
+                .issues
+                .iter()
+                .filter(|i| i.state == "open")
+                .map(|i| SessionConfig {
+                    issue_number: Some(i.number),
+                    title: i.title.clone(),
+                })
+                .collect();
+            if configs.is_empty() {
+                return ScreenAction::None;
+            }
+            return ScreenAction::LaunchSessions(configs);
+        }
+        ScreenAction::None
+    }
+
+    fn draw_milestone_list(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .title(" Milestones ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Magenta));
+
+        if self.loading {
+            let para = Paragraph::new("  Loading...")
+                .style(Style::default().fg(Color::Yellow))
+                .block(block);
+            f.render_widget(para, area);
+            return;
+        }
+
+        if self.milestones.is_empty() {
+            let para = Paragraph::new("  No milestones found")
+                .style(Style::default().fg(Color::DarkGray))
+                .block(block);
+            f.render_widget(para, area);
+            return;
+        }
+
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        // Each milestone takes 3 lines: title, progress bar, status
+        let visible_slots = (inner.height as usize) / 3;
+        let milestones_to_show: Vec<(usize, &MilestoneEntry)> = self
+            .milestones
+            .iter()
+            .enumerate()
+            .skip(self.scroll_offset)
+            .take(visible_slots)
+            .collect();
+
+        for (display_idx, (idx, entry)) in milestones_to_show.iter().enumerate() {
+            let y = inner.y + (display_idx * 3) as u16;
+            if y + 2 >= inner.y + inner.height {
+                break;
+            }
+
+            let is_selected = *idx == self.selected;
+            let cursor = if is_selected { "▸ " } else { "  " };
+
+            let title_style = if is_selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            };
+
+            // Title line
+            let title_line = Line::from(vec![
+                Span::styled(cursor, title_style),
+                Span::styled(sanitize_for_terminal(&entry.title), title_style),
+            ]);
+            let title_area = Rect::new(inner.x, y, inner.width, 1);
+            f.render_widget(Paragraph::new(title_line), title_area);
+
+            // Progress bar
+            let ratio = entry.progress_ratio();
+            let gauge_area = Rect::new(inner.x + 2, y + 1, inner.width.saturating_sub(4), 1);
+            let gauge = Gauge::default()
+                .ratio(ratio)
+                .gauge_style(Style::default().fg(Color::Green).bg(Color::DarkGray))
+                .label(format!(
+                    "{}/{} issues ({:.0}%)",
+                    entry.closed_issues,
+                    entry.total_issues(),
+                    ratio * 100.0
+                ));
+            f.render_widget(gauge, gauge_area);
+
+            // Status line
+            let status_line = Line::from(vec![
+                Span::styled(
+                    format!("  ✅ {}  ", entry.closed_issues),
+                    Style::default().fg(Color::Green),
+                ),
+                Span::styled(
+                    format!("⏳ {}", entry.open_issues),
+                    Style::default().fg(Color::Yellow),
+                ),
+            ]);
+            let status_area = Rect::new(inner.x, y + 2, inner.width, 1);
+            f.render_widget(Paragraph::new(status_line), status_area);
+        }
+    }
+
+    fn draw_detail(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .title(" Issues ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray));
+
+        if let Some(entry) = self.milestones.get(self.selected) {
+            if entry.issues.is_empty() {
+                let para = Paragraph::new(format!("  {} — no issues loaded", entry.title))
+                    .style(Style::default().fg(Color::DarkGray))
+                    .block(block);
+                f.render_widget(para, area);
+                return;
+            }
+
+            let lines: Vec<Line> = entry
+                .issues
+                .iter()
+                .take(5)
+                .map(|i| {
+                    let symbol = if i.state == "closed" { "✅" } else { "⏳" };
+                    Line::from(vec![
+                        Span::raw(format!("  {} ", symbol)),
+                        Span::styled(format!("#{} ", i.number), Style::default().fg(Color::Cyan)),
+                        Span::styled(
+                            sanitize_for_terminal(&i.title),
+                            Style::default().fg(Color::White),
+                        ),
+                    ])
+                })
+                .collect();
+
+            let para = Paragraph::new(lines).block(block);
+            f.render_widget(para, area);
+        } else {
+            let para = Paragraph::new("  Select a milestone")
+                .style(Style::default().fg(Color::DarkGray))
+                .block(block);
+            f.render_widget(para, area);
+        }
+    }
+
+    fn draw_keybinds(&self, f: &mut Frame, area: Rect) {
+        let line = Line::from(vec![
+            Span::styled("[Enter]", Style::default().fg(Color::Green)),
+            Span::raw(" View Issues  "),
+            Span::styled("[r]", Style::default().fg(Color::Green)),
+            Span::raw(" Run All Open  "),
+            Span::styled("[Esc]", Style::default().fg(Color::Green)),
+            Span::raw(" Back"),
+        ]);
+        let para = Paragraph::new(line);
+        f.render_widget(para, area);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        })
+    }
+
+    fn make_issue(number: u64) -> GhIssue {
+        GhIssue {
+            number,
+            title: format!("Issue #{}", number),
+            body: String::new(),
+            labels: vec![],
+            state: "open".to_string(),
+            html_url: format!("https://github.com/owner/repo/issues/{}", number),
+            milestone: None,
+            assignees: vec![],
+        }
+    }
+
+    fn make_entry(number: u64, open: u32, closed: u32) -> MilestoneEntry {
+        MilestoneEntry {
+            number,
+            title: format!("Milestone v{}", number),
+            description: String::new(),
+            state: "open".to_string(),
+            open_issues: open,
+            closed_issues: closed,
+            issues: vec![],
+        }
+    }
+
+    fn make_entry_with_issues(number: u64, issues: Vec<GhIssue>) -> MilestoneEntry {
+        let open = issues.len() as u32;
+        MilestoneEntry {
+            number,
+            title: format!("Milestone v{}", number),
+            description: String::new(),
+            state: "open".to_string(),
+            open_issues: open,
+            closed_issues: 0,
+            issues,
+        }
+    }
+
+    // ---- initial state ----
+
+    #[test]
+    fn milestone_screen_initial_selected_is_zero() {
+        let screen = MilestoneScreen::new(vec![make_entry(1, 3, 7), make_entry(2, 1, 2)]);
+        assert_eq!(screen.selected, 0);
+    }
+
+    #[test]
+    fn milestone_screen_loading_flag_initially_false() {
+        let screen = MilestoneScreen::new(vec![make_entry(1, 0, 5)]);
+        assert!(!screen.loading);
+    }
+
+    // ---- navigation ----
+
+    #[test]
+    fn milestone_screen_key_j_advances_cursor() {
+        let mut screen = MilestoneScreen::new(vec![
+            make_entry(1, 0, 0),
+            make_entry(2, 0, 0),
+            make_entry(3, 0, 0),
+        ]);
+        screen.handle_input(&key_event(KeyCode::Char('j')));
+        assert_eq!(screen.selected, 1);
+    }
+
+    #[test]
+    fn milestone_screen_key_down_advances_cursor() {
+        let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 0), make_entry(2, 0, 0)]);
+        screen.handle_input(&key_event(KeyCode::Down));
+        assert_eq!(screen.selected, 1);
+    }
+
+    #[test]
+    fn milestone_screen_key_k_moves_cursor_up() {
+        let mut screen = MilestoneScreen::new(vec![
+            make_entry(1, 0, 0),
+            make_entry(2, 0, 0),
+            make_entry(3, 0, 0),
+        ]);
+        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('k')));
+        assert_eq!(screen.selected, 1);
+    }
+
+    #[test]
+    fn milestone_screen_key_up_moves_cursor_up() {
+        let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 0), make_entry(2, 0, 0)]);
+        screen.handle_input(&key_event(KeyCode::Down));
+        screen.handle_input(&key_event(KeyCode::Up));
+        assert_eq!(screen.selected, 0);
+    }
+
+    #[test]
+    fn milestone_screen_cursor_does_not_underflow() {
+        let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 0), make_entry(2, 0, 0)]);
+        screen.handle_input(&key_event(KeyCode::Char('k')));
+        assert_eq!(screen.selected, 0);
+    }
+
+    #[test]
+    fn milestone_screen_cursor_does_not_overflow() {
+        let mut screen = MilestoneScreen::new(vec![
+            make_entry(1, 0, 0),
+            make_entry(2, 0, 0),
+            make_entry(3, 0, 0),
+        ]);
+        for _ in 0..10 {
+            screen.handle_input(&key_event(KeyCode::Char('j')));
+        }
+        assert_eq!(screen.selected, 2);
+    }
+
+    // ---- screen actions ----
+
+    #[test]
+    fn milestone_screen_esc_returns_pop() {
+        let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 0)]);
+        let action = screen.handle_input(&key_event(KeyCode::Esc));
+        assert_eq!(action, ScreenAction::Pop);
+    }
+
+    #[test]
+    fn milestone_screen_enter_returns_push_issue_browser_with_milestone_number() {
+        let mut screen = MilestoneScreen::new(vec![make_entry(7, 3, 0), make_entry(12, 1, 5)]);
+        screen.handle_input(&key_event(KeyCode::Char('j')));
+        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        match action {
+            ScreenAction::Push(TuiMode::IssueBrowser) => {}
+            other => panic!("Expected Push(IssueBrowser), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn milestone_screen_empty_list_enter_returns_none() {
+        let mut screen = MilestoneScreen::new(vec![]);
+        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(action, ScreenAction::None);
+    }
+
+    #[test]
+    fn milestone_screen_key_r_on_milestone_returns_launch_sessions_for_all_open_issues() {
+        let issues = vec![make_issue(10), make_issue(11)];
+        let mut screen = MilestoneScreen::new(vec![make_entry_with_issues(1, issues)]);
+        let action = screen.handle_input(&key_event(KeyCode::Char('r')));
+        match action {
+            ScreenAction::LaunchSessions(configs) => {
+                assert_eq!(configs.len(), 2);
+            }
+            other => panic!("Expected LaunchSessions, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn milestone_screen_key_r_on_empty_milestone_returns_none() {
+        let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 5)]);
+        let action = screen.handle_input(&key_event(KeyCode::Char('r')));
+        assert_eq!(action, ScreenAction::None);
+    }
+
+    // ---- MilestoneEntry::progress_ratio ----
+
+    #[test]
+    fn milestone_entry_progress_ratio_computed_correctly() {
+        let entry = make_entry(1, 3, 7);
+        let ratio = entry.progress_ratio();
+        assert!((ratio - 0.7_f64).abs() < f64::EPSILON * 10.0);
+    }
+
+    #[test]
+    fn milestone_entry_progress_ratio_zero_when_all_open() {
+        let entry = make_entry(1, 5, 0);
+        assert_eq!(entry.progress_ratio(), 0.0);
+    }
+
+    #[test]
+    fn milestone_entry_progress_ratio_one_when_all_closed() {
+        let entry = make_entry(1, 0, 5);
+        assert_eq!(entry.progress_ratio(), 1.0);
+    }
+
+    #[test]
+    fn milestone_entry_progress_ratio_zero_when_no_issues() {
+        let entry = make_entry(1, 0, 0);
+        assert_eq!(entry.progress_ratio(), 0.0);
+    }
+
+    // ---- tick ----
+
+    #[test]
+    fn milestone_screen_tick_does_not_panic() {
+        let mut screen = MilestoneScreen::new(vec![make_entry(1, 2, 3)]);
+        screen.tick();
+        screen.tick();
+        screen.tick();
+    }
+}

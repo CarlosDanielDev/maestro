@@ -96,6 +96,8 @@ pub fn parse_work_items_json(json_str: &str) -> Result<Vec<Issue>> {
             labels,
             state,
             html_url,
+            milestone: None,
+            assignees: vec![],
         });
     }
     Ok(issues)

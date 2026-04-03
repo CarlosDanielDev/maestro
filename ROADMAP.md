@@ -34,6 +34,9 @@ Hardening, missing PRD features, test coverage, and distribution.
 | [#12] | Context overflow detection and auto-fork | P1 | Done |
 | [#13] | Real-time conflict detection via stream parsing | P1 | Planned |
 | [#14] | Slack webhook integration for notifications | P2 | Planned |
+| [#31] | Interactive home screen with idle dashboard | P1 | Done |
+| [#32] | Interactive issue browser with selection and launch | P1 | Done |
+| [#33] | Milestone overview with progress tracking | P1 | Done |
 
 ### Testing & Quality
 
@@ -119,3 +122,6 @@ v0.3.0 🌐 Planned
 [#22]: https://github.com/CarlosDanielDev/maestro/issues/22
 [#23]: https://github.com/CarlosDanielDev/maestro/issues/23
 [#24]: https://github.com/CarlosDanielDev/maestro/issues/24
+[#31]: https://github.com/CarlosDanielDev/maestro/issues/31
+[#32]: https://github.com/CarlosDanielDev/maestro/issues/32
+[#33]: https://github.com/CarlosDanielDev/maestro/issues/33
