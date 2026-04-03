@@ -187,8 +187,7 @@ fn startup_cleanup(repo_root: &std::path::Path) {
         let _ = cleanup_mgr.remove_orphans(&orphans);
     }
 
-    let logger =
-        session::logger::SessionLogger::new(session::logger::SessionLogger::default_dir());
+    let logger = session::logger::SessionLogger::new(session::logger::SessionLogger::default_dir());
     if let Ok(removed) = logger.cleanup_old_logs(30)
         && removed > 0
     {
@@ -762,10 +761,7 @@ async fn cmd_run(
     } else {
         // No prompt, issue, or milestone — auto-fetch maestro:ready issues
         let client = GhCliClient::new();
-        let label_refs: Vec<&str> = issue_filter_labels
-            .iter()
-            .map(|s| s.as_str())
-            .collect();
+        let label_refs: Vec<&str> = issue_filter_labels.iter().map(|s| s.as_str()).collect();
         let issues = client.list_issues(&label_refs).await?;
 
         if issues.is_empty() {
@@ -894,7 +890,13 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
         app.github_client = Some(Box::new(GhCliClient::new()));
         app
     } else {
-        App::new(store, DEFAULT_MAX_CONCURRENT, worktree_mgr, "bypassPermissions".into(), Vec::new())
+        App::new(
+            store,
+            DEFAULT_MAX_CONCURRENT,
+            worktree_mgr,
+            "bypassPermissions".into(),
+            Vec::new(),
+        )
     };
 
     // Set up home screen and start in Dashboard mode
@@ -914,10 +916,7 @@ mod tests {
     use crate::session::worktree::MockWorktreeManager;
 
     fn make_store() -> StateStore {
-        let tmp = std::env::temp_dir().join(format!(
-            "maestro-test-{}.json",
-            uuid::Uuid::new_v4()
-        ));
+        let tmp = std::env::temp_dir().join(format!("maestro-test-{}.json", uuid::Uuid::new_v4()));
         StateStore::new(tmp)
     }
 
@@ -978,7 +977,10 @@ mod tests {
     #[test]
     fn configure_sets_fork_policy() {
         let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
-        assert!(app.fork_policy.is_some(), "configure() must set fork_policy");
+        assert!(
+            app.fork_policy.is_some(),
+            "configure() must set fork_policy"
+        );
     }
 
     #[test]
@@ -1055,8 +1057,7 @@ mod tests {
     #[test]
     fn max_concurrent_override_takes_priority() {
         let config = config_with_sessions("max_concurrent = 5");
-        let mut app =
-            setup_app_from_config(config, make_store(), make_worktree_mgr(), Some(1));
+        let mut app = setup_app_from_config(config, make_store(), make_worktree_mgr(), Some(1));
         for i in 0..3 {
             app.pool.enqueue(Session::new(
                 format!("prompt {i}"),
