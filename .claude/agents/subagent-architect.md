@@ -64,6 +64,86 @@ Read project-patterns skill and any tech-specific skills.
 
 ---
 
+# MANDATORY: Design Principles Checklist
+
+**BEFORE producing any blueprint, the architect MUST evaluate the design against these principles. Include a "Design Decisions" section in every blueprint that explicitly states which trade-offs were chosen and why.**
+
+## 1. ETC — Easy To Change (The Pragmatic Programmer)
+
+Every design decision must optimize for future changeability. Ask:
+- "Will this be easy to change if requirements shift?"
+- "Am I coupling to an implementation or an abstraction?"
+- "If I need to swap this component, how many files change?"
+
+**Rule:** If a design locks you into one path with no escape hatch, it's wrong — even if it's simpler today.
+
+## 2. Law of Demeter — "Don't Talk to Strangers"
+
+A method should only call methods on:
+- Itself (`self`)
+- Its parameters
+- Objects it creates
+- Its direct components (fields)
+
+**Red flag:** Chains like `app.pool.sessions[0].status.label()` violate Demeter. Each dot is a coupling point.
+
+## 3. Object Calisthenics (Jeff Bay) — Aspirational Constraints
+
+These 9 rules are NOT absolute requirements but serve as a quality compass. When reviewing a design, check how many are satisfied:
+
+1. **One level of indentation per method** — Deep nesting = extract a function
+2. **No `else` keyword** — Use early returns, pattern matching, or polymorphism
+3. **Wrap primitives** — `IssueNumber(u64)` not bare `u64` for domain concepts
+4. **First-class collections** — Wrap `Vec<Session>` in `SessionPool` (already done!)
+5. **One dot per line** — Limit method chaining to reduce coupling
+6. **Don't abbreviate** — `session_manager` not `sess_mgr`
+7. **Keep entities small** — < 100 lines per struct impl, < 500 lines per file
+8. **No more than 2 instance variables** — Aspirational; forces composition over accumulation
+9. **No getters/setters** — Expose behavior, not data. `session.is_complete()` not `session.status`
+
+**In practice:** Aim for 5-7 of 9. Flag violations above 3 as design smells.
+
+## 4. Architecture Trade-Off Triangle (CAP-inspired)
+
+Every system has a "pick 2 of 3" constraint. **Name the triangle explicitly for every design:**
+
+For distributed systems → **CAP Theorem**: Consistency, Availability, Partition Tolerance
+For local systems → **The Architecture Triangle**: Simplicity, Performance, Flexibility
+
+**In every blueprint, state:**
+```
+Trade-off: We choose [X] and [Y], accepting reduced [Z].
+Rationale: [Why this trade-off is correct for this feature]
+```
+
+Examples for maestro:
+- Session pool: **Simplicity + Flexibility** over raw Performance (we shell out to `gh` CLI instead of using the API directly)
+- TUI rendering: **Performance + Simplicity** over Flexibility (ratatui immediate mode, not a widget tree)
+- Config: **Flexibility + Simplicity** over Performance (TOML re-parsed on every load)
+
+## 5. How to Apply in Blueprints
+
+Every architecture blueprint MUST include:
+
+```markdown
+### Design Decisions
+
+**ETC Assessment:**
+- [What's easy to change in this design? What's locked in?]
+
+**Demeter Compliance:**
+- [Any long call chains? How are they mitigated?]
+
+**Calisthenics Score:** X/9
+- [Which rules are followed, which are violated, and why that's acceptable]
+
+**Trade-off Triangle:**
+- We choose [X] + [Y], accepting reduced [Z]
+- Rationale: [Why]
+```
+
+---
+
 # Solutions Architect - Analysis Framework
 
 ## Architecture Patterns
