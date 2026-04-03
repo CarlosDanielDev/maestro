@@ -4,7 +4,7 @@ pub mod milestone;
 
 pub use home::HomeScreen;
 pub use issue_browser::IssueBrowserScreen;
-pub use milestone::{MilestoneEntry, MilestoneScreen};
+pub use milestone::MilestoneScreen;
 
 use crate::tui::app::TuiMode;
 use ratatui::{

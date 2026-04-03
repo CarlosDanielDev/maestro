@@ -68,10 +68,10 @@ pub enum TuiCommand {
 
 /// Data events delivered from background fetch tasks.
 pub enum TuiDataEvent {
-    IssuesFetched(anyhow::Result<Vec<GhIssue>>),
-    MilestonesFetched(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
-    /// Issue fetched for session launch — ready to create session.
-    IssueFetched(anyhow::Result<GhIssue>),
+    Issues(anyhow::Result<Vec<GhIssue>>),
+    Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
+    /// Single issue for session launch — ready to create session.
+    Issue(anyhow::Result<GhIssue>),
 }
 
 struct PendingHook {
@@ -693,12 +693,12 @@ impl App {
     /// Process a data event from a background fetch task.
     pub fn handle_data_event(&mut self, evt: TuiDataEvent) {
         match evt {
-            TuiDataEvent::IssuesFetched(Ok(issues)) => {
+            TuiDataEvent::Issues(Ok(issues)) => {
                 if let Some(ref mut screen) = self.issue_browser_screen {
                     screen.set_issues(issues);
                 }
             }
-            TuiDataEvent::IssuesFetched(Err(e)) => {
+            TuiDataEvent::Issues(Err(e)) => {
                 self.activity_log.push_simple(
                     "Issues".into(),
                     format!("Failed to fetch issues: {}", e),
@@ -708,13 +708,13 @@ impl App {
                     screen.loading = false;
                 }
             }
-            TuiDataEvent::MilestonesFetched(Ok(entries)) => {
+            TuiDataEvent::Milestones(Ok(entries)) => {
                 if let Some(ref mut screen) = self.milestone_screen {
                     screen.milestones = entries.into_iter().map(MilestoneEntry::from).collect();
                     screen.loading = false;
                 }
             }
-            TuiDataEvent::MilestonesFetched(Err(e)) => {
+            TuiDataEvent::Milestones(Err(e)) => {
                 self.activity_log.push_simple(
                     "Milestones".into(),
                     format!("Failed to fetch milestones: {}", e),
@@ -724,7 +724,7 @@ impl App {
                     screen.loading = false;
                 }
             }
-            TuiDataEvent::IssueFetched(Ok(gh_issue)) => {
+            TuiDataEvent::Issue(Ok(gh_issue)) => {
                 let model = self
                     .config
                     .as_ref()
@@ -748,7 +748,7 @@ impl App {
                 self.state.issue_cache.insert(issue_number, gh_issue);
                 self.pending_session_launches.push(session);
             }
-            TuiDataEvent::IssueFetched(Err(e)) => {
+            TuiDataEvent::Issue(Err(e)) => {
                 self.activity_log.push_simple(
                     "Session".into(),
                     format!("Failed to fetch issue: {}", e),
