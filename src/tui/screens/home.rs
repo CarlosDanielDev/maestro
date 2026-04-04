@@ -185,7 +185,7 @@ impl HomeScreen {
             match code {
                 KeyCode::Char('i') => return ScreenAction::Push(TuiMode::IssueBrowser),
                 KeyCode::Char('m') => return ScreenAction::Push(TuiMode::MilestoneView),
-                KeyCode::Char('r') => return ScreenAction::Push(TuiMode::Overview),
+                KeyCode::Char('r') => return ScreenAction::Push(TuiMode::PromptInput),
                 KeyCode::Char('s') => return ScreenAction::Push(TuiMode::Overview),
                 KeyCode::Char('c') => return ScreenAction::Push(TuiMode::CostDashboard),
                 KeyCode::Char('q') => return ScreenAction::Quit,
@@ -286,7 +286,7 @@ impl HomeScreen {
         match self.selected_action {
             0 => ScreenAction::Push(TuiMode::IssueBrowser),
             1 => ScreenAction::Push(TuiMode::MilestoneView),
-            2 => ScreenAction::Push(TuiMode::Overview), // Run prompt placeholder
+            2 => ScreenAction::Push(TuiMode::PromptInput),
             3 => ScreenAction::Push(TuiMode::Overview),
             4 => ScreenAction::Push(TuiMode::CostDashboard),
             5 => ScreenAction::Quit,
