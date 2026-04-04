@@ -16,6 +16,7 @@ pub enum SessionStatus {
     Killed,
     Stalled,
     Retrying,
+    CiFix,
 }
 
 impl SessionStatus {
@@ -32,6 +33,7 @@ impl SessionStatus {
             Self::Killed => "💀",
             Self::Stalled => "⚠",
             Self::Retrying => "🔁",
+            Self::CiFix => "🔧",
         }
     }
 
@@ -48,6 +50,7 @@ impl SessionStatus {
             Self::Killed => "KILLED",
             Self::Stalled => "STALLED",
             Self::Retrying => "RETRYING",
+            Self::CiFix => "CI_FIX",
         }
     }
 
@@ -57,6 +60,14 @@ impl SessionStatus {
             Self::Completed | Self::Errored | Self::Killed | Self::NeedsReview
         )
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CiFixContext {
+    pub pr_number: u64,
+    pub issue_number: u64,
+    pub branch: String,
+    pub attempt: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +105,9 @@ pub struct Session {
     /// Fork depth in the chain (0 = original, 1 = first fork, etc.)
     #[serde(default)]
     pub fork_depth: u8,
+    /// If this session is a CI fix, tracks the PR and attempt number.
+    #[serde(default)]
+    pub ci_fix_context: Option<CiFixContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +140,7 @@ impl Session {
             parent_session_id: None,
             child_session_ids: Vec::new(),
             fork_depth: 0,
+            ci_fix_context: None,
         }
     }
 
@@ -247,5 +262,69 @@ mod tests {
             }
             other => panic!("Expected ContextUpdate, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn ci_fix_status_is_not_terminal() {
+        assert!(!SessionStatus::CiFix.is_terminal());
+    }
+
+    #[test]
+    fn ci_fix_status_has_symbol_and_label() {
+        let status = SessionStatus::CiFix;
+        assert!(!status.symbol().is_empty());
+        assert_eq!(status.label(), "CI_FIX");
+    }
+
+    #[test]
+    fn ci_fix_status_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionStatus::CiFix).unwrap();
+        assert_eq!(json, r#""ci_fix""#);
+    }
+
+    #[test]
+    fn ci_fix_context_stores_all_fields() {
+        let ctx = CiFixContext {
+            pr_number: 99,
+            issue_number: 42,
+            branch: "feat/fix".into(),
+            attempt: 1,
+        };
+        assert_eq!(ctx.pr_number, 99);
+        assert_eq!(ctx.issue_number, 42);
+        assert_eq!(ctx.branch, "feat/fix");
+        assert_eq!(ctx.attempt, 1);
+    }
+
+    #[test]
+    fn session_ci_fix_context_defaults_to_none() {
+        let s = Session::new(
+            "prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(10),
+        );
+        assert!(s.ci_fix_context.is_none());
+    }
+
+    #[test]
+    fn session_with_ci_fix_context_round_trips_via_serde() {
+        let mut s = Session::new(
+            "prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+        );
+        s.ci_fix_context = Some(CiFixContext {
+            pr_number: 5,
+            issue_number: 1,
+            branch: "feat/fix".into(),
+            attempt: 2,
+        });
+        let json = serde_json::to_string(&s).unwrap();
+        let round_tripped: Session = serde_json::from_str(&json).unwrap();
+        let ctx = round_tripped.ci_fix_context.unwrap();
+        assert_eq!(ctx.attempt, 2);
+        assert_eq!(ctx.pr_number, 5);
     }
 }

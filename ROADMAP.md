@@ -52,6 +52,7 @@ Hardening, missing PRD features, test coverage, and distribution.
 | [#32] | Interactive issue browser with selection and launch | P1 | Done |
 | [#33] | Milestone overview with progress tracking | P1 | Done |
 | [#35] | Work suggestions and quick commands on home screen | P1 | Done |
+| [#41] | CI error detection and auto-fix loop | P1 | Done |
 
 ### Testing & Quality
 
@@ -107,6 +108,7 @@ v0.2.0 🔧 In Progress
   ├── #16 TUI snapshot tests ────────┤ Quality (parallel)
   ├── #19 Parser benchmarks ─────────┘
   ├── #17 Release workflow ─────────✅ Done
+  ├── #41 CI auto-fix loop ─────────✅ Done
   └── #18 Completion docs
 
 v0.3.0 🌐 Planned
@@ -145,6 +147,8 @@ v0.3.0 🌐 Planned
 [#31]: https://github.com/CarlosDanielDev/maestro/issues/31
 [#32]: https://github.com/CarlosDanielDev/maestro/issues/32
 [#33]: https://github.com/CarlosDanielDev/maestro/issues/33
+[#35]: https://github.com/CarlosDanielDev/maestro/issues/35
+[#41]: https://github.com/CarlosDanielDev/maestro/issues/41
 [#46]: https://github.com/CarlosDanielDev/maestro/issues/46
 [#47]: https://github.com/CarlosDanielDev/maestro/issues/47
 [#48]: https://github.com/CarlosDanielDev/maestro/issues/48

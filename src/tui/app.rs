@@ -96,6 +96,7 @@ struct PendingIssueCompletion {
     files_touched: Vec<String>,
     worktree_branch: Option<String>,
     worktree_path: Option<std::path::PathBuf>,
+    is_ci_fix: bool,
 }
 
 pub struct App {
@@ -459,6 +460,7 @@ impl App {
                             files_touched: managed.session.files_touched.clone(),
                             worktree_branch: managed.branch_name.clone(),
                             worktree_path: managed.worktree_path.clone(),
+                            is_ci_fix: managed.session.ci_fix_context.is_some(),
                         });
                     }
                 }
@@ -483,6 +485,7 @@ impl App {
                             files_touched: managed.session.files_touched.clone(),
                             worktree_branch: managed.branch_name.clone(),
                             worktree_path: managed.worktree_path.clone(),
+                            is_ci_fix: managed.session.ci_fix_context.is_some(),
                         });
                     }
                 }
@@ -917,6 +920,7 @@ impl App {
                 completion.cost_usd,
                 completion.files_touched,
                 completion.worktree_branch,
+                completion.is_ci_fix,
             )
             .await;
         }
@@ -1198,6 +1202,7 @@ impl App {
         cost_usd: f64,
         files_touched: Vec<String>,
         worktree_branch: Option<String>,
+        is_ci_fix: bool,
     ) {
         // Update work assigner
         if let Some(ref mut assigner) = self.work_assigner {
@@ -1255,6 +1260,16 @@ impl App {
             }
         }
 
+        // CI fix sessions skip PR creation — the PR already exists
+        if is_ci_fix {
+            self.activity_log.push_simple(
+                format!("#{}", issue_number),
+                "CI fix pushed to existing PR branch".into(),
+                LogLevel::Info,
+            );
+            return;
+        }
+
         // Auto PR creation
         if let (Some(client), Some(config)) = (&self.github_client, &self.config)
             && success
@@ -1282,6 +1297,8 @@ impl App {
                             branch: branch_name.clone(),
                             created_at: Instant::now(),
                             check_count: 0,
+                            fix_attempt: 0,
+                            awaiting_fix_ci: false,
                         });
                     }
                     self.dispatch_review(pr_num, branch, issue_number);
@@ -1406,8 +1423,16 @@ impl App {
         }
         self.last_ci_poll = Instant::now();
 
+        let (auto_fix_enabled, max_retries) = self
+            .config
+            .as_ref()
+            .map(|c| (c.gates.ci_auto_fix.enabled, c.gates.ci_auto_fix.max_retries))
+            .unwrap_or((false, 3));
+
         let checker = CiChecker::new();
         let mut completed_indices = Vec::new();
+        // Collect fix requests to process after the loop (avoids borrow conflict)
+        let mut fix_requests: Vec<crate::github::ci::CiFixRequest> = Vec::new();
 
         for (i, check) in self.pending_pr_checks.iter_mut().enumerate() {
             check.check_count += 1;
@@ -1423,6 +1448,35 @@ impl App {
                     LogLevel::Error,
                 );
                 completed_indices.push(i);
+                continue;
+            }
+
+            // If awaiting a fix session's CI re-run, handle separately
+            if check.awaiting_fix_ci {
+                match checker.check_pr_status(check.pr_number) {
+                    Ok(CiStatus::Pending) => {
+                        // Fix was pushed, CI is re-running. Reset flag.
+                        check.awaiting_fix_ci = false;
+                    }
+                    Ok(CiStatus::Passed) => {
+                        check.awaiting_fix_ci = false;
+                        self.activity_log.push_simple(
+                            format!("PR #{}", check.pr_number),
+                            format!("CI passed after {} fix attempt(s)", check.fix_attempt),
+                            LogLevel::Info,
+                        );
+                        self.notifications.notify(
+                            crate::notifications::types::InterruptLevel::Info,
+                            &format!("PR #{}", check.pr_number),
+                            "CI checks passed after auto-fix",
+                        );
+                        completed_indices.push(i);
+                    }
+                    Ok(CiStatus::Failed { .. }) => {
+                        // Still showing old failure or fix didn't push yet. Keep waiting.
+                    }
+                    _ => {}
+                }
                 continue;
             }
 
@@ -1476,17 +1530,69 @@ impl App {
                     }
                 }
                 Ok(CiStatus::Failed { summary }) => {
-                    self.activity_log.push_simple(
-                        format!("PR #{}", check.pr_number),
-                        format!("CI failed: {}", summary),
-                        LogLevel::Error,
-                    );
-                    self.notifications.notify(
-                        crate::notifications::types::InterruptLevel::Critical,
-                        &format!("PR #{} CI failed", check.pr_number),
-                        &summary,
-                    );
-                    completed_indices.push(i);
+                    use crate::github::ci::{CiFixRequest, CiPollAction, decide_ci_action};
+
+                    let action = if auto_fix_enabled {
+                        decide_ci_action(check, max_retries, &summary)
+                    } else {
+                        CiPollAction::Abandon
+                    };
+
+                    match action {
+                        CiPollAction::SpawnFix { .. } => {
+                            match checker.fetch_failure_log(check.pr_number, &check.branch) {
+                                Ok(failure_log) => {
+                                    self.activity_log.push_simple(
+                                        format!("PR #{}", check.pr_number),
+                                        format!(
+                                            "CI failed (attempt {}/{}), spawning fix session",
+                                            check.fix_attempt + 1,
+                                            max_retries
+                                        ),
+                                        LogLevel::Warn,
+                                    );
+                                    fix_requests.push(CiFixRequest {
+                                        pr_number: check.pr_number,
+                                        issue_number: check.issue_number,
+                                        branch: check.branch.clone(),
+                                        attempt: check.fix_attempt + 1,
+                                        failure_log,
+                                    });
+                                    check.fix_attempt += 1;
+                                    check.awaiting_fix_ci = true;
+                                }
+                                Err(e) => {
+                                    self.activity_log.push_simple(
+                                        format!("PR #{}", check.pr_number),
+                                        format!("CI failed, could not fetch log: {}", e),
+                                        LogLevel::Error,
+                                    );
+                                    completed_indices.push(i);
+                                }
+                            }
+                        }
+                        CiPollAction::Abandon => {
+                            self.activity_log.push_simple(
+                                format!("PR #{}", check.pr_number),
+                                if auto_fix_enabled {
+                                    format!(
+                                        "CI failed after {} fix attempts: {}",
+                                        check.fix_attempt, summary
+                                    )
+                                } else {
+                                    format!("CI failed: {}", summary)
+                                },
+                                LogLevel::Error,
+                            );
+                            self.notifications.notify(
+                                crate::notifications::types::InterruptLevel::Critical,
+                                &format!("PR #{} CI failed", check.pr_number),
+                                &summary,
+                            );
+                            completed_indices.push(i);
+                        }
+                        CiPollAction::Wait => {} // awaiting_fix_ci handled above
+                    }
                 }
                 Ok(CiStatus::NoneConfigured) => {
                     self.activity_log.push_simple(
@@ -1510,11 +1616,60 @@ impl App {
             }
         }
 
+        // Spawn fix sessions after the loop to avoid borrow conflicts
+        for req in fix_requests {
+            self.spawn_ci_fix_session(
+                req.pr_number,
+                req.issue_number,
+                req.branch,
+                req.attempt,
+                &req.failure_log,
+            );
+        }
+
         // Remove completed checks in reverse order to preserve indices
         completed_indices.sort_unstable();
         for i in completed_indices.into_iter().rev() {
             self.pending_pr_checks.remove(i);
         }
+    }
+
+    /// Spawn a Claude session to fix a CI failure on an existing PR branch.
+    fn spawn_ci_fix_session(
+        &mut self,
+        pr_number: u64,
+        issue_number: u64,
+        branch: String,
+        attempt: u32,
+        failure_log: &str,
+    ) {
+        use crate::github::ci::build_ci_fix_prompt;
+        use crate::session::types::CiFixContext;
+
+        let model = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.default_model.clone())
+            .unwrap_or_else(|| "opus".to_string());
+        let mode = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.default_mode.clone())
+            .unwrap_or_else(|| "orchestrator".to_string());
+
+        let prompt = build_ci_fix_prompt(pr_number, issue_number, &branch, attempt, failure_log);
+
+        let mut session = Session::new(prompt, model, mode, Some(issue_number));
+        session.status = SessionStatus::CiFix;
+        session.issue_title = Some(format!("CI Fix #{} for PR #{}", attempt, pr_number));
+        session.ci_fix_context = Some(CiFixContext {
+            pr_number,
+            issue_number,
+            branch,
+            attempt,
+        });
+
+        self.pending_session_launches.push(session);
     }
 
     /// Fire a plugin hook asynchronously and log results.
