@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-03 (UTC)
+> Last updated: 2026-04-04 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -62,7 +62,7 @@ maestro/
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup  [Issue #29, #49, #34, #36, #35, #52]
-│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix  [Issue #29, #40, #41, #43]
+│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix; TuiConfig struct with optional theme field; Config gains tui field  [Issue #29, #40, #41, #43, #38]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
 │   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); validate_preflight() (public, fails fast on required check failures); build_claude_cli_result() (pub(crate), pure/testable); check_claude_cli() elevated to Required severity; build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34, #52]
 │   ├── git.rs                             # GitOps trait, CliGitOps: commit and push operations  [Phase 3]
@@ -118,8 +118,9 @@ maestro/
 │   │   ├── store.rs                       # JSON state persistence
 │   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods  [Issue #12]
 │   ├── tui/
-│   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress  [Phase 3, Issue #31-33, #46-48, #35]
-│   │   ├── app.rs                         # App state; TuiMode; TuiCommand enum (FetchIssues, FetchMilestones, FetchSuggestionData, LaunchSession, LaunchSessions); TuiDataEvent enum (Issues, Milestones, Issue, SuggestionData); SuggestionDataPayload; handle_data_event(); data_tx/data_rx channel; pending_commands; check_completions() uses config-driven gates with per-gate activity logging; poll_ci_status() with CI auto-fix loop; spawn_ci_fix_session(); on_issue_session_completed() skips PR creation for CI-fix sessions; issue launch path uses PromptBuilder::build_issue_prompt()  [Issue #12, #31-33, #35, #40, #41, #43, #46-48, #52]
+│   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress; pub mod theme  [Phase 3, Issue #31-33, #46-48, #35, #38]
+│   │   ├── app.rs                         # App state; TuiMode; TuiCommand enum (FetchIssues, FetchMilestones, FetchSuggestionData, LaunchSession, LaunchSessions); TuiDataEvent enum (Issues, Milestones, Issue, SuggestionData); SuggestionDataPayload; handle_data_event(); data_tx/data_rx channel; pending_commands; check_completions() uses config-driven gates with per-gate activity logging; poll_ci_status() with CI auto-fix loop; spawn_ci_fix_session(); on_issue_session_completed() skips PR creation for CI-fix sessions; issue launch path uses PromptBuilder::build_issue_prompt(); theme: Theme field built from config in configure()  [Issue #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52]
+│   │   ├── theme.rs                       # Theme module: Theme struct (resolved color fields), ThemeConfig (preset + overrides), ThemePreset (Dark, Light), ThemeOverrides (per-field optional color overrides), SerializableColor (named/hex/indexed), ColorCapability; builds ratatui Color values from maestro.toml [tui.theme] block  [Issue #38]
 │   │   ├── activity_log.rs                # Scrollable activity log widget with LogLevel color coding  [Phase 1]
 │   │   ├── cost_dashboard.rs              # Cost dashboard widget: per-session and aggregate cost display  [Phase 3]
 │   │   ├── dep_graph.rs                   # ASCII dependency graph visualization  [Phase 3]
@@ -219,8 +220,9 @@ maestro/
 | `src/state/file_claims.rs` | Per-session file claim registry |
 | `src/state/progress.rs` | Session phase tracking (Phase 3) |
 | `src/tui/` | Terminal UI (ratatui) |
-| `src/tui/mod.rs` | Event loop; `handle_screen_action()`; command processing; `launch_session_from_config()`; `FetchSuggestionData` async handler for GitHub ready/failed counts and milestone progress (Issues #31-33, #35, #46-48) |
-| `src/tui/app.rs` | `App` struct; `TuiMode`; `TuiCommand` (adds `FetchSuggestionData`); `TuiDataEvent` (adds `SuggestionData`); `SuggestionDataPayload`; `handle_data_event()`; `data_tx`/`data_rx` channel; `check_completions()` config-driven gates with per-gate logging; `poll_ci_status()` with CI auto-fix loop; `spawn_ci_fix_session()`; `on_issue_session_completed()` skips PR creation for CI-fix sessions; issue launch uses `PromptBuilder::build_issue_prompt()` (Issues #12, #31-33, #35, #40, #41, #43, #46-48, #52) |
+| `src/tui/mod.rs` | Event loop; `handle_screen_action()`; command processing; `launch_session_from_config()`; `FetchSuggestionData` async handler for GitHub ready/failed counts and milestone progress; `pub mod theme` (Issues #31-33, #35, #38, #46-48) |
+| `src/tui/app.rs` | `App` struct with `theme: Theme` field built in `configure()`; `TuiMode`; `TuiCommand` (adds `FetchSuggestionData`); `TuiDataEvent` (adds `SuggestionData`); `SuggestionDataPayload`; `handle_data_event()`; `data_tx`/`data_rx` channel; `check_completions()` config-driven gates with per-gate logging; `poll_ci_status()` with CI auto-fix loop; `spawn_ci_fix_session()`; `on_issue_session_completed()` skips PR creation for CI-fix sessions; issue launch uses `PromptBuilder::build_issue_prompt()` (Issues #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52) |
+| `src/tui/theme.rs` | `Theme` (resolved ratatui `Color` fields); `ThemeConfig` (`preset` + `overrides`); `ThemePreset` (`Dark`, `Light`); `ThemeOverrides` (per-field optional overrides); `SerializableColor` (named string / `#rrggbb` hex / 256-color index); `ColorCapability`; all 14 TUI rendering files consume theme fields instead of hardcoded `Color::` constants (Issue #38) |
 | `src/tui/activity_log.rs` | Scrollable log widget |
 | `src/tui/cost_dashboard.rs` | Per-session and aggregate cost display (Phase 3) |
 | `src/tui/dep_graph.rs` | ASCII dependency graph visualization (Phase 3) |

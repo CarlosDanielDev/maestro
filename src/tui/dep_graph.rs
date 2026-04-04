@@ -1,33 +1,34 @@
+use crate::tui::theme::Theme;
 use crate::work::assigner::WorkAssigner;
 use crate::work::types::WorkStatus;
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 /// Render an ASCII dependency graph visualization.
-pub fn draw_dep_graph(f: &mut Frame, assigner: Option<&WorkAssigner>, area: Rect) {
+pub fn draw_dep_graph(f: &mut Frame, assigner: Option<&WorkAssigner>, area: Rect, theme: &Theme) {
     let lines = match assigner {
-        Some(assigner) => build_graph_lines(assigner),
+        Some(assigner) => build_graph_lines(assigner, theme),
         None => vec![Line::from(Span::styled(
             " No work assigner active (prompt-only mode)",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_secondary),
         ))],
     };
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(Style::default().fg(theme.accent_info))
         .title(" Dependency Graph ");
 
     let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
 }
 
-fn build_graph_lines(assigner: &WorkAssigner) -> Vec<Line<'static>> {
+fn build_graph_lines<'a>(assigner: &WorkAssigner, theme: &Theme) -> Vec<Line<'a>> {
     let items = assigner.all_items();
     if items.is_empty() {
         return vec![Line::from(" No work items")];
@@ -37,10 +38,10 @@ fn build_graph_lines(assigner: &WorkAssigner) -> Vec<Line<'static>> {
 
     for item in items {
         let status_color = match item.status {
-            WorkStatus::Pending | WorkStatus::Blocked => Color::DarkGray,
-            WorkStatus::InProgress => Color::Green,
-            WorkStatus::Done => Color::Blue,
-            WorkStatus::Failed => Color::Red,
+            WorkStatus::Pending | WorkStatus::Blocked => theme.text_secondary,
+            WorkStatus::InProgress => theme.accent_success,
+            WorkStatus::Done => theme.status_completed,
+            WorkStatus::Failed => theme.accent_error,
         };
 
         let status_symbol = match item.status {
@@ -65,14 +66,14 @@ fn build_graph_lines(assigner: &WorkAssigner) -> Vec<Line<'static>> {
             ),
             Span::styled(
                 format!("#{:<4}", item.number()),
-                Style::default().fg(Color::White),
+                Style::default().fg(theme.text_primary),
             ),
             Span::styled(
                 format!(" {:?} ", item.priority),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme.accent_warning),
             ),
             Span::styled(item.title().to_string(), Style::default().fg(status_color)),
-            Span::styled(deps_str, Style::default().fg(Color::DarkGray)),
+            Span::styled(deps_str, Style::default().fg(theme.text_secondary)),
         ]));
     }
 

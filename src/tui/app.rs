@@ -31,6 +31,7 @@ use crate::state::types::MaestroState;
 use crate::tui::activity_log::{ActivityLog, LogLevel};
 use crate::tui::panels::PanelView;
 use crate::tui::screens::{PromptSessionConfig, SessionConfig};
+use crate::tui::theme::Theme;
 use crate::tui::screens::milestone::MilestoneEntry;
 use crate::work::assigner::WorkAssigner;
 use chrono::Utc;
@@ -167,6 +168,8 @@ pub struct App {
     pub data_tx: mpsc::UnboundedSender<TuiDataEvent>,
     /// Receiver for background data fetch results.
     pub data_rx: mpsc::UnboundedReceiver<TuiDataEvent>,
+    /// Active theme for TUI rendering.
+    pub theme: Theme,
 }
 
 impl App {
@@ -221,6 +224,7 @@ impl App {
             pending_session_launches: Vec::new(),
             data_tx,
             data_rx,
+            theme: Theme::default(),
         }
     }
 
@@ -235,6 +239,9 @@ impl App {
             &std::path::PathBuf::from("."),
         );
         self.pool.set_guardrail_prompt(guardrail);
+        let mut theme = Theme::from_config(&config.tui.theme);
+        theme.apply_capability(crate::tui::theme::ColorCapability::detect());
+        self.theme = theme;
         self.config = Some(config);
     }
 

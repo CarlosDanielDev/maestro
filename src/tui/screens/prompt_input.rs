@@ -1,9 +1,10 @@
 use super::{PromptSessionConfig, ScreenAction, draw_keybinds_bar};
+use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
@@ -237,7 +238,7 @@ impl PromptInputScreen {
         ScreenAction::None
     }
 
-    pub fn draw(&self, f: &mut Frame, area: Rect) {
+    pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -249,9 +250,9 @@ impl PromptInputScreen {
 
         // Prompt editor
         let editor_border_color = if self.focus == PromptInputFocus::PromptEditor {
-            Color::Green
+            theme.border_active
         } else {
-            Color::DarkGray
+            theme.border_inactive
         };
         let editor_block = Block::default()
             .borders(Borders::ALL)
@@ -259,7 +260,7 @@ impl PromptInputScreen {
             .title(Span::styled(
                 " Compose Prompt ",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(theme.accent_success)
                     .add_modifier(Modifier::BOLD),
             ));
 
@@ -269,9 +270,9 @@ impl PromptInputScreen {
             self.prompt_text.clone()
         };
         let text_style = if self.prompt_text.is_empty() {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(theme.text_secondary)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(theme.text_primary)
         };
         let editor = Paragraph::new(display_text)
             .style(text_style)
@@ -281,32 +282,32 @@ impl PromptInputScreen {
 
         // Image list
         let image_border_color = if self.focus == PromptInputFocus::ImageList {
-            Color::Green
+            theme.border_active
         } else {
-            Color::DarkGray
+            theme.border_inactive
         };
         let image_block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(image_border_color))
             .title(Span::styled(
                 format!(" Attachments ({}) ", self.image_paths.len()),
-                Style::default().fg(Color::Cyan),
+                Style::default().fg(theme.accent_info),
             ));
 
         let mut lines: Vec<Line> = Vec::new();
         if self.image_paths.is_empty() && !self.editing_image_path {
             lines.push(Line::from(Span::styled(
                 "  (no images attached)",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.text_secondary),
             )));
         }
         for (i, path) in self.image_paths.iter().enumerate() {
             let style = if i == self.selected_image && self.focus == PromptInputFocus::ImageList {
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(theme.accent_success)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(theme.text_primary)
             };
             let prefix = if i == self.selected_image && self.focus == PromptInputFocus::ImageList {
                 " > "
@@ -317,15 +318,15 @@ impl PromptInputScreen {
         }
         if self.editing_image_path {
             lines.push(Line::from(vec![
-                Span::styled("  Path: ", Style::default().fg(Color::Yellow)),
-                Span::styled(&self.image_path_input, Style::default().fg(Color::White)),
-                Span::styled("_", Style::default().fg(Color::Green)),
+                Span::styled("  Path: ", Style::default().fg(theme.accent_warning)),
+                Span::styled(&self.image_path_input, Style::default().fg(theme.text_primary)),
+                Span::styled("_", Style::default().fg(theme.accent_success)),
             ]));
         }
         if self.focus == PromptInputFocus::ImageList && !self.editing_image_path {
             lines.push(Line::from(Span::styled(
                 "  [a] Add   [d] Remove   [Ctrl+V] Paste",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.text_secondary),
             )));
         }
 
@@ -336,7 +337,7 @@ impl PromptInputScreen {
         if let Some(ref msg) = self.status_message {
             let status = Paragraph::new(Line::from(Span::styled(
                 format!(" {} ", msg),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme.accent_warning),
             )));
             f.render_widget(status, chunks[2]);
         } else {
@@ -349,6 +350,7 @@ impl PromptInputScreen {
                     ("Tab", "Switch"),
                     ("Esc", "Cancel"),
                 ],
+                theme,
             );
         }
     }

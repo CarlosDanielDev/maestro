@@ -1,9 +1,10 @@
-use crate::session::types::{Session, SessionStatus};
+use crate::session::types::Session;
 use crate::state::file_claims::FileClaimManager;
+use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph, Wrap},
 };
@@ -37,8 +38,8 @@ impl PanelView {
         self.selected.unwrap_or(0)
     }
 
-    pub fn draw(&self, f: &mut Frame, sessions: &[&Session], area: Rect) {
-        self.draw_with_claims(f, sessions, None, area);
+    pub fn draw(&self, f: &mut Frame, sessions: &[&Session], area: Rect, theme: &Theme) {
+        self.draw_with_claims(f, sessions, None, area, theme);
     }
 
     pub fn draw_with_claims(
@@ -47,14 +48,15 @@ impl PanelView {
         sessions: &[&Session],
         file_claims: Option<&FileClaimManager>,
         area: Rect,
+        theme: &Theme,
     ) {
         if sessions.is_empty() {
             let block = Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray))
+                .border_style(Style::default().fg(theme.border_inactive))
                 .title(" No sessions ");
             let msg = Paragraph::new("Waiting for sessions to start…")
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(theme.text_secondary))
                 .block(block)
                 .wrap(Wrap { trim: true });
             f.render_widget(msg, area);
@@ -83,6 +85,7 @@ impl PanelView {
                 is_selected,
                 has_conflict,
                 self.scroll_offset,
+                theme,
             );
         }
     }
@@ -95,8 +98,9 @@ fn draw_single_panel(
     is_selected: bool,
     has_conflict: bool,
     scroll: u16,
+    theme: &Theme,
 ) {
-    let status_color = status_to_color(session.status);
+    let status_color = theme.status_color(session.status);
 
     let fork_indicator = if session.parent_session_id.is_some() {
         format!(" [fork:{}]", session.fork_depth)
@@ -130,13 +134,12 @@ fn draw_single_panel(
     };
 
     let border_style = if has_conflict {
-        // Flashing red border for conflict — uses RAPID_BLINK + bold red
         Style::default()
-            .fg(Color::Red)
+            .fg(theme.accent_error)
             .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
     } else if is_selected {
         Style::default()
-            .fg(Color::White)
+            .fg(theme.border_focused)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(status_color)
@@ -169,7 +172,7 @@ fn draw_single_panel(
                 .fg(status_color)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(session.elapsed_display(), Style::default().fg(Color::White)),
+        Span::styled(session.elapsed_display(), Style::default().fg(theme.text_primary)),
     ]);
     f.render_widget(Paragraph::new(status_line), chunks[0]);
 
@@ -177,25 +180,19 @@ fn draw_single_panel(
     let cost_line = Line::from(vec![
         Span::styled(
             format!("${:.2}", session.cost_usd),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(theme.accent_warning),
         ),
         Span::raw("  "),
         Span::styled(
             format!("{} files", session.files_touched.len()),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_secondary),
         ),
     ]);
     f.render_widget(Paragraph::new(cost_line), chunks[1]);
 
     // Context gauge
     let ctx_pct = (session.context_pct * 100.0).min(100.0);
-    let gauge_color = if ctx_pct > 70.0 {
-        Color::Red
-    } else if ctx_pct > 40.0 {
-        Color::Yellow
-    } else {
-        Color::Green
-    };
+    let gauge_color = theme.gauge_color(ctx_pct);
     let gauge_label = if ctx_pct > 70.0 {
         format!("ctx: {:.0}% OVERFLOW", ctx_pct)
     } else {
@@ -210,31 +207,14 @@ fn draw_single_panel(
     // Current activity
     let activity = Line::from(Span::styled(
         format!("> {}", session.current_activity),
-        Style::default().fg(Color::Cyan),
+        Style::default().fg(theme.accent_info),
     ));
     f.render_widget(Paragraph::new(activity), chunks[3]);
 
     // Last message (scrollable)
     let msg = Paragraph::new(session.last_message.clone())
-        .style(Style::default().fg(Color::DarkGray))
+        .style(Style::default().fg(theme.text_muted))
         .wrap(Wrap { trim: true })
         .scroll((scroll, 0));
     f.render_widget(msg, chunks[4]);
-}
-
-fn status_to_color(status: SessionStatus) -> Color {
-    match status {
-        SessionStatus::Running => Color::Green,
-        SessionStatus::Completed => Color::Blue,
-        SessionStatus::Errored => Color::Red,
-        SessionStatus::Paused => Color::Yellow,
-        SessionStatus::Killed => Color::Red,
-        SessionStatus::Queued => Color::DarkGray,
-        SessionStatus::Spawning => Color::Cyan,
-        SessionStatus::Stalled => Color::Yellow,
-        SessionStatus::Retrying => Color::Magenta,
-        SessionStatus::GatesRunning => Color::Cyan,
-        SessionStatus::NeedsReview => Color::LightYellow,
-        SessionStatus::CiFix => Color::LightMagenta,
-    }
 }
