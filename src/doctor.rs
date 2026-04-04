@@ -92,6 +92,10 @@ pub fn run_all_checks(config: Option<&Config>) -> DoctorReport {
         && cfg.provider.kind == ProviderKind::AzureDevops
     {
         checks.push(check_az_cli());
+        // Add Azure identity check only if az cli is available
+        if checks.iter().any(|c| c.name == "az cli" && c.passed) {
+            checks.push(check_az_identity());
+        }
     }
 
     checks.push(check_claude_cli());
@@ -139,6 +143,33 @@ fn sanitize(s: &str) -> String {
     s.chars().filter(|c| !c.is_control()).collect()
 }
 
+/// Pure, testable core of the gh auth check.
+/// Accepts the outputs of the external process calls as plain values.
+pub(crate) fn build_gh_auth_result(
+    auth_ok: bool,
+    username: Option<&str>,
+    scopes: Option<&str>,
+) -> CheckResult {
+    if !auth_ok {
+        return CheckResult::fail(
+            "gh auth",
+            "not authenticated — run `gh auth login`",
+            CheckSeverity::Required,
+        );
+    }
+    let mut parts: Vec<String> = Vec::new();
+    match username {
+        Some(u) => parts.push(format!("authenticated as @{}", u)),
+        None => parts.push("authenticated".to_string()),
+    }
+    if let Some(s) = scopes
+        && !s.is_empty()
+    {
+        parts.push(format!("scopes: {}", s));
+    }
+    CheckResult::pass("gh auth", parts.join(", "), CheckSeverity::Required)
+}
+
 // --- Individual check functions ---
 
 fn check_gh_installed() -> CheckResult {
@@ -157,16 +188,41 @@ fn check_gh_installed() -> CheckResult {
 }
 
 fn check_gh_authenticated() -> CheckResult {
-    match Command::new("gh").args(["auth", "status"]).output() {
-        Ok(out) if out.status.success() => {
-            CheckResult::pass("gh auth", "authenticated", CheckSeverity::Required)
-        }
-        _ => CheckResult::fail(
-            "gh auth",
-            "not authenticated — run `gh auth login`",
-            CheckSeverity::Required,
-        ),
-    }
+    let auth_output = Command::new("gh").args(["auth", "status"]).output();
+    let auth_ok = auth_output
+        .as_ref()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    let username = if auth_ok {
+        Command::new("gh")
+            .args(["api", "user", "-q", ".login"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| sanitize(String::from_utf8_lossy(&o.stdout).trim()))
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
+    let scopes = if auth_ok {
+        auth_output
+            .ok()
+            .map(|o| {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                stderr
+                    .lines()
+                    .find(|l| l.contains("Token scopes:") || l.contains("scopes:"))
+                    .map(|l| sanitize(l.trim()))
+                    .unwrap_or_default()
+            })
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
+    build_gh_auth_result(auth_ok, username.as_deref(), scopes.as_deref())
 }
 
 fn check_git_installed() -> CheckResult {
@@ -264,6 +320,35 @@ fn check_az_cli() -> CheckResult {
         _ => CheckResult::fail(
             "az cli",
             "not installed — required for Azure DevOps provider",
+            CheckSeverity::Optional,
+        ),
+    }
+}
+
+fn check_az_identity() -> CheckResult {
+    match Command::new("az")
+        .args(["account", "show", "-o", "tsv", "--query", "user.name"])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            let username = sanitize(String::from_utf8_lossy(&out.stdout).trim());
+            if username.is_empty() {
+                CheckResult::fail(
+                    "az identity",
+                    "could not fetch identity",
+                    CheckSeverity::Optional,
+                )
+            } else {
+                CheckResult::pass(
+                    "az identity",
+                    format!("logged in as {}", username),
+                    CheckSeverity::Optional,
+                )
+            }
+        }
+        _ => CheckResult::fail(
+            "az identity",
+            "could not fetch identity",
             CheckSeverity::Optional,
         ),
     }
@@ -430,5 +515,73 @@ mod tests {
             checks: vec![CheckResult::pass("a", "ok", CheckSeverity::Required)],
         };
         assert!(report.failed_checks().is_empty());
+    }
+
+    // --- Tests for build_gh_auth_result() (Issue #34) ---
+
+    #[test]
+    fn gh_auth_check_pass_with_username_includes_username_in_message() {
+        let result = build_gh_auth_result(true, Some("carlos"), None);
+        assert!(result.passed);
+        assert!(result.message.contains("carlos"));
+    }
+
+    #[test]
+    fn gh_auth_check_pass_with_username_prefixes_at_sign() {
+        let result = build_gh_auth_result(true, Some("carlos"), None);
+        assert!(result.message.contains("@carlos"));
+    }
+
+    #[test]
+    fn gh_auth_check_pass_without_username_falls_back_to_authenticated() {
+        let result = build_gh_auth_result(true, None, None);
+        assert!(result.passed);
+        assert!(result.message.contains("authenticated"));
+    }
+
+    #[test]
+    fn gh_auth_check_fail_returns_not_authenticated() {
+        let result = build_gh_auth_result(false, None, None);
+        assert!(!result.passed);
+        assert_eq!(result.severity, CheckSeverity::Required);
+        assert!(result.message.contains("gh auth login"));
+    }
+
+    #[test]
+    fn gh_auth_check_pass_with_scopes_includes_scopes_in_message() {
+        let result = build_gh_auth_result(true, Some("carlos"), Some("repo,read:org"));
+        assert!(result.passed);
+        assert!(result.message.contains("repo,read:org"));
+    }
+
+    #[test]
+    fn gh_auth_check_pass_without_scopes_does_not_panic() {
+        let result = build_gh_auth_result(true, Some("carlos"), None);
+        assert!(result.passed);
+        assert!(!result.message.is_empty());
+    }
+
+    #[test]
+    fn report_with_username_check_has_no_failures_when_passed() {
+        let report = DoctorReport {
+            checks: vec![CheckResult::pass(
+                "gh auth",
+                "authenticated as @carlos",
+                CheckSeverity::Required,
+            )],
+        };
+        assert!(!report.has_failures());
+    }
+
+    #[test]
+    fn report_with_failed_auth_check_has_failures() {
+        let report = DoctorReport {
+            checks: vec![CheckResult::fail(
+                "gh auth",
+                "not authenticated — run `gh auth login`",
+                CheckSeverity::Required,
+            )],
+        };
+        assert!(report.has_failures());
     }
 }

@@ -859,9 +859,36 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
+    // Run preflight checks and fetch user identity on a blocking thread
+    let config_clone = config.clone();
+    let (doctor_warnings, username) = tokio::task::spawn_blocking(move || {
+        let report = doctor::run_all_checks(config_clone.as_ref());
+        let warnings: Vec<String> = report
+            .failed_checks()
+            .iter()
+            .map(|c| format!("{}: {}", c.name, c.message))
+            .collect();
+
+        // Extract username from the gh auth check result if present
+        let username = report
+            .checks
+            .iter()
+            .find(|c| c.name == "gh auth" && c.passed)
+            .and_then(|c| {
+                c.message
+                    .strip_prefix("authenticated as @")
+                    .map(|rest| rest.split(',').next().unwrap_or(rest).to_string())
+            });
+
+        (warnings, username)
+    })
+    .await
+    .unwrap_or_default();
+
     let project_info = tui::screens::home::ProjectInfo {
         repo: repo_name,
         branch,
+        username,
     };
 
     // Build recent sessions from saved state
@@ -891,19 +918,6 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
         "bypassPermissions".into(),
         Vec::new(),
     );
-
-    // Run preflight checks on a blocking thread to avoid stalling async runtime
-    let config_clone = config.clone();
-    let doctor_warnings = tokio::task::spawn_blocking(move || {
-        let report = doctor::run_all_checks(config_clone.as_ref());
-        report
-            .failed_checks()
-            .iter()
-            .map(|c| format!("{}: {}", c.name, c.message))
-            .collect::<Vec<_>>()
-    })
-    .await
-    .unwrap_or_default();
 
     // Set up home screen and start in Dashboard mode
     app.home_screen = Some(tui::screens::HomeScreen::new(
