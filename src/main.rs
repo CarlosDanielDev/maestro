@@ -70,6 +70,10 @@ enum Commands {
         /// Resume from previous state after a crash
         #[arg(long)]
         resume: bool,
+
+        /// Skip preflight doctor checks before launching sessions
+        #[arg(long)]
+        skip_doctor: bool,
     },
     /// Show queued/pending issues from GitHub
     Queue,
@@ -157,6 +161,7 @@ async fn main() -> anyhow::Result<()> {
             mode,
             max_concurrent,
             resume,
+            skip_doctor,
         }) => {
             cmd_run(
                 prompt,
@@ -166,6 +171,7 @@ async fn main() -> anyhow::Result<()> {
                 mode,
                 max_concurrent,
                 resume,
+                skip_doctor,
             )
             .await
         }
@@ -668,6 +674,7 @@ fn cmd_doctor() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn cmd_run(
     prompt: Option<String>,
     issue: Option<String>,
@@ -676,8 +683,24 @@ async fn cmd_run(
     mode: Option<String>,
     max_concurrent_override: Option<usize>,
     resume: bool,
+    skip_doctor: bool,
 ) -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
+
+    // Preflight doctor check — fail fast before wasting API credits
+    if !skip_doctor {
+        let config_ref = config.clone();
+        let report =
+            tokio::task::spawn_blocking(move || doctor::run_all_checks(Some(&config_ref))).await?;
+        if let Err(e) = doctor::validate_preflight(&report) {
+            doctor::print_report(&report);
+            return Err(e.context("Fix the issues above or pass --skip-doctor to bypass"));
+        }
+        for check in report.failed_checks() {
+            tracing::warn!("Doctor: {} — {}", check.name, check.message);
+        }
+    }
+
     let model = model.unwrap_or(config.sessions.default_model.clone());
     let session_mode = mode.unwrap_or(config.sessions.default_mode.clone());
 
@@ -688,7 +711,8 @@ async fn cmd_run(
     let issue_filter_labels = config.github.issue_filter_labels.clone();
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
 
-    let mut app = setup_app_from_config(config, store, worktree_mgr, max_concurrent_override);
+    let mut app =
+        setup_app_from_config(config.clone(), store, worktree_mgr, max_concurrent_override);
 
     // Resume from previous state if requested
     if resume {
@@ -742,12 +766,8 @@ async fn cmd_run(
             // Use mode from label (maestro:mode:X) or CLI --mode or config default
             let issue_mode = crate::modes::mode_from_labels(&gh_issue.labels)
                 .unwrap_or_else(|| session_mode.clone());
-            let mut session = Session::new(
-                gh_issue.unattended_prompt(),
-                model.clone(),
-                issue_mode,
-                Some(num),
-            );
+            let prompt = crate::prompts::PromptBuilder::build_issue_prompt(&gh_issue, &config);
+            let mut session = Session::new(prompt, model.clone(), issue_mode, Some(num));
             session.issue_title = Some(gh_issue.title.clone());
 
             // Cache issue data
