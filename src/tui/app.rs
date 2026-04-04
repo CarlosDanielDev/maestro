@@ -148,6 +148,8 @@ pub struct App {
     pub plugin_runner: Option<PluginRunner>,
     /// Whether the help overlay is visible.
     pub show_help: bool,
+    /// Scroll offset for the help overlay.
+    pub help_scroll: u16,
     /// Context overflow monitor.
     pub context_monitor: Box<dyn ContextMonitor>,
     /// Fork policy for auto-fork decisions.
@@ -214,6 +216,8 @@ impl App {
             last_work_tick: Instant::now(),
             plugin_runner: None,
             show_help: false,
+            help_scroll: 0,
+
             context_monitor: Box::new(ProductionContextMonitor::new()),
             fork_policy: None,
             home_screen: None,
