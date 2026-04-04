@@ -164,7 +164,10 @@ fn draw_detail_header(
                 Style::default().fg(theme.text_primary),
             ),
             Span::raw("  "),
-            Span::styled(session.elapsed_display(), Style::default().fg(theme.text_primary)),
+            Span::styled(
+                session.elapsed_display(),
+                Style::default().fg(theme.text_primary),
+            ),
             Span::raw("  "),
             Span::styled(
                 format!("Retries: {}", session.retry_count),

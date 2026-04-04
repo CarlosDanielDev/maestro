@@ -338,9 +338,7 @@ async fn event_loop(
                         format!("{}{}", config.prompt, image_refs)
                     };
 
-                    let session = crate::session::types::Session::new(
-                        prompt, model, mode, None,
-                    );
+                    let session = crate::session::types::Session::new(prompt, model, mode, None);
                     app.pending_session_launches.push(session);
                 }
             }
@@ -433,8 +431,7 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
                 }
                 app::TuiMode::PromptInput => {
                     if app.prompt_input_screen.is_none() {
-                        app.prompt_input_screen =
-                            Some(screens::PromptInputScreen::new());
+                        app.prompt_input_screen = Some(screens::PromptInputScreen::new());
                     }
                 }
                 _ => {}

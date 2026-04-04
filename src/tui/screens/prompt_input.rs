@@ -61,11 +61,8 @@ fn save_clipboard_image(img: &arboard::ImageData) -> Option<PathBuf> {
     let filename = format!("clip-{}.png", uuid::Uuid::new_v4());
     let path = dir.join(&filename);
 
-    let rgba_buf: image::RgbaImage = image::ImageBuffer::from_raw(
-        img.width as u32,
-        img.height as u32,
-        img.bytes.to_vec(),
-    )?;
+    let rgba_buf: image::RgbaImage =
+        image::ImageBuffer::from_raw(img.width as u32, img.height as u32, img.bytes.to_vec())?;
     rgba_buf.save(&path).ok()?;
 
     Some(path)
@@ -314,12 +311,18 @@ impl PromptInputScreen {
             } else {
                 "   "
             };
-            lines.push(Line::from(Span::styled(format!("{}{}", prefix, path), style)));
+            lines.push(Line::from(Span::styled(
+                format!("{}{}", prefix, path),
+                style,
+            )));
         }
         if self.editing_image_path {
             lines.push(Line::from(vec![
                 Span::styled("  Path: ", Style::default().fg(theme.accent_warning)),
-                Span::styled(&self.image_path_input, Style::default().fg(theme.text_primary)),
+                Span::styled(
+                    &self.image_path_input,
+                    Style::default().fg(theme.text_primary),
+                ),
                 Span::styled("_", Style::default().fg(theme.accent_success)),
             ]));
         }
@@ -684,11 +687,7 @@ mod tests {
         let mut screen = screen_in_image_list_focus();
         screen.prompt_text = "existing".to_string();
         screen.image_paths = vec!["/x.png".to_string()];
-        for code in [
-            KeyCode::Char('j'),
-            KeyCode::Char('k'),
-            KeyCode::Char('d'),
-        ] {
+        for code in [KeyCode::Char('j'), KeyCode::Char('k'), KeyCode::Char('d')] {
             screen.handle_input(&key_event(code));
         }
         assert_eq!(screen.prompt_text, "existing");
@@ -721,8 +720,9 @@ mod tests {
 
     #[test]
     fn prompt_input_ctrl_v_with_image_adds_path_to_image_list() {
-        let mut screen =
-            PromptInputScreen::with_clipboard(MockClipboard::with_image("/tmp/maestro-clips/clip-abc.png"));
+        let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_image(
+            "/tmp/maestro-clips/clip-abc.png",
+        ));
         let action = screen.handle_input(&ctrl_key(KeyCode::Char('v')));
         assert_eq!(action, ScreenAction::None);
         assert_eq!(
@@ -734,8 +734,9 @@ mod tests {
 
     #[test]
     fn prompt_input_ctrl_v_with_text_adds_text_as_path() {
-        let mut screen =
-            PromptInputScreen::with_clipboard(MockClipboard::with_text("/home/user/screenshot.png"));
+        let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_text(
+            "/home/user/screenshot.png",
+        ));
         let action = screen.handle_input(&ctrl_key(KeyCode::Char('v')));
         assert_eq!(action, ScreenAction::None);
         assert_eq!(
