@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +109,9 @@ pub struct Session {
     /// If this session is a CI fix, tracks the PR and attempt number.
     #[serde(default)]
     pub ci_fix_context: Option<CiFixContext>,
+    /// Image paths attached to this session for visual context.
+    #[serde(default)]
+    pub image_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,7 +145,14 @@ impl Session {
             child_session_ids: Vec::new(),
             fork_depth: 0,
             ci_fix_context: None,
+            image_paths: Vec::new(),
         }
+    }
+
+    /// Builder method to attach image paths to a session.
+    pub fn with_image_paths(mut self, paths: Vec<PathBuf>) -> Self {
+        self.image_paths = paths;
+        self
     }
 
     pub fn log_activity(&mut self, message: String) {
@@ -305,6 +316,45 @@ mod tests {
             Some(10),
         );
         assert!(s.ci_fix_context.is_none());
+    }
+
+    // --- image_paths field tests (issue #42) ---
+
+    #[test]
+    fn session_new_initializes_image_paths_as_empty() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        assert!(s.image_paths.is_empty());
+    }
+
+    #[test]
+    fn session_with_image_paths_builder() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None)
+            .with_image_paths(vec![
+                std::path::PathBuf::from("/tmp/a.png"),
+                std::path::PathBuf::from("/tmp/b.jpg"),
+            ]);
+        assert_eq!(s.image_paths.len(), 2);
+    }
+
+    #[test]
+    fn session_with_image_paths_round_trips_via_serde() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None)
+            .with_image_paths(vec![
+                std::path::PathBuf::from("img/a.png"),
+                std::path::PathBuf::from("img/b.jpg"),
+            ]);
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.image_paths, s.image_paths);
+    }
+
+    #[test]
+    fn session_image_paths_deserializes_with_default_when_field_absent() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json.replace(r#","image_paths":[]"#, "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert!(rt.image_paths.is_empty());
     }
 
     #[test]
