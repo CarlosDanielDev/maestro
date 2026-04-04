@@ -8,7 +8,7 @@ use chrono::Utc;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -32,7 +32,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         TuiMode::Overview => {
             let sessions = app.pool.all_sessions();
             app.panel_view
-                .draw_with_claims(f, &sessions, Some(&app.pool.file_claims), chunks[1]);
+                .draw_with_claims(f, &sessions, Some(&app.pool.file_claims), chunks[1], &app.theme);
         }
         TuiMode::Detail(idx) => {
             let sessions = app.pool.all_sessions();
@@ -43,6 +43,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &app.progress_tracker,
                     Some(&app.pool.file_claims),
                     chunks[1],
+                    &app.theme,
                 );
             } else {
                 app.panel_view.draw_with_claims(
@@ -50,18 +51,19 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &sessions,
                     Some(&app.pool.file_claims),
                     chunks[1],
+                    &app.theme,
                 );
             }
         }
         TuiMode::DependencyGraph => {
-            dep_graph::draw_dep_graph(f, app.work_assigner.as_ref(), chunks[1]);
+            dep_graph::draw_dep_graph(f, app.work_assigner.as_ref(), chunks[1], &app.theme);
         }
         TuiMode::Fullscreen(idx) => {
             let sessions = app.pool.all_sessions();
             if let Some(session) = sessions.get(idx) {
-                fullscreen::draw_fullscreen(f, session, &app.progress_tracker, chunks[1]);
+                fullscreen::draw_fullscreen(f, session, &app.progress_tracker, chunks[1], &app.theme);
             } else {
-                app.panel_view.draw(f, &sessions, chunks[1]);
+                app.panel_view.draw(f, &sessions, chunks[1], &app.theme);
             }
         }
         TuiMode::CostDashboard => {
@@ -73,48 +75,50 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 app.total_cost,
                 budget_limit,
                 chunks[1],
+                &app.theme,
             );
         }
         TuiMode::Dashboard => {
             if let Some(ref screen) = app.home_screen {
-                screen.draw(f, chunks[1]);
+                screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::IssueBrowser => {
             if let Some(ref mut screen) = app.issue_browser_screen {
-                screen.draw(f, chunks[1]);
+                screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::MilestoneView => {
             if let Some(ref mut screen) = app.milestone_screen {
-                screen.draw(f, chunks[1]);
+                screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::PromptInput => {
             if let Some(ref screen) = app.prompt_input_screen {
-                screen.draw(f, chunks[1]);
+                screen.draw(f, chunks[1], &app.theme);
             }
         }
     }
 
     // Delegate to activity log widget
-    app.activity_log.draw(f, chunks[2]);
+    app.activity_log.draw(f, chunks[2], &app.theme);
 
     // Draw notification banner overlay if any
     let banners = app.notifications.active_banners();
     if !banners.is_empty() {
-        draw_notification_banner(f, banners[0], chunks[2]);
+        draw_notification_banner(f, banners[0], chunks[2], &app.theme);
     }
 
     draw_help_bar(f, app, chunks[3]);
 
     // Draw help overlay on top of everything if active
     if app.show_help {
-        help::draw_help_overlay(f, f.area());
+        help::draw_help_overlay(f, f.area(), &app.theme);
     }
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
     let elapsed = Utc::now() - app.start_time;
     let elapsed_str = format!(
         "{:02}:{:02}:{:02}",
@@ -138,17 +142,17 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 0
             };
-            if pct >= 90 { Color::Red } else { Color::Yellow }
+            theme.budget_color(pct)
         }
-        None => Color::Yellow,
+        None => theme.accent_warning,
     };
 
     let text = Line::from(vec![
         Span::styled(
             concat!(" MAESTRO v", env!("CARGO_PKG_VERSION"), " "),
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Green)
+                .fg(theme.branding_fg)
+                .bg(theme.branding_bg)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
@@ -159,20 +163,20 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
                 if total != 1 { "s" } else { "" },
                 active
             ),
-            Style::default().fg(Color::Cyan),
+            Style::default().fg(theme.accent_info),
         ),
         Span::raw("  "),
         Span::styled(budget_display, Style::default().fg(budget_color)),
         Span::raw("  "),
         Span::styled(
             format!(" {} ", elapsed_str),
-            Style::default().fg(Color::White),
+            Style::default().fg(theme.text_primary),
         ),
     ]);
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green))
+        .border_style(Style::default().fg(theme.border_active))
         .title_alignment(ratatui::layout::Alignment::Center);
 
     let paragraph = Paragraph::new(text).block(block);
@@ -183,18 +187,19 @@ fn draw_notification_banner(
     f: &mut Frame,
     notification: &crate::notifications::types::Notification,
     area: Rect,
+    theme: &crate::tui::theme::Theme,
 ) {
     let color = match notification.level {
-        crate::notifications::types::InterruptLevel::Critical => Color::Red,
-        crate::notifications::types::InterruptLevel::Blocker => Color::LightRed,
-        _ => Color::Yellow,
+        crate::notifications::types::InterruptLevel::Critical => theme.notification_critical,
+        crate::notifications::types::InterruptLevel::Blocker => theme.notification_blocker,
+        _ => theme.notification_default,
     };
 
     let banner = Paragraph::new(Line::from(vec![
         Span::styled(
             format!(" {} ", notification.level.label()),
             Style::default()
-                .fg(Color::Black)
+                .fg(theme.branding_fg)
                 .bg(color)
                 .add_modifier(Modifier::BOLD),
         ),
@@ -204,13 +209,14 @@ fn draw_notification_banner(
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         ),
         Span::raw(": "),
-        Span::styled(&notification.message, Style::default().fg(Color::White)),
-        Span::styled("  [d]ismiss", Style::default().fg(Color::DarkGray)),
+        Span::styled(&notification.message, Style::default().fg(theme.text_primary)),
+        Span::styled("  [d]ismiss", Style::default().fg(theme.text_secondary)),
     ]));
     f.render_widget(banner, area);
 }
 
 fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
     let mode_label = match app.tui_mode {
         TuiMode::Overview => "Overview",
         TuiMode::Detail(_) => "Detail",
@@ -226,26 +232,26 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
     let help = Line::from(vec![
         Span::styled(
             format!(" {} ", mode_label),
-            Style::default().fg(Color::Black).bg(Color::DarkGray),
+            Style::default().fg(theme.keybind_label_fg).bg(theme.keybind_label_bg),
         ),
         Span::raw(" "),
-        Span::styled("[q]", Style::default().fg(Color::Yellow)),
+        Span::styled("[q]", Style::default().fg(theme.keybind_key)),
         Span::raw("uit "),
-        Span::styled("[Tab]", Style::default().fg(Color::Yellow)),
+        Span::styled("[Tab]", Style::default().fg(theme.keybind_key)),
         Span::raw("mode "),
-        Span::styled("[f]", Style::default().fg(Color::Yellow)),
+        Span::styled("[f]", Style::default().fg(theme.keybind_key)),
         Span::raw("ull "),
-        Span::styled("[$]", Style::default().fg(Color::Yellow)),
+        Span::styled("[$]", Style::default().fg(theme.keybind_key)),
         Span::raw("cost "),
-        Span::styled("[?]", Style::default().fg(Color::Yellow)),
+        Span::styled("[?]", Style::default().fg(theme.keybind_key)),
         Span::raw("help "),
-        Span::styled("[Esc]", Style::default().fg(Color::Yellow)),
+        Span::styled("[Esc]", Style::default().fg(theme.keybind_key)),
         Span::raw("back "),
-        Span::styled("[p]", Style::default().fg(Color::Yellow)),
+        Span::styled("[p]", Style::default().fg(theme.keybind_key)),
         Span::raw("ause "),
-        Span::styled("[k]", Style::default().fg(Color::Yellow)),
+        Span::styled("[k]", Style::default().fg(theme.keybind_key)),
         Span::raw("ill "),
-        Span::styled("[↑↓]", Style::default().fg(Color::Yellow)),
+        Span::styled("[↑↓]", Style::default().fg(theme.keybind_key)),
         Span::raw("scroll"),
     ]);
     f.render_widget(Paragraph::new(help), area);
