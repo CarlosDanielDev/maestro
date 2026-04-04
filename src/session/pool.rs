@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use super::image::copy_images_to_worktree;
 use super::manager::{ManagedSession, SessionEvent};
 use super::types::{Session, SessionStatus};
 use super::worktree::WorktreeManager;
@@ -95,6 +96,24 @@ impl SessionPool {
                     (None, None)
                 }
             };
+
+            // Copy images to worktree if available
+            if let Some(ref wt_path) = worktree_path
+                && !session.image_paths.is_empty()
+            {
+                match copy_images_to_worktree(&session.image_paths, wt_path) {
+                    Ok(_) => {
+                        session.log_activity(format!(
+                            "Copied {} image(s) to worktree",
+                            session.image_paths.len()
+                        ));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to copy images to worktree: {}", e);
+                        session.log_activity(format!("Image copy failed (non-fatal): {}", e));
+                    }
+                }
+            }
 
             // Build system prompt with file claims and guardrails
             let mut system_prompt = self.file_claims.build_system_prompt(session.id);
