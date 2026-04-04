@@ -209,7 +209,7 @@ impl<'de> Deserialize<'de> for SerializableColor {
             }
 
             fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
-                if v < 0 || v > 255 {
+                if !(0..=255).contains(&v) {
                     return Err(E::custom(format!("color index out of range: {}", v)));
                 }
                 Ok(SerializableColor(Color::Indexed(v as u8)))
