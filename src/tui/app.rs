@@ -751,12 +751,12 @@ impl App {
                 let issue_mode =
                     crate::modes::mode_from_labels(&gh_issue.labels).unwrap_or(default_mode);
                 let issue_number = gh_issue.number;
-                let mut session = Session::new(
-                    gh_issue.unattended_prompt(),
-                    model,
-                    issue_mode,
-                    Some(issue_number),
-                );
+                let prompt = self
+                    .config
+                    .as_ref()
+                    .map(|c| crate::prompts::PromptBuilder::build_issue_prompt(&gh_issue, c))
+                    .unwrap_or_else(|| gh_issue.unattended_prompt());
+                let mut session = Session::new(prompt, model, issue_mode, Some(issue_number));
                 session.issue_title = Some(gh_issue.title.clone());
                 self.state.issue_cache.insert(issue_number, gh_issue);
                 self.pending_session_launches.push(session);

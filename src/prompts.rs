@@ -421,4 +421,42 @@ mod tests {
         let result = resolve_guardrail(Some(""), dir.path());
         assert!(result.contains("gofmt"));
     }
+
+    // --- Tests for PromptBuilder enrichment (Issue #52) ---
+
+    #[test]
+    fn build_issue_prompt_contains_model_from_config() {
+        let issue = make_issue(&[]);
+        let config = make_config();
+        let prompt = PromptBuilder::build_issue_prompt(&issue, &config);
+        assert!(prompt.contains("Model:"));
+        assert!(prompt.contains(&config.sessions.default_model));
+    }
+
+    #[test]
+    fn build_issue_prompt_contains_mode_from_config() {
+        let issue = make_issue(&[]);
+        let config = make_config();
+        let prompt = PromptBuilder::build_issue_prompt(&issue, &config);
+        assert!(prompt.contains("Mode:"));
+    }
+
+    #[test]
+    fn build_issue_prompt_supersedes_unattended_prompt_for_feature_issues() {
+        let issue = make_issue(&["type:feature"]);
+        let config = make_config();
+        let prompt = PromptBuilder::build_issue_prompt(&issue, &config);
+        assert!(prompt.contains("Feature"));
+        // Phrase that belongs exclusively to the old unattended_prompt — must NOT leak in
+        assert!(!prompt.contains("Read relevant source files first, then implement"));
+    }
+
+    #[test]
+    fn build_issue_prompt_structured_reasoning_section_present() {
+        let issue = make_issue(&[]);
+        let config = make_config();
+        let prompt = PromptBuilder::build_issue_prompt(&issue, &config);
+        assert!(prompt.contains("## Approach"));
+        assert!(prompt.contains("1. Read and understand"));
+    }
 }
