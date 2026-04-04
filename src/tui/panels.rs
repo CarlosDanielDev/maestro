@@ -235,5 +235,6 @@ fn status_to_color(status: SessionStatus) -> Color {
         SessionStatus::Retrying => Color::Magenta,
         SessionStatus::GatesRunning => Color::Cyan,
         SessionStatus::NeedsReview => Color::LightYellow,
+        SessionStatus::CiFix => Color::LightMagenta,
     }
 }
