@@ -143,6 +143,33 @@ fn sanitize(s: &str) -> String {
     s.chars().filter(|c| !c.is_control()).collect()
 }
 
+/// Validate preflight checks and return an error if required checks fail.
+pub fn validate_preflight(report: &DoctorReport) -> anyhow::Result<()> {
+    let failed: Vec<String> = report
+        .checks
+        .iter()
+        .filter(|c| !c.passed && c.severity == CheckSeverity::Required)
+        .map(|c| format!("{}: {}", c.name, c.message))
+        .collect();
+    if !failed.is_empty() {
+        anyhow::bail!("Preflight failed: {}", failed.join("; "));
+    }
+    Ok(())
+}
+
+/// Pure, testable core of the claude cli check.
+pub(crate) fn build_claude_cli_result(available: bool, version: &str) -> CheckResult {
+    if available {
+        CheckResult::pass("claude cli", version, CheckSeverity::Required)
+    } else {
+        CheckResult::fail(
+            "claude cli",
+            "not installed — sessions won't launch",
+            CheckSeverity::Required,
+        )
+    }
+}
+
 /// Pure, testable core of the gh auth check.
 /// Accepts the outputs of the external process calls as plain values.
 pub(crate) fn build_gh_auth_result(
@@ -302,13 +329,9 @@ fn check_claude_cli() -> CheckResult {
     match Command::new("claude").arg("--version").output() {
         Ok(out) if out.status.success() => {
             let version = sanitize(String::from_utf8_lossy(&out.stdout).trim());
-            CheckResult::pass("claude cli", version, CheckSeverity::Optional)
+            build_claude_cli_result(true, &version)
         }
-        _ => CheckResult::fail(
-            "claude cli",
-            "not installed — sessions won't launch",
-            CheckSeverity::Optional,
-        ),
+        _ => build_claude_cli_result(false, ""),
     }
 }
 
@@ -583,5 +606,101 @@ mod tests {
             )],
         };
         assert!(report.has_failures());
+    }
+
+    // --- Tests for build_claude_cli_result() and validate_preflight() (Issue #52) ---
+
+    #[test]
+    fn build_claude_cli_result_pass_returns_required_severity() {
+        let result = build_claude_cli_result(true, "claude/1.2.3");
+        assert!(result.passed);
+        assert_eq!(result.severity, CheckSeverity::Required);
+    }
+
+    #[test]
+    fn build_claude_cli_result_fail_returns_required_severity() {
+        let result = build_claude_cli_result(false, "");
+        assert!(!result.passed);
+        assert_eq!(result.severity, CheckSeverity::Required);
+    }
+
+    #[test]
+    fn build_claude_cli_result_fail_message_contains_not_installed() {
+        let result = build_claude_cli_result(false, "");
+        assert!(result.message.contains("not installed"));
+    }
+
+    #[test]
+    fn build_claude_cli_result_pass_includes_version_in_message() {
+        let result = build_claude_cli_result(true, "claude/1.2.3");
+        assert!(result.message.contains("claude/1.2.3"));
+    }
+
+    #[test]
+    fn validate_preflight_returns_ok_when_no_failures() {
+        let report = DoctorReport {
+            checks: vec![
+                CheckResult::pass("gh cli", "ok", CheckSeverity::Required),
+                CheckResult::pass("claude cli", "ok", CheckSeverity::Required),
+            ],
+        };
+        assert!(validate_preflight(&report).is_ok());
+    }
+
+    #[test]
+    fn validate_preflight_returns_error_when_required_check_fails() {
+        let report = DoctorReport {
+            checks: vec![
+                CheckResult::pass("gh cli", "ok", CheckSeverity::Required),
+                CheckResult::fail("claude cli", "not installed", CheckSeverity::Required),
+            ],
+        };
+        assert!(validate_preflight(&report).is_err());
+    }
+
+    #[test]
+    fn validate_preflight_error_message_names_the_failing_check() {
+        let report = DoctorReport {
+            checks: vec![CheckResult::fail(
+                "claude cli",
+                "not installed — sessions won't launch",
+                CheckSeverity::Required,
+            )],
+        };
+        let err = validate_preflight(&report).unwrap_err();
+        assert!(err.to_string().contains("claude cli"));
+    }
+
+    #[test]
+    fn validate_preflight_returns_ok_when_only_optional_fails() {
+        let report = DoctorReport {
+            checks: vec![
+                CheckResult::pass("gh cli", "ok", CheckSeverity::Required),
+                CheckResult::fail("az cli", "not installed", CheckSeverity::Optional),
+            ],
+        };
+        assert!(validate_preflight(&report).is_ok());
+    }
+
+    #[test]
+    fn validate_preflight_returns_ok_on_empty_report() {
+        let report = DoctorReport { checks: vec![] };
+        assert!(validate_preflight(&report).is_ok());
+    }
+
+    #[test]
+    fn validate_preflight_error_lists_all_failing_required_checks() {
+        let report = DoctorReport {
+            checks: vec![
+                CheckResult::fail("gh cli", "not installed", CheckSeverity::Required),
+                CheckResult::fail("claude cli", "not installed", CheckSeverity::Required),
+            ],
+        };
+        let err = validate_preflight(&report).unwrap_err().to_string();
+        assert!(err.contains("gh cli"), "expected 'gh cli' in: {err}");
+        assert!(
+            err.contains("claude cli"),
+            "expected 'claude cli' in: {err}"
+        );
     }
 }
