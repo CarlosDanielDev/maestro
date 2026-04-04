@@ -30,7 +30,7 @@ use crate::state::store::StateStore;
 use crate::state::types::MaestroState;
 use crate::tui::activity_log::{ActivityLog, LogLevel};
 use crate::tui::panels::PanelView;
-use crate::tui::screens::SessionConfig;
+use crate::tui::screens::{PromptSessionConfig, SessionConfig};
 use crate::tui::screens::milestone::MilestoneEntry;
 use crate::work::assigner::WorkAssigner;
 use chrono::Utc;
@@ -56,6 +56,8 @@ pub enum TuiMode {
     IssueBrowser,
     /// Milestone overview with progress tracking.
     MilestoneView,
+    /// Prompt input screen for composing free-form prompts with image attachments.
+    PromptInput,
 }
 
 /// Payload for suggestion data fetched from GitHub.
@@ -72,6 +74,7 @@ pub enum TuiCommand {
     FetchSuggestionData,
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
+    LaunchPromptSession(PromptSessionConfig),
 }
 
 /// Data events delivered from background fetch tasks.
@@ -154,6 +157,8 @@ pub struct App {
     pub issue_browser_screen: Option<crate::tui::screens::IssueBrowserScreen>,
     /// Milestone screen state (for MilestoneView mode).
     pub milestone_screen: Option<crate::tui::screens::MilestoneScreen>,
+    /// Prompt input screen state (for PromptInput mode).
+    pub prompt_input_screen: Option<crate::tui::screens::PromptInputScreen>,
     /// Pending TUI commands to process in the next event loop tick.
     pub pending_commands: Vec<TuiCommand>,
     /// Sessions ready to be launched (created from background IssueFetched events).
@@ -211,6 +216,7 @@ impl App {
             home_screen: None,
             issue_browser_screen: None,
             milestone_screen: None,
+            prompt_input_screen: None,
             pending_commands: Vec::new(),
             pending_session_launches: Vec::new(),
             data_tx,
