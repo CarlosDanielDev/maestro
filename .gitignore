@@ -6,6 +6,7 @@ Cargo.lock
 maestro-state.json
 maestro.log
 .maestro/worktrees/
+.maestro/logs/
 
 # OS
 .DS_Store

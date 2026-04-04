@@ -1,13 +1,14 @@
+use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
 /// Draw the help overlay popup centered on the screen.
-pub fn draw_help_overlay(f: &mut Frame, area: Rect) {
+pub fn draw_help_overlay(f: &mut Frame, area: Rect, theme: &Theme) {
     let popup = centered_rect(60, 70, area);
 
     // Clear background behind popup
@@ -17,38 +18,42 @@ pub fn draw_help_overlay(f: &mut Frame, area: Rect) {
         Line::from(vec![Span::styled(
             "Keyboard Shortcuts",
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme.accent_info)
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(""),
-        section_header("Navigation"),
-        key_line("Tab", "Cycle views (Overview → Dependencies → Overview)"),
-        key_line("Esc", "Return to Overview / Close help"),
-        key_line("Enter", "Open detail view for selected session"),
-        key_line("1-9", "Jump to session detail by index"),
-        key_line("?", "Toggle this help overlay"),
+        section_header("Navigation", theme),
+        key_line(
+            "Tab",
+            "Cycle views (Overview → Dependencies → Overview)",
+            theme,
+        ),
+        key_line("Esc", "Return to Overview / Close help", theme),
+        key_line("Enter", "Open detail view for selected session", theme),
+        key_line("1-9", "Jump to session detail by index", theme),
+        key_line("?", "Toggle this help overlay", theme),
         Line::from(""),
-        section_header("Views"),
-        key_line("f", "Full-screen view for selected session"),
-        key_line("$", "Cost dashboard view"),
+        section_header("Views", theme),
+        key_line("f", "Full-screen view for selected session", theme),
+        key_line("$", "Cost dashboard view", theme),
         Line::from(""),
-        section_header("Session Control"),
-        key_line("p", "Pause all running sessions (SIGSTOP)"),
-        key_line("r", "Resume all paused sessions (SIGCONT)"),
-        key_line("k", "Kill all sessions"),
-        key_line("d", "Dismiss notification banner"),
+        section_header("Session Control", theme),
+        key_line("p", "Pause all running sessions (SIGSTOP)", theme),
+        key_line("r", "Resume all paused sessions (SIGCONT)", theme),
+        key_line("k", "Kill all sessions", theme),
+        key_line("d", "Dismiss notification banner", theme),
         Line::from(""),
-        section_header("Scrolling"),
-        key_line("↑/↓", "Scroll agent panel output"),
-        key_line("Shift+↑/↓", "Scroll activity log"),
-        key_line("Mouse wheel", "Scroll focused panel"),
+        section_header("Scrolling", theme),
+        key_line("↑/↓", "Scroll agent panel output", theme),
+        key_line("Shift+↑/↓", "Scroll activity log", theme),
+        key_line("Mouse wheel", "Scroll focused panel", theme),
         Line::from(""),
-        section_header("General"),
-        key_line("q / Ctrl+c", "Quit maestro"),
+        section_header("General", theme),
+        key_line("q / Ctrl+c", "Quit maestro", theme),
         Line::from(""),
         Line::from(vec![Span::styled(
             "Press ? or Esc to close",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_secondary),
         )]),
     ];
 
@@ -56,7 +61,7 @@ pub fn draw_help_overlay(f: &mut Frame, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan))
+                .border_style(Style::default().fg(theme.accent_info))
                 .title(" Help ")
                 .title_alignment(Alignment::Center),
         )
@@ -65,25 +70,25 @@ pub fn draw_help_overlay(f: &mut Frame, area: Rect) {
     f.render_widget(paragraph, popup);
 }
 
-fn section_header(title: &str) -> Line<'_> {
+fn section_header<'a>(title: &'a str, theme: &Theme) -> Line<'a> {
     Line::from(vec![Span::styled(
         format!("  {}", title),
         Style::default()
-            .fg(Color::Yellow)
+            .fg(theme.accent_warning)
             .add_modifier(Modifier::BOLD),
     )])
 }
 
-fn key_line<'a>(key: &'a str, desc: &'a str) -> Line<'a> {
+fn key_line<'a>(key: &'a str, desc: &'a str, theme: &Theme) -> Line<'a> {
     Line::from(vec![
         Span::raw("    "),
         Span::styled(
             format!("{:<16}", key),
             Style::default()
-                .fg(Color::Green)
+                .fg(theme.accent_success)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(desc, Style::default().fg(Color::White)),
+        Span::styled(desc, Style::default().fg(theme.text_primary)),
     ])
 }
 

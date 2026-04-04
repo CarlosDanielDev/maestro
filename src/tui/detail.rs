@@ -1,10 +1,11 @@
 use crate::session::types::Session;
 use crate::state::file_claims::FileClaimManager;
 use crate::state::progress::ProgressTracker;
+use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
@@ -16,8 +17,9 @@ pub fn draw_detail(
     session: &Session,
     progress_tracker: &ProgressTracker,
     area: Rect,
+    theme: &Theme,
 ) {
-    draw_detail_with_claims(f, session, progress_tracker, None, area);
+    draw_detail_with_claims(f, session, progress_tracker, None, area, theme);
 }
 
 /// Render a detail view with conflict log from file claims.
@@ -27,6 +29,7 @@ pub fn draw_detail_with_claims(
     progress_tracker: &ProgressTracker,
     file_claims: Option<&FileClaimManager>,
     area: Rect,
+    theme: &Theme,
 ) {
     let conflicts = file_claims
         .map(|fc| fc.conflicts_for_session(session.id))
@@ -51,14 +54,14 @@ pub fn draw_detail_with_claims(
         })
         .split(area);
 
-    draw_detail_header(f, session, progress_tracker, chunks[0]);
-    draw_detail_activity(f, session, chunks[1]);
+    draw_detail_header(f, session, progress_tracker, chunks[0], theme);
+    draw_detail_activity(f, session, chunks[1], theme);
 
     if has_conflicts {
-        draw_conflict_log(f, &conflicts, chunks[2]);
-        draw_detail_files(f, session, chunks[3]);
+        draw_conflict_log(f, &conflicts, chunks[2], theme);
+        draw_detail_files(f, session, chunks[3], theme);
     } else {
-        draw_detail_files(f, session, chunks[2]);
+        draw_detail_files(f, session, chunks[2], theme);
     }
 }
 
@@ -66,6 +69,7 @@ fn draw_conflict_log(
     f: &mut Frame,
     conflicts: &[&crate::state::file_claims::ConflictRecord],
     area: Rect,
+    theme: &Theme,
 ) {
     let lines: Vec<Line> = conflicts
         .iter()
@@ -75,17 +79,17 @@ fn draw_conflict_log(
             Line::from(vec![
                 Span::styled(
                     format!(" {} ", c.detected_at.format("%H:%M:%S")),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(theme.text_secondary),
                 ),
-                Span::styled("CONFLICT ", Style::default().fg(Color::Red)),
-                Span::styled(&c.file_path, Style::default().fg(Color::White)),
+                Span::styled("CONFLICT ", Style::default().fg(theme.accent_error)),
+                Span::styled(&c.file_path, Style::default().fg(theme.text_primary)),
                 Span::styled(
                     format!(
                         " (owner: S-{}, offender: S-{})",
                         &c.owner_session_id.to_string()[..8],
                         &c.offender_session_id.to_string()[..8]
                     ),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(theme.text_secondary),
                 ),
             ])
         })
@@ -93,7 +97,7 @@ fn draw_conflict_log(
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Red))
+        .border_style(Style::default().fg(theme.accent_error))
         .title(format!(" Conflicts ({}) ", conflicts.len()));
 
     let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
@@ -105,6 +109,7 @@ fn draw_detail_header(
     session: &Session,
     progress_tracker: &ProgressTracker,
     area: Rect,
+    theme: &Theme,
 ) {
     let phase_label = progress_tracker
         .get(&session.id)
@@ -131,42 +136,45 @@ fn draw_detail_header(
             Span::styled(
                 format!(" {} ", label),
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
+                    .fg(theme.branding_fg)
+                    .bg(theme.accent_info)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
-            Span::styled(title_text, Style::default().fg(Color::White)),
+            Span::styled(title_text, Style::default().fg(theme.text_primary)),
         ]),
         Line::from(vec![
             Span::styled(
                 format!(" {} ", session.status.label()),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme.accent_warning),
             ),
             Span::raw("  "),
             Span::styled(
                 format!("Phase: {}", phase_label),
-                Style::default().fg(Color::Cyan),
+                Style::default().fg(theme.accent_info),
             ),
             Span::raw("  "),
             Span::styled(
                 format!("${:.2}", session.cost_usd),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme.accent_warning),
             ),
             Span::raw("  "),
             Span::styled(
                 format!("{} tools", tools_count),
-                Style::default().fg(Color::White),
+                Style::default().fg(theme.text_primary),
             ),
             Span::raw("  "),
-            Span::styled(session.elapsed_display(), Style::default().fg(Color::White)),
+            Span::styled(
+                session.elapsed_display(),
+                Style::default().fg(theme.text_primary),
+            ),
             Span::raw("  "),
             Span::styled(
                 format!("Retries: {}", session.retry_count),
                 Style::default().fg(if session.retry_count > 0 {
-                    Color::Red
+                    theme.accent_error
                 } else {
-                    Color::DarkGray
+                    theme.text_secondary
                 }),
             ),
         ]),
@@ -174,14 +182,14 @@ fn draw_detail_header(
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(Style::default().fg(theme.accent_info))
         .title(" Session Detail ");
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);
 }
 
-fn draw_detail_activity(f: &mut Frame, session: &Session, area: Rect) {
+fn draw_detail_activity(f: &mut Frame, session: &Session, area: Rect, theme: &Theme) {
     let lines: Vec<Line> = session
         .activity_log
         .iter()
@@ -191,7 +199,7 @@ fn draw_detail_activity(f: &mut Frame, session: &Session, area: Rect) {
             Line::from(vec![
                 Span::styled(
                     format!(" {} ", entry.timestamp.format("%H:%M:%S")),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(theme.text_secondary),
                 ),
                 Span::raw(&entry.message),
             ])
@@ -200,14 +208,14 @@ fn draw_detail_activity(f: &mut Frame, session: &Session, area: Rect) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
+        .border_style(Style::default().fg(theme.border_inactive))
         .title(" Activity Log ");
 
     let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
 }
 
-fn draw_detail_files(f: &mut Frame, session: &Session, area: Rect) {
+fn draw_detail_files(f: &mut Frame, session: &Session, area: Rect, theme: &Theme) {
     let files_text = if session.files_touched.is_empty() {
         "No files touched yet".to_string()
     } else {
@@ -216,7 +224,7 @@ fn draw_detail_files(f: &mut Frame, session: &Session, area: Rect) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
+        .border_style(Style::default().fg(theme.border_inactive))
         .title(format!(" Files ({}) ", session.files_touched.len()));
 
     let paragraph = Paragraph::new(files_text)
