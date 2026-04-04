@@ -36,18 +36,17 @@ impl ClipboardProvider for SystemClipboard {
         };
 
         // Try image first
-        if let Ok(image) = clipboard.get_image() {
-            match save_clipboard_image(&image) {
-                Some(path) => return ClipboardContent::Image(path),
-                None => {}
-            }
+        if let Ok(image) = clipboard.get_image()
+            && let Some(path) = save_clipboard_image(&image)
+        {
+            return ClipboardContent::Image(path);
         }
 
         // Fall back to text
-        if let Ok(text) = clipboard.get_text() {
-            if !text.trim().is_empty() {
-                return ClipboardContent::Text(text.trim().to_string());
-            }
+        if let Ok(text) = clipboard.get_text()
+            && !text.trim().is_empty()
+        {
+            return ClipboardContent::Text(text.trim().to_string());
         }
 
         ClipboardContent::Empty
