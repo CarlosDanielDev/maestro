@@ -185,6 +185,7 @@ impl HomeScreen {
             match code {
                 KeyCode::Char('i') => return ScreenAction::Push(TuiMode::IssueBrowser),
                 KeyCode::Char('m') => return ScreenAction::Push(TuiMode::MilestoneView),
+                KeyCode::Char('r') => return ScreenAction::Push(TuiMode::Overview),
                 KeyCode::Char('s') => return ScreenAction::Push(TuiMode::Overview),
                 KeyCode::Char('c') => return ScreenAction::Push(TuiMode::CostDashboard),
                 KeyCode::Char('q') => return ScreenAction::Quit,
