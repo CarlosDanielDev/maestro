@@ -243,9 +243,7 @@ impl GitHubClient for GhCliClient {
             ),
         }
         let endpoint = format!("repos/{{owner}}/{{repo}}/milestones?state={}", state);
-        let json_str = self
-            .run_gh(&["api", &endpoint, "--paginate"])
-            .await?;
+        let json_str = self.run_gh(&["api", &endpoint, "--paginate"]).await?;
         parse_milestones_json(&json_str)
     }
 

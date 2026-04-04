@@ -9,9 +9,9 @@ pub mod panels;
 pub mod screens;
 pub mod ui;
 
-use app::App;
 use crate::github::client::{GhCliClient, GitHubClient};
 use crate::tui::activity_log::LogLevel;
+use app::App;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEventKind,
@@ -260,14 +260,10 @@ async fn event_loop(
                                     .zip(results)
                                     .map(|(ms, r)| (ms, r.unwrap_or_default()))
                                     .collect();
-                                let _ = tx.send(app::TuiDataEvent::MilestonesFetched(
-                                    Ok(entries),
-                                ));
+                                let _ = tx.send(app::TuiDataEvent::MilestonesFetched(Ok(entries)));
                             }
                             Err(e) => {
-                                let _ = tx.send(app::TuiDataEvent::MilestonesFetched(
-                                    Err(e),
-                                ));
+                                let _ = tx.send(app::TuiDataEvent::MilestonesFetched(Err(e)));
                             }
                         }
                     });
@@ -346,14 +342,12 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
                     });
 
                     if let Some(issues) = from_milestone {
-                        app.issue_browser_screen =
-                            Some(screens::IssueBrowserScreen::new(issues));
+                        app.issue_browser_screen = Some(screens::IssueBrowserScreen::new(issues));
                     } else if app.issue_browser_screen.is_none() {
                         let mut screen = screens::IssueBrowserScreen::new(vec![]);
                         screen.loading = true;
                         app.issue_browser_screen = Some(screen);
-                        app.pending_commands
-                            .push(app::TuiCommand::FetchIssues);
+                        app.pending_commands.push(app::TuiCommand::FetchIssues);
                     }
                 }
                 app::TuiMode::MilestoneView => {
@@ -361,8 +355,7 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
                         let mut screen = screens::MilestoneScreen::new(vec![]);
                         screen.loading = true;
                         app.milestone_screen = Some(screen);
-                        app.pending_commands
-                            .push(app::TuiCommand::FetchMilestones);
+                        app.pending_commands.push(app::TuiCommand::FetchMilestones);
                     }
                 }
                 _ => {}
@@ -411,9 +404,9 @@ fn spawn_issue_fetch(
             });
         }
         None => {
-            let _ = tx.send(app::TuiDataEvent::IssueFetched(Err(
-                anyhow::anyhow!("Cannot launch session without an issue number"),
-            )));
+            let _ = tx.send(app::TuiDataEvent::IssueFetched(Err(anyhow::anyhow!(
+                "Cannot launch session without an issue number"
+            ))));
         }
     }
 }
