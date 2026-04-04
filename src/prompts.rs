@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::github::types::GhIssue;
-use std::path::Path;
+use crate::session::image::image_section_for_prompt;
+use std::path::{Path, PathBuf};
 
 /// Detected project language for guardrail defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +83,19 @@ pub fn resolve_guardrail(custom: Option<&str>, project_dir: &Path) -> String {
 pub struct PromptBuilder;
 
 impl PromptBuilder {
+    /// Build a structured prompt for an issue-based session with optional image references.
+    pub fn build_issue_prompt_with_images(
+        issue: &GhIssue,
+        config: &Config,
+        image_relative_paths: &[PathBuf],
+    ) -> String {
+        let base = Self::build_issue_prompt(issue, config);
+        match image_section_for_prompt(image_relative_paths) {
+            Some(section) => format!("{base}\n\n{section}"),
+            None => base,
+        }
+    }
+
     /// Build a structured prompt for an issue-based session.
     pub fn build_issue_prompt(issue: &GhIssue, config: &Config) -> String {
         let task_type = Self::detect_task_type(issue);
@@ -449,6 +463,50 @@ mod tests {
         assert!(prompt.contains("Feature"));
         // Phrase that belongs exclusively to the old unattended_prompt — must NOT leak in
         assert!(!prompt.contains("Read relevant source files first, then implement"));
+    }
+
+    // --- image prompt tests (issue #42) ---
+
+    fn make_image_paths(names: &[&str]) -> Vec<std::path::PathBuf> {
+        names.iter().map(|n| std::path::PathBuf::from(n)).collect()
+    }
+
+    #[test]
+    fn build_issue_prompt_with_images_includes_image_section_when_paths_provided() {
+        let issue = make_issue(&[]);
+        let config = make_config();
+        let images = make_image_paths(&["screenshot.png"]);
+        let prompt = PromptBuilder::build_issue_prompt_with_images(&issue, &config, &images);
+        assert!(prompt.contains("Attached Images"));
+    }
+
+    #[test]
+    fn build_issue_prompt_with_images_lists_all_image_filenames() {
+        let issue = make_issue(&[]);
+        let config = make_config();
+        let images = make_image_paths(&["before.png", "after.jpg"]);
+        let prompt = PromptBuilder::build_issue_prompt_with_images(&issue, &config, &images);
+        assert!(prompt.contains("before.png"));
+        assert!(prompt.contains("after.jpg"));
+    }
+
+    #[test]
+    fn build_issue_prompt_with_images_omits_image_section_when_no_images() {
+        let issue = make_issue(&[]);
+        let config = make_config();
+        let prompt = PromptBuilder::build_issue_prompt_with_images(&issue, &config, &[]);
+        assert!(!prompt.contains("Attached Images"));
+    }
+
+    #[test]
+    fn build_issue_prompt_with_images_preserves_existing_prompt_content() {
+        let issue = make_issue(&[]);
+        let config = make_config();
+        let images = make_image_paths(&["ui.png"]);
+        let prompt = PromptBuilder::build_issue_prompt_with_images(&issue, &config, &images);
+        assert!(prompt.contains("#42"));
+        assert!(prompt.contains("unattended mode"));
+        assert!(prompt.contains("Attached Images"));
     }
 
     #[test]
