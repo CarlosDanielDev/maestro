@@ -232,7 +232,11 @@ impl MilestoneScreen {
             let gauge_area = Rect::new(inner.x + 2, y + 1, inner.width.saturating_sub(4), 1);
             let gauge = Gauge::default()
                 .ratio(ratio)
-                .gauge_style(Style::default().fg(theme.gauge_low).bg(theme.gauge_background))
+                .gauge_style(
+                    Style::default()
+                        .fg(theme.gauge_low)
+                        .bg(theme.gauge_background),
+                )
                 .label(format!(
                     "{}/{} issues ({:.0}%)",
                     entry.closed_issues,
@@ -279,7 +283,10 @@ impl MilestoneScreen {
                     let symbol = if i.state == "closed" { "✅" } else { "⏳" };
                     Line::from(vec![
                         Span::raw(format!("  {} ", symbol)),
-                        Span::styled(format!("#{} ", i.number), Style::default().fg(theme.accent_identifier)),
+                        Span::styled(
+                            format!("#{} ", i.number),
+                            Style::default().fg(theme.accent_identifier),
+                        ),
                         Span::styled(
                             sanitize_for_terminal(&i.title),
                             Style::default().fg(theme.text_primary),

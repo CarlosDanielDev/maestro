@@ -77,11 +77,7 @@ fn rgb_to_basic(r: u8, g: u8, b: u8) -> Color {
 
     // Determine dominant channel
     if r > g && r > b {
-        if r > 128 {
-            Color::Red
-        } else {
-            Color::DarkGray
-        }
+        if r > 128 { Color::Red } else { Color::DarkGray }
     } else if g > r && g > b {
         if g > 128 {
             Color::Green
@@ -165,7 +161,9 @@ impl From<SerializableColor> for Color {
 impl Serialize for SerializableColor {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
-            Color::Rgb(r, g, b) => serializer.serialize_str(&format!("#{:02x}{:02x}{:02x}", r, g, b)),
+            Color::Rgb(r, g, b) => {
+                serializer.serialize_str(&format!("#{:02x}{:02x}{:02x}", r, g, b))
+            }
             Color::Indexed(idx) => serializer.serialize_u8(idx),
             other => serializer.serialize_str(color_to_name(other)),
         }
@@ -180,7 +178,9 @@ impl<'de> Deserialize<'de> for SerializableColor {
             type Value = SerializableColor;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a color name (\"red\"), hex string (\"#ff0000\"), or 256-color index (0-255)")
+                formatter.write_str(
+                    "a color name (\"red\"), hex string (\"#ff0000\"), or 256-color index (0-255)",
+                )
             }
 
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
@@ -221,9 +221,16 @@ impl<'de> Deserialize<'de> for SerializableColor {
 }
 
 fn name_to_color(name: &str) -> Option<Color> {
-    let normalized: String = name.chars().filter_map(|c| {
-        if c == '_' || c == '-' { None } else { Some(c.to_ascii_lowercase()) }
-    }).collect();
+    let normalized: String = name
+        .chars()
+        .filter_map(|c| {
+            if c == '_' || c == '-' {
+                None
+            } else {
+                Some(c.to_ascii_lowercase())
+            }
+        })
+        .collect();
     match normalized.as_str() {
         "black" => Some(Color::Black),
         "red" => Some(Color::Red),
@@ -523,16 +530,41 @@ impl Theme {
             };
         }
         downgrade!(
-            branding_fg, branding_bg,
-            text_primary, text_secondary, text_muted,
-            border_active, border_inactive, border_focused,
-            status_running, status_completed, status_errored, status_paused,
-            status_killed, status_queued, status_spawning, status_stalled,
-            status_retrying, status_gates_running, status_needs_review, status_ci_fix,
-            accent_success, accent_warning, accent_error, accent_info, accent_identifier,
-            gauge_low, gauge_medium, gauge_high, gauge_background,
-            notification_critical, notification_blocker, notification_default,
-            keybind_key, keybind_label_bg, keybind_label_fg,
+            branding_fg,
+            branding_bg,
+            text_primary,
+            text_secondary,
+            text_muted,
+            border_active,
+            border_inactive,
+            border_focused,
+            status_running,
+            status_completed,
+            status_errored,
+            status_paused,
+            status_killed,
+            status_queued,
+            status_spawning,
+            status_stalled,
+            status_retrying,
+            status_gates_running,
+            status_needs_review,
+            status_ci_fix,
+            accent_success,
+            accent_warning,
+            accent_error,
+            accent_info,
+            accent_identifier,
+            gauge_low,
+            gauge_medium,
+            gauge_high,
+            gauge_background,
+            notification_critical,
+            notification_blocker,
+            notification_default,
+            keybind_key,
+            keybind_label_bg,
+            keybind_label_fg,
         );
     }
 
@@ -683,22 +715,34 @@ mod tests {
 
     #[test]
     fn status_color_running_returns_green() {
-        assert_eq!(Theme::dark().status_color(SessionStatus::Running), Color::Green);
+        assert_eq!(
+            Theme::dark().status_color(SessionStatus::Running),
+            Color::Green
+        );
     }
 
     #[test]
     fn status_color_completed_returns_blue() {
-        assert_eq!(Theme::dark().status_color(SessionStatus::Completed), Color::Blue);
+        assert_eq!(
+            Theme::dark().status_color(SessionStatus::Completed),
+            Color::Blue
+        );
     }
 
     #[test]
     fn status_color_errored_returns_red() {
-        assert_eq!(Theme::dark().status_color(SessionStatus::Errored), Color::Red);
+        assert_eq!(
+            Theme::dark().status_color(SessionStatus::Errored),
+            Color::Red
+        );
     }
 
     #[test]
     fn status_color_killed_returns_red() {
-        assert_eq!(Theme::dark().status_color(SessionStatus::Killed), Color::Red);
+        assert_eq!(
+            Theme::dark().status_color(SessionStatus::Killed),
+            Color::Red
+        );
     }
 
     #[test]
@@ -833,9 +877,22 @@ mod tests {
     #[test]
     fn serializable_color_deserializes_all_standard_named_colors() {
         let names = [
-            "black", "white", "red", "green", "blue", "yellow", "cyan", "magenta",
-            "gray", "darkgray", "lightred", "lightgreen", "lightyellow",
-            "lightblue", "lightmagenta", "lightcyan",
+            "black",
+            "white",
+            "red",
+            "green",
+            "blue",
+            "yellow",
+            "cyan",
+            "magenta",
+            "gray",
+            "darkgray",
+            "lightred",
+            "lightgreen",
+            "lightyellow",
+            "lightblue",
+            "lightmagenta",
+            "lightcyan",
         ];
         for name in names {
             let toml_str = format!(r#"text_primary = "{name}""#);
@@ -877,7 +934,11 @@ mod tests {
     #[test]
     fn detect_truecolor_from_colorterm_truecolor() {
         let cap = ColorCapability::detect_from_env(|k| {
-            if k == "COLORTERM" { Some("truecolor".into()) } else { None }
+            if k == "COLORTERM" {
+                Some("truecolor".into())
+            } else {
+                None
+            }
         });
         assert_eq!(cap, ColorCapability::TrueColor);
     }
@@ -885,7 +946,11 @@ mod tests {
     #[test]
     fn detect_truecolor_from_colorterm_24bit() {
         let cap = ColorCapability::detect_from_env(|k| {
-            if k == "COLORTERM" { Some("24bit".into()) } else { None }
+            if k == "COLORTERM" {
+                Some("24bit".into())
+            } else {
+                None
+            }
         });
         assert_eq!(cap, ColorCapability::TrueColor);
     }
@@ -893,7 +958,11 @@ mod tests {
     #[test]
     fn detect_extended_from_term_256color() {
         let cap = ColorCapability::detect_from_env(|k| {
-            if k == "TERM" { Some("xterm-256color".into()) } else { None }
+            if k == "TERM" {
+                Some("xterm-256color".into())
+            } else {
+                None
+            }
         });
         assert_eq!(cap, ColorCapability::Extended);
     }
@@ -917,7 +986,11 @@ mod tests {
     #[test]
     fn detect_extended_from_screen_256color() {
         let cap = ColorCapability::detect_from_env(|k| {
-            if k == "TERM" { Some("screen-256color".into()) } else { None }
+            if k == "TERM" {
+                Some("screen-256color".into())
+            } else {
+                None
+            }
         });
         assert_eq!(cap, ColorCapability::Extended);
     }
@@ -967,6 +1040,9 @@ mod tests {
 
     #[test]
     fn downgrade_named_color_unchanged_for_truecolor() {
-        assert_eq!(ColorCapability::TrueColor.downgrade(Color::Green), Color::Green);
+        assert_eq!(
+            ColorCapability::TrueColor.downgrade(Color::Green),
+            Color::Green
+        );
     }
 }

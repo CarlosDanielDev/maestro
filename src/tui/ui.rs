@@ -31,8 +31,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     match app.tui_mode {
         TuiMode::Overview => {
             let sessions = app.pool.all_sessions();
-            app.panel_view
-                .draw_with_claims(f, &sessions, Some(&app.pool.file_claims), chunks[1], &app.theme);
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &app.theme,
+            );
         }
         TuiMode::Detail(idx) => {
             let sessions = app.pool.all_sessions();
@@ -61,7 +66,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         TuiMode::Fullscreen(idx) => {
             let sessions = app.pool.all_sessions();
             if let Some(session) = sessions.get(idx) {
-                fullscreen::draw_fullscreen(f, session, &app.progress_tracker, chunks[1], &app.theme);
+                fullscreen::draw_fullscreen(
+                    f,
+                    session,
+                    &app.progress_tracker,
+                    chunks[1],
+                    &app.theme,
+                );
             } else {
                 app.panel_view.draw(f, &sessions, chunks[1], &app.theme);
             }
@@ -209,7 +220,10 @@ fn draw_notification_banner(
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         ),
         Span::raw(": "),
-        Span::styled(&notification.message, Style::default().fg(theme.text_primary)),
+        Span::styled(
+            &notification.message,
+            Style::default().fg(theme.text_primary),
+        ),
         Span::styled("  [d]ismiss", Style::default().fg(theme.text_secondary)),
     ]));
     f.render_widget(banner, area);
@@ -232,7 +246,9 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
     let help = Line::from(vec![
         Span::styled(
             format!(" {} ", mode_label),
-            Style::default().fg(theme.keybind_label_fg).bg(theme.keybind_label_bg),
+            Style::default()
+                .fg(theme.keybind_label_fg)
+                .bg(theme.keybind_label_bg),
         ),
         Span::raw(" "),
         Span::styled("[q]", Style::default().fg(theme.keybind_key)),

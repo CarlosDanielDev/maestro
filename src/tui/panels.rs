@@ -172,7 +172,10 @@ fn draw_single_panel(
                 .fg(status_color)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(session.elapsed_display(), Style::default().fg(theme.text_primary)),
+        Span::styled(
+            session.elapsed_display(),
+            Style::default().fg(theme.text_primary),
+        ),
     ]);
     f.render_widget(Paragraph::new(status_line), chunks[0]);
 
