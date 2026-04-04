@@ -74,6 +74,10 @@ enum Commands {
         /// Skip preflight doctor checks before launching sessions
         #[arg(long)]
         skip_doctor: bool,
+
+        /// Image file(s) to attach as visual context (can be repeated)
+        #[arg(long = "image")]
+        images: Vec<std::path::PathBuf>,
     },
     /// Show queued/pending issues from GitHub
     Queue,
@@ -162,6 +166,7 @@ async fn main() -> anyhow::Result<()> {
             max_concurrent,
             resume,
             skip_doctor,
+            images,
         }) => {
             cmd_run(
                 prompt,
@@ -172,6 +177,7 @@ async fn main() -> anyhow::Result<()> {
                 max_concurrent,
                 resume,
                 skip_doctor,
+                images,
             )
             .await
         }
@@ -684,6 +690,7 @@ async fn cmd_run(
     max_concurrent_override: Option<usize>,
     resume: bool,
     skip_doctor: bool,
+    images: Vec<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
 
@@ -699,6 +706,11 @@ async fn cmd_run(
         for check in report.failed_checks() {
             tracing::warn!("Doctor: {} — {}", check.name, check.message);
         }
+    }
+
+    // Validate image paths upfront
+    for img in &images {
+        session::image::validate_image_path(img)?;
     }
 
     let model = model.unwrap_or(config.sessions.default_model.clone());
@@ -736,7 +748,8 @@ async fn cmd_run(
 
     // Determine what to run
     if let Some(prompt_text) = prompt {
-        let session = Session::new(prompt_text, model, session_mode.clone(), None);
+        let session = Session::new(prompt_text, model, session_mode.clone(), None)
+            .with_image_paths(images.clone());
         app.add_session(session).await?;
     } else if let Some(milestone_name) = milestone {
         // Fetch all issues in the milestone
@@ -766,8 +779,11 @@ async fn cmd_run(
             // Use mode from label (maestro:mode:X) or CLI --mode or config default
             let issue_mode = crate::modes::mode_from_labels(&gh_issue.labels)
                 .unwrap_or_else(|| session_mode.clone());
-            let prompt = crate::prompts::PromptBuilder::build_issue_prompt(&gh_issue, &config);
-            let mut session = Session::new(prompt, model.clone(), issue_mode, Some(num));
+            let prompt = crate::prompts::PromptBuilder::build_issue_prompt_with_images(
+                &gh_issue, &config, &images,
+            );
+            let mut session = Session::new(prompt, model.clone(), issue_mode, Some(num))
+                .with_image_paths(images.clone());
             session.issue_title = Some(gh_issue.title.clone());
 
             // Cache issue data
