@@ -1,10 +1,11 @@
 use super::{ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
 use crate::github::types::GhIssue;
+use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -105,7 +106,7 @@ impl IssueBrowserScreen {
         ScreenAction::None
     }
 
-    pub fn draw(&mut self, f: &mut Frame, area: Rect) {
+    pub fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -115,8 +116,8 @@ impl IssueBrowserScreen {
             ])
             .split(area);
 
-        self.draw_issue_list(f, chunks[0]);
-        self.draw_preview(f, chunks[1]);
+        self.draw_issue_list(f, chunks[0], theme);
+        self.draw_preview(f, chunks[1], theme);
         draw_keybinds_bar(
             f,
             chunks[2],
@@ -126,6 +127,7 @@ impl IssueBrowserScreen {
                 ("/", "Filter"),
                 ("Esc", "Back"),
             ],
+            theme,
         );
     }
 
@@ -236,7 +238,7 @@ impl IssueBrowserScreen {
         }
     }
 
-    fn draw_issue_list(&mut self, f: &mut Frame, area: Rect) {
+    fn draw_issue_list(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let title = if self.filter_mode != FilterMode::None {
             format!(" Issues — Filter: {} ", self.filter_text)
         } else {
@@ -246,11 +248,11 @@ impl IssueBrowserScreen {
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Blue));
+            .border_style(Style::default().fg(theme.accent_info));
 
         if self.loading {
             let para = Paragraph::new("  Loading...")
-                .style(Style::default().fg(Color::Yellow))
+                .style(Style::default().fg(theme.accent_warning))
                 .block(block);
             f.render_widget(para, area);
             return;
@@ -263,7 +265,7 @@ impl IssueBrowserScreen {
                 "  No issues match the filter"
             };
             let para = Paragraph::new(msg)
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(theme.text_secondary))
                 .block(block);
             f.render_widget(para, area);
             return;
@@ -289,13 +291,13 @@ impl IssueBrowserScreen {
 
                 let style = if is_selected {
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Cyan)
+                        .fg(theme.branding_fg)
+                        .bg(theme.accent_info)
                         .add_modifier(Modifier::BOLD)
                 } else if is_multi {
-                    Style::default().fg(Color::Green)
+                    Style::default().fg(theme.accent_success)
                 } else {
-                    Style::default().fg(Color::White)
+                    Style::default().fg(theme.text_primary)
                 };
 
                 Line::from(vec![
@@ -310,43 +312,43 @@ impl IssueBrowserScreen {
         f.render_widget(para, area);
     }
 
-    fn draw_preview(&self, f: &mut Frame, area: Rect) {
+    fn draw_preview(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = Block::default()
             .title(" Preview ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
+            .border_style(Style::default().fg(theme.border_inactive));
 
         if let Some(&idx) = self.filtered_indices.get(self.selected) {
             let issue = &self.issues[idx];
             let labels = issue.labels.join(", ");
             let lines = vec![
                 Line::from(vec![
-                    Span::styled("Title: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("Title: ", Style::default().fg(theme.text_secondary)),
                     Span::styled(
                         sanitize_for_terminal(&issue.title),
-                        Style::default().fg(Color::White),
+                        Style::default().fg(theme.text_primary),
                     ),
                 ]),
                 Line::from(vec![
-                    Span::styled("State: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(&issue.state, Style::default().fg(Color::Green)),
+                    Span::styled("State: ", Style::default().fg(theme.text_secondary)),
+                    Span::styled(&issue.state, Style::default().fg(theme.accent_success)),
                     Span::raw("  |  "),
-                    Span::styled("Labels: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(labels, Style::default().fg(Color::Yellow)),
+                    Span::styled("Labels: ", Style::default().fg(theme.text_secondary)),
+                    Span::styled(labels, Style::default().fg(theme.accent_warning)),
                 ]),
                 Line::raw(""),
                 Line::from(Span::styled(
                     sanitize_for_terminal(
                         &issue.body.lines().take(3).collect::<Vec<_>>().join("\n"),
                     ),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(theme.text_muted),
                 )),
             ];
             let para = Paragraph::new(lines).block(block);
             f.render_widget(para, area);
         } else {
             let para = Paragraph::new("  Select an issue to preview")
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(theme.text_secondary))
                 .block(block);
             f.render_widget(para, area);
         }

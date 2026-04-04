@@ -1,16 +1,19 @@
 pub mod home;
 pub mod issue_browser;
 pub mod milestone;
+pub mod prompt_input;
 
 pub use home::HomeScreen;
 pub use issue_browser::IssueBrowserScreen;
 pub use milestone::MilestoneScreen;
+pub use prompt_input::PromptInputScreen;
 
 use crate::tui::app::TuiMode;
+use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -24,12 +27,15 @@ pub fn sanitize_for_terminal(s: &str) -> String {
 }
 
 /// Render a keybindings help bar at the bottom of a screen.
-pub fn draw_keybinds_bar(f: &mut Frame, area: Rect, bindings: &[(&str, &str)]) {
+pub fn draw_keybinds_bar(f: &mut Frame, area: Rect, bindings: &[(&str, &str)], theme: &Theme) {
     let spans: Vec<Span> = bindings
         .iter()
         .flat_map(|(key, label)| {
             vec![
-                Span::styled(format!("[{}]", key), Style::default().fg(Color::Green)),
+                Span::styled(
+                    format!("[{}]", key),
+                    Style::default().fg(theme.accent_success),
+                ),
                 Span::raw(format!(" {}  ", label)),
             ]
         })
@@ -50,6 +56,8 @@ pub enum ScreenAction {
     LaunchSession(SessionConfig),
     /// Launch multiple sessions (e.g., from multi-select or run-all).
     LaunchSessions(Vec<SessionConfig>),
+    /// Launch a session from a free-form prompt (no issue).
+    LaunchPromptSession(PromptSessionConfig),
     /// Quit the application.
     Quit,
 }
@@ -59,6 +67,13 @@ pub enum ScreenAction {
 pub struct SessionConfig {
     pub issue_number: Option<u64>,
     pub title: String,
+}
+
+/// Configuration for launching a prompt-based session (no GitHub issue).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PromptSessionConfig {
+    pub prompt: String,
+    pub image_paths: Vec<String>,
 }
 
 #[cfg(test)]

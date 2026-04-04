@@ -1,11 +1,12 @@
 use super::{ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
 use crate::github::types::{GhIssue, GhMilestone};
 use crate::tui::app::TuiMode;
+use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph},
 };
@@ -103,7 +104,7 @@ impl MilestoneScreen {
         ScreenAction::None
     }
 
-    pub fn draw(&mut self, f: &mut Frame, area: Rect) {
+    pub fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -113,8 +114,8 @@ impl MilestoneScreen {
             ])
             .split(area);
 
-        self.draw_milestone_list(f, chunks[0]);
-        self.draw_detail(f, chunks[1]);
+        self.draw_milestone_list(f, chunks[0], theme);
+        self.draw_detail(f, chunks[1], theme);
         draw_keybinds_bar(
             f,
             chunks[2],
@@ -123,6 +124,7 @@ impl MilestoneScreen {
                 ("r", "Run All Open"),
                 ("Esc", "Back"),
             ],
+            theme,
         );
     }
 
@@ -164,15 +166,15 @@ impl MilestoneScreen {
         ScreenAction::None
     }
 
-    fn draw_milestone_list(&mut self, f: &mut Frame, area: Rect) {
+    fn draw_milestone_list(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = Block::default()
             .title(" Milestones ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Magenta));
+            .border_style(Style::default().fg(theme.status_retrying));
 
         if self.loading {
             let para = Paragraph::new("  Loading...")
-                .style(Style::default().fg(Color::Yellow))
+                .style(Style::default().fg(theme.accent_warning))
                 .block(block);
             f.render_widget(para, area);
             return;
@@ -180,7 +182,7 @@ impl MilestoneScreen {
 
         if self.milestones.is_empty() {
             let para = Paragraph::new("  No milestones found")
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(theme.text_secondary))
                 .block(block);
             f.render_widget(para, area);
             return;
@@ -189,7 +191,6 @@ impl MilestoneScreen {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        // Each milestone takes 3 lines: title, progress bar, status
         let visible_slots = (inner.height as usize) / 3;
         self.last_visible_slots = visible_slots.max(1);
         let milestones_to_show: Vec<(usize, &MilestoneEntry)> = self
@@ -211,16 +212,15 @@ impl MilestoneScreen {
 
             let title_style = if is_selected {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Magenta)
+                    .fg(theme.branding_fg)
+                    .bg(theme.status_retrying)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
-                    .fg(Color::White)
+                    .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD)
             };
 
-            // Title line
             let title_line = Line::from(vec![
                 Span::styled(cursor, title_style),
                 Span::styled(sanitize_for_terminal(&entry.title), title_style),
@@ -228,12 +228,15 @@ impl MilestoneScreen {
             let title_area = Rect::new(inner.x, y, inner.width, 1);
             f.render_widget(Paragraph::new(title_line), title_area);
 
-            // Progress bar
             let ratio = entry.progress_ratio();
             let gauge_area = Rect::new(inner.x + 2, y + 1, inner.width.saturating_sub(4), 1);
             let gauge = Gauge::default()
                 .ratio(ratio)
-                .gauge_style(Style::default().fg(Color::Green).bg(Color::DarkGray))
+                .gauge_style(
+                    Style::default()
+                        .fg(theme.gauge_low)
+                        .bg(theme.gauge_background),
+                )
                 .label(format!(
                     "{}/{} issues ({:.0}%)",
                     entry.closed_issues,
@@ -242,15 +245,14 @@ impl MilestoneScreen {
                 ));
             f.render_widget(gauge, gauge_area);
 
-            // Status line
             let status_line = Line::from(vec![
                 Span::styled(
                     format!("  ✅ {}  ", entry.closed_issues),
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(theme.accent_success),
                 ),
                 Span::styled(
                     format!("⏳ {}", entry.open_issues),
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(theme.accent_warning),
                 ),
             ]);
             let status_area = Rect::new(inner.x, y + 2, inner.width, 1);
@@ -258,16 +260,16 @@ impl MilestoneScreen {
         }
     }
 
-    fn draw_detail(&self, f: &mut Frame, area: Rect) {
+    fn draw_detail(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = Block::default()
             .title(" Issues ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
+            .border_style(Style::default().fg(theme.border_inactive));
 
         if let Some(entry) = self.milestones.get(self.selected) {
             if entry.issues.is_empty() {
                 let para = Paragraph::new(format!("  {} — no issues loaded", entry.title))
-                    .style(Style::default().fg(Color::DarkGray))
+                    .style(Style::default().fg(theme.text_secondary))
                     .block(block);
                 f.render_widget(para, area);
                 return;
@@ -281,10 +283,13 @@ impl MilestoneScreen {
                     let symbol = if i.state == "closed" { "✅" } else { "⏳" };
                     Line::from(vec![
                         Span::raw(format!("  {} ", symbol)),
-                        Span::styled(format!("#{} ", i.number), Style::default().fg(Color::Cyan)),
+                        Span::styled(
+                            format!("#{} ", i.number),
+                            Style::default().fg(theme.accent_identifier),
+                        ),
                         Span::styled(
                             sanitize_for_terminal(&i.title),
-                            Style::default().fg(Color::White),
+                            Style::default().fg(theme.text_primary),
                         ),
                     ])
                 })
@@ -294,7 +299,7 @@ impl MilestoneScreen {
             f.render_widget(para, area);
         } else {
             let para = Paragraph::new("  Select a milestone")
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(theme.text_secondary))
                 .block(block);
             f.render_widget(para, area);
         }

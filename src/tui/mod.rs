@@ -7,6 +7,7 @@ pub mod fullscreen;
 pub mod help;
 pub mod panels;
 pub mod screens;
+pub mod theme;
 pub mod ui;
 
 use crate::github::client::{GhCliClient, GitHubClient};
@@ -120,6 +121,15 @@ async fn event_loop(
                                 false
                             }
                         }
+                        app::TuiMode::PromptInput => {
+                            if let Some(ref mut screen) = app.prompt_input_screen {
+                                let action = screen.handle_input(&event);
+                                handle_screen_action(app, action);
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         _ => false,
                     };
 
@@ -169,7 +179,8 @@ async fn event_loop(
                                 | app::TuiMode::Fullscreen(_)
                                 | app::TuiMode::Dashboard
                                 | app::TuiMode::IssueBrowser
-                                | app::TuiMode::MilestoneView => app::TuiMode::Overview,
+                                | app::TuiMode::MilestoneView
+                                | app::TuiMode::PromptInput => app::TuiMode::Overview,
                             };
                         }
                         // Esc returns to dashboard when no sessions are running,
@@ -304,6 +315,32 @@ async fn event_loop(
                         spawn_issue_fetch(app.data_tx.clone(), config);
                     }
                 }
+                app::TuiCommand::LaunchPromptSession(config) => {
+                    let model = app
+                        .config
+                        .as_ref()
+                        .map(|c| c.sessions.default_model.clone())
+                        .unwrap_or_else(|| "opus".to_string());
+                    let mode = app
+                        .config
+                        .as_ref()
+                        .map(|c| c.sessions.default_mode.clone())
+                        .unwrap_or_else(|| "orchestrator".to_string());
+
+                    let prompt = if config.image_paths.is_empty() {
+                        config.prompt
+                    } else {
+                        let image_refs: String = config
+                            .image_paths
+                            .iter()
+                            .map(|p| format!("\n[Attached image: {}]", p))
+                            .collect();
+                        format!("{}{}", config.prompt, image_refs)
+                    };
+
+                    let session = crate::session::types::Session::new(prompt, model, mode, None);
+                    app.pending_session_launches.push(session);
+                }
             }
         }
 
@@ -319,10 +356,16 @@ async fn event_loop(
             }
         }
 
-        // Auto-exit when all sessions complete (skip if in dashboard mode)
-        if app.all_done() && !matches!(app.tui_mode, app::TuiMode::Dashboard) {
-            // If we have a home screen, return to dashboard instead of exiting
-            if app.home_screen.is_some() {
+        // Auto-exit when all sessions complete (skip if in dashboard/prompt/screen modes)
+        if app.all_done()
+            && !matches!(
+                app.tui_mode,
+                app::TuiMode::Dashboard | app::TuiMode::PromptInput
+            )
+        {
+            // If we have a home screen and no sessions ever launched, return to dashboard
+            // But if user explicitly navigated here (pool has had sessions), stay put
+            if app.home_screen.is_some() && app.pool.total_count() == 0 {
                 app.tui_mode = app::TuiMode::Dashboard;
                 continue;
             }
@@ -386,6 +429,11 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
                         app.pending_commands.push(app::TuiCommand::FetchMilestones);
                     }
                 }
+                app::TuiMode::PromptInput => {
+                    if app.prompt_input_screen.is_none() {
+                        app.prompt_input_screen = Some(screens::PromptInputScreen::new());
+                    }
+                }
                 _ => {}
             }
             app.tui_mode = mode;
@@ -397,6 +445,9 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
                 }
                 app::TuiMode::MilestoneView => {
                     app.milestone_screen = None;
+                }
+                app::TuiMode::PromptInput => {
+                    app.prompt_input_screen = None;
                 }
                 _ => {}
             }
@@ -413,6 +464,12 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
         ScreenAction::LaunchSessions(configs) => {
             app.pending_commands
                 .push(app::TuiCommand::LaunchSessions(configs));
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::LaunchPromptSession(config) => {
+            app.prompt_input_screen = None;
+            app.pending_commands
+                .push(app::TuiCommand::LaunchPromptSession(config));
             app.tui_mode = app::TuiMode::Overview;
         }
     }
