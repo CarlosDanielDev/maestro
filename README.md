@@ -50,6 +50,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Interactive home screen** — launching `maestro` opens an idle dashboard with a quick-actions menu, repo/branch info, and a recent activity panel; navigate with `j`/`k` or direct shortcut keys
 - **Interactive issue browser** — browse, filter, and launch GitHub issues directly from the TUI; supports single-launch (`Enter`) and multi-select batch-launch (`Space` + `Enter`); filter by text (`/`) or milestone (`m`)
 - **Milestone overview** — inspect milestone progress with real-time completion gauges; drill into issues or run all open issues in a milestone with a single key (`r`)
+- **Automatic preflight checks** — `maestro run` validates that `claude`, `gh`/`az`, and `git` are correctly installed and authenticated before spending any API credits; use `--skip-doctor` to bypass when needed
 
 ### Roadmap
 
@@ -133,6 +134,12 @@ maestro status
 
 # View spending report
 maestro cost
+
+# Run preflight environment checks manually
+maestro doctor
+
+# Skip preflight checks (use when environment is already known-good)
+maestro run --issue 42 --skip-doctor
 ```
 
 ## Configuration
