@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-03 23:00 (UTC)
+> Last updated: 2026-04-03 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -61,10 +61,10 @@ maestro/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
-│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; cmd_run() refactored to use same helper  [Issue #29, #49, #34, #36, #35]
+│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup  [Issue #29, #49, #34, #36, #35, #52]
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix  [Issue #29, #40, #41, #43]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
-│   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34]
+│   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); validate_preflight() (public, fails fast on required check failures); build_claude_cli_result() (pub(crate), pure/testable); check_claude_cli() elevated to Required severity; build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34, #52]
 │   ├── git.rs                             # GitOps trait, CliGitOps: commit and push operations  [Phase 3]
 │   ├── models.rs                          # ModelRouter: label-based model routing  [Phase 3]
 │   ├── prompts.rs                         # PromptBuilder: structured issue prompts with task-type detection; ProjectLanguage enum; detect_project_language(); default_guardrail(); resolve_guardrail()  [Phase 3, Issue #43]
@@ -119,7 +119,7 @@ maestro/
 │   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods  [Issue #12]
 │   ├── tui/
 │   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress  [Phase 3, Issue #31-33, #46-48, #35]
-│   │   ├── app.rs                         # App state; TuiMode; TuiCommand enum (FetchIssues, FetchMilestones, FetchSuggestionData, LaunchSession, LaunchSessions); TuiDataEvent enum (Issues, Milestones, Issue, SuggestionData); SuggestionDataPayload; handle_data_event(); data_tx/data_rx channel; pending_commands; check_completions() uses config-driven gates with per-gate activity logging; poll_ci_status() with CI auto-fix loop; spawn_ci_fix_session(); on_issue_session_completed() skips PR creation for CI-fix sessions  [Issue #12, #31-33, #35, #40, #41, #43, #46-48]
+│   │   ├── app.rs                         # App state; TuiMode; TuiCommand enum (FetchIssues, FetchMilestones, FetchSuggestionData, LaunchSession, LaunchSessions); TuiDataEvent enum (Issues, Milestones, Issue, SuggestionData); SuggestionDataPayload; handle_data_event(); data_tx/data_rx channel; pending_commands; check_completions() uses config-driven gates with per-gate activity logging; poll_ci_status() with CI auto-fix loop; spawn_ci_fix_session(); on_issue_session_completed() skips PR creation for CI-fix sessions; issue launch path uses PromptBuilder::build_issue_prompt()  [Issue #12, #31-33, #35, #40, #41, #43, #46-48, #52]
 │   │   ├── activity_log.rs                # Scrollable activity log widget with LogLevel color coding  [Phase 1]
 │   │   ├── cost_dashboard.rs              # Cost dashboard widget: per-session and aggregate cost display  [Phase 3]
 │   │   ├── dep_graph.rs                   # ASCII dependency graph visualization  [Phase 3]
@@ -181,9 +181,9 @@ maestro/
 | `.claude/skills/` | Reusable knowledge bases for subagents |
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
 | `src/` | Rust source code |
-| `src/main.rs` | CLI entry point; `setup_app_from_config()` shared App setup helper; `cmd_dashboard()` with startup cleanup, config-driven wiring, and `FetchSuggestionData` queued on startup; `cmd_run()` refactored to use shared helper (Issues #29, #34, #35, #36, #49) |
+| `src/main.rs` | CLI entry point; `--skip-doctor` flag on `run` subcommand; `cmd_run()` calls `validate_preflight()` before launch and uses `PromptBuilder::build_issue_prompt()` for issue sessions; `setup_app_from_config()` shared App setup helper; `cmd_dashboard()` with startup cleanup, config-driven wiring, and `FetchSuggestionData` queued on startup (Issues #29, #34, #35, #36, #49, #52) |
 | `src/budget.rs` | Per-session and global budget enforcement (Phase 3) |
-| `src/doctor.rs` | Preflight check system: `CheckSeverity`, `CheckResult`, `DoctorReport`, `run_all_checks()`, `print_report()`; `build_gh_auth_result()` (pure/testable); `check_az_identity()` for Azure DevOps (Issues #49, #34) |
+| `src/doctor.rs` | Preflight check system: `CheckSeverity`, `CheckResult`, `DoctorReport`, `run_all_checks()`, `print_report()`; `validate_preflight()` fails fast if any required check fails; `build_claude_cli_result()` (pub(crate), pure/testable); `check_claude_cli()` is Required severity; `build_gh_auth_result()` (pure/testable); `check_az_identity()` for Azure DevOps (Issues #49, #34, #52) |
 | `src/git.rs` | GitOps trait and CLI-backed commit+push (Phase 3) |
 | `src/models.rs` | Label-based model routing (Phase 3) |
 | `src/prompts.rs` | Structured issue prompt builder with task-type detection; ProjectLanguage detection; guardrail resolution (Phase 3, Issue #43) |
@@ -220,7 +220,7 @@ maestro/
 | `src/state/progress.rs` | Session phase tracking (Phase 3) |
 | `src/tui/` | Terminal UI (ratatui) |
 | `src/tui/mod.rs` | Event loop; `handle_screen_action()`; command processing; `launch_session_from_config()`; `FetchSuggestionData` async handler for GitHub ready/failed counts and milestone progress (Issues #31-33, #35, #46-48) |
-| `src/tui/app.rs` | `App` struct; `TuiMode`; `TuiCommand` (adds `FetchSuggestionData`); `TuiDataEvent` (adds `SuggestionData`); `SuggestionDataPayload`; `handle_data_event()`; `data_tx`/`data_rx` channel; `check_completions()` config-driven gates with per-gate logging; `poll_ci_status()` with CI auto-fix loop; `spawn_ci_fix_session()`; `on_issue_session_completed()` skips PR creation for CI-fix sessions (Issues #12, #31-33, #35, #40, #41, #43, #46-48) |
+| `src/tui/app.rs` | `App` struct; `TuiMode`; `TuiCommand` (adds `FetchSuggestionData`); `TuiDataEvent` (adds `SuggestionData`); `SuggestionDataPayload`; `handle_data_event()`; `data_tx`/`data_rx` channel; `check_completions()` config-driven gates with per-gate logging; `poll_ci_status()` with CI auto-fix loop; `spawn_ci_fix_session()`; `on_issue_session_completed()` skips PR creation for CI-fix sessions; issue launch uses `PromptBuilder::build_issue_prompt()` (Issues #12, #31-33, #35, #40, #41, #43, #46-48, #52) |
 | `src/tui/activity_log.rs` | Scrollable log widget |
 | `src/tui/cost_dashboard.rs` | Per-session and aggregate cost display (Phase 3) |
 | `src/tui/dep_graph.rs` | ASCII dependency graph visualization (Phase 3) |
