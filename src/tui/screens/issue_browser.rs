@@ -1,5 +1,7 @@
-use super::{ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
+use super::{Screen, ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
 use crate::github::types::GhIssue;
+use crate::tui::navigation::InputMode;
+use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -57,56 +59,7 @@ impl IssueBrowserScreen {
         self.loading = false;
     }
 
-    pub fn handle_input(&mut self, event: &Event) -> ScreenAction {
-        if let Event::Key(KeyEvent {
-            code,
-            kind: KeyEventKind::Press,
-            ..
-        }) = event
-        {
-            // In filter mode, handle text input
-            if self.filter_mode != FilterMode::None {
-                return self.handle_filter_input(*code);
-            }
-
-            match code {
-                KeyCode::Esc => return ScreenAction::Pop,
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if !self.filtered_indices.is_empty()
-                        && self.selected < self.filtered_indices.len() - 1
-                    {
-                        self.selected += 1;
-                        self.sync_scroll();
-                    }
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    self.selected = self.selected.saturating_sub(1);
-                    self.sync_scroll();
-                }
-                KeyCode::Char(' ') => {
-                    if let Some(&idx) = self.filtered_indices.get(self.selected) {
-                        let number = self.issues[idx].number;
-                        if !self.selected_set.remove(&number) {
-                            self.selected_set.insert(number);
-                        }
-                    }
-                }
-                KeyCode::Char('/') => {
-                    self.filter_mode = FilterMode::Label;
-                }
-                KeyCode::Char('m') => {
-                    self.filter_mode = FilterMode::Milestone;
-                }
-                KeyCode::Enter => {
-                    return self.handle_enter();
-                }
-                _ => {}
-            }
-        }
-        ScreenAction::None
-    }
-
-    pub fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+    fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -355,6 +308,114 @@ impl IssueBrowserScreen {
     }
 }
 
+impl KeymapProvider for IssueBrowserScreen {
+    fn keybindings(&self) -> Vec<KeyBindingGroup> {
+        vec![
+            KeyBindingGroup {
+                title: "Navigation",
+                bindings: vec![
+                    KeyBinding {
+                        key: "j/Down",
+                        description: "Move down",
+                    },
+                    KeyBinding {
+                        key: "k/Up",
+                        description: "Move up",
+                    },
+                    KeyBinding {
+                        key: "Space",
+                        description: "Toggle multi-select",
+                    },
+                ],
+            },
+            KeyBindingGroup {
+                title: "Actions",
+                bindings: vec![
+                    KeyBinding {
+                        key: "Enter",
+                        description: "Run selected issue(s)",
+                    },
+                    KeyBinding {
+                        key: "/",
+                        description: "Filter by label/title",
+                    },
+                    KeyBinding {
+                        key: "m",
+                        description: "Filter by milestone",
+                    },
+                    KeyBinding {
+                        key: "Esc",
+                        description: "Back / Cancel filter",
+                    },
+                ],
+            },
+        ]
+    }
+}
+
+impl Screen for IssueBrowserScreen {
+    fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
+        if let Event::Key(KeyEvent {
+            code,
+            kind: KeyEventKind::Press,
+            ..
+        }) = event
+        {
+            // In filter mode, handle text input (acts like Insert mode)
+            if self.filter_mode != FilterMode::None {
+                return self.handle_filter_input(*code);
+            }
+
+            match code {
+                KeyCode::Esc => return ScreenAction::Pop,
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if !self.filtered_indices.is_empty()
+                        && self.selected < self.filtered_indices.len() - 1
+                    {
+                        self.selected += 1;
+                        self.sync_scroll();
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.selected = self.selected.saturating_sub(1);
+                    self.sync_scroll();
+                }
+                KeyCode::Char(' ') => {
+                    if let Some(&idx) = self.filtered_indices.get(self.selected) {
+                        let number = self.issues[idx].number;
+                        if !self.selected_set.remove(&number) {
+                            self.selected_set.insert(number);
+                        }
+                    }
+                }
+                KeyCode::Char('/') => {
+                    self.filter_mode = FilterMode::Label;
+                }
+                KeyCode::Char('m') => {
+                    self.filter_mode = FilterMode::Milestone;
+                }
+                KeyCode::Enter => {
+                    return self.handle_enter();
+                }
+                _ => {}
+            }
+        }
+        ScreenAction::None
+    }
+
+    fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        self.draw_impl(f, area, theme);
+    }
+
+    fn desired_input_mode(&self) -> Option<InputMode> {
+        if self.filter_mode != FilterMode::None {
+            Some(InputMode::Insert)
+        } else {
+            Some(InputMode::Normal)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,38 +481,38 @@ mod tests {
     #[test]
     fn issue_browser_key_j_advances_cursor() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected, 1);
     }
 
     #[test]
     fn issue_browser_key_down_advances_cursor() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Down));
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert_eq!(screen.selected, 1);
     }
 
     #[test]
     fn issue_browser_key_k_moves_cursor_up() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected, 1);
     }
 
     #[test]
     fn issue_browser_key_up_moves_cursor_up() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Down));
-        screen.handle_input(&key_event(KeyCode::Up));
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.selected, 0);
     }
 
     #[test]
     fn issue_browser_cursor_does_not_underflow() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected, 0);
     }
 
@@ -459,7 +520,7 @@ mod tests {
     fn issue_browser_cursor_does_not_overflow() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
         for _ in 0..10 {
-            screen.handle_input(&key_event(KeyCode::Char('j')));
+            screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         }
         assert_eq!(screen.selected, 2);
     }
@@ -469,15 +530,15 @@ mod tests {
     #[test]
     fn issue_browser_esc_returns_pop() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        let action = screen.handle_input(&key_event(KeyCode::Esc));
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
     }
 
     #[test]
     fn issue_browser_enter_on_single_issue_returns_launch_session() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('j'))); // move to issue 2 (number=2)
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal); // move to issue 2 (number=2)
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         match action {
             ScreenAction::LaunchSession(config) => {
                 assert_eq!(config.issue_number, Some(2));
@@ -489,11 +550,11 @@ mod tests {
     #[test]
     fn issue_browser_enter_with_multi_select_returns_launch_sessions() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char(' '))); // select issue #1
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char(' '))); // select issue #3
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select issue #1
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select issue #3
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         match action {
             ScreenAction::LaunchSessions(configs) => {
                 assert_eq!(configs.len(), 2);
@@ -505,7 +566,7 @@ mod tests {
     #[test]
     fn issue_browser_empty_issue_list_enter_returns_none() {
         let mut screen = IssueBrowserScreen::new(vec![]);
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
@@ -516,7 +577,7 @@ mod tests {
         let issues = make_three_issues();
         let issue_number = issues[0].number;
         let mut screen = IssueBrowserScreen::new(issues);
-        screen.handle_input(&key_event(KeyCode::Char(' ')));
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
         assert!(screen.selected_set.contains(&issue_number));
     }
 
@@ -525,8 +586,8 @@ mod tests {
         let issues = make_three_issues();
         let issue_number = issues[0].number;
         let mut screen = IssueBrowserScreen::new(issues);
-        screen.handle_input(&key_event(KeyCode::Char(' ')));
-        screen.handle_input(&key_event(KeyCode::Char(' ')));
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
         assert!(!screen.selected_set.contains(&issue_number));
     }
 
@@ -535,7 +596,7 @@ mod tests {
     #[test]
     fn issue_browser_slash_enters_filter_mode() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('/')));
+        screen.handle_input(&key_event(KeyCode::Char('/')), InputMode::Normal);
         assert_eq!(screen.filter_mode, FilterMode::Label);
     }
 
@@ -547,10 +608,10 @@ mod tests {
             make_issue(3, "Add logout"),
         ];
         let mut screen = IssueBrowserScreen::new(issues);
-        screen.handle_input(&key_event(KeyCode::Char('/')));
-        screen.handle_input(&key_event(KeyCode::Char('A')));
-        screen.handle_input(&key_event(KeyCode::Char('d')));
-        screen.handle_input(&key_event(KeyCode::Char('d')));
+        screen.handle_input(&key_event(KeyCode::Char('/')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('A')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
         assert_eq!(screen.filtered_indices.len(), 2);
     }
 
@@ -558,20 +619,20 @@ mod tests {
     fn issue_browser_filter_text_is_case_insensitive() {
         let issues = vec![make_issue(1, "Implement Feature")];
         let mut screen = IssueBrowserScreen::new(issues);
-        screen.handle_input(&key_event(KeyCode::Char('/')));
-        screen.handle_input(&key_event(KeyCode::Char('i')));
-        screen.handle_input(&key_event(KeyCode::Char('m')));
-        screen.handle_input(&key_event(KeyCode::Char('p')));
+        screen.handle_input(&key_event(KeyCode::Char('/')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('i')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('m')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('p')), InputMode::Normal);
         assert_eq!(screen.filtered_indices.len(), 1);
     }
 
     #[test]
     fn issue_browser_esc_in_filter_mode_clears_filter_and_exits() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('/')));
-        screen.handle_input(&key_event(KeyCode::Char('F')));
-        screen.handle_input(&key_event(KeyCode::Char('i')));
-        screen.handle_input(&key_event(KeyCode::Esc));
+        screen.handle_input(&key_event(KeyCode::Char('/')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('F')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('i')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert!(screen.filter_text.is_empty());
         assert_eq!(screen.filter_mode, FilterMode::None);
         assert_eq!(screen.filtered_indices.len(), 3);
@@ -580,19 +641,19 @@ mod tests {
     #[test]
     fn issue_browser_backspace_in_filter_mode_deletes_last_char() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('/')));
-        screen.handle_input(&key_event(KeyCode::Char('a')));
-        screen.handle_input(&key_event(KeyCode::Char('b')));
-        screen.handle_input(&key_event(KeyCode::Backspace));
+        screen.handle_input(&key_event(KeyCode::Char('/')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('b')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
         assert_eq!(screen.filter_text, "a");
     }
 
     #[test]
     fn issue_browser_filter_no_match_results_in_empty_filtered_indices() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('/')));
+        screen.handle_input(&key_event(KeyCode::Char('/')), InputMode::Normal);
         for c in "zzznomatch".chars() {
-            screen.handle_input(&key_event(KeyCode::Char(c)));
+            screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
         }
         assert_eq!(screen.filtered_indices.len(), 0);
     }
@@ -602,7 +663,7 @@ mod tests {
     #[test]
     fn issue_browser_key_m_enters_milestone_filter_mode() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('m')));
+        screen.handle_input(&key_event(KeyCode::Char('m')), InputMode::Normal);
         assert_eq!(screen.filter_mode, FilterMode::Milestone);
     }
 
@@ -645,12 +706,12 @@ mod tests {
         ];
         let mut screen = IssueBrowserScreen::new(issues);
         for _ in 0..4 {
-            screen.handle_input(&key_event(KeyCode::Char('j')));
+            screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         }
         assert_eq!(screen.selected, 4);
-        screen.handle_input(&key_event(KeyCode::Char('/')));
+        screen.handle_input(&key_event(KeyCode::Char('/')), InputMode::Normal);
         for c in "Alpha".chars() {
-            screen.handle_input(&key_event(KeyCode::Char(c)));
+            screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
         }
         assert!(screen.selected <= 1);
     }
@@ -660,8 +721,8 @@ mod tests {
     #[test]
     fn issue_browser_set_issues_replaces_and_resets() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected, 2);
 
         screen.loading = true;

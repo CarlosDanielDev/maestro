@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-04 (UTC)
+> Last updated: 2026-04-04 18:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -129,6 +129,10 @@ maestro/
 │   │   ├── help.rs                        # Help overlay widget with keybinding reference  [Phase 3]
 │   │   ├── panels.rs                      # Split-pane panel view; fork depth indicator in title; overflow warning in context gauge; GatesRunning (Cyan), NeedsReview (LightYellow), and CiFix (LightMagenta) status colors  [Issue #12, #40, #41]
 │   │   ├── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners, screen rendering branches  [Phase 3, Issue #31-33]
+│   │   ├── navigation/                    # Keyboard navigation and focus management  [Issue #37]
+│   │   │   ├── mod.rs                     # Module exports for navigation subsystem
+│   │   │   ├── focus.rs                   # Focus management: FocusManager, focus ring, widget focus state
+│   │   │   └── keymap.rs                  # Keymap definitions: action-to-key bindings, context-sensitive keymaps
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum, SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen
 │   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; draw_suggestions() renders Suggestions panel; Tab-based focus navigation between QuickActions and Suggestions; ProjectInfo gains username field  [Issue #31, #49, #34, #35]
@@ -229,6 +233,10 @@ maestro/
 | `src/tui/detail.rs` | Session detail view (Phase 3) |
 | `src/tui/fullscreen.rs` | Fullscreen session view with phase progress overlay (Phase 3) |
 | `src/tui/help.rs` | Help overlay widget with keybinding reference (Phase 3) |
+| `src/tui/navigation/` | Keyboard navigation system and focus management (Issue #37) |
+| `src/tui/navigation/mod.rs` | Module exports for navigation subsystem |
+| `src/tui/navigation/focus.rs` | `FocusManager`: focus ring, widget focus state tracking |
+| `src/tui/navigation/keymap.rs` | Keymap definitions: action-to-key bindings, context-sensitive keymaps |
 | `src/tui/panels.rs` | Split-pane multi-session view; `GatesRunning` (Cyan), `NeedsReview` (LightYellow), and `CiFix` (LightMagenta) status colors (Issues #40, #41) |
 | `src/tui/screens/` | Interactive TUI screen components (Issues #31-33) |
 | `src/tui/screens/mod.rs` | `ScreenAction` enum, `SessionConfig`; re-exports all screen types |

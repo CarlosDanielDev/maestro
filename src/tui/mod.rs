@@ -5,6 +5,7 @@ pub mod dep_graph;
 pub mod detail;
 pub mod fullscreen;
 pub mod help;
+pub mod navigation;
 pub mod panels;
 pub mod screens;
 pub mod theme;
@@ -12,6 +13,7 @@ pub mod ui;
 
 use crate::github::client::{GhCliClient, GitHubClient};
 use crate::tui::activity_log::LogLevel;
+use crate::tui::screens::Screen;
 use app::App;
 use crossterm::{
     event::{
@@ -85,53 +87,37 @@ async fn event_loop(
                     // Help overlay intercepts all keys when visible
                     if app.show_help {
                         match key.code {
-                            KeyCode::Char('?') | KeyCode::Esc => app.show_help = false,
+                            KeyCode::Char('?') | KeyCode::Esc => {
+                                app.show_help = false;
+                                app.help_scroll = 0;
+                            }
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                app.help_scroll = app.help_scroll.saturating_add(1);
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                app.help_scroll = app.help_scroll.saturating_sub(1);
+                            }
                             _ => {}
                         }
                         continue;
                     }
 
+                    // Global hotkeys that must not be swallowed by screens
+                    if key.code == KeyCode::Char('?') {
+                        app.show_help = true;
+                        app.help_scroll = 0;
+                        continue;
+                    }
+
                     // Delegate to active screen when in screen-based modes
                     let event = Event::Key(key);
-                    let screen_handled = match app.tui_mode {
-                        app::TuiMode::Dashboard => {
-                            if let Some(ref mut screen) = app.home_screen {
-                                let action = screen.handle_input(&event);
-                                handle_screen_action(app, action);
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        app::TuiMode::IssueBrowser => {
-                            if let Some(ref mut screen) = app.issue_browser_screen {
-                                let action = screen.handle_input(&event);
-                                handle_screen_action(app, action);
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        app::TuiMode::MilestoneView => {
-                            if let Some(ref mut screen) = app.milestone_screen {
-                                let action = screen.handle_input(&event);
-                                handle_screen_action(app, action);
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        app::TuiMode::PromptInput => {
-                            if let Some(ref mut screen) = app.prompt_input_screen {
-                                let action = screen.handle_input(&event);
-                                handle_screen_action(app, action);
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        _ => false,
-                    };
+                    let screen_handled =
+                        if let Some(action) = dispatch_to_active_screen(app, &event) {
+                            handle_screen_action(app, action);
+                            true
+                        } else {
+                            false
+                        };
 
                     if screen_handled {
                         if !app.running {
@@ -155,10 +141,6 @@ async fn event_loop(
                         }
                         (KeyCode::Char('k'), _) => {
                             app.kill_all().await;
-                        }
-                        // Help overlay
-                        (KeyCode::Char('?'), _) => {
-                            app.show_help = true;
                         }
                         // Full-screen view for selected session
                         (KeyCode::Char('f'), _) => {
@@ -396,6 +378,22 @@ async fn event_loop(
             return Ok(());
         }
     }
+}
+
+/// Dispatch an input event to the active screen, if any.
+/// Returns `Some(action)` if a screen handled the event, `None` otherwise.
+fn dispatch_to_active_screen(app: &mut App, event: &Event) -> Option<ScreenAction> {
+    use crate::tui::navigation::InputMode;
+
+    let screen: &mut dyn Screen = match app.tui_mode {
+        app::TuiMode::Dashboard => app.home_screen.as_mut()?,
+        app::TuiMode::IssueBrowser => app.issue_browser_screen.as_mut()?,
+        app::TuiMode::MilestoneView => app.milestone_screen.as_mut()?,
+        app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
+        _ => return None,
+    };
+    let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
+    Some(screen.handle_input(event, mode))
 }
 
 /// Process a ScreenAction returned by a screen's input handler.
