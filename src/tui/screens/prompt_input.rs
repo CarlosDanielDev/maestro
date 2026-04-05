@@ -1,4 +1,7 @@
-use super::{PromptSessionConfig, ScreenAction, draw_keybinds_bar};
+use super::{PromptSessionConfig, Screen, ScreenAction, draw_keybinds_bar};
+use crate::tui::navigation::InputMode;
+use crate::tui::navigation::focus::{FocusId, FocusRing};
+use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -67,17 +70,11 @@ fn save_clipboard_image(img: &arboard::ImageData) -> Option<PathBuf> {
     Some(path)
 }
 
-#[derive(Debug, PartialEq)]
-pub enum PromptInputFocus {
-    PromptEditor,
-    ImageList,
-}
-
 pub struct PromptInputScreen {
     pub(crate) prompt_text: String,
     pub(crate) cursor_position: (usize, usize),
     pub(crate) image_paths: Vec<String>,
-    pub(crate) focus: PromptInputFocus,
+    pub(crate) focus_ring: FocusRing,
     pub(crate) image_path_input: String,
     pub(crate) editing_image_path: bool,
     pub(crate) selected_image: usize,
@@ -92,12 +89,15 @@ impl PromptInputScreen {
         Self::with_clipboard(Box::new(SystemClipboard))
     }
 
+    pub const PROMPT_EDITOR_PANE: FocusId = FocusId("prompt:editor");
+    pub const IMAGE_LIST_PANE: FocusId = FocusId("prompt:images");
+
     pub fn with_clipboard(clipboard: Box<dyn ClipboardProvider>) -> Self {
         Self {
             prompt_text: String::new(),
             cursor_position: (0, 0),
             image_paths: Vec::new(),
-            focus: PromptInputFocus::PromptEditor,
+            focus_ring: FocusRing::new(vec![Self::PROMPT_EDITOR_PANE, Self::IMAGE_LIST_PANE]),
             image_path_input: String::new(),
             editing_image_path: false,
             selected_image: 0,
@@ -105,6 +105,14 @@ impl PromptInputScreen {
             clipboard,
             status_message: None,
         }
+    }
+
+    fn is_prompt_editor_focused(&self) -> bool {
+        self.focus_ring.is_focused(Self::PROMPT_EDITOR_PANE)
+    }
+
+    fn is_image_list_focused(&self) -> bool {
+        self.focus_ring.is_focused(Self::IMAGE_LIST_PANE)
     }
 
     fn paste_from_clipboard(&mut self) {
@@ -124,117 +132,7 @@ impl PromptInputScreen {
         }
     }
 
-    pub fn handle_input(&mut self, event: &Event) -> ScreenAction {
-        if let Event::Key(KeyEvent {
-            code,
-            modifiers,
-            kind: KeyEventKind::Press,
-            ..
-        }) = event
-        {
-            // Ctrl+S: submit prompt
-            if *modifiers == KeyModifiers::CONTROL && *code == KeyCode::Char('s') {
-                if self.prompt_text.trim().is_empty() {
-                    return ScreenAction::None;
-                }
-                return ScreenAction::LaunchPromptSession(PromptSessionConfig {
-                    prompt: self.prompt_text.clone(),
-                    image_paths: self.image_paths.clone(),
-                });
-            }
-
-            // Ctrl+V: paste from clipboard (adds image/path to attachments)
-            if *modifiers == KeyModifiers::CONTROL && *code == KeyCode::Char('v') {
-                self.paste_from_clipboard();
-                return ScreenAction::None;
-            }
-
-            // Esc: cancel image path editing or pop screen
-            if *code == KeyCode::Esc {
-                if self.editing_image_path {
-                    self.editing_image_path = false;
-                    self.image_path_input.clear();
-                    return ScreenAction::None;
-                }
-                return ScreenAction::Pop;
-            }
-
-            // Tab: toggle focus
-            if *code == KeyCode::Tab {
-                self.focus = match self.focus {
-                    PromptInputFocus::PromptEditor => PromptInputFocus::ImageList,
-                    PromptInputFocus::ImageList => PromptInputFocus::PromptEditor,
-                };
-                return ScreenAction::None;
-            }
-
-            // Route input based on focus and editing state
-            if self.editing_image_path {
-                match code {
-                    KeyCode::Enter => {
-                        if !self.image_path_input.is_empty() {
-                            self.image_paths.push(self.image_path_input.clone());
-                        }
-                        self.editing_image_path = false;
-                        self.image_path_input.clear();
-                    }
-                    KeyCode::Backspace => {
-                        self.image_path_input.pop();
-                    }
-                    KeyCode::Char(c) => {
-                        self.image_path_input.push(*c);
-                    }
-                    _ => {}
-                }
-                return ScreenAction::None;
-            }
-
-            match self.focus {
-                PromptInputFocus::PromptEditor => match code {
-                    KeyCode::Char(c) => {
-                        self.prompt_text.push(*c);
-                    }
-                    KeyCode::Enter => {
-                        self.prompt_text.push('\n');
-                    }
-                    KeyCode::Backspace => {
-                        self.prompt_text.pop();
-                    }
-                    _ => {}
-                },
-                PromptInputFocus::ImageList => match code {
-                    KeyCode::Char('a') => {
-                        self.editing_image_path = true;
-                        self.image_path_input.clear();
-                    }
-                    KeyCode::Char('d') => {
-                        if !self.image_paths.is_empty() {
-                            self.image_paths.remove(self.selected_image);
-                            if self.selected_image > 0
-                                && self.selected_image >= self.image_paths.len()
-                            {
-                                self.selected_image = self.image_paths.len().saturating_sub(1);
-                            }
-                        }
-                    }
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        if !self.image_paths.is_empty()
-                            && self.selected_image < self.image_paths.len() - 1
-                        {
-                            self.selected_image += 1;
-                        }
-                    }
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        self.selected_image = self.selected_image.saturating_sub(1);
-                    }
-                    _ => {}
-                },
-            }
-        }
-        ScreenAction::None
-    }
-
-    pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+    fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -245,7 +143,7 @@ impl PromptInputScreen {
             .split(area);
 
         // Prompt editor
-        let editor_border_color = if self.focus == PromptInputFocus::PromptEditor {
+        let editor_border_color = if self.is_prompt_editor_focused() {
             theme.border_active
         } else {
             theme.border_inactive
@@ -277,7 +175,7 @@ impl PromptInputScreen {
         f.render_widget(editor, chunks[0]);
 
         // Image list
-        let image_border_color = if self.focus == PromptInputFocus::ImageList {
+        let image_border_color = if self.is_image_list_focused() {
             theme.border_active
         } else {
             theme.border_inactive
@@ -298,14 +196,14 @@ impl PromptInputScreen {
             )));
         }
         for (i, path) in self.image_paths.iter().enumerate() {
-            let style = if i == self.selected_image && self.focus == PromptInputFocus::ImageList {
+            let style = if i == self.selected_image && self.is_image_list_focused() {
                 Style::default()
                     .fg(theme.accent_success)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(theme.text_primary)
             };
-            let prefix = if i == self.selected_image && self.focus == PromptInputFocus::ImageList {
+            let prefix = if i == self.selected_image && self.is_image_list_focused() {
                 " > "
             } else {
                 "   "
@@ -325,7 +223,7 @@ impl PromptInputScreen {
                 Span::styled("_", Style::default().fg(theme.accent_success)),
             ]));
         }
-        if self.focus == PromptInputFocus::ImageList && !self.editing_image_path {
+        if self.is_image_list_focused() && !self.editing_image_path {
             lines.push(Line::from(Span::styled(
                 "  [a] Add   [d] Remove   [Ctrl+V] Paste",
                 Style::default().fg(theme.text_secondary),
@@ -354,6 +252,173 @@ impl PromptInputScreen {
                 ],
                 theme,
             );
+        }
+    }
+}
+
+impl KeymapProvider for PromptInputScreen {
+    fn keybindings(&self) -> Vec<KeyBindingGroup> {
+        vec![
+            KeyBindingGroup {
+                title: "Prompt Editor",
+                bindings: vec![
+                    KeyBinding {
+                        key: "Ctrl+s",
+                        description: "Submit prompt",
+                    },
+                    KeyBinding {
+                        key: "Ctrl+v",
+                        description: "Paste from clipboard",
+                    },
+                    KeyBinding {
+                        key: "Tab",
+                        description: "Toggle focus (editor/images)",
+                    },
+                    KeyBinding {
+                        key: "Esc",
+                        description: "Back",
+                    },
+                ],
+            },
+            KeyBindingGroup {
+                title: "Image List",
+                bindings: vec![
+                    KeyBinding {
+                        key: "a",
+                        description: "Add image path",
+                    },
+                    KeyBinding {
+                        key: "d",
+                        description: "Delete selected image",
+                    },
+                    KeyBinding {
+                        key: "j/k",
+                        description: "Navigate images",
+                    },
+                ],
+            },
+        ]
+    }
+}
+
+impl Screen for PromptInputScreen {
+    fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
+        if let Event::Key(KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            ..
+        }) = event
+        {
+            if *modifiers == KeyModifiers::CONTROL && *code == KeyCode::Char('s') {
+                if self.prompt_text.trim().is_empty() {
+                    return ScreenAction::None;
+                }
+                return ScreenAction::LaunchPromptSession(PromptSessionConfig {
+                    prompt: self.prompt_text.clone(),
+                    image_paths: self.image_paths.clone(),
+                });
+            }
+
+            if *modifiers == KeyModifiers::CONTROL && *code == KeyCode::Char('v') {
+                self.paste_from_clipboard();
+                return ScreenAction::None;
+            }
+
+            if *code == KeyCode::Esc {
+                if self.editing_image_path {
+                    self.editing_image_path = false;
+                    self.image_path_input.clear();
+                    return ScreenAction::None;
+                }
+                return ScreenAction::Pop;
+            }
+
+            if *code == KeyCode::Tab {
+                self.focus_ring.next();
+                return ScreenAction::None;
+            }
+            if *code == KeyCode::BackTab {
+                self.focus_ring.previous();
+                return ScreenAction::None;
+            }
+
+            // Route input based on focus and editing state
+            if self.editing_image_path {
+                match code {
+                    KeyCode::Enter => {
+                        if !self.image_path_input.is_empty() {
+                            self.image_paths.push(self.image_path_input.clone());
+                        }
+                        self.editing_image_path = false;
+                        self.image_path_input.clear();
+                    }
+                    KeyCode::Backspace => {
+                        self.image_path_input.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        self.image_path_input.push(*c);
+                    }
+                    _ => {}
+                }
+                return ScreenAction::None;
+            }
+
+            if self.is_prompt_editor_focused() {
+                match code {
+                    KeyCode::Char(c) => {
+                        self.prompt_text.push(*c);
+                    }
+                    KeyCode::Enter => {
+                        self.prompt_text.push('\n');
+                    }
+                    KeyCode::Backspace => {
+                        self.prompt_text.pop();
+                    }
+                    _ => {}
+                }
+            } else if self.is_image_list_focused() {
+                match code {
+                    KeyCode::Char('a') => {
+                        self.editing_image_path = true;
+                        self.image_path_input.clear();
+                    }
+                    KeyCode::Char('d') => {
+                        if !self.image_paths.is_empty() {
+                            self.image_paths.remove(self.selected_image);
+                            if self.selected_image > 0
+                                && self.selected_image >= self.image_paths.len()
+                            {
+                                self.selected_image = self.image_paths.len().saturating_sub(1);
+                            }
+                        }
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        if !self.image_paths.is_empty()
+                            && self.selected_image < self.image_paths.len() - 1
+                        {
+                            self.selected_image += 1;
+                        }
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.selected_image = self.selected_image.saturating_sub(1);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        ScreenAction::None
+    }
+
+    fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        self.draw_impl(f, area, theme);
+    }
+
+    fn desired_input_mode(&self) -> Option<InputMode> {
+        if self.is_prompt_editor_focused() {
+            Some(InputMode::Insert)
+        } else {
+            Some(InputMode::Normal)
         }
     }
 }
@@ -420,7 +485,7 @@ mod tests {
 
     fn screen_in_image_list_focus() -> PromptInputScreen {
         let mut s = mock_screen();
-        s.handle_input(&key_event(KeyCode::Tab));
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
         s
     }
 
@@ -441,7 +506,11 @@ mod tests {
     #[test]
     fn prompt_input_initial_focus_is_prompt_editor() {
         let screen = mock_screen();
-        assert_eq!(screen.focus, PromptInputFocus::PromptEditor);
+        assert!(
+            screen
+                .focus_ring
+                .is_focused(PromptInputScreen::PROMPT_EDITOR_PANE)
+        );
     }
 
     #[test]
@@ -455,16 +524,16 @@ mod tests {
     #[test]
     fn prompt_input_typing_appends_character() {
         let mut screen = mock_screen();
-        screen.handle_input(&key_event(KeyCode::Char('h')));
-        screen.handle_input(&key_event(KeyCode::Char('i')));
-        screen.handle_input(&key_event(KeyCode::Char('!')));
+        screen.handle_input(&key_event(KeyCode::Char('h')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('i')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('!')), InputMode::Normal);
         assert_eq!(screen.prompt_text, "hi!");
     }
 
     #[test]
     fn prompt_input_enter_inserts_newline() {
         let mut screen = screen_with_prompt("hello");
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(screen.prompt_text, "hello\n");
         assert_eq!(action, ScreenAction::None);
     }
@@ -472,14 +541,14 @@ mod tests {
     #[test]
     fn prompt_input_backspace_removes_last_character() {
         let mut screen = screen_with_prompt("abc");
-        screen.handle_input(&key_event(KeyCode::Backspace));
+        screen.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
         assert_eq!(screen.prompt_text, "ab");
     }
 
     #[test]
     fn prompt_input_backspace_on_empty_prompt_is_noop() {
         let mut screen = mock_screen();
-        let action = screen.handle_input(&key_event(KeyCode::Backspace));
+        let action = screen.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
         assert_eq!(screen.prompt_text, "");
         assert_eq!(action, ScreenAction::None);
     }
@@ -489,7 +558,7 @@ mod tests {
     #[test]
     fn prompt_input_ctrl_s_with_prompt_returns_launch_prompt_session() {
         let mut screen = screen_with_prompt("fix the bug");
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')));
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
         assert_eq!(
             action,
             ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -503,7 +572,7 @@ mod tests {
     fn prompt_input_ctrl_s_with_prompt_and_images_includes_image_paths() {
         let mut screen = screen_with_prompt("describe this");
         screen.image_paths = vec!["/tmp/a.png".to_string(), "/tmp/b.png".to_string()];
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')));
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
         assert_eq!(
             action,
             ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -516,14 +585,14 @@ mod tests {
     #[test]
     fn prompt_input_ctrl_s_with_empty_prompt_is_rejected() {
         let mut screen = mock_screen();
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')));
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
     #[test]
     fn prompt_input_ctrl_s_with_whitespace_only_prompt_is_rejected() {
         let mut screen = screen_with_prompt("   \n  ");
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')));
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
@@ -532,14 +601,14 @@ mod tests {
     #[test]
     fn prompt_input_esc_returns_pop() {
         let mut screen = mock_screen();
-        let action = screen.handle_input(&key_event(KeyCode::Esc));
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
     }
 
     #[test]
     fn prompt_input_esc_in_image_list_focus_returns_pop() {
         let mut screen = screen_in_image_list_focus();
-        let action = screen.handle_input(&key_event(KeyCode::Esc));
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
     }
 
@@ -548,17 +617,25 @@ mod tests {
     #[test]
     fn prompt_input_tab_switches_focus_to_image_list() {
         let mut screen = mock_screen();
-        let action = screen.handle_input(&key_event(KeyCode::Tab));
-        assert_eq!(screen.focus, PromptInputFocus::ImageList);
+        let action = screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        assert!(
+            screen
+                .focus_ring
+                .is_focused(PromptInputScreen::IMAGE_LIST_PANE)
+        );
         assert_eq!(action, ScreenAction::None);
     }
 
     #[test]
     fn prompt_input_tab_toggles_back_to_prompt_editor() {
         let mut screen = mock_screen();
-        screen.handle_input(&key_event(KeyCode::Tab));
-        screen.handle_input(&key_event(KeyCode::Tab));
-        assert_eq!(screen.focus, PromptInputFocus::PromptEditor);
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        assert!(
+            screen
+                .focus_ring
+                .is_focused(PromptInputScreen::PROMPT_EDITOR_PANE)
+        );
     }
 
     // --- Group 6: ImageList add image path ---
@@ -566,7 +643,7 @@ mod tests {
     #[test]
     fn prompt_input_key_a_in_image_list_enters_editing_mode() {
         let mut screen = screen_in_image_list_focus();
-        screen.handle_input(&key_event(KeyCode::Char('a')));
+        screen.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
         assert!(screen.editing_image_path);
         assert_eq!(screen.image_path_input, "");
     }
@@ -574,10 +651,10 @@ mod tests {
     #[test]
     fn prompt_input_typing_in_image_path_input_accumulates_text() {
         let mut screen = screen_in_image_list_focus();
-        screen.handle_input(&key_event(KeyCode::Char('a'))); // enter editing mode
+        screen.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal); // enter editing mode
         let original_prompt = screen.prompt_text.clone();
         for ch in ['/', 't', 'm', 'p'] {
-            screen.handle_input(&key_event(KeyCode::Char(ch)));
+            screen.handle_input(&key_event(KeyCode::Char(ch)), InputMode::Normal);
         }
         assert_eq!(screen.image_path_input, "/tmp");
         assert_eq!(screen.prompt_text, original_prompt);
@@ -588,7 +665,7 @@ mod tests {
         let mut screen = screen_in_image_list_focus();
         screen.editing_image_path = true;
         screen.image_path_input = "/tmp/shot.png".to_string();
-        screen.handle_input(&key_event(KeyCode::Enter));
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(screen.image_paths, vec!["/tmp/shot.png".to_string()]);
         assert!(!screen.editing_image_path);
         assert_eq!(screen.image_path_input, "");
@@ -599,7 +676,7 @@ mod tests {
         let mut screen = screen_in_image_list_focus();
         screen.editing_image_path = true;
         screen.image_path_input = "".to_string();
-        screen.handle_input(&key_event(KeyCode::Enter));
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert!(screen.image_paths.is_empty());
         assert!(!screen.editing_image_path);
     }
@@ -609,7 +686,7 @@ mod tests {
         let mut screen = screen_in_image_list_focus();
         screen.editing_image_path = true;
         screen.image_path_input = "/tmp/partial".to_string();
-        let action = screen.handle_input(&key_event(KeyCode::Esc));
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert!(screen.image_paths.is_empty());
         assert!(!screen.editing_image_path);
         assert_eq!(screen.image_path_input, "");
@@ -622,14 +699,14 @@ mod tests {
     fn prompt_input_key_d_removes_selected_image() {
         let mut screen = screen_with_images(&["/a.png", "/b.png"]);
         screen.selected_image = 0;
-        screen.handle_input(&key_event(KeyCode::Char('d')));
+        screen.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
         assert_eq!(screen.image_paths, vec!["/b.png".to_string()]);
     }
 
     #[test]
     fn prompt_input_key_d_on_empty_image_list_is_noop() {
         let mut screen = screen_in_image_list_focus();
-        let action = screen.handle_input(&key_event(KeyCode::Char('d')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
         assert!(screen.image_paths.is_empty());
         assert_eq!(action, ScreenAction::None);
     }
@@ -638,7 +715,7 @@ mod tests {
     fn prompt_input_selected_image_clamps_after_deletion() {
         let mut screen = screen_with_images(&["/only.png"]);
         screen.selected_image = 0;
-        screen.handle_input(&key_event(KeyCode::Char('d')));
+        screen.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
         assert!(screen.image_paths.is_empty());
         assert_eq!(screen.selected_image, 0);
     }
@@ -649,7 +726,7 @@ mod tests {
     fn prompt_input_key_j_in_image_list_advances_selected_image() {
         let mut screen = screen_with_images(&["/a.png", "/b.png"]);
         screen.selected_image = 0;
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_image, 1);
     }
 
@@ -658,7 +735,7 @@ mod tests {
         let mut screen = screen_with_images(&["/a.png"]);
         screen.selected_image = 0;
         for _ in 0..3 {
-            screen.handle_input(&key_event(KeyCode::Char('j')));
+            screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         }
         assert_eq!(screen.selected_image, 0);
     }
@@ -667,7 +744,7 @@ mod tests {
     fn prompt_input_key_k_in_image_list_moves_selection_up() {
         let mut screen = screen_with_images(&["/a.png", "/b.png"]);
         screen.selected_image = 1;
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected_image, 0);
     }
 
@@ -675,7 +752,7 @@ mod tests {
     fn prompt_input_key_k_in_image_list_does_not_underflow() {
         let mut screen = screen_with_images(&["/a.png", "/b.png"]);
         screen.selected_image = 0;
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected_image, 0);
     }
 
@@ -687,7 +764,7 @@ mod tests {
         screen.prompt_text = "existing".to_string();
         screen.image_paths = vec!["/x.png".to_string()];
         for code in [KeyCode::Char('j'), KeyCode::Char('k'), KeyCode::Char('d')] {
-            screen.handle_input(&key_event(code));
+            screen.handle_input(&key_event(code), InputMode::Normal);
         }
         assert_eq!(screen.prompt_text, "existing");
     }
@@ -722,7 +799,7 @@ mod tests {
         let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_image(
             "/tmp/maestro-clips/clip-abc.png",
         ));
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('v')));
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
         assert_eq!(
             screen.image_paths,
@@ -736,7 +813,7 @@ mod tests {
         let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_text(
             "/home/user/screenshot.png",
         ));
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('v')));
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
         assert_eq!(
             screen.image_paths,
@@ -748,7 +825,7 @@ mod tests {
     #[test]
     fn prompt_input_ctrl_v_with_empty_clipboard_shows_message() {
         let mut screen = PromptInputScreen::with_clipboard(MockClipboard::empty());
-        screen.handle_input(&ctrl_key(KeyCode::Char('v')));
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert!(screen.image_paths.is_empty());
         assert_eq!(screen.status_message.unwrap(), "Clipboard is empty");
     }
@@ -758,8 +835,12 @@ mod tests {
         let mut screen =
             PromptInputScreen::with_clipboard(MockClipboard::with_text("/tmp/shot.png"));
         // Default focus is PromptEditor — Ctrl+V should still work
-        assert_eq!(screen.focus, PromptInputFocus::PromptEditor);
-        screen.handle_input(&ctrl_key(KeyCode::Char('v')));
+        assert!(
+            screen
+                .focus_ring
+                .is_focused(PromptInputScreen::PROMPT_EDITOR_PANE)
+        );
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(screen.image_paths, vec!["/tmp/shot.png".to_string()]);
     }
 
@@ -768,7 +849,7 @@ mod tests {
         let mut screen =
             PromptInputScreen::with_clipboard(MockClipboard::with_text("/tmp/new.png"));
         screen.image_paths = vec!["/tmp/existing.png".to_string()];
-        screen.handle_input(&ctrl_key(KeyCode::Char('v')));
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(
             screen.image_paths,
             vec!["/tmp/existing.png".to_string(), "/tmp/new.png".to_string()]
@@ -780,7 +861,7 @@ mod tests {
         let mut screen =
             PromptInputScreen::with_clipboard(MockClipboard::with_text("/tmp/img.png"));
         screen.prompt_text = "my prompt".to_string();
-        screen.handle_input(&ctrl_key(KeyCode::Char('v')));
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(screen.prompt_text, "my prompt");
     }
 }

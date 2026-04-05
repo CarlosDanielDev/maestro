@@ -1,6 +1,8 @@
-use super::{ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
+use super::{Screen, ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
 use crate::github::types::{GhIssue, GhMilestone};
 use crate::tui::app::TuiMode;
+use crate::tui::navigation::InputMode;
+use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -70,41 +72,7 @@ impl MilestoneScreen {
         }
     }
 
-    pub fn handle_input(&mut self, event: &Event) -> ScreenAction {
-        if let Event::Key(KeyEvent {
-            code,
-            kind: KeyEventKind::Press,
-            ..
-        }) = event
-        {
-            match code {
-                KeyCode::Esc => return ScreenAction::Pop,
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if !self.milestones.is_empty() && self.selected < self.milestones.len() - 1 {
-                        self.selected += 1;
-                        self.sync_scroll();
-                    }
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    self.selected = self.selected.saturating_sub(1);
-                    self.sync_scroll();
-                }
-                KeyCode::Enter => {
-                    if self.milestones.is_empty() {
-                        return ScreenAction::None;
-                    }
-                    return ScreenAction::Push(TuiMode::IssueBrowser);
-                }
-                KeyCode::Char('r') => {
-                    return self.handle_run_all();
-                }
-                _ => {}
-            }
-        }
-        ScreenAction::None
-    }
-
-    pub fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+    fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -306,6 +274,80 @@ impl MilestoneScreen {
     }
 }
 
+impl KeymapProvider for MilestoneScreen {
+    fn keybindings(&self) -> Vec<KeyBindingGroup> {
+        vec![KeyBindingGroup {
+            title: "Milestones",
+            bindings: vec![
+                KeyBinding {
+                    key: "j/Down",
+                    description: "Move down",
+                },
+                KeyBinding {
+                    key: "k/Up",
+                    description: "Move up",
+                },
+                KeyBinding {
+                    key: "Enter",
+                    description: "View issues",
+                },
+                KeyBinding {
+                    key: "r",
+                    description: "Run all open issues",
+                },
+                KeyBinding {
+                    key: "Esc",
+                    description: "Back",
+                },
+            ],
+        }]
+    }
+}
+
+impl Screen for MilestoneScreen {
+    fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
+        if let Event::Key(KeyEvent {
+            code,
+            kind: KeyEventKind::Press,
+            ..
+        }) = event
+        {
+            match code {
+                KeyCode::Esc => return ScreenAction::Pop,
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if !self.milestones.is_empty() && self.selected < self.milestones.len() - 1 {
+                        self.selected += 1;
+                        self.sync_scroll();
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.selected = self.selected.saturating_sub(1);
+                    self.sync_scroll();
+                }
+                KeyCode::Enter => {
+                    if self.milestones.is_empty() {
+                        return ScreenAction::None;
+                    }
+                    return ScreenAction::Push(TuiMode::IssueBrowser);
+                }
+                KeyCode::Char('r') => {
+                    return self.handle_run_all();
+                }
+                _ => {}
+            }
+        }
+        ScreenAction::None
+    }
+
+    fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        self.draw_impl(f, area, theme);
+    }
+
+    fn desired_input_mode(&self) -> Option<InputMode> {
+        Some(InputMode::Normal)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,14 +415,14 @@ mod tests {
             make_entry(2, 0, 0),
             make_entry(3, 0, 0),
         ]);
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected, 1);
     }
 
     #[test]
     fn milestone_screen_key_down_advances_cursor() {
         let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 0), make_entry(2, 0, 0)]);
-        screen.handle_input(&key_event(KeyCode::Down));
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert_eq!(screen.selected, 1);
     }
 
@@ -391,24 +433,24 @@ mod tests {
             make_entry(2, 0, 0),
             make_entry(3, 0, 0),
         ]);
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected, 1);
     }
 
     #[test]
     fn milestone_screen_key_up_moves_cursor_up() {
         let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 0), make_entry(2, 0, 0)]);
-        screen.handle_input(&key_event(KeyCode::Down));
-        screen.handle_input(&key_event(KeyCode::Up));
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.selected, 0);
     }
 
     #[test]
     fn milestone_screen_cursor_does_not_underflow() {
         let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 0), make_entry(2, 0, 0)]);
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected, 0);
     }
 
@@ -420,7 +462,7 @@ mod tests {
             make_entry(3, 0, 0),
         ]);
         for _ in 0..10 {
-            screen.handle_input(&key_event(KeyCode::Char('j')));
+            screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         }
         assert_eq!(screen.selected, 2);
     }
@@ -430,15 +472,15 @@ mod tests {
     #[test]
     fn milestone_screen_esc_returns_pop() {
         let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 0)]);
-        let action = screen.handle_input(&key_event(KeyCode::Esc));
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
     }
 
     #[test]
     fn milestone_screen_enter_returns_push_issue_browser_with_milestone_number() {
         let mut screen = MilestoneScreen::new(vec![make_entry(7, 3, 0), make_entry(12, 1, 5)]);
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         match action {
             ScreenAction::Push(TuiMode::IssueBrowser) => {}
             other => panic!("Expected Push(IssueBrowser), got {:?}", other),
@@ -448,7 +490,7 @@ mod tests {
     #[test]
     fn milestone_screen_empty_list_enter_returns_none() {
         let mut screen = MilestoneScreen::new(vec![]);
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
@@ -456,7 +498,7 @@ mod tests {
     fn milestone_screen_key_r_on_milestone_returns_launch_sessions_for_all_open_issues() {
         let issues = vec![make_issue(10), make_issue(11)];
         let mut screen = MilestoneScreen::new(vec![make_entry_with_issues(1, issues)]);
-        let action = screen.handle_input(&key_event(KeyCode::Char('r')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('r')), InputMode::Normal);
         match action {
             ScreenAction::LaunchSessions(configs) => {
                 assert_eq!(configs.len(), 2);
@@ -468,7 +510,7 @@ mod tests {
     #[test]
     fn milestone_screen_key_r_on_empty_milestone_returns_none() {
         let mut screen = MilestoneScreen::new(vec![make_entry(1, 0, 5)]);
-        let action = screen.handle_input(&key_event(KeyCode::Char('r')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('r')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 

@@ -1,5 +1,8 @@
-use super::ScreenAction;
+use super::{Screen, ScreenAction};
 use crate::tui::app::TuiMode;
+use crate::tui::navigation::InputMode;
+use crate::tui::navigation::focus::{FocusId, FocusRing};
+use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -140,12 +143,6 @@ impl Suggestion {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HomeSection {
-    QuickActions,
-    Suggestions,
-}
-
 pub struct HomeScreen {
     pub selected_action: usize,
     pub recent_sessions: Vec<SessionSummary>,
@@ -153,12 +150,14 @@ pub struct HomeScreen {
     pub warnings: Vec<String>,
     pub suggestions: Vec<Suggestion>,
     pub selected_suggestion: usize,
-    pub focus_section: HomeSection,
+    pub focus_ring: FocusRing,
 }
 
 impl HomeScreen {
     pub const NUM_ACTIONS: usize = QUICK_ACTIONS.len();
     pub const QUIT_ACTION_INDEX: usize = 5;
+    pub const QUICK_ACTIONS_PANE: FocusId = FocusId("home:quick_actions");
+    pub const SUGGESTIONS_PANE: FocusId = FocusId("home:suggestions");
 
     pub fn new(
         project_info: ProjectInfo,
@@ -172,71 +171,19 @@ impl HomeScreen {
             warnings,
             suggestions: Vec::new(),
             selected_suggestion: 0,
-            focus_section: HomeSection::QuickActions,
+            focus_ring: FocusRing::new(vec![Self::QUICK_ACTIONS_PANE, Self::SUGGESTIONS_PANE]),
         }
     }
 
-    pub fn handle_input(&mut self, event: &Event) -> ScreenAction {
-        if let Event::Key(KeyEvent {
-            code,
-            kind: KeyEventKind::Press,
-            ..
-        }) = event
-        {
-            match code {
-                KeyCode::Char('i') => return ScreenAction::Push(TuiMode::IssueBrowser),
-                KeyCode::Char('m') => return ScreenAction::Push(TuiMode::MilestoneView),
-                KeyCode::Char('r') => return ScreenAction::Push(TuiMode::PromptInput),
-                KeyCode::Char('s') => return ScreenAction::Push(TuiMode::Overview),
-                KeyCode::Char('c') => return ScreenAction::Push(TuiMode::CostDashboard),
-                KeyCode::Char('q') => return ScreenAction::Quit,
-                KeyCode::Tab => {
-                    self.focus_section = match self.focus_section {
-                        HomeSection::QuickActions => HomeSection::Suggestions,
-                        HomeSection::Suggestions => HomeSection::QuickActions,
-                    };
-                }
-                KeyCode::Char('j') | KeyCode::Down => match self.focus_section {
-                    HomeSection::QuickActions => {
-                        if self.selected_action < Self::NUM_ACTIONS - 1 {
-                            self.selected_action += 1;
-                        }
-                    }
-                    HomeSection::Suggestions => {
-                        if !self.suggestions.is_empty()
-                            && self.selected_suggestion < self.suggestions.len() - 1
-                        {
-                            self.selected_suggestion += 1;
-                        }
-                    }
-                },
-                KeyCode::Char('k') | KeyCode::Up => match self.focus_section {
-                    HomeSection::QuickActions => {
-                        self.selected_action = self.selected_action.saturating_sub(1);
-                    }
-                    HomeSection::Suggestions => {
-                        self.selected_suggestion = self.selected_suggestion.saturating_sub(1);
-                    }
-                },
-                KeyCode::Enter => match self.focus_section {
-                    HomeSection::QuickActions => {
-                        return self.execute_selected_action();
-                    }
-                    HomeSection::Suggestions => {
-                        if let Some(suggestion) = self.suggestions.get(self.selected_suggestion) {
-                            return ScreenAction::Push(suggestion.action);
-                        }
-                        return ScreenAction::None;
-                    }
-                },
-                KeyCode::Esc => return ScreenAction::None,
-                _ => {}
-            }
-        }
-        ScreenAction::None
+    fn is_quick_actions_focused(&self) -> bool {
+        self.focus_ring.is_focused(Self::QUICK_ACTIONS_PANE)
     }
 
-    pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+    fn is_suggestions_focused(&self) -> bool {
+        self.focus_ring.is_focused(Self::SUGGESTIONS_PANE)
+    }
+
+    fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let warning_height = if self.warnings.is_empty() {
             0
         } else {
@@ -353,7 +300,7 @@ impl HomeScreen {
     }
 
     fn draw_quick_actions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let is_focused = self.focus_section == HomeSection::QuickActions;
+        let is_focused = self.is_quick_actions_focused();
         let border_color = if is_focused {
             theme.border_active
         } else {
@@ -393,7 +340,7 @@ impl HomeScreen {
     }
 
     fn draw_suggestions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let is_focused = self.focus_section == HomeSection::Suggestions;
+        let is_focused = self.is_suggestions_focused();
         let border_color = if is_focused {
             theme.border_active
         } else {
@@ -496,6 +443,125 @@ impl HomeScreen {
     }
 }
 
+impl KeymapProvider for HomeScreen {
+    fn keybindings(&self) -> Vec<KeyBindingGroup> {
+        vec![
+            KeyBindingGroup {
+                title: "Navigation",
+                bindings: vec![
+                    KeyBinding {
+                        key: "j/Down",
+                        description: "Move down",
+                    },
+                    KeyBinding {
+                        key: "k/Up",
+                        description: "Move up",
+                    },
+                    KeyBinding {
+                        key: "Tab",
+                        description: "Cycle focus between panes",
+                    },
+                ],
+            },
+            KeyBindingGroup {
+                title: "Actions",
+                bindings: vec![
+                    KeyBinding {
+                        key: "Enter",
+                        description: "Execute selected action",
+                    },
+                    KeyBinding {
+                        key: "i",
+                        description: "Browse Issues",
+                    },
+                    KeyBinding {
+                        key: "m",
+                        description: "Browse Milestones",
+                    },
+                    KeyBinding {
+                        key: "r",
+                        description: "Run Prompt",
+                    },
+                    KeyBinding {
+                        key: "q",
+                        description: "Quit",
+                    },
+                ],
+            },
+        ]
+    }
+}
+
+impl Screen for HomeScreen {
+    fn handle_input(&mut self, event: &Event, mode: InputMode) -> ScreenAction {
+        if let Event::Key(KeyEvent {
+            code,
+            kind: KeyEventKind::Press,
+            ..
+        }) = event
+        {
+            if mode == InputMode::Insert {
+                return ScreenAction::None;
+            }
+
+            match code {
+                KeyCode::Char('i') => return ScreenAction::Push(TuiMode::IssueBrowser),
+                KeyCode::Char('m') => return ScreenAction::Push(TuiMode::MilestoneView),
+                KeyCode::Char('r') => return ScreenAction::Push(TuiMode::PromptInput),
+                KeyCode::Char('s') => return ScreenAction::Push(TuiMode::Overview),
+                KeyCode::Char('c') => return ScreenAction::Push(TuiMode::CostDashboard),
+                KeyCode::Char('q') => return ScreenAction::Quit,
+                KeyCode::Tab => {
+                    self.focus_ring.next();
+                }
+                KeyCode::BackTab => {
+                    self.focus_ring.previous();
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if self.is_quick_actions_focused() {
+                        if self.selected_action < Self::NUM_ACTIONS - 1 {
+                            self.selected_action += 1;
+                        }
+                    } else if self.is_suggestions_focused()
+                        && !self.suggestions.is_empty()
+                        && self.selected_suggestion < self.suggestions.len() - 1
+                    {
+                        self.selected_suggestion += 1;
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if self.is_quick_actions_focused() {
+                        self.selected_action = self.selected_action.saturating_sub(1);
+                    } else if self.is_suggestions_focused() {
+                        self.selected_suggestion = self.selected_suggestion.saturating_sub(1);
+                    }
+                }
+                KeyCode::Enter => {
+                    if self.is_quick_actions_focused() {
+                        return self.execute_selected_action();
+                    } else if self.is_suggestions_focused() {
+                        if let Some(suggestion) = self.suggestions.get(self.selected_suggestion) {
+                            return ScreenAction::Push(suggestion.action);
+                        }
+                        return ScreenAction::None;
+                    }
+                }
+                KeyCode::Esc => return ScreenAction::None,
+                _ => {}
+            }
+        }
+        ScreenAction::None
+    }
+
+    fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        self.draw_impl(f, area, theme);
+    }
+
+    fn desired_input_mode(&self) -> Option<InputMode> {
+        Some(InputMode::Normal)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,7 +602,7 @@ mod tests {
     #[test]
     fn home_key_j_moves_selection_down() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        let action = screen.handle_input(&key_event(KeyCode::Char('j')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
         assert_eq!(screen.selected_action, 1);
     }
@@ -544,25 +610,25 @@ mod tests {
     #[test]
     fn home_key_down_moves_selection_down() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        screen.handle_input(&key_event(KeyCode::Down));
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert_eq!(screen.selected_action, 1);
     }
 
     #[test]
     fn home_key_k_moves_selection_up() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_action, 2);
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected_action, 1);
     }
 
     #[test]
     fn home_key_k_does_not_underflow_at_zero() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        screen.handle_input(&key_event(KeyCode::Char('k')));
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected_action, 0);
     }
 
@@ -571,7 +637,7 @@ mod tests {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let num_actions = HomeScreen::NUM_ACTIONS;
         for _ in 0..num_actions + 5 {
-            screen.handle_input(&key_event(KeyCode::Char('j')));
+            screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         }
         assert_eq!(screen.selected_action, num_actions - 1);
     }
@@ -579,44 +645,44 @@ mod tests {
     #[test]
     fn home_key_up_moves_selection_up() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        screen.handle_input(&key_event(KeyCode::Down));
-        screen.handle_input(&key_event(KeyCode::Up));
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.selected_action, 0);
     }
 
     #[test]
     fn home_key_i_returns_push_issue_browser() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        let action = screen.handle_input(&key_event(KeyCode::Char('i')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('i')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::IssueBrowser));
     }
 
     #[test]
     fn home_key_m_returns_push_milestone_view() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        let action = screen.handle_input(&key_event(KeyCode::Char('m')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('m')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::MilestoneView));
     }
 
     #[test]
     fn home_key_q_returns_quit() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        let action = screen.handle_input(&key_event(KeyCode::Char('q')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('q')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Quit);
     }
 
     #[test]
     fn home_enter_on_issues_action_returns_push_issue_browser() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::IssueBrowser));
     }
 
     #[test]
     fn home_enter_on_milestones_action_returns_push_milestone_view() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        screen.handle_input(&key_event(KeyCode::Down));
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::MilestoneView));
     }
 
@@ -624,16 +690,16 @@ mod tests {
     fn home_enter_on_quit_action_returns_quit() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         for _ in 0..HomeScreen::QUIT_ACTION_INDEX {
-            screen.handle_input(&key_event(KeyCode::Down));
+            screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         }
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::Quit);
     }
 
     #[test]
     fn home_esc_returns_none() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        let action = screen.handle_input(&key_event(KeyCode::Esc));
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
@@ -657,7 +723,7 @@ mod tests {
     #[test]
     fn home_unknown_key_returns_none() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        let action = screen.handle_input(&key_event(KeyCode::Char('x')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('x')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
@@ -698,7 +764,7 @@ mod tests {
     }
 
     fn focus_suggestions(screen: &mut HomeScreen) {
-        screen.handle_input(&key_event(KeyCode::Tab));
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     }
 
     // -- Suggestion::build_suggestions (pure logic) --
@@ -821,27 +887,58 @@ mod tests {
         assert_eq!(result[3].kind, SuggestionKind::IdleSessions);
     }
 
-    // -- HomeSection focus and Tab toggle --
+    // -- FocusRing focus and Tab toggle --
 
     #[test]
-    fn home_initial_focus_section_is_quick_actions() {
+    fn home_initial_focus_is_quick_actions() {
         let screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        assert_eq!(screen.focus_section, HomeSection::QuickActions);
+        assert!(screen.focus_ring.is_focused(HomeScreen::QUICK_ACTIONS_PANE));
     }
 
     #[test]
     fn home_tab_toggles_focus_from_quick_actions_to_suggestions() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        screen.handle_input(&key_event(KeyCode::Tab));
-        assert_eq!(screen.focus_section, HomeSection::Suggestions);
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        assert!(screen.focus_ring.is_focused(HomeScreen::SUGGESTIONS_PANE));
     }
 
     #[test]
     fn home_tab_toggles_focus_back_to_quick_actions() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        screen.handle_input(&key_event(KeyCode::Tab));
-        screen.handle_input(&key_event(KeyCode::Tab));
-        assert_eq!(screen.focus_section, HomeSection::QuickActions);
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        assert!(screen.focus_ring.is_focused(HomeScreen::QUICK_ACTIONS_PANE));
+    }
+
+    #[test]
+    fn home_shift_tab_cycles_focus_in_reverse() {
+        use crate::tui::screens::test_helpers::key_event_with_modifiers;
+        use crossterm::event::KeyModifiers;
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        let shift_tab = key_event_with_modifiers(KeyCode::BackTab, KeyModifiers::SHIFT);
+        screen.handle_input(&shift_tab, InputMode::Normal);
+        assert!(screen.focus_ring.is_focused(HomeScreen::SUGGESTIONS_PANE));
+    }
+
+    // -- Screen trait tests --
+
+    #[test]
+    fn home_desired_input_mode_is_normal() {
+        let screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        assert_eq!(screen.desired_input_mode(), Some(InputMode::Normal));
+    }
+
+    #[test]
+    fn home_keybindings_returns_at_least_one_group() {
+        let screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        assert!(!screen.keybindings().is_empty());
+    }
+
+    #[test]
+    fn home_handle_input_navigation_keys_ignored_in_insert_mode() {
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        let action = screen.handle_input(&key_event(KeyCode::Char('q')), InputMode::Insert);
+        assert_ne!(action, ScreenAction::Quit);
     }
 
     // -- Suggestion list navigation --
@@ -857,7 +954,7 @@ mod tests {
         let sug = Suggestion::build_suggestions(1, 0, &[("v1".to_string(), 1, 2)], 1);
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_suggestion, 1);
     }
 
@@ -866,7 +963,7 @@ mod tests {
         let sug = Suggestion::build_suggestions(1, 0, &[("v1".to_string(), 1, 2)], 1);
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
-        screen.handle_input(&key_event(KeyCode::Down));
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert_eq!(screen.selected_suggestion, 1);
     }
 
@@ -875,9 +972,9 @@ mod tests {
         let sug = Suggestion::build_suggestions(1, 0, &[("v1".to_string(), 1, 2)], 1);
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_suggestion, 1);
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected_suggestion, 0);
     }
 
@@ -886,8 +983,8 @@ mod tests {
         let sug = Suggestion::build_suggestions(1, 0, &[], 1);
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
-        screen.handle_input(&key_event(KeyCode::Char('k')));
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected_suggestion, 0);
     }
 
@@ -897,7 +994,7 @@ mod tests {
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
         for _ in 0..10 {
-            screen.handle_input(&key_event(KeyCode::Char('j')));
+            screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         }
         assert_eq!(screen.selected_suggestion, 1);
     }
@@ -905,7 +1002,7 @@ mod tests {
     #[test]
     fn home_j_navigates_quick_actions_when_focus_is_quick_actions() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_action, 1);
         assert_eq!(screen.selected_suggestion, 0);
     }
@@ -917,7 +1014,7 @@ mod tests {
         let sug = Suggestion::build_suggestions(3, 0, &[], 1);
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::IssueBrowser));
     }
 
@@ -926,7 +1023,7 @@ mod tests {
         let sug = Suggestion::build_suggestions(0, 0, &[("v1".to_string(), 1, 5)], 1);
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::MilestoneView));
     }
 
@@ -935,7 +1032,7 @@ mod tests {
         let sug = Suggestion::build_suggestions(0, 0, &[], 0);
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::Overview));
     }
 
@@ -943,7 +1040,7 @@ mod tests {
     fn home_enter_when_suggestions_empty_and_focused_returns_none() {
         let mut screen = make_home_with_suggestions(vec![]);
         focus_suggestions(&mut screen);
-        let action = screen.handle_input(&key_event(KeyCode::Enter));
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
@@ -953,7 +1050,7 @@ mod tests {
     fn home_char_i_returns_issue_browser_when_focused_on_suggestions() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         focus_suggestions(&mut screen);
-        let action = screen.handle_input(&key_event(KeyCode::Char('i')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('i')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::IssueBrowser));
     }
 
@@ -961,7 +1058,7 @@ mod tests {
     fn home_char_m_returns_milestone_view_when_focused_on_suggestions() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         focus_suggestions(&mut screen);
-        let action = screen.handle_input(&key_event(KeyCode::Char('m')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('m')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::MilestoneView));
     }
 
@@ -969,7 +1066,7 @@ mod tests {
     fn home_char_q_returns_quit_when_focused_on_suggestions() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         focus_suggestions(&mut screen);
-        let action = screen.handle_input(&key_event(KeyCode::Char('q')));
+        let action = screen.handle_input(&key_event(KeyCode::Char('q')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Quit);
     }
 
@@ -1031,7 +1128,7 @@ mod tests {
     fn home_j_on_empty_suggestions_when_focused_does_not_panic() {
         let mut screen = make_home_with_suggestions(vec![]);
         focus_suggestions(&mut screen);
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_suggestion, 0);
     }
 
@@ -1039,7 +1136,7 @@ mod tests {
     fn home_k_on_empty_suggestions_when_focused_does_not_panic() {
         let mut screen = make_home_with_suggestions(vec![]);
         focus_suggestions(&mut screen);
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         assert_eq!(screen.selected_suggestion, 0);
     }
 
@@ -1049,8 +1146,8 @@ mod tests {
         let mut screen = make_home_with_suggestions(sug);
         focus_suggestions(&mut screen);
         // Navigate to index 2
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_suggestion, 2);
         // Replace with fewer suggestions
         let new_sug = Suggestion::build_suggestions(1, 0, &[], 1);
@@ -1063,13 +1160,13 @@ mod tests {
         let sug = Suggestion::build_suggestions(1, 0, &[("v1".to_string(), 1, 2)], 1);
         let mut screen = make_home_with_suggestions(sug);
         // Move quick actions selection to 2
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('j')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.selected_action, 2);
         // Switch to suggestions and navigate
         focus_suggestions(&mut screen);
-        screen.handle_input(&key_event(KeyCode::Char('j')));
-        screen.handle_input(&key_event(KeyCode::Char('k')));
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
         // Quick actions selection must be unchanged
         assert_eq!(screen.selected_action, 2);
         assert_eq!(screen.selected_suggestion, 0);

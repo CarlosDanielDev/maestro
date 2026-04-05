@@ -4,6 +4,8 @@ use crate::tui::dep_graph;
 use crate::tui::detail;
 use crate::tui::fullscreen;
 use crate::tui::help;
+use crate::tui::navigation::keymap::KeymapProvider;
+use crate::tui::screens::Screen;
 use chrono::Utc;
 use ratatui::{
     Frame,
@@ -90,7 +92,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             );
         }
         TuiMode::Dashboard => {
-            if let Some(ref screen) = app.home_screen {
+            if let Some(ref mut screen) = app.home_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -105,7 +107,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::PromptInput => {
-            if let Some(ref screen) = app.prompt_input_screen {
+            if let Some(ref mut screen) = app.prompt_input_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -124,7 +126,36 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Draw help overlay on top of everything if active
     if app.show_help {
-        help::draw_help_overlay(f, f.area(), &app.theme);
+        use crate::tui::navigation::InputMode;
+        let (screen_bindings, input_mode) = match app.tui_mode {
+            TuiMode::Dashboard => app
+                .home_screen
+                .as_ref()
+                .map(|s| (s.keybindings(), s.desired_input_mode())),
+            TuiMode::IssueBrowser => app
+                .issue_browser_screen
+                .as_ref()
+                .map(|s| (s.keybindings(), s.desired_input_mode())),
+            TuiMode::MilestoneView => app
+                .milestone_screen
+                .as_ref()
+                .map(|s| (s.keybindings(), s.desired_input_mode())),
+            TuiMode::PromptInput => app
+                .prompt_input_screen
+                .as_ref()
+                .map(|s| (s.keybindings(), s.desired_input_mode())),
+            _ => None,
+        }
+        .map(|(b, m)| (b, m.unwrap_or(InputMode::Normal)))
+        .unwrap_or_default();
+        help::draw_help_overlay(
+            f,
+            f.area(),
+            &screen_bindings,
+            input_mode,
+            app.help_scroll,
+            &app.theme,
+        );
     }
 }
 
