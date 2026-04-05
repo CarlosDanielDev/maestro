@@ -7,6 +7,7 @@ pub mod fullscreen;
 pub mod help;
 pub mod panels;
 pub mod screens;
+pub mod theme;
 pub mod ui;
 
 use crate::github::client::{GhCliClient, GitHubClient};

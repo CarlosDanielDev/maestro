@@ -9,10 +9,11 @@ pub use milestone::MilestoneScreen;
 pub use prompt_input::PromptInputScreen;
 
 use crate::tui::app::TuiMode;
+use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -26,12 +27,12 @@ pub fn sanitize_for_terminal(s: &str) -> String {
 }
 
 /// Render a keybindings help bar at the bottom of a screen.
-pub fn draw_keybinds_bar(f: &mut Frame, area: Rect, bindings: &[(&str, &str)]) {
+pub fn draw_keybinds_bar(f: &mut Frame, area: Rect, bindings: &[(&str, &str)], theme: &Theme) {
     let spans: Vec<Span> = bindings
         .iter()
         .flat_map(|(key, label)| {
             vec![
-                Span::styled(format!("[{}]", key), Style::default().fg(Color::Green)),
+                Span::styled(format!("[{}]", key), Style::default().fg(theme.accent_success)),
                 Span::raw(format!(" {}  ", label)),
             ]
         })

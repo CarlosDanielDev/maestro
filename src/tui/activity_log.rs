@@ -1,3 +1,4 @@
+use crate::tui::theme::Theme;
 use chrono::{DateTime, Utc};
 use ratatui::{
     Frame,
@@ -24,12 +25,12 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    pub fn color(&self) -> Color {
+    pub fn color(&self, theme: &Theme) -> Color {
         match self {
-            Self::Info => Color::White,
-            Self::Tool => Color::Cyan,
-            Self::Warn => Color::Yellow,
-            Self::Error => Color::Red,
+            Self::Info => theme.text_primary,
+            Self::Tool => theme.accent_info,
+            Self::Warn => theme.accent_warning,
+            Self::Error => theme.accent_error,
         }
     }
 }
@@ -84,10 +85,10 @@ impl ActivityLog {
         &self.entries
     }
 
-    pub fn draw(&self, f: &mut Frame, area: Rect) {
+    pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray))
+            .border_style(Style::default().fg(theme.border_inactive))
             .title(" Activity Log ");
 
         let inner_height = area.height.saturating_sub(2) as usize;
@@ -95,7 +96,7 @@ impl ActivityLog {
 
         if total == 0 {
             let msg = Paragraph::new("No activity yet")
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(theme.text_secondary))
                 .block(block);
             f.render_widget(msg, area);
             return;
@@ -109,14 +110,14 @@ impl ActivityLog {
             .map(|entry| {
                 let time = entry.timestamp.format("%H:%M:%S");
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("{} ", time), Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("{} ", time), Style::default().fg(theme.text_secondary)),
                     Span::styled(
                         format!("[{}] ", entry.session_label),
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(theme.accent_identifier),
                     ),
                     Span::styled(
                         entry.message.clone(),
-                        Style::default().fg(entry.level.color()),
+                        Style::default().fg(entry.level.color(theme)),
                     ),
                 ]))
             })
@@ -202,7 +203,6 @@ mod tests {
         let mut log = ActivityLog::new(100);
         log.push(make_entry("a"));
         log.push(make_entry("b"));
-        // max offset = 1 (entries.len() - 1)
         for _ in 0..10 {
             log.scroll_down();
         }

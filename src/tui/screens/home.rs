@@ -1,10 +1,11 @@
 use super::ScreenAction;
 use crate::tui::app::TuiMode;
+use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -235,7 +236,7 @@ impl HomeScreen {
         ScreenAction::None
     }
 
-    pub fn draw(&self, f: &mut Frame, area: Rect) {
+    pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let warning_height = if self.warnings.is_empty() {
             0
         } else {
@@ -252,11 +253,11 @@ impl HomeScreen {
             ])
             .split(area);
 
-        self.draw_logo(f, chunks[0]);
-        self.draw_project_info(f, chunks[1]);
+        self.draw_logo(f, chunks[0], theme);
+        self.draw_project_info(f, chunks[1], theme);
 
         if !self.warnings.is_empty() {
-            self.draw_warnings(f, chunks[2]);
+            self.draw_warnings(f, chunks[2], theme);
         }
 
         let bottom = Layout::default()
@@ -268,9 +269,9 @@ impl HomeScreen {
             ])
             .split(chunks[3]);
 
-        self.draw_quick_actions(f, bottom[0]);
-        self.draw_suggestions(f, bottom[1]);
-        self.draw_recent_sessions(f, bottom[2]);
+        self.draw_quick_actions(f, bottom[0], theme);
+        self.draw_suggestions(f, bottom[1], theme);
+        self.draw_recent_sessions(f, bottom[2], theme);
     }
 
     pub fn set_suggestions(&mut self, suggestions: Vec<Suggestion>) {
@@ -294,30 +295,30 @@ impl HomeScreen {
         }
     }
 
-    fn draw_logo(&self, f: &mut Frame, area: Rect) {
+    fn draw_logo(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let logo = Paragraph::new(LOGO)
-            .style(Style::default().fg(Color::Green))
+            .style(Style::default().fg(theme.accent_success))
             .alignment(Alignment::Center);
         f.render_widget(logo, area);
     }
 
-    fn draw_project_info(&self, f: &mut Frame, area: Rect) {
+    fn draw_project_info(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let username_display = self.project_info.username.as_deref().unwrap_or("unknown");
 
         let info = Line::from(vec![
-            Span::styled("  Repo: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(&self.project_info.repo, Style::default().fg(Color::Cyan)),
+            Span::styled("  Repo: ", Style::default().fg(theme.text_secondary)),
+            Span::styled(&self.project_info.repo, Style::default().fg(theme.accent_info)),
             Span::raw("  |  "),
-            Span::styled("Branch: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Branch: ", Style::default().fg(theme.text_secondary)),
             Span::styled(
                 &self.project_info.branch,
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme.accent_warning),
             ),
             Span::raw("  |  "),
-            Span::styled("User: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("User: ", Style::default().fg(theme.text_secondary)),
             Span::styled(
                 format!("@{}", username_display),
-                Style::default().fg(Color::Green),
+                Style::default().fg(theme.accent_success),
             ),
         ]);
         let block = Block::default().borders(Borders::BOTTOM);
@@ -327,19 +328,19 @@ impl HomeScreen {
         f.render_widget(para, area);
     }
 
-    fn draw_warnings(&self, f: &mut Frame, area: Rect) {
+    fn draw_warnings(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = Block::default()
             .title(" Warnings ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow));
+            .border_style(Style::default().fg(theme.accent_warning));
 
         let lines: Vec<Line> = self
             .warnings
             .iter()
             .map(|w| {
                 Line::from(vec![
-                    Span::styled("  ! ", Style::default().fg(Color::Yellow)),
-                    Span::styled(w.as_str(), Style::default().fg(Color::White)),
+                    Span::styled("  ! ", Style::default().fg(theme.accent_warning)),
+                    Span::styled(w.as_str(), Style::default().fg(theme.text_primary)),
                 ])
             })
             .collect();
@@ -348,12 +349,12 @@ impl HomeScreen {
         f.render_widget(para, area);
     }
 
-    fn draw_quick_actions(&self, f: &mut Frame, area: Rect) {
+    fn draw_quick_actions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let is_focused = self.focus_section == HomeSection::QuickActions;
         let border_color = if is_focused {
-            Color::Green
+            theme.border_active
         } else {
-            Color::DarkGray
+            theme.border_inactive
         };
         let block = Block::default()
             .title(" Quick Actions ")
@@ -361,8 +362,8 @@ impl HomeScreen {
             .border_style(Style::default().fg(border_color));
 
         let selected_style = Style::default()
-            .fg(Color::Black)
-            .bg(Color::Green)
+            .fg(theme.branding_fg)
+            .bg(theme.accent_success)
             .add_modifier(Modifier::BOLD);
 
         let mut lines = Vec::new();
@@ -371,12 +372,12 @@ impl HomeScreen {
             let style = if is_selected {
                 selected_style
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(theme.text_primary)
             };
             let key_style = if is_selected {
                 selected_style
             } else {
-                Style::default().fg(Color::Green)
+                Style::default().fg(theme.accent_success)
             };
             lines.push(Line::from(vec![
                 Span::styled(format!("  [{}]  ", key), key_style),
@@ -388,12 +389,12 @@ impl HomeScreen {
         f.render_widget(para, area);
     }
 
-    fn draw_suggestions(&self, f: &mut Frame, area: Rect) {
+    fn draw_suggestions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let is_focused = self.focus_section == HomeSection::Suggestions;
         let border_color = if is_focused {
-            Color::Green
+            theme.border_active
         } else {
-            Color::DarkGray
+            theme.border_inactive
         };
         let block = Block::default()
             .title(" Suggestions ")
@@ -402,7 +403,7 @@ impl HomeScreen {
 
         if self.suggestions.is_empty() {
             let para = Paragraph::new("  No suggestions — everything looks good!")
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(theme.text_secondary))
                 .block(block);
             f.render_widget(para, area);
             return;
@@ -418,18 +419,18 @@ impl HomeScreen {
                 SuggestionKind::FailedIssues { .. } => "!!",
             };
             let color = match &suggestion.kind {
-                SuggestionKind::ReadyIssues { .. } => Color::Green,
-                SuggestionKind::MilestoneProgress { .. } => Color::Cyan,
-                SuggestionKind::IdleSessions => Color::Yellow,
-                SuggestionKind::FailedIssues { .. } => Color::Red,
+                SuggestionKind::ReadyIssues { .. } => theme.accent_success,
+                SuggestionKind::MilestoneProgress { .. } => theme.accent_info,
+                SuggestionKind::IdleSessions => theme.accent_warning,
+                SuggestionKind::FailedIssues { .. } => theme.accent_error,
             };
             let style = if is_selected {
                 Style::default()
-                    .fg(Color::Black)
+                    .fg(theme.branding_fg)
                     .bg(color)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(theme.text_primary)
             };
             lines.push(Line::from(vec![
                 Span::styled(format!("  {} ", icon), Style::default().fg(color)),
@@ -441,15 +442,15 @@ impl HomeScreen {
         f.render_widget(para, area);
     }
 
-    fn draw_recent_sessions(&self, f: &mut Frame, area: Rect) {
+    fn draw_recent_sessions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = Block::default()
             .title(" Recent Activity ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
+            .border_style(Style::default().fg(theme.border_inactive));
 
         if self.recent_sessions.is_empty() {
             let para = Paragraph::new("  No recent sessions")
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(theme.text_secondary))
                 .block(block);
             f.render_widget(para, area);
             return;
@@ -460,10 +461,10 @@ impl HomeScreen {
             .iter()
             .map(|s| {
                 let status_style = match s.status.as_str() {
-                    "completed" => Style::default().fg(Color::Green),
-                    "running" => Style::default().fg(Color::Yellow),
-                    "errored" => Style::default().fg(Color::Red),
-                    _ => Style::default().fg(Color::DarkGray),
+                    "completed" => Style::default().fg(theme.accent_success),
+                    "running" => Style::default().fg(theme.accent_warning),
+                    "errored" => Style::default().fg(theme.accent_error),
+                    _ => Style::default().fg(theme.text_secondary),
                 };
                 let symbol = match s.status.as_str() {
                     "completed" => "✅",
@@ -475,13 +476,13 @@ impl HomeScreen {
                     Span::styled(format!("  {} ", symbol), status_style),
                     Span::styled(
                         format!("#{}", s.issue_number),
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(theme.accent_identifier),
                     ),
                     Span::raw(" "),
-                    Span::styled(&s.title, Style::default().fg(Color::White)),
+                    Span::styled(&s.title, Style::default().fg(theme.text_primary)),
                     Span::styled(
                         format!("  ${:.2}", s.cost_usd),
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(theme.text_secondary),
                     ),
                 ])
             })
