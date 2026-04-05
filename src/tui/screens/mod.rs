@@ -9,7 +9,10 @@ pub use milestone::MilestoneScreen;
 pub use prompt_input::PromptInputScreen;
 
 use crate::tui::app::TuiMode;
+use crate::tui::navigation::InputMode;
+use crate::tui::navigation::keymap::KeymapProvider;
 use crate::tui::theme::Theme;
+use crossterm::event::Event;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -17,6 +20,21 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+
+/// Trait that all interactive screens implement.
+pub trait Screen: KeymapProvider {
+    /// Handle an input event. Returns a ScreenAction describing what the event loop should do.
+    fn handle_input(&mut self, event: &Event, mode: InputMode) -> ScreenAction;
+
+    /// Render the screen into the given area.
+    fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme);
+
+    /// What input mode this screen wants to be in, given its current state.
+    /// Returns None to leave the mode unchanged (defer to current global mode).
+    fn desired_input_mode(&self) -> Option<InputMode> {
+        None
+    }
+}
 
 /// Sanitize strings from external sources (GitHub API, git) for safe terminal rendering.
 /// Strips control characters that could be interpreted as terminal escape sequences.
@@ -84,6 +102,15 @@ pub(crate) mod test_helpers {
         Event::Key(KeyEvent {
             code,
             modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        })
+    }
+
+    pub fn key_event_with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> Event {
+        Event::Key(KeyEvent {
+            code,
+            modifiers,
             kind: KeyEventKind::Press,
             state: KeyEventState::NONE,
         })
