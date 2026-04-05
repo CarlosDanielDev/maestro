@@ -357,10 +357,16 @@ async fn event_loop(
             }
         }
 
-        // Auto-exit when all sessions complete (skip if in dashboard mode)
-        if app.all_done() && !matches!(app.tui_mode, app::TuiMode::Dashboard) {
-            // If we have a home screen, return to dashboard instead of exiting
-            if app.home_screen.is_some() {
+        // Auto-exit when all sessions complete (skip if in dashboard/prompt/screen modes)
+        if app.all_done()
+            && !matches!(
+                app.tui_mode,
+                app::TuiMode::Dashboard | app::TuiMode::PromptInput
+            )
+        {
+            // If we have a home screen and no sessions ever launched, return to dashboard
+            // But if user explicitly navigated here (pool has had sessions), stay put
+            if app.home_screen.is_some() && app.pool.total_count() == 0 {
                 app.tui_mode = app::TuiMode::Dashboard;
                 continue;
             }
