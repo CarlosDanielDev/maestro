@@ -48,7 +48,10 @@ fn promote_creates_worktree_for_issue_session() {
     let managed = pool.get_active_mut(id).unwrap();
     assert!(managed.worktree_path.is_some());
     let path = managed.worktree_path.as_ref().unwrap().to_string_lossy();
-    assert!(path.contains("issue-42"), "worktree path must contain the slug");
+    assert!(
+        path.contains("issue-42"),
+        "worktree path must contain the slug"
+    );
     assert!(managed.branch_name.is_some());
     assert!(
         managed.branch_name.as_ref().unwrap().contains("issue-42"),
@@ -152,11 +155,13 @@ fn handle_event_error_transitions_session_status() {
     assert_eq!(managed.session.status, SessionStatus::Errored);
     assert!(managed.session.finished_at.is_some());
     assert_eq!(managed.session.current_activity, "Error");
-    assert!(managed
-        .session
-        .activity_log
-        .iter()
-        .any(|e| e.message.contains("rate limit exceeded")));
+    assert!(
+        managed
+            .session
+            .activity_log
+            .iter()
+            .any(|e| e.message.contains("rate limit exceeded"))
+    );
 }
 
 #[test]

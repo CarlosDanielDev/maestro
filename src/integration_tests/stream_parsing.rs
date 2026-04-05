@@ -57,11 +57,13 @@ fn tool_use_sets_activity_and_logs() {
     });
 
     assert_eq!(managed.session.current_activity, "Using Read");
-    assert!(managed
-        .session
-        .activity_log
-        .iter()
-        .any(|e| e.message.contains("Read")));
+    assert!(
+        managed
+            .session
+            .activity_log
+            .iter()
+            .any(|e| e.message.contains("Read"))
+    );
 }
 
 #[test]
@@ -133,11 +135,13 @@ fn tool_result_error_logs_activity() {
         is_error: true,
     });
 
-    assert!(managed
-        .session
-        .activity_log
-        .iter()
-        .any(|e| e.message.contains("Write") && e.message.to_lowercase().contains("error")));
+    assert!(
+        managed
+            .session
+            .activity_log
+            .iter()
+            .any(|e| e.message.contains("Write") && e.message.to_lowercase().contains("error"))
+    );
 }
 
 #[test]
@@ -169,11 +173,13 @@ fn context_update_sets_context_pct() {
     managed.handle_event(&StreamEvent::ContextUpdate { context_pct: 0.75 });
 
     assert!((managed.session.context_pct - 0.75).abs() < f64::EPSILON);
-    assert!(managed
-        .session
-        .activity_log
-        .iter()
-        .any(|e| e.message.contains("75")));
+    assert!(
+        managed
+            .session
+            .activity_log
+            .iter()
+            .any(|e| e.message.contains("75"))
+    );
 }
 
 #[test]
@@ -227,10 +233,12 @@ fn roundtrip_tool_use_with_file_path_updates_files_touched() {
     let mut managed = ManagedSession::new(make_session("s"));
     managed.handle_event(&event);
 
-    assert!(managed
-        .session
-        .files_touched
-        .contains(&"src/session/pool.rs".to_string()));
+    assert!(
+        managed
+            .session
+            .files_touched
+            .contains(&"src/session/pool.rs".to_string())
+    );
 }
 
 #[test]
@@ -254,11 +262,13 @@ fn roundtrip_error_event_transitions_to_errored() {
     managed.handle_event(&event);
 
     assert_eq!(managed.session.status, SessionStatus::Errored);
-    assert!(managed
-        .session
-        .activity_log
-        .iter()
-        .any(|e| e.message.contains("context window exceeded")));
+    assert!(
+        managed
+            .session
+            .activity_log
+            .iter()
+            .any(|e| e.message.contains("context window exceeded"))
+    );
 }
 
 #[test]
@@ -296,10 +306,12 @@ fn roundtrip_full_session_transcript() {
 
     assert_eq!(managed.session.status, SessionStatus::Completed);
     assert!((managed.session.cost_usd - 1.50).abs() < f64::EPSILON);
-    assert!(managed
-        .session
-        .files_touched
-        .contains(&"src/main.rs".to_string()));
+    assert!(
+        managed
+            .session
+            .files_touched
+            .contains(&"src/main.rs".to_string())
+    );
     assert!(
         (managed.session.context_pct - 0.25).abs() < 0.001,
         "context_pct must be 0.25 for 50k/200k tokens"

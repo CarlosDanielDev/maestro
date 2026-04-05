@@ -1,7 +1,7 @@
-use crate::github::client::mock::MockGitHubClient;
 use crate::github::client::GitHubClient;
+use crate::github::client::mock::MockGitHubClient;
 use crate::github::labels::LabelManager;
-use crate::github::pr::{build_pr_body, PrCreator};
+use crate::github::pr::{PrCreator, build_pr_body};
 use crate::integration_tests::helpers::*;
 use crate::session::manager::ManagedSession;
 use crate::session::types::StreamEvent;
@@ -16,12 +16,12 @@ async fn mark_done_transitions_labels_correctly() {
     let adds = client.add_label_calls();
     let removes = client.remove_label_calls();
 
-    assert!(adds
-        .iter()
-        .any(|(n, l)| *n == 42 && l == "maestro:done"));
-    assert!(removes
-        .iter()
-        .any(|(n, l)| *n == 42 && l == "maestro:in-progress"));
+    assert!(adds.iter().any(|(n, l)| *n == 42 && l == "maestro:done"));
+    assert!(
+        removes
+            .iter()
+            .any(|(n, l)| *n == 42 && l == "maestro:in-progress")
+    );
 }
 
 #[tokio::test]
@@ -129,9 +129,7 @@ async fn error_session_marks_failed_not_done() {
     label_mgr.mark_failed(20).await.unwrap();
 
     let adds = client.add_label_calls();
-    assert!(adds
-        .iter()
-        .any(|(n, l)| *n == 20 && l == "maestro:failed"));
+    assert!(adds.iter().any(|(n, l)| *n == 20 && l == "maestro:failed"));
     assert_eq!(
         adds.iter().filter(|(_, l)| l == "maestro:done").count(),
         0,
