@@ -307,7 +307,10 @@ impl HomeScreen {
 
         let info = Line::from(vec![
             Span::styled("  Repo: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(&self.project_info.repo, Style::default().fg(theme.accent_info)),
+            Span::styled(
+                &self.project_info.repo,
+                Style::default().fg(theme.accent_info),
+            ),
             Span::raw("  |  "),
             Span::styled("Branch: ", Style::default().fg(theme.text_secondary)),
             Span::styled(

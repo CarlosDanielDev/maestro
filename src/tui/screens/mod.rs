@@ -32,7 +32,10 @@ pub fn draw_keybinds_bar(f: &mut Frame, area: Rect, bindings: &[(&str, &str)], t
         .iter()
         .flat_map(|(key, label)| {
             vec![
-                Span::styled(format!("[{}]", key), Style::default().fg(theme.accent_success)),
+                Span::styled(
+                    format!("[{}]", key),
+                    Style::default().fg(theme.accent_success),
+                ),
                 Span::raw(format!(" {}  ", label)),
             ]
         })

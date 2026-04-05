@@ -129,13 +129,19 @@ fn draw_session_footer(
         Span::styled(elapsed, Style::default().fg(theme.text_primary)),
         Span::raw("  "),
         Span::styled(" Files: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(files_count.to_string(), Style::default().fg(theme.accent_info)),
+        Span::styled(
+            files_count.to_string(),
+            Style::default().fg(theme.accent_info),
+        ),
         Span::raw("  "),
         Span::styled(" Phase: ", Style::default().fg(theme.text_secondary)),
         Span::styled(phase, Style::default().fg(theme.accent_success)),
         Span::raw("  "),
         Span::styled(" Activity: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(&session.current_activity, Style::default().fg(theme.text_primary)),
+        Span::styled(
+            &session.current_activity,
+            Style::default().fg(theme.text_primary),
+        ),
         Span::raw("    "),
         Span::styled(
             "[Esc] back  [↑↓] scroll",

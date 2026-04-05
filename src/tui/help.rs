@@ -23,7 +23,11 @@ pub fn draw_help_overlay(f: &mut Frame, area: Rect, theme: &Theme) {
         )]),
         Line::from(""),
         section_header("Navigation", theme),
-        key_line("Tab", "Cycle views (Overview → Dependencies → Overview)", theme),
+        key_line(
+            "Tab",
+            "Cycle views (Overview → Dependencies → Overview)",
+            theme,
+        ),
         key_line("Esc", "Return to Overview / Close help", theme),
         key_line("Enter", "Open detail view for selected session", theme),
         key_line("1-9", "Jump to session detail by index", theme),

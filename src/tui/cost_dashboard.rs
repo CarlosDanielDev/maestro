@@ -31,7 +31,13 @@ pub fn draw_cost_dashboard(
     draw_session_costs(f, sessions, chunks[2], theme);
 }
 
-fn draw_budget_gauge(f: &mut Frame, total_cost: f64, budget_limit: Option<f64>, area: Rect, theme: &Theme) {
+fn draw_budget_gauge(
+    f: &mut Frame,
+    total_cost: f64,
+    budget_limit: Option<f64>,
+    area: Rect,
+    theme: &Theme,
+) {
     let (ratio, label) = match budget_limit {
         Some(limit) if limit > 0.0 => {
             let pct = (total_cost / limit * 100.0).min(100.0);
@@ -72,7 +78,13 @@ fn draw_budget_gauge(f: &mut Frame, total_cost: f64, budget_limit: Option<f64>, 
     f.render_widget(gauge, area);
 }
 
-fn draw_summary_stats(f: &mut Frame, sessions: &[&Session], total_cost: f64, area: Rect, theme: &Theme) {
+fn draw_summary_stats(
+    f: &mut Frame,
+    sessions: &[&Session],
+    total_cost: f64,
+    area: Rect,
+    theme: &Theme,
+) {
     let completed = sessions
         .iter()
         .filter(|s| s.status == SessionStatus::Completed)
@@ -169,7 +181,10 @@ fn draw_session_costs(f: &mut Frame, sessions: &[&Session], area: Rect, theme: &
 
         lines.push(Line::from(vec![
             Span::raw("  "),
-            Span::styled(format!("{:<12}", id_str), Style::default().fg(theme.text_primary)),
+            Span::styled(
+                format!("{:<12}", id_str),
+                Style::default().fg(theme.text_primary),
+            ),
             Span::raw(" "),
             Span::styled(
                 format!("{:<45}", title_display),
