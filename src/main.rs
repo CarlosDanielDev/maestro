@@ -17,6 +17,9 @@ mod tui;
 mod util;
 mod work;
 
+#[cfg(test)]
+mod integration_tests;
+
 use clap::{Parser, Subcommand};
 use config::{Config, NotificationsConfig};
 use github::client::{GhCliClient, GitHubClient};
