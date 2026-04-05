@@ -1,4 +1,5 @@
 use crate::provider::types::ProviderKind;
+use crate::tui::theme::ThemeConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -27,6 +28,14 @@ pub struct Config {
     pub plugins: Vec<PluginConfig>,
     #[serde(default)]
     pub modes: std::collections::HashMap<String, ModeConfig>,
+    #[serde(default)]
+    pub tui: TuiConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TuiConfig {
+    #[serde(default)]
+    pub theme: ThemeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -727,5 +736,86 @@ max_retries = 7
         .unwrap();
         let cfg = Config::load(f.path()).expect("load failed");
         assert_eq!(cfg.gates.ci_auto_fix.max_retries, 7);
+    }
+
+    #[test]
+    fn tui_config_defaults_when_section_absent() {
+        use crate::tui::theme::ThemePreset;
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+"#
+        )
+        .unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert_eq!(cfg.tui.theme.preset, ThemePreset::Dark);
+        assert!(cfg.tui.theme.overrides.text_primary.is_none());
+    }
+
+    #[test]
+    fn tui_config_deserializes_light_preset() {
+        use crate::tui::theme::ThemePreset;
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+[tui.theme]
+preset = "light"
+"#
+        )
+        .unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert_eq!(cfg.tui.theme.preset, ThemePreset::Light);
+    }
+
+    #[test]
+    fn tui_config_deserializes_color_override() {
+        use crate::tui::theme::SerializableColor;
+        use ratatui::style::Color;
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+[tui.theme.overrides]
+text_primary = "cyan"
+"#
+        )
+        .unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert_eq!(
+            cfg.tui.theme.overrides.text_primary,
+            Some(SerializableColor(Color::Cyan))
+        );
     }
 }

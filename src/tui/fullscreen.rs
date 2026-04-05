@@ -1,9 +1,10 @@
 use crate::session::types::Session;
 use crate::state::progress::ProgressTracker;
+use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
@@ -14,6 +15,7 @@ pub fn draw_fullscreen(
     session: &Session,
     progress_tracker: &ProgressTracker,
     area: Rect,
+    theme: &Theme,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -24,12 +26,12 @@ pub fn draw_fullscreen(
         ])
         .split(area);
 
-    draw_session_header(f, session, chunks[0]);
-    draw_session_output(f, session, chunks[1]);
-    draw_session_footer(f, session, progress_tracker, chunks[2]);
+    draw_session_header(f, session, chunks[0], theme);
+    draw_session_output(f, session, chunks[1], theme);
+    draw_session_footer(f, session, progress_tracker, chunks[2], theme);
 }
 
-fn draw_session_header(f: &mut Frame, session: &Session, area: Rect) {
+fn draw_session_header(f: &mut Frame, session: &Session, area: Rect, theme: &Theme) {
     let title = match session.issue_number {
         Some(n) => {
             let issue_title = session.issue_title.as_deref().unwrap_or("untitled");
@@ -38,19 +40,13 @@ fn draw_session_header(f: &mut Frame, session: &Session, area: Rect) {
         None => format!("Session {}", &session.id.to_string()[..8]),
     };
 
-    let status_color = match session.status {
-        crate::session::types::SessionStatus::Running => Color::Green,
-        crate::session::types::SessionStatus::Completed => Color::Cyan,
-        crate::session::types::SessionStatus::Errored => Color::Red,
-        crate::session::types::SessionStatus::Paused => Color::Yellow,
-        _ => Color::White,
-    };
+    let status_color = theme.status_color(session.status);
 
     let header = Line::from(vec![
         Span::styled(
             format!(" {} {} ", session.status.symbol(), session.status.label()),
             Style::default()
-                .fg(Color::Black)
+                .fg(theme.branding_fg)
                 .bg(status_color)
                 .add_modifier(Modifier::BOLD),
         ),
@@ -58,18 +54,18 @@ fn draw_session_header(f: &mut Frame, session: &Session, area: Rect) {
         Span::styled(
             &title,
             Style::default()
-                .fg(Color::White)
+                .fg(theme.text_primary)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
         Span::styled(
             format!("model: {}", session.model),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_secondary),
         ),
         Span::raw("  "),
         Span::styled(
             format!("mode: {}", session.mode),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_secondary),
         ),
     ]);
 
@@ -80,7 +76,7 @@ fn draw_session_header(f: &mut Frame, session: &Session, area: Rect) {
     f.render_widget(Paragraph::new(header).block(block), area);
 }
 
-fn draw_session_output(f: &mut Frame, session: &Session, area: Rect) {
+fn draw_session_output(f: &mut Frame, session: &Session, area: Rect, theme: &Theme) {
     let output = if session.last_message.is_empty() {
         "Waiting for output...".to_string()
     } else {
@@ -91,12 +87,11 @@ fn draw_session_output(f: &mut Frame, session: &Session, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray))
+                .border_style(Style::default().fg(theme.border_inactive))
                 .title(" Agent Output "),
         )
         .wrap(Wrap { trim: false })
         .scroll((
-            // Show the last lines — scroll to bottom
             {
                 let inner_height = area.height.saturating_sub(2);
                 let line_count = session.last_message.lines().count() as u16;
@@ -113,6 +108,7 @@ fn draw_session_footer(
     session: &Session,
     progress_tracker: &ProgressTracker,
     area: Rect,
+    theme: &Theme,
 ) {
     let elapsed = session.elapsed_display();
     let files_count = session.files_touched.len();
@@ -123,33 +119,39 @@ fn draw_session_footer(
         .unwrap_or_else(|| "—".into());
 
     let footer = Line::from(vec![
-        Span::styled(" Cost: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" Cost: ", Style::default().fg(theme.text_secondary)),
         Span::styled(
             format!("${:.2}", session.cost_usd),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(theme.accent_warning),
         ),
         Span::raw("  "),
-        Span::styled(" Elapsed: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(elapsed, Style::default().fg(Color::White)),
+        Span::styled(" Elapsed: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(elapsed, Style::default().fg(theme.text_primary)),
         Span::raw("  "),
-        Span::styled(" Files: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(files_count.to_string(), Style::default().fg(Color::Cyan)),
+        Span::styled(" Files: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(
+            files_count.to_string(),
+            Style::default().fg(theme.accent_info),
+        ),
         Span::raw("  "),
-        Span::styled(" Phase: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(phase, Style::default().fg(Color::Green)),
+        Span::styled(" Phase: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(phase, Style::default().fg(theme.accent_success)),
         Span::raw("  "),
-        Span::styled(" Activity: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(&session.current_activity, Style::default().fg(Color::White)),
+        Span::styled(" Activity: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(
+            &session.current_activity,
+            Style::default().fg(theme.text_primary),
+        ),
         Span::raw("    "),
         Span::styled(
             "[Esc] back  [↑↓] scroll",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_secondary),
         ),
     ]);
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
+        .border_style(Style::default().fg(theme.border_inactive));
 
     f.render_widget(Paragraph::new(footer).block(block), area);
 }

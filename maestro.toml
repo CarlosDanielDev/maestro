@@ -63,3 +63,6 @@ test_command = "cargo test"
 enabled = false
 command = "gh pr review {pr_number} --comment --body 'Automated review by Maestro'"
 auto_approve = false
+
+[tui.theme]
+preset = "dark"
