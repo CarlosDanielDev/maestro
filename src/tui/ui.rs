@@ -90,6 +90,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1]);
             }
         }
+        TuiMode::PromptInput => {
+            if let Some(ref screen) = app.prompt_input_screen {
+                screen.draw(f, chunks[1]);
+            }
+        }
     }
 
     // Delegate to activity log widget
@@ -215,6 +220,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::Dashboard => "Dashboard",
         TuiMode::IssueBrowser => "Issues",
         TuiMode::MilestoneView => "Milestones",
+        TuiMode::PromptInput => "Prompt",
     };
 
     let help = Line::from(vec![

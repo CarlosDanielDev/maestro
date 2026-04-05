@@ -1,10 +1,12 @@
 pub mod home;
 pub mod issue_browser;
 pub mod milestone;
+pub mod prompt_input;
 
 pub use home::HomeScreen;
 pub use issue_browser::IssueBrowserScreen;
 pub use milestone::MilestoneScreen;
+pub use prompt_input::PromptInputScreen;
 
 use crate::tui::app::TuiMode;
 use ratatui::{
@@ -50,6 +52,8 @@ pub enum ScreenAction {
     LaunchSession(SessionConfig),
     /// Launch multiple sessions (e.g., from multi-select or run-all).
     LaunchSessions(Vec<SessionConfig>),
+    /// Launch a session from a free-form prompt (no issue).
+    LaunchPromptSession(PromptSessionConfig),
     /// Quit the application.
     Quit,
 }
@@ -59,6 +63,13 @@ pub enum ScreenAction {
 pub struct SessionConfig {
     pub issue_number: Option<u64>,
     pub title: String,
+}
+
+/// Configuration for launching a prompt-based session (no GitHub issue).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PromptSessionConfig {
+    pub prompt: String,
+    pub image_paths: Vec<String>,
 }
 
 #[cfg(test)]
