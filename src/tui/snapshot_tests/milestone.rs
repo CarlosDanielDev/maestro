@@ -1,6 +1,6 @@
 use super::*;
-use crate::tui::screens::milestone::{MilestoneEntry, MilestoneScreen};
 use crate::tui::screens::Screen;
+use crate::tui::screens::milestone::{MilestoneEntry, MilestoneScreen};
 use crate::tui::theme::Theme;
 use insta::assert_snapshot;
 
