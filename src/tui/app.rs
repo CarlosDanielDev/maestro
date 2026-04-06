@@ -59,6 +59,8 @@ pub enum TuiMode {
     MilestoneView,
     /// Prompt input screen for composing free-form prompts with image attachments.
     PromptInput,
+    /// Post-completion summary overlay.
+    CompletionSummary,
 }
 
 /// Payload for suggestion data fetched from GitHub.
@@ -86,6 +88,23 @@ pub enum TuiDataEvent {
     Issue(anyhow::Result<GhIssue>),
     /// Suggestion data for the home screen.
     SuggestionData(SuggestionDataPayload),
+}
+
+/// Summary data shown in the post-completion overlay.
+#[derive(Debug, Clone)]
+pub struct CompletionSummaryData {
+    pub session_count: usize,
+    pub total_cost_usd: f64,
+    pub sessions: Vec<CompletionSessionLine>,
+}
+
+/// Per-session line in the completion summary.
+#[derive(Debug, Clone)]
+pub struct CompletionSessionLine {
+    pub label: String,
+    pub status: SessionStatus,
+    pub cost_usd: f64,
+    pub elapsed: String,
 }
 
 struct PendingHook {
@@ -172,6 +191,10 @@ pub struct App {
     pub data_rx: mpsc::UnboundedReceiver<TuiDataEvent>,
     /// Active theme for TUI rendering.
     pub theme: Theme,
+    /// Whether to exit after all sessions complete (--once flag for CI).
+    pub once_mode: bool,
+    /// Data for the completion summary overlay.
+    pub completion_summary: Option<CompletionSummaryData>,
 }
 
 impl App {
@@ -229,6 +252,8 @@ impl App {
             data_tx,
             data_rx,
             theme: Theme::default(),
+            once_mode: false,
+            completion_summary: None,
         }
     }
 
@@ -1114,6 +1139,86 @@ impl App {
         self.pool.active_count()
     }
 
+    /// Build a summary of all sessions for the completion overlay.
+    pub fn build_completion_summary(&self) -> CompletionSummaryData {
+        let sessions = self.pool.all_sessions();
+        let mut lines = Vec::new();
+        let mut total_cost = 0.0;
+
+        for s in &sessions {
+            total_cost += s.cost_usd;
+            lines.push(CompletionSessionLine {
+                label: session_label(s),
+                status: s.status,
+                cost_usd: s.cost_usd,
+                elapsed: s.elapsed_display(),
+            });
+        }
+
+        CompletionSummaryData {
+            session_count: sessions.len(),
+            total_cost_usd: total_cost,
+            sessions: lines,
+        }
+    }
+
+    /// Transition from CompletionSummary to Dashboard mode.
+    pub fn transition_to_dashboard(&mut self) {
+        let all = self.pool.all_sessions();
+
+        // Save session state
+        self.state.sessions = all.iter().copied().cloned().collect();
+        self.state.update_total_cost();
+        self.state.last_updated = Some(chrono::Utc::now());
+        let _ = self.store.save(&self.state);
+
+        // Build recent sessions for the home screen
+        let recent: Vec<crate::tui::screens::home::SessionSummary> = all
+            .iter()
+            .rev()
+            .take(10)
+            .map(|s| crate::tui::screens::home::SessionSummary {
+                issue_number: s.issue_number.unwrap_or(0),
+                title: s
+                    .issue_title
+                    .clone()
+                    .unwrap_or_else(|| s.last_message.clone()),
+                status: s.status.label().to_string(),
+                cost_usd: s.cost_usd,
+            })
+            .collect();
+
+        // Initialize home screen if needed (cmd_run path has no home_screen)
+        if self.home_screen.is_none() {
+            let project_info = crate::tui::screens::home::ProjectInfo {
+                repo: self
+                    .config
+                    .as_ref()
+                    .map(|c| c.project.repo.clone())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                branch: std::process::Command::new("git")
+                    .args(["branch", "--show-current"])
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                username: None,
+            };
+            self.home_screen = Some(crate::tui::screens::HomeScreen::new(
+                project_info,
+                recent,
+                Vec::new(),
+            ));
+        } else if let Some(ref mut screen) = self.home_screen {
+            screen.recent_sessions = recent;
+        }
+
+        // Clear completion summary and switch to dashboard
+        self.completion_summary = None;
+        self.pending_commands.push(TuiCommand::FetchSuggestionData);
+        self.tui_mode = TuiMode::Dashboard;
+    }
+
     /// Assign ready work items from the assigner to session slots.
     pub async fn tick_work_assigner(&mut self) -> anyhow::Result<()> {
         // Collect ready items and mark them in-progress (scoped borrow)
@@ -1734,3 +1839,192 @@ fn session_label(session: &Session) -> String {
 }
 
 use crate::util::truncate_at_char_boundary;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+
+    fn make_app() -> App {
+        let tmp = std::env::temp_dir().join(format!(
+            "maestro-tui-app-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let store = StateStore::new(tmp);
+        App::new(
+            store,
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        )
+    }
+
+    #[test]
+    fn tui_mode_completion_summary_variant_exists() {
+        let mode = TuiMode::CompletionSummary;
+        assert!(matches!(mode, TuiMode::CompletionSummary));
+    }
+
+    #[test]
+    fn completion_session_line_fields_are_accessible() {
+        let line = CompletionSessionLine {
+            label: "#42".to_string(),
+            status: crate::session::types::SessionStatus::Completed,
+            cost_usd: 1.23,
+            elapsed: "1m 05s".to_string(),
+        };
+        assert_eq!(line.label, "#42");
+        assert_eq!(line.status, crate::session::types::SessionStatus::Completed);
+        assert!((line.cost_usd - 1.23).abs() < f64::EPSILON);
+        assert_eq!(line.elapsed, "1m 05s");
+    }
+
+    #[test]
+    fn completion_summary_data_fields_are_accessible() {
+        let data = CompletionSummaryData {
+            sessions: vec![],
+            total_cost_usd: 0.0,
+            session_count: 0,
+        };
+        assert!(data.sessions.is_empty());
+        assert_eq!(data.session_count, 0);
+        assert!(data.total_cost_usd.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn app_once_mode_defaults_to_false() {
+        let app = make_app();
+        assert!(!app.once_mode, "once_mode must default to false");
+    }
+
+    #[test]
+    fn app_completion_summary_defaults_to_none() {
+        let app = make_app();
+        assert!(
+            app.completion_summary.is_none(),
+            "completion_summary must default to None"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_returns_empty_when_no_sessions() {
+        let app = make_app();
+        let summary = app.build_completion_summary();
+        assert_eq!(summary.session_count, 0);
+        assert!(summary.sessions.is_empty());
+        assert!(summary.total_cost_usd.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn build_completion_summary_label_uses_issue_number_when_present() {
+        let mut app = make_app();
+        let session = crate::session::types::Session::new(
+            "do something".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(99),
+        );
+        app.pool.enqueue(session);
+        let summary = app.build_completion_summary();
+        assert_eq!(summary.session_count, 1);
+        assert!(
+            summary.sessions[0].label.contains("#99"),
+            "label must include issue number"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_label_uses_short_id_when_no_issue() {
+        let mut app = make_app();
+        let session = crate::session::types::Session::new(
+            "do something".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        let short_id = session.id.to_string()[..8].to_string();
+        app.pool.enqueue(session);
+        let summary = app.build_completion_summary();
+        assert_eq!(summary.session_count, 1);
+        assert!(
+            summary.sessions[0].label.contains(&short_id),
+            "label must include short UUID when no issue"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_aggregates_cost() {
+        let mut app = make_app();
+        let mut s1 = crate::session::types::Session::new(
+            "task 1".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+        );
+        s1.cost_usd = 1.50;
+        let mut s2 = crate::session::types::Session::new(
+            "task 2".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(2),
+        );
+        s2.cost_usd = 2.75;
+        app.pool.enqueue(s1);
+        app.pool.enqueue(s2);
+        let summary = app.build_completion_summary();
+        assert!((summary.total_cost_usd - 4.25).abs() < 0.001);
+        assert_eq!(summary.session_count, 2);
+    }
+
+    #[test]
+    fn transition_to_dashboard_sets_tui_mode_to_dashboard() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.transition_to_dashboard();
+        assert!(matches!(app.tui_mode, TuiMode::Dashboard));
+    }
+
+    #[test]
+    fn transition_to_dashboard_clears_completion_summary() {
+        let mut app = make_app();
+        app.completion_summary = Some(CompletionSummaryData {
+            sessions: vec![],
+            total_cost_usd: 0.0,
+            session_count: 0,
+        });
+        app.transition_to_dashboard();
+        assert!(app.completion_summary.is_none());
+    }
+
+    #[test]
+    fn transition_to_dashboard_preserves_orthogonal_state() {
+        let mut app = make_app();
+        app.total_cost = 9.99;
+        app.running = true;
+        app.transition_to_dashboard();
+        assert!(app.running);
+        assert!((app.total_cost - 9.99).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn transition_to_dashboard_creates_home_screen_when_missing() {
+        let mut app = make_app();
+        assert!(app.home_screen.is_none());
+        app.transition_to_dashboard();
+        assert!(app.home_screen.is_some());
+    }
+
+    #[test]
+    fn transition_to_dashboard_queues_suggestion_refresh() {
+        let mut app = make_app();
+        app.transition_to_dashboard();
+        assert!(
+            app.pending_commands
+                .iter()
+                .any(|c| matches!(c, TuiCommand::FetchSuggestionData)),
+            "must queue FetchSuggestionData"
+        );
+    }
+}

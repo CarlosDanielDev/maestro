@@ -51,6 +51,10 @@ pub enum Commands {
         /// Image file(s) to attach as visual context (can be repeated)
         #[arg(long = "image")]
         images: Vec<std::path::PathBuf>,
+
+        /// Exit after all sessions complete (CI/scripting mode, no dashboard return)
+        #[arg(long)]
+        once: bool,
     },
     /// Show queued/pending issues from GitHub
     Queue,
@@ -267,6 +271,64 @@ mod tests {
             contents.contains(".TH"),
             "man page must contain roff .TH macro"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // --once flag parsing
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn run_once_flag_defaults_to_false() {
+        let cli = Cli::try_parse_from(["maestro", "run", "--prompt", "hello"]).unwrap();
+        if let Some(Commands::Run { once, .. }) = cli.command {
+            assert!(!once, "--once must default to false");
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_once_flag_is_set_when_provided() {
+        let cli = Cli::try_parse_from(["maestro", "run", "--prompt", "hello", "--once"]).unwrap();
+        if let Some(Commands::Run { once, .. }) = cli.command {
+            assert!(once, "--once must be true when flag is provided");
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_once_flag_is_false_with_issue_only() {
+        let cli = Cli::try_parse_from(["maestro", "run", "--issue", "42"]).unwrap();
+        if let Some(Commands::Run { once, .. }) = cli.command {
+            assert!(
+                !once,
+                "--once must default to false when only --issue is given"
+            );
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_once_flag_coexists_with_other_flags() {
+        let cli = Cli::try_parse_from([
+            "maestro", "run", "--prompt", "x", "--once", "--model", "haiku", "--resume",
+        ])
+        .unwrap();
+        if let Some(Commands::Run {
+            once,
+            model,
+            resume,
+            ..
+        }) = cli.command
+        {
+            assert!(once);
+            assert_eq!(model.as_deref(), Some("haiku"));
+            assert!(resume);
+        } else {
+            panic!("Expected Commands::Run");
+        }
     }
 
     #[test]
