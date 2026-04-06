@@ -567,6 +567,19 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
             }
             app.tui_mode = app::TuiMode::Dashboard;
         }
+        ScreenAction::RefreshSuggestions => {
+            let already_loading = app
+                .home_screen
+                .as_ref()
+                .is_some_and(|s| s.loading_suggestions);
+            if !already_loading {
+                if let Some(ref mut screen) = app.home_screen {
+                    screen.start_loading_suggestions();
+                }
+                app.pending_commands
+                    .push(app::TuiCommand::FetchSuggestionData);
+            }
+        }
         ScreenAction::Quit => {
             app.running = false;
         }
@@ -657,4 +670,77 @@ fn print_summary(app: &App) {
     println!();
     println!("Total cost: ${:.2}", summary.total_cost_usd);
     println!();
+}
+
+#[cfg(test)]
+mod handle_screen_action_tests {
+    use super::*;
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+    use screens::ScreenAction;
+
+    fn make_app() -> app::App {
+        let tmp = std::env::temp_dir().join(format!(
+            "maestro-tui-mod-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let store = StateStore::new(tmp);
+        app::App::new(
+            store,
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        )
+    }
+
+    // --- Issue #86: handle_screen_action for RefreshSuggestions ---
+
+    #[test]
+    fn handle_refresh_suggestions_action_queues_fetch_suggestion_data() {
+        let mut app = make_app();
+        app.transition_to_dashboard();
+        app.pending_commands.clear();
+        // Clear loading flag so the debounce guard allows the action
+        if let Some(ref mut screen) = app.home_screen {
+            screen.loading_suggestions = false;
+        }
+        handle_screen_action(&mut app, ScreenAction::RefreshSuggestions);
+        assert!(
+            app.pending_commands
+                .iter()
+                .any(|c| matches!(c, app::TuiCommand::FetchSuggestionData)),
+            "RefreshSuggestions must queue FetchSuggestionData"
+        );
+    }
+
+    #[test]
+    fn handle_refresh_suggestions_action_sets_loading_flag_on_home_screen() {
+        let mut app = make_app();
+        app.transition_to_dashboard();
+        if let Some(ref mut screen) = app.home_screen {
+            screen.loading_suggestions = false;
+        }
+        handle_screen_action(&mut app, ScreenAction::RefreshSuggestions);
+        assert!(
+            app.home_screen
+                .as_ref()
+                .map(|s| s.loading_suggestions)
+                .unwrap_or(false),
+            "loading_suggestions must be true while fetch is pending"
+        );
+    }
+
+    #[test]
+    fn handle_refresh_suggestions_skips_when_already_loading() {
+        let mut app = make_app();
+        app.transition_to_dashboard();
+        // loading_suggestions is already true from transition_to_dashboard
+        app.pending_commands.clear();
+        handle_screen_action(&mut app, ScreenAction::RefreshSuggestions);
+        assert!(
+            app.pending_commands.is_empty(),
+            "must not queue duplicate FetchSuggestionData while already loading"
+        );
+    }
 }

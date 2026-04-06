@@ -1271,6 +1271,9 @@ impl App {
 
         // Clear completion summary and switch to dashboard
         self.completion_summary = None;
+        if let Some(ref mut screen) = self.home_screen {
+            screen.start_loading_suggestions();
+        }
         self.pending_commands.push(TuiCommand::FetchSuggestionData);
         self.tui_mode = TuiMode::Dashboard;
     }
@@ -2137,6 +2140,39 @@ mod tests {
                 .iter()
                 .any(|c| matches!(c, TuiCommand::FetchSuggestionData)),
             "must queue FetchSuggestionData"
+        );
+    }
+
+    // --- Issue #86: suggestion refresh after session completion ---
+
+    #[test]
+    fn transition_to_dashboard_sets_loading_suggestions_flag() {
+        let mut app = make_app();
+        app.transition_to_dashboard();
+        assert!(
+            app.home_screen
+                .as_ref()
+                .map(|s| s.loading_suggestions)
+                .unwrap_or(false),
+            "transition_to_dashboard must set loading_suggestions = true"
+        );
+    }
+
+    #[test]
+    fn suggestion_data_event_clears_loading_flag_on_home_screen() {
+        let mut app = make_app();
+        app.transition_to_dashboard();
+        if let Some(ref mut screen) = app.home_screen {
+            screen.loading_suggestions = true;
+        }
+        app.handle_data_event(TuiDataEvent::SuggestionData(SuggestionDataPayload {
+            ready_issue_count: 0,
+            failed_issue_count: 0,
+            milestones: vec![],
+        }));
+        assert!(
+            !app.home_screen.as_ref().unwrap().loading_suggestions,
+            "SuggestionData event must clear loading_suggestions"
         );
     }
 

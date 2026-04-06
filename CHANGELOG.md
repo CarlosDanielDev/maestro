@@ -7,6 +7,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Dashboard Suggestion Refresh After Session Completion (#86)
+
+- `src/tui/screens/mod.rs` — `ScreenAction::RefreshSuggestions` variant added; triggers a suggestion reload from the dashboard without a full navigation round-trip
+- `src/tui/screens/home.rs` — `loading_suggestions: bool` field added to `HomeScreen`; when `true`, the suggestions panel renders a `"Loading..."` placeholder instead of stale data; `set_suggestions()` clears the flag on delivery; `R` (uppercase) key binding added — emits `ScreenAction::RefreshSuggestions` for on-demand manual refresh
+- `src/tui/app.rs` — `transition_to_dashboard()` now sets `loading_suggestions = true` on the `HomeScreen` and queues `TuiCommand::FetchSuggestionData` so suggestions are always up-to-date when returning from a completed session; the `SuggestionData` data event clears the flag after delivery
+- `src/tui/mod.rs` — `RefreshSuggestions` branch added to `handle_screen_action()`: sets `loading_suggestions = true` and queues `FetchSuggestionData`; `CompletionSummary` dismiss path delegates to `transition_to_dashboard()` which now handles the refresh automatically
+- 8 new tests across `home.rs`, `app.rs`, and `tui/mod.rs`: cover default flag state, flag cleared by `set_suggestions()`, `R` key emitting the correct action, `transition_to_dashboard()` setting the loading flag and queuing `FetchSuggestionData`, and `RefreshSuggestions` action wiring in the event handler
+
 ### Continuous Work Mode (#85)
 
 - `src/continuous.rs` — new `ContinuousModeState` and `ContinuousFailure` structs; state machine that tracks current issue, completed/skipped counts, and accumulated failures; `on_issue_completed()`, `on_issue_failed()` (pauses the loop), `skip()`, and `resume()` transition methods
