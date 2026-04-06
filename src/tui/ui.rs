@@ -330,7 +330,7 @@ fn draw_completion_overlay(
     use crate::session::types::SessionStatus;
     use ratatui::widgets::Clear;
 
-    let overlay_area = help::centered_rect(60, 60, area);
+    let overlay_area = help::centered_rect(70, 70, area);
     f.render_widget(Clear, overlay_area);
 
     let mut lines = Vec::new();
@@ -342,8 +342,11 @@ fn draw_completion_overlay(
             SessionStatus::Errored => theme.accent_error,
             _ => theme.accent_warning,
         };
-        lines.push(Line::from(vec![
+
+        let mut spans = vec![
             Span::raw("  "),
+            Span::styled(sl.status.symbol(), Style::default().fg(status_color)),
+            Span::raw(" "),
             Span::styled(&sl.label, Style::default().fg(theme.accent_info)),
             Span::raw(" "),
             Span::styled(sl.status.label(), Style::default().fg(status_color)),
@@ -353,7 +356,26 @@ fn draw_completion_overlay(
                 Style::default().fg(theme.accent_success),
             ),
             Span::raw(format!(" {}", sl.elapsed)),
-        ]));
+        ];
+
+        if !sl.pr_link.is_empty() {
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled(
+                &sl.pr_link,
+                Style::default()
+                    .fg(theme.accent_info)
+                    .add_modifier(Modifier::UNDERLINED),
+            ));
+        }
+
+        lines.push(Line::from(spans));
+
+        if !sl.error_summary.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw("      "),
+                Span::styled(&sl.error_summary, Style::default().fg(theme.accent_error)),
+            ]));
+        }
     }
 
     lines.push(Line::from(""));
@@ -371,13 +393,20 @@ fn draw_completion_overlay(
             if summary.session_count != 1 { "s" } else { "" }
         )),
     ]));
+
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::raw("  "),
-        Span::styled("[Enter]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Dashboard  "),
+        Span::styled("[i]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" Browse issues  "),
+        Span::styled("[r]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" New prompt  "),
+        Span::styled("[l]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" View logs  "),
         Span::styled("[q]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Quit"),
+        Span::raw(" Quit  "),
+        Span::styled("[Esc]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" Dashboard"),
     ]));
 
     let block = Block::default()
