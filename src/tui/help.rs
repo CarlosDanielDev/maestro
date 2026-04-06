@@ -109,7 +109,7 @@ fn render_binding_groups<'a>(
 }
 
 /// Create a centered rectangle within the given area.
-fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+pub(crate) fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

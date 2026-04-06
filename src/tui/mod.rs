@@ -105,6 +105,28 @@ async fn event_loop(
                         continue;
                     }
 
+                    // CompletionSummary overlay intercepts all keys
+                    if app.tui_mode == app::TuiMode::CompletionSummary {
+                        match (key.code, key.modifiers) {
+                            (KeyCode::Enter, _) | (KeyCode::Esc, _) => {
+                                app.transition_to_dashboard();
+                            }
+                            (KeyCode::Char('q'), _)
+                            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                                app.running = false;
+                                return Ok(());
+                            }
+                            (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+                                app.panel_view.scroll_up();
+                            }
+                            (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+                                app.panel_view.scroll_down();
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     // Global hotkeys that must not be swallowed by screens
                     if key.code == KeyCode::Char('?') {
                         app.show_help = true;
@@ -165,7 +187,8 @@ async fn event_loop(
                                 | app::TuiMode::Dashboard
                                 | app::TuiMode::IssueBrowser
                                 | app::TuiMode::MilestoneView
-                                | app::TuiMode::PromptInput => app::TuiMode::Overview,
+                                | app::TuiMode::PromptInput
+                                | app::TuiMode::CompletionSummary => app::TuiMode::Overview,
                             };
                         }
                         // Esc returns to dashboard when no sessions are running,
@@ -341,44 +364,30 @@ async fn event_loop(
             }
         }
 
-        // Auto-exit when all sessions complete (skip if in dashboard/prompt/screen modes)
+        // Auto-transition when all sessions complete (fires once)
         if app.all_done()
+            && app.completion_summary.is_none()
             && !matches!(
                 app.tui_mode,
-                app::TuiMode::Dashboard | app::TuiMode::PromptInput
+                app::TuiMode::Dashboard
+                    | app::TuiMode::PromptInput
+                    | app::TuiMode::CompletionSummary
             )
         {
             // If we have a home screen and no sessions ever launched, return to dashboard
-            // But if user explicitly navigated here (pool has had sessions), stay put
             if app.home_screen.is_some() && app.pool.total_count() == 0 {
                 app.tui_mode = app::TuiMode::Dashboard;
                 continue;
             }
-            // Draw final state, then wait for quit key or timeout
-            terminal.draw(|f| ui::draw(f, app))?;
 
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-            loop {
-                let remaining = deadline - tokio::time::Instant::now();
-                if remaining.is_zero() {
-                    break;
-                }
-                if event::poll(remaining.min(Duration::from_millis(100)))?
-                    && let Event::Key(key) = event::read()?
-                {
-                    match key.code {
-                        // Only these keys exit
-                        KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter => break,
-                        // Arrows scroll the agent panel output
-                        KeyCode::Up => app.panel_view.scroll_up(),
-                        KeyCode::Down => app.panel_view.scroll_down(),
-                        _ => {}
-                    }
-                    // Redraw after scroll
-                    terminal.draw(|f| ui::draw(f, app))?;
-                }
+            // --once flag: preserve old exit behavior for CI/scripting
+            if app.once_mode {
+                return Ok(());
             }
-            return Ok(());
+
+            // Build summary and show overlay
+            app.completion_summary = Some(app.build_completion_summary());
+            app.tui_mode = app::TuiMode::CompletionSummary;
         }
     }
 }
@@ -499,27 +508,25 @@ fn spawn_issue_fetch(
 
 /// Print a summary of all sessions to stdout after the TUI exits.
 fn print_summary(app: &App) {
-    let sessions = app.pool.all_sessions();
-    if sessions.is_empty() {
+    let summary = app.build_completion_summary();
+    if summary.sessions.is_empty() {
         return;
     }
+
+    let all_sessions = app.pool.all_sessions();
 
     println!();
     println!("=== Maestro Session Summary ===");
     println!();
 
-    for session in &sessions {
-        let label = match session.issue_number {
-            Some(n) => format!("#{}", n),
-            None => session.id.to_string()[..8].to_string(),
-        };
+    for (sl, session) in summary.sessions.iter().zip(all_sessions.iter()) {
         println!(
             "  {} {} {} ${:.2} {}",
-            session.status.symbol(),
-            label,
-            session.status.label(),
-            session.cost_usd,
-            session.elapsed_display(),
+            sl.status.symbol(),
+            sl.label,
+            sl.status.label(),
+            sl.cost_usd,
+            sl.elapsed,
         );
 
         if !session.last_message.is_empty() {
@@ -528,8 +535,7 @@ fn print_summary(app: &App) {
         if !session.files_touched.is_empty() {
             println!("    Files: {}", session.files_touched.join(", "));
         }
-        // Show recent activity log entries for errored sessions
-        if session.status == crate::session::types::SessionStatus::Errored {
+        if sl.status == crate::session::types::SessionStatus::Errored {
             for entry in session
                 .activity_log
                 .iter()
@@ -545,9 +551,6 @@ fn print_summary(app: &App) {
     }
 
     println!();
-    println!(
-        "Total cost: ${:.2}",
-        sessions.iter().map(|s| s.cost_usd).sum::<f64>()
-    );
+    println!("Total cost: ${:.2}", summary.total_cost_usd);
     println!();
 }
