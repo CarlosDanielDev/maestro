@@ -1,6 +1,7 @@
 use crate::budget::{BudgetAction, BudgetCheck, BudgetEnforcer};
 use crate::config::Config;
 use crate::config::ConflictPolicy;
+use crate::continuous::ContinuousModeState;
 use crate::gates::runner::{self, GateCheck, GateRunner};
 use crate::gates::types::{CompletionGate, GateResult};
 use crate::git::GitOps;
@@ -61,6 +62,8 @@ pub enum TuiMode {
     PromptInput,
     /// Post-completion summary overlay.
     CompletionSummary,
+    /// Continuous mode failure pause overlay (skip/retry/stop).
+    ContinuousPause,
 }
 
 /// Payload for suggestion data fetched from GitHub.
@@ -197,6 +200,8 @@ pub struct App {
     pub once_mode: bool,
     /// Data for the completion summary overlay.
     pub completion_summary: Option<CompletionSummaryData>,
+    /// Continuous mode state (Some when --continuous flag is active).
+    pub continuous_mode: Option<ContinuousModeState>,
 }
 
 impl App {
@@ -256,6 +261,7 @@ impl App {
             theme: Theme::default(),
             once_mode: false,
             completion_summary: None,
+            continuous_mode: None,
         }
     }
 
@@ -1271,6 +1277,13 @@ impl App {
 
     /// Assign ready work items from the assigner to session slots.
     pub async fn tick_work_assigner(&mut self) -> anyhow::Result<()> {
+        // In continuous mode, only advance when no issue is running and not paused
+        if let Some(ref cont) = self.continuous_mode {
+            if !cont.can_advance() {
+                return Ok(());
+            }
+        }
+
         // Collect ready items and mark them in-progress (scoped borrow)
         let ready_items = {
             let Some(assigner) = self.work_assigner.as_mut() else {
@@ -1354,11 +1367,21 @@ impl App {
             let mut session = Session::new(prompt, model, mode, Some(issue_number));
             session.issue_title = Some(title);
 
-            self.activity_log.push_simple(
-                format!("#{}", issue_number),
-                "Assigned from work queue".into(),
-                LogLevel::Info,
-            );
+            // Track in continuous mode
+            if let Some(ref mut cont) = self.continuous_mode {
+                cont.set_current_issue(issue_number);
+                self.activity_log.push_simple(
+                    "CONTINUOUS".into(),
+                    format!("Advancing to next issue: #{}", issue_number),
+                    LogLevel::Info,
+                );
+            } else {
+                self.activity_log.push_simple(
+                    format!("#{}", issue_number),
+                    "Assigned from work queue".into(),
+                    LogLevel::Info,
+                );
+            }
 
             self.add_session(session).await?;
         }
@@ -1412,6 +1435,43 @@ impl App {
                         ),
                     );
                 }
+            }
+        }
+
+        // Continuous mode: track completion/failure
+        if let Some(ref mut cont) = self.continuous_mode {
+            if success {
+                cont.on_issue_completed(issue_number);
+                self.activity_log.push_simple(
+                    "CONTINUOUS".into(),
+                    format!(
+                        "Issue #{} completed ({} done so far)",
+                        issue_number, cont.completed_count
+                    ),
+                    LogLevel::Info,
+                );
+            } else {
+                let title = self
+                    .state
+                    .issue_cache
+                    .get(&issue_number)
+                    .map(|i| i.title.clone())
+                    .unwrap_or_else(|| format!("Issue #{}", issue_number));
+                let entries = self.activity_log.entries();
+                let error_summary = entries
+                    .iter()
+                    .rev()
+                    .take(10)
+                    .find(|e| e.level == LogLevel::Error)
+                    .map(|e| e.message.clone())
+                    .unwrap_or_else(|| "Session failed".into());
+                cont.on_issue_failed(issue_number, title, error_summary);
+                self.tui_mode = TuiMode::ContinuousPause;
+                self.activity_log.push_simple(
+                    "CONTINUOUS".into(),
+                    format!("Issue #{} failed — paused for user decision", issue_number),
+                    LogLevel::Warn,
+                );
             }
         }
 
