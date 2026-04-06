@@ -49,7 +49,14 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           ARCHIVE="maestro-${TAG}-${{ matrix.target }}.tar.gz"
-          tar czf "${ARCHIVE}" -C target/${{ matrix.target }}/release maestro
+          OUT_DIR=$(find target/${{ matrix.target }}/release/build -path "*/maestro-*/out" -type d 2>/dev/null | head -1)
+          mkdir -p staging
+          cp target/${{ matrix.target }}/release/maestro staging/
+          if [ -n "${OUT_DIR}" ]; then
+            cp "${OUT_DIR}/man/maestro.1" staging/ 2>/dev/null || true
+            cp -r "${OUT_DIR}/completions" staging/ 2>/dev/null || true
+          fi
+          tar czf "${ARCHIVE}" -C staging .
           echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
 
       - name: Upload artifact

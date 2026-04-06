@@ -1,4 +1,5 @@
 mod budget;
+mod cli;
 mod config;
 mod doctor;
 mod gates;
@@ -20,7 +21,8 @@ mod work;
 #[cfg(test)]
 mod integration_tests;
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use cli::{Cli, Commands};
 use config::{Config, NotificationsConfig};
 use github::client::{GhCliClient, GitHubClient};
 use notifications::dispatcher::NotificationDispatcher;
@@ -30,102 +32,6 @@ use state::store::StateStore;
 use tui::app::App;
 use work::assigner::WorkAssigner;
 use work::types::WorkItem;
-
-#[derive(Parser)]
-#[command(
-    name = "maestro",
-    version,
-    about = "Multi-session Claude Code orchestrator"
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Run sessions from GitHub issues or a prompt
-    Run {
-        /// Prompt to send to Claude
-        #[arg(short, long)]
-        prompt: Option<String>,
-
-        /// GitHub issue number(s), comma-separated
-        #[arg(short, long)]
-        issue: Option<String>,
-
-        /// Milestone to fetch all issues from
-        #[arg(short = 'M', long)]
-        milestone: Option<String>,
-
-        /// Model to use (opus, sonnet, haiku)
-        #[arg(short, long)]
-        model: Option<String>,
-
-        /// Session mode (orchestrator, vibe, review, or custom)
-        #[arg(long)]
-        mode: Option<String>,
-
-        /// Max concurrent sessions (overrides config)
-        #[arg(long)]
-        max_concurrent: Option<usize>,
-
-        /// Resume from previous state after a crash
-        #[arg(long)]
-        resume: bool,
-
-        /// Skip preflight doctor checks before launching sessions
-        #[arg(long)]
-        skip_doctor: bool,
-
-        /// Image file(s) to attach as visual context (can be repeated)
-        #[arg(long = "image")]
-        images: Vec<std::path::PathBuf>,
-    },
-    /// Show queued/pending issues from GitHub
-    Queue,
-    /// Add an issue to the work queue manually
-    Add {
-        /// Issue number to add
-        issue_number: u64,
-    },
-    /// Show current state without TUI
-    Status,
-    /// Show spending report
-    Cost,
-    /// Initialize maestro.toml in current directory
-    Init,
-    /// Clean orphaned worktrees left by crashed sessions
-    Clean {
-        /// Show what would be cleaned without actually doing it
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Show session transcript logs
-    Logs {
-        /// Show full log for a specific session ID
-        #[arg(long)]
-        session: Option<String>,
-        /// Export as JSON
-        #[arg(long)]
-        export: Option<String>,
-    },
-    /// Resume interrupted sessions from saved state
-    Resume {
-        /// Resume a specific session by ID
-        #[arg(long)]
-        session: Option<String>,
-    },
-    /// Test Slack webhook configuration
-    TestSlack,
-    /// Generate shell completions
-    Completions {
-        /// Shell to generate completions for (bash, zsh, fish)
-        shell: String,
-    },
-    /// Check environment setup and required tools
-    Doctor,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -154,7 +60,8 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Logs { session, export }) => cmd_logs(session, export),
         Some(Commands::Resume { session }) => cmd_resume(session).await,
         Some(Commands::TestSlack) => cmd_test_slack().await,
-        Some(Commands::Completions { shell }) => cmd_completions(&shell),
+        Some(Commands::Completions { shell }) => cli::cmd_completions(shell),
+        Some(Commands::Mangen { out_dir }) => cli::cmd_mangen(&out_dir),
         Some(Commands::Doctor) => cmd_doctor(),
         Some(Commands::Status) => cmd_status(),
         Some(Commands::Cost) => cmd_cost(),
@@ -654,22 +561,6 @@ async fn cmd_test_slack() -> anyhow::Result<()> {
             anyhow::bail!("Slack webhook test failed: {}", e)
         }
     }
-}
-
-fn cmd_completions(shell: &str) -> anyhow::Result<()> {
-    use clap::CommandFactory;
-    use clap_complete::{Shell, generate};
-
-    let shell = match shell.to_lowercase().as_str() {
-        "bash" => Shell::Bash,
-        "zsh" => Shell::Zsh,
-        "fish" => Shell::Fish,
-        other => anyhow::bail!("Unsupported shell: {}. Use bash, zsh, or fish.", other),
-    };
-
-    let mut cmd = Cli::command();
-    generate(shell, &mut cmd, "maestro", &mut std::io::stdout());
-    Ok(())
 }
 
 fn cmd_doctor() -> anyhow::Result<()> {
