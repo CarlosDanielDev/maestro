@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-04 18:00 (UTC)
+> Last updated: 2026-04-04 19:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -61,7 +61,7 @@ maestro/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
 ├── src/
-│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup  [Issue #29, #49, #34, #36, #35, #52]
+│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests  [Issue #15, #29, #49, #34, #36, #35, #52]
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix; TuiConfig struct with optional theme field; Config gains tui field  [Issue #29, #40, #41, #43, #38]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
 │   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); validate_preflight() (public, fails fast on required check failures); build_claude_cli_result() (pub(crate), pure/testable); check_claude_cli() elevated to Required severity; build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34, #52]
@@ -138,6 +138,13 @@ maestro/
 │   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; draw_suggestions() renders Suggestions panel; Tab-based focus navigation between QuickActions and Suggestions; ProjectInfo gains username field  [Issue #31, #49, #34, #35]
 │   │       ├── issue_browser.rs           # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery  [Issue #32, #46]
 │   │       └── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action  [Issue #33]
+│   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
+│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue()
+│   │   ├── session_lifecycle.rs           # 11 tests: enqueue/promote/complete lifecycle via handle_event()
+│   │   ├── stream_parsing.rs              # 22 tests: stream event parsing and parser round-trips
+│   │   ├── completion_pipeline.rs         # 9 tests: label transitions and PR creation
+│   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
+│   │   └── worktree_lifecycle.rs          # 8 tests: worktree create/cleanup and health monitoring
 │   └── work/                              # Work queue and scheduling  [Phase 2]
 │       ├── mod.rs                         # Module exports
 │       ├── types.rs                       # WorkItem, WorkStatus; from_issue, is_ready
@@ -243,6 +250,13 @@ maestro/
 | `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
 | `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters; `set_issues()` (Issues #32, #46) |
 | `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
+| `src/integration_tests/` | End-to-end integration test suite; 55 tests; MockGitHubClient and MockWorktreeManager; no external process dependencies (Issue #15) |
+| `src/integration_tests/mod.rs` | Module declarations and shared helpers: `make_pool()`, `make_pool_with_worktree()`, `make_session()`, `make_session_with_issue()`, `make_gh_issue()` |
+| `src/integration_tests/session_lifecycle.rs` | 11 tests covering enqueue, promote, and complete session lifecycle via `handle_event()` |
+| `src/integration_tests/stream_parsing.rs` | 22 tests covering stream event parsing and parser round-trips |
+| `src/integration_tests/completion_pipeline.rs` | 9 tests covering label transitions and PR creation |
+| `src/integration_tests/concurrent_sessions.rs` | 6 tests covering `max_concurrent` enforcement |
+| `src/integration_tests/worktree_lifecycle.rs` | 8 tests covering worktree create/cleanup and health monitoring |
 | `src/work/` | Work queue and dependency scheduling (Phase 2) |
 | `src/work/dependencies.rs` | Dependency graph, topological sort |
 | `src/work/assigner.rs` | Priority-ordered work assignment |
