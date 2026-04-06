@@ -4,13 +4,13 @@
 //! All external dependencies are replaced with in-process mocks.
 
 #[cfg(test)]
-mod session_lifecycle;
-#[cfg(test)]
-mod stream_parsing;
-#[cfg(test)]
 mod completion_pipeline;
 #[cfg(test)]
 mod concurrent_sessions;
+#[cfg(test)]
+mod session_lifecycle;
+#[cfg(test)]
+mod stream_parsing;
 #[cfg(test)]
 mod worktree_lifecycle;
 
