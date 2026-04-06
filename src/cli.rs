@@ -55,6 +55,10 @@ pub enum Commands {
         /// Exit after all sessions complete (CI/scripting mode, no dashboard return)
         #[arg(long)]
         once: bool,
+
+        /// Continuous mode: auto-advance to next ready issue after each completion (use with --milestone)
+        #[arg(short = 'C', long)]
+        continuous: bool,
     },
     /// Show queued/pending issues from GitHub
     Queue,
@@ -326,6 +330,60 @@ mod tests {
             assert!(once);
             assert_eq!(model.as_deref(), Some("haiku"));
             assert!(resume);
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // --continuous / -C flag parsing
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn run_continuous_flag_defaults_to_false() {
+        let cli = Cli::try_parse_from(["maestro", "run", "--prompt", "hello"]).unwrap();
+        if let Some(Commands::Run { continuous, .. }) = cli.command {
+            assert!(!continuous, "--continuous must default to false");
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_continuous_long_flag_is_set_when_provided() {
+        let cli =
+            Cli::try_parse_from(["maestro", "run", "--prompt", "hello", "--continuous"]).unwrap();
+        if let Some(Commands::Run { continuous, .. }) = cli.command {
+            assert!(
+                continuous,
+                "--continuous must be true when flag is provided"
+            );
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_continuous_short_flag_is_set_when_provided() {
+        let cli = Cli::try_parse_from(["maestro", "run", "--prompt", "hello", "-C"]).unwrap();
+        if let Some(Commands::Run { continuous, .. }) = cli.command {
+            assert!(continuous, "-C must set continuous to true");
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_continuous_coexists_with_once_flag() {
+        let cli =
+            Cli::try_parse_from(["maestro", "run", "--prompt", "x", "--continuous", "--once"])
+                .unwrap();
+        if let Some(Commands::Run {
+            continuous, once, ..
+        }) = cli.command
+        {
+            assert!(continuous, "--continuous must be true");
+            assert!(once, "--once must be true");
         } else {
             panic!("Expected Commands::Run");
         }

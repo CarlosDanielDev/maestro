@@ -7,6 +7,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Continuous Work Mode (#85)
+
+- `src/continuous.rs` — new `ContinuousModeState` and `ContinuousFailure` structs; state machine that tracks current issue, completed/skipped counts, and accumulated failures; `on_issue_completed()`, `on_issue_failed()` (pauses the loop), `skip()`, and `resume()` transition methods
+- `src/cli.rs` — `--continuous` / `-C` flag added to `maestro run`; when set, maestro auto-advances to the next ready issue after each session completion
+- `src/main.rs` — `--continuous` flag wired through `setup_app_from_config()`; forces `max_concurrent = 1` when continuous mode is active to ensure sequential issue processing
+- `src/tui/app.rs` — `TuiMode::ContinuousPause` variant added; `continuous_mode: bool` field on `App`
+- `src/tui/mod.rs` — `ContinuousPause` key-intercept overlay added: `[s]` skips the failed issue and advances, `[r]` retries the issue, `[q]` quits the continuous loop
+- `src/tui/ui.rs` — `ContinuousPause` render branch added with pause overlay showing failure details; status bar indicator displays continuous mode state (current issue number, completed count, skipped count)
+- `src/work/assigner.rs` — `mark_pending()` transitions a work item back to `Pending` status; `mark_pending_undo_cascade()` cascades the undo to all dependent items in the dependency graph
+
 ### Post-Session Activity Log with Cost Summary and Next Actions (#84)
 
 - `src/tui/app.rs` — `CompletionSessionLine` gains `pr_link: Option<String>` and `error_summary: Option<String>` fields; `build_completion_summary()` populates `pr_link` by matching the session's `issue_number` against `pending_pr_checks` (resolved to a full `https://github.com/{repo}/pull/{N}` URL when a repo slug is available, otherwise `#N`) and falls back to `ci_fix_context.pr_number`; `error_summary` is set only for `Errored` sessions — it picks the last activity-log entry whose message starts with `"Error:"` or `"E:"` (or the last entry as a fallback) and truncates it to 80 characters with a trailing `...`
