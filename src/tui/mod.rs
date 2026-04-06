@@ -148,6 +148,52 @@ async fn event_loop(
                         continue;
                     }
 
+                    // ContinuousPause overlay intercepts all keys
+                    if app.tui_mode == app::TuiMode::ContinuousPause {
+                        match (key.code, key.modifiers) {
+                            // [s] Skip — mark failed, advance to next
+                            (KeyCode::Char('s'), _) => {
+                                if let Some(ref mut cont) = app.continuous_mode {
+                                    let skipped = cont.current_failure().map(|f| f.issue_number);
+                                    cont.on_skip();
+                                    if let Some(num) = skipped {
+                                        app.activity_log.push_simple(
+                                            "CONTINUOUS".into(),
+                                            format!("Skipped #{}, advancing...", num),
+                                            LogLevel::Warn,
+                                        );
+                                    }
+                                }
+                                app.tui_mode = app::TuiMode::Overview;
+                            }
+                            // [r] Retry — re-enqueue the failed issue
+                            (KeyCode::Char('r'), _) => {
+                                if let Some(ref mut cont) = app.continuous_mode {
+                                    if let Some(issue_number) = cont.on_retry() {
+                                        if let Some(ref mut assigner) = app.work_assigner {
+                                            assigner.mark_pending_undo_cascade(issue_number);
+                                        }
+                                        app.activity_log.push_simple(
+                                            "CONTINUOUS".into(),
+                                            format!("Retrying #{}...", issue_number),
+                                            LogLevel::Info,
+                                        );
+                                    }
+                                }
+                                app.tui_mode = app::TuiMode::Overview;
+                            }
+                            // [q] or Ctrl+C — stop continuous mode
+                            (KeyCode::Char('q'), _)
+                            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                                app.continuous_mode = None;
+                                app.running = false;
+                                return Ok(());
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     // Global hotkeys that must not be swallowed by screens
                     if key.code == KeyCode::Char('?') {
                         app.show_help = true;
@@ -209,7 +255,8 @@ async fn event_loop(
                                 | app::TuiMode::IssueBrowser
                                 | app::TuiMode::MilestoneView
                                 | app::TuiMode::PromptInput
-                                | app::TuiMode::CompletionSummary => app::TuiMode::Overview,
+                                | app::TuiMode::CompletionSummary
+                                | app::TuiMode::ContinuousPause => app::TuiMode::Overview,
                             };
                         }
                         // Esc returns to dashboard when no sessions are running,
@@ -385,8 +432,44 @@ async fn event_loop(
             }
         }
 
+        // In continuous mode, check if work assigner has more work after all sessions finish
+        if app.all_done()
+            && app.continuous_mode.is_some()
+            && !matches!(
+                app.tui_mode,
+                app::TuiMode::ContinuousPause | app::TuiMode::CompletionSummary
+            )
+        {
+            let all_terminal = app
+                .work_assigner
+                .as_ref()
+                .map(|a| a.all_terminal())
+                .unwrap_or(true);
+            if all_terminal {
+                // All milestone issues are done — end continuous mode and show summary
+                if let Some(ref cont) = app.continuous_mode {
+                    app.activity_log.push_simple(
+                        "CONTINUOUS".into(),
+                        format!(
+                            "Milestone complete: {} done, {} skipped, {} failed",
+                            cont.completed_count,
+                            cont.skipped_count,
+                            cont.failures.len()
+                        ),
+                        LogLevel::Info,
+                    );
+                }
+                app.continuous_mode = None;
+                app.completion_summary = Some(app.build_completion_summary());
+                app.tui_mode = app::TuiMode::CompletionSummary;
+                continue;
+            }
+            // Otherwise, tick_work_assigner will pick the next issue on the next loop iteration
+        }
+
         // Auto-transition when all sessions complete (fires once)
         if app.all_done()
+            && app.continuous_mode.is_none()
             && app.completion_summary.is_none()
             && !matches!(
                 app.tui_mode,

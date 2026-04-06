@@ -1,6 +1,7 @@
 mod budget;
 mod cli;
 mod config;
+mod continuous;
 mod doctor;
 mod gates;
 mod git;
@@ -78,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
             skip_doctor,
             images,
             once,
+            continuous,
         }) => {
             cmd_run(
                 prompt,
@@ -90,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
                 skip_doctor,
                 images,
                 once,
+                continuous,
             )
             .await
         }
@@ -588,8 +591,14 @@ async fn cmd_run(
     skip_doctor: bool,
     images: Vec<std::path::PathBuf>,
     once: bool,
+    continuous: bool,
 ) -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
+
+    // Warn if --continuous without --milestone
+    if continuous && milestone.is_none() {
+        tracing::warn!("--continuous has no effect without --milestone");
+    }
 
     // Preflight doctor check — fail fast before wasting API credits
     if !skip_doctor {
@@ -620,8 +629,19 @@ async fn cmd_run(
     let issue_filter_labels = config.github.issue_filter_labels.clone();
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
 
-    let mut app =
-        setup_app_from_config(config.clone(), store, worktree_mgr, max_concurrent_override);
+    // In continuous mode, force serial execution (max_concurrent = 1)
+    let effective_max_concurrent = if continuous && milestone.is_some() {
+        Some(1)
+    } else {
+        max_concurrent_override
+    };
+
+    let mut app = setup_app_from_config(
+        config.clone(),
+        store,
+        worktree_mgr,
+        effective_max_concurrent,
+    );
 
     // Resume from previous state if requested
     if resume {
@@ -662,6 +682,15 @@ async fn cmd_run(
         // Store assigner in app for work management
         app.work_assigner = Some(assigner);
         app.github_client = Some(Box::new(client));
+
+        // Enable continuous mode if requested
+        if continuous {
+            app.continuous_mode = Some(continuous::ContinuousModeState::new());
+            tracing::info!(
+                "Continuous mode: processing milestone '{}' issues serially",
+                milestone_name
+            );
+        }
     } else if let Some(issue_str) = issue {
         let client = GhCliClient::new();
 

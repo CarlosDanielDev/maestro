@@ -1,3 +1,4 @@
+use crate::continuous::ContinuousModeState;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
@@ -126,6 +127,19 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 draw_completion_overlay(f, summary, chunks[1], &app.theme);
             }
         }
+        TuiMode::ContinuousPause => {
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &app.theme,
+            );
+            if let Some(ref cont) = app.continuous_mode {
+                draw_continuous_pause_overlay(f, cont, chunks[1], &app.theme);
+            }
+        }
     }
 
     // Delegate to activity log widget
@@ -160,6 +174,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 .as_ref()
                 .map(|s| (s.keybindings(), s.desired_input_mode())),
             TuiMode::CompletionSummary => None,
+            TuiMode::ContinuousPause => None,
             _ => None,
         }
         .map(|(b, m)| (b, m.unwrap_or(InputMode::Normal)))
@@ -205,7 +220,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         None => theme.accent_warning,
     };
 
-    let text = Line::from(vec![
+    let mut spans = vec![
         Span::styled(
             concat!(" MAESTRO v", env!("CARGO_PKG_VERSION"), " "),
             Style::default()
@@ -230,7 +245,24 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             format!(" {} ", elapsed_str),
             Style::default().fg(theme.text_primary),
         ),
-    ]);
+    ];
+
+    if let Some(ref cont) = app.continuous_mode {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            format!(
+                " CONTINUOUS: {}/{} done ",
+                cont.completed_count,
+                cont.total_attempted()
+            ),
+            Style::default()
+                .fg(theme.branding_fg)
+                .bg(theme.accent_info)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    let text = Line::from(spans);
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -289,6 +321,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::MilestoneView => "Milestones",
         TuiMode::PromptInput => "Prompt",
         TuiMode::CompletionSummary => "Summary",
+        TuiMode::ContinuousPause => "Paused",
     };
 
     let help = Line::from(vec![
@@ -417,4 +450,89 @@ fn draw_completion_overlay(
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, overlay_area);
+}
+
+fn draw_continuous_pause_overlay(
+    f: &mut Frame,
+    state: &ContinuousModeState,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    use ratatui::widgets::Clear;
+
+    let overlay_area = help::centered_rect(60, 50, area);
+    f.render_widget(Clear, overlay_area);
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+
+    if let Some(failure) = state.current_failure() {
+        lines.push(Line::from(vec![
+            Span::raw("  Issue: "),
+            Span::styled(
+                format!("#{}", failure.issue_number),
+                Style::default()
+                    .fg(theme.accent_error)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(&failure.issue_title, Style::default().fg(theme.accent_info)),
+        ]));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::raw("  Error: "),
+            Span::styled(
+                truncate_str(&failure.error_summary, 80),
+                Style::default().fg(theme.accent_error),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::raw("  Progress: "),
+        Span::styled(
+            format!("{} completed", state.completed_count),
+            Style::default().fg(theme.accent_success),
+        ),
+        Span::raw(", "),
+        Span::styled(
+            format!("{} skipped", state.skipped_count),
+            Style::default().fg(theme.accent_warning),
+        ),
+        Span::raw(", "),
+        Span::styled(
+            format!("{} failed", state.failures.len()),
+            Style::default().fg(theme.accent_error),
+        ),
+    ]));
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled("[s]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" Skip  "),
+        Span::styled("[r]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" Retry  "),
+        Span::styled("[q]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" Stop"),
+    ]));
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Session Failed — Continuous Mode ")
+        .title_alignment(ratatui::layout::Alignment::Center)
+        .border_style(Style::default().fg(theme.accent_error));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    f.render_widget(paragraph, overlay_area);
+}
+
+fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
+    if s.chars().count() <= max_len {
+        std::borrow::Cow::Borrowed(s)
+    } else {
+        let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
+        std::borrow::Cow::Owned(format!("{}...", truncated))
+    }
 }
