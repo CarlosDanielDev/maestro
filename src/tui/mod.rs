@@ -11,6 +11,9 @@ pub mod screens;
 pub mod theme;
 pub mod ui;
 
+#[cfg(test)]
+mod snapshot_tests;
+
 use crate::github::client::{GhCliClient, GitHubClient};
 use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::Screen;
