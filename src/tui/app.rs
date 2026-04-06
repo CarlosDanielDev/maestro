@@ -105,6 +105,8 @@ pub struct CompletionSessionLine {
     pub status: SessionStatus,
     pub cost_usd: f64,
     pub elapsed: String,
+    pub pr_link: String,
+    pub error_summary: String,
 }
 
 struct PendingHook {
@@ -1141,17 +1143,65 @@ impl App {
 
     /// Build a summary of all sessions for the completion overlay.
     pub fn build_completion_summary(&self) -> CompletionSummaryData {
+        use std::collections::HashMap;
+
         let sessions = self.pool.all_sessions();
         let mut lines = Vec::new();
         let mut total_cost = 0.0;
 
+        let pr_map: HashMap<u64, u64> = self
+            .pending_pr_checks
+            .iter()
+            .map(|p| (p.issue_number, p.pr_number))
+            .collect();
+
+        let repo = self
+            .config
+            .as_ref()
+            .map(|c| c.project.repo.clone())
+            .unwrap_or_default();
+
         for s in &sessions {
             total_cost += s.cost_usd;
+
+            let pr_num = s
+                .issue_number
+                .and_then(|iss| pr_map.get(&iss).copied())
+                .or_else(|| s.ci_fix_context.as_ref().map(|ctx| ctx.pr_number));
+
+            let pr_link = match pr_num {
+                Some(n) if repo.is_empty() => format!("#{}", n),
+                Some(n) => format!("https://github.com/{}/pull/{}", repo, n),
+                None => String::new(),
+            };
+
+            let error_summary = if s.status == SessionStatus::Errored {
+                s.activity_log
+                    .iter()
+                    .rev()
+                    .find(|e| e.message.starts_with("Error:") || e.message.starts_with("E:"))
+                    .or_else(|| s.activity_log.last())
+                    .map(|e| {
+                        let msg = &e.message;
+                        let end = truncate_at_char_boundary(msg, 77);
+                        if end < msg.len() {
+                            format!("{}...", &msg[..end])
+                        } else {
+                            msg.clone()
+                        }
+                    })
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+
             lines.push(CompletionSessionLine {
                 label: session_label(s),
                 status: s.status,
                 cost_usd: s.cost_usd,
                 elapsed: s.elapsed_display(),
+                pr_link,
+                error_summary,
             });
         }
 
@@ -1874,6 +1924,8 @@ mod tests {
             status: crate::session::types::SessionStatus::Completed,
             cost_usd: 1.23,
             elapsed: "1m 05s".to_string(),
+            pr_link: String::new(),
+            error_summary: String::new(),
         };
         assert_eq!(line.label, "#42");
         assert_eq!(line.status, crate::session::types::SessionStatus::Completed);
@@ -2025,6 +2077,243 @@ mod tests {
                 .iter()
                 .any(|c| matches!(c, TuiCommand::FetchSuggestionData)),
             "must queue FetchSuggestionData"
+        );
+    }
+
+    // --- Issue #84: post-session activity log with cost summary ---
+
+    #[test]
+    fn completion_session_line_pr_link_defaults_to_empty() {
+        let line = CompletionSessionLine {
+            label: "#1".to_string(),
+            status: crate::session::types::SessionStatus::Completed,
+            cost_usd: 0.0,
+            elapsed: "0s".to_string(),
+            pr_link: String::new(),
+            error_summary: String::new(),
+        };
+        assert!(line.pr_link.is_empty());
+    }
+
+    #[test]
+    fn completion_session_line_holds_pr_link_value() {
+        let line = CompletionSessionLine {
+            label: "#42".to_string(),
+            status: crate::session::types::SessionStatus::Completed,
+            cost_usd: 0.0,
+            elapsed: "0s".to_string(),
+            pr_link: "https://github.com/org/repo/pull/42".into(),
+            error_summary: String::new(),
+        };
+        assert_eq!(line.pr_link, "https://github.com/org/repo/pull/42");
+    }
+
+    #[test]
+    fn completion_session_line_holds_error_summary_value() {
+        let line = CompletionSessionLine {
+            label: "#7".to_string(),
+            status: crate::session::types::SessionStatus::Errored,
+            cost_usd: 0.0,
+            elapsed: "0s".to_string(),
+            pr_link: String::new(),
+            error_summary: "Error: process exited with code 1".into(),
+        };
+        assert_eq!(line.error_summary, "Error: process exited with code 1");
+    }
+
+    #[test]
+    fn build_completion_summary_sets_pr_link_when_pending_check_matches() {
+        use crate::github::ci::PendingPrCheck;
+
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(10),
+        );
+        session.status = crate::session::types::SessionStatus::Completed;
+        app.pool.enqueue(session);
+        app.pending_pr_checks.push(PendingPrCheck {
+            pr_number: 42,
+            issue_number: 10,
+            branch: "feat/issue-10".into(),
+            created_at: std::time::Instant::now(),
+            check_count: 0,
+            fix_attempt: 0,
+            awaiting_fix_ci: false,
+        });
+
+        let summary = app.build_completion_summary();
+        assert!(
+            summary.sessions[0].pr_link.contains("42"),
+            "pr_link must reference PR number"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_pr_link_empty_when_no_matching_check() {
+        use crate::github::ci::PendingPrCheck;
+
+        let mut app = make_app();
+        let session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(99),
+        );
+        app.pool.enqueue(session);
+        app.pending_pr_checks.push(PendingPrCheck {
+            pr_number: 5,
+            issue_number: 5,
+            branch: "feat/issue-5".into(),
+            created_at: std::time::Instant::now(),
+            check_count: 0,
+            fix_attempt: 0,
+            awaiting_fix_ci: false,
+        });
+
+        let summary = app.build_completion_summary();
+        assert!(
+            summary.sessions[0].pr_link.is_empty(),
+            "pr_link must be empty when no PendingPrCheck matches"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_pr_link_empty_when_no_issue_number() {
+        use crate::github::ci::PendingPrCheck;
+
+        let mut app = make_app();
+        let session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        app.pool.enqueue(session);
+        app.pending_pr_checks.push(PendingPrCheck {
+            pr_number: 1,
+            issue_number: 1,
+            branch: "feat/issue-1".into(),
+            created_at: std::time::Instant::now(),
+            check_count: 0,
+            fix_attempt: 0,
+            awaiting_fix_ci: false,
+        });
+
+        let summary = app.build_completion_summary();
+        assert!(
+            summary.sessions[0].pr_link.is_empty(),
+            "pr_link must be empty for sessions without issue_number"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_error_summary_for_errored_session() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(5),
+        );
+        session.status = crate::session::types::SessionStatus::Errored;
+        session.log_activity("Process started".into());
+        session.log_activity("Error: process exited with code 1".into());
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert!(
+            !summary.sessions[0].error_summary.is_empty(),
+            "error_summary must be set for Errored sessions with activity"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_error_summary_empty_for_completed() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(6),
+        );
+        session.status = crate::session::types::SessionStatus::Completed;
+        session.log_activity("Some activity".into());
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert!(
+            summary.sessions[0].error_summary.is_empty(),
+            "error_summary must be empty for Completed sessions"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_error_summary_empty_when_no_activity() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(7),
+        );
+        session.status = crate::session::types::SessionStatus::Errored;
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert!(
+            summary.sessions[0].error_summary.is_empty(),
+            "error_summary must be empty when activity_log is empty"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_error_summary_truncates_long_messages() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(8),
+        );
+        session.status = crate::session::types::SessionStatus::Errored;
+        session.log_activity(format!("Error: {}", "x".repeat(200)));
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        let err = &summary.sessions[0].error_summary;
+        assert!(
+            err.len() <= 83,
+            "error_summary must be truncated, got {} chars",
+            err.len()
+        );
+        assert!(err.ends_with("..."), "truncated summary must end with ...");
+    }
+
+    #[test]
+    fn build_completion_summary_pr_link_from_ci_fix_context() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "fix ci".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(15),
+        );
+        session.status = crate::session::types::SessionStatus::Completed;
+        session.ci_fix_context = Some(crate::session::types::CiFixContext {
+            pr_number: 77,
+            issue_number: 15,
+            branch: "feat/fix-ci".into(),
+            attempt: 1,
+        });
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert!(
+            summary.sessions[0].pr_link.contains("77"),
+            "pr_link must reference ci_fix_context PR number"
         );
     }
 }
