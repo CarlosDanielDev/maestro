@@ -116,6 +116,20 @@ async fn event_loop(
                                 app.running = false;
                                 return Ok(());
                             }
+                            (KeyCode::Char('i'), _) => {
+                                let mut screen = screens::IssueBrowserScreen::new(vec![]);
+                                screen.loading = true;
+                                app.issue_browser_screen = Some(screen);
+                                app.pending_commands.push(app::TuiCommand::FetchIssues);
+                                app.tui_mode = app::TuiMode::IssueBrowser;
+                            }
+                            (KeyCode::Char('r'), _) => {
+                                app.prompt_input_screen = Some(screens::PromptInputScreen::new());
+                                app.tui_mode = app::TuiMode::PromptInput;
+                            }
+                            (KeyCode::Char('l'), _) => {
+                                app.tui_mode = app::TuiMode::Overview;
+                            }
                             (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
                                 app.panel_view.scroll_up();
                             }
@@ -123,6 +137,13 @@ async fn event_loop(
                                 app.panel_view.scroll_down();
                             }
                             _ => {}
+                        }
+                        // Clear overlay when navigating away (Enter/Esc handled by transition_to_dashboard)
+                        if !matches!(
+                            key.code,
+                            KeyCode::Up | KeyCode::Down | KeyCode::Char('k' | 'j')
+                        ) {
+                            app.completion_summary = None;
                         }
                         continue;
                     }
