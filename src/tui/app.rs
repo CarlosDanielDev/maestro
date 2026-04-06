@@ -1847,8 +1847,10 @@ mod tests {
     use crate::state::store::StateStore;
 
     fn make_app() -> App {
-        let tmp = std::env::temp_dir()
-            .join(format!("maestro-tui-app-test-{}.json", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!(
+            "maestro-tui-app-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
         let store = StateStore::new(tmp);
         App::new(
             store,

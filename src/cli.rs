@@ -289,8 +289,7 @@ mod tests {
 
     #[test]
     fn run_once_flag_is_set_when_provided() {
-        let cli =
-            Cli::try_parse_from(["maestro", "run", "--prompt", "hello", "--once"]).unwrap();
+        let cli = Cli::try_parse_from(["maestro", "run", "--prompt", "hello", "--once"]).unwrap();
         if let Some(Commands::Run { once, .. }) = cli.command {
             assert!(once, "--once must be true when flag is provided");
         } else {
@@ -302,7 +301,10 @@ mod tests {
     fn run_once_flag_is_false_with_issue_only() {
         let cli = Cli::try_parse_from(["maestro", "run", "--issue", "42"]).unwrap();
         if let Some(Commands::Run { once, .. }) = cli.command {
-            assert!(!once, "--once must default to false when only --issue is given");
+            assert!(
+                !once,
+                "--once must default to false when only --issue is given"
+            );
         } else {
             panic!("Expected Commands::Run");
         }
