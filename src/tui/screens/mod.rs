@@ -76,6 +76,8 @@ pub enum ScreenAction {
     LaunchSessions(Vec<SessionConfig>),
     /// Launch a session from a free-form prompt (no issue).
     LaunchPromptSession(PromptSessionConfig),
+    /// Request a refresh of dashboard suggestion data.
+    RefreshSuggestions,
     /// Quit the application.
     Quit,
 }

@@ -49,7 +49,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Config-driven completion gates** — after a session finishes, maestro runs a configurable list of shell commands (fmt, clippy, test, or any custom command) before accepting the result; required gate failures transition the session to `NEEDS_REVIEW` and block PR creation; optional gates log warnings only; configured via `[sessions.completion_gates]` in `maestro.toml`
 - **Completion summary overlay** — when all sessions finish, a centred overlay shows a per-session outcome summary (status, cost, elapsed time, PR link, and error snippet for failed sessions); `[i]` opens the issue browser, `[r]` opens a new prompt, `[l]` views the activity log, `[Esc]` returns to the dashboard; use `--once` to skip the overlay and exit immediately (suited for CI/scripting)
 - **Continuous work mode** — `--continuous` / `-C` flag on `maestro run` auto-advances through all ready issues one at a time; on failure a pause overlay prompts the user to `[s]` skip, `[r]` retry, or `[q]` quit; the status bar shows current issue, completed, and skipped counts throughout the run
-- **Interactive home screen** — launching `maestro` opens an idle dashboard with a quick-actions menu, repo/branch info, and a recent activity panel; navigate with `j`/`k` or direct shortcut keys
+- **Interactive home screen** — launching `maestro` opens an idle dashboard with a quick-actions menu, contextual work suggestions, repo/branch info, and a recent activity panel; navigate with `j`/`k` or direct shortcut keys; suggestions auto-refresh when returning from a completed session and can be refreshed on demand with `R`; a loading indicator is shown while a refresh is in progress
 - **Interactive issue browser** — browse, filter, and launch GitHub issues directly from the TUI; supports single-launch (`Enter`) and multi-select batch-launch (`Space` + `Enter`); filter by text (`/`) or milestone (`m`)
 - **Milestone overview** — inspect milestone progress with real-time completion gauges; drill into issues or run all open issues in a milestone with a single key (`r`)
 - **Automatic preflight checks** — `maestro run` validates that `claude`, `gh`/`az`, and `git` are correctly installed and authenticated before spending any API credits; use `--skip-doctor` to bypass when needed
@@ -364,6 +364,7 @@ Dependencies can also be declared in the issue body as `blocked-by: #N` (case-in
 | `i` | Open issue browser |
 | `m` | Open milestone overview |
 | `c` | Open cost dashboard |
+| `R` | Refresh work suggestions |
 | `j` / `Down` | Move selection down |
 | `k` / `Up` | Move selection up |
 | `Enter` | Execute selected action |

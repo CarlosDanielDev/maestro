@@ -150,6 +150,7 @@ pub struct HomeScreen {
     pub warnings: Vec<String>,
     pub suggestions: Vec<Suggestion>,
     pub selected_suggestion: usize,
+    pub loading_suggestions: bool,
     pub focus_ring: FocusRing,
 }
 
@@ -171,6 +172,7 @@ impl HomeScreen {
             warnings,
             suggestions: Vec::new(),
             selected_suggestion: 0,
+            loading_suggestions: false,
             focus_ring: FocusRing::new(vec![Self::QUICK_ACTIONS_PANE, Self::SUGGESTIONS_PANE]),
         }
     }
@@ -221,9 +223,14 @@ impl HomeScreen {
         self.draw_recent_sessions(f, bottom[2], theme);
     }
 
+    pub fn start_loading_suggestions(&mut self) {
+        self.loading_suggestions = true;
+    }
+
     pub fn set_suggestions(&mut self, suggestions: Vec<Suggestion>) {
         self.suggestions = suggestions;
         self.selected_suggestion = 0;
+        self.loading_suggestions = false;
     }
 
     pub fn tick(&mut self) {
@@ -350,6 +357,14 @@ impl HomeScreen {
             .title(" Suggestions ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(border_color));
+
+        if self.loading_suggestions {
+            let para = Paragraph::new("  Loading...")
+                .style(Style::default().fg(theme.accent_warning))
+                .block(block);
+            f.render_widget(para, area);
+            return;
+        }
 
         if self.suggestions.is_empty() {
             let para = Paragraph::new("  No suggestions — everything looks good!")
@@ -483,6 +498,10 @@ impl KeymapProvider for HomeScreen {
                         description: "Run Prompt",
                     },
                     KeyBinding {
+                        key: "R",
+                        description: "Refresh Suggestions",
+                    },
+                    KeyBinding {
                         key: "q",
                         description: "Quit",
                     },
@@ -508,6 +527,7 @@ impl Screen for HomeScreen {
                 KeyCode::Char('i') => return ScreenAction::Push(TuiMode::IssueBrowser),
                 KeyCode::Char('m') => return ScreenAction::Push(TuiMode::MilestoneView),
                 KeyCode::Char('r') => return ScreenAction::Push(TuiMode::PromptInput),
+                KeyCode::Char('R') => return ScreenAction::RefreshSuggestions,
                 KeyCode::Char('s') => return ScreenAction::Push(TuiMode::Overview),
                 KeyCode::Char('c') => return ScreenAction::Push(TuiMode::CostDashboard),
                 KeyCode::Char('q') => return ScreenAction::Quit,
@@ -1170,5 +1190,36 @@ mod tests {
         // Quick actions selection must be unchanged
         assert_eq!(screen.selected_action, 2);
         assert_eq!(screen.selected_suggestion, 0);
+    }
+
+    // --- Issue #86: suggestion refresh keybinding and loading state ---
+
+    #[test]
+    fn home_shift_r_returns_refresh_suggestions() {
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        let action = screen.handle_input(&key_event(KeyCode::Char('R')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::RefreshSuggestions);
+    }
+
+    #[test]
+    fn home_shift_r_from_suggestions_pane_returns_refresh_suggestions() {
+        let mut screen = make_home_with_suggestions(vec![]);
+        focus_suggestions(&mut screen);
+        let action = screen.handle_input(&key_event(KeyCode::Char('R')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::RefreshSuggestions);
+    }
+
+    #[test]
+    fn home_loading_suggestions_defaults_to_false() {
+        let screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        assert!(!screen.loading_suggestions);
+    }
+
+    #[test]
+    fn set_suggestions_clears_loading_flag() {
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        screen.loading_suggestions = true;
+        screen.set_suggestions(vec![]);
+        assert!(!screen.loading_suggestions);
     }
 }
