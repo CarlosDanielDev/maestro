@@ -7,6 +7,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Post-Session Activity Log with Cost Summary and Next Actions (#84)
+
+- `src/tui/app.rs` — `CompletionSessionLine` gains `pr_link: Option<String>` and `error_summary: Option<String>` fields; `build_completion_summary()` populates `pr_link` by matching the session's `issue_number` against `pending_pr_checks` (resolved to a full `https://github.com/{repo}/pull/{N}` URL when a repo slug is available, otherwise `#N`) and falls back to `ci_fix_context.pr_number`; `error_summary` is set only for `Errored` sessions — it picks the last activity-log entry whose message starts with `"Error:"` or `"E:"` (or the last entry as a fallback) and truncates it to 80 characters with a trailing `...`
+- `src/tui/ui.rs` — `draw_completion_overlay()` extended with two new rendering sections: PR links are appended to the session row as underlined, `accent_info`-colored spans; error summaries are rendered on a dedicated indented line in `accent_error` color; the dismiss hint is replaced with a full keybindings bar: `[i]` Browse issues, `[r]` New prompt, `[l]` View logs, `[q]` Quit, `[Esc]` Dashboard — all keys styled with `theme.keybind_key`
+- `src/tui/mod.rs` — `CompletionSummary` key-intercept branch extended with three new handlers: `[i]` clears the summary, creates a loading `IssueBrowserScreen`, queues `FetchIssues`, and transitions to `IssueBrowser` mode; `[r]` clears the summary, creates a `PromptInputScreen`, and transitions to `PromptInput` mode; `[l]` clears the summary and transitions to `Overview` mode (activity log view); scroll keys `j`/`k`/Up/Down delegate to `panel_view` for log scrolling within the overlay
+
 ### Return to Dashboard After Session Completion (#83)
 
 - `src/cli.rs` — `--once` flag added to `maestro run`; when set, maestro exits after all sessions complete (preserves previous behaviour for CI and scripting use cases)
