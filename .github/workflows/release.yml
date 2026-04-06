@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -27,13 +31,13 @@ jobs:
             os: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@aa7c1c80a07a27a84c0aa76d0cef0aad3830e330 # v2.7.8
         with:
           key: ${{ matrix.target }}
 
@@ -45,13 +49,11 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           ARCHIVE="maestro-${TAG}-${{ matrix.target }}.tar.gz"
-          cd target/${{ matrix.target }}/release
-          tar czf "../../../${ARCHIVE}" maestro
-          cd ../../..
+          tar czf "${ARCHIVE}" -C target/${{ matrix.target }}/release maestro
           echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: maestro-${{ matrix.target }}
           path: ${{ env.ARCHIVE }}
@@ -61,22 +63,21 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts
           merge-multiple: true
 
       - name: Generate checksums
+        id: checksums
         run: |
           cd artifacts
           sha256sum *.tar.gz > sha256sums.txt
           cat sha256sums.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           generate_release_notes: true
           files: |
@@ -92,9 +93,18 @@ jobs:
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN secret is not set — skipping tap update"
+            exit 0
+          fi
           TAG="${GITHUB_REF#refs/tags/}"
-          curl -X POST \
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${TAP_TOKEN}" \
             https://api.github.com/repos/CarlosDanielDev/homebrew-tap/dispatches \
-            -d "{\"event_type\": \"formula-update\", \"client_payload\": {\"version\": \"${TAG#v}\", \"tag\": \"${TAG}\"}}"
+            -d "{\"event_type\": \"formula-update\", \"client_payload\": {\"version\": \"${TAG#v}\", \"tag\": \"${TAG}\"}}")
+          if [ "${HTTP_CODE}" != "204" ]; then
+            echo "::error::Failed to trigger homebrew tap update — HTTP ${HTTP_CODE}"
+            exit 1
+          fi
+          echo "Homebrew tap update triggered successfully"
