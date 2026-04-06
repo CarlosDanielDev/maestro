@@ -42,6 +42,11 @@ anyhow = "1"
 [dev-dependencies]
 tempfile = "3"
 insta = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "parser"
+harness = false
 
 [profile.release]
 lto = "fat"
