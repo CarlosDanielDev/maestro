@@ -245,7 +245,8 @@ impl PromptInputScreen {
                 f,
                 chunks[2],
                 &[
-                    ("Ctrl+S", "Submit"),
+                    ("Enter", "Submit"),
+                    ("Shift+Enter", "New line"),
                     ("Ctrl+V", "Paste"),
                     ("Tab", "Switch"),
                     ("Esc", "Cancel"),
@@ -263,8 +264,12 @@ impl KeymapProvider for PromptInputScreen {
                 title: "Prompt Editor",
                 bindings: vec![
                     KeyBinding {
-                        key: "Ctrl+s",
+                        key: "Enter",
                         description: "Submit prompt",
+                    },
+                    KeyBinding {
+                        key: "Shift+Enter",
+                        description: "New line",
                     },
                     KeyBinding {
                         key: "Ctrl+v",
@@ -310,16 +315,6 @@ impl Screen for PromptInputScreen {
             ..
         }) = event
         {
-            if *modifiers == KeyModifiers::CONTROL && *code == KeyCode::Char('s') {
-                if self.prompt_text.trim().is_empty() {
-                    return ScreenAction::None;
-                }
-                return ScreenAction::LaunchPromptSession(PromptSessionConfig {
-                    prompt: self.prompt_text.clone(),
-                    image_paths: self.image_paths.clone(),
-                });
-            }
-
             if *modifiers == KeyModifiers::CONTROL && *code == KeyCode::Char('v') {
                 self.paste_from_clipboard();
                 return ScreenAction::None;
@@ -366,11 +361,22 @@ impl Screen for PromptInputScreen {
 
             if self.is_prompt_editor_focused() {
                 match code {
-                    KeyCode::Char(c) => {
-                        self.prompt_text.push(*c);
+                    KeyCode::Enter if *modifiers == KeyModifiers::SHIFT => {
+                        self.prompt_text.push('\n');
                     }
                     KeyCode::Enter => {
-                        self.prompt_text.push('\n');
+                        if !self.prompt_text.trim().is_empty() {
+                            return ScreenAction::LaunchPromptSession(PromptSessionConfig {
+                                prompt: self.prompt_text.clone(),
+                                image_paths: self.image_paths.clone(),
+                            });
+                        }
+                    }
+                    KeyCode::Char(c)
+                        if *modifiers == KeyModifiers::NONE
+                            || *modifiers == KeyModifiers::SHIFT =>
+                    {
+                        self.prompt_text.push(*c);
                     }
                     KeyCode::Backspace => {
                         self.prompt_text.pop();
@@ -426,8 +432,8 @@ impl Screen for PromptInputScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::screens::test_helpers::key_event;
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
+    use crossterm::event::{KeyCode, KeyModifiers};
 
     /// Mock clipboard that returns a preconfigured response.
     struct MockClipboard {
@@ -464,13 +470,12 @@ mod tests {
         }
     }
 
-    fn ctrl_key(code: KeyCode) -> Event {
-        Event::Key(KeyEvent {
-            code,
-            modifiers: KeyModifiers::CONTROL,
-            kind: KeyEventKind::Press,
-            state: KeyEventState::NONE,
-        })
+    fn ctrl_key(code: KeyCode) -> crossterm::event::Event {
+        key_event_with_modifiers(code, KeyModifiers::CONTROL)
+    }
+
+    fn shift_key(code: KeyCode) -> crossterm::event::Event {
+        key_event_with_modifiers(code, KeyModifiers::SHIFT)
     }
 
     fn mock_screen() -> PromptInputScreen {
@@ -531,9 +536,9 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_enter_inserts_newline() {
+    fn prompt_input_shift_enter_inserts_newline() {
         let mut screen = screen_with_prompt("hello");
-        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let action = screen.handle_input(&shift_key(KeyCode::Enter), InputMode::Normal);
         assert_eq!(screen.prompt_text, "hello\n");
         assert_eq!(action, ScreenAction::None);
     }
@@ -553,12 +558,12 @@ mod tests {
         assert_eq!(action, ScreenAction::None);
     }
 
-    // --- Group 3: Submit (Ctrl+S) ---
+    // --- Group 3: Submit (Enter) ---
 
     #[test]
-    fn prompt_input_ctrl_s_with_prompt_returns_launch_prompt_session() {
+    fn prompt_input_enter_with_prompt_returns_launch_prompt_session() {
         let mut screen = screen_with_prompt("fix the bug");
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(
             action,
             ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -569,10 +574,10 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_ctrl_s_with_prompt_and_images_includes_image_paths() {
+    fn prompt_input_enter_with_prompt_and_images_includes_image_paths() {
         let mut screen = screen_with_prompt("describe this");
         screen.image_paths = vec!["/tmp/a.png".to_string(), "/tmp/b.png".to_string()];
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(
             action,
             ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -583,17 +588,35 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_ctrl_s_with_empty_prompt_is_rejected() {
+    fn prompt_input_enter_with_empty_prompt_is_rejected() {
         let mut screen = mock_screen();
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
     #[test]
-    fn prompt_input_ctrl_s_with_whitespace_only_prompt_is_rejected() {
+    fn prompt_input_enter_with_whitespace_only_prompt_is_rejected() {
         let mut screen = screen_with_prompt("   \n  ");
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+    }
+
+    #[test]
+    fn prompt_input_ctrl_s_is_ignored() {
+        let mut screen = screen_with_prompt("fix the bug");
         let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
+        assert_eq!(screen.prompt_text, "fix the bug");
+    }
+
+    #[test]
+    fn prompt_input_enter_in_image_path_editing_does_not_submit_session() {
+        let mut screen = screen_in_image_list_focus();
+        screen.editing_image_path = true;
+        screen.image_path_input = "/tmp/shot.png".to_string();
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        assert_eq!(screen.image_paths, vec!["/tmp/shot.png".to_string()]);
     }
 
     // --- Group 4: Esc ---
