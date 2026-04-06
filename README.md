@@ -105,6 +105,67 @@ cargo build --release
 # Binary at target/release/maestro
 ```
 
+## Shell Completions
+
+Maestro supports tab-completion for bash, zsh, and fish. Completions are pre-generated in every release tarball and installed automatically by Homebrew.
+
+### Generate on demand
+
+```bash
+maestro completions bash   # print bash completion script
+maestro completions zsh    # print zsh completion script
+maestro completions fish   # print fish completion script
+```
+
+### Bash
+
+```bash
+maestro completions bash > ~/.local/share/bash-completion/completions/maestro
+```
+
+Restart your shell or run `source ~/.bashrc` to activate.
+
+### Zsh
+
+```bash
+mkdir -p ~/.zfunc
+maestro completions zsh > ~/.zfunc/_maestro
+```
+
+Add the following line to your `~/.zshrc` **before** `compinit` is called:
+
+```zsh
+fpath+=~/.zfunc
+```
+
+Then reload:
+
+```zsh
+source ~/.zshrc
+```
+
+### Fish
+
+```bash
+maestro completions fish > ~/.config/fish/completions/maestro.fish
+```
+
+Fish picks up completions in that directory automatically — no shell restart required.
+
+### Homebrew
+
+Homebrew installs the man page and shell completions automatically when you run `brew install`. No manual steps are needed.
+
+### Pre-built releases
+
+Each release tarball on the [GitHub Releases page](https://github.com/CarlosDanielDev/maestro/releases) includes a `completions/` directory (containing `maestro.bash`, `_maestro` for zsh, and `maestro.fish`) and a `man/maestro.1` man page. Copy the files to the appropriate paths listed above.
+
+To read the man page from the tarball:
+
+```bash
+man ./man/maestro.1
+```
+
 ## Quick Start
 
 ```bash
