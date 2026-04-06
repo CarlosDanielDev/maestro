@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-04 19:00 (UTC)
+> Last updated: 2026-04-05 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -133,6 +133,15 @@ maestro/
 │   │   │   ├── mod.rs                     # Module exports for navigation subsystem
 │   │   │   ├── focus.rs                   # Focus management: FocusManager, focus ring, widget focus state
 │   │   │   └── keymap.rs                  # Keymap definitions: action-to-key bindings, context-sensitive keymaps
+│   │   ├── snapshot_tests/                # TUI snapshot tests using insta (29 tests, 6 views)  [Issue #16]
+│   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules
+│   │   │   ├── overview.rs                # 6 snapshot tests for PanelView (empty, single, multiple, selected, context overflow, forked)
+│   │   │   ├── detail.rs                  # 5 snapshot tests for DetailView (basic, progress, activity log, no files, retries)
+│   │   │   ├── dashboard.rs               # 4 snapshot tests for HomeScreen (baseline, warnings, suggestions, selected action)
+│   │   │   ├── issue_browser.rs           # 5 snapshot tests for IssueBrowserScreen (with issues, empty, loading, multi-select, filter)
+│   │   │   ├── milestone.rs               # 4 snapshot tests for MilestoneScreen (with milestones, empty, loading, detail pane)
+│   │   │   ├── cost_dashboard.rs          # 5 snapshot tests for CostDashboard (no budget, under threshold, over 90%, empty, sorted)
+│   │   │   └── snapshots/                 # Committed insta snapshot files (29 .snap files)
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum, SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen
 │   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; draw_suggestions() renders Suggestions panel; Tab-based focus navigation between QuickActions and Suggestions; ProjectInfo gains username field  [Issue #31, #49, #34, #35]
@@ -167,7 +176,7 @@ maestro/
 │           └── security-patterns/
 ├── .gitignore                             # Includes .maestro/worktrees/
 ├── Cargo.lock                             # Dependency lock file
-├── Cargo.toml                             # Rust package manifest; tempfile dev-dependency added
+├── Cargo.toml                             # Rust package manifest; tempfile and insta dev-dependencies added
 ├── CHANGELOG.md                           # Release history following Keep a Changelog format
 ├── LICENSE
 ├── README.md                              # Project front door
@@ -250,6 +259,14 @@ maestro/
 | `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
 | `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters; `set_issues()` (Issues #32, #46) |
 | `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
+| `src/tui/snapshot_tests/` | TUI snapshot test suite; 29 tests across 6 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issue #16) |
+| `src/tui/snapshot_tests/overview.rs` | 6 snapshot tests for `PanelView`: empty, single running, multiple, selected, context overflow, forked |
+| `src/tui/snapshot_tests/detail.rs` | 5 snapshot tests for `DetailView`: basic, progress, activity log, no files touched, files + retries |
+| `src/tui/snapshot_tests/dashboard.rs` | 4 snapshot tests for `HomeScreen`: baseline, with warnings, with suggestions, selected action |
+| `src/tui/snapshot_tests/issue_browser.rs` | 5 snapshot tests for `IssueBrowserScreen`: with issues, empty, loading, multi-select, filter active |
+| `src/tui/snapshot_tests/milestone.rs` | 4 snapshot tests for `MilestoneScreen`: with milestones, empty, loading, issues in detail pane |
+| `src/tui/snapshot_tests/cost_dashboard.rs` | 5 snapshot tests for `CostDashboard`: no budget, under threshold, over 90%, empty sessions, sorted by cost |
+| `src/tui/snapshot_tests/snapshots/` | 29 committed `.snap` files — insta ground-truth for TUI rendering regressions |
 | `src/integration_tests/` | End-to-end integration test suite; 55 tests; MockGitHubClient and MockWorktreeManager; no external process dependencies (Issue #15) |
 | `src/integration_tests/mod.rs` | Module declarations and shared helpers: `make_pool()`, `make_pool_with_worktree()`, `make_session()`, `make_session_with_issue()`, `make_gh_issue()` |
 | `src/integration_tests/session_lifecycle.rs` | 11 tests covering enqueue, promote, and complete session lifecycle via `handle_event()` |
