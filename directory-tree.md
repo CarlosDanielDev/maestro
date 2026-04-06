@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-05 00:00 (UTC)
+> Last updated: 2026-04-06 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -59,7 +59,7 @@ maestro/
 │   │   └── bug.yml                        # Bug report issue form with DOR
 │   └── workflows/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
-│       └── release.yml                    # Release workflow: cross-platform builds, GitHub Release, Homebrew tap trigger
+│       └── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
 ├── src/
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests  [Issue #15, #29, #49, #34, #36, #35, #52]
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix; TuiConfig struct with optional theme field; Config gains tui field  [Issue #29, #40, #41, #43, #38]
@@ -176,7 +176,7 @@ maestro/
 │           └── security-patterns/
 ├── .gitignore                             # Includes .maestro/worktrees/
 ├── Cargo.lock                             # Dependency lock file
-├── Cargo.toml                             # Rust package manifest; tempfile and insta dev-dependencies added
+├── Cargo.toml                             # Rust package manifest; tempfile and insta dev-dependencies; optimized release profile
 ├── CHANGELOG.md                           # Release history following Keep a Changelog format
 ├── LICENSE
 ├── README.md                              # Project front door
@@ -194,7 +194,7 @@ maestro/
 | `.github/ISSUE_TEMPLATE/feature.yml` | Feature request issue form with Definition of Ready fields |
 | `.github/ISSUE_TEMPLATE/bug.yml` | Bug report issue form with Definition of Ready fields |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline |
-| `.github/workflows/release.yml` | Release automation: build binaries, create GitHub Release, update Homebrew tap |
+| `.github/workflows/release.yml` | Release automation: cross-platform builds, GitHub Release with SHA256 checksums, Homebrew tap update |
 | `.claude/` | Claude Code agent configuration |
 | `.claude/agents/` | Subagent definitions |
 | `.claude/commands/` | Slash command definitions |

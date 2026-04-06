@@ -7,6 +7,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Release Workflow for Binary Build and Distribution (#17)
+
+- Release workflow now prevents concurrent builds on the same tag
+- Homebrew tap update fails fast when API credentials are missing or the API returns an error
+- Release binaries are fully optimized and stripped for minimal distribution size (LTO, single codegen unit, symbol stripping)
+
 ### TUI Rendering Snapshot Tests (#16)
 
 - `Cargo.toml` — `insta = "1"` added as a dev-dependency for snapshot-based TUI rendering tests
