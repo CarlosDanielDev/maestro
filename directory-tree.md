@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-06 00:00 (UTC)
+> Last updated: 2026-04-06 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -60,8 +60,10 @@ maestro/
 │   └── workflows/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
+├── build.rs                               # Build script: generates man page (maestro.1) and shell completions (bash, zsh, fish) into OUT_DIR at build time using clap_mangen and clap_complete  [Issue #18]
 ├── src/
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests  [Issue #15, #29, #49, #34, #36, #35, #52]
+│   ├── cli.rs                             # CLI definition extracted from main.rs; Cli struct and Commands enum (clap derive); generate_completions() and cmd_completions() for shell tab-completion output; cmd_mangen() for roff man page generation; Completions and Mangen subcommands  [Issue #18]
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix; TuiConfig struct with optional theme field; Config gains tui field  [Issue #29, #40, #41, #43, #38]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
 │   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); validate_preflight() (public, fails fast on required check failures); build_claude_cli_result() (pub(crate), pure/testable); check_claude_cli() elevated to Required severity; build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34, #52]
@@ -201,8 +203,10 @@ maestro/
 | `.claude/hooks/` | Pre/post command notification hooks |
 | `.claude/skills/` | Reusable knowledge bases for subagents |
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
+| `build.rs` | Build script: generates `maestro.1` man page and bash/zsh/fish completions into `OUT_DIR` at build time (Issue #18) |
 | `src/` | Rust source code |
 | `src/main.rs` | CLI entry point; `--skip-doctor` flag on `run` subcommand; `cmd_run()` calls `validate_preflight()` before launch and uses `PromptBuilder::build_issue_prompt()` for issue sessions; `setup_app_from_config()` shared App setup helper; `cmd_dashboard()` with startup cleanup, config-driven wiring, and `FetchSuggestionData` queued on startup (Issues #29, #34, #35, #36, #49, #52) |
+| `src/cli.rs` | CLI struct and subcommand definitions; `generate_completions()`, `cmd_completions()`, `cmd_mangen()`; `Completions` and `Mangen` subcommands (Issue #18) |
 | `src/budget.rs` | Per-session and global budget enforcement (Phase 3) |
 | `src/doctor.rs` | Preflight check system: `CheckSeverity`, `CheckResult`, `DoctorReport`, `run_all_checks()`, `print_report()`; `validate_preflight()` fails fast if any required check fails; `build_claude_cli_result()` (pub(crate), pure/testable); `check_claude_cli()` is Required severity; `build_gh_auth_result()` (pure/testable); `check_az_identity()` for Azure DevOps (Issues #49, #34, #52) |
 | `src/git.rs` | GitOps trait and CLI-backed commit+push (Phase 3) |
