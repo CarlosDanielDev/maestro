@@ -166,7 +166,49 @@ impl WorkAssigner {
     pub fn mark_failed_cascade(&mut self, issue_number: u64) -> Vec<u64> {
         self.mark_failed(issue_number);
 
-        // BFS to find all transitive dependents using cached graph
+        let visited = self.transitive_dependents(issue_number);
+
+        for &num in &visited {
+            if let Some(item) = self.items.iter_mut().find(|i| i.number() == num)
+                && !matches!(item.status, WorkStatus::Done | WorkStatus::Failed)
+            {
+                item.status = WorkStatus::Failed;
+            }
+        }
+
+        visited.into_iter().collect()
+    }
+
+    /// Reset a failed item back to Pending for retry.
+    /// No-op if the item is not in Failed status or doesn't exist.
+    pub fn mark_pending(&mut self, issue_number: u64) {
+        self.completed_issues.remove(&issue_number);
+        if let Some(item) = self.items.iter_mut().find(|i| i.number() == issue_number)
+            && item.status == WorkStatus::Failed
+        {
+            item.status = WorkStatus::Pending;
+        }
+    }
+
+    /// Reset a failed item AND its cascade-failed dependents back to Pending.
+    /// Items that are Done are not affected.
+    pub fn mark_pending_undo_cascade(&mut self, issue_number: u64) {
+        self.mark_pending(issue_number);
+
+        let visited = self.transitive_dependents(issue_number);
+
+        for &num in &visited {
+            self.completed_issues.remove(&num);
+            if let Some(item) = self.items.iter_mut().find(|i| i.number() == num)
+                && item.status == WorkStatus::Failed
+            {
+                item.status = WorkStatus::Pending;
+            }
+        }
+    }
+
+    /// BFS to collect all transitive dependents of an issue.
+    fn transitive_dependents(&self, issue_number: u64) -> HashSet<u64> {
         let mut visited: HashSet<u64> = HashSet::new();
         let mut queue = std::collections::VecDeque::new();
         queue.push_back(issue_number);
@@ -179,16 +221,7 @@ impl WorkAssigner {
             }
         }
 
-        // Mark all transitive dependents as failed
-        for &num in &visited {
-            if let Some(item) = self.items.iter_mut().find(|i| i.number() == num)
-                && !matches!(item.status, WorkStatus::Done | WorkStatus::Failed)
-            {
-                item.status = WorkStatus::Failed;
-            }
-        }
-
-        visited.into_iter().collect()
+        visited
     }
 
     /// Get all work items for display.
@@ -563,6 +596,96 @@ mod tests {
         assert_eq!(counts.in_progress, 0);
         assert_eq!(counts.done, 0);
         assert_eq!(counts.failed, 0);
+    }
+
+    // mark_pending
+
+    #[test]
+    fn mark_pending_resets_failed_item_to_pending() {
+        let mut assigner = assigner_from(vec![make_item(1, Priority::P0, &[])]);
+        assigner.mark_in_progress(1);
+        assigner.mark_failed(1);
+        assigner.mark_pending(1);
+        let counts = assigner.count_by_status();
+        assert_eq!(counts.failed, 0);
+        assert_eq!(counts.pending, 1);
+    }
+
+    #[test]
+    fn mark_pending_unknown_id_is_noop() {
+        let mut assigner = assigner_from(vec![make_item(1, Priority::P0, &[])]);
+        assigner.mark_in_progress(1);
+        assigner.mark_failed(1);
+        assigner.mark_pending(999);
+        assert_eq!(assigner.count_by_status().failed, 1);
+    }
+
+    #[test]
+    fn mark_pending_allows_next_ready_to_return_item_again() {
+        let mut assigner = assigner_from(vec![make_item(1, Priority::P0, &[])]);
+        assigner.mark_in_progress(1);
+        assigner.mark_failed(1);
+        assigner.mark_pending(1);
+        let ready = assigner.next_ready(1);
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].number(), 1);
+    }
+
+    // mark_pending_undo_cascade
+
+    #[test]
+    fn mark_pending_undo_cascade_resets_root_and_dependents() {
+        let mut assigner = assigner_from(vec![
+            make_item(1, Priority::P0, &[]),
+            make_item(2, Priority::P1, &[1]),
+            make_item(3, Priority::P2, &[2]),
+        ]);
+        assigner.mark_in_progress(1);
+        assigner.mark_failed_cascade(1);
+        assert_eq!(assigner.count_by_status().failed, 3);
+
+        assigner.mark_pending_undo_cascade(1);
+        let counts = assigner.count_by_status();
+        assert_eq!(counts.failed, 0);
+        assert_eq!(counts.pending, 3);
+    }
+
+    #[test]
+    fn mark_pending_undo_cascade_does_not_reset_done_items() {
+        let mut assigner = assigner_from(vec![
+            make_item(1, Priority::P0, &[]),
+            make_item(2, Priority::P1, &[1]),
+        ]);
+        // Mark 2 done independently first
+        assigner.mark_in_progress(2);
+        assigner.mark_done(2);
+        // Now fail 1 (cascade should skip done item 2)
+        assigner.mark_in_progress(1);
+        assigner.mark_failed_cascade(1);
+
+        assigner.mark_pending_undo_cascade(1);
+
+        // Item 1 should be pending again; item 2 must remain done
+        assert_eq!(assigner.count_by_status().pending, 1);
+        assert_eq!(assigner.count_by_status().done, 1);
+        assert_eq!(assigner.count_by_status().failed, 0);
+    }
+
+    #[test]
+    fn mark_pending_undo_cascade_resets_only_failed_dependents() {
+        let mut assigner = assigner_from(vec![
+            make_item(1, Priority::P0, &[]),
+            make_item(2, Priority::P1, &[1]),
+            make_item(3, Priority::P2, &[]), // independent, stays pending
+        ]);
+        assigner.mark_in_progress(1);
+        assigner.mark_failed_cascade(1);
+
+        assigner.mark_pending_undo_cascade(1);
+
+        // All three are pending: 1 reset, 2 reset, 3 was always pending
+        assert_eq!(assigner.count_by_status().pending, 3);
+        assert_eq!(assigner.count_by_status().failed, 0);
     }
 
     #[test]
