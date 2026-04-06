@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Submit Prompt with Enter Key, Shift+Enter for Newlines (#101)
+
+- `src/tui/screens/prompt_input.rs` — `Enter` now submits the prompt and launches a session (previously `Ctrl+S`); `Shift+Enter` inserts a newline in the prompt body (previously `Enter`); `Ctrl+S` removed as a submission keybinding; keybinds bar updated to show `Enter: Submit` and `Shift+Enter: New line`
+
 ### Dashboard Suggestion Refresh After Session Completion (#86)
 
 - `src/tui/screens/mod.rs` — `ScreenAction::RefreshSuggestions` variant added; triggers a suggestion reload from the dashboard without a full navigation round-trip

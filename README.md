@@ -391,6 +391,18 @@ Dependencies can also be declared in the issue body as `blocked-by: #N` (case-in
 | `r` | Run all open issues in selected milestone |
 | `Esc` | Go back |
 
+### Prompt Input
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Submit prompt and launch session |
+| `Shift+Enter` | Insert newline |
+| `Ctrl+V` | Paste from clipboard (text or image) |
+| `Tab` / `Shift+Tab` | Move focus between fields |
+| `a` | Add image attachment (in attachment list) |
+| `d` | Remove selected attachment (in attachment list) |
+| `Esc` | Cancel and return to previous screen |
+
 ## How It Works
 
 1. Maestro spawns `claude --print --output-format stream-json --model <model> "<prompt>"`
