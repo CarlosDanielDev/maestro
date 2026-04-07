@@ -87,6 +87,8 @@ pub enum ScreenAction {
 pub struct SessionConfig {
     pub issue_number: Option<u64>,
     pub title: String,
+    /// Optional custom prompt to append to the issue prompt.
+    pub custom_prompt: Option<String>,
 }
 
 /// Configuration for launching a prompt-based session (no GitHub issue).
