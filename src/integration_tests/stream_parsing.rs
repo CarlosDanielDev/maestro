@@ -16,7 +16,7 @@ fn assistant_message_updates_last_message_and_activity() {
     });
 
     assert_eq!(managed.session.last_message, "Hello from Claude");
-    assert_eq!(managed.session.current_activity, "Thinking");
+    assert_eq!(managed.session.current_activity, "Hello from Claude");
 }
 
 #[test]
@@ -52,11 +52,12 @@ fn tool_use_sets_activity_and_logs() {
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Read".to_string(),
-        args_preview: String::new(),
+
         file_path: Some("src/main.rs".to_string()),
+        command_preview: None,
     });
 
-    assert_eq!(managed.session.current_activity, "Using Read");
+    assert_eq!(managed.session.current_activity, "Read: main.rs");
     assert!(
         managed
             .session
@@ -78,8 +79,9 @@ fn tool_use_file_touching_tools_track_files() {
         let mut managed = ManagedSession::new(make_session("s"));
         managed.handle_event(&StreamEvent::ToolUse {
             tool: tool.to_string(),
-            args_preview: String::new(),
+
             file_path: Some(path.to_string()),
+            command_preview: None,
         });
         assert!(
             managed.session.files_touched.contains(&path.to_string()),
@@ -95,8 +97,9 @@ fn tool_use_bash_does_not_track_file_path() {
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Bash".to_string(),
-        args_preview: r#"{"command":"cargo test"}"#.to_string(),
+
         file_path: None,
+        command_preview: None,
     });
 
     assert!(managed.session.files_touched.is_empty());
@@ -109,8 +112,9 @@ fn tool_use_deduplicates_files_touched() {
     for _ in 0..3 {
         managed.handle_event(&StreamEvent::ToolUse {
             tool: "Read".to_string(),
-            args_preview: String::new(),
+
             file_path: Some("src/main.rs".to_string()),
+            command_preview: None,
         });
     }
 
@@ -145,7 +149,7 @@ fn tool_result_error_logs_activity() {
 }
 
 #[test]
-fn tool_result_success_does_not_log_activity() {
+fn tool_result_success_logs_done_with_elapsed() {
     let mut managed = ManagedSession::new(make_session("s"));
     let initial_log_len = managed.session.activity_log.len();
 
@@ -154,7 +158,10 @@ fn tool_result_success_does_not_log_activity() {
         is_error: false,
     });
 
-    assert_eq!(managed.session.activity_log.len(), initial_log_len);
+    assert!(
+        managed.session.activity_log.len() > initial_log_len,
+        "ToolResult success must log a 'done' entry"
+    );
 }
 
 #[test]
@@ -222,7 +229,7 @@ fn roundtrip_assistant_text_updates_session() {
     managed.handle_event(&event);
 
     assert_eq!(managed.session.last_message, "I will fix the bug.");
-    assert_eq!(managed.session.current_activity, "Thinking");
+    assert_eq!(managed.session.current_activity, "I will fix the bug.");
 }
 
 #[test]
@@ -318,4 +325,246 @@ fn roundtrip_full_session_transcript() {
     );
     assert!(managed.session.last_message.contains("I see the issue"));
     assert_eq!(managed.session.current_activity, "Done");
+}
+
+// ---------------------------------------------------------------------------
+// Issue #102: Phase 1 — Richer tool activity messages
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tool_use_read_with_file_path_formats_activity_as_read_basename() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::ToolUse {
+        tool: "Read".to_string(),
+
+        file_path: Some("/src/session/manager.rs".to_string()),
+        command_preview: None,
+    });
+
+    assert_eq!(managed.session.current_activity, "Read: manager.rs");
+}
+
+#[test]
+fn tool_use_write_with_file_path_formats_activity_as_write_basename() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::ToolUse {
+        tool: "Write".to_string(),
+
+        file_path: Some("/src/new_module.rs".to_string()),
+        command_preview: None,
+    });
+
+    assert_eq!(managed.session.current_activity, "Write: new_module.rs");
+}
+
+#[test]
+fn tool_use_bash_with_command_preview_formats_activity_with_dollar_prefix() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::ToolUse {
+        tool: "Bash".to_string(),
+
+        file_path: None,
+        command_preview: Some("cargo test".to_string()),
+    });
+
+    assert_eq!(managed.session.current_activity, "$ cargo test");
+}
+
+#[test]
+fn tool_use_without_file_path_and_without_command_preview_falls_back() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::ToolUse {
+        tool: "WebSearch".to_string(),
+
+        file_path: None,
+        command_preview: None,
+    });
+
+    assert_eq!(managed.session.current_activity, "Using WebSearch");
+}
+
+#[test]
+fn tool_result_success_logs_elapsed_time_string() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::ToolUse {
+        tool: "Read".to_string(),
+
+        file_path: Some("src/main.rs".to_string()),
+        command_preview: None,
+    });
+
+    let log_len_before = managed.session.activity_log.len();
+
+    managed.handle_event(&StreamEvent::ToolResult {
+        tool: "Read".to_string(),
+        is_error: false,
+    });
+
+    assert!(
+        managed.session.activity_log.len() > log_len_before,
+        "ToolResult success must add an elapsed time log entry"
+    );
+    let last = &managed.session.activity_log.last().unwrap().message;
+    assert!(
+        last.contains("done") || last.contains("ms") || last.contains("s"),
+        "elapsed log entry must contain time indicator, got: {:?}",
+        last
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Issue #102: Phase 2 — Thinking block extraction
+// ---------------------------------------------------------------------------
+
+#[test]
+fn thinking_event_sets_current_activity_to_thinking() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::Thinking {
+        text: "some internal reasoning".to_string(),
+    });
+
+    assert_eq!(managed.session.current_activity, "Thinking...");
+}
+
+#[test]
+fn multiple_thinking_events_do_not_flood_activity_log() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    for _ in 0..3 {
+        managed.handle_event(&StreamEvent::Thinking {
+            text: "still thinking".to_string(),
+        });
+    }
+
+    assert!(
+        managed.session.activity_log.len() <= 1,
+        "Thinking events must not flood activity_log; got {} entries",
+        managed.session.activity_log.len()
+    );
+}
+
+#[test]
+fn non_thinking_event_after_thinking_logs_thought_duration() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::Thinking {
+        text: "pondering".to_string(),
+    });
+
+    managed.handle_event(&StreamEvent::ToolUse {
+        tool: "Read".to_string(),
+
+        file_path: Some("src/lib.rs".to_string()),
+        command_preview: None,
+    });
+
+    assert!(
+        managed
+            .session
+            .activity_log
+            .iter()
+            .any(|e| e.message.contains("Thought for")),
+        "activity log must contain a 'Thought for' duration entry"
+    );
+}
+
+#[test]
+fn multiple_thinking_events_produce_single_duration_log_on_transition() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    for _ in 0..3 {
+        managed.handle_event(&StreamEvent::Thinking {
+            text: "chain reasoning".to_string(),
+        });
+    }
+
+    managed.handle_event(&StreamEvent::ToolUse {
+        tool: "Bash".to_string(),
+
+        file_path: None,
+        command_preview: Some("cargo fmt".to_string()),
+    });
+
+    let thought_entries = managed
+        .session
+        .activity_log
+        .iter()
+        .filter(|e| e.message.contains("Thought for"))
+        .count();
+
+    assert_eq!(
+        thought_entries, 1,
+        "exactly one 'Thought for' entry must be logged"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Issue #102: Phase 3 — Streaming text feedback
+// ---------------------------------------------------------------------------
+
+#[test]
+fn assistant_message_long_sets_truncated_preview_in_current_activity() {
+    let mut managed = ManagedSession::new(make_session("s"));
+    let long_text = "A".repeat(80);
+
+    managed.handle_event(&StreamEvent::AssistantMessage { text: long_text });
+
+    let activity = &managed.session.current_activity;
+    assert!(
+        activity.ends_with('…'),
+        "long AssistantMessage preview must end with ellipsis, got: {:?}",
+        activity
+    );
+    let without_ellipsis = activity.trim_end_matches('…');
+    assert!(
+        without_ellipsis.chars().count() <= 40,
+        "preview prefix must be at most 40 chars, got: {:?}",
+        without_ellipsis
+    );
+}
+
+#[test]
+fn assistant_message_short_shown_fully_in_current_activity() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::AssistantMessage {
+        text: "Fixed.".to_string(),
+    });
+
+    assert_eq!(managed.session.current_activity, "Fixed.");
+}
+
+#[test]
+fn assistant_message_does_not_add_to_activity_log() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    for i in 0..5 {
+        managed.handle_event(&StreamEvent::AssistantMessage {
+            text: format!("chunk {}", i),
+        });
+    }
+
+    assert_eq!(
+        managed.session.activity_log.len(),
+        0,
+        "AssistantMessage events must not push entries to activity_log"
+    );
+}
+
+// Regression: roundtrip through parser and handler
+#[test]
+fn roundtrip_tool_use_bash_command_preview_preserved_through_parse_and_handle() {
+    let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Bash","input":{"command":"cargo test --lib"}}}"#;
+    let event = parse_stream_line(line);
+
+    let mut managed = ManagedSession::new(make_session("s"));
+    managed.handle_event(&event);
+
+    assert_eq!(managed.session.current_activity, "$ cargo test --lib");
 }

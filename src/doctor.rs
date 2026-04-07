@@ -46,6 +46,7 @@ impl CheckResult {
         }
     }
 
+    #[allow(dead_code)]
     pub fn symbol(&self) -> &'static str {
         match (self.passed, self.severity) {
             (true, _) => "OK",

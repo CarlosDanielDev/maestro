@@ -1,6 +1,6 @@
 use super::types::MaestroState;
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub struct StateStore {
     path: PathBuf,
@@ -34,9 +34,5 @@ impl StateStore {
         std::fs::rename(&tmp, &self.path)
             .with_context(|| format!("renaming {} to {}", tmp.display(), self.path.display()))?;
         Ok(())
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 }

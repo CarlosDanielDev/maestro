@@ -7,6 +7,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Enhanced Real-Time Session Activity Feedback (#102)
+
+- `src/session/types.rs` — `StreamEvent::Thinking { text }` variant added to represent extended thinking blocks emitted by Claude; `command_preview: Option<String>` field added to `StreamEvent::ToolUse` to carry the first ~60 characters of a Bash command for richer activity messages
+- `src/session/parser.rs` — `parse_assistant_event()` now matches `"thinking"` message type and emits `StreamEvent::Thinking { text }`; Bash tool input is inspected for a `"command"` key and its value is stored as `command_preview` (truncated at a safe char boundary with a `…` suffix when longer than 60 characters); non-Bash tools always receive `command_preview: None`
+- `src/session/manager.rs` — `SessionManager` gains `thinking_start: Option<Instant>` field; on the first `Thinking` event the clock starts and `"Thinking..."` is logged to the session activity; when any non-Thinking event follows, the elapsed duration is logged as `"Thought for Xs"` and `thinking_start` is cleared; `ToolUse` activity messages are now richer: file-touching tools show the file path, Bash tool shows `$ <command_preview>`, other tools show the tool name with the file path when available; `ToolResult` messages include elapsed time since the matching `ToolUse` started
+- `src/tui/activity_log.rs` — `LogLevel::Thinking` variant added; rendered in `theme.accent_success` (green), visually distinct from `Info`, `Tool`, `Warn`, and `Error`
+- `src/tui/app.rs` — `StreamEvent::AssistantMessage` text chunks are no longer forwarded to the global activity log (anti-flood); `StreamEvent::Thinking` is handled silently in the event router — thinking state is tracked per-session via `current_activity` in `manager.rs` without generating a global log entry
+- `src/session/logger.rs` — `Thinking` arm added to the file logger: emits `[HH:MM:SS] THINKING: <text>` lines to the per-session log file for offline inspection
+
 ### Submit Prompt with Enter Key, Shift+Enter for Newlines (#101)
 
 - `src/tui/screens/prompt_input.rs` — `Enter` now submits the prompt and launches a session (previously `Ctrl+S`); `Shift+Enter` inserts a newline in the prompt body (previously `Enter`); `Ctrl+S` removed as a submission keybinding; keybinds bar updated to show `Enter: Submit` and `Shift+Enter: New line`

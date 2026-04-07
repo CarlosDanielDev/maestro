@@ -72,13 +72,11 @@ fn save_clipboard_image(img: &arboard::ImageData) -> Option<PathBuf> {
 
 pub struct PromptInputScreen {
     pub(crate) prompt_text: String,
-    pub(crate) cursor_position: (usize, usize),
     pub(crate) image_paths: Vec<String>,
     pub(crate) focus_ring: FocusRing,
     pub(crate) image_path_input: String,
     pub(crate) editing_image_path: bool,
     pub(crate) selected_image: usize,
-    pub(crate) scroll_offset: usize,
     pub(crate) clipboard: Box<dyn ClipboardProvider>,
     /// Transient status message shown after clipboard paste.
     pub(crate) status_message: Option<String>,
@@ -95,13 +93,11 @@ impl PromptInputScreen {
     pub fn with_clipboard(clipboard: Box<dyn ClipboardProvider>) -> Self {
         Self {
             prompt_text: String::new(),
-            cursor_position: (0, 0),
             image_paths: Vec::new(),
             focus_ring: FocusRing::new(vec![Self::PROMPT_EDITOR_PANE, Self::IMAGE_LIST_PANE]),
             image_path_input: String::new(),
             editing_image_path: false,
             selected_image: 0,
-            scroll_offset: 0,
             clipboard,
             status_message: None,
         }

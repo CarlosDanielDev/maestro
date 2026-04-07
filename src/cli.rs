@@ -112,6 +112,7 @@ pub enum Commands {
     },
 }
 
+#[allow(dead_code)]
 pub fn generate_completions<W: std::io::Write>(shell: Shell, out: &mut W) {
     use clap::CommandFactory;
     use clap_complete::generate;
@@ -120,6 +121,7 @@ pub fn generate_completions<W: std::io::Write>(shell: Shell, out: &mut W) {
     generate(shell, &mut cmd, "maestro", out);
 }
 
+#[allow(dead_code)]
 pub fn cmd_completions(shell: Shell) -> anyhow::Result<()> {
     generate_completions(shell, &mut std::io::stdout());
     Ok(())

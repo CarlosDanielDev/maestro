@@ -84,10 +84,6 @@ impl IssueBrowserScreen {
         );
     }
 
-    pub fn tick(&mut self) {
-        // No-op; async data fetching would drain channel here
-    }
-
     pub fn set_milestone_filter(&mut self, milestone: Option<u64>) {
         self.milestone_filter = milestone;
         self.reapply_filters();

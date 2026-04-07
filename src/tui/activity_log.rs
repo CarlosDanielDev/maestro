@@ -20,6 +20,7 @@ pub struct LogEntry {
 pub enum LogLevel {
     Info,
     Tool,
+    Thinking,
     Warn,
     Error,
 }
@@ -29,6 +30,7 @@ impl LogLevel {
         match self {
             Self::Info => theme.text_primary,
             Self::Tool => theme.accent_info,
+            Self::Thinking => theme.accent_success,
             Self::Warn => theme.accent_warning,
             Self::Error => theme.accent_error,
         }
@@ -252,6 +254,51 @@ mod tests {
             log.push(make_entry(&format!("entry {}", i)));
         }
         assert_eq!(log.entries().len(), 5);
+    }
+
+    // --- Issue #102: LogLevel::Thinking tests ---
+
+    #[test]
+    fn log_level_thinking_has_a_color_that_does_not_panic() {
+        let theme = Theme::default();
+        let _ = LogLevel::Thinking.color(&theme);
+    }
+
+    #[test]
+    fn log_level_thinking_color_differs_from_error_color() {
+        let theme = Theme::default();
+        let thinking_color = LogLevel::Thinking.color(&theme);
+        let error_color = LogLevel::Error.color(&theme);
+        assert_ne!(
+            thinking_color, error_color,
+            "Thinking log level must use a visually distinct color from Error"
+        );
+    }
+
+    #[test]
+    fn log_entry_with_thinking_level_is_stored_and_retrievable() {
+        let mut log = ActivityLog::new(100);
+        log.push(LogEntry {
+            timestamp: Utc::now(),
+            session_label: "S-test".to_string(),
+            message: "Thinking block started".to_string(),
+            level: LogLevel::Thinking,
+        });
+        assert_eq!(log.entries().len(), 1);
+        assert_eq!(log.entries()[0].level, LogLevel::Thinking);
+    }
+
+    #[test]
+    fn push_simple_with_thinking_level_stores_correctly() {
+        let mut log = ActivityLog::new(100);
+        log.push_simple(
+            "S-1".to_string(),
+            "Thought for 3s".to_string(),
+            LogLevel::Thinking,
+        );
+        assert_eq!(log.entries().len(), 1);
+        assert_eq!(log.entries()[0].level, LogLevel::Thinking);
+        assert_eq!(log.entries()[0].message, "Thought for 3s");
     }
 
     #[test]
