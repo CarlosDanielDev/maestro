@@ -5,6 +5,7 @@ pub mod dep_graph;
 pub mod detail;
 pub mod fullscreen;
 pub mod help;
+pub mod markdown;
 pub mod navigation;
 pub mod panels;
 pub mod screens;
