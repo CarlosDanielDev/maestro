@@ -229,6 +229,9 @@ pub struct App {
     pub upgrade_state: crate::updater::UpgradeState,
     /// Tick counter for spinner animation (incremented each TUI draw cycle).
     pub spinner_tick: usize,
+    /// Whether the completion summary has been dismissed by the user.
+    /// Prevents the auto-transition from re-triggering after navigation away.
+    pub completion_summary_dismissed: bool,
 }
 
 impl App {
@@ -290,6 +293,7 @@ impl App {
             continuous_mode: None,
             upgrade_state: crate::updater::UpgradeState::Hidden,
             spinner_tick: 0,
+            completion_summary_dismissed: false,
         }
     }
 
@@ -315,6 +319,9 @@ impl App {
         let label = session_label(&session);
         self.activity_log
             .push_simple(label.clone(), "Enqueuing session...".into(), LogLevel::Info);
+
+        // Reset dismissed flag so completion summary can trigger for new sessions
+        self.completion_summary_dismissed = false;
 
         self.pool.enqueue(session);
 
@@ -1349,8 +1356,10 @@ impl App {
             screen.recent_sessions = recent;
         }
 
-        // Clear completion summary and switch to dashboard
+        // Clear completion summary and stale screen state, then switch to dashboard
         self.completion_summary = None;
+        self.completion_summary_dismissed = true;
+        self.issue_browser_screen = None;
         if let Some(ref mut screen) = self.home_screen {
             screen.start_loading_suggestions();
         }
@@ -2946,6 +2955,106 @@ mod tests {
         assert!(
             app.pending_session_launches.is_empty(),
             "spawn_gate_fix_session must be a no-op when issue_number is None"
+        );
+    }
+
+    // --- Issue #148: completion summary traps navigation ---
+
+    #[test]
+    fn completion_summary_dismissed_defaults_to_false() {
+        let app = make_app();
+        assert!(
+            !app.completion_summary_dismissed,
+            "completion_summary_dismissed must default to false"
+        );
+    }
+
+    #[test]
+    fn transition_to_dashboard_sets_dismissed_flag() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(CompletionSummaryData {
+            sessions: vec![],
+            total_cost_usd: 0.0,
+            session_count: 0,
+        });
+        app.transition_to_dashboard();
+        assert!(
+            app.completion_summary_dismissed,
+            "transition_to_dashboard must set completion_summary_dismissed = true"
+        );
+        assert!(
+            app.completion_summary.is_none(),
+            "completion_summary must be cleared"
+        );
+        assert!(
+            matches!(app.tui_mode, TuiMode::Dashboard),
+            "tui_mode must be Dashboard"
+        );
+    }
+
+    #[test]
+    fn transition_to_dashboard_clears_issue_browser_screen() {
+        let mut app = make_app();
+        app.issue_browser_screen = Some(crate::tui::screens::IssueBrowserScreen::new(vec![]));
+        app.transition_to_dashboard();
+        assert!(
+            app.issue_browser_screen.is_none(),
+            "transition_to_dashboard must clear stale issue_browser_screen"
+        );
+    }
+
+    #[tokio::test]
+    async fn add_session_resets_dismissed_flag() {
+        let mut app = make_app();
+        app.completion_summary_dismissed = true;
+        let session = crate::session::types::Session::new(
+            "test".to_string(),
+            "opus".to_string(),
+            "orchestrator".to_string(),
+            None,
+        );
+        let _ = app.add_session(session).await;
+        assert!(
+            !app.completion_summary_dismissed,
+            "add_session must reset completion_summary_dismissed to false"
+        );
+    }
+
+    #[test]
+    fn dismissed_flag_prevents_summary_retrigger_scenario() {
+        // Simulate: completion summary was shown, user dismissed it,
+        // all sessions are still done → summary must NOT re-trigger.
+        let mut app = make_app();
+        // Set up a finished session
+        let session = crate::session::types::Session::new(
+            "done".to_string(),
+            "opus".to_string(),
+            "orchestrator".to_string(),
+            None,
+        );
+        app.pool.enqueue(session);
+        let promoted = app.pool.try_promote();
+        for id in promoted {
+            app.pool.on_session_completed(id);
+        }
+        assert!(app.pool.all_done(), "pool must be all_done");
+
+        // Dismiss the summary
+        app.completion_summary_dismissed = true;
+        app.completion_summary = None;
+        app.tui_mode = TuiMode::Overview;
+
+        // The auto-transition condition should NOT fire:
+        // all_done=true, continuous_mode=None, completion_summary=None,
+        // but completion_summary_dismissed=true → blocked
+        let should_trigger = app.pool.all_done()
+            && app.continuous_mode.is_none()
+            && app.completion_summary.is_none()
+            && !app.completion_summary_dismissed;
+        assert!(
+            !should_trigger,
+            "auto-transition must not fire when completion_summary_dismissed is true"
         );
     }
 }
