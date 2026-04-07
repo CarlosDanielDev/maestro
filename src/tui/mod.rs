@@ -15,6 +15,7 @@ pub mod ui;
 mod snapshot_tests;
 
 use crate::github::client::{GhCliClient, GitHubClient};
+use crate::github::types::GhIssue;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::Screen;
 use app::App;
@@ -532,6 +533,18 @@ fn dispatch_to_active_screen(app: &mut App, event: &Event) -> Option<ScreenActio
     Some(screen.handle_input(event, mode))
 }
 
+/// Returns milestone issues only when navigating from `MilestoneView`.
+fn milestone_issues_if_applicable(app: &App) -> Option<Vec<GhIssue>> {
+    if app.tui_mode != app::TuiMode::MilestoneView {
+        return None;
+    }
+    app.milestone_screen.as_ref().and_then(|ms| {
+        ms.selected_milestone()
+            .filter(|entry| !entry.issues.is_empty())
+            .map(|entry| entry.issues.clone())
+    })
+}
+
 /// Process a ScreenAction returned by a screen's input handler.
 fn handle_screen_action(app: &mut App, action: ScreenAction) {
     match action {
@@ -539,16 +552,11 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
         ScreenAction::Push(mode) => {
             match mode {
                 app::TuiMode::IssueBrowser => {
-                    // If coming from milestone view, use that milestone's issues
-                    let from_milestone = app.milestone_screen.as_ref().and_then(|ms| {
-                        ms.selected_milestone()
-                            .filter(|entry| !entry.issues.is_empty())
-                            .map(|entry| entry.issues.clone())
-                    });
-
-                    if let Some(issues) = from_milestone {
+                    if let Some(issues) = milestone_issues_if_applicable(app) {
                         app.issue_browser_screen = Some(screens::IssueBrowserScreen::new(issues));
-                    } else if app.issue_browser_screen.is_none() {
+                    } else {
+                        // Fresh screen for "All Issues" — never reuse a
+                        // milestone-scoped screen (fixes #117).
                         let mut screen = screens::IssueBrowserScreen::new(vec![]);
                         screen.loading = true;
                         app.issue_browser_screen = Some(screen);
@@ -761,6 +769,108 @@ mod handle_screen_action_tests {
         assert!(
             app.pending_commands.is_empty(),
             "must not queue duplicate FetchSuggestionData while already loading"
+        );
+    }
+
+    // --- Issue #117: milestone filter must not persist on All Issues view ---
+
+    use crate::github::types::GhIssue;
+    use crate::tui::screens::milestone::MilestoneEntry;
+
+    fn make_issue(number: u64, milestone: Option<u64>) -> GhIssue {
+        GhIssue {
+            number,
+            title: format!("Issue #{number}"),
+            body: String::new(),
+            labels: vec![],
+            state: "open".to_string(),
+            html_url: String::new(),
+            milestone,
+            assignees: vec![],
+        }
+    }
+
+    #[test]
+    fn push_issue_browser_from_all_issues_resets_stale_milestone_screen() {
+        let mut app = make_app();
+        app.issue_browser_screen = Some(screens::IssueBrowserScreen::new(vec![make_issue(
+            1,
+            Some(42),
+        )]));
+        app.milestone_screen = None;
+        app.tui_mode = app::TuiMode::Dashboard;
+        app.pending_commands.clear();
+
+        handle_screen_action(&mut app, ScreenAction::Push(app::TuiMode::IssueBrowser));
+
+        assert!(
+            app.pending_commands
+                .iter()
+                .any(|c| matches!(c, app::TuiCommand::FetchIssues)),
+            "navigating to All Issues must queue FetchIssues, not reuse stale screen"
+        );
+        let screen = app.issue_browser_screen.as_ref().unwrap();
+        assert!(screen.loading, "fresh screen must be in loading state");
+        assert!(
+            screen.issues.is_empty(),
+            "fresh screen must start with no issues"
+        );
+    }
+
+    #[test]
+    fn push_issue_browser_from_milestone_uses_milestone_issues() {
+        let mut app = make_app();
+        let entry = MilestoneEntry {
+            number: 3,
+            title: "Sprint 1".to_string(),
+            description: String::new(),
+            state: "open".to_string(),
+            open_issues: 1,
+            closed_issues: 0,
+            issues: vec![make_issue(7, Some(3))],
+        };
+        app.milestone_screen = Some(screens::MilestoneScreen::new(vec![entry]));
+        app.tui_mode = app::TuiMode::MilestoneView;
+        app.issue_browser_screen = None;
+        app.pending_commands.clear();
+
+        handle_screen_action(&mut app, ScreenAction::Push(app::TuiMode::IssueBrowser));
+
+        assert!(
+            !app.pending_commands
+                .iter()
+                .any(|c| matches!(c, app::TuiCommand::FetchIssues)),
+            "milestone push must NOT queue FetchIssues"
+        );
+        let screen = app.issue_browser_screen.as_ref().unwrap();
+        assert_eq!(screen.issues.len(), 1);
+        assert_eq!(screen.issues[0].number, 7);
+    }
+
+    #[test]
+    fn push_issue_browser_clears_milestone_filter_on_all_issues() {
+        let mut app = make_app();
+        let mut stale_screen = screens::IssueBrowserScreen::new(vec![]);
+        stale_screen.set_milestone_filter(Some(5));
+        app.issue_browser_screen = Some(stale_screen);
+        app.milestone_screen = None;
+        app.tui_mode = app::TuiMode::Dashboard;
+        app.pending_commands.clear();
+
+        handle_screen_action(&mut app, ScreenAction::Push(app::TuiMode::IssueBrowser));
+
+        let fetched = vec![
+            make_issue(10, None),
+            make_issue(11, Some(99)),
+            make_issue(12, None),
+        ];
+        app.handle_data_event(app::TuiDataEvent::Issues(Ok(fetched)));
+
+        let screen = app.issue_browser_screen.as_ref().unwrap();
+        assert_eq!(
+            screen.filtered_indices.len(),
+            3,
+            "All Issues must show all fetched issues — no milestone filter should be active"
         );
     }
 }

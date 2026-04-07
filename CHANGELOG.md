@@ -7,6 +7,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- Milestone filter persists on "All Issues" view when switching between milestone and non-milestone contexts (#117)
+
+### Detailed Changes
+
+### Milestone Filter Persists on All Issues View (#117)
+
+- `src/tui/mod.rs` — `handle_screen_action()` now always constructs a fresh `IssueBrowserScreen` when navigating to "All Issues" from a non-milestone context, instead of reusing a stale screen that retained a milestone-scoped filter from a previous navigation
+- `src/tui/screens/issue_browser.rs` — `set_issues()` now calls `reapply_filters()` after replacing the issue list so that any active milestone filter is correctly applied to the newly delivered data rather than being silently dropped
+
 ## [0.5.0] - 2026-04-07
 
 ### Added

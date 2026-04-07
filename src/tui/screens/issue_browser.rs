@@ -53,10 +53,10 @@ impl IssueBrowserScreen {
 
     pub fn set_issues(&mut self, issues: Vec<GhIssue>) {
         self.issues = issues;
-        self.filtered_indices = (0..self.issues.len()).collect();
         self.selected = 0;
         self.scroll_offset = 0;
         self.loading = false;
+        self.reapply_filters();
     }
 
     fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -710,6 +710,45 @@ mod tests {
             screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
         }
         assert!(screen.selected <= 1);
+    }
+
+    // ---- set_issues with milestone filter (issue #117) ----
+
+    #[test]
+    fn set_issues_with_active_milestone_filter_respects_filter() {
+        let mut screen = IssueBrowserScreen::new(vec![]);
+        screen.set_milestone_filter(Some(10));
+
+        let issues = vec![
+            make_issue_with_milestone(1, 10),
+            make_issue_with_milestone(2, 10),
+            make_issue_with_milestone(3, 99),
+        ];
+        screen.set_issues(issues);
+
+        assert_eq!(
+            screen.filtered_indices.len(),
+            2,
+            "set_issues must reapply active milestone filter"
+        );
+    }
+
+    #[test]
+    fn set_issues_without_active_milestone_filter_shows_all() {
+        let mut screen = IssueBrowserScreen::new(vec![]);
+
+        let issues = vec![
+            make_issue_with_milestone(1, 10),
+            make_issue_with_milestone(2, 10),
+            make_issue_with_milestone(3, 99),
+        ];
+        screen.set_issues(issues);
+
+        assert_eq!(
+            screen.filtered_indices.len(),
+            3,
+            "set_issues with no filter must show all issues"
+        );
     }
 
     // ---- set_issues ----
