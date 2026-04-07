@@ -91,6 +91,10 @@ pub enum TuiDataEvent {
     Issue(anyhow::Result<GhIssue>),
     /// Suggestion data for the home screen.
     SuggestionData(SuggestionDataPayload),
+    /// Version check result from background task.
+    VersionCheckResult(Option<crate::updater::ReleaseInfo>),
+    /// Binary upgrade result (Ok = backup_path, Err = error message).
+    UpgradeResult(Result<String, String>),
 }
 
 /// Summary data shown in the post-completion overlay.
@@ -220,6 +224,8 @@ pub struct App {
     pub completion_summary: Option<CompletionSummaryData>,
     /// Continuous mode state (Some when --continuous flag is active).
     pub continuous_mode: Option<ContinuousModeState>,
+    /// Current state of the self-upgrade flow.
+    pub upgrade_state: crate::updater::UpgradeState,
 }
 
 impl App {
@@ -279,6 +285,7 @@ impl App {
             once_mode: false,
             completion_summary: None,
             continuous_mode: None,
+            upgrade_state: crate::updater::UpgradeState::Hidden,
         }
     }
 
@@ -849,6 +856,26 @@ impl App {
                 if let Some(ref mut screen) = self.home_screen {
                     screen.set_suggestions(suggestions);
                 }
+            }
+            TuiDataEvent::VersionCheckResult(Some(info)) => {
+                self.activity_log.push_simple(
+                    "UPDATE".into(),
+                    format!("New version {} available", info.tag),
+                    LogLevel::Info,
+                );
+                self.upgrade_state = crate::updater::UpgradeState::Available(info);
+            }
+            TuiDataEvent::VersionCheckResult(None) => {}
+            TuiDataEvent::UpgradeResult(Ok(backup_path)) => {
+                if let crate::updater::UpgradeState::Downloading { version } = &self.upgrade_state {
+                    self.upgrade_state = crate::updater::UpgradeState::ReadyToRestart {
+                        version: version.clone(),
+                        backup_path,
+                    };
+                }
+            }
+            TuiDataEvent::UpgradeResult(Err(msg)) => {
+                self.upgrade_state = crate::updater::UpgradeState::Failed(msg);
             }
         }
     }

@@ -12,6 +12,8 @@ mod session_lifecycle;
 #[cfg(test)]
 mod stream_parsing;
 #[cfg(test)]
+mod upgrade;
+#[cfg(test)]
 mod worktree_lifecycle;
 
 /// Shared test helpers used across integration test modules.
