@@ -95,9 +95,15 @@ fn cost_dashboard_multiple_sessions_sorted_by_cost() {
         .unwrap();
 
     let output = format!("{}", terminal.backend());
-    let pos_expensive = output.find("Expensive task").expect("Should contain Expensive task");
-    let pos_medium = output.find("Medium task").expect("Should contain Medium task");
-    let pos_cheap = output.find("Cheap task").expect("Should contain Cheap task");
+    let pos_expensive = output
+        .find("Expensive task")
+        .expect("Should contain Expensive task");
+    let pos_medium = output
+        .find("Medium task")
+        .expect("Should contain Medium task");
+    let pos_cheap = output
+        .find("Cheap task")
+        .expect("Should contain Cheap task");
     assert!(
         pos_expensive < pos_medium && pos_medium < pos_cheap,
         "Sessions should be sorted by cost descending"

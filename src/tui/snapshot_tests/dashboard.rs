@@ -1,6 +1,6 @@
 use super::*;
-use crate::tui::screens::home::{HomeScreen, ProjectInfo, Suggestion};
 use crate::tui::screens::Screen;
+use crate::tui::screens::home::{HomeScreen, ProjectInfo, Suggestion};
 use crate::tui::theme::Theme;
 use insta::assert_snapshot;
 
