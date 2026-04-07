@@ -65,10 +65,29 @@ body:
     id: blocked-by
     attributes:
       label: Blocked By
-      description: List any issues or PRs that must be completed before this one can start.
+      description: List any issues or PRs that must be completed before this one can start. Use "None" if no dependencies.
       placeholder: |
         - #42 (description)
         - None
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependency-graph
+    attributes:
+      label: Dependency Graph
+      description: For epic/multi-issue features, provide an ASCII dependency graph showing implementation order. Optional for single standalone issues.
+      placeholder: |
+        ## Dependency Graph (Implementation Order)
+
+        Level 0 — no dependencies:
+        • #106 feat: scaffolding and types
+
+        Level 1 — depends on #106 (can run in parallel):
+        • #107 feat: Phase 1 scanner
+        • #108 feat: Phase 2 analyzer
+
+        Sequence: #106 → #107 ∥ #108
     validations:
       required: false
 
