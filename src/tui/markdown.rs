@@ -1,8 +1,16 @@
-use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
-use ratatui::style::{Modifier, Style};
+use std::sync::LazyLock;
+
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::ThemeSet;
+use syntect::parsing::SyntaxSet;
 
 use crate::tui::theme::Theme;
+
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
 /// Render a markdown string into ratatui-styled text, applying colors and
 /// modifiers from the given Theme. The `width` parameter is used for
@@ -53,6 +61,7 @@ struct MarkdownRenderer<'t> {
     bold: bool,
     italic: bool,
     in_code_block: bool,
+    code_block_lang: Option<String>,
     in_heading: bool,
     in_link: bool,
     list_stack: Vec<ListKind>,
@@ -69,6 +78,7 @@ impl<'t> MarkdownRenderer<'t> {
             bold: false,
             italic: false,
             in_code_block: false,
+            code_block_lang: None,
             in_heading: false,
             in_link: false,
             list_stack: Vec::new(),
@@ -125,6 +135,66 @@ impl<'t> MarkdownRenderer<'t> {
         }
     }
 
+    fn highlight_code(&mut self, text: &str, lang: &str) {
+        let ss = &*SYNTAX_SET;
+        let ts = &*THEME_SET;
+
+        let syntax = ss
+            .find_syntax_by_token(lang)
+            .unwrap_or_else(|| ss.find_syntax_plain_text());
+
+        let highlight_theme = ts.themes.get("base16-ocean.dark").unwrap_or_else(|| {
+            ts.themes
+                .values()
+                .next()
+                .expect("syntect must have at least one theme")
+        });
+
+        let mut highlighter = HighlightLines::new(syntax, highlight_theme);
+
+        let text_lines: Vec<&str> = text.split('\n').collect();
+        let mut highlighted: Vec<Vec<Span<'static>>> = Vec::with_capacity(text_lines.len());
+
+        for line in &text_lines {
+            let mut line_spans = Vec::new();
+            if let Ok(ranges) = highlighter.highlight_line(line, ss) {
+                for (style, token) in ranges {
+                    if !token.is_empty() {
+                        let fg = syntect_to_ratatui_color(style.foreground);
+                        let mut ratatui_style = Style::default().fg(fg);
+                        if style
+                            .font_style
+                            .contains(syntect::highlighting::FontStyle::BOLD)
+                        {
+                            ratatui_style = ratatui_style.add_modifier(Modifier::BOLD);
+                        }
+                        if style
+                            .font_style
+                            .contains(syntect::highlighting::FontStyle::ITALIC)
+                        {
+                            ratatui_style = ratatui_style.add_modifier(Modifier::ITALIC);
+                        }
+                        line_spans.push(Span::styled(token.to_string(), ratatui_style));
+                    }
+                }
+            } else if !line.is_empty() {
+                line_spans.push(Span::styled(
+                    line.to_string(),
+                    Style::default().fg(self.theme.text_secondary),
+                ));
+            }
+            highlighted.push(line_spans);
+        }
+
+        // Now append collected spans to self without borrow conflicts.
+        for (i, line_spans) in highlighted.into_iter().enumerate() {
+            self.active_spans.extend(line_spans);
+            if i < text_lines.len() - 1 {
+                self.flush_line();
+            }
+        }
+    }
+
     fn process_event(&mut self, event: Event<'_>) {
         match event {
             // --- Block-level start tags ---
@@ -153,13 +223,21 @@ impl<'t> MarkdownRenderer<'t> {
                 self.push_blank_line();
             }
 
-            Event::Start(Tag::CodeBlock(_)) => {
+            Event::Start(Tag::CodeBlock(kind)) => {
                 self.flush_line();
                 self.in_code_block = true;
+                self.code_block_lang = match kind {
+                    CodeBlockKind::Fenced(lang) => {
+                        let lang = lang.as_ref().trim().to_string();
+                        if lang.is_empty() { None } else { Some(lang) }
+                    }
+                    CodeBlockKind::Indented => None,
+                };
             }
             Event::End(TagEnd::CodeBlock) => {
                 self.flush_line();
                 self.in_code_block = false;
+                self.code_block_lang = None;
                 self.push_blank_line();
             }
 
@@ -210,17 +288,20 @@ impl<'t> MarkdownRenderer<'t> {
             // --- Leaf events ---
             Event::Text(text) => {
                 if self.in_code_block {
-                    let style = Style::default().fg(self.theme.text_secondary);
                     let text_str = text.into_string();
-                    // Split code block text on newlines into separate lines
-                    let code_lines: Vec<&str> = text_str.split('\n').collect();
-                    for (i, code_line) in code_lines.iter().enumerate() {
-                        if !code_line.is_empty() {
-                            self.active_spans
-                                .push(Span::styled(code_line.to_string(), style));
-                        }
-                        if i < code_lines.len() - 1 {
-                            self.flush_line();
+                    if let Some(lang) = self.code_block_lang.clone() {
+                        self.highlight_code(&text_str, &lang);
+                    } else {
+                        let style = Style::default().fg(self.theme.text_secondary);
+                        let code_lines: Vec<&str> = text_str.split('\n').collect();
+                        for (i, code_line) in code_lines.iter().enumerate() {
+                            if !code_line.is_empty() {
+                                self.active_spans
+                                    .push(Span::styled(code_line.to_string(), style));
+                            }
+                            if i < code_lines.len() - 1 {
+                                self.flush_line();
+                            }
                         }
                     }
                 } else {
@@ -300,6 +381,11 @@ impl<'t> MarkdownRenderer<'t> {
             _ => {}
         }
     }
+}
+
+/// Convert a syntect RGBA color to the nearest ratatui Color.
+fn syntect_to_ratatui_color(c: syntect::highlighting::Color) -> Color {
+    Color::Rgb(c.r, c.g, c.b)
 }
 
 // ---------------------------------------------------------------------------
@@ -660,6 +746,119 @@ mod tests {
     fn bold_and_link_coexist_without_panic() {
         let result = render_markdown("**[bold link](http://x.com)**", &theme(), 80);
         assert!(!result.lines.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Group 4 — Syntax highlighting
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn rust_code_block_uses_rgb_colors() {
+        let input = "```rust\nlet x = 42;\n```";
+        let result = render_markdown(input, &theme(), 80);
+        let spans = all_spans(&result);
+        // With syntax highlighting, at least one span should use an RGB color
+        let has_rgb = spans
+            .iter()
+            .any(|s| matches!(s.style.fg, Some(Color::Rgb(_, _, _))));
+        assert!(
+            has_rgb,
+            "rust code block should produce RGB-colored spans from syntax highlighting"
+        );
+    }
+
+    #[test]
+    fn python_code_block_uses_rgb_colors() {
+        let input = "```python\ndef hello():\n    print('hi')\n```";
+        let result = render_markdown(input, &theme(), 80);
+        let spans = all_spans(&result);
+        let has_rgb = spans
+            .iter()
+            .any(|s| matches!(s.style.fg, Some(Color::Rgb(_, _, _))));
+        assert!(
+            has_rgb,
+            "python code block should produce RGB-colored spans from syntax highlighting"
+        );
+    }
+
+    #[test]
+    fn javascript_code_block_uses_rgb_colors() {
+        let input = "```javascript\nconst x = 42;\n```";
+        let result = render_markdown(input, &theme(), 80);
+        let spans = all_spans(&result);
+        let has_rgb = spans
+            .iter()
+            .any(|s| matches!(s.style.fg, Some(Color::Rgb(_, _, _))));
+        assert!(
+            has_rgb,
+            "javascript code block should produce RGB-colored spans from syntax highlighting"
+        );
+    }
+
+    #[test]
+    fn unknown_language_falls_back_gracefully() {
+        let input = "```nonexistent_lang_xyz\nsome code here\n```";
+        let result = render_markdown(input, &theme(), 80);
+        // Should not panic, and should produce some output
+        assert!(
+            !result.lines.is_empty(),
+            "unknown language should still produce output"
+        );
+    }
+
+    #[test]
+    fn code_block_without_lang_uses_text_secondary() {
+        let input = "```\nplain code\n```";
+        let result = render_markdown(input, &theme(), 80);
+        let code_line = result
+            .lines
+            .iter()
+            .find(|line| line.spans.iter().any(|s| s.content.contains("plain code")))
+            .expect("expected a line containing the code body");
+        for span in &code_line.spans {
+            assert_eq!(
+                span.style.fg,
+                Some(Color::DarkGray),
+                "code block without lang should use text_secondary (DarkGray)"
+            );
+        }
+    }
+
+    #[test]
+    fn highlighted_code_preserves_content() {
+        let input = "```rust\nfn main() {}\n```";
+        let result = render_markdown(input, &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("fn") && all_text.contains("main"),
+            "highlighted code should preserve the source text"
+        );
+    }
+
+    #[test]
+    fn syntax_highlighting_200_lines_performance() {
+        // Warm up lazy statics (one-time init cost excluded from benchmark).
+        let _ = render_markdown("```rust\nlet x = 1;\n```", &theme(), 80);
+
+        let mut code = String::new();
+        for i in 0..200 {
+            code.push_str(&format!("let var_{i} = {i};\n"));
+        }
+        let input = format!("```rust\n{code}```");
+        let t = theme();
+        let start = std::time::Instant::now();
+        let _ = render_markdown(&input, &t, 80);
+        let elapsed = start.elapsed();
+        // In release mode this completes in <10ms. Debug mode is ~10x slower,
+        // so we allow up to 500ms to avoid flaky CI on unoptimized builds.
+        assert!(
+            elapsed.as_millis() < 500,
+            "highlighting 200 lines took {}ms (expected <500ms debug, <50ms release)",
+            elapsed.as_millis()
+        );
     }
 
     #[test]
