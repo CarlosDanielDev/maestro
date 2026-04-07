@@ -8,6 +8,7 @@ pub mod help;
 pub mod navigation;
 pub mod panels;
 pub mod screens;
+pub mod spinner;
 pub mod theme;
 pub mod ui;
 pub mod widgets;

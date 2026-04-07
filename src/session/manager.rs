@@ -214,6 +214,8 @@ impl ManagedSession {
         if !matches!(event, StreamEvent::Thinking { .. })
             && let Some(start) = self.thinking_start.take()
         {
+            self.session.is_thinking = false;
+            self.session.thinking_started_at = None;
             self.session
                 .log_activity(format!("Thought for {}", format_elapsed(start.elapsed())));
         }
@@ -312,7 +314,10 @@ impl ManagedSession {
             }
             StreamEvent::Thinking { .. } => {
                 if self.thinking_start.is_none() {
-                    self.thinking_start = Some(std::time::Instant::now());
+                    let now = std::time::Instant::now();
+                    self.thinking_start = Some(now);
+                    self.session.is_thinking = true;
+                    self.session.thinking_started_at = Some(now);
                     self.session.log_activity("Thinking...".into());
                 }
                 if self.session.current_activity != "Thinking..." {
