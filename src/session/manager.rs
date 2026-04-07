@@ -68,42 +68,60 @@ impl ManagedSession {
         }
     }
 
-    /// Spawn the Claude CLI process and start streaming events.
-    pub async fn spawn(&mut self, tx: mpsc::UnboundedSender<SessionEvent>) -> Result<()> {
-        self.session.status = SessionStatus::Spawning;
-        self.session.started_at = Some(Utc::now());
-
-        let mut cmd = Command::new("claude");
-        cmd.args(["--print", "--verbose", "--output-format", "stream-json"]);
+    /// Build the CLI arguments for spawning the Claude process.
+    /// Extracted for testability — tests can inspect args without spawning.
+    fn build_args(&self) -> Vec<String> {
+        let mut args = vec![
+            "--bare".to_string(),
+            "--print".to_string(),
+            "--verbose".to_string(),
+            "--output-format".to_string(),
+            "stream-json".to_string(),
+        ];
 
         // Model selection
-        cmd.args(["--model", &self.session.model]);
+        args.push("--model".to_string());
+        args.push(self.session.model.clone());
 
         // Permission mode (default: bypassPermissions for unattended sessions)
         if let Some(ref mode) = self.permission_mode
             && !mode.is_empty()
             && mode != "default"
         {
-            cmd.args(["--permission-mode", mode]);
+            args.push("--permission-mode".to_string());
+            args.push(mode.clone());
         }
 
         // Allowed tools whitelist
         if !self.allowed_tools.is_empty() {
-            cmd.args(["--allowedTools", &self.allowed_tools.join(",")]);
+            args.push("--allowedTools".to_string());
+            args.push(self.allowed_tools.join(","));
         }
 
         // Inject file claims via --append-system-prompt
         if let Some(ref appendix) = self.system_prompt_appendix {
-            cmd.args(["--append-system-prompt", appendix]);
+            args.push("--append-system-prompt".to_string());
+            args.push(appendix.clone());
         }
+
+        // Prompt is a positional argument (must be last)
+        args.push(self.session.prompt.clone());
+
+        args
+    }
+
+    /// Spawn the Claude CLI process and start streaming events.
+    pub async fn spawn(&mut self, tx: mpsc::UnboundedSender<SessionEvent>) -> Result<()> {
+        self.session.status = SessionStatus::Spawning;
+        self.session.started_at = Some(Utc::now());
+
+        let mut cmd = Command::new("claude");
+        cmd.args(self.build_args());
 
         // Set working directory to worktree if available
         if let Some(ref wt_path) = self.worktree_path {
             cmd.current_dir(wt_path);
         }
-
-        // Prompt is a positional argument (must be last)
-        cmd.arg(&self.session.prompt);
 
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -338,3 +356,112 @@ fn format_elapsed(d: std::time::Duration) -> String {
 }
 
 use crate::util::truncate_at_char_boundary;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::types::Session;
+    use uuid::Uuid;
+
+    fn make_managed(prompt: &str) -> ManagedSession {
+        let session = Session {
+            id: Uuid::new_v4(),
+            prompt: prompt.to_string(),
+            model: "claude-sonnet-4-5-20250514".to_string(),
+            status: SessionStatus::Queued,
+            issue_number: None,
+            mode: "print".to_string(),
+            started_at: None,
+            finished_at: None,
+            cost_usd: 0.0,
+            context_pct: 0.0,
+            current_activity: String::new(),
+            last_message: String::new(),
+            activity_log: vec![],
+            files_touched: vec![],
+            pid: None,
+            issue_title: None,
+            retry_count: 0,
+            last_retry_at: None,
+            parent_session_id: None,
+            child_session_ids: vec![],
+            fork_depth: 0,
+            ci_fix_context: None,
+            image_paths: vec![],
+            gate_results: vec![],
+            is_thinking: false,
+            thinking_started_at: None,
+        };
+        ManagedSession::new(session)
+    }
+
+    #[test]
+    fn spawn_args_include_bare_flag() {
+        let ms = make_managed("do something");
+        let args = ms.build_args();
+        assert!(
+            args.iter().any(|a| a == "--bare"),
+            "args must contain --bare; got: {:?}",
+            args
+        );
+    }
+
+    #[test]
+    fn spawn_args_bare_flag_position_before_prompt() {
+        let prompt = "do something";
+        let ms = make_managed(prompt);
+        let args = ms.build_args();
+        let bare_pos = args
+            .iter()
+            .position(|a| a == "--bare")
+            .expect("--bare must be present");
+        let prompt_pos = args
+            .iter()
+            .position(|a| a == prompt)
+            .expect("prompt must be present");
+        assert!(
+            bare_pos < prompt_pos,
+            "--bare must appear before the prompt positional arg"
+        );
+    }
+
+    #[test]
+    fn spawn_args_include_required_base_flags() {
+        let ms = make_managed("test prompt");
+        let args = ms.build_args();
+        for flag in &[
+            "--print",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--bare",
+        ] {
+            assert!(
+                args.iter().any(|a| a == flag),
+                "args must contain {}; got: {:?}",
+                flag,
+                args
+            );
+        }
+    }
+
+    #[test]
+    fn spawn_args_with_permission_mode_includes_permission_flag() {
+        let mut ms = make_managed("test");
+        ms.permission_mode = Some("bypassPermissions".to_string());
+        let args = ms.build_args();
+        assert!(args.iter().any(|a| a == "--permission-mode"));
+        assert!(args.iter().any(|a| a == "bypassPermissions"));
+    }
+
+    #[test]
+    fn spawn_args_default_permission_mode_is_excluded() {
+        let mut ms = make_managed("test");
+        ms.permission_mode = Some("default".to_string());
+        let args = ms.build_args();
+        assert!(
+            !args.iter().any(|a| a == "--permission-mode"),
+            "permission_mode=default must not emit --permission-mode flag"
+        );
+    }
+}
