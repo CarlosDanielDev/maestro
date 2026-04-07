@@ -7,6 +7,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Add [f] Fix Action to Completion Overlay for Failed Gates (#104)
+
+- `src/gates/types.rs` — `GateResult` derives `Serialize`/`Deserialize` (round-trip support for persisting gate results on the session)
+- `src/session/types.rs` — `GateResultEntry` struct added (`gate`, `passed`, `message`) as a lightweight, session-local mirror of `gates::types::GateResult` that avoids a cross-module dependency; `gate_results: Vec<GateResultEntry>` field added to `Session` (serde default, persisted to `maestro-state.json`); `issue_number` and `model` fields were already present and are now surfaced in the completion overlay
+- `src/tui/app.rs` — `GateFailureInfo` struct added (`gate_name`, `message`) carrying per-gate failure detail for the overlay; `CompletionSessionLine` extended with `gate_failures: Vec<GateFailureInfo>`, `issue_number: Option<u64>`, and `model: String` fields; `CompletionSummaryData::has_needs_review()` method added — returns `true` when any session line has `NeedsReview` status; `build_completion_summary()` populates `gate_failures` by filtering `session.gate_results` for failed entries and mapping them to `GateFailureInfo`; gate results are persisted onto `ManagedSession` during gate execution in `check_completions()`; `spawn_gate_fix_session()` method added — reads `gate_failures` from a `NeedsReview` `CompletionSessionLine`, constructs a fix prompt via `build_gate_fix_prompt()`, creates a new `Session`, and adds it to the pool; `build_gate_fix_prompt()` private function constructs a structured unattended prompt embedding the issue number and per-gate failure messages
+- `src/tui/ui.rs` — `draw_completion_overlay()` extended: per-session gate failure lines are rendered below the error summary with a `✗ <gate_name> <message>` format in warning/error colors; `[f] Fix` keybinding is appended to the keybindings bar only when `summary.has_needs_review()` returns `true`
+- `src/tui/mod.rs` — `CompletionSummary` key-intercept branch extended with an `[f]` handler: collects all `NeedsReview` sessions from `completion_summary`, calls `app.spawn_gate_fix_session()` for each, clears the summary, and transitions to `Overview` mode
+
 ### Enhanced Real-Time Session Activity Feedback (#102)
 
 - `src/session/types.rs` — `StreamEvent::Thinking { text }` variant added to represent extended thinking blocks emitted by Claude; `command_preview: Option<String>` field added to `StreamEvent::ToolUse` to carry the first ~60 characters of a Bash command for richer activity messages

@@ -409,6 +409,17 @@ fn draw_completion_overlay(
                 Span::styled(&sl.error_summary, Style::default().fg(theme.accent_error)),
             ]));
         }
+
+        for gf in &sl.gate_failures {
+            lines.push(Line::from(vec![
+                Span::raw("      "),
+                Span::styled(
+                    format!("✗ {} ", gf.gate),
+                    Style::default().fg(theme.accent_warning),
+                ),
+                Span::styled(&gf.message, Style::default().fg(theme.accent_error)),
+            ]));
+        }
     }
 
     lines.push(Line::from(""));
@@ -428,19 +439,28 @@ fn draw_completion_overlay(
     ]));
 
     lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::raw("  "),
+
+    let mut keybind_spans = vec![Span::raw("  ")];
+
+    if summary.has_needs_review() {
+        keybind_spans.push(Span::styled("[f]", Style::default().fg(theme.keybind_key)));
+        keybind_spans.push(Span::raw(" Fix  "));
+    }
+
+    keybind_spans.extend([
         Span::styled("[i]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Browse issues  "),
+        Span::raw(" Browse  "),
         Span::styled("[r]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" New prompt  "),
+        Span::raw(" New  "),
         Span::styled("[l]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" View logs  "),
+        Span::raw(" Logs  "),
         Span::styled("[q]", Style::default().fg(theme.keybind_key)),
         Span::raw(" Quit  "),
         Span::styled("[Esc]", Style::default().fg(theme.keybind_key)),
         Span::raw(" Dashboard"),
-    ]));
+    ]);
+
+    lines.push(Line::from(keybind_spans));
 
     let block = Block::default()
         .borders(Borders::ALL)
