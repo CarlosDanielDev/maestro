@@ -47,6 +47,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Multi-provider support** — works with GitHub (via `gh` CLI) or Azure DevOps (via `az` CLI); provider is auto-detected from the git remote or set explicitly in config
 - **Session prompt guardrails** — a language-specific pre-completion checklist (format, lint, test) is automatically detected from the project root and appended to every session's system prompt; can be overridden with a custom prompt via `guardrail_prompt` in `maestro.toml`
 - **Config-driven completion gates** — after a session finishes, maestro runs a configurable list of shell commands (fmt, clippy, test, or any custom command) before accepting the result; required gate failures transition the session to `NEEDS_REVIEW` and block PR creation; optional gates log warnings only; configured via `[sessions.completion_gates]` in `maestro.toml`
+- **Completion summary overlay** — when all sessions finish, a centred overlay shows a per-session outcome summary before returning to the dashboard; any key press dismisses it; use `--once` to skip the overlay and exit immediately (suited for CI/scripting)
 - **Interactive home screen** — launching `maestro` opens an idle dashboard with a quick-actions menu, repo/branch info, and a recent activity panel; navigate with `j`/`k` or direct shortcut keys
 - **Interactive issue browser** — browse, filter, and launch GitHub issues directly from the TUI; supports single-launch (`Enter`) and multi-select batch-launch (`Space` + `Enter`); filter by text (`/`) or milestone (`m`)
 - **Milestone overview** — inspect milestone progress with real-time completion gauges; drill into issues or run all open issues in a milestone with a single key (`r`)
@@ -174,6 +175,9 @@ maestro init
 
 # Run a single session with a prompt
 maestro run --prompt "Refactor the auth module to use async/await"
+
+# Run a session and exit immediately when done (CI / scripting mode)
+maestro run --issue 42 --once
 
 # Run a session for a GitHub issue
 maestro run --issue 42

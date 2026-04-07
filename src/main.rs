@@ -77,6 +77,7 @@ async fn main() -> anyhow::Result<()> {
             resume,
             skip_doctor,
             images,
+            once,
         }) => {
             cmd_run(
                 prompt,
@@ -88,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
                 resume,
                 skip_doctor,
                 images,
+                once,
             )
             .await
         }
@@ -585,6 +587,7 @@ async fn cmd_run(
     resume: bool,
     skip_doctor: bool,
     images: Vec<std::path::PathBuf>,
+    once: bool,
 ) -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
 
@@ -707,6 +710,8 @@ async fn cmd_run(
         app.work_assigner = Some(assigner);
         app.github_client = Some(Box::new(client));
     }
+
+    app.once_mode = once;
 
     // Launch TUI
     tui::run(app).await
@@ -1031,5 +1036,22 @@ mod tests {
             "plan",
             "cmd_dashboard must not override permission_mode with a hardcoded value"
         );
+    }
+
+    #[test]
+    fn app_once_mode_field_defaults_to_false() {
+        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        assert!(
+            !app.once_mode,
+            "App built from config must have once_mode = false"
+        );
+    }
+
+    #[test]
+    fn app_once_mode_field_is_settable() {
+        let mut app =
+            setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        app.once_mode = true;
+        assert!(app.once_mode, "once_mode must be directly settable");
     }
 }
