@@ -7,6 +7,40 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-07
+
+### Added
+- Mandatory dependency chain and graph guardrail for issue/milestone creation (#113)
+- [f] Fix action to completion overlay for failed gates (#104)
+- Enhanced real-time session activity feedback — thinking, streaming, tool details (#102)
+- Submit prompt with Enter key, Shift+Enter for newlines (#101)
+- Dashboard suggestion refresh after session completion (#86)
+- Continuous work mode — auto-advance to next ready issue (#85)
+- Post-session activity log with cost summary and next actions (#84)
+- Return to dashboard after session completion instead of exiting (#83)
+- Work suggestions and quick commands (#35)
+- Session launch with worktree isolation from TUI (#36)
+- Provider auth verification and user context (#34)
+- Standardized issue templates with Definition of Ready (#53)
+- Onboarding preflight check — `maestro doctor` (#49)
+- CI error detection and auto-fix loop (#41)
+- Auto-fmt, clippy, and test completion gates (#40)
+- Live GitHub data fetching and session launch from TUI (#46, #47, #48)
+- Interactive TUI screens — dashboard, issue browser, milestone view (#31, #32, #33)
+- Session prompt guardrails with auto-detected language (#43)
+
+### Performance
+- Benchmark session parser throughput (#19)
+
+### Documentation
+- Man page and shell completion installation guide (#18)
+
+### Testing
+- TUI rendering snapshot tests (#16)
+- Integration test suite for end-to-end session lifecycle (#15)
+
+### Detailed Changes
+
 ### Mandatory Dependency Chain and Graph Guardrail for Issue and Milestone Creation (#113)
 
 - `.claude/CLAUDE.md` — Critical Premise #5 added: "DEPENDENCY CHAIN AND GRAPH — NON-NEGOTIABLE"; rules require an explicit dependency graph for issues that have blockers, and for milestones consisting of multiple issues; DOR table updated to mark `Blocked By` as required for both Feature and Bug issues
