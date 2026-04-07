@@ -159,6 +159,9 @@ maestro/
 │   │       ├── issue_browser.rs           # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery; set_issues() calls reapply_filters() so active milestone filters are honoured when new issue data arrives  [Issue #32, #46, #117]
 │   │       ├── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action  [Issue #33]
 │   │       └── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter inserts newline, Ctrl+V pastes from clipboard (image or text), Esc cancels; image attachment list with [a]/[d]; keybinds bar always visible  [Issue #101]
+│   │   └── widgets/                       # Reusable TUI widget components  [Issue #124]
+│   │       ├── mod.rs                     # Module re-exports for all widgets
+│   │       └── ci_monitor.rs              # CiMonitorWidget: compact bordered box rendering live CI check-run status for a PR; status icons, check names, elapsed times, and a summary footer
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
 │   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue()
 │   │   ├── session_lifecycle.rs           # 11 tests: enqueue/promote/complete lifecycle via handle_event()
