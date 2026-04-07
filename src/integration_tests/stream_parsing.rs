@@ -557,6 +557,92 @@ fn assistant_message_does_not_add_to_activity_log() {
     );
 }
 
+// --- Issue #134: Thinking state transitions ---
+
+#[test]
+fn thinking_event_sets_is_thinking_and_started_at() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    assert!(!managed.session.is_thinking);
+    assert!(managed.session.thinking_started_at.is_none());
+
+    managed.handle_event(&StreamEvent::Thinking {
+        text: "reasoning".to_string(),
+    });
+
+    assert!(managed.session.is_thinking);
+    assert!(managed.session.thinking_started_at.is_some());
+}
+
+#[test]
+fn non_thinking_event_clears_thinking_state() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    // Start thinking
+    managed.handle_event(&StreamEvent::Thinking {
+        text: "reasoning".to_string(),
+    });
+    assert!(managed.session.is_thinking);
+
+    // Non-thinking event clears it
+    managed.handle_event(&StreamEvent::AssistantMessage {
+        text: "Hello".to_string(),
+    });
+    assert!(!managed.session.is_thinking);
+    assert!(managed.session.thinking_started_at.is_none());
+}
+
+#[test]
+fn multiple_thinking_events_keep_original_start_time() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::Thinking {
+        text: "first".to_string(),
+    });
+    let first_start = managed.session.thinking_started_at;
+
+    managed.handle_event(&StreamEvent::Thinking {
+        text: "second".to_string(),
+    });
+    // Start time should not change on subsequent thinking events
+    assert_eq!(managed.session.thinking_started_at, first_start);
+}
+
+#[test]
+fn thinking_elapsed_increases_over_time() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::Thinking {
+        text: "reasoning".to_string(),
+    });
+
+    let started_at = managed.session.thinking_started_at.unwrap();
+    let elapsed = started_at.elapsed();
+    // Elapsed should be very small (just created)
+    assert!(elapsed.as_secs() < 1);
+}
+
+#[test]
+fn thinking_stop_logs_elapsed_time() {
+    let mut managed = ManagedSession::new(make_session("s"));
+
+    managed.handle_event(&StreamEvent::Thinking {
+        text: "reasoning".to_string(),
+    });
+
+    managed.handle_event(&StreamEvent::AssistantMessage {
+        text: "done".to_string(),
+    });
+
+    // Should have logged "Thought for ..."
+    let has_thought_log = managed
+        .session
+        .activity_log
+        .iter()
+        .any(|e| e.message.starts_with("Thought for"));
+    assert!(has_thought_log);
+}
+
 // Regression: roundtrip through parser and handler
 #[test]
 fn roundtrip_tool_use_bash_command_preview_preserved_through_parse_and_handle() {

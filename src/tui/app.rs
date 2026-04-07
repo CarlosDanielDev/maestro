@@ -227,6 +227,8 @@ pub struct App {
     pub continuous_mode: Option<ContinuousModeState>,
     /// Current state of the self-upgrade flow.
     pub upgrade_state: crate::updater::UpgradeState,
+    /// Tick counter for spinner animation (incremented each TUI draw cycle).
+    pub spinner_tick: usize,
 }
 
 impl App {
@@ -287,6 +289,7 @@ impl App {
             completion_summary: None,
             continuous_mode: None,
             upgrade_state: crate::updater::UpgradeState::Hidden,
+            spinner_tick: 0,
         }
     }
 

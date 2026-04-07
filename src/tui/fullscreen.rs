@@ -1,5 +1,6 @@
 use crate::session::types::Session;
 use crate::state::progress::ProgressTracker;
+use crate::tui::spinner;
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
@@ -16,6 +17,7 @@ pub fn draw_fullscreen(
     progress_tracker: &ProgressTracker,
     area: Rect,
     theme: &Theme,
+    spinner_tick: usize,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -28,7 +30,7 @@ pub fn draw_fullscreen(
 
     draw_session_header(f, session, chunks[0], theme);
     draw_session_output(f, session, chunks[1], theme);
-    draw_session_footer(f, session, progress_tracker, chunks[2], theme);
+    draw_session_footer(f, session, progress_tracker, chunks[2], theme, spinner_tick);
 }
 
 fn draw_session_header(f: &mut Frame, session: &Session, area: Rect, theme: &Theme) {
@@ -109,6 +111,7 @@ fn draw_session_footer(
     progress_tracker: &ProgressTracker,
     area: Rect,
     theme: &Theme,
+    spinner_tick: usize,
 ) {
     let elapsed = session.elapsed_display();
     let files_count = session.files_touched.len();
@@ -139,7 +142,15 @@ fn draw_session_footer(
         Span::raw("  "),
         Span::styled(" Activity: ", Style::default().fg(theme.text_secondary)),
         Span::styled(
-            &session.current_activity,
+            if session.is_thinking {
+                let elapsed = session
+                    .thinking_started_at
+                    .map(|t| t.elapsed())
+                    .unwrap_or_default();
+                spinner::thinking_activity(spinner_tick, elapsed)
+            } else {
+                session.current_activity.clone()
+            },
             Style::default().fg(theme.text_primary),
         ),
         Span::raw("    "),
