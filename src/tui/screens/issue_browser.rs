@@ -220,18 +220,34 @@ impl IssueBrowserScreen {
     fn reapply_filters(&mut self) {
         let filter_lower = self.filter_text.to_lowercase();
 
+        // When in milestone filter mode, parse typed text as milestone number
+        let typed_milestone: Option<u64> = if self.filter_mode == FilterMode::Milestone
+            && !self.filter_text.is_empty()
+        {
+            self.filter_text.trim().parse::<u64>().ok()
+        } else {
+            None
+        };
+
         self.filtered_indices = self
             .issues
             .iter()
             .enumerate()
             .filter(|(_, issue)| {
-                // Milestone filter
+                // Programmatic milestone filter (set via set_milestone_filter)
                 if let Some(ms) = self.milestone_filter
                     && issue.milestone != Some(ms)
                 {
                     return false;
                 }
-                // Text filter (applies to title in label filter mode, or always if text exists)
+                // Typed milestone filter (user pressed 'm' and typed a number)
+                if self.filter_mode == FilterMode::Milestone && !self.filter_text.is_empty() {
+                    return match typed_milestone {
+                        Some(ms) => issue.milestone == Some(ms),
+                        None => false, // non-numeric text matches nothing
+                    };
+                }
+                // Text filter (applies to title in label filter mode)
                 if !filter_lower.is_empty() {
                     let title_lower = issue.title.to_lowercase();
                     if !title_lower.contains(&filter_lower) {
@@ -900,6 +916,112 @@ mod tests {
             screen.filtered_indices.len(),
             3,
             "set_issues with no filter must show all issues"
+        );
+    }
+
+    // ---- milestone text filter (typed input via 'm' key) ----
+
+    #[test]
+    fn milestone_filter_mode_typed_number_matches_by_milestone_not_title() {
+        // All issues share the same title so a title-match bug would return all 3.
+        let issues = vec![
+            GhIssue {
+                number: 1,
+                title: "Same title".to_string(),
+                body: String::new(),
+                labels: vec![],
+                state: "open".to_string(),
+                html_url: String::new(),
+                milestone: Some(42),
+                assignees: vec![],
+            },
+            GhIssue {
+                number: 2,
+                title: "Same title".to_string(),
+                body: String::new(),
+                labels: vec![],
+                state: "open".to_string(),
+                html_url: String::new(),
+                milestone: Some(42),
+                assignees: vec![],
+            },
+            GhIssue {
+                number: 3,
+                title: "Same title".to_string(),
+                body: String::new(),
+                labels: vec![],
+                state: "open".to_string(),
+                html_url: String::new(),
+                milestone: None,
+                assignees: vec![],
+            },
+        ];
+        let mut screen = IssueBrowserScreen::new(issues);
+        screen.handle_input(&key_event(KeyCode::Char('m')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('4')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('2')), InputMode::Normal);
+        assert_eq!(
+            screen.filtered_indices.len(),
+            2,
+            "Milestone filter must match by milestone number, not title"
+        );
+    }
+
+    #[test]
+    fn milestone_filter_mode_invalid_text_shows_no_results() {
+        let issues = vec![
+            make_issue_with_milestone(1, 5),
+            make_issue_with_milestone(2, 5),
+        ];
+        let mut screen = IssueBrowserScreen::new(issues);
+        screen.handle_input(&key_event(KeyCode::Char('m')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('b')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('c')), InputMode::Normal);
+        assert_eq!(
+            screen.filtered_indices.len(),
+            0,
+            "Non-numeric milestone filter text must match no issues"
+        );
+    }
+
+    #[test]
+    fn milestone_filter_mode_esc_clears_filter_and_restores_all_issues() {
+        let issues = vec![
+            make_issue_with_milestone(1, 7),
+            make_issue_with_milestone(2, 7),
+            make_issue_with_milestone(3, 99),
+        ];
+        let mut screen = IssueBrowserScreen::new(issues);
+        screen.handle_input(&key_event(KeyCode::Char('m')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('7')), InputMode::Normal);
+        assert_eq!(screen.filtered_indices.len(), 2);
+        screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert_eq!(
+            screen.filtered_indices.len(),
+            3,
+            "Esc must restore all issues"
+        );
+        assert_eq!(screen.filter_mode, FilterMode::None);
+        assert!(screen.filter_text.is_empty());
+    }
+
+    #[test]
+    fn label_filter_mode_still_matches_by_title_regression() {
+        let issues = vec![
+            make_issue(1, "Add feature"),
+            make_issue(2, "Fix bug"),
+            make_issue(3, "Add config"),
+        ];
+        let mut screen = IssueBrowserScreen::new(issues);
+        screen.handle_input(&key_event(KeyCode::Char('/')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('A')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
+        assert_eq!(
+            screen.filtered_indices.len(),
+            2,
+            "Label filter must still match by title substring"
         );
     }
 
