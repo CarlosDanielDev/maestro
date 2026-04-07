@@ -609,9 +609,19 @@ fn milestone_issues_if_applicable(app: &App) -> Option<Vec<GhIssue>> {
         return None;
     }
     app.milestone_screen.as_ref().and_then(|ms| {
-        ms.selected_milestone()
-            .filter(|entry| !entry.issues.is_empty())
-            .map(|entry| entry.issues.clone())
+        ms.selected_milestone().and_then(|entry| {
+            let open_issues: Vec<GhIssue> = entry
+                .issues
+                .iter()
+                .filter(|i| i.state == "open")
+                .cloned()
+                .collect();
+            if open_issues.is_empty() {
+                None
+            } else {
+                Some(open_issues)
+            }
+        })
     })
 }
 
@@ -887,12 +897,16 @@ mod handle_screen_action_tests {
     use crate::tui::screens::milestone::MilestoneEntry;
 
     fn make_issue(number: u64, milestone: Option<u64>) -> GhIssue {
+        make_issue_with_state(number, milestone, "open")
+    }
+
+    fn make_issue_with_state(number: u64, milestone: Option<u64>, state: &str) -> GhIssue {
         GhIssue {
             number,
             title: format!("Issue #{number}"),
             body: String::new(),
             labels: vec![],
-            state: "open".to_string(),
+            state: state.to_string(),
             html_url: String::new(),
             milestone,
             assignees: vec![],
@@ -980,6 +994,41 @@ mod handle_screen_action_tests {
             screen.filtered_indices.len(),
             3,
             "All Issues must show all fetched issues — no milestone filter should be active"
+        );
+    }
+
+    #[test]
+    fn milestone_issue_browser_excludes_closed_issues() {
+        let mut app = make_app();
+        let entry = MilestoneEntry {
+            number: 5,
+            title: "Sprint 2".to_string(),
+            description: String::new(),
+            state: "open".to_string(),
+            open_issues: 2,
+            closed_issues: 1,
+            issues: vec![
+                make_issue_with_state(10, Some(5), "open"),
+                make_issue_with_state(11, Some(5), "closed"),
+                make_issue_with_state(12, Some(5), "open"),
+            ],
+        };
+        app.milestone_screen = Some(screens::MilestoneScreen::new(vec![entry]));
+        app.tui_mode = app::TuiMode::MilestoneView;
+        app.issue_browser_screen = None;
+        app.pending_commands.clear();
+
+        handle_screen_action(&mut app, ScreenAction::Push(app::TuiMode::IssueBrowser));
+
+        let screen = app.issue_browser_screen.as_ref().unwrap();
+        assert_eq!(
+            screen.issues.len(),
+            2,
+            "Issue browser from milestone must only contain open issues"
+        );
+        assert!(
+            screen.issues.iter().all(|i| i.state == "open"),
+            "All issues passed to IssueBrowserScreen must have state 'open'"
         );
     }
 }
