@@ -1278,10 +1278,10 @@ impl App {
     /// Assign ready work items from the assigner to session slots.
     pub async fn tick_work_assigner(&mut self) -> anyhow::Result<()> {
         // In continuous mode, only advance when no issue is running and not paused
-        if let Some(ref cont) = self.continuous_mode {
-            if !cont.can_advance() {
-                return Ok(());
-            }
+        if let Some(ref cont) = self.continuous_mode
+            && !cont.can_advance()
+        {
+            return Ok(());
         }
 
         // Collect ready items and mark them in-progress (scoped borrow)

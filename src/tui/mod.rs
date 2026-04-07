@@ -168,17 +168,17 @@ async fn event_loop(
                             }
                             // [r] Retry — re-enqueue the failed issue
                             (KeyCode::Char('r'), _) => {
-                                if let Some(ref mut cont) = app.continuous_mode {
-                                    if let Some(issue_number) = cont.on_retry() {
-                                        if let Some(ref mut assigner) = app.work_assigner {
-                                            assigner.mark_pending_undo_cascade(issue_number);
-                                        }
-                                        app.activity_log.push_simple(
-                                            "CONTINUOUS".into(),
-                                            format!("Retrying #{}...", issue_number),
-                                            LogLevel::Info,
-                                        );
+                                if let Some(ref mut cont) = app.continuous_mode
+                                    && let Some(issue_number) = cont.on_retry()
+                                {
+                                    if let Some(ref mut assigner) = app.work_assigner {
+                                        assigner.mark_pending_undo_cascade(issue_number);
                                     }
+                                    app.activity_log.push_simple(
+                                        "CONTINUOUS".into(),
+                                        format!("Retrying #{}...", issue_number),
+                                        LogLevel::Info,
+                                    );
                                 }
                                 app.tui_mode = app::TuiMode::Overview;
                             }
