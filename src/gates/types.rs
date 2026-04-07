@@ -50,7 +50,7 @@ impl CompletionGate {
 }
 
 /// Result of running a single gate.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GateResult {
     pub gate: String,
     pub passed: bool,
@@ -193,5 +193,27 @@ mod tests {
         let json = serde_json::to_string(&gate).unwrap();
         assert!(json.contains("command"));
         assert!(json.contains("fmt"));
+    }
+
+    // --- Issue #104: GateResult Serialize/Deserialize ---
+
+    #[test]
+    fn gate_result_pass_round_trips_via_serde() {
+        let r = GateResult::pass("tests", "all passed");
+        let json = serde_json::to_string(&r).unwrap();
+        let rt: GateResult = serde_json::from_str(&json).unwrap();
+        assert!(rt.passed);
+        assert_eq!(rt.gate, "tests");
+        assert_eq!(rt.message, "all passed");
+    }
+
+    #[test]
+    fn gate_result_fail_round_trips_via_serde() {
+        let r = GateResult::fail("clippy", "2 warnings found");
+        let json = serde_json::to_string(&r).unwrap();
+        let rt: GateResult = serde_json::from_str(&json).unwrap();
+        assert!(!rt.passed);
+        assert_eq!(rt.gate, "clippy");
+        assert_eq!(rt.message, "2 warnings found");
     }
 }

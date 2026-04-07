@@ -9,3 +9,13 @@ pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
     }
     end
 }
+
+/// Truncate a string at a char boundary and append "..." if it was truncated.
+pub fn truncate_with_ellipsis(s: &str, max_bytes: usize) -> String {
+    let end = truncate_at_char_boundary(s, max_bytes);
+    if end < s.len() {
+        format!("{}...", &s[..end])
+    } else {
+        s.to_string()
+    }
+}

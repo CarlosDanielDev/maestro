@@ -130,6 +130,26 @@ async fn event_loop(
                             (KeyCode::Char('l'), _) => {
                                 app.tui_mode = app::TuiMode::Overview;
                             }
+                            (KeyCode::Char('f'), _) => {
+                                let needs_review: Vec<_> = app
+                                    .completion_summary
+                                    .as_ref()
+                                    .into_iter()
+                                    .flat_map(|s| &s.sessions)
+                                    .filter(|s| {
+                                        s.status
+                                            == crate::session::types::SessionStatus::NeedsReview
+                                    })
+                                    .cloned()
+                                    .collect();
+                                if !needs_review.is_empty() {
+                                    for sl in &needs_review {
+                                        app.spawn_gate_fix_session(sl);
+                                    }
+                                    app.completion_summary = None;
+                                    app.tui_mode = app::TuiMode::Overview;
+                                }
+                            }
                             (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
                                 app.panel_view.scroll_up();
                             }
