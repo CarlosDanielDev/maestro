@@ -1,6 +1,6 @@
 use super::types::MaestroState;
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub struct StateStore {
     path: PathBuf,
