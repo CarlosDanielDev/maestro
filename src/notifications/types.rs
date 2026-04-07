@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Severity level for interruptions/notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum InterruptLevel {

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::collections::VecDeque;
 use tokio::sync::mpsc;
 use uuid::Uuid;

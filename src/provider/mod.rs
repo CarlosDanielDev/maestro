@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod azure_devops;
 pub mod types;
 

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::fmt;
 
 /// Unique identifier for a focusable pane within a screen.
