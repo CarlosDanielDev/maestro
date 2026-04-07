@@ -1,6 +1,6 @@
 use super::*;
 use crate::tui::screens::Screen;
-use crate::tui::screens::issue_browser::{FilterMode, IssueBrowserScreen};
+use crate::tui::screens::issue_browser::{FilterMode, IssueBrowserScreen, IssuePromptOverlay};
 use crate::tui::theme::Theme;
 use insta::assert_snapshot;
 
@@ -86,6 +86,52 @@ fn issue_browser_filter_active() {
     ]);
     screen.filter_mode = FilterMode::Label;
     screen.filter_text = "Add".to_string();
+
+    terminal
+        .draw(|f| {
+            screen.draw(f, f.area(), &theme);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn issue_browser_prompt_overlay_empty() {
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut screen = IssueBrowserScreen::new(vec![
+        make_gh_issue(1, "Add login flow"),
+        make_gh_issue(2, "Fix database crash"),
+    ]);
+    screen.prompt_overlay = Some(IssuePromptOverlay {
+        text: String::new(),
+        issue_number: 1,
+        issue_title: "Add login flow".to_string(),
+    });
+
+    terminal
+        .draw(|f| {
+            screen.draw(f, f.area(), &theme);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn issue_browser_prompt_overlay_with_text() {
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut screen = IssueBrowserScreen::new(vec![
+        make_gh_issue(1, "Add login flow"),
+        make_gh_issue(2, "Fix database crash"),
+    ]);
+    screen.prompt_overlay = Some(IssuePromptOverlay {
+        text: "focus on error handling".to_string(),
+        issue_number: 1,
+        issue_title: "Add login flow".to_string(),
+    });
 
     terminal
         .draw(|f| {

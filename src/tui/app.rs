@@ -88,7 +88,8 @@ pub enum TuiDataEvent {
     Issues(anyhow::Result<Vec<GhIssue>>),
     Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
     /// Single issue for session launch — ready to create session.
-    Issue(anyhow::Result<GhIssue>),
+    /// The optional String carries a custom prompt to append.
+    Issue(anyhow::Result<GhIssue>, Option<String>),
     /// Suggestion data for the home screen.
     SuggestionData(SuggestionDataPayload),
     /// Version check result from background task.
@@ -814,7 +815,7 @@ impl App {
                     screen.loading = false;
                 }
             }
-            TuiDataEvent::Issue(Ok(gh_issue)) => {
+            TuiDataEvent::Issue(Ok(gh_issue), custom_prompt) => {
                 let model = self
                     .config
                     .as_ref()
@@ -828,17 +829,27 @@ impl App {
                 let issue_mode =
                     crate::modes::mode_from_labels(&gh_issue.labels).unwrap_or(default_mode);
                 let issue_number = gh_issue.number;
-                let prompt = self
+                let base_prompt = self
                     .config
                     .as_ref()
                     .map(|c| crate::prompts::PromptBuilder::build_issue_prompt(&gh_issue, c))
                     .unwrap_or_else(|| gh_issue.unattended_prompt());
+                let prompt = match custom_prompt {
+                    Some(ref cp) if !cp.trim().is_empty() => {
+                        format!(
+                            "{}\n\n## Additional Instructions\n\n{}",
+                            base_prompt,
+                            cp.trim()
+                        )
+                    }
+                    _ => base_prompt,
+                };
                 let mut session = Session::new(prompt, model, issue_mode, Some(issue_number));
                 session.issue_title = Some(gh_issue.title.clone());
                 self.state.issue_cache.insert(issue_number, gh_issue);
                 self.pending_session_launches.push(session);
             }
-            TuiDataEvent::Issue(Err(e)) => {
+            TuiDataEvent::Issue(Err(e), _) => {
                 self.activity_log.push_simple(
                     "Session".into(),
                     format!("Failed to fetch issue: {}", e),

@@ -698,18 +698,22 @@ fn spawn_issue_fetch(
     tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>,
     config: screens::SessionConfig,
 ) {
+    let custom_prompt = config.custom_prompt.clone();
     match config.issue_number {
         Some(issue_number) => {
             tokio::spawn(async move {
                 let client = GhCliClient::new();
                 let result = client.get_issue(issue_number).await;
-                let _ = tx.send(app::TuiDataEvent::Issue(result));
+                let _ = tx.send(app::TuiDataEvent::Issue(result, custom_prompt));
             });
         }
         None => {
-            let _ = tx.send(app::TuiDataEvent::Issue(Err(anyhow::anyhow!(
-                "Cannot launch session without an issue number"
-            ))));
+            let _ = tx.send(app::TuiDataEvent::Issue(
+                Err(anyhow::anyhow!(
+                    "Cannot launch session without an issue number"
+                )),
+                custom_prompt,
+            ));
         }
     }
 }

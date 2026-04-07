@@ -124,6 +124,7 @@ impl MilestoneScreen {
                 .map(|i| SessionConfig {
                     issue_number: Some(i.number),
                     title: i.title.clone(),
+                    custom_prompt: None,
                 })
                 .collect();
             if configs.is_empty() {
