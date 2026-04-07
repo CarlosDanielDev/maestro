@@ -111,6 +111,21 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::CompletionSummary => {
+            // Draw overview underneath as backdrop
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &app.theme,
+            );
+            // Draw overlay on top
+            if let Some(ref summary) = app.completion_summary {
+                draw_completion_overlay(f, summary, chunks[1], &app.theme);
+            }
+        }
     }
 
     // Delegate to activity log widget
@@ -144,6 +159,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 .prompt_input_screen
                 .as_ref()
                 .map(|s| (s.keybindings(), s.desired_input_mode())),
+            TuiMode::CompletionSummary => None,
             _ => None,
         }
         .map(|(b, m)| (b, m.unwrap_or(InputMode::Normal)))
@@ -272,6 +288,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::IssueBrowser => "Issues",
         TuiMode::MilestoneView => "Milestones",
         TuiMode::PromptInput => "Prompt",
+        TuiMode::CompletionSummary => "Summary",
     };
 
     let help = Line::from(vec![
@@ -302,4 +319,73 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("scroll"),
     ]);
     f.render_widget(Paragraph::new(help), area);
+}
+
+fn draw_completion_overlay(
+    f: &mut Frame,
+    summary: &crate::tui::app::CompletionSummaryData,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    use crate::session::types::SessionStatus;
+    use ratatui::widgets::Clear;
+
+    let overlay_area = help::centered_rect(60, 60, area);
+    f.render_widget(Clear, overlay_area);
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+
+    for sl in &summary.sessions {
+        let status_color = match sl.status {
+            SessionStatus::Completed => theme.accent_success,
+            SessionStatus::Errored => theme.accent_error,
+            _ => theme.accent_warning,
+        };
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(&sl.label, Style::default().fg(theme.accent_info)),
+            Span::raw(" "),
+            Span::styled(sl.status.label(), Style::default().fg(status_color)),
+            Span::raw(" "),
+            Span::styled(
+                format!("${:.2}", sl.cost_usd),
+                Style::default().fg(theme.accent_success),
+            ),
+            Span::raw(format!(" {}", sl.elapsed)),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::raw("  Total: "),
+        Span::styled(
+            format!("${:.2}", summary.total_cost_usd),
+            Style::default()
+                .fg(theme.accent_success)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(
+            "  ({} session{})",
+            summary.session_count,
+            if summary.session_count != 1 { "s" } else { "" }
+        )),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled("[Enter]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" Dashboard  "),
+        Span::styled("[q]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" Quit"),
+    ]));
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Session Complete ")
+        .title_alignment(ratatui::layout::Alignment::Center)
+        .border_style(Style::default().fg(theme.accent_success));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    f.render_widget(paragraph, overlay_area);
 }

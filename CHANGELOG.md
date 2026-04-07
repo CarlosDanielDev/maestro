@@ -5,6 +5,16 @@ All notable changes to Maestro are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Return to Dashboard After Session Completion (#83)
+
+- `src/cli.rs` — `--once` flag added to `maestro run`; when set, maestro exits after all sessions complete (preserves previous behaviour for CI and scripting use cases)
+- `src/tui/app.rs` — `TuiMode::CompletionSummary` variant added; `CompletionSummaryData` struct and `CompletionSessionLine` struct hold the per-session summary shown in the overlay; `once_mode: bool` field on `App` controls exit-vs-return behaviour; `build_completion_summary()` collects session outcomes; `completion_summary` field stores the active overlay data; `return_to_dashboard()` transitions from the overlay back to `Dashboard` mode and refreshes suggestions
+- `src/tui/mod.rs` — `CompletionSummary` intercept branch added to the key-event handler (any key dismisses the overlay); exit path now checks `once_mode`: exits immediately when `true`, otherwise builds the summary and transitions to `CompletionSummary` mode; `Dashboard` mode is restored on dismiss
+- `src/tui/ui.rs` — `TuiMode::CompletionSummary` render branch added; `draw_completion_summary()` renders a centred overlay with per-session outcome rows and a dismiss prompt
+- `src/main.rs` — `once_mode` propagated from the parsed CLI flag into `App` via `setup_app_from_config()`
+
 ## [0.4.0] - 2026-04-06
 
 ### Release Workflow for Binary Build and Distribution (#17)
