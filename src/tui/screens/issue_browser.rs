@@ -1,17 +1,76 @@
 use super::{Screen, ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
 use crate::github::types::GhIssue;
+use crate::tui::help::centered_rect;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 use std::collections::HashSet;
+
+/// Action returned by the prompt overlay's input handler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum OverlayAction {
+    /// No navigation change.
+    None,
+    /// User cancelled the overlay.
+    Cancel,
+    /// User confirmed — `None` means empty/whitespace-only prompt.
+    Confirm(Option<String>),
+}
+
+/// Inline prompt overlay shown before launching an issue session.
+#[derive(Debug, Clone)]
+pub(crate) struct IssuePromptOverlay {
+    pub text: String,
+    pub issue_number: u64,
+    pub issue_title: String,
+}
+
+impl IssuePromptOverlay {
+    pub fn handle_input(&mut self, event: &Event) -> OverlayAction {
+        if let Event::Key(KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            ..
+        }) = event
+        {
+            match code {
+                KeyCode::Esc => return OverlayAction::Cancel,
+                KeyCode::Enter => {
+                    if modifiers.contains(KeyModifiers::SHIFT) {
+                        self.text.push('\n');
+                        return OverlayAction::None;
+                    }
+                    // Enter or Ctrl+Enter confirms
+                    let trimmed = self.text.trim().to_string();
+                    return if trimmed.is_empty() {
+                        OverlayAction::Confirm(None)
+                    } else {
+                        OverlayAction::Confirm(Some(trimmed))
+                    };
+                }
+                KeyCode::Backspace => {
+                    self.text.pop();
+                }
+                KeyCode::Char(c) => {
+                    if self.text.len() < 2048 {
+                        self.text.push(*c);
+                    }
+                }
+                _ => {}
+            }
+        }
+        OverlayAction::None
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterMode {
@@ -32,6 +91,8 @@ pub struct IssueBrowserScreen {
     pub(crate) loading: bool,
     /// Last known visible height from draw, used for scroll sync.
     last_visible_height: usize,
+    /// Prompt overlay shown before launching a single-issue session.
+    pub(crate) prompt_overlay: Option<IssuePromptOverlay>,
 }
 
 impl IssueBrowserScreen {
@@ -48,6 +109,7 @@ impl IssueBrowserScreen {
             milestone_filter: None,
             loading: false,
             last_visible_height: 20,
+            prompt_overlay: None,
         }
     }
 
@@ -122,12 +184,12 @@ impl IssueBrowserScreen {
         ScreenAction::None
     }
 
-    fn handle_enter(&self) -> ScreenAction {
+    fn handle_enter(&mut self) -> ScreenAction {
         if self.filtered_indices.is_empty() {
             return ScreenAction::None;
         }
 
-        // If multi-select is active, launch all selected
+        // If multi-select is active, launch all selected (skip overlay)
         if !self.selected_set.is_empty() {
             let configs: Vec<SessionConfig> = self
                 .issues
@@ -136,17 +198,19 @@ impl IssueBrowserScreen {
                 .map(|i| SessionConfig {
                     issue_number: Some(i.number),
                     title: i.title.clone(),
+                    custom_prompt: None,
                 })
                 .collect();
             return ScreenAction::LaunchSessions(configs);
         }
 
-        // Otherwise launch the single selected issue
+        // For single issue, open the prompt overlay
         if let Some(&idx) = self.filtered_indices.get(self.selected) {
             let issue = &self.issues[idx];
-            return ScreenAction::LaunchSession(SessionConfig {
-                issue_number: Some(issue.number),
-                title: issue.title.clone(),
+            self.prompt_overlay = Some(IssuePromptOverlay {
+                text: String::new(),
+                issue_number: issue.number,
+                issue_title: issue.title.clone(),
             });
         }
 
@@ -302,6 +366,69 @@ impl IssueBrowserScreen {
             f.render_widget(para, area);
         }
     }
+
+    fn draw_prompt_overlay(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let overlay = match &self.prompt_overlay {
+            Some(o) => o,
+            None => return,
+        };
+
+        let overlay_area = centered_rect(65, 55, area);
+        f.render_widget(Clear, overlay_area);
+
+        let title = format!(" #{} — {} ", overlay.issue_number, overlay.issue_title);
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.accent_info));
+
+        let inner = block.inner(overlay_area);
+        f.render_widget(block, overlay_area);
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // hint
+                Constraint::Min(3),    // text area
+                Constraint::Length(1), // keybinds
+            ])
+            .split(inner);
+
+        // Hint line
+        let hint = Paragraph::new(Line::from(Span::styled(
+            "Additional instructions (optional):",
+            Style::default().fg(theme.text_secondary),
+        )));
+        f.render_widget(hint, chunks[0]);
+
+        // Text area
+        let text_content = if overlay.text.is_empty() {
+            Paragraph::new(Line::from(Span::styled(
+                "Type your prompt here...",
+                Style::default().fg(theme.text_muted),
+            )))
+        } else {
+            Paragraph::new(sanitize_for_terminal(&overlay.text))
+                .style(Style::default().fg(theme.text_primary))
+                .wrap(Wrap { trim: false })
+        };
+        let text_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border_inactive));
+        f.render_widget(text_content.block(text_block), chunks[1]);
+
+        // Keybinds bar
+        draw_keybinds_bar(
+            f,
+            chunks[2],
+            &[
+                ("Enter", "Launch"),
+                ("Shift+Enter", "New line"),
+                ("Esc", "Cancel"),
+            ],
+            theme,
+        );
+    }
 }
 
 impl KeymapProvider for IssueBrowserScreen {
@@ -351,6 +478,27 @@ impl KeymapProvider for IssueBrowserScreen {
 
 impl Screen for IssueBrowserScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
+        // When overlay is active, route all input to it
+        if let Some(ref mut overlay) = self.prompt_overlay {
+            match overlay.handle_input(event) {
+                OverlayAction::Cancel => {
+                    self.prompt_overlay = None;
+                    return ScreenAction::None;
+                }
+                OverlayAction::Confirm(custom_prompt) => {
+                    let issue_number = overlay.issue_number;
+                    let title = overlay.issue_title.clone();
+                    self.prompt_overlay = None;
+                    return ScreenAction::LaunchSession(SessionConfig {
+                        issue_number: Some(issue_number),
+                        title,
+                        custom_prompt,
+                    });
+                }
+                OverlayAction::None => return ScreenAction::None,
+            }
+        }
+
         if let Event::Key(KeyEvent {
             code,
             kind: KeyEventKind::Press,
@@ -401,10 +549,13 @@ impl Screen for IssueBrowserScreen {
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         self.draw_impl(f, area, theme);
+        if self.prompt_overlay.is_some() {
+            self.draw_prompt_overlay(f, area, theme);
+        }
     }
 
     fn desired_input_mode(&self) -> Option<InputMode> {
-        if self.filter_mode != FilterMode::None {
+        if self.prompt_overlay.is_some() || self.filter_mode != FilterMode::None {
             Some(InputMode::Insert)
         } else {
             Some(InputMode::Normal)
@@ -415,8 +566,8 @@ impl Screen for IssueBrowserScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::screens::test_helpers::key_event;
-    use crossterm::event::KeyCode;
+    use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
+    use crossterm::event::{KeyCode, KeyModifiers};
 
     fn make_issue(number: u64, title: &str) -> GhIssue {
         GhIssue {
@@ -531,16 +682,17 @@ mod tests {
     }
 
     #[test]
-    fn issue_browser_enter_on_single_issue_returns_launch_session() {
+    fn issue_browser_enter_on_single_issue_opens_overlay() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
         screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal); // move to issue 2 (number=2)
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        match action {
-            ScreenAction::LaunchSession(config) => {
-                assert_eq!(config.issue_number, Some(2));
-            }
-            other => panic!("Expected LaunchSession, got {:?}", other),
-        }
+        assert_eq!(action, ScreenAction::None, "should not launch directly");
+        let overlay = screen
+            .prompt_overlay
+            .as_ref()
+            .expect("overlay should be open");
+        assert_eq!(overlay.issue_number, 2);
+        assert_eq!(overlay.issue_title, "Fix crash");
     }
 
     #[test]
@@ -777,5 +929,198 @@ mod tests {
         assert!(screen.issues.is_empty());
         assert!(screen.filtered_indices.is_empty());
         assert_eq!(screen.selected, 0);
+    }
+
+    // ---- Issue #99: IssuePromptOverlay state machine ----
+
+    fn make_overlay(number: u64, title: &str) -> IssuePromptOverlay {
+        IssuePromptOverlay {
+            text: String::new(),
+            issue_number: number,
+            issue_title: title.to_string(),
+        }
+    }
+
+    fn overlay_with_text(number: u64, title: &str, text: &str) -> IssuePromptOverlay {
+        IssuePromptOverlay {
+            text: text.to_string(),
+            issue_number: number,
+            issue_title: title.to_string(),
+        }
+    }
+
+    #[test]
+    fn overlay_initial_state_text_is_empty() {
+        let overlay = make_overlay(42, "Fix crash");
+        assert!(overlay.text.is_empty());
+    }
+
+    #[test]
+    fn overlay_typing_appends_characters() {
+        let mut overlay = make_overlay(42, "Fix crash");
+        overlay.handle_input(&key_event(KeyCode::Char('a')));
+        overlay.handle_input(&key_event(KeyCode::Char('b')));
+        assert_eq!(overlay.text, "ab");
+    }
+
+    #[test]
+    fn overlay_backspace_removes_last_character() {
+        let mut overlay = overlay_with_text(42, "T", "hello");
+        overlay.handle_input(&key_event(KeyCode::Backspace));
+        assert_eq!(overlay.text, "hell");
+    }
+
+    #[test]
+    fn overlay_backspace_on_empty_is_noop() {
+        let mut overlay = make_overlay(42, "T");
+        let action = overlay.handle_input(&key_event(KeyCode::Backspace));
+        assert_eq!(action, OverlayAction::None);
+        assert_eq!(overlay.text, "");
+    }
+
+    #[test]
+    fn overlay_escape_returns_cancel() {
+        let mut overlay = make_overlay(42, "T");
+        let action = overlay.handle_input(&key_event(KeyCode::Esc));
+        assert_eq!(action, OverlayAction::Cancel);
+    }
+
+    #[test]
+    fn overlay_enter_with_text_returns_confirm_some() {
+        let mut overlay = overlay_with_text(42, "T", "focus on error handling");
+        let action = overlay.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(
+            action,
+            OverlayAction::Confirm(Some("focus on error handling".to_string()))
+        );
+    }
+
+    #[test]
+    fn overlay_enter_with_empty_text_returns_confirm_none() {
+        let mut overlay = make_overlay(42, "T");
+        let action = overlay.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(action, OverlayAction::Confirm(None));
+    }
+
+    #[test]
+    fn overlay_enter_with_whitespace_only_returns_confirm_none() {
+        let mut overlay = overlay_with_text(42, "T", "   \n  ");
+        let action = overlay.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(action, OverlayAction::Confirm(None));
+    }
+
+    #[test]
+    fn overlay_shift_enter_inserts_newline() {
+        let mut overlay = overlay_with_text(42, "T", "line one");
+        let action = overlay.handle_input(&key_event_with_modifiers(
+            KeyCode::Enter,
+            KeyModifiers::SHIFT,
+        ));
+        assert_eq!(overlay.text, "line one\n");
+        assert_eq!(action, OverlayAction::None);
+    }
+
+    #[test]
+    fn overlay_ctrl_enter_also_confirms() {
+        let mut overlay = overlay_with_text(42, "T", "hint");
+        let action = overlay.handle_input(&key_event_with_modifiers(
+            KeyCode::Enter,
+            KeyModifiers::CONTROL,
+        ));
+        assert_eq!(action, OverlayAction::Confirm(Some("hint".to_string())));
+    }
+
+    #[test]
+    fn overlay_stores_issue_number_and_title() {
+        let overlay = make_overlay(99, "Custom feature");
+        assert_eq!(overlay.issue_number, 99);
+        assert_eq!(overlay.issue_title, "Custom feature");
+    }
+
+    #[test]
+    fn overlay_confirm_text_is_trimmed() {
+        let mut overlay = overlay_with_text(42, "T", "  trimmed  ");
+        let action = overlay.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(action, OverlayAction::Confirm(Some("trimmed".to_string())));
+    }
+
+    // ---- Issue #99: IssueBrowserScreen overlay integration ----
+
+    #[test]
+    fn issue_browser_overlay_cancel_dismisses_overlay() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        assert!(screen.prompt_overlay.is_some());
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        assert!(screen.prompt_overlay.is_none());
+    }
+
+    #[test]
+    fn issue_browser_overlay_confirm_with_text_returns_launch_with_custom_prompt() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        for c in "focus on errors".chars() {
+            screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
+        }
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSession(config) => {
+                assert_eq!(config.issue_number, Some(1));
+                assert_eq!(config.custom_prompt, Some("focus on errors".to_string()));
+            }
+            other => panic!("Expected LaunchSession, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn issue_browser_overlay_confirm_empty_returns_launch_custom_prompt_none() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // confirm empty
+        match action {
+            ScreenAction::LaunchSession(config) => {
+                assert_eq!(config.custom_prompt, None);
+            }
+            other => panic!("Expected LaunchSession, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn issue_browser_enter_with_multi_select_skips_overlay() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select #1
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select #2
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSessions(_) => {}
+            other => panic!("Expected LaunchSessions without overlay, got {:?}", other),
+        }
+        assert!(screen.prompt_overlay.is_none());
+    }
+
+    #[test]
+    fn issue_browser_overlay_captures_input_before_list_navigation() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        let initial_selected = screen.selected;
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal); // should type into overlay
+        assert_eq!(
+            screen.selected, initial_selected,
+            "cursor must not move while overlay is open"
+        );
+        assert_eq!(
+            screen.prompt_overlay.as_ref().unwrap().text,
+            "j",
+            "char must be typed into overlay text"
+        );
+    }
+
+    #[test]
+    fn issue_browser_overlay_active_desired_mode_is_insert() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        assert_eq!(screen.desired_input_mode(), Some(InputMode::Insert));
     }
 }
