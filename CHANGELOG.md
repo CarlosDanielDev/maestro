@@ -7,11 +7,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-07
+
+### Added
+
+- Self-upgrade via CLI/TUI with user confirmation (#118) — async version check on startup via GitHub Releases API, non-blocking upgrade banner, binary download with backup/rollback, restart confirmation
+- New `src/updater/` module with `UpdateChecker` trait, `Installer`, `RestartBuilder`, and `UpgradeState` state machine
+- Security hardening: download URL allowlist (GitHub domains only), 120s timeout, 200MB size limit, rollback error logging
+
 ### Fixed
 
 - Milestone filter persists on "All Issues" view when switching between milestone and non-milestone contexts (#117)
 
 ### Detailed Changes
+
+### Self-Upgrade via CLI/TUI with User Confirmation (#118)
+
+- `src/updater/mod.rs` — `UpgradeState` enum (Hidden, Available, Downloading, ReadyToRestart, Failed) state machine; `ReleaseInfo` struct; `is_trusted_download_url()` validates download URLs against an HTTPS allowlist of GitHub domains; `GITHUB_REPO` and `MAX_DOWNLOAD_SIZE` constants
+- `src/updater/checker.rs` — `Version` struct with semver parsing (strips `v` prefix, handles pre-release suffixes); `UpdateChecker` trait returning `Option<ReleaseInfo>` from a single API call; `GitHubReleaseChecker` production impl hitting `/releases/latest` with 5s timeout; `parse_releases_response()` for JSON parsing with pre-release filtering
+- `src/updater/installer.rs` — `Installer` struct with `install_with_backup()` (reads original, writes backup, replaces binary, sets permissions, rolls back on failure with logged errors); `download_and_install()` with URL validation, 120s timeout, and 200MB Content-Length guard; `restart_with_same_args()` uses POSIX `execvp()` on Unix
+- `src/updater/restart.rs` — `RestartBuilder` and `RestartCommand` pure data structs for testable restart command construction without side effects
+- `src/tui/app.rs` — `upgrade_state: UpgradeState` field added to `App`; `TuiDataEvent::VersionCheckResult` and `TuiDataEvent::UpgradeResult` variants; `handle_data_event()` arms for state transitions
+- `src/tui/mod.rs` — `spawn_version_check()` spawns async version check before event loop; `spawn_upgrade_download()` spawns binary download on user confirmation; key handlers for `[u]` upgrade, `[Esc]` dismiss, `[y]` restart, `[n]` skip restart
+- `src/tui/ui.rs` — `draw_upgrade_banner()` renders state-specific banners: blue "UPDATE" for available, yellow "DOWNLOADING" for in-progress, green "READY" for restart confirmation, red "ERROR" for failures
 
 ### Milestone Filter Persists on All Issues View (#117)
 
