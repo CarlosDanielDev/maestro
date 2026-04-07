@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::tui::theme::Theme;
 use chrono::{DateTime, Utc};
 use ratatui::{

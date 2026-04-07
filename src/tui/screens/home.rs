@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::{Screen, ScreenAction};
 use crate::tui::app::TuiMode;
 use crate::tui::navigation::InputMode;

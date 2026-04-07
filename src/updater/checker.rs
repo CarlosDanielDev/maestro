@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 

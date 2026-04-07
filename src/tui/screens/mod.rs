@@ -1,4 +1,5 @@
 pub mod home;
+#[allow(dead_code)]
 pub mod issue_browser;
 pub mod milestone;
 pub mod prompt_input;

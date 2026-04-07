@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod checker;
 pub mod installer;
 pub mod restart;

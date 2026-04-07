@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::github::types::GhIssue;
 use crate::session::types::Session;
 use chrono::{DateTime, Utc};

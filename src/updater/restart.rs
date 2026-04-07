@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::path::PathBuf;
 
 /// A restart command to be executed by the caller (never spawned internally).
