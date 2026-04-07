@@ -91,9 +91,11 @@ impl WorkQueue {
             }
         }
 
-        // All independent — build the queue
+        // All independent — build the queue (deduplicated, preserving input order)
+        let mut seen = HashSet::new();
         let items = issues
             .iter()
+            .filter(|n| seen.insert(**n))
             .enumerate()
             .map(|(pos, &num)| QueuedItem {
                 issue_number: num,
