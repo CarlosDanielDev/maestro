@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-07 19:00 (UTC)
+> Last updated: 2026-04-07 20:15 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -138,6 +138,7 @@ maestro/
 │   │   ├── detail.rs                      # Session detail view  [Phase 3]
 │   │   ├── fullscreen.rs                  # Fullscreen session view with phase progress overlay  [Phase 3]
 │   │   ├── help.rs                        # Help overlay widget with keybinding reference  [Phase 3]
+│   │   ├── markdown.rs                     # markdown-to-ratatui rendering module; convert Markdown content to terminal-friendly widgets
 │   │   ├── panels.rs                      # Split-pane panel view; fork depth indicator in title; overflow warning in context gauge; GatesRunning (Cyan), NeedsReview (LightYellow), and CiFix (LightMagenta) status colors  [Issue #12, #40, #41]
 │   │   ├── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners, screen rendering branches; draw_upgrade_banner() renders upgrade notification states (available, downloading, installing, done, failed) as a top-of-screen banner with version info and [y]/[n] confirmation prompts; CompletionSummary render branch and draw_completion_overlay() centred overlay with per-session outcome rows, PR links (underlined), error summaries, per-gate failure lines (✗ gate_name message in warning/error colors), and keybindings bar ([f] Fix when has_needs_review(), [i] [r] [l] [q] [Esc]); ContinuousPause render branch and continuous pause overlay; status bar indicator showing continuous mode state (current issue, completed/skipped counts)  [Phase 3, Issue #31-33, #83, #84, #85, #104, #118]
 │   │   ├── navigation/                    # Keyboard navigation and focus management  [Issue #37]
@@ -270,6 +271,7 @@ maestro/
 | `src/tui/detail.rs` | Session detail view (Phase 3) |
 | `src/tui/fullscreen.rs` | Fullscreen session view with phase progress overlay (Phase 3) |
 | `src/tui/help.rs` | Help overlay widget with keybinding reference (Phase 3) |
+| `src/tui/markdown.rs` | markdown-to-ratatui rendering module; convert Markdown content to terminal-friendly widgets |
 | `src/tui/navigation/` | Keyboard navigation system and focus management (Issue #37) |
 | `src/tui/navigation/mod.rs` | Module exports for navigation subsystem |
 | `src/tui/navigation/focus.rs` | `FocusManager`: focus ring, widget focus state tracking |
