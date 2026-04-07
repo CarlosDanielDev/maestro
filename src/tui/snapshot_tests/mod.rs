@@ -1,6 +1,7 @@
 mod cost_dashboard;
 mod dashboard;
 mod detail;
+mod fullscreen;
 mod issue_browser;
 mod milestone;
 mod overview;

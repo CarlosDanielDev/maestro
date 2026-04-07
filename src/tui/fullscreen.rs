@@ -1,5 +1,6 @@
 use crate::session::types::Session;
 use crate::state::progress::ProgressTracker;
+use crate::tui::markdown::render_markdown;
 use crate::tui::spinner;
 use crate::tui::theme::Theme;
 use ratatui::{
@@ -79,13 +80,18 @@ fn draw_session_header(f: &mut Frame, session: &Session, area: Rect, theme: &The
 }
 
 fn draw_session_output(f: &mut Frame, session: &Session, area: Rect, theme: &Theme) {
-    let output = if session.last_message.is_empty() {
-        "Waiting for output...".to_string()
+    let inner_width = area.width.saturating_sub(2);
+    let md_text = if session.last_message.is_empty() {
+        ratatui::text::Text::raw("Waiting for output...")
     } else {
-        session.last_message.clone()
+        render_markdown(&session.last_message, theme, inner_width)
     };
 
-    let paragraph = Paragraph::new(output)
+    let line_count = md_text.lines.len() as u16;
+    let inner_height = area.height.saturating_sub(2);
+    let scroll_offset = line_count.saturating_sub(inner_height);
+
+    let paragraph = Paragraph::new(md_text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -93,14 +99,7 @@ fn draw_session_output(f: &mut Frame, session: &Session, area: Rect, theme: &The
                 .title(" Agent Output "),
         )
         .wrap(Wrap { trim: false })
-        .scroll((
-            {
-                let inner_height = area.height.saturating_sub(2);
-                let line_count = session.last_message.lines().count() as u16;
-                line_count.saturating_sub(inner_height)
-            },
-            0,
-        ));
+        .scroll((scroll_offset, 0));
 
     f.render_widget(paragraph, area);
 }

@@ -104,6 +104,79 @@ fn panel_view_context_overflow() {
 }
 
 #[test]
+fn panel_view_markdown_last_message() {
+    let mut terminal = test_terminal();
+    let panel = PanelView::new();
+    let theme = Theme::dark();
+    let mut session = make_session(SessionStatus::Running, Some(42));
+    session.last_message =
+        "# Progress\n\nCompleted **3 of 5** tasks.\n\n- `cargo build` passed\n- Tests running\n"
+            .to_string();
+
+    terminal
+        .draw(|f| {
+            panel.draw(f, &[&session], f.area(), &theme, 0);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn panel_view_empty_last_message_shows_placeholder() {
+    let mut terminal = test_terminal();
+    let panel = PanelView::new();
+    let theme = Theme::dark();
+    let mut session = make_session(SessionStatus::Running, Some(42));
+    session.last_message = String::new();
+
+    terminal
+        .draw(|f| {
+            panel.draw(f, &[&session], f.area(), &theme, 0);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn panel_view_plain_text_last_message() {
+    let mut terminal = test_terminal();
+    let panel = PanelView::new();
+    let theme = Theme::dark();
+    let mut session = make_session(SessionStatus::Running, Some(42));
+    session.last_message = "Simple status update without any markdown".to_string();
+
+    terminal
+        .draw(|f| {
+            panel.draw(f, &[&session], f.area(), &theme, 0);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn panel_view_scroll_with_markdown_content() {
+    let mut terminal = test_terminal();
+    let mut panel = PanelView::new();
+    panel.scroll_offset = 2;
+    let theme = Theme::dark();
+    let mut session = make_session(SessionStatus::Running, Some(42));
+    session.last_message =
+        "# Title\n\nFirst paragraph with **bold** text.\n\nSecond paragraph with `code`.\n\nThird paragraph.\n\nFourth paragraph.\n"
+            .to_string();
+
+    terminal
+        .draw(|f| {
+            panel.draw(f, &[&session], f.area(), &theme, 0);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
 fn panel_view_forked_session() {
     let mut terminal = test_terminal();
     let panel = PanelView::new();
