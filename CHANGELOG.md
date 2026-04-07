@@ -5,7 +5,7 @@ All notable changes to Maestro are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-04-06
 
 ### Release Workflow for Binary Build and Distribution (#17)
 
