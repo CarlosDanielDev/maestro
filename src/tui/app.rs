@@ -101,6 +101,13 @@ pub struct CompletionSummaryData {
     pub sessions: Vec<CompletionSessionLine>,
 }
 
+/// Per-gate failure detail shown in the completion summary overlay.
+#[derive(Debug, Clone)]
+pub struct GateFailureInfo {
+    pub gate: String,
+    pub message: String,
+}
+
 /// Per-session line in the completion summary.
 #[derive(Debug, Clone)]
 pub struct CompletionSessionLine {
@@ -110,6 +117,18 @@ pub struct CompletionSessionLine {
     pub elapsed: String,
     pub pr_link: String,
     pub error_summary: String,
+    pub gate_failures: Vec<GateFailureInfo>,
+    pub issue_number: Option<u64>,
+    pub model: String,
+}
+
+impl CompletionSummaryData {
+    /// Returns true if any session ended in NeedsReview (gate failures present).
+    pub fn has_needs_review(&self) -> bool {
+        self.sessions
+            .iter()
+            .any(|s| s.status == SessionStatus::NeedsReview)
+    }
 }
 
 struct PendingHook {
@@ -914,7 +933,18 @@ impl App {
                         .map(|(r, _)| r.message.clone())
                         .collect();
 
+                    let failed_gate_results: Vec<crate::session::types::GateResultEntry> = paired
+                        .iter()
+                        .filter(|(r, _)| !r.passed)
+                        .map(|(r, _)| crate::session::types::GateResultEntry {
+                            gate: r.gate.clone(),
+                            passed: r.passed,
+                            message: r.message.clone(),
+                        })
+                        .collect();
+
                     if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
+                        managed.session.gate_results = failed_gate_results;
                         managed.session.status = SessionStatus::NeedsReview;
                         managed
                             .session
@@ -1188,18 +1218,23 @@ impl App {
                     .rev()
                     .find(|e| e.message.starts_with("Error:") || e.message.starts_with("E:"))
                     .or_else(|| s.activity_log.last())
-                    .map(|e| {
-                        let msg = &e.message;
-                        let end = truncate_at_char_boundary(msg, 77);
-                        if end < msg.len() {
-                            format!("{}...", &msg[..end])
-                        } else {
-                            msg.clone()
-                        }
-                    })
+                    .map(|e| truncate_with_ellipsis(&e.message, 77))
                     .unwrap_or_default()
             } else {
                 String::new()
+            };
+
+            let gate_failures = if s.status == SessionStatus::NeedsReview {
+                s.gate_results
+                    .iter()
+                    .filter(|r| !r.passed)
+                    .map(|r| GateFailureInfo {
+                        gate: r.gate.clone(),
+                        message: truncate_with_ellipsis(&r.message, 100),
+                    })
+                    .collect()
+            } else {
+                Vec::new()
             };
 
             lines.push(CompletionSessionLine {
@@ -1209,6 +1244,9 @@ impl App {
                 elapsed: s.elapsed_display(),
                 pr_link,
                 error_summary,
+                gate_failures,
+                issue_number: s.issue_number,
+                model: s.model.clone(),
             });
         }
 
@@ -1907,6 +1945,53 @@ impl App {
         self.pending_session_launches.push(session);
     }
 
+    /// Spawn a fix session for gate failures on a NeedsReview session.
+    pub fn spawn_gate_fix_session(&mut self, failed_line: &CompletionSessionLine) {
+        let issue_number = match failed_line.issue_number {
+            Some(n) => n,
+            None => return,
+        };
+
+        let gate_failure_details: String = failed_line
+            .gate_failures
+            .iter()
+            .map(|gf| format!("- [{}]: {}", gf.gate, gf.message))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .chars()
+            .filter(|c| !c.is_control() || *c == '\n')
+            .take(2000)
+            .collect();
+
+        let model = if failed_line.model.is_empty() {
+            self.config
+                .as_ref()
+                .map(|c| c.sessions.default_model.clone())
+                .unwrap_or_else(|| "opus".to_string())
+        } else {
+            failed_line.model.clone()
+        };
+
+        let mode = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.default_mode.clone())
+            .unwrap_or_else(|| "orchestrator".to_string());
+
+        let prompt = build_gate_fix_prompt(issue_number, &gate_failure_details);
+
+        let mut session = Session::new(prompt, model, mode, Some(issue_number));
+        session.issue_title = Some(format!("Gate Fix for #{}", issue_number));
+
+        self.pending_session_launches.push(session);
+
+        self.activity_log.push_simple(
+            format!("#{}", issue_number),
+            "Launched gate fix session".into(),
+            LogLevel::Info,
+        );
+    }
+
     /// Fire a plugin hook asynchronously and log results.
     pub async fn fire_plugin_hook(&mut self, hook: HookPoint, ctx: HookContext) {
         let Some(ref runner) = self.plugin_runner else {
@@ -1951,11 +2036,24 @@ fn session_label(session: &Session) -> String {
     }
 }
 
-use crate::util::truncate_at_char_boundary;
+fn build_gate_fix_prompt(issue_number: u64, failure_details: &str) -> String {
+    format!(
+        "Fix the gate failures for issue #{issue_number}.\n\n\
+         GATE FAILURES:\n{failure_details}\n\n\
+         IMPORTANT: You are running in unattended mode. \
+         Do NOT use AskUserQuestion. \
+         Read the failing code, fix the issues, then commit and push. \
+         Run the failing gate commands locally to reproduce, then fix and verify. \
+         Keep the fix minimal — do NOT refactor unrelated code. Only fix the gate failures."
+    )
+}
+
+use crate::util::truncate_with_ellipsis;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::types::GateResultEntry;
     use crate::session::worktree::MockWorktreeManager;
     use crate::state::store::StateStore;
 
@@ -1989,6 +2087,9 @@ mod tests {
             elapsed: "1m 05s".to_string(),
             pr_link: String::new(),
             error_summary: String::new(),
+            gate_failures: vec![],
+            issue_number: Some(42),
+            model: "opus".to_string(),
         };
         assert_eq!(line.label, "#42");
         assert_eq!(line.status, crate::session::types::SessionStatus::Completed);
@@ -2187,6 +2288,9 @@ mod tests {
             elapsed: "0s".to_string(),
             pr_link: String::new(),
             error_summary: String::new(),
+            gate_failures: vec![],
+            issue_number: Some(1),
+            model: "opus".to_string(),
         };
         assert!(line.pr_link.is_empty());
     }
@@ -2200,6 +2304,9 @@ mod tests {
             elapsed: "0s".to_string(),
             pr_link: "https://github.com/org/repo/pull/42".into(),
             error_summary: String::new(),
+            gate_failures: vec![],
+            issue_number: Some(42),
+            model: "opus".to_string(),
         };
         assert_eq!(line.pr_link, "https://github.com/org/repo/pull/42");
     }
@@ -2213,6 +2320,9 @@ mod tests {
             elapsed: "0s".to_string(),
             pr_link: String::new(),
             error_summary: "Error: process exited with code 1".into(),
+            gate_failures: vec![],
+            issue_number: Some(7),
+            model: "opus".to_string(),
         };
         assert_eq!(line.error_summary, "Error: process exited with code 1");
     }
@@ -2410,6 +2520,391 @@ mod tests {
         assert!(
             summary.sessions[0].pr_link.contains("77"),
             "pr_link must reference ci_fix_context PR number"
+        );
+    }
+
+    // --- Issue #104: [f] Fix action in completion overlay for failed gates ---
+
+    #[test]
+    fn gate_failure_info_fields_are_accessible() {
+        let info = GateFailureInfo {
+            gate: "tests".to_string(),
+            message: "3 tests failed".to_string(),
+        };
+        assert_eq!(info.gate, "tests");
+        assert_eq!(info.message, "3 tests failed");
+    }
+
+    #[test]
+    fn gate_failure_info_can_be_cloned() {
+        let info = GateFailureInfo {
+            gate: "clippy".to_string(),
+            message: "2 warnings".to_string(),
+        };
+        let cloned = info.clone();
+        assert_eq!(cloned.gate, info.gate);
+        assert_eq!(cloned.message, info.message);
+    }
+
+    #[test]
+    fn completion_session_line_gate_failures_defaults_to_empty() {
+        let line = CompletionSessionLine {
+            label: "#42".to_string(),
+            status: crate::session::types::SessionStatus::NeedsReview,
+            cost_usd: 0.0,
+            elapsed: "0s".to_string(),
+            pr_link: String::new(),
+            error_summary: String::new(),
+            gate_failures: vec![],
+            issue_number: Some(42),
+            model: "opus".to_string(),
+        };
+        assert!(line.gate_failures.is_empty());
+    }
+
+    #[test]
+    fn completion_session_line_holds_gate_failures() {
+        let line = CompletionSessionLine {
+            label: "#7".to_string(),
+            status: crate::session::types::SessionStatus::NeedsReview,
+            cost_usd: 0.0,
+            elapsed: "0s".to_string(),
+            pr_link: String::new(),
+            error_summary: String::new(),
+            gate_failures: vec![GateFailureInfo {
+                gate: "tests".to_string(),
+                message: "cargo test failed".to_string(),
+            }],
+            issue_number: Some(7),
+            model: "opus".to_string(),
+        };
+        assert_eq!(line.gate_failures.len(), 1);
+        assert_eq!(line.gate_failures[0].gate, "tests");
+    }
+
+    #[test]
+    fn has_needs_review_returns_false_when_no_sessions() {
+        let data = CompletionSummaryData {
+            sessions: vec![],
+            total_cost_usd: 0.0,
+            session_count: 0,
+        };
+        assert!(!data.has_needs_review());
+    }
+
+    #[test]
+    fn has_needs_review_returns_false_when_all_completed() {
+        let data = CompletionSummaryData {
+            sessions: vec![CompletionSessionLine {
+                label: "#1".to_string(),
+                status: crate::session::types::SessionStatus::Completed,
+                cost_usd: 0.0,
+                elapsed: "0s".to_string(),
+                pr_link: String::new(),
+                error_summary: String::new(),
+                gate_failures: vec![],
+                issue_number: Some(1),
+                model: "opus".to_string(),
+            }],
+            total_cost_usd: 0.0,
+            session_count: 1,
+        };
+        assert!(!data.has_needs_review());
+    }
+
+    #[test]
+    fn has_needs_review_returns_true_when_one_session_needs_review() {
+        let data = CompletionSummaryData {
+            sessions: vec![CompletionSessionLine {
+                label: "#2".to_string(),
+                status: crate::session::types::SessionStatus::NeedsReview,
+                cost_usd: 0.0,
+                elapsed: "0s".to_string(),
+                pr_link: String::new(),
+                error_summary: String::new(),
+                gate_failures: vec![GateFailureInfo {
+                    gate: "tests".to_string(),
+                    message: "failed".to_string(),
+                }],
+                issue_number: Some(2),
+                model: "opus".to_string(),
+            }],
+            total_cost_usd: 0.0,
+            session_count: 1,
+        };
+        assert!(data.has_needs_review());
+    }
+
+    #[test]
+    fn has_needs_review_returns_true_when_mixed_statuses() {
+        let data = CompletionSummaryData {
+            sessions: vec![
+                CompletionSessionLine {
+                    label: "#1".to_string(),
+                    status: crate::session::types::SessionStatus::Completed,
+                    cost_usd: 0.0,
+                    elapsed: "0s".to_string(),
+                    pr_link: String::new(),
+                    error_summary: String::new(),
+                    gate_failures: vec![],
+                    issue_number: Some(1),
+                    model: "opus".to_string(),
+                },
+                CompletionSessionLine {
+                    label: "#2".to_string(),
+                    status: crate::session::types::SessionStatus::NeedsReview,
+                    cost_usd: 0.0,
+                    elapsed: "0s".to_string(),
+                    pr_link: String::new(),
+                    error_summary: String::new(),
+                    gate_failures: vec![GateFailureInfo {
+                        gate: "clippy".to_string(),
+                        message: "lint error".to_string(),
+                    }],
+                    issue_number: Some(2),
+                    model: "opus".to_string(),
+                },
+            ],
+            total_cost_usd: 0.0,
+            session_count: 2,
+        };
+        assert!(data.has_needs_review());
+    }
+
+    #[test]
+    fn build_completion_summary_gate_failures_empty_for_completed_session() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(10),
+        );
+        session.status = crate::session::types::SessionStatus::Completed;
+        session.gate_results = vec![GateResultEntry::pass("tests", "all passed")];
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert!(
+            summary.sessions[0].gate_failures.is_empty(),
+            "completed session with passing gates must have empty gate_failures"
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_gate_failures_populated_for_needs_review() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(20),
+        );
+        session.status = crate::session::types::SessionStatus::NeedsReview;
+        session.gate_results = vec![GateResultEntry::fail("tests", "3 tests failed")];
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert_eq!(summary.sessions[0].gate_failures.len(), 1);
+        assert_eq!(summary.sessions[0].gate_failures[0].gate, "tests");
+        assert!(
+            summary.sessions[0].gate_failures[0]
+                .message
+                .contains("3 tests failed")
+        );
+    }
+
+    #[test]
+    fn build_completion_summary_gate_failures_multiple_failed_gates() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(30),
+        );
+        session.status = crate::session::types::SessionStatus::NeedsReview;
+        session.gate_results = vec![
+            GateResultEntry::fail("tests", "cargo test failed"),
+            GateResultEntry::fail("clippy", "2 warnings"),
+        ];
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert_eq!(summary.sessions[0].gate_failures.len(), 2);
+    }
+
+    #[test]
+    fn build_completion_summary_gate_failures_skips_passing_gates() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(40),
+        );
+        session.status = crate::session::types::SessionStatus::NeedsReview;
+        session.gate_results = vec![
+            GateResultEntry::pass("fmt", "formatted"),
+            GateResultEntry::fail("tests", "failed"),
+        ];
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert_eq!(summary.sessions[0].gate_failures.len(), 1);
+        assert_eq!(summary.sessions[0].gate_failures[0].gate, "tests");
+    }
+
+    #[test]
+    fn build_completion_summary_gate_failures_empty_when_needs_review_has_no_gate_results() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(50),
+        );
+        session.status = crate::session::types::SessionStatus::NeedsReview;
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert!(summary.sessions[0].gate_failures.is_empty());
+    }
+
+    #[test]
+    fn build_completion_summary_populates_issue_number() {
+        let mut app = make_app();
+        let session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(77),
+        );
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert_eq!(summary.sessions[0].issue_number, Some(77));
+    }
+
+    #[test]
+    fn build_completion_summary_issue_number_is_none_when_session_has_none() {
+        let mut app = make_app();
+        let session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert!(summary.sessions[0].issue_number.is_none());
+    }
+
+    #[test]
+    fn build_completion_summary_populates_model() {
+        let mut app = make_app();
+        let session = crate::session::types::Session::new(
+            "task".into(),
+            "claude-opus-4".into(),
+            "orchestrator".into(),
+            Some(88),
+        );
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        assert_eq!(summary.sessions[0].model, "claude-opus-4");
+    }
+
+    #[test]
+    fn build_completion_summary_gate_failure_message_truncated() {
+        let mut app = make_app();
+        let mut session = crate::session::types::Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(60),
+        );
+        session.status = crate::session::types::SessionStatus::NeedsReview;
+        session.gate_results = vec![GateResultEntry::fail("tests", &"x".repeat(300))];
+        app.pool.enqueue(session);
+
+        let summary = app.build_completion_summary();
+        let msg = &summary.sessions[0].gate_failures[0].message;
+        assert!(
+            msg.len() <= 104,
+            "gate failure message must be truncated, got {} chars",
+            msg.len()
+        );
+    }
+
+    #[test]
+    fn build_gate_fix_prompt_includes_issue_number() {
+        let prompt = build_gate_fix_prompt(42, "tests failed");
+        assert!(prompt.contains("42"));
+    }
+
+    #[test]
+    fn build_gate_fix_prompt_includes_failure_details() {
+        let details = "- [tests]: cargo test -- 3 failures";
+        let prompt = build_gate_fix_prompt(10, details);
+        assert!(prompt.contains(details));
+    }
+
+    #[test]
+    fn build_gate_fix_prompt_is_non_empty() {
+        let prompt = build_gate_fix_prompt(99, "gate failed");
+        assert!(!prompt.is_empty());
+    }
+
+    #[test]
+    fn spawn_gate_fix_session_queues_pending_launch() {
+        let mut app = make_app();
+
+        let line = CompletionSessionLine {
+            label: "#55".to_string(),
+            status: crate::session::types::SessionStatus::NeedsReview,
+            cost_usd: 1.0,
+            elapsed: "30s".to_string(),
+            pr_link: String::new(),
+            error_summary: String::new(),
+            gate_failures: vec![GateFailureInfo {
+                gate: "tests".to_string(),
+                message: "cargo test failed".to_string(),
+            }],
+            issue_number: Some(55),
+            model: "opus".to_string(),
+        };
+
+        app.spawn_gate_fix_session(&line);
+        assert!(
+            !app.pending_session_launches.is_empty(),
+            "spawn_gate_fix_session must queue a session launch"
+        );
+    }
+
+    #[test]
+    fn spawn_gate_fix_session_does_nothing_when_no_issue_number() {
+        let mut app = make_app();
+        let line = CompletionSessionLine {
+            label: "abc123".to_string(),
+            status: crate::session::types::SessionStatus::NeedsReview,
+            cost_usd: 0.0,
+            elapsed: "0s".to_string(),
+            pr_link: String::new(),
+            error_summary: String::new(),
+            gate_failures: vec![GateFailureInfo {
+                gate: "tests".to_string(),
+                message: "failed".to_string(),
+            }],
+            issue_number: None,
+            model: "opus".to_string(),
+        };
+
+        app.spawn_gate_fix_session(&line);
+        assert!(
+            app.pending_session_launches.is_empty(),
+            "spawn_gate_fix_session must be a no-op when issue_number is None"
         );
     }
 }

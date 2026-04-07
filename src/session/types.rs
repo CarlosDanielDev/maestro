@@ -112,6 +112,36 @@ pub struct Session {
     /// Image paths attached to this session for visual context.
     #[serde(default)]
     pub image_paths: Vec<PathBuf>,
+    /// Gate results from the last gate check run (empty if gates not configured or not run yet).
+    #[serde(default)]
+    pub gate_results: Vec<GateResultEntry>,
+}
+
+/// Lightweight gate result stored on a session for post-completion display.
+/// Decoupled from `gates::types::GateResult` so session types don't depend on the gates module.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateResultEntry {
+    pub gate: String,
+    pub passed: bool,
+    pub message: String,
+}
+
+impl GateResultEntry {
+    pub fn pass(gate: &str, message: impl Into<String>) -> Self {
+        Self {
+            gate: gate.to_string(),
+            passed: true,
+            message: message.into(),
+        }
+    }
+
+    pub fn fail(gate: &str, message: impl Into<String>) -> Self {
+        Self {
+            gate: gate.to_string(),
+            passed: false,
+            message: message.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +176,7 @@ impl Session {
             fork_depth: 0,
             ci_fix_context: None,
             image_paths: Vec::new(),
+            gate_results: Vec::new(),
         }
     }
 
@@ -426,5 +457,41 @@ mod tests {
         let ctx = round_tripped.ci_fix_context.unwrap();
         assert_eq!(ctx.attempt, 2);
         assert_eq!(ctx.pr_number, 5);
+    }
+
+    // --- Issue #104: Session::gate_results field ---
+
+    #[test]
+    fn session_gate_results_defaults_to_empty() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        assert!(s.gate_results.is_empty());
+    }
+
+    #[test]
+    fn session_gate_results_round_trips_via_serde() {
+        let mut s = Session::new(
+            "prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+        );
+        s.gate_results = vec![
+            GateResultEntry::pass("tests", "all passed"),
+            GateResultEntry::fail("clippy", "2 warnings"),
+        ];
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.gate_results.len(), 2);
+        assert!(rt.gate_results[0].passed);
+        assert!(!rt.gate_results[1].passed);
+    }
+
+    #[test]
+    fn session_gate_results_deserializes_with_default_when_field_absent() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json.replace(r#","gate_results":[]"#, "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert!(rt.gate_results.is_empty());
     }
 }
