@@ -411,8 +411,14 @@ mod tests {
         let prompt = "do something";
         let ms = make_managed(prompt);
         let args = ms.build_args();
-        let bare_pos = args.iter().position(|a| a == "--bare").expect("--bare must be present");
-        let prompt_pos = args.iter().position(|a| a == prompt).expect("prompt must be present");
+        let bare_pos = args
+            .iter()
+            .position(|a| a == "--bare")
+            .expect("--bare must be present");
+        let prompt_pos = args
+            .iter()
+            .position(|a| a == prompt)
+            .expect("prompt must be present");
         assert!(
             bare_pos < prompt_pos,
             "--bare must appear before the prompt positional arg"
@@ -423,7 +429,13 @@ mod tests {
     fn spawn_args_include_required_base_flags() {
         let ms = make_managed("test prompt");
         let args = ms.build_args();
-        for flag in &["--print", "--verbose", "--output-format", "stream-json", "--bare"] {
+        for flag in &[
+            "--print",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--bare",
+        ] {
             assert!(
                 args.iter().any(|a| a == flag),
                 "args must contain {}; got: {:?}",
