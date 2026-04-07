@@ -116,6 +116,12 @@ pub struct Session {
     /// Gate results from the last gate check run (empty if gates not configured or not run yet).
     #[serde(default)]
     pub gate_results: Vec<GateResultEntry>,
+    /// Whether this session is currently in a thinking state.
+    #[serde(skip)]
+    pub is_thinking: bool,
+    /// When the current thinking block started (for elapsed display).
+    #[serde(skip)]
+    pub thinking_started_at: Option<std::time::Instant>,
 }
 
 /// Lightweight gate result stored on a session for post-completion display.
@@ -178,6 +184,8 @@ impl Session {
             ci_fix_context: None,
             image_paths: Vec::new(),
             gate_results: Vec::new(),
+            is_thinking: false,
+            thinking_started_at: None,
         }
     }
 
@@ -390,6 +398,32 @@ mod tests {
         let stripped = json.replace(r#","image_paths":[]"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
         assert!(rt.image_paths.is_empty());
+    }
+
+    // --- Issue #134: Thinking state fields ---
+
+    #[test]
+    fn session_is_thinking_defaults_to_false() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        assert!(!s.is_thinking);
+        assert!(s.thinking_started_at.is_none());
+    }
+
+    #[test]
+    fn session_thinking_fields_skipped_in_serde() {
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        s.is_thinking = true;
+        s.thinking_started_at = Some(std::time::Instant::now());
+
+        let json = serde_json::to_string(&s).unwrap();
+        // The skipped fields should not appear in JSON
+        assert!(!json.contains("is_thinking"));
+        assert!(!json.contains("thinking_started_at"));
+
+        // Deserialize should default them
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert!(!rt.is_thinking);
+        assert!(rt.thinking_started_at.is_none());
     }
 
     // --- Issue #102: Enhanced real-time session activity feedback ---

@@ -12,7 +12,7 @@ fn panel_view_empty_sessions() {
 
     terminal
         .draw(|f| {
-            panel.draw(f, &[], f.area(), &theme);
+            panel.draw(f, &[], f.area(), &theme, 0);
         })
         .unwrap();
 
@@ -28,7 +28,7 @@ fn panel_view_single_running_session() {
 
     terminal
         .draw(|f| {
-            panel.draw(f, &[&session], f.area(), &theme);
+            panel.draw(f, &[&session], f.area(), &theme, 0);
         })
         .unwrap();
 
@@ -57,7 +57,7 @@ fn panel_view_multiple_sessions() {
 
     terminal
         .draw(|f| {
-            panel.draw(f, &[&s1, &s2, &s3], f.area(), &theme);
+            panel.draw(f, &[&s1, &s2, &s3], f.area(), &theme, 0);
         })
         .unwrap();
 
@@ -78,7 +78,7 @@ fn panel_view_selected_session() {
 
     terminal
         .draw(|f| {
-            panel.draw(f, &[&s1, &s2], f.area(), &theme);
+            panel.draw(f, &[&s1, &s2], f.area(), &theme, 0);
         })
         .unwrap();
 
@@ -96,7 +96,7 @@ fn panel_view_context_overflow() {
 
     terminal
         .draw(|f| {
-            panel.draw(f, &[&session], f.area(), &theme);
+            panel.draw(f, &[&session], f.area(), &theme, 0);
         })
         .unwrap();
 
@@ -115,7 +115,7 @@ fn panel_view_forked_session() {
 
     terminal
         .draw(|f| {
-            panel.draw(f, &[&session], f.area(), &theme);
+            panel.draw(f, &[&session], f.area(), &theme, 0);
         })
         .unwrap();
 
