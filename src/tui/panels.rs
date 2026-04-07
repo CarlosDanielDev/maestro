@@ -1,5 +1,6 @@
 use crate::session::types::Session;
 use crate::state::file_claims::FileClaimManager;
+use crate::tui::markdown::render_markdown;
 use crate::tui::spinner;
 use crate::tui::theme::Theme;
 use ratatui::{
@@ -235,9 +236,17 @@ fn draw_single_panel(
     ));
     f.render_widget(Paragraph::new(activity), chunks[3]);
 
-    // Last message (scrollable)
-    let msg = Paragraph::new(session.last_message.clone())
-        .style(Style::default().fg(theme.text_muted))
+    // Last message (scrollable, rendered as markdown)
+    let md_text = if session.last_message.is_empty() {
+        ratatui::text::Text::raw("Waiting for output...")
+    } else {
+        render_markdown(
+            &session.last_message,
+            theme,
+            chunks[4].width.saturating_sub(2),
+        )
+    };
+    let msg = Paragraph::new(md_text)
         .wrap(Wrap { trim: true })
         .scroll((scroll, 0));
     f.render_widget(msg, chunks[4]);
