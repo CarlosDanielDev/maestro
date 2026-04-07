@@ -10,6 +10,7 @@ pub mod panels;
 pub mod screens;
 pub mod theme;
 pub mod ui;
+pub mod widgets;
 
 #[cfg(test)]
 mod snapshot_tests;
