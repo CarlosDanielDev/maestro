@@ -221,13 +221,12 @@ impl IssueBrowserScreen {
         let filter_lower = self.filter_text.to_lowercase();
 
         // When in milestone filter mode, parse typed text as milestone number
-        let typed_milestone: Option<u64> = if self.filter_mode == FilterMode::Milestone
-            && !self.filter_text.is_empty()
-        {
-            self.filter_text.trim().parse::<u64>().ok()
-        } else {
-            None
-        };
+        let typed_milestone: Option<u64> =
+            if self.filter_mode == FilterMode::Milestone && !self.filter_text.is_empty() {
+                self.filter_text.trim().parse::<u64>().ok()
+            } else {
+                None
+            };
 
         self.filtered_indices = self
             .issues
