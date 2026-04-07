@@ -16,6 +16,7 @@ mod review;
 mod session;
 mod state;
 mod tui;
+mod updater;
 mod util;
 mod work;
 

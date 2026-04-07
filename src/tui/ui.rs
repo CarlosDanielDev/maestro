@@ -151,6 +151,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_notification_banner(f, banners[0], chunks[2], &app.theme);
     }
 
+    // Draw upgrade banner if visible
+    draw_upgrade_banner(f, &app.upgrade_state, chunks[3], &app.theme);
+
     draw_help_bar(f, app, chunks[3]);
 
     // Draw help overlay on top of everything if active
@@ -546,6 +549,88 @@ fn draw_continuous_pause_overlay(
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, overlay_area);
+}
+
+fn draw_upgrade_banner(
+    f: &mut Frame,
+    state: &crate::updater::UpgradeState,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    use crate::updater::UpgradeState;
+
+    let spans = match state {
+        UpgradeState::Hidden => return,
+        UpgradeState::Available(info) => vec![
+            Span::styled(
+                " UPDATE ",
+                Style::default()
+                    .fg(theme.branding_fg)
+                    .bg(theme.accent_info)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                format!("New version {} available", info.tag),
+                Style::default().fg(theme.accent_info),
+            ),
+            Span::raw("  "),
+            Span::styled("[u]pgrade", Style::default().fg(theme.text_secondary)),
+            Span::raw("  "),
+            Span::styled("[Esc] dismiss", Style::default().fg(theme.text_secondary)),
+        ],
+        UpgradeState::Downloading { version } => vec![
+            Span::styled(
+                " DOWNLOADING ",
+                Style::default()
+                    .fg(theme.branding_fg)
+                    .bg(theme.accent_warning)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                format!("Downloading v{}...", version),
+                Style::default().fg(theme.accent_warning),
+            ),
+        ],
+        UpgradeState::ReadyToRestart { version, .. } => vec![
+            Span::styled(
+                " READY ",
+                Style::default()
+                    .fg(theme.branding_fg)
+                    .bg(theme.accent_success)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                format!("v{} installed!", version),
+                Style::default().fg(theme.accent_success),
+            ),
+            Span::raw("  Restart now? "),
+            Span::styled("[y]es", Style::default().fg(theme.text_secondary)),
+            Span::raw("  "),
+            Span::styled("[n]o", Style::default().fg(theme.text_secondary)),
+        ],
+        UpgradeState::Failed(msg) => vec![
+            Span::styled(
+                " ERROR ",
+                Style::default()
+                    .fg(theme.branding_fg)
+                    .bg(theme.accent_error)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                format!("Upgrade failed: {}", msg),
+                Style::default().fg(theme.accent_error),
+            ),
+            Span::raw("  "),
+            Span::styled("[Esc] dismiss", Style::default().fg(theme.text_secondary)),
+        ],
+    };
+
+    let line = Line::from(spans);
+    f.render_widget(Paragraph::new(line), area);
 }
 
 fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
