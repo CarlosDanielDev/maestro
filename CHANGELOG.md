@@ -7,6 +7,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-07
+
+### Added
+
+- Markdown-to-ratatui rendering module (#133)
+- Syntax highlighting for fenced code blocks (#137)
+- Markdown rendering wired into panel and fullscreen views (#136)
+- Thinking animation spinner with elapsed metadata (#134)
+- CI monitor TUI widget for live PR check status (#124)
+- File conflict predictor for pre-launch validation (#66)
+- Work queue planner with dependency validation (#65)
+- Granular CI check-run details from `gh pr checks` (#123)
+- Custom prompt input overlay for issue session launch (#99)
+
+### Fixed
+
+- Completion summary trapping navigation — Esc and [i] don't escape (#148)
+
+### Documentation
+
+- Self-upgrade instructions added to README
+
 ## [0.5.1] - 2026-04-07
 
 ### Added
