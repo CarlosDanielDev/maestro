@@ -18,9 +18,7 @@ pub fn is_trusted_download_url(url: &str) -> bool {
         return false;
     };
     let host = rest.split('/').next().unwrap_or("");
-    TRUSTED_DOWNLOAD_HOSTS
-        .iter()
-        .any(|&trusted| host == trusted)
+    TRUSTED_DOWNLOAD_HOSTS.contains(&host)
 }
 
 /// State machine for the upgrade notification in the TUI.

@@ -47,10 +47,9 @@ pub fn parse_releases_response(json: &str) -> Result<Option<String>> {
     let latest = releases
         .iter()
         .find(|r| {
-            r.get("prerelease")
+            !r.get("prerelease")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
-                == false
         })
         .and_then(|r| r.get("tag_name"))
         .and_then(|t| t.as_str())
