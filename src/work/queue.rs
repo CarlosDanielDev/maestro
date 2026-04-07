@@ -59,6 +59,15 @@ impl WorkQueue {
 
         let selected: HashSet<u64> = issues.iter().copied().collect();
 
+        // Check for self-loops (issue depends on itself)
+        for &issue in &selected {
+            if graph.dependents_of(issue).contains(&issue) {
+                return Err(QueueValidationError::CycleDetected {
+                    issues: vec![issue],
+                });
+            }
+        }
+
         // For each selected issue, BFS through dependents_of to find
         // which other selected issues are transitively reachable.
         // If issue A can reach issue B via dependents_of, then B depends on A.
@@ -324,6 +333,26 @@ mod tests {
             QueueValidationError::CycleDetected { .. } => {}
             other => panic!("Expected CycleDetected, got {:?}", other),
         }
+    }
+
+    // --- Edge cases ---
+
+    #[test]
+    fn self_referential_issue_returns_error() {
+        // Issue 7 blocked by itself — self-cycle
+        let items = vec![make_item(7, &[7])];
+        let graph = build_graph(&items);
+        let result = WorkQueue::validate_selection(&[7], &graph);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn selection_with_issue_not_in_graph_succeeds() {
+        // Issue 999 was never in the graph — no edges, treated as independent
+        let items = vec![make_item(1, &[])];
+        let graph = build_graph(&items);
+        let result = WorkQueue::validate_selection(&[1, 999], &graph).unwrap();
+        assert_eq!(result.len(), 2);
     }
 
     // --- Error display ---
