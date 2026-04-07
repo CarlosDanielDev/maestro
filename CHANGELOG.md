@@ -7,6 +7,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Mandatory Dependency Chain and Graph Guardrail for Issue and Milestone Creation (#113)
+
+- `.claude/CLAUDE.md` — Critical Premise #5 added: "DEPENDENCY CHAIN AND GRAPH — NON-NEGOTIABLE"; rules require an explicit dependency graph for issues that have blockers, and for milestones consisting of multiple issues; DOR table updated to mark `Blocked By` as required for both Feature and Bug issues
+- `.github/ISSUE_TEMPLATE/feature.yml` — `Blocked By` field set to `required: true`; new `Dependency Graph` textarea field added (optional) for documenting ASCII dependency graphs when creating multi-issue features or epics
+- `.github/ISSUE_TEMPLATE/bug.yml` — `Blocked By` field set to `required: true` with placeholder guidance to use "None" if there are no dependencies
+- GitHub v1.0.0 milestone updated via API to include dependency graph section in its description
+
 ### Add [f] Fix Action to Completion Overlay for Failed Gates (#104)
 
 - `src/gates/types.rs` — `GateResult` derives `Serialize`/`Deserialize` (round-trip support for persisting gate results on the session)

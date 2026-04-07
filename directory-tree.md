@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-06 23:55 (UTC)
+> Last updated: 2026-04-06 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -55,8 +55,8 @@ maestro/
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── config.yml                     # Template chooser config (blank issues disabled)
-│   │   ├── feature.yml                    # Feature request issue form with DOR
-│   │   └── bug.yml                        # Bug report issue form with DOR
+│   │   ├── feature.yml                    # Feature request issue form with DOR; Blocked By required; Dependency Graph field
+│   │   └── bug.yml                        # Bug report issue form with DOR; Blocked By required
 │   └── workflows/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
@@ -198,8 +198,8 @@ maestro/
 | Path | Description |
 |------|-------------|
 | `.github/ISSUE_TEMPLATE/config.yml` | Template chooser config — blank issues disabled |
-| `.github/ISSUE_TEMPLATE/feature.yml` | Feature request issue form with Definition of Ready fields |
-| `.github/ISSUE_TEMPLATE/bug.yml` | Bug report issue form with Definition of Ready fields |
+| `.github/ISSUE_TEMPLATE/feature.yml` | Feature request issue form with DOR fields; `Blocked By` required; `Dependency Graph` textarea for epic/multi-issue ordering |
+| `.github/ISSUE_TEMPLATE/bug.yml` | Bug report issue form with DOR fields; `Blocked By` required |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline |
 | `.github/workflows/release.yml` | Release automation: cross-platform builds, GitHub Release with SHA256 checksums, Homebrew tap update |
 | `.claude/` | Claude Code agent configuration |
