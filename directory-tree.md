@@ -170,8 +170,9 @@ maestro/
 │   └── work/                              # Work queue and scheduling  [Phase 2]
 │       ├── mod.rs                         # Module exports; pub mod queue
 │       ├── types.rs                       # WorkItem, WorkStatus; from_issue, is_ready
-│       ├── dependencies.rs               # DependencyGraph: topological sort, cycle detection
 │       ├── assigner.rs                    # WorkAssigner: topo sort tiebreaker, cycle detection; mark_pending() transitions an item back to Pending; mark_pending_undo_cascade() cascades undo to dependents  [Phase 3, Issue #85]
+│       ├── conflicts.rs                   # Conflict detection for concurrent work items
+│       ├── dependencies.rs               # DependencyGraph: topological sort, cycle detection
 │       └── queue.rs                       # WorkQueue, QueuedItem, QueueValidationError; validate_selection()  [Issue #65]
 ├── template/
 │   ├── README-TEMPLATE.md                 # Template usage instructions
@@ -300,8 +301,9 @@ maestro/
 | `src/integration_tests/worktree_lifecycle.rs` | 8 tests covering worktree create/cleanup and health monitoring |
 | `src/integration_tests/upgrade.rs` | End-to-end upgrade flow tests: version check, banner state transitions, installer backup/swap, `RestartCommand` construction (Issue #118) |
 | `src/work/` | Work queue and dependency scheduling (Phase 2) |
-| `src/work/dependencies.rs` | Dependency graph, topological sort |
 | `src/work/assigner.rs` | Priority-ordered work assignment; `mark_pending()` and `mark_pending_undo_cascade()` for continuous mode retry/skip (Issue #85) |
+| `src/work/conflicts.rs` | Conflict detection for concurrent work items |
+| `src/work/dependencies.rs` | Dependency graph, topological sort |
 | `template/` | Reproducible project template |
 | `CHANGELOG.md` | Release history |
 | `ROADMAP.md` | Project milestones and implementation order |
