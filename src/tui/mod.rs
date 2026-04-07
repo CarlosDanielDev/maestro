@@ -184,6 +184,8 @@ async fn event_loop(
                                 return Ok(());
                             }
                             (KeyCode::Char('i'), _) => {
+                                app.completion_summary = None;
+                                app.completion_summary_dismissed = true;
                                 let mut screen = screens::IssueBrowserScreen::new(vec![]);
                                 screen.loading = true;
                                 app.issue_browser_screen = Some(screen);
@@ -558,9 +560,11 @@ async fn event_loop(
         if app.all_done()
             && app.continuous_mode.is_none()
             && app.completion_summary.is_none()
+            && !app.completion_summary_dismissed
             && !matches!(
                 app.tui_mode,
                 app::TuiMode::Dashboard
+                    | app::TuiMode::IssueBrowser
                     | app::TuiMode::PromptInput
                     | app::TuiMode::CompletionSummary
             )
