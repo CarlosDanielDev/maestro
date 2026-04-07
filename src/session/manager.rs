@@ -210,11 +210,11 @@ impl ManagedSession {
 
     /// Update session state from a stream event.
     pub fn handle_event(&mut self, event: &StreamEvent) {
-        if !matches!(event, StreamEvent::Thinking { .. }) {
-            if let Some(start) = self.thinking_start.take() {
-                self.session
-                    .log_activity(format!("Thought for {}", format_elapsed(start.elapsed())));
-            }
+        if !matches!(event, StreamEvent::Thinking { .. })
+            && let Some(start) = self.thinking_start.take()
+        {
+            self.session
+                .log_activity(format!("Thought for {}", format_elapsed(start.elapsed())));
         }
 
         match event {
