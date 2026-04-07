@@ -72,6 +72,8 @@ async fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
+    spawn_version_check(app.data_tx.clone());
+
     loop {
         // Draw
         terminal.draw(|f| ui::draw(f, app))?;
@@ -88,6 +90,67 @@ async fn event_loop(
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(key) => {
+                    match &app.upgrade_state {
+                        crate::updater::UpgradeState::Available(info) => {
+                            if key.code == KeyCode::Char('u') {
+                                let info_clone = info.clone();
+                                let tx = app.data_tx.clone();
+                                app.upgrade_state = crate::updater::UpgradeState::Downloading {
+                                    version: info_clone.version.clone(),
+                                };
+                                spawn_upgrade_download(tx, info_clone);
+                                continue;
+                            }
+                            if key.code == KeyCode::Esc {
+                                app.upgrade_state = crate::updater::UpgradeState::Hidden;
+                                continue;
+                            }
+                        }
+                        crate::updater::UpgradeState::ReadyToRestart { .. } => {
+                            if key.code == KeyCode::Char('y') {
+                                disable_raw_mode().ok();
+                                execute!(
+                                    terminal.backend_mut(),
+                                    LeaveAlternateScreen,
+                                    DisableMouseCapture
+                                )
+                                .ok();
+                                terminal.show_cursor().ok();
+                                if let Err(e) = crate::updater::installer::restart_with_same_args()
+                                {
+                                    enable_raw_mode().ok();
+                                    execute!(
+                                        io::stdout(),
+                                        EnterAlternateScreen,
+                                        EnableMouseCapture
+                                    )
+                                    .ok();
+                                    app.upgrade_state = crate::updater::UpgradeState::Failed(
+                                        format!("Restart failed: {}", e),
+                                    );
+                                }
+                                continue;
+                            }
+                            if key.code == KeyCode::Char('n') || key.code == KeyCode::Esc {
+                                app.upgrade_state = crate::updater::UpgradeState::Hidden;
+                                app.activity_log.push_simple(
+                                    "UPDATE".into(),
+                                    "Upgrade installed. Restart manually to use new version."
+                                        .into(),
+                                    crate::tui::activity_log::LogLevel::Info,
+                                );
+                                continue;
+                            }
+                        }
+                        crate::updater::UpgradeState::Failed(_) => {
+                            if key.code == KeyCode::Esc || key.code == KeyCode::Enter {
+                                app.upgrade_state = crate::updater::UpgradeState::Hidden;
+                                continue;
+                            }
+                        }
+                        _ => {}
+                    }
+
                     // Help overlay intercepts all keys when visible
                     if app.show_help {
                         match key.code {
@@ -649,6 +712,41 @@ fn spawn_issue_fetch(
             ))));
         }
     }
+}
+
+/// Spawn a non-blocking version check that sends the result via the data channel.
+fn spawn_version_check(tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>) {
+    tokio::spawn(async move {
+        use crate::updater::checker::{GitHubReleaseChecker, UpdateChecker};
+        let checker = GitHubReleaseChecker::new(crate::updater::GITHUB_REPO.to_string());
+        match checker.check_for_update().await {
+            Ok(info) => {
+                let _ = tx.send(app::TuiDataEvent::VersionCheckResult(info));
+            }
+            Err(e) => {
+                tracing::debug!("Version check failed: {}", e);
+            }
+        }
+    });
+}
+
+/// Spawn background binary download and installation.
+fn spawn_upgrade_download(
+    tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>,
+    info: crate::updater::ReleaseInfo,
+) {
+    let dest = std::env::current_exe().unwrap_or_default();
+    tokio::spawn(async move {
+        let installer = crate::updater::installer::Installer::new(dest);
+        match installer.download_and_install(&info.download_url).await {
+            Ok(backup) => {
+                let _ = tx.send(app::TuiDataEvent::UpgradeResult(Ok(backup)));
+            }
+            Err(e) => {
+                let _ = tx.send(app::TuiDataEvent::UpgradeResult(Err(e.to_string())));
+            }
+        }
+    });
 }
 
 /// Print a summary of all sessions to stdout after the TUI exits.
