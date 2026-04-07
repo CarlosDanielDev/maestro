@@ -1,6 +1,18 @@
 use super::types::StreamEvent;
 use serde_json::Value;
 
+/// Find a valid char boundary at or after `max_bytes` for safe string slicing.
+fn char_boundary(s: &str, max_bytes: usize) -> usize {
+    if max_bytes >= s.len() {
+        return s.len();
+    }
+    let mut i = max_bytes;
+    while !s.is_char_boundary(i) && i > 0 {
+        i -= 1;
+    }
+    i
+}
+
 /// Parse a single line of Claude CLI `--output-format stream-json` output.
 ///
 /// The stream-json format emits one JSON object per line. Key event types:
@@ -50,6 +62,14 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
         .unwrap_or("");
 
     match msg_type {
+        "thinking" => {
+            let text = msg
+                .and_then(|m| m.get("thinking"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+            StreamEvent::Thinking { text }
+        }
         "tool_use" => {
             let tool = msg
                 .and_then(|m| m.get("name"))
@@ -57,27 +77,26 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
                 .unwrap_or("unknown")
                 .to_string();
             let input = msg.and_then(|m| m.get("input"));
-            let args_preview = match input {
-                Some(inp) => {
-                    let s = inp.to_string();
-                    if s.len() > 80 {
-                        format!("{}…", &s[..80])
-                    } else {
-                        s
-                    }
-                }
-                None => String::new(),
-            };
             let file_path = input.and_then(|inp| {
                 inp.get("file_path")
                     .or_else(|| inp.get("path"))
                     .and_then(|p| p.as_str())
                     .map(|s| s.to_string())
             });
+            let command_preview = input.and_then(|inp| {
+                inp.get("command").and_then(|c| c.as_str()).map(|s| {
+                    if s.len() > 60 {
+                        let boundary = char_boundary(s, 60);
+                        format!("{}…", &s[..boundary])
+                    } else {
+                        s.to_string()
+                    }
+                })
+            });
             StreamEvent::ToolUse {
                 tool,
-                args_preview,
                 file_path,
+                command_preview,
             }
         }
         "text" => {
@@ -119,8 +138,8 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
                         });
                         return StreamEvent::ToolUse {
                             tool,
-                            args_preview: String::new(),
                             file_path,
+                            command_preview: None,
                         };
                     }
                 }
@@ -319,6 +338,89 @@ mod tests {
                 assert!((context_pct - 0.7).abs() < f64::EPSILON);
             }
             other => panic!("Expected ContextUpdate, got {:?}", other),
+        }
+    }
+
+    // --- Issue #102: Phase 1 — command_preview extraction ---
+
+    #[test]
+    fn parse_bash_tool_use_extracts_command_preview() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Bash","input":{"command":"cargo test"}}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ToolUse {
+                tool,
+                command_preview,
+                ..
+            } => {
+                assert_eq!(tool, "Bash");
+                assert_eq!(command_preview, Some("cargo test".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_non_bash_tool_use_has_no_command_preview() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Read","input":{"file_path":"/src/lib.rs"}}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::ToolUse {
+                command_preview, ..
+            } => {
+                assert_eq!(command_preview, None);
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_bash_long_command_truncated_to_60_chars() {
+        let long_cmd = "a".repeat(80);
+        let line = format!(
+            r#"{{"type":"assistant","message":{{"type":"tool_use","name":"Bash","input":{{"command":"{}"}}}}}}"#,
+            long_cmd
+        );
+        match parse_stream_line(&line) {
+            StreamEvent::ToolUse {
+                command_preview: Some(p),
+                ..
+            } => {
+                assert!(
+                    p.ends_with('…'),
+                    "truncated command must end with ellipsis, got: {:?}",
+                    p
+                );
+                let without_ellipsis = p.trim_end_matches('…');
+                assert!(
+                    without_ellipsis.chars().count() <= 60,
+                    "command prefix exceeds 60 chars: {:?}",
+                    without_ellipsis
+                );
+            }
+            other => panic!(
+                "Expected ToolUse with Some(command_preview), got {:?}",
+                other
+            ),
+        }
+    }
+
+    // --- Issue #102: Phase 2 — Thinking block extraction ---
+
+    #[test]
+    fn parse_thinking_message_produces_thinking_event() {
+        let line =
+            r#"{"type":"assistant","message":{"type":"thinking","thinking":"Let me reason..."}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::Thinking { text } => assert_eq!(text, "Let me reason..."),
+            other => panic!("Expected Thinking, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_thinking_message_empty_text_produces_thinking_with_empty_string() {
+        let line = r#"{"type":"assistant","message":{"type":"thinking","thinking":""}}"#;
+        match parse_stream_line(line) {
+            StreamEvent::Thinking { text } => assert!(text.is_empty()),
+            other => panic!("Expected Thinking with empty text, got {:?}", other),
         }
     }
 

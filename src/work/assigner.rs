@@ -87,16 +87,6 @@ impl WorkAssigner {
         ready.into_iter().take(count).collect()
     }
 
-    /// Get issues that were detected as part of a dependency cycle (marked Failed at init).
-    pub fn cycling_issues(&self) -> Vec<u64> {
-        let ordered: HashSet<u64> = self.topo_order.keys().copied().collect();
-        self.items
-            .iter()
-            .filter(|i| !ordered.contains(&i.number()) && i.status == WorkStatus::Failed)
-            .map(|i| i.number())
-            .collect()
-    }
-
     /// Build a partial topological order, skipping cycle nodes.
     fn partial_topo_sort(graph: &DependencyGraph, items: &[WorkItem]) -> HashMap<u64, usize> {
         // Try ordering each item independently — items reachable from roots get ordered

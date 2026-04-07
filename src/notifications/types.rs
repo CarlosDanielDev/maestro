@@ -1,5 +1,3 @@
-use chrono::{DateTime, Utc};
-
 /// Severity level for interruptions/notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum InterruptLevel {
@@ -40,7 +38,6 @@ pub struct Notification {
     pub level: InterruptLevel,
     pub title: String,
     pub message: String,
-    pub timestamp: DateTime<Utc>,
     pub dismissed: bool,
 }
 
@@ -54,7 +51,6 @@ impl Notification {
             level,
             title: title.into(),
             message: message.into(),
-            timestamp: Utc::now(),
             dismissed: false,
         }
     }

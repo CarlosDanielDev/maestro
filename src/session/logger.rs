@@ -66,6 +66,9 @@ impl SessionLogger {
             StreamEvent::ContextUpdate { context_pct } => {
                 format!("[{}] CONTEXT: {:.0}%\n", timestamp, context_pct * 100.0)
             }
+            StreamEvent::Thinking { text } => {
+                format!("[{}] THINKING: {}\n", timestamp, text)
+            }
             StreamEvent::Unknown { raw } => {
                 format!("[{}] UNKNOWN: {}\n", timestamp, raw)
             }
@@ -202,8 +205,9 @@ mod tests {
         let id = Uuid::new_v4();
         let event = StreamEvent::ToolUse {
             tool: "Write".into(),
-            args_preview: String::new(),
+
             file_path: Some("src/main.rs".into()),
+            command_preview: None,
         };
         logger.log_event(id, &event).unwrap();
         let content = logger.read_log(id).unwrap();

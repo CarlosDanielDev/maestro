@@ -35,8 +35,4 @@ impl StateStore {
             .with_context(|| format!("renaming {} to {}", tmp.display(), self.path.display()))?;
         Ok(())
     }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
 }

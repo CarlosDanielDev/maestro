@@ -136,7 +136,6 @@ pub struct App {
     pub running: bool,
     pub total_cost: f64,
     pub start_time: chrono::DateTime<chrono::Utc>,
-    pub event_tx: mpsc::UnboundedSender<SessionEvent>,
     pub event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     /// Work assigner for GitHub issue-based runs. None for prompt-only runs.
     pub work_assigner: Option<WorkAssigner>,
@@ -227,7 +226,6 @@ impl App {
             running: true,
             total_cost: 0.0,
             start_time: Utc::now(),
-            event_tx,
             event_rx,
             work_assigner: None,
             github_client: None,
@@ -451,31 +449,34 @@ impl App {
 
             match &evt.event {
                 StreamEvent::ToolUse {
-                    tool, file_path, ..
+                    tool,
+                    file_path,
+                    command_preview,
+                    ..
                 } => {
-                    self.activity_log
-                        .push_simple(label, format!("Using {}", tool), LogLevel::Tool);
+                    let detail = match (
+                        tool.as_str(),
+                        file_path.as_deref(),
+                        command_preview.as_deref(),
+                    ) {
+                        ("Bash", _, Some(cmd)) => format!("$ {}", cmd),
+                        (t, Some(path), _) => format!("{}: {}", t, path),
+                        (t, None, _) => format!("Using {}", t),
+                    };
+                    self.activity_log.push_simple(label, detail, LogLevel::Tool);
                     // Track progress phase
                     let progress = self.progress_tracker.get_or_create(session_id);
                     progress.on_tool_use(tool, file_path.as_deref());
                 }
                 StreamEvent::AssistantMessage { text } => {
-                    let preview = if text.len() > 60 {
-                        let end = truncate_at_char_boundary(text, 60);
-                        format!("{}…", &text[..end])
-                    } else {
-                        text.clone()
-                    };
-                    if !preview.is_empty() {
-                        self.activity_log.push_simple(
-                            label,
-                            format!("\"{}\"", preview),
-                            LogLevel::Info,
-                        );
-                    }
+                    // Do NOT push every text chunk to global activity log (anti-flood)
                     // Track progress phase from message content
                     let progress = self.progress_tracker.get_or_create(session_id);
                     progress.on_message(text);
+                }
+                StreamEvent::Thinking { .. } => {
+                    // Thinking is tracked per-session via current_activity
+                    // No global activity log entry needed
                 }
                 StreamEvent::Completed { cost_usd } => {
                     self.activity_log.push_simple(
@@ -1604,7 +1605,6 @@ impl App {
             let review_config = crate::review::ReviewConfig {
                 enabled: review_cfg.enabled,
                 command: review_cfg.command.clone(),
-                auto_approve: review_cfg.auto_approve,
             };
             let dispatcher = crate::review::ReviewDispatcher::new(review_config);
             match dispatcher.dispatch(pr_number, branch) {

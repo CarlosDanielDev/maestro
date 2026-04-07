@@ -377,9 +377,6 @@ pub struct ReviewConfig {
     /// Review command template (used when `reviewers` is empty). Variables: {pr_number}, {branch}.
     #[serde(default = "default_review_command")]
     pub command: String,
-    /// Whether to auto-approve PRs after successful review.
-    #[serde(default)]
-    pub auto_approve: bool,
     /// Multi-reviewer council configuration. If non-empty, overrides `command`.
     #[serde(default)]
     pub reviewers: Vec<ReviewerEntry>,
@@ -398,7 +395,6 @@ impl Default for ReviewConfig {
         Self {
             enabled: false,
             command: default_review_command(),
-            auto_approve: false,
             reviewers: Vec::new(),
         }
     }

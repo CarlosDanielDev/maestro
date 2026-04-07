@@ -14,6 +14,7 @@ use ratatui::{
 };
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct MilestoneEntry {
     pub number: u64,
     pub title: String,
@@ -96,9 +97,8 @@ impl MilestoneScreen {
         );
     }
 
-    pub fn tick(&mut self) {
-        // No-op; async data fetching would drain channel here
-    }
+    #[allow(dead_code)]
+    pub fn tick(&mut self) {}
 
     pub fn selected_milestone(&self) -> Option<&MilestoneEntry> {
         self.milestones.get(self.selected)
