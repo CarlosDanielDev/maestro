@@ -161,35 +161,6 @@ impl SlackClient {
         }
     }
 
-    /// Send a notification event to Slack. Returns false if rate-limited.
-    pub async fn send(&mut self, event: &SlackEvent) -> Result<bool, SlackError> {
-        if !self.check_rate_limit() {
-            tracing::warn!("Slack notification rate-limited, dropping message");
-            return Ok(false);
-        }
-
-        let payload = event.to_payload();
-        let resp = self
-            .http
-            .post(&self.webhook_url)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| SlackError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if status.is_success() {
-            self.record_send();
-            Ok(true)
-        } else {
-            let body = resp.text().await.unwrap_or_default();
-            Err(SlackError::Api {
-                status: status.as_u16(),
-                body,
-            })
-        }
-    }
-
     /// Send a test message to verify the webhook is configured correctly.
     pub async fn send_test(&mut self) -> Result<bool, SlackError> {
         let payload = serde_json::json!({

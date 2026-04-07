@@ -28,6 +28,8 @@ pub struct ManagedSession {
     pub permission_mode: Option<String>,
     /// Allowed tools whitelist.
     pub allowed_tools: Vec<String>,
+    last_tool_start: Option<std::time::Instant>,
+    thinking_start: Option<std::time::Instant>,
 }
 
 impl ManagedSession {
@@ -40,6 +42,8 @@ impl ManagedSession {
             system_prompt_appendix: None,
             permission_mode: None,
             allowed_tools: Vec::new(),
+            last_tool_start: None,
+            thinking_start: None,
         }
     }
 
@@ -58,6 +62,8 @@ impl ManagedSession {
             system_prompt_appendix,
             permission_mode: None,
             allowed_tools: Vec::new(),
+            last_tool_start: None,
+            thinking_start: None,
         }
     }
 
@@ -202,27 +208,29 @@ impl ManagedSession {
         Ok(())
     }
 
-    /// Wait for the child to exit and return its status.
-    pub async fn wait(&mut self) -> Result<std::process::ExitStatus> {
-        if let Some(ref mut child) = self.child {
-            let status = child.wait().await?;
-            Ok(status)
-        } else {
-            anyhow::bail!("No child process")
-        }
-    }
-
     /// Update session state from a stream event.
     pub fn handle_event(&mut self, event: &StreamEvent) {
+        if !matches!(event, StreamEvent::Thinking { .. })
+            && let Some(start) = self.thinking_start.take()
+        {
+            self.session
+                .log_activity(format!("Thought for {}", format_elapsed(start.elapsed())));
+        }
+
         match event {
             StreamEvent::AssistantMessage { text } => {
-                // Accumulate the full response for display in panel
                 if !text.is_empty() {
+                    if text.len() > 40 {
+                        let boundary = truncate_at_char_boundary(text, 40);
+                        self.session.current_activity = format!("{}…", &text[..boundary]);
+                    } else {
+                        self.session.current_activity = text.clone();
+                    }
+
                     if !self.session.last_message.is_empty() {
                         self.session.last_message.push('\n');
                     }
                     self.session.last_message.push_str(text);
-                    // Cap at 10KB to prevent unbounded growth
                     if self.session.last_message.len() > 10_000 {
                         let start = self.session.last_message.len() - 8_000;
                         let boundary = truncate_at_char_boundary(&self.session.last_message, start);
@@ -230,15 +238,30 @@ impl ManagedSession {
                             self.session.last_message[boundary..].to_string();
                     }
                 }
-                self.session.current_activity = "Thinking".into();
             }
             StreamEvent::ToolUse {
-                tool, file_path, ..
+                tool,
+                file_path,
+                command_preview,
+                ..
             } => {
-                self.session.current_activity = format!("Using {}", tool);
-                self.session.log_activity(format!("Tool: {}", tool));
+                self.last_tool_start = Some(std::time::Instant::now());
 
-                // Track files touched
+                let (activity, log_msg) = match (
+                    tool.as_str(),
+                    file_path.as_deref(),
+                    command_preview.as_deref(),
+                ) {
+                    ("Bash", _, Some(cmd)) => (format!("$ {}", cmd), format!("Bash: $ {}", cmd)),
+                    (t, Some(path), _) => {
+                        let short = path.rsplit('/').next().unwrap_or(path);
+                        (format!("{}: {}", t, short), format!("{}: {}", t, path))
+                    }
+                    (t, None, _) => (format!("Using {}", t), format!("Tool: {}", t)),
+                };
+                self.session.current_activity = activity;
+                self.session.log_activity(log_msg);
+
                 if let Some(path) = file_path
                     && matches!(tool.as_str(), "Read" | "Edit" | "Write" | "Glob" | "Grep")
                     && !self.session.files_touched.contains(path)
@@ -247,8 +270,18 @@ impl ManagedSession {
                 }
             }
             StreamEvent::ToolResult { tool, is_error } => {
+                let elapsed_str = self
+                    .last_tool_start
+                    .take()
+                    .map(|start| format!(" ({})", format_elapsed(start.elapsed())))
+                    .unwrap_or_default();
+
                 if *is_error {
-                    self.session.log_activity(format!("Tool {} errored", tool));
+                    self.session
+                        .log_activity(format!("Tool {} errored{}", tool, elapsed_str));
+                } else {
+                    self.session
+                        .log_activity(format!("Tool {} done{}", tool, elapsed_str));
                 }
             }
             StreamEvent::CostUpdate { cost_usd } => {
@@ -276,8 +309,25 @@ impl ManagedSession {
                 self.session
                     .log_activity(format!("Context: {:.0}%", context_pct * 100.0));
             }
+            StreamEvent::Thinking { .. } => {
+                if self.thinking_start.is_none() {
+                    self.thinking_start = Some(std::time::Instant::now());
+                    self.session.log_activity("Thinking...".into());
+                }
+                if self.session.current_activity != "Thinking..." {
+                    self.session.current_activity = "Thinking...".into();
+                }
+            }
             StreamEvent::Unknown { .. } => {}
         }
+    }
+}
+
+fn format_elapsed(d: std::time::Duration) -> String {
+    if d.as_secs() >= 1 {
+        format!("{:.1}s", d.as_secs_f64())
+    } else {
+        format!("{}ms", d.as_millis())
     }
 }
 
