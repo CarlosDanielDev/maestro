@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod budget;
 mod cli;
 mod config;
