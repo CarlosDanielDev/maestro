@@ -6,7 +6,6 @@ use std::process::Command;
 pub struct ReviewConfig {
     pub enabled: bool,
     pub command: String,
-    pub auto_approve: bool,
 }
 
 /// Dispatches review commands after PR creation.
@@ -99,7 +98,6 @@ mod tests {
         let dispatcher = ReviewDispatcher::new(ReviewConfig {
             enabled: false,
             command: String::new(),
-            auto_approve: false,
         });
         let result = dispatcher.dispatch(1, "main").unwrap();
         assert!(result.success);
@@ -111,14 +109,12 @@ mod tests {
         let enabled = ReviewDispatcher::new(ReviewConfig {
             enabled: true,
             command: "echo review".into(),
-            auto_approve: false,
         });
         assert!(enabled.is_enabled());
 
         let disabled = ReviewDispatcher::new(ReviewConfig {
             enabled: false,
             command: String::new(),
-            auto_approve: false,
         });
         assert!(!disabled.is_enabled());
     }
@@ -128,7 +124,6 @@ mod tests {
         let dispatcher = ReviewDispatcher::new(ReviewConfig {
             enabled: true,
             command: "true".into(),
-            auto_approve: false,
         });
         let result = dispatcher.dispatch(42, "maestro/issue-42").unwrap();
         assert!(result.success);
@@ -139,7 +134,6 @@ mod tests {
         let dispatcher = ReviewDispatcher::new(ReviewConfig {
             enabled: true,
             command: "false".into(),
-            auto_approve: false,
         });
         let result = dispatcher.dispatch(42, "maestro/issue-42").unwrap();
         assert!(!result.success);
@@ -150,7 +144,6 @@ mod tests {
         let dispatcher = ReviewDispatcher::new(ReviewConfig {
             enabled: true,
             command: "echo {pr_number} {branch}".into(),
-            auto_approve: false,
         });
         let result = dispatcher.dispatch(99, "feat/test").unwrap();
         assert!(result.success);
@@ -163,7 +156,6 @@ mod tests {
         let dispatcher = ReviewDispatcher::new(ReviewConfig {
             enabled: true,
             command: String::new(),
-            auto_approve: false,
         });
         assert!(dispatcher.dispatch(1, "main").is_err());
     }

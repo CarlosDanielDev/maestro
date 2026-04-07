@@ -78,8 +78,9 @@ async fn full_pipeline_label_and_pr_for_completed_session() {
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Write".to_string(),
-        args_preview: String::new(),
+
         file_path: Some("src/github/pr.rs".to_string()),
+        command_preview: None,
     });
     managed.handle_event(&StreamEvent::Completed { cost_usd: 0.77 });
 

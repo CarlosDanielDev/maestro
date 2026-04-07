@@ -198,9 +198,10 @@ pub enum StreamEvent {
     /// A tool is being used
     ToolUse {
         tool: String,
-        args_preview: String,
         /// Extracted file path, if this is a file-touching tool.
         file_path: Option<String>,
+        /// Extracted command for Bash tool (first ~60 chars).
+        command_preview: Option<String>,
     },
     /// Tool result received
     ToolResult { tool: String, is_error: bool },
@@ -212,6 +213,8 @@ pub enum StreamEvent {
     Error { message: String },
     /// Context window usage update
     ContextUpdate { context_pct: f64 },
+    /// Assistant is thinking (extended thinking block)
+    Thinking { text: String },
     /// Raw line we couldn't parse
     Unknown { raw: String },
 }
@@ -355,6 +358,53 @@ mod tests {
         let stripped = json.replace(r#","image_paths":[]"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
         assert!(rt.image_paths.is_empty());
+    }
+
+    // --- Issue #102: Enhanced real-time session activity feedback ---
+
+    #[test]
+    fn stream_event_thinking_variant_holds_text() {
+        let e = StreamEvent::Thinking {
+            text: "reasoning".to_string(),
+        };
+        match e {
+            StreamEvent::Thinking { text } => assert_eq!(text, "reasoning"),
+            other => panic!("Expected Thinking, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn stream_event_tool_use_command_preview_is_none_for_read() {
+        let e = StreamEvent::ToolUse {
+            tool: "Read".to_string(),
+
+            file_path: Some("/src/main.rs".to_string()),
+            command_preview: None,
+        };
+        match e {
+            StreamEvent::ToolUse {
+                command_preview, ..
+            } => assert_eq!(command_preview, None),
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn stream_event_tool_use_command_preview_holds_value() {
+        let e = StreamEvent::ToolUse {
+            tool: "Bash".to_string(),
+
+            file_path: None,
+            command_preview: Some("cargo build".to_string()),
+        };
+        match e {
+            StreamEvent::ToolUse {
+                command_preview, ..
+            } => {
+                assert_eq!(command_preview, Some("cargo build".to_string()))
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
     }
 
     #[test]

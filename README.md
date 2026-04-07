@@ -53,6 +53,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Interactive issue browser** — browse, filter, and launch GitHub issues directly from the TUI; supports single-launch (`Enter`) and multi-select batch-launch (`Space` + `Enter`); filter by text (`/`) or milestone (`m`)
 - **Milestone overview** — inspect milestone progress with real-time completion gauges; drill into issues or run all open issues in a milestone with a single key (`r`)
 - **Automatic preflight checks** — `maestro run` validates that `claude`, `gh`/`az`, and `git` are correctly installed and authenticated before spending any API credits; use `--skip-doctor` to bypass when needed
+- **Rich real-time activity feedback** — the activity log shows detailed, human-readable messages for every tool call: file-touching tools display the file path, Bash tool calls show the command preview (`$ cargo test`), and tool results include elapsed time; when Claude uses extended thinking, the activity log shows `"Thinking..."` while the block runs and `"Thought for Xs"` when it finishes; text chunks are suppressed from the global log to prevent flooding
 
 ### Roadmap
 

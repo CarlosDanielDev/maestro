@@ -117,7 +117,7 @@ fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
     }
 }
 
-/// Check if all gate results passed.
+#[allow(dead_code)]
 pub fn all_gates_passed(results: &[GateResult]) -> bool {
     results.iter().all(|r| r.passed)
 }

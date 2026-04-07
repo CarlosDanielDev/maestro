@@ -38,15 +38,7 @@ pub enum MaestroLabel {
 }
 
 impl MaestroLabel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Ready => "maestro:ready",
-            Self::InProgress => "maestro:in-progress",
-            Self::Done => "maestro:done",
-            Self::Failed => "maestro:failed",
-        }
-    }
-
+    #[allow(dead_code)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "maestro:ready" => Some(Self::Ready),
@@ -54,6 +46,15 @@ impl MaestroLabel {
             "maestro:done" => Some(Self::Done),
             "maestro:failed" => Some(Self::Failed),
             _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ready => "maestro:ready",
+            Self::InProgress => "maestro:in-progress",
+            Self::Done => "maestro:done",
+            Self::Failed => "maestro:failed",
         }
     }
 }
@@ -151,7 +152,7 @@ impl GhIssue {
         blockers
     }
 
-    /// Check if this issue has a specific maestro status label.
+    #[allow(dead_code)]
     pub fn has_maestro_label(&self, label: MaestroLabel) -> bool {
         self.labels.iter().any(|l| l == label.as_str())
     }

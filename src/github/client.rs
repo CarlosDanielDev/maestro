@@ -2,20 +2,6 @@ use super::types::{GhIssue, GhMilestone};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
-#[derive(Debug, Clone)]
-pub struct CreatePrParams {
-    pub head_branch: String,
-    pub base_branch: String,
-    pub title: String,
-    pub body: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct PrResult {
-    pub number: u64,
-    pub url: String,
-}
-
 /// Trait for GitHub API operations. Mockable for testing.
 #[async_trait]
 pub trait GitHubClient: Send + Sync {
