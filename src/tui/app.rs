@@ -661,7 +661,6 @@ impl App {
             );
         }
 
-        // Check overflow threshold — gated by Flag::AutoFork
         if !self.flags.is_enabled(crate::flags::Flag::AutoFork) {
             return;
         }
@@ -2327,6 +2326,7 @@ use crate::util::truncate_with_ellipsis;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flags::Flag;
     use crate::session::types::GateResultEntry;
     use crate::session::worktree::MockWorktreeManager;
     use crate::state::store::StateStore;
@@ -3285,25 +3285,13 @@ mod tests {
     // --- Issue #145: FeatureFlags wiring ---
 
     fn make_app_with_flags(flags: crate::flags::store::FeatureFlags) -> App {
-        let tmp = std::env::temp_dir().join(format!(
-            "maestro-tui-app-flags-test-{}.json",
-            uuid::Uuid::new_v4()
-        ));
-        let store = StateStore::new(tmp);
-        let mut app = App::new(
-            store,
-            3,
-            Box::new(MockWorktreeManager::new()),
-            "bypassPermissions".into(),
-            vec![],
-        );
+        let mut app = make_app();
         app.flags = flags;
         app
     }
 
     #[test]
     fn app_flags_field_defaults_to_feature_flags_default() {
-        use crate::flags::Flag;
         let app = make_app();
         assert!(
             app.flags.is_enabled(Flag::ContinuousMode),
@@ -3321,7 +3309,6 @@ mod tests {
 
     #[test]
     fn app_flags_can_be_replaced_after_construction() {
-        use crate::flags::Flag;
         let mut app = make_app();
         let custom = crate::flags::store::FeatureFlags::new(
             std::collections::HashMap::new(),
@@ -3337,7 +3324,6 @@ mod tests {
 
     #[test]
     fn continuous_mode_not_set_when_flag_disabled() {
-        use crate::flags::Flag;
         let flags = crate::flags::store::FeatureFlags::new(
             std::collections::HashMap::new(),
             vec![],
@@ -3357,7 +3343,6 @@ mod tests {
 
     #[test]
     fn continuous_mode_set_when_flag_enabled() {
-        use crate::flags::Flag;
         let mut app = make_app();
         let cli_continuous = true;
         if app.flags.is_enabled(Flag::ContinuousMode) && cli_continuous {
