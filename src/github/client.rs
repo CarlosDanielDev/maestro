@@ -191,7 +191,7 @@ impl GitHubClient for GhCliClient {
             "--limit",
             "100",
             "--json",
-            "number,title,body,labels,state,url",
+            "number,title,body,labels,state,url,milestone",
         ];
         if !label_arg.is_empty() {
             args.push("--label");
@@ -214,7 +214,7 @@ impl GitHubClient for GhCliClient {
                 "--limit",
                 "100",
                 "--json",
-                "number,title,body,labels,state,url",
+                "number,title,body,labels,state,url,milestone",
             ])
             .await?;
         parse_issues_json(&json_str)
