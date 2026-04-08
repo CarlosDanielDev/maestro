@@ -345,7 +345,8 @@ async fn event_loop(
                                 | app::TuiMode::MilestoneView
                                 | app::TuiMode::PromptInput
                                 | app::TuiMode::CompletionSummary
-                                | app::TuiMode::ContinuousPause => app::TuiMode::Overview,
+                                | app::TuiMode::ContinuousPause
+                                | app::TuiMode::QueueConfirmation => app::TuiMode::Overview,
                             };
                         }
                         // Esc returns to dashboard when no sessions are running,
@@ -597,6 +598,7 @@ fn dispatch_to_active_screen(app: &mut App, event: &Event) -> Option<ScreenActio
         app::TuiMode::IssueBrowser => app.issue_browser_screen.as_mut()?,
         app::TuiMode::MilestoneView => app.milestone_screen.as_mut()?,
         app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
+        app::TuiMode::QueueConfirmation => app.queue_confirmation_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -670,6 +672,9 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
                 }
                 app::TuiMode::PromptInput => {
                     app.prompt_input_screen = None;
+                }
+                app::TuiMode::QueueConfirmation => {
+                    app.queue_confirmation_screen = None;
                 }
                 _ => {}
             }
