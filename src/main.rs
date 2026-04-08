@@ -714,7 +714,6 @@ async fn cmd_run(
         app.work_assigner = Some(assigner);
         app.github_client = Some(Box::new(client));
 
-        // Enable continuous mode if requested — gated by Flag::ContinuousMode
         if continuous && app.flags.is_enabled(crate::flags::Flag::ContinuousMode) {
             app.continuous_mode = Some(continuous::ContinuousModeState::new());
             tracing::info!(
