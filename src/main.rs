@@ -87,6 +87,8 @@ async fn main() -> anyhow::Result<()> {
             images,
             once,
             continuous,
+            enable_flags,
+            disable_flags,
         }) => {
             cmd_run(
                 prompt,
@@ -100,6 +102,8 @@ async fn main() -> anyhow::Result<()> {
                 images,
                 once,
                 continuous,
+                enable_flags,
+                disable_flags,
             )
             .await
         }
@@ -248,6 +252,15 @@ work_tick_interval_secs = 10
 #                                      #   tests_failed, budget_threshold, file_conflict, pr_created
 # run = "curl -X POST https://slack.webhook/..."
 # timeout_secs = 30                    # Optional per-plugin timeout
+
+# Feature flag overrides
+[flags]
+# continuous_mode = true   # default: true
+# auto_fork = true         # default: true
+# ci_auto_fix = false      # default: false
+# review_council = false   # experimental — disabled by default
+# model_routing = false    # experimental — disabled by default
+# context_overflow = false # default: false
 
 # Custom modes — define system prompt and allowed tools
 # [modes.review]
@@ -599,8 +612,18 @@ async fn cmd_run(
     images: Vec<std::path::PathBuf>,
     once: bool,
     continuous: bool,
+    enable_flags: Vec<String>,
+    disable_flags: Vec<String>,
 ) -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
+
+    // Build feature flags with resolution priority:
+    // CLI --disable-flag > CLI --enable-flag > config [flags] > Flag::default_enabled()
+    let _feature_flags = crate::flags::store::FeatureFlags::new(
+        config.flags.entries.clone(),
+        enable_flags,
+        disable_flags,
+    );
 
     // Warn if --continuous without --milestone
     if continuous && milestone.is_none() {

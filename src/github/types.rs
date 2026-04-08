@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -170,6 +171,33 @@ impl GhIssue {
     }
 }
 
+/// A PR creation that failed and is queued for retry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingPr {
+    pub issue_number: u64,
+    pub branch: String,
+    pub base_branch: String,
+    pub files_touched: Vec<String>,
+    pub cost_usd: f64,
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub last_error: String,
+    pub last_attempt_at: DateTime<Utc>,
+    pub next_retry_at: Option<DateTime<Utc>>,
+    pub status: PendingPrStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingPrStatus {
+    /// Will auto-retry at next_retry_at.
+    RetryScheduled,
+    /// All auto-retries exhausted, awaiting manual retry.
+    AwaitingManualRetry,
+    /// User triggered a manual retry, in progress.
+    Retrying,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +213,41 @@ mod tests {
             milestone: None,
             assignees: vec![],
         }
+    }
+
+    // --- Issue #159: PendingPr serde tests ---
+
+    #[test]
+    fn pending_pr_status_serializes_as_snake_case() {
+        let json = serde_json::to_string(&PendingPrStatus::RetryScheduled).unwrap();
+        assert_eq!(json, r#""retry_scheduled""#);
+        let json = serde_json::to_string(&PendingPrStatus::AwaitingManualRetry).unwrap();
+        assert_eq!(json, r#""awaiting_manual_retry""#);
+        let json = serde_json::to_string(&PendingPrStatus::Retrying).unwrap();
+        assert_eq!(json, r#""retrying""#);
+    }
+
+    #[test]
+    fn pending_pr_round_trips_via_serde() {
+        let pending = PendingPr {
+            issue_number: 42,
+            branch: "maestro/issue-42".to_string(),
+            base_branch: "main".to_string(),
+            files_touched: vec!["src/lib.rs".to_string()],
+            cost_usd: 1.23,
+            attempt: 1,
+            max_attempts: 3,
+            last_error: "network timeout".to_string(),
+            last_attempt_at: Utc::now(),
+            next_retry_at: Some(Utc::now()),
+            status: PendingPrStatus::RetryScheduled,
+        };
+        let json = serde_json::to_string(&pending).unwrap();
+        let rt: PendingPr = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.issue_number, 42);
+        assert_eq!(rt.branch, "maestro/issue-42");
+        assert_eq!(rt.attempt, 1);
+        assert_eq!(rt.status, PendingPrStatus::RetryScheduled);
     }
 
     // Priority::from_label

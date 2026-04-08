@@ -19,6 +19,7 @@ pub enum SessionStatus {
     Stalled,
     Retrying,
     CiFix,
+    NeedsPr,
 }
 
 impl SessionStatus {
@@ -36,6 +37,7 @@ impl SessionStatus {
             Self::Stalled => "⚠",
             Self::Retrying => "🔁",
             Self::CiFix => "🔧",
+            Self::NeedsPr => "📋",
         }
     }
 
@@ -53,6 +55,7 @@ impl SessionStatus {
             Self::Stalled => "STALLED",
             Self::Retrying => "RETRYING",
             Self::CiFix => "CI_FIX",
+            Self::NeedsPr => "NEEDS_PR",
         }
     }
 
@@ -427,6 +430,32 @@ mod tests {
     }
 
     // --- Issue #102: Enhanced real-time session activity feedback ---
+
+    // --- Issue #159: NeedsPr status tests ---
+
+    #[test]
+    fn needs_pr_status_is_not_terminal() {
+        assert!(!SessionStatus::NeedsPr.is_terminal());
+    }
+
+    #[test]
+    fn needs_pr_status_has_symbol_and_label() {
+        let status = SessionStatus::NeedsPr;
+        assert!(!status.symbol().is_empty());
+        assert_eq!(status.label(), "NEEDS_PR");
+    }
+
+    #[test]
+    fn needs_pr_status_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionStatus::NeedsPr).unwrap();
+        assert_eq!(json, r#""needs_pr""#);
+    }
+
+    #[test]
+    fn needs_pr_status_deserializes_from_snake_case() {
+        let status: SessionStatus = serde_json::from_str(r#""needs_pr""#).unwrap();
+        assert_eq!(status, SessionStatus::NeedsPr);
+    }
 
     #[test]
     fn stream_event_thinking_variant_holds_text() {
