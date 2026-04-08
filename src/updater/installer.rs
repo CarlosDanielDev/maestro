@@ -92,14 +92,14 @@ impl Installer {
             anyhow::bail!("Download failed: HTTP {}", resp.status());
         }
 
-        if let Some(len) = resp.content_length() {
-            if len > crate::updater::MAX_DOWNLOAD_SIZE {
-                anyhow::bail!(
-                    "Binary too large: {} bytes (max {} bytes)",
-                    len,
-                    crate::updater::MAX_DOWNLOAD_SIZE
-                );
-            }
+        if let Some(len) = resp.content_length()
+            && len > crate::updater::MAX_DOWNLOAD_SIZE
+        {
+            anyhow::bail!(
+                "Binary too large: {} bytes (max {} bytes)",
+                len,
+                crate::updater::MAX_DOWNLOAD_SIZE
+            );
         }
 
         let bytes = resp.bytes().await?;
