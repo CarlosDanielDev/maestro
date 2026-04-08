@@ -236,6 +236,8 @@ pub struct App {
     pub gh_auth_ok: bool,
     /// PRs that failed creation and are queued for retry or manual action.
     pub pending_prs: Vec<crate::github::types::PendingPr>,
+    /// Runtime feature flags for gating experimental features.
+    pub flags: crate::flags::store::FeatureFlags,
 }
 
 impl App {
@@ -300,6 +302,7 @@ impl App {
             completion_summary_dismissed: false,
             gh_auth_ok: true,
             pending_prs: Vec::new(),
+            flags: crate::flags::store::FeatureFlags::default(),
         }
     }
 
@@ -658,8 +661,8 @@ impl App {
             );
         }
 
-        // Check overflow threshold
-        if !ctx_cfg.auto_fork {
+        // Check overflow threshold — gated by Flag::AutoFork
+        if !self.flags.is_enabled(crate::flags::Flag::AutoFork) {
             return;
         }
         let overflow = self
@@ -1966,11 +1969,12 @@ impl App {
         }
         self.last_ci_poll = Instant::now();
 
-        let (auto_fix_enabled, max_retries) = self
+        let auto_fix_enabled = self.flags.is_enabled(crate::flags::Flag::CiAutoFix);
+        let max_retries = self
             .config
             .as_ref()
-            .map(|c| (c.gates.ci_auto_fix.enabled, c.gates.ci_auto_fix.max_retries))
-            .unwrap_or((false, 3));
+            .map(|c| c.gates.ci_auto_fix.max_retries)
+            .unwrap_or(3);
 
         let checker = CiChecker::new();
         let mut completed_indices = Vec::new();
@@ -3275,6 +3279,142 @@ mod tests {
         assert!(
             !should_trigger,
             "auto-transition must not fire when completion_summary_dismissed is true"
+        );
+    }
+
+    // --- Issue #145: FeatureFlags wiring ---
+
+    fn make_app_with_flags(flags: crate::flags::store::FeatureFlags) -> App {
+        let tmp = std::env::temp_dir().join(format!(
+            "maestro-tui-app-flags-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let store = StateStore::new(tmp);
+        let mut app = App::new(
+            store,
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        );
+        app.flags = flags;
+        app
+    }
+
+    #[test]
+    fn app_flags_field_defaults_to_feature_flags_default() {
+        use crate::flags::Flag;
+        let app = make_app();
+        assert!(
+            app.flags.is_enabled(Flag::ContinuousMode),
+            "app.flags must default ContinuousMode to true"
+        );
+        assert!(
+            app.flags.is_enabled(Flag::AutoFork),
+            "app.flags must default AutoFork to true"
+        );
+        assert!(
+            !app.flags.is_enabled(Flag::CiAutoFix),
+            "app.flags must default CiAutoFix to false"
+        );
+    }
+
+    #[test]
+    fn app_flags_can_be_replaced_after_construction() {
+        use crate::flags::Flag;
+        let mut app = make_app();
+        let custom = crate::flags::store::FeatureFlags::new(
+            std::collections::HashMap::new(),
+            vec!["ci_auto_fix".to_string()],
+            vec![],
+        );
+        app.flags = custom;
+        assert!(
+            app.flags.is_enabled(Flag::CiAutoFix),
+            "app.flags must reflect newly assigned FeatureFlags"
+        );
+    }
+
+    #[test]
+    fn continuous_mode_not_set_when_flag_disabled() {
+        use crate::flags::Flag;
+        let flags = crate::flags::store::FeatureFlags::new(
+            std::collections::HashMap::new(),
+            vec![],
+            vec!["continuous_mode".to_string()],
+        );
+        let mut app = make_app_with_flags(flags);
+        // Simulate gating logic from cmd_run
+        let cli_continuous = true;
+        if app.flags.is_enabled(Flag::ContinuousMode) && cli_continuous {
+            app.continuous_mode = Some(ContinuousModeState::new());
+        }
+        assert!(
+            app.continuous_mode.is_none(),
+            "continuous_mode must remain None when Flag::ContinuousMode is disabled"
+        );
+    }
+
+    #[test]
+    fn continuous_mode_set_when_flag_enabled() {
+        use crate::flags::Flag;
+        let mut app = make_app();
+        let cli_continuous = true;
+        if app.flags.is_enabled(Flag::ContinuousMode) && cli_continuous {
+            app.continuous_mode = Some(ContinuousModeState::new());
+        }
+        assert!(
+            app.continuous_mode.is_some(),
+            "continuous_mode must be Some when Flag::ContinuousMode is enabled"
+        );
+    }
+
+    #[test]
+    fn check_context_overflow_skips_fork_when_auto_fork_flag_disabled() {
+        let flags = crate::flags::store::FeatureFlags::new(
+            std::collections::HashMap::new(),
+            vec![],
+            vec!["auto_fork".to_string()],
+        );
+        let mut app = make_app_with_flags(flags);
+        app.fork_policy = Some(crate::session::fork::ForkPolicy::new(5));
+        let dummy_id = uuid::Uuid::new_v4();
+        app.check_context_overflow(dummy_id);
+        assert!(
+            app.pending_session_launches.is_empty(),
+            "check_context_overflow must not fork when Flag::AutoFork is disabled"
+        );
+    }
+
+    #[test]
+    fn poll_ci_status_skips_fix_when_ci_auto_fix_flag_disabled() {
+        let flags = crate::flags::store::FeatureFlags::new(
+            std::collections::HashMap::new(),
+            vec![],
+            vec!["ci_auto_fix".to_string()],
+        );
+        let mut app = make_app_with_flags(flags);
+        app.pending_pr_checks.push(PendingPrCheck {
+            pr_number: 99,
+            issue_number: 42,
+            branch: "feat/test".to_string(),
+            fix_attempt: 0,
+            check_count: 0,
+            awaiting_fix_ci: false,
+            created_at: Instant::now()
+                .checked_sub(Duration::from_secs(120))
+                .unwrap_or_else(Instant::now),
+        });
+        app.last_ci_poll = Instant::now()
+            .checked_sub(Duration::from_secs(120))
+            .unwrap_or_else(Instant::now);
+        // poll_ci_status with Flag::CiAutoFix disabled — no fix sessions spawned.
+        // The checker will fail (no gh in tests), but auto_fix_enabled is false so
+        // CiPollAction::Abandon is chosen — no fix session enqueued.
+        app.poll_ci_status();
+        assert!(
+            app.pending_session_launches.is_empty(),
+            "poll_ci_status must not spawn fix session when Flag::CiAutoFix is disabled"
         );
     }
 }
