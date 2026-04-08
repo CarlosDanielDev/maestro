@@ -1,6 +1,4 @@
-mod store;
-
-pub use store::FeatureFlags;
+pub mod store;
 
 use serde::{Deserialize, Serialize};
 
