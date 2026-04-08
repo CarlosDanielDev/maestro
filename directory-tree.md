@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-07 19:00 (UTC)
+> Last updated: 2026-04-07 20:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -168,10 +168,11 @@ maestro/
 │   │   ├── worktree_lifecycle.rs          # 8 tests: worktree create/cleanup and health monitoring
 │   │   └── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
 │   └── work/                              # Work queue and scheduling  [Phase 2]
-│       ├── mod.rs                         # Module exports
+│       ├── mod.rs                         # Module exports; pub mod queue
 │       ├── types.rs                       # WorkItem, WorkStatus; from_issue, is_ready
 │       ├── dependencies.rs               # DependencyGraph: topological sort, cycle detection
-│       └── assigner.rs                    # WorkAssigner: topo sort tiebreaker, cycle detection; mark_pending() transitions an item back to Pending; mark_pending_undo_cascade() cascades undo to dependents  [Phase 3, Issue #85]
+│       ├── assigner.rs                    # WorkAssigner: topo sort tiebreaker, cycle detection; mark_pending() transitions an item back to Pending; mark_pending_undo_cascade() cascades undo to dependents  [Phase 3, Issue #85]
+│       └── queue.rs                       # WorkQueue, QueuedItem, QueueValidationError; validate_selection()  [Issue #65]
 ├── template/
 │   ├── README-TEMPLATE.md                 # Template usage instructions
 │   └── .claude/                           # Reproducible template for new projects
