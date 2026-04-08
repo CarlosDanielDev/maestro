@@ -140,6 +140,26 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     }
 }
 
+/// Check if a stderr string indicates a GitHub CLI authentication failure.
+pub fn is_auth_error(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("not logged in")
+        || lower.contains("authentication required")
+        || lower.contains("http 401")
+        || lower.contains("auth login")
+        || lower.contains("try authenticating")
+        || lower.contains("authentication token")
+        || lower.contains("could not authenticate")
+}
+
+/// Sentinel prefix used to tag gh auth errors in anyhow messages.
+const GH_AUTH_ERROR_SENTINEL: &str = "[gh-auth-error]";
+
+/// Check if an anyhow error is a gh CLI auth error (by sentinel prefix).
+pub fn is_gh_auth_error(err: &anyhow::Error) -> bool {
+    err.to_string().contains(GH_AUTH_ERROR_SENTINEL)
+}
+
 /// Validate user-provided strings before passing to `gh` CLI.
 /// Prevents argument injection (values starting with `-`).
 fn validate_gh_arg(value: &str, field_name: &str) -> Result<()> {
@@ -169,6 +189,9 @@ impl GhCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            if is_auth_error(&stderr) {
+                anyhow::bail!("{} {}", GH_AUTH_ERROR_SENTINEL, stderr.trim());
+            }
             anyhow::bail!("gh command failed: {}", stderr.trim());
         }
 
@@ -753,5 +776,70 @@ mod tests {
         let client = MockGitHubClient::new();
         let milestones = client.list_milestones("open").await.unwrap();
         assert!(milestones.is_empty());
+    }
+
+    // -- is_auth_error --
+
+    #[test]
+    fn is_auth_error_returns_true_for_not_logged_in() {
+        assert!(is_auth_error("ERROR: not logged in to any GitHub host"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_true_for_authentication_required() {
+        assert!(is_auth_error("gh: authentication required"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_true_for_http_401() {
+        assert!(is_auth_error("HTTP 401: Unauthorized"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_true_for_auth_token_errors() {
+        assert!(is_auth_error(
+            "error refreshing authentication token: token expired"
+        ));
+    }
+
+    #[test]
+    fn is_auth_error_returns_true_for_try_authenticating() {
+        assert!(is_auth_error("try authenticating with: gh auth login"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_false_for_network_timeout() {
+        assert!(!is_auth_error("dial tcp: connection timed out"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_false_for_branch_not_found() {
+        assert!(!is_auth_error("ERROR: branch 'maestro/issue-99' not found"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_false_for_empty_string() {
+        assert!(!is_auth_error(""));
+    }
+
+    #[test]
+    fn is_auth_error_is_case_insensitive() {
+        assert!(is_auth_error("NOT LOGGED IN TO ANY GITHUB HOST"));
+        assert!(is_auth_error("Http 401: unauthorized"));
+        assert!(is_auth_error("AUTHENTICATION REQUIRED"));
+    }
+
+    // -- is_gh_auth_error --
+
+    #[test]
+    fn is_gh_auth_error_returns_true_for_sentinel() {
+        let err = anyhow::anyhow!("[gh-auth-error] not logged in");
+        assert!(is_gh_auth_error(&err));
+    }
+
+    #[test]
+    fn is_gh_auth_error_returns_false_for_regular_error() {
+        let err = anyhow::anyhow!("gh command failed: branch not found");
+        assert!(!is_gh_auth_error(&err));
     }
 }
