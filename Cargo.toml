@@ -41,6 +41,15 @@ clap_complete = "4"
 clap_mangen = "0.2"
 anyhow = "1"
 
+# --- Compile-time feature gates ---
+# Convention:
+#   Cargo features  → module is incomplete / adds >500 lines of dead code
+#   Runtime flags    → module compiles fine, behavior needs toggling at startup
+# Activate with: cargo build --features experimental-sanitizer
+[features]
+default = []
+experimental-sanitizer = []
+
 [dev-dependencies]
 tempfile = "3"
 insta = "1"
