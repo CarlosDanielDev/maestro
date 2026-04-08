@@ -3,11 +3,13 @@ pub mod home;
 pub mod issue_browser;
 pub mod milestone;
 pub mod prompt_input;
+pub mod queue_confirmation;
 
 pub use home::HomeScreen;
 pub use issue_browser::IssueBrowserScreen;
 pub use milestone::MilestoneScreen;
 pub use prompt_input::PromptInputScreen;
+pub use queue_confirmation::QueueConfirmationScreen;
 
 use crate::tui::app::TuiMode;
 use crate::tui::navigation::InputMode;

@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-08 12:00 (UTC)
+> Last updated: 2026-04-08 14:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -149,15 +149,17 @@ maestro/
 │   │   │   ├── mod.rs                     # Module exports for navigation subsystem
 │   │   │   ├── focus.rs                   # Focus management: FocusManager, focus ring, widget focus state
 │   │   │   └── keymap.rs                  # Keymap definitions: action-to-key bindings, context-sensitive keymaps
-│   │   ├── snapshot_tests/                # TUI snapshot tests using insta (29 tests, 6 views)  [Issue #16]
+│   │   ├── spinner.rs                     # Braille spinner animation helpers: spinner_frame(), format_thinking_elapsed(), spinner activity string builder
+│   │   ├── snapshot_tests/                # TUI snapshot tests using insta (33 tests, 7 views)  [Issue #16]
 │   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules
 │   │   │   ├── overview.rs                # 6 snapshot tests for PanelView (empty, single, multiple, selected, context overflow, forked)
-│   │   │   ├── detail.rs                  # 5 snapshot tests for DetailView (basic, progress, activity log, no files, retries)
+│   │   │   ├── detail.rs                  # 6 snapshot tests for DetailView (basic, progress, activity log, no files, retries, markdown)
+│   │   │   ├── fullscreen.rs              # 4 snapshot tests for FullscreenView (markdown, plain text, empty placeholder, auto-scroll)
 │   │   │   ├── dashboard.rs               # 4 snapshot tests for HomeScreen (baseline, warnings, suggestions, selected action)
-│   │   │   ├── issue_browser.rs           # 5 snapshot tests for IssueBrowserScreen (with issues, empty, loading, multi-select, filter)
+│   │   │   ├── issue_browser.rs           # 7 snapshot tests for IssueBrowserScreen (with issues, empty, loading, multi-select, filter, prompt overlays)
 │   │   │   ├── milestone.rs               # 4 snapshot tests for MilestoneScreen (with milestones, empty, loading, detail pane)
 │   │   │   ├── cost_dashboard.rs          # 5 snapshot tests for CostDashboard (no budget, under threshold, over 90%, empty, sorted)
-│   │   │   └── snapshots/                 # Committed insta snapshot files (29 .snap files)
+│   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files)
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen  [Issue #31-33, #86]
 │   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; draw_suggestions() renders Suggestions panel with "Loading..." placeholder when loading_suggestions=true; loading_suggestions: bool field; set_suggestions() clears loading flag on delivery; R key emits RefreshSuggestions; Tab-based focus navigation between QuickActions and Suggestions; ProjectInfo gains username field  [Issue #31, #49, #34, #35, #86]
@@ -297,14 +299,16 @@ maestro/
 | `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters; `set_issues()` (Issues #32, #46) |
 | `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
 | `src/tui/screens/prompt_input.rs` | `PromptInputScreen`: free-text prompt entry; `Enter` submits, `Shift+Enter` inserts newline, `Ctrl+V` pastes from clipboard (image or text), `Esc` cancels; image attachment list with `[a]`/`[d]` (Issue #101) |
-| `src/tui/snapshot_tests/` | TUI snapshot test suite; 29 tests across 6 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issue #16) |
+| `src/tui/spinner.rs` | Braille spinner helpers: `spinner_frame()`, `format_thinking_elapsed()`, full spinner activity string builder |
+| `src/tui/snapshot_tests/` | TUI snapshot test suite; 33 tests across 7 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issue #16) |
 | `src/tui/snapshot_tests/overview.rs` | 6 snapshot tests for `PanelView`: empty, single running, multiple, selected, context overflow, forked |
-| `src/tui/snapshot_tests/detail.rs` | 5 snapshot tests for `DetailView`: basic, progress, activity log, no files touched, files + retries |
+| `src/tui/snapshot_tests/detail.rs` | 6 snapshot tests for `DetailView`: basic, progress, activity log, no files touched, files + retries, markdown content |
+| `src/tui/snapshot_tests/fullscreen.rs` | 4 snapshot tests for `FullscreenView`: markdown last message, plain text, empty placeholder, auto-scroll to bottom |
 | `src/tui/snapshot_tests/dashboard.rs` | 4 snapshot tests for `HomeScreen`: baseline, with warnings, with suggestions, selected action |
-| `src/tui/snapshot_tests/issue_browser.rs` | 5 snapshot tests for `IssueBrowserScreen`: with issues, empty, loading, multi-select, filter active |
+| `src/tui/snapshot_tests/issue_browser.rs` | 7 snapshot tests for `IssueBrowserScreen`: with issues, empty, loading, multi-select, filter active, prompt overlay empty, prompt overlay with text |
 | `src/tui/snapshot_tests/milestone.rs` | 4 snapshot tests for `MilestoneScreen`: with milestones, empty, loading, issues in detail pane |
 | `src/tui/snapshot_tests/cost_dashboard.rs` | 5 snapshot tests for `CostDashboard`: no budget, under threshold, over 90%, empty sessions, sorted by cost |
-| `src/tui/snapshot_tests/snapshots/` | 29 committed `.snap` files — insta ground-truth for TUI rendering regressions |
+| `src/tui/snapshot_tests/snapshots/` | Committed `.snap` files — insta ground-truth for TUI rendering regressions |
 | `src/integration_tests/` | End-to-end integration test suite; MockGitHubClient and MockWorktreeManager; no external process dependencies (Issue #15) |
 | `src/integration_tests/mod.rs` | Module declarations and shared helpers: `make_pool()`, `make_pool_with_worktree()`, `make_session()`, `make_session_with_issue()`, `make_gh_issue()` |
 | `src/integration_tests/session_lifecycle.rs` | 11 tests covering enqueue, promote, and complete session lifecycle via `handle_event()` |

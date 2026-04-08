@@ -64,6 +64,8 @@ pub enum TuiMode {
     CompletionSummary,
     /// Continuous mode failure pause overlay (skip/retry/stop).
     ContinuousPause,
+    /// Queue confirmation before launching multi-selected issues.
+    QueueConfirmation,
 }
 
 /// Payload for suggestion data fetched from GitHub.
@@ -238,6 +240,10 @@ pub struct App {
     pub pending_prs: Vec<crate::github::types::PendingPr>,
     /// Runtime feature flags for gating experimental features.
     pub flags: crate::flags::store::FeatureFlags,
+    /// Queue confirmation screen state (for QueueConfirmation mode).
+    pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
+    /// Granular per-check details for each pending PR, keyed by PR number.
+    pub ci_check_details: std::collections::HashMap<u64, Vec<crate::github::ci::CheckRunDetail>>,
 }
 
 impl App {
@@ -303,6 +309,8 @@ impl App {
             gh_auth_ok: true,
             pending_prs: Vec::new(),
             flags: crate::flags::store::FeatureFlags::default(),
+            queue_confirmation_screen: None,
+            ci_check_details: std::collections::HashMap::new(),
         }
     }
 
@@ -1979,6 +1987,7 @@ impl App {
         let mut completed_indices = Vec::new();
         // Collect fix requests to process after the loop (avoids borrow conflict)
         let mut fix_requests: Vec<crate::github::ci::CiFixRequest> = Vec::new();
+        let mut detail_updates: Vec<(u64, Vec<crate::github::ci::CheckRunDetail>)> = Vec::new();
 
         for (i, check) in self.pending_pr_checks.iter_mut().enumerate() {
             check.check_count += 1;
@@ -2077,6 +2086,9 @@ impl App {
                 }
                 Ok(CiStatus::Failed { summary }) => {
                     use crate::github::ci::{CiFixRequest, CiPollAction, decide_ci_action};
+                    if let Ok(details) = checker.check_pr_details(check.pr_number) {
+                        detail_updates.push((check.pr_number, details));
+                    }
 
                     let action = if auto_fix_enabled {
                         decide_ci_action(check, max_retries, &summary)
@@ -2149,7 +2161,9 @@ impl App {
                     completed_indices.push(i);
                 }
                 Ok(CiStatus::Pending) => {
-                    // Still waiting, keep polling
+                    if let Ok(details) = checker.check_pr_details(check.pr_number) {
+                        detail_updates.push((check.pr_number, details));
+                    }
                 }
                 Err(e) => {
                     self.activity_log.push_simple(
@@ -2173,8 +2187,17 @@ impl App {
             );
         }
 
+        // Update CI check details for TUI display
+        for (pr_number, details) in detail_updates {
+            self.ci_check_details.insert(pr_number, details);
+        }
+
         // Remove completed checks in reverse order to preserve indices
         completed_indices.sort_unstable();
+        for &i in &completed_indices {
+            let pr_number = self.pending_pr_checks[i].pr_number;
+            self.ci_check_details.remove(&pr_number);
+        }
         for i in completed_indices.into_iter().rev() {
             self.pending_pr_checks.remove(i);
         }
@@ -3401,5 +3424,51 @@ mod tests {
             app.pending_session_launches.is_empty(),
             "poll_ci_status must not spawn fix session when Flag::CiAutoFix is disabled"
         );
+    }
+
+    // --- Issue #125: CI check details field ---
+
+    #[test]
+    fn app_ci_check_details_field_defaults_to_empty() {
+        let app = make_app();
+        assert!(app.ci_check_details.is_empty());
+    }
+
+    #[test]
+    fn ci_check_details_can_be_populated_and_read() {
+        let mut app = make_app();
+        let detail = crate::github::ci::CheckRunDetail {
+            name: "build".into(),
+            status: crate::github::ci::CheckStatus::Completed,
+            conclusion: crate::github::ci::CheckConclusion::Success,
+            started_at: None,
+            elapsed_secs: Some(42),
+        };
+        app.ci_check_details.insert(99, vec![detail]);
+        assert_eq!(app.ci_check_details.len(), 1);
+        assert_eq!(app.ci_check_details[&99][0].name, "build");
+    }
+
+    #[test]
+    fn ci_check_details_keyed_by_pr_number() {
+        let mut app = make_app();
+        let detail = crate::github::ci::CheckRunDetail {
+            name: "test".into(),
+            status: crate::github::ci::CheckStatus::InProgress,
+            conclusion: crate::github::ci::CheckConclusion::None,
+            started_at: None,
+            elapsed_secs: None,
+        };
+        app.ci_check_details.insert(55, vec![detail]);
+        assert!(app.ci_check_details.contains_key(&55));
+        assert!(!app.ci_check_details.contains_key(&10));
+    }
+
+    // --- Issue #67: QueueConfirmation screen state ---
+
+    #[test]
+    fn app_queue_confirmation_screen_defaults_to_none() {
+        let app = make_app();
+        assert!(app.queue_confirmation_screen.is_none());
     }
 }
