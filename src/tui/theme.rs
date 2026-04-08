@@ -583,6 +583,7 @@ impl Theme {
             SessionStatus::GatesRunning => self.status_gates_running,
             SessionStatus::NeedsReview => self.status_needs_review,
             SessionStatus::CiFix => self.status_ci_fix,
+            SessionStatus::NeedsPr => self.status_stalled, // Reuse stalled color (amber warning)
         }
     }
 

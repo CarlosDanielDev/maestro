@@ -66,3 +66,12 @@ auto_approve = false
 
 [tui.theme]
 preset = "dark"
+
+[flags]
+# Feature flag overrides. Uncomment to enable/disable.
+# continuous_mode = true   # default: true
+# auto_fork = true         # default: true
+# ci_auto_fix = false      # default: false
+# review_council = false   # experimental — disabled by default
+# model_routing = false    # experimental — disabled by default
+# context_overflow = false # default: false

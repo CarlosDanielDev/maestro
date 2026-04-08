@@ -19,6 +19,8 @@ pub trait GitHubClient: Send + Sync {
         head_branch: &str,
         base_branch: &str,
     ) -> Result<u64>;
+    /// List open PR numbers for a given head branch.
+    async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>>;
 }
 
 /// Parse JSON output from `gh issue list --json ...`.
@@ -137,6 +139,9 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
         (**self)
             .create_pr(issue_number, title, body, head_branch, base_branch)
             .await
+    }
+    async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
+        (**self).list_prs_for_branch(head_branch).await
     }
 }
 
@@ -331,6 +336,8 @@ impl GitHubClient for GhCliClient {
         head_branch: &str,
         base_branch: &str,
     ) -> Result<u64> {
+        validate_gh_arg(head_branch, "head_branch")?;
+        validate_gh_arg(base_branch, "base_branch")?;
         let json_str = self
             .run_gh(&[
                 "pr",
@@ -349,6 +356,27 @@ impl GitHubClient for GhCliClient {
             .await?;
         let v: serde_json::Value = serde_json::from_str(&json_str)?;
         Ok(v.get("number").and_then(|n| n.as_u64()).unwrap_or(0))
+    }
+
+    async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
+        validate_gh_arg(head_branch, "head_branch")?;
+        let json_str = self
+            .run_gh(&[
+                "pr",
+                "list",
+                "--head",
+                head_branch,
+                "--state",
+                "open",
+                "--json",
+                "number",
+            ])
+            .await?;
+        let prs: Vec<serde_json::Value> = serde_json::from_str(&json_str)?;
+        Ok(prs
+            .iter()
+            .filter_map(|v| v.get("number").and_then(|n| n.as_u64()))
+            .collect())
     }
 }
 
@@ -371,6 +399,7 @@ pub mod mock {
         create_pr_response: Option<u64>,
         create_pr_error: Option<String>,
         get_issue_errors: std::collections::HashMap<u64, String>,
+        list_prs_for_branch_responses: std::collections::HashMap<String, Vec<u64>>,
 
         add_label_calls: Vec<(u64, String)>,
         remove_label_calls: Vec<(u64, String)>,
@@ -421,6 +450,14 @@ pub mod mock {
 
         pub fn set_create_pr_error(&self, msg: &str) {
             self.inner.lock().unwrap().create_pr_error = Some(msg.to_string());
+        }
+
+        pub fn set_list_prs_for_branch(&self, branch: &str, pr_numbers: Vec<u64>) {
+            self.inner
+                .lock()
+                .unwrap()
+                .list_prs_for_branch_responses
+                .insert(branch.to_string(), pr_numbers);
         }
 
         pub fn add_label_calls(&self) -> Vec<(u64, String)> {
@@ -513,6 +550,15 @@ pub mod mock {
                 anyhow::bail!("{}", err);
             }
             Ok(state.create_pr_response.unwrap_or(1))
+        }
+
+        async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
+            let state = self.inner.lock().unwrap();
+            Ok(state
+                .list_prs_for_branch_responses
+                .get(head_branch)
+                .cloned()
+                .unwrap_or_default())
         }
     }
 }
@@ -776,6 +822,29 @@ mod tests {
         let client = MockGitHubClient::new();
         let milestones = client.list_milestones("open").await.unwrap();
         assert!(milestones.is_empty());
+    }
+
+    // -- list_prs_for_branch --
+
+    #[tokio::test]
+    async fn mock_list_prs_for_branch_returns_configured_prs() {
+        let client = MockGitHubClient::new();
+        client.set_list_prs_for_branch("maestro/issue-42", vec![10, 20]);
+        let prs = client
+            .list_prs_for_branch("maestro/issue-42")
+            .await
+            .unwrap();
+        assert_eq!(prs, vec![10, 20]);
+    }
+
+    #[tokio::test]
+    async fn mock_list_prs_for_branch_returns_empty_for_unknown_branch() {
+        let client = MockGitHubClient::new();
+        let prs = client
+            .list_prs_for_branch("maestro/issue-99")
+            .await
+            .unwrap();
+        assert!(prs.is_empty());
     }
 
     // -- is_auth_error --
