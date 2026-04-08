@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::parser::parse_stream_line;
 use super::types::{Session, SessionStatus, StreamEvent};
 use anyhow::{Context, Result};

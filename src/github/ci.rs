@@ -1,5 +1,7 @@
+#![allow(dead_code)]
 use anyhow::Result;
-use serde::Deserialize;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 /// CI check status for a pull request.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,6 +14,63 @@ pub enum CiStatus {
     Failed { summary: String },
     /// No CI checks configured on this repo/branch.
     NoneConfigured,
+}
+
+/// Status of an individual CI check run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckStatus {
+    #[serde(alias = "QUEUED", alias = "queued")]
+    Queued,
+    #[serde(alias = "IN_PROGRESS", alias = "in_progress")]
+    InProgress,
+    #[serde(alias = "COMPLETED", alias = "completed")]
+    Completed,
+    #[serde(alias = "WAITING", alias = "waiting")]
+    Waiting,
+    #[serde(alias = "PENDING", alias = "pending")]
+    Pending,
+    #[serde(alias = "REQUESTED", alias = "requested")]
+    Requested,
+    #[serde(other)]
+    #[default]
+    Unknown,
+}
+
+/// Conclusion of a completed CI check run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckConclusion {
+    #[serde(alias = "SUCCESS", alias = "success")]
+    Success,
+    #[serde(alias = "FAILURE", alias = "failure")]
+    Failure,
+    #[serde(alias = "NEUTRAL", alias = "neutral")]
+    Neutral,
+    #[serde(alias = "CANCELLED", alias = "cancelled")]
+    Cancelled,
+    #[serde(alias = "TIMED_OUT", alias = "timed_out")]
+    TimedOut,
+    #[serde(alias = "ACTION_REQUIRED", alias = "action_required")]
+    ActionRequired,
+    #[serde(alias = "SKIPPED", alias = "skipped")]
+    Skipped,
+    #[serde(alias = "STALE", alias = "stale")]
+    Stale,
+    #[serde(alias = "STARTUP_FAILURE", alias = "startup_failure")]
+    StartupFailure,
+    /// Check not yet completed or unrecognized conclusion.
+    #[serde(other)]
+    #[default]
+    None,
+}
+
+/// Granular detail for a single CI check run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckRunDetail {
+    pub name: String,
+    pub status: CheckStatus,
+    pub conclusion: CheckConclusion,
+    pub started_at: Option<DateTime<Utc>>,
+    pub elapsed_secs: Option<u64>,
 }
 
 /// Action to take after evaluating CI failure for auto-fix.
@@ -37,6 +96,18 @@ pub struct PendingPrCheck {
     pub fix_attempt: u32,
     /// If true, a fix session is running — skip re-processing failures.
     pub awaiting_fix_ci: bool,
+}
+
+/// Trait for CI status checking. Mockable for tests.
+pub trait CiCheck {
+    /// Check the rollup CI status for a PR (pass/fail/pending).
+    fn check_pr_status(&self, pr_number: u64) -> Result<CiStatus>;
+
+    /// Fetch granular per-check details for a PR.
+    fn check_pr_details(&self, pr_number: u64) -> Result<Vec<CheckRunDetail>>;
+
+    /// Fetch the failed CI run log for a PR branch.
+    fn fetch_failure_log(&self, pr_number: u64, branch: &str) -> Result<String>;
 }
 
 /// Checks CI status for pull requests via `gh` CLI.
@@ -67,9 +138,10 @@ impl CiChecker {
     pub fn new() -> Self {
         Self
     }
+}
 
-    /// Check the CI status for a given PR number.
-    pub fn check_pr_status(&self, pr_number: u64) -> Result<CiStatus> {
+impl CiCheck for CiChecker {
+    fn check_pr_status(&self, pr_number: u64) -> Result<CiStatus> {
         let num_str = pr_number.to_string();
         let output = std::process::Command::new("gh")
             .args([
@@ -90,9 +162,28 @@ impl CiChecker {
         parse_ci_json(&json_str)
     }
 
-    /// Fetch the failed CI run log for a PR branch.
-    /// Returns a truncated log string (max ~4000 chars to fit in a prompt).
-    pub fn fetch_failure_log(&self, pr_number: u64, branch: &str) -> Result<String> {
+    fn check_pr_details(&self, pr_number: u64) -> Result<Vec<CheckRunDetail>> {
+        let num_str = pr_number.to_string();
+        let output = std::process::Command::new("gh")
+            .args([
+                "pr",
+                "checks",
+                &num_str,
+                "--json",
+                "name,status,conclusion,startedAt,completedAt",
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("gh pr checks failed: {}", stderr.trim());
+        }
+
+        let json_str = String::from_utf8_lossy(&output.stdout);
+        parse_check_details(&json_str)
+    }
+
+    fn fetch_failure_log(&self, pr_number: u64, branch: &str) -> Result<String> {
         let output = std::process::Command::new("gh")
             .args([
                 "run",
@@ -176,6 +267,51 @@ pub(crate) fn parse_ci_json(json: &str) -> Result<CiStatus> {
     } else {
         Ok(CiStatus::Passed)
     }
+}
+
+/// Raw JSON shape from `gh pr checks --json name,status,conclusion,startedAt,completedAt`.
+#[derive(Deserialize)]
+struct CheckRunJson {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    status: CheckStatus,
+    #[serde(default)]
+    conclusion: CheckConclusion,
+    #[serde(default, rename = "startedAt")]
+    started_at: Option<DateTime<Utc>>,
+    #[serde(default, rename = "completedAt")]
+    completed_at: Option<DateTime<Utc>>,
+}
+
+impl From<CheckRunJson> for CheckRunDetail {
+    fn from(raw: CheckRunJson) -> Self {
+        let elapsed_secs = match (raw.started_at, raw.completed_at) {
+            (Some(start), Some(end)) => {
+                let duration = end.signed_duration_since(start);
+                Some(duration.num_seconds().max(0) as u64)
+            }
+            (Some(start), None) if raw.status == CheckStatus::InProgress => {
+                let duration = Utc::now().signed_duration_since(start);
+                Some(duration.num_seconds().max(0) as u64)
+            }
+            _ => None,
+        };
+
+        Self {
+            name: raw.name,
+            status: raw.status,
+            conclusion: raw.conclusion,
+            started_at: raw.started_at,
+            elapsed_secs,
+        }
+    }
+}
+
+/// Parse check-run details JSON from `gh pr checks --json ...` output.
+pub(crate) fn parse_check_details(json: &str) -> Result<Vec<CheckRunDetail>> {
+    let runs: Vec<CheckRunJson> = serde_json::from_str(json)?;
+    Ok(runs.into_iter().map(CheckRunDetail::from).collect())
 }
 
 /// Truncate a log to the last `max_chars` characters, keeping complete lines.
@@ -453,5 +589,168 @@ mod tests {
             "Expected scope-limiting instruction in prompt, got: {}",
             prompt
         );
+    }
+
+    // ── parse_check_details tests ────────────────────────────────────────
+
+    #[test]
+    fn parse_check_details_all_passing_returns_success_statuses() {
+        let json = r#"[
+            {"name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"test","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:02:00Z"}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].status, CheckStatus::Completed);
+        assert_eq!(result[0].conclusion, CheckConclusion::Success);
+        assert_eq!(result[1].status, CheckStatus::Completed);
+        assert_eq!(result[1].conclusion, CheckConclusion::Success);
+    }
+
+    #[test]
+    fn parse_check_details_some_pending_returns_queued_and_in_progress() {
+        let json = r#"[
+            {"name":"lint","status":"QUEUED","conclusion":"","startedAt":null,"completedAt":null},
+            {"name":"build","status":"IN_PROGRESS","conclusion":"","startedAt":"2024-01-01T10:00:00Z","completedAt":null}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].status, CheckStatus::Queued);
+        assert_eq!(result[1].status, CheckStatus::InProgress);
+    }
+
+    #[test]
+    fn parse_check_details_mixed_failure_returns_all_conclusions() {
+        let json = r#"[
+            {"name":"unit","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"integ","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:03:00Z"},
+            {"name":"e2e","status":"COMPLETED","conclusion":"TIMED_OUT","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:10:00Z"}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].conclusion, CheckConclusion::Success);
+        assert_eq!(result[1].conclusion, CheckConclusion::Failure);
+        assert_eq!(result[2].conclusion, CheckConclusion::TimedOut);
+    }
+
+    #[test]
+    fn parse_check_details_null_started_at_yields_no_elapsed() {
+        let json = r#"[{"name":"build","status":"IN_PROGRESS","conclusion":"","startedAt":null,"completedAt":null}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].started_at, None);
+        assert_eq!(result[0].elapsed_secs, None);
+    }
+
+    #[test]
+    fn parse_check_details_completed_computes_elapsed_from_timestamps() {
+        let json = r#"[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:02:30Z"}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].elapsed_secs, Some(150));
+    }
+
+    #[test]
+    fn parse_check_details_in_progress_elapsed_is_positive() {
+        let json = r#"[{"name":"build","status":"IN_PROGRESS","conclusion":"","startedAt":"2020-01-01T00:00:00Z","completedAt":null}]"#;
+        let result = parse_check_details(json).unwrap();
+        match result[0].elapsed_secs {
+            Some(n) => assert!(n > 0, "elapsed must be positive for in-progress check"),
+            None => panic!("expected Some(elapsed) for IN_PROGRESS with startedAt set"),
+        }
+    }
+
+    #[test]
+    fn parse_check_details_queued_elapsed_is_none() {
+        let json = r#"[{"name":"deploy","status":"QUEUED","conclusion":"","startedAt":"2024-01-01T10:00:00Z","completedAt":null}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].elapsed_secs, None);
+    }
+
+    #[test]
+    fn parse_check_details_empty_array_returns_empty_vec() {
+        let result = parse_check_details("[]");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_check_details_malformed_json_returns_error() {
+        let result = parse_check_details("{broken json");
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(!msg.is_empty());
+    }
+
+    #[test]
+    fn parse_check_details_unknown_status_deserializes_as_unknown() {
+        let json = r#"[{"name":"check","status":"SOME_FUTURE_STATUS","conclusion":"SUCCESS","startedAt":null,"completedAt":null}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].status, CheckStatus::Unknown);
+    }
+
+    #[test]
+    fn parse_check_details_unknown_conclusion_uses_serde_other() {
+        let json = r#"[{"name":"check","status":"COMPLETED","conclusion":"BRAND_NEW","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].conclusion, CheckConclusion::None);
+    }
+
+    #[test]
+    fn parse_check_details_all_status_variants() {
+        let json = r#"[
+            {"name":"a","status":"QUEUED","conclusion":"","startedAt":null,"completedAt":null},
+            {"name":"b","status":"IN_PROGRESS","conclusion":"","startedAt":"2024-01-01T10:00:00Z","completedAt":null},
+            {"name":"c","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"d","status":"WAITING","conclusion":"","startedAt":null,"completedAt":null},
+            {"name":"e","status":"PENDING","conclusion":"","startedAt":null,"completedAt":null},
+            {"name":"f","status":"REQUESTED","conclusion":"","startedAt":null,"completedAt":null}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result.len(), 6);
+        assert_eq!(result[0].status, CheckStatus::Queued);
+        assert_eq!(result[1].status, CheckStatus::InProgress);
+        assert_eq!(result[2].status, CheckStatus::Completed);
+        assert_eq!(result[3].status, CheckStatus::Waiting);
+        assert_eq!(result[4].status, CheckStatus::Pending);
+        assert_eq!(result[5].status, CheckStatus::Requested);
+    }
+
+    #[test]
+    fn parse_check_details_name_preserved_verbatim() {
+        let json = r#"[{"name":"My Fancy Check / integration","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"}]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].name, "My Fancy Check / integration");
+    }
+
+    #[test]
+    fn parse_check_details_missing_completed_at_key() {
+        let json = r#"[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z"}]"#;
+        let result = parse_check_details(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].elapsed_secs, None);
+    }
+
+    #[test]
+    fn parse_check_details_all_conclusion_variants() {
+        let json = r#"[
+            {"name":"a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"b","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"c","status":"COMPLETED","conclusion":"NEUTRAL","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"d","status":"COMPLETED","conclusion":"CANCELLED","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"e","status":"COMPLETED","conclusion":"TIMED_OUT","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"f","status":"COMPLETED","conclusion":"ACTION_REQUIRED","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"g","status":"COMPLETED","conclusion":"SKIPPED","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"h","status":"COMPLETED","conclusion":"STALE","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"},
+            {"name":"i","status":"COMPLETED","conclusion":"STARTUP_FAILURE","startedAt":"2024-01-01T10:00:00Z","completedAt":"2024-01-01T10:01:00Z"}
+        ]"#;
+        let result = parse_check_details(json).unwrap();
+        assert_eq!(result[0].conclusion, CheckConclusion::Success);
+        assert_eq!(result[1].conclusion, CheckConclusion::Failure);
+        assert_eq!(result[2].conclusion, CheckConclusion::Neutral);
+        assert_eq!(result[3].conclusion, CheckConclusion::Cancelled);
+        assert_eq!(result[4].conclusion, CheckConclusion::TimedOut);
+        assert_eq!(result[5].conclusion, CheckConclusion::ActionRequired);
+        assert_eq!(result[6].conclusion, CheckConclusion::Skipped);
+        assert_eq!(result[7].conclusion, CheckConclusion::Stale);
+        assert_eq!(result[8].conclusion, CheckConclusion::StartupFailure);
     }
 }

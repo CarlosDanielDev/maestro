@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::types::Issue;
 use crate::github::client::GitHubClient;
 use crate::github::types::GhMilestone;

@@ -5,7 +5,7 @@ use crate::continuous::ContinuousModeState;
 use crate::gates::runner::{self, GateCheck, GateRunner};
 use crate::gates::types::{CompletionGate, GateResult};
 use crate::git::GitOps;
-use crate::github::ci::{CiChecker, CiStatus, PendingPrCheck};
+use crate::github::ci::{CiCheck, CiChecker, CiStatus, PendingPrCheck};
 use crate::github::client::GitHubClient;
 use crate::github::labels::LabelManager;
 use crate::github::pr::PrCreator;

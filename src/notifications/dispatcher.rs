@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::process::Command;
 
 use super::slack::{SlackClient, SlackEvent, level_to_slack_event};

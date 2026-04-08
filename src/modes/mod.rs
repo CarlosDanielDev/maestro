@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::config::{Config, ModeConfig};
 
 /// Built-in mode definitions. These are available even without config.

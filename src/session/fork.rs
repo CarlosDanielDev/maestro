@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::types::{Session, SessionStatus};
 use crate::state::progress::SessionProgress;
 
