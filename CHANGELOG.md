@@ -7,18 +7,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-04-08
+
 ### Added
 
+- Feature flag registry and store with `Flag` enum and `FeatureFlags` runtime store (#141)
+- Cargo `[features]` for compile-time gating of experimental modules (#142)
 - `[flags]` config section in `maestro.toml` for per-project feature flag overrides (#143)
-- `FlagsConfig` struct in `src/config.rs` — flattened `HashMap<String, bool>` loaded from `[flags]` table
 - `--enable-flag` and `--disable-flag` CLI args on the `Run` subcommand for runtime flag overrides (#143)
-- `PendingPr` and `PendingPrStatus` structs in `src/github/types.rs` for tracking failed PR creation attempts (#159)
-- `NeedsPr` session status variant in `src/session/types.rs` — non-terminal, triggers PR retry flow (#159)
-- `PrRetryPolicy` (exponential back-off, default 3 attempts) and `OrphanBranch` (branch with no open PR) in `src/github/pr.rs` (#159)
-- `list_prs_for_branch()` on `GitHubClient` trait and `GhCliClient` / `MockGitHubClient` impls in `src/github/client.rs` (#159)
-- `list_remote_branches()` on `GitOps` trait and `CliGitOps` / mock impl in `src/git.rs` (#159)
-- `pending_prs: Vec<PendingPr>` field on `MaestroState` in `src/state/types.rs` — persisted to JSON state (#159)
-- `process_pending_pr_retries()` and `trigger_manual_pr_retry()` on `App` in `src/tui/app.rs` — retry loop and manual trigger for stuck PRs (#159)
+- `FeatureFlags` wired into `App` struct — three features gated behind runtime flags (#145):
+  - `Flag::AutoFork` gates auto-fork on context overflow
+  - `Flag::CiAutoFix` gates automatic CI fix session spawning
+  - `Flag::ContinuousMode` gates continuous mode activation
+- `PendingPr` and `PendingPrStatus` structs for tracking failed PR creation attempts (#159)
+- `PrRetryPolicy` with exponential back-off (default 3 attempts) and `OrphanBranch` recovery (#159)
+- PR creation retry loop and manual trigger for stuck PRs (#159)
+
+### Fixed
+
+- `gh` CLI auth failure detection with clear error surfacing to user (#158)
+- Milestone issue browser no longer shows closed issues (#150)
 
 ## [0.5.2] - 2026-04-07
 
