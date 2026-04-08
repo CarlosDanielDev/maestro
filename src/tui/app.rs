@@ -232,6 +232,8 @@ pub struct App {
     /// Whether the completion summary has been dismissed by the user.
     /// Prevents the auto-transition from re-triggering after navigation away.
     pub completion_summary_dismissed: bool,
+    /// Whether gh CLI is authenticated. Updated if a runtime auth error is detected.
+    pub gh_auth_ok: bool,
 }
 
 impl App {
@@ -294,6 +296,7 @@ impl App {
             upgrade_state: crate::updater::UpgradeState::Hidden,
             spinner_tick: 0,
             completion_summary_dismissed: false,
+            gh_auth_ok: true,
         }
     }
 
@@ -312,6 +315,34 @@ impl App {
         theme.apply_capability(crate::tui::theme::ColorCapability::detect());
         self.theme = theme;
         self.config = Some(config);
+    }
+
+    /// Check if a GitHub error is an auth failure. If so, mark auth as lost and log it.
+    /// Returns true if the error was an auth error.
+    fn check_gh_auth_error(&mut self, e: &anyhow::Error) -> bool {
+        if crate::github::client::is_gh_auth_error(e) {
+            self.gh_auth_ok = false;
+            self.activity_log.push_simple(
+                "AUTH".into(),
+                "GitHub authentication lost. Run `gh auth login` to re-authenticate.".into(),
+                LogLevel::Error,
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Log a warning that a GitHub operation is being skipped due to auth failure.
+    fn log_gh_auth_skip(&mut self, issue_number: u64, operation: &str) {
+        self.activity_log.push_simple(
+            format!("#{}", issue_number),
+            format!(
+                "Skipping {} — GitHub not authenticated. Run `gh auth login`",
+                operation
+            ),
+            LogLevel::Warn,
+        );
     }
 
     /// Add a session and try to promote/spawn it.
@@ -800,6 +831,7 @@ impl App {
                 }
             }
             TuiDataEvent::Issues(Err(e)) => {
+                self.check_gh_auth_error(&e);
                 self.activity_log.push_simple(
                     "Issues".into(),
                     format!("Failed to fetch issues: {}", e),
@@ -816,6 +848,7 @@ impl App {
                 }
             }
             TuiDataEvent::Milestones(Err(e)) => {
+                self.check_gh_auth_error(&e);
                 self.activity_log.push_simple(
                     "Milestones".into(),
                     format!("Failed to fetch milestones: {}", e),
@@ -1446,13 +1479,18 @@ impl App {
         for (issue_number, prompt, mode, title, model) in items {
             // Update GitHub labels (non-fatal on error)
             if let Some(client) = &self.github_client {
-                let label_mgr = LabelManager::new(client.as_ref());
-                if let Err(e) = label_mgr.mark_in_progress(issue_number).await {
-                    self.activity_log.push_simple(
-                        format!("#{}", issue_number),
-                        format!("Label update failed: {}", e),
-                        LogLevel::Error,
-                    );
+                if !self.gh_auth_ok {
+                    self.log_gh_auth_skip(issue_number, "label update");
+                } else {
+                    let label_mgr = LabelManager::new(client.as_ref());
+                    if let Err(e) = label_mgr.mark_in_progress(issue_number).await {
+                        self.check_gh_auth_error(&e);
+                        self.activity_log.push_simple(
+                            format!("#{}", issue_number),
+                            format!("Label update failed: {}", e),
+                            LogLevel::Error,
+                        );
+                    }
                 }
             }
 
@@ -1569,18 +1607,23 @@ impl App {
 
         // Update GitHub labels
         if let Some(ref client) = self.github_client {
-            let label_mgr = LabelManager::new(client.as_ref());
-            let result = if success {
-                label_mgr.mark_done(issue_number).await
+            if !self.gh_auth_ok {
+                self.log_gh_auth_skip(issue_number, "label update");
             } else {
-                label_mgr.mark_failed(issue_number).await
-            };
-            if let Err(e) = result {
-                self.activity_log.push_simple(
-                    format!("#{}", issue_number),
-                    format!("Label update failed: {}", e),
-                    LogLevel::Error,
-                );
+                let label_mgr = LabelManager::new(client.as_ref());
+                let result = if success {
+                    label_mgr.mark_done(issue_number).await
+                } else {
+                    label_mgr.mark_failed(issue_number).await
+                };
+                if let Err(e) = result {
+                    self.check_gh_auth_error(&e);
+                    self.activity_log.push_simple(
+                        format!("#{}", issue_number),
+                        format!("Label update failed: {}", e),
+                        LogLevel::Error,
+                    );
+                }
             }
         }
 
@@ -1594,8 +1637,12 @@ impl App {
             return;
         }
 
-        // Auto PR creation
-        if let (Some(client), Some(config)) = (&self.github_client, &self.config)
+        // Auto PR creation (skip if auth lost)
+        if !self.gh_auth_ok {
+            if success {
+                self.log_gh_auth_skip(issue_number, "PR creation");
+            }
+        } else if let (Some(client), Some(config)) = (&self.github_client, &self.config)
             && success
             && config.github.auto_pr
             && let Some(ref branch) = worktree_branch
@@ -1635,6 +1682,7 @@ impl App {
                     self.fire_plugin_hook(HookPoint::PrCreated, ctx).await;
                 }
                 Err(e) => {
+                    self.check_gh_auth_error(&e);
                     self.activity_log.push_simple(
                         format!("#{}", issue_number),
                         format!("PR creation failed: {}", e),

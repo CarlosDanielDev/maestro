@@ -5,6 +5,7 @@ mod cli;
 mod config;
 mod continuous;
 mod doctor;
+mod flags;
 mod gates;
 mod git;
 mod github;
@@ -21,6 +22,9 @@ mod tui;
 mod updater;
 mod util;
 mod work;
+
+#[cfg(feature = "experimental-sanitizer")]
+mod sanitizer;
 
 #[cfg(test)]
 mod integration_tests;
@@ -806,7 +810,7 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
 
     // Run preflight checks and fetch user identity on a blocking thread
     let config_clone = config.clone();
-    let (doctor_warnings, username) = tokio::task::spawn_blocking(move || {
+    let (doctor_warnings, username, gh_auth_ok) = tokio::task::spawn_blocking(move || {
         let report = doctor::run_all_checks(config_clone.as_ref());
         let warnings: Vec<String> = report
             .failed_checks()
@@ -825,7 +829,14 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
                     .map(|rest| rest.split(',').next().unwrap_or(rest).to_string())
             });
 
-        (warnings, username)
+        let gh_auth_ok = report
+            .checks
+            .iter()
+            .find(|c| c.name == "gh auth")
+            .map(|c| c.passed)
+            .unwrap_or(true);
+
+        (warnings, username, gh_auth_ok)
     })
     .await
     .unwrap_or_default();
@@ -865,6 +876,9 @@ async fn cmd_dashboard() -> anyhow::Result<()> {
             Vec::new(),
         )
     };
+
+    // Propagate startup gh auth check result
+    app.gh_auth_ok = gh_auth_ok;
 
     // Set up home screen and start in Dashboard mode
     app.home_screen = Some(tui::screens::HomeScreen::new(
