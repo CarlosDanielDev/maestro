@@ -619,7 +619,7 @@ async fn cmd_run(
 
     // Build feature flags with resolution priority:
     // CLI --disable-flag > CLI --enable-flag > config [flags] > Flag::default_enabled()
-    let _feature_flags = crate::flags::store::FeatureFlags::new(
+    let feature_flags = crate::flags::store::FeatureFlags::new(
         config.flags.entries.clone(),
         enable_flags,
         disable_flags,
@@ -672,6 +672,7 @@ async fn cmd_run(
         worktree_mgr,
         effective_max_concurrent,
     );
+    app.flags = feature_flags;
 
     // Resume from previous state if requested
     if resume {
@@ -713,13 +714,15 @@ async fn cmd_run(
         app.work_assigner = Some(assigner);
         app.github_client = Some(Box::new(client));
 
-        // Enable continuous mode if requested
-        if continuous {
+        // Enable continuous mode if requested — gated by Flag::ContinuousMode
+        if continuous && app.flags.is_enabled(crate::flags::Flag::ContinuousMode) {
             app.continuous_mode = Some(continuous::ContinuousModeState::new());
             tracing::info!(
                 "Continuous mode: processing milestone '{}' issues serially",
                 milestone_name
             );
+        } else if continuous {
+            tracing::info!("--continuous ignored: Flag::ContinuousMode is disabled");
         }
     } else if let Some(issue_str) = issue {
         let client = GhCliClient::new();
@@ -1122,5 +1125,55 @@ mod tests {
             setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
         app.once_mode = true;
         assert!(app.once_mode, "once_mode must be directly settable");
+    }
+
+    // --- Issue #145: FeatureFlags wiring into App ---
+
+    #[test]
+    fn feature_flags_are_assignable_to_app() {
+        let mut app =
+            setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let flags = crate::flags::store::FeatureFlags::new(
+            std::collections::HashMap::new(),
+            vec!["ci_auto_fix".to_string()],
+            vec![],
+        );
+        app.flags = flags;
+        assert!(
+            app.flags.is_enabled(crate::flags::Flag::CiAutoFix),
+            "app.flags must reflect assigned FeatureFlags"
+        );
+    }
+
+    #[test]
+    fn feature_flags_cli_disable_overrides_config_enable() {
+        let mut config_entries = std::collections::HashMap::new();
+        config_entries.insert("ci_auto_fix".to_string(), true);
+        let flags = crate::flags::store::FeatureFlags::new(
+            config_entries,
+            vec![],
+            vec!["ci_auto_fix".to_string()],
+        );
+        assert!(
+            !flags.is_enabled(crate::flags::Flag::CiAutoFix),
+            "CLI --disable-flag must override config enable"
+        );
+    }
+
+    #[test]
+    fn feature_flags_default_on_app_matches_flag_defaults() {
+        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        assert!(
+            app.flags.is_enabled(crate::flags::Flag::ContinuousMode),
+            "ContinuousMode must default to true"
+        );
+        assert!(
+            app.flags.is_enabled(crate::flags::Flag::AutoFork),
+            "AutoFork must default to true"
+        );
+        assert!(
+            !app.flags.is_enabled(crate::flags::Flag::CiAutoFix),
+            "CiAutoFix must default to false"
+        );
     }
 }
