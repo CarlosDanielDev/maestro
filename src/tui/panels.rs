@@ -1,5 +1,6 @@
 use crate::session::types::Session;
 use crate::state::file_claims::FileClaimManager;
+use crate::tui::spinner;
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
@@ -38,8 +39,15 @@ impl PanelView {
         self.selected.unwrap_or(0)
     }
 
-    pub fn draw(&self, f: &mut Frame, sessions: &[&Session], area: Rect, theme: &Theme) {
-        self.draw_with_claims(f, sessions, None, area, theme);
+    pub fn draw(
+        &self,
+        f: &mut Frame,
+        sessions: &[&Session],
+        area: Rect,
+        theme: &Theme,
+        spinner_tick: usize,
+    ) {
+        self.draw_with_claims(f, sessions, None, area, theme, spinner_tick);
     }
 
     pub fn draw_with_claims(
@@ -49,6 +57,7 @@ impl PanelView {
         file_claims: Option<&FileClaimManager>,
         area: Rect,
         theme: &Theme,
+        spinner_tick: usize,
     ) {
         if sessions.is_empty() {
             let block = Block::default()
@@ -86,11 +95,13 @@ impl PanelView {
                 has_conflict,
                 self.scroll_offset,
                 theme,
+                spinner_tick,
             );
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_single_panel(
     f: &mut Frame,
     session: &Session,
@@ -99,6 +110,7 @@ fn draw_single_panel(
     has_conflict: bool,
     scroll: u16,
     theme: &Theme,
+    spinner_tick: usize,
 ) {
     let status_color = theme.status_color(session.status);
 
@@ -207,9 +219,18 @@ fn draw_single_panel(
         .percent(ctx_pct as u16);
     f.render_widget(gauge, chunks[2]);
 
-    // Current activity
+    // Current activity (animated spinner when thinking)
+    let activity_text = if session.is_thinking {
+        let elapsed = session
+            .thinking_started_at
+            .map(|t| t.elapsed())
+            .unwrap_or_default();
+        format!("> {}", spinner::thinking_activity(spinner_tick, elapsed))
+    } else {
+        format!("> {}", session.current_activity)
+    };
     let activity = Line::from(Span::styled(
-        format!("> {}", session.current_activity),
+        activity_text,
         Style::default().fg(theme.accent_info),
     ));
     f.render_widget(Paragraph::new(activity), chunks[3]);

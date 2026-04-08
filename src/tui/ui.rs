@@ -18,6 +18,9 @@ use ratatui::{
 
 /// Render the entire TUI.
 pub fn draw(f: &mut Frame, app: &mut App) {
+    // Advance spinner animation on each draw cycle
+    app.spinner_tick = app.spinner_tick.wrapping_add(1);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -31,6 +34,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_status_bar(f, app, chunks[0]);
 
     // Render main content based on TUI mode
+    let spinner_tick = app.spinner_tick;
     match app.tui_mode {
         TuiMode::Overview => {
             let sessions = app.pool.all_sessions();
@@ -40,6 +44,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 Some(&app.pool.file_claims),
                 chunks[1],
                 &app.theme,
+                spinner_tick,
             );
         }
         TuiMode::Detail(idx) => {
@@ -60,6 +65,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     Some(&app.pool.file_claims),
                     chunks[1],
                     &app.theme,
+                    spinner_tick,
                 );
             }
         }
@@ -75,9 +81,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &app.progress_tracker,
                     chunks[1],
                     &app.theme,
+                    spinner_tick,
                 );
             } else {
-                app.panel_view.draw(f, &sessions, chunks[1], &app.theme);
+                app.panel_view
+                    .draw(f, &sessions, chunks[1], &app.theme, spinner_tick);
             }
         }
         TuiMode::CostDashboard => {
@@ -121,6 +129,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 Some(&app.pool.file_claims),
                 chunks[1],
                 &app.theme,
+                spinner_tick,
             );
             // Draw overlay on top
             if let Some(ref summary) = app.completion_summary {
@@ -135,6 +144,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 Some(&app.pool.file_claims),
                 chunks[1],
                 &app.theme,
+                spinner_tick,
             );
             if let Some(ref cont) = app.continuous_mode {
                 draw_continuous_pause_overlay(f, cont, chunks[1], &app.theme);
