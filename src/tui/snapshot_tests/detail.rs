@@ -99,3 +99,23 @@ fn detail_view_with_files_and_retries() {
 
     assert_snapshot!(terminal.backend());
 }
+
+#[test]
+fn detail_view_activity_log_does_not_use_markdown() {
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut session = make_session(SessionStatus::Running, Some(42));
+    session.activity_log = vec![
+        make_activity(5, "**bold** should appear literally"),
+        make_activity(10, "Running `cargo test`"),
+    ];
+    let tracker = ProgressTracker::new();
+
+    terminal
+        .draw(|f| {
+            draw_detail_with_claims(f, &session, &tracker, None, f.area(), &theme);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
