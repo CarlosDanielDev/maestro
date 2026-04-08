@@ -54,6 +54,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Milestone overview** — inspect milestone progress with real-time completion gauges; drill into issues or run all open issues in a milestone with a single key (`r`)
 - **Automatic preflight checks** — `maestro run` validates that `claude`, `gh`/`az`, and `git` are correctly installed and authenticated before spending any API credits; use `--skip-doctor` to bypass when needed
 - **Rich real-time activity feedback** — the activity log shows detailed, human-readable messages for every tool call: file-touching tools display the file path, Bash tool calls show the command preview (`$ cargo test`), and tool results include elapsed time; when Claude uses extended thinking, the activity log shows `"Thinking..."` while the block runs and `"Thought for Xs"` when it finishes; text chunks are suppressed from the global log to prevent flooding
+- **Self-upgrade** — async version check on startup notifies you when a new release is available; press `[u]` to download and install the update with automatic backup and restart confirmation
 
 ### Roadmap
 
@@ -106,6 +107,32 @@ git clone https://github.com/CarlosDanielDev/maestro.git
 cd maestro
 cargo build --release
 # Binary at target/release/maestro
+```
+
+## Updating
+
+Maestro checks for new versions automatically on startup. When an update is available, a banner appears at the bottom of the TUI:
+
+```
+ UPDATE  New version v0.5.1 available  [u]pgrade  [Esc] dismiss
+```
+
+Press `u` to download and install the new version. Maestro backs up the current binary before replacing it and asks for restart confirmation:
+
+```
+ READY  v0.5.1 installed!  Restart now? [y]es  [n]o
+```
+
+If you decline, the upgrade takes effect on the next launch.
+
+You can also update through your original install method:
+
+```bash
+# Homebrew
+brew upgrade carlosdanieldev/tap/maestro --formula
+
+# From source
+git pull && cargo build --release
 ```
 
 ## Shell Completions
