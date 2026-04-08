@@ -86,7 +86,7 @@ pub fn parse_issues_json(json_str: &str) -> Result<Vec<GhIssue>> {
                 .get("state")
                 .and_then(|s| s.as_str())
                 .unwrap_or("open")
-                .to_string(),
+                .to_lowercase(),
             html_url: v
                 .get("html_url")
                 .or_else(|| v.get("url"))
@@ -536,6 +536,23 @@ mod tests {
     #[test]
     fn parse_issues_json_invalid_json_returns_err() {
         assert!(parse_issues_json("{not json}").is_err());
+    }
+
+    #[test]
+    fn parse_issues_json_normalizes_state_to_lowercase() {
+        let json = r#"[
+            {"number": 1, "title": "T", "body": "", "state": "OPEN", "url": "u", "labels": []},
+            {"number": 2, "title": "T2", "body": "", "state": "CLOSED", "url": "u2", "labels": []}
+        ]"#;
+        let issues = parse_issues_json(json).unwrap();
+        assert_eq!(
+            issues[0].state, "open",
+            "OPEN must be normalized to lowercase"
+        );
+        assert_eq!(
+            issues[1].state, "closed",
+            "CLOSED must be normalized to lowercase"
+        );
     }
 
     #[test]
