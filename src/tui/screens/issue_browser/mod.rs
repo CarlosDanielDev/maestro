@@ -19,15 +19,20 @@ pub(crate) enum OverlayAction {
     Confirm(Option<String>),
 }
 
-/// Inline prompt overlay shown before launching an issue session.
+/// Inline prompt overlay shown before launching issue session(s).
 #[derive(Debug, Clone)]
 pub(crate) struct IssuePromptOverlay {
     pub text: String,
-    pub issue_number: u64,
-    pub issue_title: String,
+    /// One entry per selected issue: `(issue_number, issue_title)`.
+    /// Always has at least one entry.
+    pub selected_issues: Vec<(u64, String)>,
 }
 
 impl IssuePromptOverlay {
+    pub fn is_multi(&self) -> bool {
+        self.selected_issues.len() > 1
+    }
+
     pub fn handle_input(&mut self, event: &Event) -> OverlayAction {
         if let Event::Key(KeyEvent {
             code,
@@ -85,7 +90,7 @@ pub struct IssueBrowserScreen {
     pub(crate) loading: bool,
     /// Last known visible height from draw, used for scroll sync.
     last_visible_height: usize,
-    /// Prompt overlay shown before launching a single-issue session.
+    /// Prompt overlay shown before launching issue session(s).
     pub(crate) prompt_overlay: Option<IssuePromptOverlay>,
 }
 
@@ -171,14 +176,27 @@ impl Screen for IssueBrowserScreen {
                     return ScreenAction::None;
                 }
                 OverlayAction::Confirm(custom_prompt) => {
-                    let issue_number = overlay.issue_number;
-                    let title = overlay.issue_title.clone();
-                    self.prompt_overlay = None;
-                    return ScreenAction::LaunchSession(SessionConfig {
-                        issue_number: Some(issue_number),
-                        title,
-                        custom_prompt,
-                    });
+                    let selected_issues =
+                        self.prompt_overlay.take().unwrap().selected_issues;
+
+                    if selected_issues.len() == 1 {
+                        let (number, title) = selected_issues.into_iter().next().unwrap();
+                        return ScreenAction::LaunchSession(SessionConfig {
+                            issue_number: Some(number),
+                            title,
+                            custom_prompt,
+                        });
+                    }
+
+                    let configs: Vec<SessionConfig> = selected_issues
+                        .into_iter()
+                        .map(|(number, title)| SessionConfig {
+                            issue_number: Some(number),
+                            title,
+                            custom_prompt: custom_prompt.clone(),
+                        })
+                        .collect();
+                    return ScreenAction::LaunchSessions(configs);
                 }
                 OverlayAction::None => return ScreenAction::None,
             }
@@ -288,6 +306,16 @@ mod tests {
         ]
     }
 
+    /// Build an IssueBrowserScreen with issues #1 and #3 already in selected_set.
+    fn screen_with_two_selected() -> IssueBrowserScreen {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select #1
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal); // move to #2
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal); // move to #3
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select #3
+        screen
+    }
+
     // ---- initial state ----
 
     #[test]
@@ -376,17 +404,21 @@ mod tests {
             .prompt_overlay
             .as_ref()
             .expect("overlay should be open");
-        assert_eq!(overlay.issue_number, 2);
-        assert_eq!(overlay.issue_title, "Fix crash");
+        assert_eq!(overlay.selected_issues.len(), 1);
+        assert_eq!(overlay.selected_issues[0].0, 2);
+        assert_eq!(overlay.selected_issues[0].1, "Fix crash");
     }
 
     #[test]
     fn issue_browser_enter_with_multi_select_returns_launch_sessions() {
-        let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select issue #1
-        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
-        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
-        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select issue #3
+        let mut screen = screen_with_two_selected();
+
+        // First Enter: opens overlay, does not launch
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None, "first Enter must open overlay");
+        assert!(screen.prompt_overlay.is_some());
+
+        // Second Enter (empty prompt): dispatches LaunchSessions
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         match action {
             ScreenAction::LaunchSessions(configs) => {
@@ -727,16 +759,14 @@ mod tests {
     fn make_overlay(number: u64, title: &str) -> IssuePromptOverlay {
         IssuePromptOverlay {
             text: String::new(),
-            issue_number: number,
-            issue_title: title.to_string(),
+            selected_issues: vec![(number, title.to_string())],
         }
     }
 
     fn overlay_with_text(number: u64, title: &str, text: &str) -> IssuePromptOverlay {
         IssuePromptOverlay {
             text: text.to_string(),
-            issue_number: number,
-            issue_title: title.to_string(),
+            selected_issues: vec![(number, title.to_string())],
         }
     }
 
@@ -824,8 +854,8 @@ mod tests {
     #[test]
     fn overlay_stores_issue_number_and_title() {
         let overlay = make_overlay(99, "Custom feature");
-        assert_eq!(overlay.issue_number, 99);
-        assert_eq!(overlay.issue_title, "Custom feature");
+        assert_eq!(overlay.selected_issues[0].0, 99);
+        assert_eq!(overlay.selected_issues[0].1, "Custom feature");
     }
 
     #[test]
@@ -878,17 +908,105 @@ mod tests {
     }
 
     #[test]
-    fn issue_browser_enter_with_multi_select_skips_overlay() {
-        let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select #1
-        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
-        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // select #2
+    fn issue_browser_enter_with_multi_select_opens_overlay() {
+        let mut screen = screen_with_two_selected();
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(
+            action,
+            ScreenAction::None,
+            "multi-select Enter must open overlay, not dispatch LaunchSessions"
+        );
+        assert!(screen.prompt_overlay.is_some());
+    }
+
+    // ---- Issue #130: multi-select prompt overlay ----
+
+    #[test]
+    fn multi_select_overlay_has_correct_selected_issues() {
+        let mut screen = screen_with_two_selected();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let overlay = screen.prompt_overlay.as_ref().unwrap();
+        let mut numbers: Vec<u64> = overlay.selected_issues.iter().map(|(n, _)| *n).collect();
+        numbers.sort();
+        assert_eq!(numbers, vec![1, 3]);
+        let titles: std::collections::HashMap<u64, &str> = overlay
+            .selected_issues
+            .iter()
+            .map(|(n, t)| (*n, t.as_str()))
+            .collect();
+        assert_eq!(titles[&1], "Add login");
+        assert_eq!(titles[&3], "Add logout");
+    }
+
+    #[test]
+    fn multi_select_overlay_confirm_with_text_returns_launch_sessions_with_prompt() {
+        let mut screen = screen_with_two_selected();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        for c in "focus on auth".chars() {
+            screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
+        }
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         match action {
-            ScreenAction::LaunchSessions(_) => {}
-            other => panic!("Expected LaunchSessions without overlay, got {:?}", other),
+            ScreenAction::LaunchSessions(configs) => {
+                assert_eq!(configs.len(), 2);
+                for config in &configs {
+                    assert_eq!(config.custom_prompt, Some("focus on auth".to_string()));
+                }
+            }
+            other => panic!("Expected LaunchSessions, got {:?}", other),
         }
         assert!(screen.prompt_overlay.is_none());
+    }
+
+    #[test]
+    fn multi_select_overlay_confirm_empty_returns_launch_sessions_with_none() {
+        let mut screen = screen_with_two_selected();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSessions(configs) => {
+                assert_eq!(configs.len(), 2);
+                for config in &configs {
+                    assert_eq!(config.custom_prompt, None);
+                }
+            }
+            other => panic!("Expected LaunchSessions, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn multi_select_overlay_cancel_preserves_selection() {
+        let mut screen = screen_with_two_selected();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        assert!(screen.prompt_overlay.is_none());
+        assert!(screen.selected_set.contains(&1));
+        assert!(screen.selected_set.contains(&3));
+    }
+
+    #[test]
+    fn single_issue_overlay_still_returns_launch_session() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        for c in "hint".chars() {
+            screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
+        }
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSession(config) => {
+                assert_eq!(config.issue_number, Some(1));
+                assert_eq!(config.custom_prompt, Some("hint".to_string()));
+            }
+            other => panic!("Expected LaunchSession, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn multi_select_overlay_desired_mode_is_insert() {
+        let mut screen = screen_with_two_selected();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(screen.desired_input_mode(), Some(InputMode::Insert));
     }
 
     #[test]

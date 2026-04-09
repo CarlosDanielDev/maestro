@@ -1,6 +1,6 @@
 use super::{FilterMode, IssueBrowserScreen, IssuePromptOverlay, sanitize_for_terminal};
 use crate::tui::help::centered_rect;
-use crate::tui::screens::{ScreenAction, SessionConfig, draw_keybinds_bar};
+use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
 use crate::tui::theme::Theme;
 use crossterm::event::KeyCode;
 use ratatui::{
@@ -80,19 +80,19 @@ impl IssueBrowserScreen {
             return ScreenAction::None;
         }
 
-        // If multi-select is active, launch all selected (skip overlay)
+        // If multi-select is active, open overlay with all selected issues
         if !self.selected_set.is_empty() {
-            let configs: Vec<SessionConfig> = self
+            let selected_issues: Vec<(u64, String)> = self
                 .issues
                 .iter()
                 .filter(|i| self.selected_set.contains(&i.number))
-                .map(|i| SessionConfig {
-                    issue_number: Some(i.number),
-                    title: i.title.clone(),
-                    custom_prompt: None,
-                })
+                .map(|i| (i.number, i.title.clone()))
                 .collect();
-            return ScreenAction::LaunchSessions(configs);
+            self.prompt_overlay = Some(IssuePromptOverlay {
+                text: String::new(),
+                selected_issues,
+            });
+            return ScreenAction::None;
         }
 
         // For single issue, open the prompt overlay
@@ -100,8 +100,7 @@ impl IssueBrowserScreen {
             let issue = &self.issues[idx];
             self.prompt_overlay = Some(IssuePromptOverlay {
                 text: String::new(),
-                issue_number: issue.number,
-                issue_title: issue.title.clone(),
+                selected_issues: vec![(issue.number, issue.title.clone())],
             });
         }
 
@@ -279,10 +278,18 @@ impl IssueBrowserScreen {
             None => return,
         };
 
-        let overlay_area = centered_rect(65, 55, area);
+        let is_multi = overlay.is_multi();
+        let height_pct = if is_multi { 65 } else { 55 };
+        let overlay_area = centered_rect(65, height_pct, area);
         f.render_widget(Clear, overlay_area);
 
-        let title = format!(" #{} — {} ", overlay.issue_number, overlay.issue_title);
+        let title = if is_multi {
+            format!(" {} issues selected ", overlay.selected_issues.len())
+        } else {
+            let (number, ref title) = overlay.selected_issues[0];
+            format!(" #{} — {} ", number, title)
+        };
+
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
@@ -291,23 +298,95 @@ impl IssueBrowserScreen {
         let inner = block.inner(overlay_area);
         f.render_widget(block, overlay_area);
 
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1), // hint
-                Constraint::Min(3),    // text area
-                Constraint::Length(1), // keybinds
-            ])
-            .split(inner);
+        if is_multi {
+            let issue_list_height = overlay.selected_issues.len().min(8) as u16 + 2;
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),                 // hint
+                    Constraint::Length(issue_list_height), // issue list
+                    Constraint::Min(3),                    // text area
+                    Constraint::Length(1),                 // keybinds
+                ])
+                .split(inner);
 
-        // Hint line
-        let hint = Paragraph::new(Line::from(Span::styled(
-            "Additional instructions (optional):",
-            Style::default().fg(theme.text_secondary),
-        )));
-        f.render_widget(hint, chunks[0]);
+            let hint = Paragraph::new(Line::from(Span::styled(
+                "Shared prompt for all sessions (optional):",
+                Style::default().fg(theme.text_secondary),
+            )));
+            f.render_widget(hint, chunks[0]);
 
-        // Text area
+            let issue_lines: Vec<Line> = overlay
+                .selected_issues
+                .iter()
+                .take(8)
+                .map(|(num, title)| {
+                    Line::from(vec![
+                        Span::styled(
+                            format!("  #{:<5} ", num),
+                            Style::default().fg(theme.accent_info),
+                        ),
+                        Span::styled(
+                            sanitize_for_terminal(title),
+                            Style::default().fg(theme.text_primary),
+                        ),
+                    ])
+                })
+                .collect();
+            let issue_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border_inactive));
+            f.render_widget(Paragraph::new(issue_lines).block(issue_block), chunks[1]);
+
+            Self::draw_overlay_text_area(f, chunks[2], overlay, theme);
+
+            draw_keybinds_bar(
+                f,
+                chunks[3],
+                &[
+                    ("Enter", "Launch all"),
+                    ("Shift+Enter", "New line"),
+                    ("Esc", "Cancel"),
+                ],
+                theme,
+            );
+        } else {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // hint
+                    Constraint::Min(3),    // text area
+                    Constraint::Length(1), // keybinds
+                ])
+                .split(inner);
+
+            let hint = Paragraph::new(Line::from(Span::styled(
+                "Additional instructions (optional):",
+                Style::default().fg(theme.text_secondary),
+            )));
+            f.render_widget(hint, chunks[0]);
+
+            Self::draw_overlay_text_area(f, chunks[1], overlay, theme);
+
+            draw_keybinds_bar(
+                f,
+                chunks[2],
+                &[
+                    ("Enter", "Launch"),
+                    ("Shift+Enter", "New line"),
+                    ("Esc", "Cancel"),
+                ],
+                theme,
+            );
+        }
+    }
+
+    fn draw_overlay_text_area(
+        f: &mut Frame,
+        area: Rect,
+        overlay: &IssuePromptOverlay,
+        theme: &Theme,
+    ) {
         let text_content = if overlay.text.is_empty() {
             Paragraph::new(Line::from(Span::styled(
                 "Type your prompt here...",
@@ -321,18 +400,6 @@ impl IssueBrowserScreen {
         let text_block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border_inactive));
-        f.render_widget(text_content.block(text_block), chunks[1]);
-
-        // Keybinds bar
-        draw_keybinds_bar(
-            f,
-            chunks[2],
-            &[
-                ("Enter", "Launch"),
-                ("Shift+Enter", "New line"),
-                ("Esc", "Cancel"),
-            ],
-            theme,
-        );
+        f.render_widget(text_content.block(text_block), area);
     }
 }

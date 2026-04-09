@@ -106,8 +106,7 @@ fn issue_browser_prompt_overlay_empty() {
     ]);
     screen.prompt_overlay = Some(IssuePromptOverlay {
         text: String::new(),
-        issue_number: 1,
-        issue_title: "Add login flow".to_string(),
+        selected_issues: vec![(1, "Add login flow".to_string())],
     });
 
     terminal
@@ -129,8 +128,7 @@ fn issue_browser_prompt_overlay_with_text() {
     ]);
     screen.prompt_overlay = Some(IssuePromptOverlay {
         text: "focus on error handling".to_string(),
-        issue_number: 1,
-        issue_title: "Add login flow".to_string(),
+        selected_issues: vec![(1, "Add login flow".to_string())],
     });
 
     terminal
