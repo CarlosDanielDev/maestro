@@ -7,6 +7,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use crate::tui::screens::settings::validation::{ValidationFeedback, ValidationSeverity};
 use crate::tui::theme::Theme;
 
 use super::WidgetAction;
@@ -59,13 +60,25 @@ impl NumberStepper {
         }
     }
 
-    pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
-        let label_style = if focused {
-            Style::default()
+    pub fn draw(
+        &self,
+        f: &mut Frame,
+        area: Rect,
+        theme: &Theme,
+        focused: bool,
+        validation: Option<&ValidationFeedback>,
+    ) {
+        let label_style = match validation.map(|v| v.severity) {
+            Some(ValidationSeverity::Error) => Style::default()
+                .fg(theme.accent_error)
+                .add_modifier(Modifier::BOLD),
+            Some(ValidationSeverity::Warning) => Style::default()
+                .fg(theme.accent_warning)
+                .add_modifier(Modifier::BOLD),
+            _ if focused => Style::default()
                 .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(theme.text_primary)
+                .add_modifier(Modifier::BOLD),
+            _ => Style::default().fg(theme.text_primary),
         };
 
         let left_dim = self.value <= self.min;
@@ -102,6 +115,32 @@ impl NumberStepper {
             Span::styled(" >", right_arrow),
         ]);
         f.render_widget(Paragraph::new(line), area);
+
+        // Render inline error/warning message on the next line
+        if let Some(fb) = validation
+            && !fb.message.is_empty()
+            && area.height > 1
+        {
+            let msg_area = Rect {
+                y: area.y + 1,
+                height: 1,
+                ..area
+            };
+            let color = match fb.severity {
+                ValidationSeverity::Error => theme.accent_error,
+                ValidationSeverity::Warning => theme.accent_warning,
+                ValidationSeverity::Valid => theme.text_muted,
+            };
+            let prefix_len = self.label.len() + 2;
+            let padding = " ".repeat(prefix_len);
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    format!("{}{}", padding, fb.message),
+                    Style::default().fg(color),
+                ))),
+                msg_area,
+            );
+        }
     }
 }
 
