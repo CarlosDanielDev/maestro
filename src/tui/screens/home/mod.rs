@@ -19,6 +19,7 @@ const QUICK_ACTIONS: &[(&str, char)] = &[
     ("Run Prompt", 'r'),
     ("Status", 's'),
     ("Cost Report", 'c'),
+    ("Token Report", 't'),
     ("Quit", 'q'),
 ];
 
@@ -44,7 +45,7 @@ pub struct HomeScreen {
 
 impl HomeScreen {
     pub const NUM_ACTIONS: usize = QUICK_ACTIONS.len();
-    pub const QUIT_ACTION_INDEX: usize = 5;
+    pub const QUIT_ACTION_INDEX: usize = 6;
     pub const QUICK_ACTIONS_PANE: FocusId = FocusId("home:quick_actions");
     pub const SUGGESTIONS_PANE: FocusId = FocusId("home:suggestions");
 
@@ -146,6 +147,7 @@ impl Screen for HomeScreen {
                 KeyCode::Char('R') => return ScreenAction::RefreshSuggestions,
                 KeyCode::Char('s') => return ScreenAction::Push(TuiMode::Overview),
                 KeyCode::Char('c') => return ScreenAction::Push(TuiMode::CostDashboard),
+                KeyCode::Char('t') => return ScreenAction::Push(TuiMode::TokenDashboard),
                 KeyCode::Char('q') => return ScreenAction::Quit,
                 KeyCode::Tab => {
                     self.focus_ring.next();

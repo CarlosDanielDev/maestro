@@ -466,6 +466,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("ull "),
         Span::styled("[$]", Style::default().fg(theme.keybind_key)),
         Span::raw("cost "),
+        Span::styled("[t]", Style::default().fg(theme.keybind_key)),
+        Span::raw("okens "),
         Span::styled("[?]", Style::default().fg(theme.keybind_key)),
         Span::raw("help "),
         Span::styled("[Esc]", Style::default().fg(theme.keybind_key)),
