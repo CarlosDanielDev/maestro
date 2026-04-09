@@ -17,9 +17,18 @@ fn filter_findings(findings: Vec<&Finding>, min_severity: Severity) -> Vec<&Find
 }
 
 fn count_by_severity(findings: &[&Finding]) -> (usize, usize, usize) {
-    let critical = findings.iter().filter(|f| f.severity == Severity::Critical).count();
-    let warning = findings.iter().filter(|f| f.severity == Severity::Warning).count();
-    let info = findings.iter().filter(|f| f.severity == Severity::Info).count();
+    let critical = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Critical)
+        .count();
+    let warning = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Warning)
+        .count();
+    let info = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Info)
+        .count();
     (critical, warning, info)
 }
 
@@ -148,7 +157,11 @@ impl ReportGenerator for MarkdownReporter {
         out.push_str(&format!("| CRITICAL | {} |\n", critical));
         out.push_str(&format!("| WARNING | {} |\n", warning));
         out.push_str(&format!("| INFO | {} |\n", info));
-        out.push_str(&format!("\n**Total findings:** {} — **Dead lines:** {}\n\n", filtered.len(), dead_lines));
+        out.push_str(&format!(
+            "\n**Total findings:** {} — **Dead lines:** {}\n\n",
+            filtered.len(),
+            dead_lines
+        ));
 
         let grouped = group_by_category(&filtered);
 

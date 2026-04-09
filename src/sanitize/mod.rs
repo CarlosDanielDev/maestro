@@ -5,10 +5,10 @@ mod scanner;
 pub mod screen;
 mod types;
 
-pub use analyzer::SmellAnalyzer;
-pub use scanner::{CodeScanner, RustScanner};
 use analyzer::ClaudeAnalyzer;
+pub use analyzer::SmellAnalyzer;
 pub use config::{OutputFormat, SanitizeConfig};
+pub use scanner::{CodeScanner, RustScanner};
 pub use types::{
     AnalysisResult, Finding, SanitizeReport, ScanResult, Severity, SmellCategory, SourceLocation,
 };
@@ -20,10 +20,7 @@ pub async fn cmd_sanitize(config: SanitizeConfig) -> anyhow::Result<()> {
     eprintln!("Phase 1: Scanning...");
     let scanner = RustScanner::new();
     let scan_result = scanner.scan(&config.path).await?;
-    eprintln!(
-        "  Found {} issues in Phase 1",
-        scan_result.findings.len()
-    );
+    eprintln!("  Found {} issues in Phase 1", scan_result.findings.len());
 
     // Phase 2: AI Analysis (optional)
     let analysis_result = if config.skip_ai {
@@ -42,7 +39,10 @@ pub async fn cmd_sanitize(config: SanitizeConfig) -> anyhow::Result<()> {
                 result
             }
             Err(e) => {
-                eprintln!("  Phase 2 failed: {}. Continuing with scan-only results.", e);
+                eprintln!(
+                    "  Phase 2 failed: {}. Continuing with scan-only results.",
+                    e
+                );
                 AnalysisResult::default()
             }
         }

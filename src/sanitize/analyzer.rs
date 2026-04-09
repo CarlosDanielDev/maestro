@@ -34,13 +34,7 @@ impl SmellAnalyzer for ClaudeAnalyzer {
         let prompt = build_prompt(scan, source_files).await?;
 
         let output = tokio::process::Command::new("claude")
-            .args([
-                "--print",
-                "--output-format",
-                "text",
-                "--model",
-                &self.model,
-            ])
+            .args(["--print", "--output-format", "text", "--model", &self.model])
             .arg(&prompt)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
@@ -99,7 +93,8 @@ async fn build_prompt(scan: &ScanResult, source_files: &[PathBuf]) -> anyhow::Re
     if scan.findings.is_empty() {
         prompt.push_str("Phase 1 scanner found no issues.\n\n");
     } else {
-        prompt.push_str("Phase 1 scanner already found these issues (DO NOT report these again):\n");
+        prompt
+            .push_str("Phase 1 scanner already found these issues (DO NOT report these again):\n");
         for f in &scan.findings {
             prompt.push_str(&format!(
                 "- {}:{}-{}: {:?}\n",
@@ -159,9 +154,7 @@ pub(crate) fn parse_response(raw_text: &str) -> Vec<Finding> {
             return findings;
         }
 
-        if let Ok(values) =
-            serde_json::from_str::<Vec<serde_json::Value>>(&trimmed[start..=end])
-        {
+        if let Ok(values) = serde_json::from_str::<Vec<serde_json::Value>>(&trimmed[start..=end]) {
             let findings: Vec<Finding> = values
                 .into_iter()
                 .filter_map(|v| serde_json::from_value(v).ok())

@@ -572,10 +572,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut body = String::from("struct Foo;\nimpl Foo {\n");
         for i in 0..205 {
-            body.push_str(&format!(
-                "    fn method_{}(&self) -> i32 {{ {} }}\n",
-                i, i
-            ));
+            body.push_str(&format!("    fn method_{}(&self) -> i32 {{ {} }}\n", i, i));
         }
         body.push_str("}\n");
 
@@ -671,9 +668,7 @@ fn main() {
         let unused_structs: Vec<_> = result
             .findings
             .iter()
-            .filter(|f| {
-                f.category == SmellCategory::UnusedStruct && f.message.contains("MyStruct")
-            })
+            .filter(|f| f.category == SmellCategory::UnusedStruct && f.message.contains("MyStruct"))
             .collect();
         assert!(
             unused_structs.is_empty(),

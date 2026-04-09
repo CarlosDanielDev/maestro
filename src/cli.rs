@@ -626,8 +626,7 @@ mod tests {
 
     #[test]
     fn sanitize_severity_accepts_warning() {
-        let cli =
-            Cli::try_parse_from(["maestro", "sanitize", "--severity", "warning"]).unwrap();
+        let cli = Cli::try_parse_from(["maestro", "sanitize", "--severity", "warning"]).unwrap();
         if let Some(Commands::Sanitize { severity, .. }) = cli.command {
             assert_eq!(severity, SanitizeSeverityFilter::Warning);
         } else {
@@ -637,8 +636,7 @@ mod tests {
 
     #[test]
     fn sanitize_severity_accepts_critical() {
-        let cli =
-            Cli::try_parse_from(["maestro", "sanitize", "--severity", "critical"]).unwrap();
+        let cli = Cli::try_parse_from(["maestro", "sanitize", "--severity", "critical"]).unwrap();
         if let Some(Commands::Sanitize { severity, .. }) = cli.command {
             assert_eq!(severity, SanitizeSeverityFilter::Critical);
         } else {
@@ -715,8 +713,17 @@ mod tests {
     #[test]
     fn sanitize_all_flags_coexist() {
         let cli = Cli::try_parse_from([
-            "maestro", "sanitize", "--path", "/project", "--output", "json", "--severity",
-            "warning", "--skip-ai", "--model", "haiku",
+            "maestro",
+            "sanitize",
+            "--path",
+            "/project",
+            "--output",
+            "json",
+            "--severity",
+            "warning",
+            "--skip-ai",
+            "--model",
+            "haiku",
         ])
         .unwrap();
         if let Some(Commands::Sanitize {
