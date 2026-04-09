@@ -118,6 +118,14 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     .push(app::TuiCommand::FetchSuggestionData);
             }
         }
+        ScreenAction::CheckForUpdate => {
+            app.activity_log.push_simple(
+                "UPDATE".into(),
+                "Checking for updates...".into(),
+                crate::tui::activity_log::LogLevel::Info,
+            );
+            crate::tui::background_tasks::spawn_version_check(app.data_tx.clone());
+        }
         ScreenAction::Quit => {
             app.running = false;
         }

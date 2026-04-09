@@ -7,6 +7,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-04-09
+
+### Added
+
+- "Update Maestro" quick action in dashboard home screen (`[u]` keybinding) — triggers version check and self-update flow
+
+### Fixed
+
+- Release workflow: Homebrew tap update now checks out the tap repo directly instead of relying on repository_dispatch, fixing silent failures when the token lacked Contents permission
+- Release workflow: use environment variables for all interpolated values (GitHub Actions security best practice)
+
 ## [0.6.0] - 2026-04-09
 
 ### Added
