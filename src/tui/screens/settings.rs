@@ -1,4 +1,6 @@
 use crate::config::Config;
+use crate::flags::FlagSource;
+use crate::flags::store::FeatureFlags;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
@@ -29,6 +31,7 @@ pub enum SettingsTab {
     Review,
     Theme,
     Layout,
+    Flags,
     Advanced,
 }
 
@@ -43,6 +46,7 @@ impl SettingsTab {
         Self::Review,
         Self::Theme,
         Self::Layout,
+        Self::Flags,
         Self::Advanced,
     ];
 
@@ -57,6 +61,7 @@ impl SettingsTab {
             Self::Review => "Review",
             Self::Theme => "Theme",
             Self::Layout => "Layout",
+            Self::Flags => "Flags",
             Self::Advanced => "Advanced",
         }
     }
@@ -78,10 +83,12 @@ pub struct SettingsScreen {
     confirm_discard: bool,
     save_flash: Option<std::time::Instant>,
     pub live_preview: bool,
+    feature_flags: FeatureFlags,
+    flags_selected: usize,
 }
 
 impl SettingsScreen {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, flags: FeatureFlags) -> Self {
         let fields_per_tab = Self::build_fields(&config);
         Self {
             original_config: config.clone(),
@@ -94,6 +101,8 @@ impl SettingsScreen {
             confirm_discard: false,
             save_flash: None,
             live_preview: false,
+            feature_flags: flags,
+            flags_selected: 0,
         }
     }
 
@@ -131,6 +140,7 @@ impl SettingsScreen {
             Self::build_review_fields(config),
             Self::build_theme_fields(config),
             Self::build_layout_fields(config),
+            vec![], // Flags tab — read-only, custom draw
             Self::build_advanced_fields(config),
         ]
     }
@@ -470,6 +480,7 @@ impl SettingsScreen {
         self.active_tab = (self.active_tab + 1) % SettingsTab::ALL.len();
         self.field_index = 0;
         self.scroll_offset = 0;
+        self.flags_selected = 0;
     }
 
     fn prev_tab(&mut self) {
@@ -480,6 +491,7 @@ impl SettingsScreen {
         };
         self.field_index = 0;
         self.scroll_offset = 0;
+        self.flags_selected = 0;
     }
 
     fn active_widget_needs_insert(&self) -> bool {
@@ -677,8 +689,8 @@ impl SettingsScreen {
             }
         }
 
-        // Advanced (tab 9)
-        if let Some(fields) = self.fields_per_tab.get(9) {
+        // Advanced (tab 10 — Flags tab at 9 has no widgets)
+        if let Some(fields) = self.fields_per_tab.get(10) {
             if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
                 self.config.concurrency.heavy_task_limit = w.value as usize;
             }
@@ -739,6 +751,70 @@ impl SettingsScreen {
                 height: 1,
             };
             fields[field_idx].widget.draw(f, field_area, theme, focused);
+        }
+    }
+
+    fn draw_feature_flags(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let flags = self.feature_flags.all_with_source();
+
+        // Header row
+        let header_style = Style::default()
+            .fg(theme.text_secondary)
+            .add_modifier(Modifier::BOLD);
+        let header = Line::from(vec![
+            Span::styled(format!("  {:<22}", "Flag"), header_style),
+            Span::styled(format!("{:<10}", "State"), header_style),
+            Span::styled(format!("{:<12}", "Source"), header_style),
+            Span::styled("Description", header_style),
+        ]);
+        if area.height > 0 {
+            f.render_widget(Paragraph::new(header), Rect { height: 1, ..area });
+        }
+
+        let data_area = Rect {
+            y: area.y + 1,
+            height: area.height.saturating_sub(1),
+            ..area
+        };
+
+        for (i, (flag, enabled, source)) in flags.iter().enumerate() {
+            if i >= data_area.height as usize {
+                break;
+            }
+            let focused = i == self.flags_selected;
+            let (state_label, state_style) = if *enabled {
+                ("+ ON ", Style::default().fg(theme.accent_success))
+            } else {
+                ("- OFF", Style::default().fg(theme.text_muted))
+            };
+            let source_label = match source {
+                FlagSource::Default => "default",
+                FlagSource::Config => "config",
+                FlagSource::Cli => "CLI",
+            };
+            let row_style = if focused {
+                Style::default()
+                    .fg(theme.accent_success)
+                    .add_modifier(Modifier::BOLD)
+            } else if *enabled {
+                Style::default().fg(theme.text_primary)
+            } else {
+                Style::default().fg(theme.text_muted)
+            };
+            let prefix = if focused { "> " } else { "  " };
+
+            let line = Line::from(vec![
+                Span::styled(format!("{}{:<22}", prefix, flag.name()), row_style),
+                Span::styled(format!("{:<10}", state_label), state_style),
+                Span::styled(format!("{:<12}", source_label), row_style),
+                Span::styled(flag.description(), row_style),
+            ]);
+            let row_area = Rect {
+                y: data_area.y + i as u16,
+                height: 1,
+                ..data_area
+            };
+            f.render_widget(Paragraph::new(line), row_area);
         }
     }
 }
@@ -811,16 +887,29 @@ impl Screen for SettingsScreen {
                 ScreenAction::None
             }
             (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                self.field_index = self.field_index.saturating_sub(1);
+                if self.active_tab() == SettingsTab::Flags {
+                    self.flags_selected = self.flags_selected.saturating_sub(1);
+                } else {
+                    self.field_index = self.field_index.saturating_sub(1);
+                }
                 ScreenAction::None
             }
             (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                if self.field_count() > 0 && self.field_index + 1 < self.field_count() {
+                if self.active_tab() == SettingsTab::Flags {
+                    let max = crate::flags::Flag::all().len().saturating_sub(1);
+                    if self.flags_selected < max {
+                        self.flags_selected += 1;
+                    }
+                } else if self.field_count() > 0 && self.field_index + 1 < self.field_count() {
                     self.field_index += 1;
                 }
                 ScreenAction::None
             }
             _ => {
+                // Flags tab is read-only — skip widget delegation
+                if self.active_tab() == SettingsTab::Flags {
+                    return ScreenAction::None;
+                }
                 // Delegate to active widget for non-navigation keys
                 let idx = self.field_index;
                 let tab = self.active_tab;
@@ -886,7 +975,11 @@ impl Screen for SettingsScreen {
             chunks[1],
         );
 
-        self.draw_fields(f, chunks[2], theme);
+        if self.active_tab() == SettingsTab::Flags {
+            self.draw_feature_flags(f, chunks[2], theme);
+        } else {
+            self.draw_fields(f, chunks[2], theme);
+        }
 
         if self.confirm_discard {
             f.render_widget(
@@ -900,6 +993,13 @@ impl Screen for SettingsScreen {
                     Span::styled("(y/n)", Style::default().fg(theme.text_secondary)),
                 ])),
                 chunks[3],
+            );
+        } else if self.active_tab() == SettingsTab::Flags {
+            draw_keybinds_bar(
+                f,
+                chunks[3],
+                &[("Tab", "Tab"), ("↑/↓", "Navigate"), ("Esc", "Back")],
+                theme,
             );
         } else {
             draw_keybinds_bar(
@@ -965,8 +1065,13 @@ impl KeymapProvider for SettingsScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flags::store::FeatureFlags as TestFeatureFlags;
     use crate::tui::screens::test_helpers::key_event;
     use crossterm::event::{KeyEventKind, KeyEventState};
+
+    fn make_flags() -> TestFeatureFlags {
+        TestFeatureFlags::default()
+    }
 
     fn make_config() -> Config {
         let toml_str = r#"
@@ -988,20 +1093,20 @@ alert_threshold_pct = 80
 
     #[test]
     fn initial_tab_is_project() {
-        let screen = SettingsScreen::new(make_config());
+        let screen = SettingsScreen::new(make_config(), make_flags());
         assert_eq!(screen.active_tab(), SettingsTab::Project);
     }
 
     #[test]
     fn tab_cycles_right() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
         assert_eq!(screen.active_tab(), SettingsTab::Sessions);
     }
 
     #[test]
     fn tab_wraps_right() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         for _ in 0..SettingsTab::ALL.len() {
             screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
         }
@@ -1010,14 +1115,14 @@ alert_threshold_pct = 80
 
     #[test]
     fn tab_wraps_left() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         screen.handle_input(&key_event(KeyCode::BackTab), InputMode::Normal);
         assert_eq!(screen.active_tab(), SettingsTab::Advanced);
     }
 
     #[test]
     fn field_navigation() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         assert_eq!(screen.field_index, 0);
         screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert_eq!(screen.field_index, 1);
@@ -1027,14 +1132,14 @@ alert_threshold_pct = 80
 
     #[test]
     fn esc_returns_pop() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
     }
 
     #[test]
     fn tab_switch_resets_field_index() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert!(screen.field_index > 0);
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1043,7 +1148,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn toggle_widget_changes_config() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         // Navigate to Notifications tab (index 4)
         for _ in 0..4 {
             screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1058,7 +1163,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn number_stepper_changes_config() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         // Navigate to Sessions tab
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
         assert_eq!(screen.active_tab(), SettingsTab::Sessions);
@@ -1071,7 +1176,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn dropdown_cycles_config() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         // Navigate to GitHub tab (index 3)
         for _ in 0..3 {
             screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1090,26 +1195,33 @@ alert_threshold_pct = 80
 
     #[test]
     fn desired_input_mode_normal_by_default() {
-        let screen = SettingsScreen::new(make_config());
+        let screen = SettingsScreen::new(make_config(), make_flags());
         assert_eq!(screen.desired_input_mode(), Some(InputMode::Normal));
     }
 
     #[test]
     fn keybindings_returns_non_empty() {
-        let screen = SettingsScreen::new(make_config());
+        let screen = SettingsScreen::new(make_config(), make_flags());
         let groups = screen.keybindings();
         assert!(!groups.is_empty());
     }
 
     #[test]
-    fn all_tabs_have_fields() {
-        let screen = SettingsScreen::new(make_config());
+    fn all_tabs_have_fields_except_flags() {
+        let screen = SettingsScreen::new(make_config(), make_flags());
         for (i, tab) in SettingsTab::ALL.iter().enumerate() {
-            assert!(
-                !screen.fields_per_tab[i].is_empty(),
-                "Tab {:?} has no fields",
-                tab
-            );
+            if *tab == SettingsTab::Flags {
+                assert!(
+                    screen.fields_per_tab[i].is_empty(),
+                    "Flags tab must have no widget fields"
+                );
+            } else {
+                assert!(
+                    !screen.fields_per_tab[i].is_empty(),
+                    "Tab {:?} has no fields",
+                    tab
+                );
+            }
         }
     }
 
@@ -1117,13 +1229,13 @@ alert_threshold_pct = 80
 
     #[test]
     fn initially_not_dirty() {
-        let screen = SettingsScreen::new(make_config());
+        let screen = SettingsScreen::new(make_config(), make_flags());
         assert!(!screen.is_dirty());
     }
 
     #[test]
     fn modify_makes_dirty() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         // Toggle desktop notification
         for _ in 0..4 {
             screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1134,7 +1246,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn ctrl_r_resets_dirty() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         let orig_desktop = screen.config.notifications.desktop;
         // Modify
         for _ in 0..4 {
@@ -1156,7 +1268,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn esc_with_dirty_shows_confirmation() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         // Modify
         for _ in 0..4 {
             screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1171,7 +1283,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn confirm_discard_y_pops() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         screen.confirm_discard = true;
         let action = screen.handle_input(&key_event(KeyCode::Char('y')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
@@ -1179,7 +1291,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn confirm_discard_n_cancels() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         screen.confirm_discard = true;
         let action = screen.handle_input(&key_event(KeyCode::Char('n')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
@@ -1188,7 +1300,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn ctrl_s_saves_and_returns_update_config() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         // Modify
         for _ in 0..4 {
             screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1227,7 +1339,8 @@ alert_threshold_pct = 80
         )
         .unwrap();
         let config = Config::load(f.path()).unwrap();
-        let mut screen = SettingsScreen::new(config).with_config_path(f.path().to_path_buf());
+        let mut screen =
+            SettingsScreen::new(config, make_flags()).with_config_path(f.path().to_path_buf());
         // Modify desktop notifications
         for _ in 0..4 {
             screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1271,7 +1384,8 @@ desktop = true
         )
         .unwrap();
         let config = Config::load(f.path()).unwrap();
-        let mut screen = SettingsScreen::new(config).with_config_path(f.path().to_path_buf());
+        let mut screen =
+            SettingsScreen::new(config, make_flags()).with_config_path(f.path().to_path_buf());
 
         // Modify: sessions tab, increment max_concurrent
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1316,7 +1430,8 @@ alert_threshold_pct = 80
         )
         .unwrap();
         let config = Config::load(f.path()).unwrap();
-        let mut screen = SettingsScreen::new(config).with_config_path(f.path().to_path_buf());
+        let mut screen =
+            SettingsScreen::new(config, make_flags()).with_config_path(f.path().to_path_buf());
 
         // Modify
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1339,7 +1454,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn integration_modify_ctrl_r_verify_all_fields_reset() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         let orig = screen.config.clone();
 
         // Modify multiple things
@@ -1367,7 +1482,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn integration_theme_preview_on_change_emits_preview() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
 
         // Go to Theme tab (index 7)
         for _ in 0..7 {
@@ -1389,7 +1504,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn integration_theme_preview_reset_clears_preview() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         screen.live_preview = true;
 
         let ctrl_r = Event::Key(KeyEvent {
@@ -1405,7 +1520,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn integration_layout_tab_fields() {
-        let mut screen = SettingsScreen::new(make_config());
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
         // Navigate to Layout tab (index 8)
         for _ in 0..8 {
             screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1423,12 +1538,147 @@ alert_threshold_pct = 80
 
     #[test]
     fn integration_keybindings_grouped_logically() {
-        let screen = SettingsScreen::new(make_config());
+        let screen = SettingsScreen::new(make_config(), make_flags());
         let groups = screen.keybindings();
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].title, "Navigation");
         assert_eq!(groups[1].title, "Actions");
         assert!(groups[0].bindings.len() >= 3);
         assert!(groups[1].bindings.len() >= 2);
+    }
+
+    // --- Issue #146: Feature flags display tests ---
+
+    #[test]
+    fn feature_flags_tab_exists_in_all() {
+        assert!(
+            SettingsTab::ALL.contains(&SettingsTab::Flags),
+            "Flags tab must be in ALL"
+        );
+    }
+
+    #[test]
+    fn feature_flags_tab_label_is_flags() {
+        assert_eq!(SettingsTab::Flags.label(), "Flags");
+    }
+
+    #[test]
+    fn flags_tab_has_no_widget_fields() {
+        let screen = SettingsScreen::new(make_config(), make_flags());
+        let flags_idx = SettingsTab::ALL
+            .iter()
+            .position(|t| *t == SettingsTab::Flags)
+            .unwrap();
+        assert!(screen.fields_per_tab[flags_idx].is_empty());
+    }
+
+    #[test]
+    fn flags_navigation_up_down() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        // Navigate to Flags tab
+        let flags_idx = SettingsTab::ALL
+            .iter()
+            .position(|t| *t == SettingsTab::Flags)
+            .unwrap();
+        for _ in 0..flags_idx {
+            screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        }
+        assert_eq!(screen.active_tab(), SettingsTab::Flags);
+        assert_eq!(screen.flags_selected, 0);
+
+        // Down
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.flags_selected, 1);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.flags_selected, 2);
+
+        // Up
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.flags_selected, 1);
+
+        // Up at 0 stays at 0
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.flags_selected, 0);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.flags_selected, 0);
+    }
+
+    #[test]
+    fn flags_navigation_bounded_by_flag_count() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        let flags_idx = SettingsTab::ALL
+            .iter()
+            .position(|t| *t == SettingsTab::Flags)
+            .unwrap();
+        for _ in 0..flags_idx {
+            screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        }
+        // Press Down more times than there are flags
+        for _ in 0..20 {
+            screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        }
+        let max = crate::flags::Flag::all().len() - 1;
+        assert_eq!(screen.flags_selected, max);
+    }
+
+    #[test]
+    fn flags_tab_read_only_ignores_widget_keys() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        let flags_idx = SettingsTab::ALL
+            .iter()
+            .position(|t| *t == SettingsTab::Flags)
+            .unwrap();
+        for _ in 0..flags_idx {
+            screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        }
+        // Space, Enter, 'l' should all be no-ops
+        let action = screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+    }
+
+    #[test]
+    fn advanced_tab_still_works_after_flags_reindex() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        // Navigate to Advanced tab (last)
+        let adv_idx = SettingsTab::ALL
+            .iter()
+            .position(|t| *t == SettingsTab::Advanced)
+            .unwrap();
+        for _ in 0..adv_idx {
+            screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        }
+        assert_eq!(screen.active_tab(), SettingsTab::Advanced);
+        assert!(screen.field_count() > 0, "Advanced tab must have fields");
+
+        // Modify heavy_task_limit
+        let orig = screen.config.concurrency.heavy_task_limit;
+        screen.handle_input(&key_event(KeyCode::Char('l')), InputMode::Normal);
+        assert_eq!(screen.config.concurrency.heavy_task_limit, orig + 1);
+    }
+
+    #[test]
+    fn feature_flags_with_mixed_sources() {
+        use std::collections::HashMap;
+        let mut config_flags = HashMap::new();
+        config_flags.insert("ci_auto_fix".to_string(), true);
+        let flags = TestFeatureFlags::new(config_flags, vec!["model_routing".to_string()], vec![]);
+        let screen = SettingsScreen::new(make_config(), flags);
+        let entries = screen.feature_flags.all_with_source();
+
+        let ci = entries
+            .iter()
+            .find(|(f, _, _)| *f == crate::flags::Flag::CiAutoFix)
+            .unwrap();
+        assert!(ci.1);
+        assert_eq!(ci.2, crate::flags::FlagSource::Config);
+
+        let mr = entries
+            .iter()
+            .find(|(f, _, _)| *f == crate::flags::Flag::ModelRouting)
+            .unwrap();
+        assert!(mr.1);
+        assert_eq!(mr.2, crate::flags::FlagSource::Cli);
     }
 }
