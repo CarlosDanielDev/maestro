@@ -120,6 +120,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::QueueConfirmation => {
+            if let Some(ref mut screen) = app.queue_confirmation_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
         TuiMode::CompletionSummary => {
             // Draw overview underneath as backdrop
             let sessions = app.pool.all_sessions();
@@ -152,8 +157,44 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
     }
 
-    // Delegate to activity log widget
-    app.activity_log.draw(f, chunks[2], &app.theme);
+    // Conditionally split activity area for CI monitor
+    let has_ci_checks = app.gh_auth_ok && !app.ci_check_details.is_empty();
+    if has_ci_checks {
+        let ci_pr_count = app.ci_check_details.len() as u16;
+        let ci_height = (ci_pr_count * 6).min(chunks[2].height / 2).max(4);
+        let activity_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(ci_height), Constraint::Min(3)])
+            .split(chunks[2]);
+
+        // Render CI monitor(s)
+        let ci_area = activity_chunks[0];
+        if app.ci_check_details.len() == 1 {
+            let (&pr_number, details) = app.ci_check_details.iter().next().unwrap();
+            let widget =
+                crate::tui::widgets::CiMonitorWidget::new(details, &app.theme).pr_number(pr_number);
+            ratatui::widgets::Widget::render(widget, ci_area, f.buffer_mut());
+        } else {
+            let constraints: Vec<Constraint> = app
+                .ci_check_details
+                .keys()
+                .map(|_| Constraint::Ratio(1, app.ci_check_details.len() as u32))
+                .collect();
+            let pr_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(constraints)
+                .split(ci_area);
+            for (i, (&pr_number, details)) in app.ci_check_details.iter().enumerate() {
+                let widget = crate::tui::widgets::CiMonitorWidget::new(details, &app.theme)
+                    .pr_number(pr_number)
+                    .max_visible_rows(3);
+                ratatui::widgets::Widget::render(widget, pr_chunks[i], f.buffer_mut());
+            }
+        }
+        app.activity_log.draw(f, activity_chunks[1], &app.theme);
+    } else {
+        app.activity_log.draw(f, chunks[2], &app.theme);
+    }
 
     // Draw gh auth warning banner if authentication lost
     if !app.gh_auth_ok {
@@ -189,6 +230,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 .map(|s| (s.keybindings(), s.desired_input_mode())),
             TuiMode::PromptInput => app
                 .prompt_input_screen
+                .as_ref()
+                .map(|s| (s.keybindings(), s.desired_input_mode())),
+            TuiMode::QueueConfirmation => app
+                .queue_confirmation_screen
                 .as_ref()
                 .map(|s| (s.keybindings(), s.desired_input_mode())),
             TuiMode::CompletionSummary => None,
@@ -358,6 +403,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::PromptInput => "Prompt",
         TuiMode::CompletionSummary => "Summary",
         TuiMode::ContinuousPause => "Paused",
+        TuiMode::QueueConfirmation => "Queue",
     };
 
     let help = Line::from(vec![
