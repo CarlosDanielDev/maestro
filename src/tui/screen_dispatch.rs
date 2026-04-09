@@ -1,0 +1,177 @@
+use super::app;
+use super::screens::{self, Screen, ScreenAction};
+use crate::github::types::GhIssue;
+use crossterm::event::Event;
+
+pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Option<ScreenAction> {
+    use crate::tui::navigation::InputMode;
+
+    let screen: &mut dyn Screen = match app.tui_mode {
+        app::TuiMode::Dashboard => app.home_screen.as_mut()?,
+        app::TuiMode::IssueBrowser => app.issue_browser_screen.as_mut()?,
+        app::TuiMode::MilestoneView => app.milestone_screen.as_mut()?,
+        app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
+        app::TuiMode::QueueConfirmation => app.queue_confirmation_screen.as_mut()?,
+        _ => return None,
+    };
+    let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
+    Some(screen.handle_input(event, mode))
+}
+
+/// Returns milestone issues only when navigating from `MilestoneView`.
+fn milestone_issues_if_applicable(app: &app::App) -> Option<Vec<GhIssue>> {
+    if app.tui_mode != app::TuiMode::MilestoneView {
+        return None;
+    }
+    app.milestone_screen.as_ref().and_then(|ms| {
+        ms.selected_milestone().and_then(|entry| {
+            let open_issues: Vec<GhIssue> = entry
+                .issues
+                .iter()
+                .filter(|i| i.state == "open")
+                .cloned()
+                .collect();
+            if open_issues.is_empty() {
+                None
+            } else {
+                Some(open_issues)
+            }
+        })
+    })
+}
+
+/// Process a ScreenAction returned by a screen's input handler.
+pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
+    match action {
+        ScreenAction::None => {}
+        ScreenAction::Push(mode) => {
+            match mode {
+                app::TuiMode::IssueBrowser => {
+                    if let Some(issues) = milestone_issues_if_applicable(app) {
+                        app.issue_browser_screen = Some(screens::IssueBrowserScreen::new(issues));
+                    } else {
+                        // Fresh screen for "All Issues" — never reuse a
+                        // milestone-scoped screen (fixes #117).
+                        let mut screen = screens::IssueBrowserScreen::new(vec![]);
+                        screen.loading = true;
+                        app.issue_browser_screen = Some(screen);
+                        app.pending_commands.push(app::TuiCommand::FetchIssues);
+                    }
+                }
+                app::TuiMode::MilestoneView => {
+                    if app.milestone_screen.is_none() {
+                        let mut screen = screens::MilestoneScreen::new(vec![]);
+                        screen.loading = true;
+                        app.milestone_screen = Some(screen);
+                        app.pending_commands.push(app::TuiCommand::FetchMilestones);
+                    }
+                }
+                app::TuiMode::PromptInput => {
+                    if app.prompt_input_screen.is_none() {
+                        app.prompt_input_screen = Some(screens::PromptInputScreen::new());
+                    }
+                }
+                _ => {}
+            }
+            app.tui_mode = mode;
+        }
+        ScreenAction::Pop => {
+            match app.tui_mode {
+                app::TuiMode::IssueBrowser => {
+                    app.issue_browser_screen = None;
+                }
+                app::TuiMode::MilestoneView => {
+                    app.milestone_screen = None;
+                }
+                app::TuiMode::PromptInput => {
+                    app.prompt_input_screen = None;
+                }
+                app::TuiMode::QueueConfirmation => {
+                    app.queue_confirmation_screen = None;
+                }
+                _ => {}
+            }
+            app.tui_mode = app::TuiMode::Dashboard;
+        }
+        ScreenAction::RefreshSuggestions => {
+            let already_loading = app
+                .home_screen
+                .as_ref()
+                .is_some_and(|s| s.loading_suggestions);
+            if !already_loading {
+                if let Some(ref mut screen) = app.home_screen {
+                    screen.start_loading_suggestions();
+                }
+                app.pending_commands
+                    .push(app::TuiCommand::FetchSuggestionData);
+            }
+        }
+        ScreenAction::Quit => {
+            app.running = false;
+        }
+        ScreenAction::LaunchSession(config) => {
+            app.pending_commands
+                .push(app::TuiCommand::LaunchSession(config));
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::LaunchSessions(configs) => {
+            app.pending_commands
+                .push(app::TuiCommand::LaunchSessions(configs));
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::LaunchPromptSession(config) => {
+            app.prompt_input_screen = None;
+            app.pending_commands
+                .push(app::TuiCommand::LaunchPromptSession(config));
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::LaunchConflictFix(config) => {
+            app.spawn_conflict_fix_session(&config);
+            app.completion_summary = None;
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::LaunchQueue(configs) => {
+            use crate::work::dependencies::DependencyGraph;
+            use crate::work::executor::QueueExecutor;
+            use crate::work::queue::WorkQueue;
+            use crate::work::types::WorkItem;
+
+            // Build a WorkQueue from the session configs for the executor
+            let issue_numbers: Vec<u64> = configs.iter().filter_map(|c| c.issue_number).collect();
+
+            // Build a minimal dependency graph (items are already validated by QueueConfirmation)
+            let items: Vec<WorkItem> = configs
+                .iter()
+                .filter_map(|c| {
+                    c.issue_number.map(|n| {
+                        WorkItem::from_issue(crate::github::types::GhIssue {
+                            number: n,
+                            title: c.title.clone(),
+                            body: String::new(),
+                            labels: vec![],
+                            state: "open".to_string(),
+                            html_url: String::new(),
+                            milestone: None,
+                            assignees: vec![],
+                        })
+                    })
+                })
+                .collect();
+            let graph = DependencyGraph::build(&items);
+
+            if let Ok(queue) = WorkQueue::validate_selection(&issue_numbers, &graph) {
+                let executor = QueueExecutor::new(&queue);
+                app.queue_launch_configs = Some(configs);
+                app.queue_executor = Some(executor);
+                app.advance_queue_and_launch();
+                app.completion_summary_dismissed = false;
+                app.tui_mode = app::TuiMode::QueueExecution;
+            } else {
+                // Fallback: launch all at once if queue validation fails
+                app.pending_commands
+                    .push(app::TuiCommand::LaunchSessions(configs));
+                app.tui_mode = app::TuiMode::Overview;
+            }
+        }
+    }
+}
