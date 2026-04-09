@@ -172,6 +172,64 @@ async fn event_loop(
                         continue;
                     }
 
+                    // QueueExecution overlay intercepts keys when awaiting decision
+                    if app.tui_mode == app::TuiMode::QueueExecution {
+                        use crate::work::executor::{ExecutorPhase, FailureAction};
+                        match (key.code, key.modifiers) {
+                            (KeyCode::Esc, _) => {
+                                // Show session overview without stopping the queue
+                                app.tui_mode = app::TuiMode::Overview;
+                            }
+                            (KeyCode::Char('q'), _)
+                            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                                app.running = false;
+                                return Ok(());
+                            }
+                            (KeyCode::Char('r'), _) => {
+                                if let Some(ref mut exec) = app.queue_executor
+                                    && matches!(
+                                        exec.phase(),
+                                        ExecutorPhase::AwaitingDecision { .. }
+                                    )
+                                {
+                                    exec.apply_decision(FailureAction::Retry);
+                                    app.advance_queue_and_launch();
+                                }
+                            }
+                            (KeyCode::Char('s'), _) => {
+                                if let Some(ref mut exec) = app.queue_executor
+                                    && matches!(
+                                        exec.phase(),
+                                        ExecutorPhase::AwaitingDecision { .. }
+                                    )
+                                {
+                                    exec.apply_decision(FailureAction::Skip);
+                                    if exec.is_finished() {
+                                        app.completion_summary =
+                                            Some(app.build_completion_summary());
+                                        app.tui_mode = app::TuiMode::CompletionSummary;
+                                    } else {
+                                        app.advance_queue_and_launch();
+                                    }
+                                }
+                            }
+                            (KeyCode::Char('a'), _) => {
+                                if let Some(ref mut exec) = app.queue_executor
+                                    && matches!(
+                                        exec.phase(),
+                                        ExecutorPhase::AwaitingDecision { .. }
+                                    )
+                                {
+                                    exec.apply_decision(FailureAction::Abort);
+                                    app.completion_summary = Some(app.build_completion_summary());
+                                    app.tui_mode = app::TuiMode::CompletionSummary;
+                                }
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     // CompletionSummary overlay intercepts all keys
                     if app.tui_mode == app::TuiMode::CompletionSummary {
                         match (key.code, key.modifiers) {
@@ -200,29 +258,70 @@ async fn event_loop(
                                 app.tui_mode = app::TuiMode::Overview;
                             }
                             (KeyCode::Char('f'), _) => {
-                                let needs_review: Vec<_> = app
+                                // First check for conflict suggestions
+                                let has_suggestions = app
                                     .completion_summary
                                     .as_ref()
-                                    .into_iter()
-                                    .flat_map(|s| &s.sessions)
-                                    .filter(|s| {
-                                        s.status
-                                            == crate::session::types::SessionStatus::NeedsReview
-                                    })
-                                    .cloned()
-                                    .collect();
-                                if !needs_review.is_empty() {
-                                    for sl in &needs_review {
-                                        app.spawn_gate_fix_session(sl);
+                                    .map(|s| s.has_conflict_suggestions())
+                                    .unwrap_or(false);
+                                if has_suggestions {
+                                    let config = app.completion_summary.as_ref().and_then(|s| {
+                                        s.suggestions.get(s.selected_suggestion).map(|sg| {
+                                            screens::ConflictFixConfig {
+                                                pr_number: sg.pr_number,
+                                                issue_number: sg.issue_number,
+                                                branch: sg.branch.clone(),
+                                                conflicting_files: sg.conflicting_files.clone(),
+                                            }
+                                        })
+                                    });
+                                    if let Some(config) = config {
+                                        app.spawn_conflict_fix_session(&config);
+                                        app.completion_summary = None;
+                                        app.tui_mode = app::TuiMode::Overview;
                                     }
-                                    app.completion_summary = None;
-                                    app.tui_mode = app::TuiMode::Overview;
+                                } else {
+                                    // Fallback: gate fix for NeedsReview sessions
+                                    let needs_review: Vec<_> = app
+                                        .completion_summary
+                                        .as_ref()
+                                        .into_iter()
+                                        .flat_map(|s| &s.sessions)
+                                        .filter(|s| {
+                                            s.status
+                                                == crate::session::types::SessionStatus::NeedsReview
+                                        })
+                                        .cloned()
+                                        .collect();
+                                    if !needs_review.is_empty() {
+                                        for sl in &needs_review {
+                                            app.spawn_gate_fix_session(sl);
+                                        }
+                                        app.completion_summary = None;
+                                        app.tui_mode = app::TuiMode::Overview;
+                                    }
                                 }
                             }
                             (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+                                // Navigate suggestion selection
+                                if let Some(ref mut summary) = app.completion_summary
+                                    && !summary.suggestions.is_empty()
+                                {
+                                    summary.selected_suggestion =
+                                        summary.selected_suggestion.saturating_sub(1);
+                                }
                                 app.panel_view.scroll_up();
                             }
                             (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+                                // Navigate suggestion selection
+                                if let Some(ref mut summary) = app.completion_summary
+                                    && !summary.suggestions.is_empty()
+                                {
+                                    let max = summary.suggestions.len().saturating_sub(1);
+                                    if summary.selected_suggestion < max {
+                                        summary.selected_suggestion += 1;
+                                    }
+                                }
                                 app.panel_view.scroll_down();
                             }
                             _ => {}
@@ -346,7 +445,8 @@ async fn event_loop(
                                 | app::TuiMode::PromptInput
                                 | app::TuiMode::CompletionSummary
                                 | app::TuiMode::ContinuousPause
-                                | app::TuiMode::QueueConfirmation => app::TuiMode::Overview,
+                                | app::TuiMode::QueueConfirmation
+                                | app::TuiMode::QueueExecution => app::TuiMode::Overview,
                             };
                         }
                         // Esc returns to dashboard when no sessions are running,
@@ -527,7 +627,9 @@ async fn event_loop(
             && app.continuous_mode.is_some()
             && !matches!(
                 app.tui_mode,
-                app::TuiMode::ContinuousPause | app::TuiMode::CompletionSummary
+                app::TuiMode::ContinuousPause
+                    | app::TuiMode::CompletionSummary
+                    | app::TuiMode::QueueExecution
             )
         {
             let all_terminal = app
@@ -557,9 +659,43 @@ async fn event_loop(
             // Otherwise, tick_work_assigner will pick the next issue on the next loop iteration
         }
 
+        // Queue executor: auto-advance when current session completes
+        if app.queue_executor.is_some() && app.all_done() {
+            use crate::work::executor::ExecutorPhase;
+            let should_advance = app
+                .queue_executor
+                .as_ref()
+                .map(|e| matches!(e.phase(), ExecutorPhase::Running { .. }))
+                .unwrap_or(false);
+
+            if should_advance {
+                let last_session_succeeded = app
+                    .pool
+                    .all_sessions()
+                    .last()
+                    .map(|s| matches!(s.status, crate::session::types::SessionStatus::Completed))
+                    .unwrap_or(false);
+
+                if last_session_succeeded {
+                    if let Some(ref mut exec) = app.queue_executor {
+                        exec.mark_success();
+                        if exec.is_finished() {
+                            app.completion_summary = Some(app.build_completion_summary());
+                            app.tui_mode = app::TuiMode::CompletionSummary;
+                        } else {
+                            app.advance_queue_and_launch();
+                        }
+                    }
+                } else if let Some(ref mut exec) = app.queue_executor {
+                    exec.mark_failure();
+                }
+            }
+        }
+
         // Auto-transition when all sessions complete (fires once)
         if app.all_done()
             && app.continuous_mode.is_none()
+            && app.queue_executor.is_none()
             && app.completion_summary.is_none()
             && !app.completion_summary_dismissed
             && !matches!(
@@ -711,6 +847,54 @@ fn handle_screen_action(app: &mut App, action: ScreenAction) {
             app.pending_commands
                 .push(app::TuiCommand::LaunchPromptSession(config));
             app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::LaunchConflictFix(config) => {
+            app.spawn_conflict_fix_session(&config);
+            app.completion_summary = None;
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::LaunchQueue(configs) => {
+            use crate::work::dependencies::DependencyGraph;
+            use crate::work::executor::QueueExecutor;
+            use crate::work::queue::WorkQueue;
+            use crate::work::types::WorkItem;
+
+            // Build a WorkQueue from the session configs for the executor
+            let issue_numbers: Vec<u64> = configs.iter().filter_map(|c| c.issue_number).collect();
+
+            // Build a minimal dependency graph (items are already validated by QueueConfirmation)
+            let items: Vec<WorkItem> = configs
+                .iter()
+                .filter_map(|c| {
+                    c.issue_number.map(|n| {
+                        WorkItem::from_issue(crate::github::types::GhIssue {
+                            number: n,
+                            title: c.title.clone(),
+                            body: String::new(),
+                            labels: vec![],
+                            state: "open".to_string(),
+                            html_url: String::new(),
+                            milestone: None,
+                            assignees: vec![],
+                        })
+                    })
+                })
+                .collect();
+            let graph = DependencyGraph::build(&items);
+
+            if let Ok(queue) = WorkQueue::validate_selection(&issue_numbers, &graph) {
+                let executor = QueueExecutor::new(&queue);
+                app.queue_launch_configs = Some(configs);
+                app.queue_executor = Some(executor);
+                app.advance_queue_and_launch();
+                app.completion_summary_dismissed = false;
+                app.tui_mode = app::TuiMode::QueueExecution;
+            } else {
+                // Fallback: launch all at once if queue validation fails
+                app.pending_commands
+                    .push(app::TuiCommand::LaunchSessions(configs));
+                app.tui_mode = app::TuiMode::Overview;
+            }
         }
     }
 }

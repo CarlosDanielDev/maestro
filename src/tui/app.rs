@@ -66,6 +66,8 @@ pub enum TuiMode {
     ContinuousPause,
     /// Queue confirmation before launching multi-selected issues.
     QueueConfirmation,
+    /// Sequential queue execution in progress.
+    QueueExecution,
 }
 
 /// Payload for suggestion data fetched from GitHub.
@@ -100,12 +102,24 @@ pub enum TuiDataEvent {
     UpgradeResult(Result<String, String>),
 }
 
+/// A merge conflict suggestion shown in the completion overlay.
+#[derive(Debug, Clone)]
+pub struct ConflictSuggestion {
+    pub pr_number: u64,
+    pub issue_number: u64,
+    pub branch: String,
+    pub conflicting_files: Vec<String>,
+    pub message: String,
+}
+
 /// Summary data shown in the post-completion overlay.
 #[derive(Debug, Clone)]
 pub struct CompletionSummaryData {
     pub session_count: usize,
     pub total_cost_usd: f64,
     pub sessions: Vec<CompletionSessionLine>,
+    pub suggestions: Vec<ConflictSuggestion>,
+    pub selected_suggestion: usize,
 }
 
 /// Per-gate failure detail shown in the completion summary overlay.
@@ -135,6 +149,11 @@ impl CompletionSummaryData {
         self.sessions
             .iter()
             .any(|s| s.status == SessionStatus::NeedsReview)
+    }
+
+    /// Returns true if there are conflict suggestions to display.
+    pub fn has_conflict_suggestions(&self) -> bool {
+        !self.suggestions.is_empty()
     }
 }
 
@@ -244,6 +263,10 @@ pub struct App {
     pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
     /// Granular per-check details for each pending PR, keyed by PR number.
     pub ci_check_details: std::collections::HashMap<u64, Vec<crate::github::ci::CheckRunDetail>>,
+    /// Sequential queue executor state (for QueueExecution mode).
+    pub queue_executor: Option<crate::work::executor::QueueExecutor>,
+    /// Session configs for queue execution (kept to launch sessions as executor advances).
+    pub queue_launch_configs: Option<Vec<crate::tui::screens::SessionConfig>>,
 }
 
 impl App {
@@ -311,6 +334,8 @@ impl App {
             flags: crate::flags::store::FeatureFlags::default(),
             queue_confirmation_screen: None,
             ci_check_details: std::collections::HashMap::new(),
+            queue_executor: None,
+            queue_launch_configs: None,
         }
     }
 
@@ -1351,6 +1376,8 @@ impl App {
             session_count: sessions.len(),
             total_cost_usd: total_cost,
             sessions: lines,
+            suggestions: Vec::new(),
+            selected_suggestion: 0,
         }
     }
 
@@ -2204,6 +2231,21 @@ impl App {
     }
 
     /// Spawn a Claude session to fix a CI failure on an existing PR branch.
+    /// Returns (model, mode) from config or sensible defaults.
+    fn default_model_and_mode(&self) -> (String, String) {
+        let model = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.default_model.clone())
+            .unwrap_or_else(|| "opus".to_string());
+        let mode = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.default_mode.clone())
+            .unwrap_or_else(|| "orchestrator".to_string());
+        (model, mode)
+    }
+
     fn spawn_ci_fix_session(
         &mut self,
         pr_number: u64,
@@ -2215,16 +2257,7 @@ impl App {
         use crate::github::ci::build_ci_fix_prompt;
         use crate::session::types::CiFixContext;
 
-        let model = self
-            .config
-            .as_ref()
-            .map(|c| c.sessions.default_model.clone())
-            .unwrap_or_else(|| "opus".to_string());
-        let mode = self
-            .config
-            .as_ref()
-            .map(|c| c.sessions.default_mode.clone())
-            .unwrap_or_else(|| "orchestrator".to_string());
+        let (model, mode) = self.default_model_and_mode();
 
         let prompt = build_ci_fix_prompt(pr_number, issue_number, &branch, attempt, failure_log);
 
@@ -2259,20 +2292,12 @@ impl App {
             .take(2000)
             .collect();
 
+        let (default_model, mode) = self.default_model_and_mode();
         let model = if failed_line.model.is_empty() {
-            self.config
-                .as_ref()
-                .map(|c| c.sessions.default_model.clone())
-                .unwrap_or_else(|| "opus".to_string())
+            default_model
         } else {
             failed_line.model.clone()
         };
-
-        let mode = self
-            .config
-            .as_ref()
-            .map(|c| c.sessions.default_mode.clone())
-            .unwrap_or_else(|| "orchestrator".to_string());
 
         let prompt = build_gate_fix_prompt(issue_number, &gate_failure_details);
 
@@ -2286,6 +2311,64 @@ impl App {
             "Launched gate fix session".into(),
             LogLevel::Info,
         );
+    }
+
+    /// Spawn a Claude session to resolve merge conflicts for a PR.
+    pub fn spawn_conflict_fix_session(&mut self, config: &crate::tui::screens::ConflictFixConfig) {
+        use crate::github::merge::build_conflict_fix_prompt;
+        use crate::session::types::ConflictFixContext;
+
+        let (model, mode) = self.default_model_and_mode();
+
+        let prompt = build_conflict_fix_prompt(
+            config.pr_number,
+            config.issue_number,
+            &config.branch,
+            &config.conflicting_files,
+        );
+
+        let mut session = Session::new(prompt, model, mode, Some(config.issue_number));
+        session.status = SessionStatus::ConflictFix;
+        session.issue_title = Some(format!("Conflict Fix for PR #{}", config.pr_number));
+        session.conflict_fix_context = Some(ConflictFixContext {
+            pr_number: config.pr_number,
+            issue_number: config.issue_number,
+            branch: config.branch.clone(),
+            conflicting_files: config.conflicting_files.clone(),
+        });
+
+        self.pending_session_launches.push(session);
+
+        self.activity_log.push_simple(
+            format!("PR #{}", config.pr_number),
+            "Launched conflict fix session".into(),
+            LogLevel::Info,
+        );
+    }
+
+    /// Advance the queue executor to the next item and queue a session launch for it.
+    /// Returns true if a session was queued, false if the executor is finished.
+    pub fn advance_queue_and_launch(&mut self) -> bool {
+        let issue_num = {
+            let exec = match self.queue_executor.as_mut() {
+                Some(e) => e,
+                None => return false,
+            };
+            match exec.advance() {
+                Some(item) => item.issue_number,
+                None => return false,
+            }
+        };
+
+        if let Some(config) = self
+            .queue_launch_configs
+            .as_ref()
+            .and_then(|cfgs| cfgs.iter().find(|c| c.issue_number == Some(issue_num)))
+        {
+            self.pending_commands
+                .push(TuiCommand::LaunchSession(config.clone()));
+        }
+        true
     }
 
     /// Fire a plugin hook asynchronously and log results.
@@ -2400,6 +2483,8 @@ mod tests {
             sessions: vec![],
             total_cost_usd: 0.0,
             session_count: 0,
+            suggestions: vec![],
+            selected_suggestion: 0,
         };
         assert!(data.sessions.is_empty());
         assert_eq!(data.session_count, 0);
@@ -2506,6 +2591,8 @@ mod tests {
             sessions: vec![],
             total_cost_usd: 0.0,
             session_count: 0,
+            suggestions: vec![],
+            selected_suggestion: 0,
         });
         app.transition_to_dashboard();
         assert!(app.completion_summary.is_none());
@@ -2885,6 +2972,8 @@ mod tests {
             sessions: vec![],
             total_cost_usd: 0.0,
             session_count: 0,
+            suggestions: vec![],
+            selected_suggestion: 0,
         };
         assert!(!data.has_needs_review());
     }
@@ -2905,6 +2994,8 @@ mod tests {
             }],
             total_cost_usd: 0.0,
             session_count: 1,
+            suggestions: vec![],
+            selected_suggestion: 0,
         };
         assert!(!data.has_needs_review());
     }
@@ -2928,6 +3019,8 @@ mod tests {
             }],
             total_cost_usd: 0.0,
             session_count: 1,
+            suggestions: vec![],
+            selected_suggestion: 0,
         };
         assert!(data.has_needs_review());
     }
@@ -2964,6 +3057,8 @@ mod tests {
             ],
             total_cost_usd: 0.0,
             session_count: 2,
+            suggestions: vec![],
+            selected_suggestion: 0,
         };
         assert!(data.has_needs_review());
     }
@@ -3224,6 +3319,8 @@ mod tests {
             sessions: vec![],
             total_cost_usd: 0.0,
             session_count: 0,
+            suggestions: vec![],
+            selected_suggestion: 0,
         });
         app.transition_to_dashboard();
         assert!(
@@ -3470,5 +3567,154 @@ mod tests {
     fn app_queue_confirmation_screen_defaults_to_none() {
         let app = make_app();
         assert!(app.queue_confirmation_screen.is_none());
+    }
+
+    // --- Issue #68: QueueExecutor state ---
+
+    #[test]
+    fn app_queue_executor_defaults_to_none() {
+        let app = make_app();
+        assert!(app.queue_executor.is_none());
+    }
+
+    #[test]
+    fn tui_mode_queue_execution_variant_exists() {
+        let mode = TuiMode::QueueExecution;
+        assert!(matches!(mode, TuiMode::QueueExecution));
+    }
+
+    // --- Issue #139: ConflictSuggestion and CompletionSummaryData suggestions ---
+
+    #[test]
+    fn conflict_suggestion_stores_all_fields() {
+        let sg = ConflictSuggestion {
+            pr_number: 42,
+            issue_number: 10,
+            branch: "feat/auth".to_string(),
+            conflicting_files: vec!["src/a.rs".to_string()],
+            message: "has merge conflicts".to_string(),
+        };
+        assert_eq!(sg.pr_number, 42);
+        assert_eq!(sg.issue_number, 10);
+        assert_eq!(sg.branch, "feat/auth");
+        assert_eq!(sg.conflicting_files.len(), 1);
+        assert!(!sg.message.is_empty());
+    }
+
+    #[test]
+    fn completion_summary_data_suggestions_defaults_to_empty() {
+        let data = CompletionSummaryData {
+            session_count: 0,
+            total_cost_usd: 0.0,
+            sessions: vec![],
+            suggestions: vec![],
+            selected_suggestion: 0,
+        };
+        assert!(data.suggestions.is_empty());
+    }
+
+    #[test]
+    fn completion_summary_data_selected_suggestion_defaults_to_zero() {
+        let data = CompletionSummaryData {
+            session_count: 0,
+            total_cost_usd: 0.0,
+            sessions: vec![],
+            suggestions: vec![],
+            selected_suggestion: 0,
+        };
+        assert_eq!(data.selected_suggestion, 0);
+    }
+
+    #[test]
+    fn completion_summary_data_holds_multiple_suggestions() {
+        let data = CompletionSummaryData {
+            session_count: 0,
+            total_cost_usd: 0.0,
+            sessions: vec![],
+            suggestions: vec![
+                ConflictSuggestion {
+                    pr_number: 1,
+                    issue_number: 1,
+                    branch: "a".to_string(),
+                    conflicting_files: vec![],
+                    message: "conflict".to_string(),
+                },
+                ConflictSuggestion {
+                    pr_number: 2,
+                    issue_number: 2,
+                    branch: "b".to_string(),
+                    conflicting_files: vec![],
+                    message: "conflict".to_string(),
+                },
+            ],
+            selected_suggestion: 0,
+        };
+        assert_eq!(data.suggestions.len(), 2);
+    }
+
+    #[test]
+    fn selected_suggestion_can_be_advanced() {
+        let mut data = CompletionSummaryData {
+            session_count: 0,
+            total_cost_usd: 0.0,
+            sessions: vec![],
+            suggestions: vec![
+                ConflictSuggestion {
+                    pr_number: 1,
+                    issue_number: 1,
+                    branch: "a".to_string(),
+                    conflicting_files: vec![],
+                    message: "conflict".to_string(),
+                },
+                ConflictSuggestion {
+                    pr_number: 2,
+                    issue_number: 2,
+                    branch: "b".to_string(),
+                    conflicting_files: vec![],
+                    message: "conflict".to_string(),
+                },
+            ],
+            selected_suggestion: 0,
+        };
+        data.selected_suggestion = 1;
+        assert_eq!(data.selected_suggestion, 1);
+    }
+
+    #[test]
+    fn has_conflict_suggestions_returns_false_when_empty() {
+        let data = CompletionSummaryData {
+            session_count: 0,
+            total_cost_usd: 0.0,
+            sessions: vec![],
+            suggestions: vec![],
+            selected_suggestion: 0,
+        };
+        assert!(!data.has_conflict_suggestions());
+    }
+
+    #[test]
+    fn has_conflict_suggestions_returns_true_when_populated() {
+        let data = CompletionSummaryData {
+            session_count: 0,
+            total_cost_usd: 0.0,
+            sessions: vec![],
+            suggestions: vec![ConflictSuggestion {
+                pr_number: 1,
+                issue_number: 1,
+                branch: "a".to_string(),
+                conflicting_files: vec![],
+                message: "conflict".to_string(),
+            }],
+            selected_suggestion: 0,
+        };
+        assert!(data.has_conflict_suggestions());
+    }
+
+    #[test]
+    fn build_completion_summary_suggestions_default_to_empty() {
+        let app = make_app();
+        let summary = app.build_completion_summary();
+        assert!(summary.suggestions.is_empty());
+        assert_eq!(summary.selected_suggestion, 0);
     }
 }
