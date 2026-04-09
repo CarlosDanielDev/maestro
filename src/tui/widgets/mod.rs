@@ -15,6 +15,7 @@ pub use toggle::Toggle;
 use crossterm::event::KeyEvent;
 use ratatui::{Frame, layout::Rect};
 
+use crate::tui::screens::settings::validation::ValidationFeedback;
 use crate::tui::theme::Theme;
 
 /// Action returned by a form widget after handling input.
@@ -50,11 +51,18 @@ impl WidgetKind {
         }
     }
 
-    pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
+    pub fn draw(
+        &self,
+        f: &mut Frame,
+        area: Rect,
+        theme: &Theme,
+        focused: bool,
+        validation: Option<&ValidationFeedback>,
+    ) {
         match self {
             Self::Toggle(w) => w.draw(f, area, theme, focused),
-            Self::TextInput(w) => w.draw(f, area, theme, focused),
-            Self::NumberStepper(w) => w.draw(f, area, theme, focused),
+            Self::TextInput(w) => w.draw(f, area, theme, focused, validation),
+            Self::NumberStepper(w) => w.draw(f, area, theme, focused, validation),
             Self::Dropdown(w) => w.draw(f, area, theme, focused),
             Self::ListEditor(w) => w.draw(f, area, theme, focused),
         }
