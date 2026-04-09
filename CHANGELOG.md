@@ -7,6 +7,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-04-09
+
+### Added
+
+- Field-level validation with inline error messages for Settings screen (#75)
+- Persistent background sessions with multi-window navigation (#63)
+
 ## [0.8.0] - 2026-04-09
 
 ### Added
