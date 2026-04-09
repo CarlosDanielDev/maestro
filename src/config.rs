@@ -2,6 +2,7 @@ use crate::provider::types::ProviderKind;
 use crate::tui::theme::ThemeConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +31,14 @@ pub struct Config {
     pub modes: std::collections::HashMap<String, ModeConfig>,
     #[serde(default)]
     pub tui: TuiConfig,
+    #[serde(default)]
+    pub flags: FlagsConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FlagsConfig {
+    #[serde(flatten)]
+    pub entries: HashMap<String, bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -783,6 +792,108 @@ preset = "light"
         .unwrap();
         let cfg = Config::load(f.path()).expect("load failed");
         assert_eq!(cfg.tui.theme.preset, ThemePreset::Light);
+    }
+
+    // --- Issue #143: FlagsConfig tests ---
+
+    #[test]
+    fn flags_config_defaults_to_empty_hashmap() {
+        let cfg = FlagsConfig::default();
+        assert!(cfg.entries.is_empty());
+    }
+
+    #[test]
+    fn flags_config_deserializes_from_toml() {
+        let toml_str = r#"
+ci_auto_fix = true
+review_council = false
+"#;
+        let cfg: FlagsConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.entries.get("ci_auto_fix"), Some(&true));
+        assert_eq!(cfg.entries.get("review_council"), Some(&false));
+    }
+
+    #[test]
+    fn flags_config_deserializes_multiple_entries() {
+        let toml_str = r#"
+continuous_mode = false
+ci_auto_fix = true
+"#;
+        let cfg: FlagsConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.entries.get("continuous_mode"), Some(&false));
+        assert_eq!(cfg.entries.get("ci_auto_fix"), Some(&true));
+        assert_eq!(cfg.entries.len(), 2);
+    }
+
+    #[test]
+    fn flags_config_handles_unknown_keys() {
+        let toml_str = r#"
+totally_unknown_flag = true
+ci_auto_fix = false
+"#;
+        let cfg: FlagsConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.entries.len(), 2);
+        assert_eq!(cfg.entries.get("totally_unknown_flag"), Some(&true));
+    }
+
+    #[test]
+    fn full_config_flags_defaults_when_section_absent() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+"#
+        )
+        .unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert!(cfg.flags.entries.is_empty());
+    }
+
+    #[test]
+    fn flags_config_non_boolean_value_is_rejected() {
+        let toml_str = r#"continuous_mode = "yes""#;
+        let result = toml::from_str::<FlagsConfig>(toml_str);
+        assert!(
+            result.is_err(),
+            "non-bool flag value must fail to deserialize"
+        );
+    }
+
+    #[test]
+    fn full_config_flags_parses_when_section_present() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+[flags]
+ci_auto_fix = true
+review_council = false
+"#
+        )
+        .unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert_eq!(cfg.flags.entries.get("ci_auto_fix"), Some(&true));
+        assert_eq!(cfg.flags.entries.get("review_council"), Some(&false));
     }
 
     #[test]

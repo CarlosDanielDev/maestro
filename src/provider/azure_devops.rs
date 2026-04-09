@@ -325,6 +325,31 @@ impl GitHubClient for AzDevOpsClient {
         let v: serde_json::Value = serde_json::from_str(&json_str)?;
         Ok(v.get("pullRequestId").and_then(|n| n.as_u64()).unwrap_or(0))
     }
+
+    async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
+        let json_str = self
+            .run_az(&[
+                "repos",
+                "pr",
+                "list",
+                "--source-branch",
+                head_branch,
+                "--status",
+                "active",
+                "--org",
+                &self.organization,
+                "--project",
+                &self.project,
+                "-o",
+                "json",
+            ])
+            .await?;
+        let prs: Vec<serde_json::Value> = serde_json::from_str(&json_str)?;
+        Ok(prs
+            .iter()
+            .filter_map(|v| v.get("pullRequestId").and_then(|n| n.as_u64()))
+            .collect())
+    }
 }
 
 #[cfg(test)]

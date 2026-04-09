@@ -7,6 +7,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `[flags]` config section in `maestro.toml` for per-project feature flag overrides (#143)
+- `FlagsConfig` struct in `src/config.rs` — flattened `HashMap<String, bool>` loaded from `[flags]` table
+- `--enable-flag` and `--disable-flag` CLI args on the `Run` subcommand for runtime flag overrides (#143)
+- `PendingPr` and `PendingPrStatus` structs in `src/github/types.rs` for tracking failed PR creation attempts (#159)
+- `NeedsPr` session status variant in `src/session/types.rs` — non-terminal, triggers PR retry flow (#159)
+- `PrRetryPolicy` (exponential back-off, default 3 attempts) and `OrphanBranch` (branch with no open PR) in `src/github/pr.rs` (#159)
+- `list_prs_for_branch()` on `GitHubClient` trait and `GhCliClient` / `MockGitHubClient` impls in `src/github/client.rs` (#159)
+- `list_remote_branches()` on `GitOps` trait and `CliGitOps` / mock impl in `src/git.rs` (#159)
+- `pending_prs: Vec<PendingPr>` field on `MaestroState` in `src/state/types.rs` — persisted to JSON state (#159)
+- `process_pending_pr_retries()` and `trigger_manual_pr_retry()` on `App` in `src/tui/app.rs` — retry loop and manual trigger for stuck PRs (#159)
+
 ## [0.5.2] - 2026-04-07
 
 ### Added
