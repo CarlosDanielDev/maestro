@@ -34,21 +34,14 @@ arboard = "3.6.1"
 image = { version = "0.25.10", features = ["png"], default-features = false }
 pulldown-cmark = { version = "0.12", default-features = false }
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
+syn = { version = "2", features = ["full", "visit"] }
+walkdir = "2"
 
 [build-dependencies]
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 clap_mangen = "0.2"
 anyhow = "1"
-
-# --- Compile-time feature gates ---
-# Convention:
-#   Cargo features  → module is incomplete / adds >500 lines of dead code
-#   Runtime flags    → module compiles fine, behavior needs toggling at startup
-# Activate with: cargo build --features experimental-sanitizer
-[features]
-default = []
-experimental-sanitizer = []
 
 [dev-dependencies]
 tempfile = "3"

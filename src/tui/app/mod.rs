@@ -97,6 +97,7 @@ pub struct App {
     pub queue_executor: Option<crate::work::executor::QueueExecutor>,
     pub queue_launch_configs: Option<Vec<crate::tui::screens::SessionConfig>>,
     pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
+    pub sanitize_screen: Option<crate::sanitize::screen::SanitizeScreen>,
     pub prompt_history: crate::state::prompt_history::PromptHistoryStore,
 }
 
@@ -167,6 +168,7 @@ impl App {
             queue_executor: None,
             queue_launch_configs: None,
             hollow_retry_screen: None,
+            sanitize_screen: None,
             prompt_history: crate::state::prompt_history::PromptHistoryStore::new(
                 crate::state::prompt_history::PromptHistoryStore::default_path(),
                 crate::config::default_max_prompt_history(),

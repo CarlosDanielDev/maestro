@@ -21,6 +21,7 @@ pub enum TuiMode {
     QueueExecution,
     HollowRetry,
     TokenDashboard,
+    Sanitize,
 }
 
 /// Payload for suggestion data fetched from GitHub.
