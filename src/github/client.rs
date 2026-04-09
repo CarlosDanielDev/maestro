@@ -21,6 +21,18 @@ pub trait GitHubClient: Send + Sync {
     ) -> Result<u64>;
     /// List open PR numbers for a given head branch.
     async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>>;
+
+    /// Create a GitHub milestone and return its number.
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<u64>;
+
+    /// Create a GitHub issue and return its number.
+    async fn create_issue(
+        &self,
+        title: &str,
+        body: &str,
+        labels: &[String],
+        milestone: Option<u64>,
+    ) -> Result<u64>;
 }
 
 /// Parse JSON output from `gh issue list --json ...`.
@@ -142,6 +154,18 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     }
     async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
         (**self).list_prs_for_branch(head_branch).await
+    }
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<u64> {
+        (**self).create_milestone(title, description).await
+    }
+    async fn create_issue(
+        &self,
+        title: &str,
+        body: &str,
+        labels: &[String],
+        milestone: Option<u64>,
+    ) -> Result<u64> {
+        (**self).create_issue(title, body, labels, milestone).await
     }
 }
 
@@ -378,6 +402,61 @@ impl GitHubClient for GhCliClient {
             .filter_map(|v| v.get("number").and_then(|n| n.as_u64()))
             .collect())
     }
+
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<u64> {
+        validate_gh_arg(title, "milestone title")?;
+        let json_str = self
+            .run_gh(&[
+                "api",
+                "repos/{owner}/{repo}/milestones",
+                "--method",
+                "POST",
+                "-f",
+                &format!("title={}", title),
+                "-f",
+                &format!("description={}", description),
+            ])
+            .await?;
+        let v: serde_json::Value =
+            serde_json::from_str(&json_str).context("Failed to parse milestone response")?;
+        v.get("number")
+            .and_then(|n| n.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'number' in milestone response"))
+    }
+
+    async fn create_issue(
+        &self,
+        title: &str,
+        body: &str,
+        labels: &[String],
+        milestone: Option<u64>,
+    ) -> Result<u64> {
+        validate_gh_arg(title, "issue title")?;
+        let mut args = vec!["issue", "create", "--title", title, "--body", body];
+        let label_str = labels.join(",");
+        if !label_str.is_empty() {
+            args.push("--label");
+            args.push(&label_str);
+        }
+        let ms_str;
+        if let Some(ms) = milestone {
+            ms_str = ms.to_string();
+            args.push("--milestone");
+            args.push(&ms_str);
+        }
+        let output = self.run_gh(&args).await?;
+        // gh issue create returns a URL like https://github.com/owner/repo/issues/123
+        // Extract the issue number from the URL
+        let number = output
+            .trim()
+            .rsplit('/')
+            .next()
+            .and_then(|s| s.parse::<u64>().ok())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Failed to parse issue number from gh output: {}", output)
+            })?;
+        Ok(number)
+    }
 }
 
 #[cfg(test)]
@@ -404,6 +483,11 @@ pub mod mock {
         add_label_calls: Vec<(u64, String)>,
         remove_label_calls: Vec<(u64, String)>,
         create_pr_calls: Vec<CreatePrCallRecord>,
+
+        create_milestone_calls: Vec<(String, String)>,
+        create_milestone_counter: u64,
+        create_issue_calls: Vec<CreateIssueCallRecord>,
+        create_issue_counter: u64,
     }
 
     #[derive(Debug, Clone)]
@@ -413,6 +497,14 @@ pub mod mock {
         pub body: String,
         pub head_branch: String,
         pub base_branch: String,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct CreateIssueCallRecord {
+        pub title: String,
+        pub body: String,
+        pub labels: Vec<String>,
+        pub milestone: Option<u64>,
     }
 
     impl MockGitHubClient {
@@ -470,6 +562,14 @@ pub mod mock {
 
         pub fn create_pr_calls(&self) -> Vec<CreatePrCallRecord> {
             self.inner.lock().unwrap().create_pr_calls.clone()
+        }
+
+        pub fn create_milestone_calls(&self) -> Vec<(String, String)> {
+            self.inner.lock().unwrap().create_milestone_calls.clone()
+        }
+
+        pub fn create_issue_calls(&self) -> Vec<CreateIssueCallRecord> {
+            self.inner.lock().unwrap().create_issue_calls.clone()
         }
     }
 
@@ -559,6 +659,33 @@ pub mod mock {
                 .get(head_branch)
                 .cloned()
                 .unwrap_or_default())
+        }
+
+        async fn create_milestone(&self, title: &str, description: &str) -> Result<u64> {
+            let mut state = self.inner.lock().unwrap();
+            state.create_milestone_counter += 1;
+            state
+                .create_milestone_calls
+                .push((title.to_string(), description.to_string()));
+            Ok(state.create_milestone_counter)
+        }
+
+        async fn create_issue(
+            &self,
+            title: &str,
+            body: &str,
+            labels: &[String],
+            milestone: Option<u64>,
+        ) -> Result<u64> {
+            let mut state = self.inner.lock().unwrap();
+            state.create_issue_counter += 1;
+            state.create_issue_calls.push(CreateIssueCallRecord {
+                title: title.to_string(),
+                body: body.to_string(),
+                labels: labels.to_vec(),
+                milestone,
+            });
+            Ok(state.create_issue_counter)
         }
     }
 }
@@ -910,5 +1037,52 @@ mod tests {
     fn is_gh_auth_error_returns_false_for_regular_error() {
         let err = anyhow::anyhow!("gh command failed: branch not found");
         assert!(!is_gh_auth_error(&err));
+    }
+
+    // -- create_milestone / create_issue mock tests --
+
+    #[tokio::test]
+    async fn mock_create_milestone_records_call_and_returns_number() {
+        let client = MockGitHubClient::new();
+        let n1 = client
+            .create_milestone("M0", "First milestone")
+            .await
+            .unwrap();
+        let n2 = client
+            .create_milestone("M1", "Second milestone")
+            .await
+            .unwrap();
+        assert_eq!(n1, 1);
+        assert_eq!(n2, 2);
+        let calls = client.create_milestone_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].0, "M0");
+        assert_eq!(calls[1].0, "M1");
+    }
+
+    #[tokio::test]
+    async fn mock_create_issue_records_call_and_returns_number() {
+        let client = MockGitHubClient::new();
+        let n = client
+            .create_issue("feat: thing", "body", &["enhancement".into()], Some(1))
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+        let calls = client.create_issue_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].title, "feat: thing");
+        assert_eq!(calls[0].labels, vec!["enhancement"]);
+        assert_eq!(calls[0].milestone, Some(1));
+    }
+
+    #[tokio::test]
+    async fn mock_create_issue_increments_counter() {
+        let client = MockGitHubClient::new();
+        let n1 = client.create_issue("a", "", &[], None).await.unwrap();
+        let n2 = client.create_issue("b", "", &[], None).await.unwrap();
+        let n3 = client.create_issue("c", "", &[], None).await.unwrap();
+        assert_eq!(n1, 1);
+        assert_eq!(n2, 2);
+        assert_eq!(n3, 3);
     }
 }

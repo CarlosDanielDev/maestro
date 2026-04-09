@@ -350,6 +350,20 @@ impl GitHubClient for AzDevOpsClient {
             .filter_map(|v| v.get("pullRequestId").and_then(|n| n.as_u64()))
             .collect())
     }
+
+    async fn create_milestone(&self, _title: &str, _description: &str) -> Result<u64> {
+        anyhow::bail!("create_milestone is not supported for Azure DevOps")
+    }
+
+    async fn create_issue(
+        &self,
+        _title: &str,
+        _body: &str,
+        _labels: &[String],
+        _milestone: Option<u64>,
+    ) -> Result<u64> {
+        anyhow::bail!("create_issue is not supported for Azure DevOps")
+    }
 }
 
 #[cfg(test)]
