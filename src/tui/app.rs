@@ -8,8 +8,8 @@ use crate::git::GitOps;
 use crate::github::ci::{CiCheck, CiChecker, CiStatus, PendingPrCheck};
 use crate::github::client::GitHubClient;
 use crate::github::labels::LabelManager;
-use crate::github::pr::PrCreator;
-use crate::github::types::{GhIssue, GhMilestone};
+use crate::github::pr::{PrCreator, PrRetryPolicy};
+use crate::github::types::{GhIssue, GhMilestone, PendingPr, PendingPrStatus};
 use crate::models::ModelRouter;
 use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::notifications::slack::SlackEvent;
@@ -234,6 +234,8 @@ pub struct App {
     pub completion_summary_dismissed: bool,
     /// Whether gh CLI is authenticated. Updated if a runtime auth error is detected.
     pub gh_auth_ok: bool,
+    /// PRs that failed creation and are queued for retry or manual action.
+    pub pending_prs: Vec<crate::github::types::PendingPr>,
 }
 
 impl App {
@@ -297,6 +299,7 @@ impl App {
             spinner_tick: 0,
             completion_summary_dismissed: false,
             gh_auth_ok: true,
+            pending_prs: Vec::new(),
         }
     }
 
@@ -941,6 +944,9 @@ impl App {
         for ph in pending_hooks {
             self.fire_plugin_hook(ph.hook, ph.ctx).await;
         }
+
+        // Process pending PR retries
+        self.process_pending_pr_retries().await;
 
         // Process pending issue completions (gates, git push, label updates, PR creation)
         let pending = std::mem::take(&mut self.pending_issue_completions);
@@ -1642,52 +1648,91 @@ impl App {
             if success {
                 self.log_gh_auth_skip(issue_number, "PR creation");
             }
-        } else if let (Some(client), Some(config)) = (&self.github_client, &self.config)
-            && success
-            && config.github.auto_pr
-            && let Some(ref branch) = worktree_branch
-            && let Some(issue) = self.state.issue_cache.get(&issue_number)
-        {
-            let file_refs: Vec<&str> = files_touched.iter().map(|s| s.as_str()).collect();
-            let pr_creator = PrCreator::new(client.as_ref(), config.project.base_branch.clone());
-            match pr_creator
-                .create_for_issue(issue, branch, &file_refs, cost_usd)
-                .await
+        } else if success {
+            // Extract config values before entering async/mutable code
+            let auto_pr = self
+                .config
+                .as_ref()
+                .map(|c| c.github.auto_pr)
+                .unwrap_or(false);
+            let base_branch = self
+                .config
+                .as_ref()
+                .map(|c| c.project.base_branch.clone())
+                .unwrap_or_else(|| "main".to_string());
+
+            if auto_pr
+                && self.github_client.is_some()
+                && let Some(ref branch) = worktree_branch
+                && let Some(issue) = self.state.issue_cache.get(&issue_number)
             {
-                Ok(pr_num) => {
-                    self.activity_log.push_simple(
-                        format!("#{}", issue_number),
-                        format!("PR #{} created", pr_num),
-                        LogLevel::Info,
-                    );
-                    // Track PR for CI polling
-                    if let Some(ref branch_name) = worktree_branch {
-                        self.pending_pr_checks.push(PendingPrCheck {
-                            pr_number: pr_num,
-                            issue_number,
-                            branch: branch_name.clone(),
-                            created_at: Instant::now(),
-                            check_count: 0,
-                            fix_attempt: 0,
-                            awaiting_fix_ci: false,
-                        });
+                let file_refs: Vec<&str> = files_touched.iter().map(|s| s.as_str()).collect();
+                let client = self.github_client.as_ref().unwrap();
+                let pr_creator = PrCreator::new(client.as_ref(), base_branch.clone());
+                match pr_creator
+                    .create_for_issue(issue, branch, &file_refs, cost_usd)
+                    .await
+                {
+                    Ok(pr_num) => {
+                        self.activity_log.push_simple(
+                            format!("#{}", issue_number),
+                            format!("PR #{} created", pr_num),
+                            LogLevel::Info,
+                        );
+                        // Track PR for CI polling
+                        if let Some(ref branch_name) = worktree_branch {
+                            self.pending_pr_checks.push(PendingPrCheck {
+                                pr_number: pr_num,
+                                issue_number,
+                                branch: branch_name.clone(),
+                                created_at: Instant::now(),
+                                check_count: 0,
+                                fix_attempt: 0,
+                                awaiting_fix_ci: false,
+                            });
+                        }
+                        self.dispatch_review(pr_num, branch, issue_number);
+                        // Fire pr_created hook
+                        let ctx = HookContext::new()
+                            .with_session("", Some(issue_number))
+                            .with_pr(pr_num)
+                            .with_branch(branch)
+                            .with_cost(cost_usd);
+                        self.fire_plugin_hook(HookPoint::PrCreated, ctx).await;
                     }
-                    self.dispatch_review(pr_num, branch, issue_number);
-                    // Fire pr_created hook
-                    let ctx = HookContext::new()
-                        .with_session("", Some(issue_number))
-                        .with_pr(pr_num)
-                        .with_branch(branch)
-                        .with_cost(cost_usd);
-                    self.fire_plugin_hook(HookPoint::PrCreated, ctx).await;
-                }
-                Err(e) => {
-                    self.check_gh_auth_error(&e);
-                    self.activity_log.push_simple(
-                        format!("#{}", issue_number),
-                        format!("PR creation failed: {}", e),
-                        LogLevel::Error,
-                    );
+                    Err(e) => {
+                        self.check_gh_auth_error(&e);
+                        let policy = PrRetryPolicy::default();
+                        let now = chrono::Utc::now();
+                        let pending = PendingPr {
+                            issue_number,
+                            branch: branch.clone(),
+                            base_branch: base_branch.clone(),
+                            files_touched: files_touched.clone(),
+                            cost_usd,
+                            attempt: 0,
+                            max_attempts: policy.max_attempts,
+                            last_error: e.to_string(),
+                            last_attempt_at: now,
+                            next_retry_at: policy.delay_for_attempt(0).map(|d| {
+                                now + chrono::Duration::from_std(d)
+                                    .unwrap_or(chrono::Duration::seconds(5))
+                            }),
+                            status: PendingPrStatus::RetryScheduled,
+                        };
+                        self.pending_prs.push(pending);
+
+                        // Update session status to NeedsPr
+                        if let Some(managed) = self.pool.find_by_issue_mut(issue_number) {
+                            managed.session.status = SessionStatus::NeedsPr;
+                        }
+
+                        self.activity_log.push_simple(
+                            format!("#{}", issue_number),
+                            format!("PR creation failed (will retry): {}", e),
+                            LogLevel::Warn,
+                        );
+                    }
                 }
             }
         }
@@ -1772,6 +1817,133 @@ impl App {
                     );
                 }
             }
+        }
+    }
+
+    /// Process pending PR retries. Called from check_completions.
+    pub async fn process_pending_pr_retries(&mut self) {
+        if self.pending_prs.is_empty() || self.github_client.is_none() {
+            return;
+        }
+
+        let now = chrono::Utc::now();
+
+        // Collect indices of items ready for retry (avoids borrow issues with self)
+        let ready_indices: Vec<usize> = self
+            .pending_prs
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                if p.status == PendingPrStatus::RetryScheduled {
+                    p.next_retry_at.is_none_or(|next| now >= next)
+                } else {
+                    p.status == PendingPrStatus::Retrying
+                }
+            })
+            .map(|(i, _)| i)
+            .collect();
+
+        let mut completed_indices = Vec::new();
+        let policy = PrRetryPolicy::default();
+
+        for idx in ready_indices {
+            let pending = &mut self.pending_prs[idx];
+            pending.attempt += 1;
+            pending.status = PendingPrStatus::Retrying;
+            pending.last_attempt_at = now;
+
+            let issue_number = pending.issue_number;
+            let branch = pending.branch.clone();
+            let base_branch = pending.base_branch.clone();
+            let files_touched: Vec<String> = pending.files_touched.clone();
+            let cost_usd = pending.cost_usd;
+            let attempt = pending.attempt;
+
+            let issue = self.state.issue_cache.get(&issue_number).cloned();
+            if let (Some(client), Some(issue)) = (&self.github_client, &issue) {
+                let file_refs: Vec<&str> = files_touched.iter().map(|s| s.as_str()).collect();
+                let pr_creator = PrCreator::new(client.as_ref(), base_branch);
+                match pr_creator
+                    .create_for_issue(issue, &branch, &file_refs, cost_usd)
+                    .await
+                {
+                    Ok(pr_num) => {
+                        completed_indices.push(idx);
+                        if let Some(managed) = self.pool.find_by_issue_mut(issue_number) {
+                            managed.session.status = SessionStatus::Completed;
+                        }
+                        self.activity_log.push_simple(
+                            format!("#{}", issue_number),
+                            format!("PR #{} created (retry {})", pr_num, attempt),
+                            LogLevel::Info,
+                        );
+                        self.pending_pr_checks.push(PendingPrCheck {
+                            pr_number: pr_num,
+                            issue_number,
+                            branch: branch.clone(),
+                            created_at: Instant::now(),
+                            check_count: 0,
+                            fix_attempt: 0,
+                            awaiting_fix_ci: false,
+                        });
+                    }
+                    Err(e) => {
+                        let pending = &mut self.pending_prs[idx];
+                        pending.last_error = e.to_string();
+                        if let Some(delay) = policy.delay_for_attempt(attempt) {
+                            pending.next_retry_at = Some(
+                                now + chrono::Duration::from_std(delay)
+                                    .unwrap_or(chrono::Duration::seconds(5)),
+                            );
+                            pending.status = PendingPrStatus::RetryScheduled;
+                            self.activity_log.push_simple(
+                                format!("#{}", issue_number),
+                                format!(
+                                    "PR retry {} failed, next in {}s: {}",
+                                    attempt,
+                                    delay.as_secs(),
+                                    e
+                                ),
+                                LogLevel::Warn,
+                            );
+                        } else {
+                            pending.status = PendingPrStatus::AwaitingManualRetry;
+                            pending.next_retry_at = None;
+                            self.activity_log.push_simple(
+                                format!("#{}", issue_number),
+                                format!(
+                                    "PR creation failed permanently after {} attempts: {}",
+                                    attempt, e
+                                ),
+                                LogLevel::Error,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove completed entries (reverse order to preserve indices)
+        for idx in completed_indices.into_iter().rev() {
+            self.pending_prs.remove(idx);
+        }
+    }
+
+    /// Trigger a manual PR retry for a specific issue. Called from TUI key handler.
+    pub fn trigger_manual_pr_retry(&mut self, issue_number: u64) {
+        if let Some(pending) = self
+            .pending_prs
+            .iter_mut()
+            .find(|p| p.issue_number == issue_number)
+        {
+            pending.status = PendingPrStatus::RetryScheduled;
+            pending.next_retry_at = Some(chrono::Utc::now()); // immediate
+            pending.attempt = 0; // reset attempt counter for manual retry
+            self.activity_log.push_simple(
+                format!("#{}", issue_number),
+                "Manual PR retry queued".into(),
+                LogLevel::Info,
+            );
         }
     }
 

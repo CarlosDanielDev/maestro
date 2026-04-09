@@ -59,6 +59,14 @@ pub enum Commands {
         /// Continuous mode: auto-advance to next ready issue after each completion (use with --milestone)
         #[arg(short = 'C', long)]
         continuous: bool,
+
+        /// Enable a feature flag (repeatable, e.g. --enable-flag ci_auto_fix)
+        #[arg(long = "enable-flag", value_name = "FLAG")]
+        enable_flags: Vec<String>,
+
+        /// Disable a feature flag (repeatable, e.g. --disable-flag auto_fork)
+        #[arg(long = "disable-flag", value_name = "FLAG")]
+        disable_flags: Vec<String>,
     },
     /// Show queued/pending issues from GitHub
     Queue,
@@ -386,6 +394,128 @@ mod tests {
         {
             assert!(continuous, "--continuous must be true");
             assert!(once, "--once must be true");
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // --enable-flag / --disable-flag parsing (Issue #143)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn run_enable_flag_parses_single_value() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "run",
+            "--prompt",
+            "hello",
+            "--enable-flag",
+            "ci_auto_fix",
+        ])
+        .unwrap();
+        if let Some(Commands::Run { enable_flags, .. }) = cli.command {
+            assert_eq!(enable_flags, vec!["ci_auto_fix"]);
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_disable_flag_parses_single_value() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "run",
+            "--prompt",
+            "hello",
+            "--disable-flag",
+            "auto_fork",
+        ])
+        .unwrap();
+        if let Some(Commands::Run { disable_flags, .. }) = cli.command {
+            assert_eq!(disable_flags, vec!["auto_fork"]);
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_enable_flag_accumulates_multiple_values() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "run",
+            "--prompt",
+            "hello",
+            "--enable-flag",
+            "ci_auto_fix",
+            "--enable-flag",
+            "review_council",
+        ])
+        .unwrap();
+        if let Some(Commands::Run { enable_flags, .. }) = cli.command {
+            assert_eq!(enable_flags, vec!["ci_auto_fix", "review_council"]);
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_disable_flag_accumulates_multiple_values() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "run",
+            "--prompt",
+            "hello",
+            "--disable-flag",
+            "continuous_mode",
+            "--disable-flag",
+            "auto_fork",
+        ])
+        .unwrap();
+        if let Some(Commands::Run { disable_flags, .. }) = cli.command {
+            assert_eq!(disable_flags, vec!["continuous_mode", "auto_fork"]);
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_enable_and_disable_flags_coexist() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "run",
+            "--prompt",
+            "hello",
+            "--enable-flag",
+            "ci_auto_fix",
+            "--disable-flag",
+            "auto_fork",
+        ])
+        .unwrap();
+        if let Some(Commands::Run {
+            enable_flags,
+            disable_flags,
+            ..
+        }) = cli.command
+        {
+            assert_eq!(enable_flags, vec!["ci_auto_fix"]);
+            assert_eq!(disable_flags, vec!["auto_fork"]);
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_flags_default_to_empty_vecs() {
+        let cli = Cli::try_parse_from(["maestro", "run", "--prompt", "hello"]).unwrap();
+        if let Some(Commands::Run {
+            enable_flags,
+            disable_flags,
+            ..
+        }) = cli.command
+        {
+            assert!(enable_flags.is_empty());
+            assert!(disable_flags.is_empty());
         } else {
             panic!("Expected Commands::Run");
         }

@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::github::types::GhIssue;
+use crate::github::types::{GhIssue, PendingPr};
 use crate::session::types::Session;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,9 @@ pub struct MaestroState {
     /// Fork lineage: maps child session ID to parent session ID.
     #[serde(default)]
     pub fork_lineage: HashMap<uuid::Uuid, uuid::Uuid>,
+    /// PRs that failed creation and are queued for retry or manual action.
+    #[serde(default)]
+    pub pending_prs: Vec<PendingPr>,
 }
 
 impl MaestroState {
@@ -142,6 +145,52 @@ mod tests {
         state.record_fork(Uuid::new_v4(), Uuid::new_v4());
         state.update_total_cost();
         assert!((state.total_cost_usd - 2.0).abs() < f64::EPSILON);
+    }
+
+    // --- Issue #159: MaestroState::pending_prs persistence ---
+
+    #[test]
+    fn maestro_state_pending_prs_defaults_to_empty_vec() {
+        let state = MaestroState::default();
+        assert!(state.pending_prs.is_empty());
+    }
+
+    #[test]
+    fn maestro_state_pending_prs_round_trips_via_serde() {
+        use crate::github::types::{PendingPr, PendingPrStatus};
+
+        let mut state = MaestroState::default();
+        state.pending_prs.push(PendingPr {
+            issue_number: 7,
+            branch: "maestro/issue-7".into(),
+            base_branch: "main".into(),
+            files_touched: vec!["src/lib.rs".into()],
+            cost_usd: 0.5,
+            attempt: 0,
+            max_attempts: 3,
+            last_error: String::new(),
+            last_attempt_at: chrono::Utc::now(),
+            next_retry_at: None,
+            status: PendingPrStatus::RetryScheduled,
+        });
+
+        let json = serde_json::to_string(&state).unwrap();
+        let rt: MaestroState = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.pending_prs.len(), 1);
+        assert_eq!(rt.pending_prs[0].issue_number, 7);
+        assert_eq!(rt.pending_prs[0].branch, "maestro/issue-7");
+    }
+
+    #[test]
+    fn maestro_state_pending_prs_deserializes_with_default_when_absent() {
+        let state = MaestroState::default();
+        let json = serde_json::to_string(&state).unwrap();
+        let stripped = json.replace(r#","pending_prs":[]"#, "");
+        let rt: MaestroState = serde_json::from_str(&stripped).unwrap();
+        assert!(
+            rt.pending_prs.is_empty(),
+            "must default to empty vec for backward compatibility"
+        );
     }
 
     #[test]

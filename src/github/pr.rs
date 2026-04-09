@@ -1,6 +1,7 @@
 use super::client::GitHubClient;
 use super::types::GhIssue;
 use anyhow::Result;
+use std::time::Duration;
 
 /// Build the PR body for an issue.
 pub fn build_pr_body(issue: &GhIssue, files_touched: &[&str], cost_usd: f64) -> String {
@@ -53,6 +54,60 @@ impl<C: GitHubClient> PrCreator<C> {
         self.client
             .create_pr(issue.number, &title, &body, head_branch, &self.base_branch)
             .await
+    }
+}
+
+/// Retry configuration for PR creation.
+#[derive(Debug, Clone)]
+pub struct PrRetryPolicy {
+    pub max_attempts: u32,
+    pub base_delay_secs: u64,
+    pub multiplier: u64,
+}
+
+impl Default for PrRetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            base_delay_secs: 5,
+            multiplier: 3,
+        }
+    }
+}
+
+impl PrRetryPolicy {
+    /// Calculate delay for attempt N (0-indexed). Returns None if retries exhausted.
+    pub fn delay_for_attempt(&self, attempt: u32) -> Option<Duration> {
+        if attempt >= self.max_attempts {
+            return None;
+        }
+        let secs = self
+            .multiplier
+            .checked_pow(attempt)
+            .and_then(|m| self.base_delay_secs.checked_mul(m))
+            .unwrap_or(u64::MAX);
+        Some(Duration::from_secs(secs))
+    }
+}
+
+/// A remote branch with no corresponding open PR.
+#[derive(Debug, Clone)]
+pub struct OrphanBranch {
+    pub branch: String,
+    pub issue_number: Option<u64>,
+}
+
+impl OrphanBranch {
+    /// Parse an issue number from a branch name like "maestro/issue-42".
+    pub fn from_branch_name(branch: &str) -> Self {
+        let issue_number = branch
+            .strip_prefix("maestro/issue-")
+            .or_else(|| branch.strip_prefix("origin/maestro/issue-"))
+            .and_then(|rest| rest.parse::<u64>().ok());
+        Self {
+            branch: branch.to_string(),
+            issue_number,
+        }
     }
 }
 
@@ -150,6 +205,96 @@ mod tests {
                 .to_string()
                 .contains("branch already has open PR")
         );
+    }
+
+    // --- Issue #159: PrRetryPolicy tests ---
+
+    #[test]
+    fn retry_policy_default_values() {
+        let policy = PrRetryPolicy::default();
+        assert_eq!(policy.max_attempts, 3);
+        assert_eq!(policy.base_delay_secs, 5);
+        assert_eq!(policy.multiplier, 3);
+    }
+
+    #[test]
+    fn retry_policy_delay_attempt_0_is_5s() {
+        let policy = PrRetryPolicy::default();
+        assert_eq!(policy.delay_for_attempt(0), Some(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn retry_policy_delay_attempt_1_is_15s() {
+        let policy = PrRetryPolicy::default();
+        assert_eq!(policy.delay_for_attempt(1), Some(Duration::from_secs(15)));
+    }
+
+    #[test]
+    fn retry_policy_delay_attempt_2_is_45s() {
+        let policy = PrRetryPolicy::default();
+        assert_eq!(policy.delay_for_attempt(2), Some(Duration::from_secs(45)));
+    }
+
+    #[test]
+    fn retry_policy_delay_attempt_3_is_exhausted() {
+        let policy = PrRetryPolicy::default();
+        assert_eq!(policy.delay_for_attempt(3), None);
+    }
+
+    #[test]
+    fn retry_policy_delay_attempt_beyond_max_is_none() {
+        let policy = PrRetryPolicy::default();
+        assert_eq!(policy.delay_for_attempt(100), None);
+    }
+
+    #[test]
+    fn retry_policy_custom_values() {
+        let policy = PrRetryPolicy {
+            max_attempts: 2,
+            base_delay_secs: 10,
+            multiplier: 2,
+        };
+        assert_eq!(policy.delay_for_attempt(0), Some(Duration::from_secs(10)));
+        assert_eq!(policy.delay_for_attempt(1), Some(Duration::from_secs(20)));
+        assert_eq!(policy.delay_for_attempt(2), None);
+    }
+
+    #[test]
+    fn retry_policy_delays_are_strictly_increasing() {
+        let policy = PrRetryPolicy::default();
+        let delays: Vec<Duration> = (0..3)
+            .map(|i| policy.delay_for_attempt(i).expect("attempt within range"))
+            .collect();
+        for window in delays.windows(2) {
+            assert!(window[1] > window[0], "delays must be strictly increasing");
+        }
+    }
+
+    // --- Issue #159: OrphanBranch tests ---
+
+    #[test]
+    fn orphan_branch_parses_issue_number_from_maestro_prefix() {
+        let ob = OrphanBranch::from_branch_name("maestro/issue-42");
+        assert_eq!(ob.issue_number, Some(42));
+        assert_eq!(ob.branch, "maestro/issue-42");
+    }
+
+    #[test]
+    fn orphan_branch_parses_issue_number_from_origin_prefix() {
+        let ob = OrphanBranch::from_branch_name("origin/maestro/issue-99");
+        assert_eq!(ob.issue_number, Some(99));
+    }
+
+    #[test]
+    fn orphan_branch_returns_none_for_non_matching_branch() {
+        let ob = OrphanBranch::from_branch_name("feat/something");
+        assert_eq!(ob.issue_number, None);
+    }
+
+    #[test]
+    fn orphan_branch_returns_none_for_non_numeric_suffix() {
+        let ob = OrphanBranch::from_branch_name("maestro/issue-abc");
+        assert_eq!(ob.issue_number, None);
     }
 
     #[tokio::test]
