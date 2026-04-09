@@ -425,12 +425,7 @@ mod tests {
     fn spawn_args_include_required_base_flags() {
         let ms = make_managed("test prompt");
         let args = ms.build_args();
-        for flag in &[
-            "--print",
-            "--verbose",
-            "--output-format",
-            "stream-json",
-        ] {
+        for flag in &["--print", "--verbose", "--output-format", "stream-json"] {
             assert!(
                 args.iter().any(|a| a == flag),
                 "args must contain {}; got: {:?}",
