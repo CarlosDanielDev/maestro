@@ -72,7 +72,6 @@ impl ManagedSession {
     /// Extracted for testability — tests can inspect args without spawning.
     fn build_args(&self) -> Vec<String> {
         let mut args = vec![
-            "--bare".to_string(),
             "--print".to_string(),
             "--verbose".to_string(),
             "--output-format".to_string(),
@@ -412,32 +411,13 @@ mod tests {
     }
 
     #[test]
-    fn spawn_args_include_bare_flag() {
+    fn spawn_args_do_not_include_bare_flag() {
         let ms = make_managed("do something");
         let args = ms.build_args();
         assert!(
-            args.iter().any(|a| a == "--bare"),
-            "args must contain --bare; got: {:?}",
+            !args.iter().any(|a| a == "--bare"),
+            "args must NOT contain --bare (breaks OAuth); got: {:?}",
             args
-        );
-    }
-
-    #[test]
-    fn spawn_args_bare_flag_position_before_prompt() {
-        let prompt = "do something";
-        let ms = make_managed(prompt);
-        let args = ms.build_args();
-        let bare_pos = args
-            .iter()
-            .position(|a| a == "--bare")
-            .expect("--bare must be present");
-        let prompt_pos = args
-            .iter()
-            .position(|a| a == prompt)
-            .expect("prompt must be present");
-        assert!(
-            bare_pos < prompt_pos,
-            "--bare must appear before the prompt positional arg"
         );
     }
 
@@ -450,7 +430,6 @@ mod tests {
             "--verbose",
             "--output-format",
             "stream-json",
-            "--bare",
         ] {
             assert!(
                 args.iter().any(|a| a == flag),
