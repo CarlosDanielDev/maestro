@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-08 15:00 (UTC)
+> Last updated: 2026-04-09 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -74,9 +74,9 @@ maestro/
 │   ├── prompts.rs                         # PromptBuilder: structured issue prompts with task-type detection; ProjectLanguage enum; detect_project_language(); default_guardrail(); resolve_guardrail()  [Phase 3, Issue #43]
 │   ├── util.rs                            # Shared utilities (truncate, etc.)
 │   ├── sanitizer.rs                       # Placeholder sanitizer module; compiled only when `--features experimental-sanitizer` is set  [Issue #142]
-│   ├── flags/                             # Feature flag registry and runtime store  [Issue #141]
-│   │   ├── mod.rs                         # Flag enum (6 variants); serde serialization; default_enabled(), description(), all() helpers
-│   │   └── store.rs                       # FeatureFlags store; HashMap-based resolution: CLI override > config file > compile-time defaults
+│   ├── flags/                             # Feature flag registry and runtime store  [Issue #141, #146]
+│   │   ├── mod.rs                         # Flag enum (6 variants); FlagSource enum (Default, Config, Cli); serde serialization; default_enabled(), description(), name(), all() helpers
+│   │   └── store.rs                       # FeatureFlags store; source tracking per flag; HashMap-based resolution: CLI override > config file > compile-time defaults; source(), all_with_source() methods
 │   ├── updater/                           # Self-upgrade subsystem  [Issue #118]
 │   │   ├── mod.rs                         # UpgradeState state machine (Idle, Checking, UpdateAvailable, Downloading, Installing, Done, Failed); ReleaseInfo type (tag_name, download_url, body)
 │   │   ├── checker.rs                     # UpdateChecker trait; GitHubReleaseChecker (hits GitHub Releases API); version parsing via semver comparison; check_for_update() async entry point
@@ -161,12 +161,16 @@ maestro/
 │   │   │   ├── milestone.rs               # 4 snapshot tests for MilestoneScreen (with milestones, empty, loading, detail pane)
 │   │   │   ├── cost_dashboard.rs          # 5 snapshot tests for CostDashboard (no budget, under threshold, over 90%, empty, sorted)
 │   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files)
+│   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection  [Issue #146]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen  [Issue #31-33, #86]
 │   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; draw_suggestions() renders Suggestions panel with "Loading..." placeholder when loading_suggestions=true; loading_suggestions: bool field; set_suggestions() clears loading flag on delivery; R key emits RefreshSuggestions; Tab-based focus navigation between QuickActions and Suggestions; ProjectInfo gains username field  [Issue #31, #49, #34, #35, #86]
+│   │       ├── hollow_retry.rs            # HollowRetryScreen: minimal retry prompt overlay shown when a session stalls and user confirmation is required
 │   │       ├── issue_browser.rs           # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery; set_issues() calls reapply_filters() so active milestone filters are honoured when new issue data arrives  [Issue #32, #46, #117]
 │   │       ├── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action  [Issue #33]
-│   │       └── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter inserts newline, Ctrl+V pastes from clipboard (image or text), Esc cancels; image attachment list with [a]/[d]; keybinds bar always visible  [Issue #101]
+│   │       ├── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter inserts newline, Ctrl+V pastes from clipboard (image or text), Esc cancels; image attachment list with [a]/[d]; keybinds bar always visible  [Issue #101]
+│   │       ├── queue_confirmation.rs      # QueueConfirmationScreen: confirmation overlay before bulk-queuing selected issues from the issue browser
+│   │       └── settings.rs               # SettingsScreen: interactive Settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent  [Issue #124, #146]
 │   │   └── widgets/                       # Reusable TUI widget components  [Issue #124]
 │   │       ├── mod.rs                     # Module re-exports for all widgets
 │   │       └── ci_monitor.rs              # CiMonitorWidget: compact bordered box rendering live CI check-run status for a PR; status icons, check names, elapsed times, and a summary footer
@@ -235,9 +239,9 @@ maestro/
 | `src/continuous.rs` | `ContinuousModeState` and `ContinuousFailure` structs; state machine tracking current issue, completed/skipped counts, and accumulated failures for `--continuous` mode (Issue #85) |
 | `src/budget.rs` | Per-session and global budget enforcement (Phase 3) |
 | `src/sanitizer.rs` | Compile-time gated placeholder module; only included when `--features experimental-sanitizer` is passed to cargo (Issue #142) |
-| `src/flags/` | Feature flag registry and runtime resolution (Issue #141) |
-| `src/flags/mod.rs` | `Flag` enum with 6 variants; `serde` derive; `default_enabled()`, `description()`, `all()` helpers |
-| `src/flags/store.rs` | `FeatureFlags` store; `HashMap`-based resolution order: CLI flag > config file > compile-time defaults |
+| `src/flags/` | Feature flag registry and runtime resolution (Issues #141, #146) |
+| `src/flags/mod.rs` | `Flag` enum with 6 variants; `FlagSource` enum (`Default`, `Config`, `Cli`); `serde` derive; `default_enabled()`, `description()`, `name()`, `all()` helpers |
+| `src/flags/store.rs` | `FeatureFlags` store; per-flag source tracking; `HashMap`-based resolution order: CLI flag > config file > compile-time defaults; `source()` and `all_with_source()` methods |
 | `src/doctor.rs` | Preflight check system: `CheckSeverity`, `CheckResult`, `DoctorReport`, `run_all_checks()`, `print_report()`; `validate_preflight()` fails fast if any required check fails; `build_claude_cli_result()` (pub(crate), pure/testable); `check_claude_cli()` is Required severity; `build_gh_auth_result()` (pure/testable); `check_az_identity()` for Azure DevOps (Issues #49, #34, #52) |
 | `src/git.rs` | GitOps trait and CLI-backed commit+push (Phase 3) |
 | `src/models.rs` | Label-based model routing (Phase 3) |
@@ -302,6 +306,10 @@ maestro/
 | `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters; `set_issues()` (Issues #32, #46) |
 | `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
 | `src/tui/screens/prompt_input.rs` | `PromptInputScreen`: free-text prompt entry; `Enter` submits, `Shift+Enter` inserts newline, `Ctrl+V` pastes from clipboard (image or text), `Esc` cancels; image attachment list with `[a]`/`[d]` (Issue #101) |
+| `src/tui/screens/hollow_retry.rs` | `HollowRetryScreen`: minimal retry prompt overlay for stalled sessions awaiting user confirmation |
+| `src/tui/screens/queue_confirmation.rs` | `QueueConfirmationScreen`: confirmation overlay before bulk-queuing selected issues from the issue browser |
+| `src/tui/screens/settings.rs` | `SettingsScreen`: tabbed interactive settings UI; `Flags` tab shows all feature flags with name, state, source (`Default`/`Config`/`Cli`), and description; read-only display with green accent on focused fields (Issues #124, #146) |
+| `src/tui/screen_dispatch.rs` | `ScreenDispatch`: routes key events and render calls to the active screen; constructor accepts `FeatureFlags` to supply the settings screen (Issue #146) |
 | `src/tui/spinner.rs` | Braille spinner helpers: `spinner_frame()`, `format_thinking_elapsed()`, full spinner activity string builder |
 | `src/tui/snapshot_tests/` | TUI snapshot test suite; 33 tests across 7 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issue #16) |
 | `src/tui/snapshot_tests/overview.rs` | 6 snapshot tests for `PanelView`: empty, single running, multiple, selected, context overflow, forked |

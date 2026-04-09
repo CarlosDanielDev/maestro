@@ -2,6 +2,17 @@ pub mod store;
 
 use serde::{Deserialize, Serialize};
 
+/// Where a flag's current value was resolved from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlagSource {
+    /// Compiled-in default value.
+    Default,
+    /// Overridden by maestro.toml [flags] section.
+    Config,
+    /// Overridden by CLI --enable-flag / --disable-flag.
+    Cli,
+}
+
 /// All feature flags known to maestro.
 ///
 /// Adding a new flag requires three changes:
@@ -38,6 +49,18 @@ impl Flag {
             Flag::ReviewCouncil => false,
             Flag::ModelRouting => false,
             Flag::ContextOverflow => false,
+        }
+    }
+
+    /// Snake_case name matching the config/CLI key.
+    pub fn name(self) -> &'static str {
+        match self {
+            Flag::ContinuousMode => "continuous_mode",
+            Flag::AutoFork => "auto_fork",
+            Flag::CiAutoFix => "ci_auto_fix",
+            Flag::ReviewCouncil => "review_council",
+            Flag::ModelRouting => "model_routing",
+            Flag::ContextOverflow => "context_overflow",
         }
     }
 
@@ -125,6 +148,29 @@ mod tests {
         assert!(all.contains(&Flag::ReviewCouncil));
         assert!(all.contains(&Flag::ModelRouting));
         assert!(all.contains(&Flag::ContextOverflow));
+    }
+
+    // -- Flag::name --
+
+    #[test]
+    fn flag_name_returns_snake_case_for_each_variant() {
+        assert_eq!(Flag::ContinuousMode.name(), "continuous_mode");
+        assert_eq!(Flag::AutoFork.name(), "auto_fork");
+        assert_eq!(Flag::CiAutoFix.name(), "ci_auto_fix");
+        assert_eq!(Flag::ReviewCouncil.name(), "review_council");
+        assert_eq!(Flag::ModelRouting.name(), "model_routing");
+        assert_eq!(Flag::ContextOverflow.name(), "context_overflow");
+    }
+
+    #[test]
+    fn flag_name_is_non_empty_for_all_variants() {
+        for flag in Flag::all() {
+            assert!(
+                !flag.name().is_empty(),
+                "name() must not be empty for {:?}",
+                flag
+            );
+        }
     }
 
     // -- Serde round-trip --
