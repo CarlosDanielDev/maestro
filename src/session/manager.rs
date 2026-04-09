@@ -147,11 +147,13 @@ impl ManagedSession {
             let mut got_result = false;
 
             while let Ok(Some(line)) = lines.next_line().await {
-                let event = parse_stream_line(&line);
-                if matches!(event, StreamEvent::Completed { .. }) {
-                    got_result = true;
+                let events = parse_stream_line(&line);
+                for event in events {
+                    if matches!(event, StreamEvent::Completed { .. }) {
+                        got_result = true;
+                    }
+                    let _ = tx.send(SessionEvent { session_id, event });
                 }
-                let _ = tx.send(SessionEvent { session_id, event });
             }
 
             // Only send fallback completion if we didn't get a real result event
@@ -317,6 +319,13 @@ impl ManagedSession {
                     self.session.finished_at = Some(Utc::now());
                     self.session.current_activity = "Done".into();
                     self.session.log_activity("Session completed".into());
+
+                    if self.session.detect_hollow_completion() {
+                        self.session.is_hollow_completion = true;
+                        self.session.log_activity(
+                            "Warning: hollow completion detected — session completed without performing any work".into(),
+                        );
+                    }
                 }
             }
             StreamEvent::Error { message } => {
@@ -329,6 +338,10 @@ impl ManagedSession {
                 self.session.context_pct = *context_pct;
                 self.session
                     .log_activity(format!("Context: {:.0}%", context_pct * 100.0));
+            }
+            StreamEvent::TokenUpdate { usage } => {
+                // Claude CLI emits cumulative totals, so we replace rather than accumulate
+                self.session.token_usage = usage.clone();
             }
             StreamEvent::Thinking { .. } => {
                 if self.thinking_start.is_none() {
@@ -375,6 +388,7 @@ mod tests {
             finished_at: None,
             cost_usd: 0.0,
             context_pct: 0.0,
+            token_usage: crate::session::types::TokenUsage::default(),
             current_activity: String::new(),
             last_message: String::new(),
             activity_log: vec![],
@@ -390,6 +404,7 @@ mod tests {
             conflict_fix_context: None,
             image_paths: vec![],
             gate_results: vec![],
+            is_hollow_completion: false,
             is_thinking: false,
             thinking_started_at: None,
         };
@@ -464,5 +479,83 @@ mod tests {
             !args.iter().any(|a| a == "--permission-mode"),
             "permission_mode=default must not emit --permission-mode flag"
         );
+    }
+
+    // --- Issue #169: Hollow completion detection (handle_event) ---
+
+    fn make_managed_with_start(prompt: &str, started_secs_ago: i64) -> ManagedSession {
+        let mut ms = make_managed(prompt);
+        let now = chrono::Utc::now();
+        ms.session.started_at = Some(now - chrono::Duration::seconds(started_secs_ago));
+        ms
+    }
+
+    #[test]
+    fn handle_event_completed_sets_hollow_flag_when_all_conditions_met() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert!(ms.session.is_hollow_completion);
+        assert_eq!(ms.session.status, SessionStatus::Completed);
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_set_hollow_flag_when_cost_is_nonzero() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.03 });
+        assert!(!ms.session.is_hollow_completion);
+        assert!((ms.session.cost_usd - 0.03).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_set_hollow_flag_when_files_were_touched() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.session.files_touched.push("src/lib.rs".into());
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert!(!ms.session.is_hollow_completion);
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_set_hollow_flag_when_tool_calls_present() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.session.log_activity("Bash: $ cargo test".into());
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert!(!ms.session.is_hollow_completion);
+    }
+
+    #[test]
+    fn handle_event_completed_logs_hollow_warning_to_activity_log() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert!(
+            ms.session
+                .activity_log
+                .iter()
+                .any(|e| e.message.to_lowercase().contains("hollow")),
+            "expected a hollow warning entry in the activity log"
+        );
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_log_hollow_warning_for_real_session() {
+        let mut ms = make_managed_with_start("test", 60);
+        ms.session.cost_usd = 0.05;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.05 });
+        assert!(
+            !ms.session
+                .activity_log
+                .iter()
+                .any(|e| e.message.to_lowercase().contains("hollow")),
+            "must not log hollow warning for a real session"
+        );
+    }
+
+    #[test]
+    fn handle_event_completed_does_not_mutate_hollow_flag_for_already_terminal_session() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.session.status = SessionStatus::Errored;
+        ms.session.is_hollow_completion = false;
+        ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
+        assert_eq!(ms.session.status, SessionStatus::Errored);
+        assert!(!ms.session.is_hollow_completion);
     }
 }

@@ -69,6 +69,16 @@ impl SessionLogger {
             StreamEvent::Thinking { text } => {
                 format!("[{}] THINKING: {}\n", timestamp, text)
             }
+            StreamEvent::TokenUpdate { usage } => {
+                format!(
+                    "[{}] TOKENS: in={} out={} cache_r={} cache_w={}\n",
+                    timestamp,
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.cache_read_tokens,
+                    usage.cache_creation_tokens
+                )
+            }
             StreamEvent::Unknown { raw } => {
                 format!("[{}] UNKNOWN: {}\n", timestamp, raw)
             }

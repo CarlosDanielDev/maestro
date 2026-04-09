@@ -2,6 +2,7 @@ pub mod activity_log;
 pub mod app;
 mod background_tasks;
 pub mod cost_dashboard;
+pub mod token_dashboard;
 pub mod dep_graph;
 pub mod detail;
 pub mod fullscreen;
@@ -408,11 +409,15 @@ async fn event_loop(
                         (KeyCode::Char('$'), _) => {
                             app.tui_mode = app::TuiMode::CostDashboard;
                         }
+                        (KeyCode::Char('t'), _) => {
+                            app.tui_mode = app::TuiMode::TokenDashboard;
+                        }
                         (KeyCode::Tab, _) => {
                             app.tui_mode = match app.tui_mode {
                                 app::TuiMode::Overview => app::TuiMode::DependencyGraph,
                                 app::TuiMode::DependencyGraph => app::TuiMode::CostDashboard,
-                                app::TuiMode::CostDashboard => app::TuiMode::Overview,
+                                app::TuiMode::CostDashboard => app::TuiMode::TokenDashboard,
+                                app::TuiMode::TokenDashboard => app::TuiMode::Overview,
                                 app::TuiMode::Detail(_)
                                 | app::TuiMode::Fullscreen(_)
                                 | app::TuiMode::Dashboard
@@ -422,7 +427,8 @@ async fn event_loop(
                                 | app::TuiMode::CompletionSummary
                                 | app::TuiMode::ContinuousPause
                                 | app::TuiMode::QueueConfirmation
-                                | app::TuiMode::QueueExecution => app::TuiMode::Overview,
+                                | app::TuiMode::QueueExecution
+                                | app::TuiMode::HollowRetry => app::TuiMode::Overview,
                             };
                         }
                         (KeyCode::Esc, _) => {
@@ -560,6 +566,7 @@ async fn event_loop(
                         .map(|c| c.sessions.default_mode.clone())
                         .unwrap_or_else(|| "orchestrator".to_string());
 
+                    let original_prompt = config.prompt.clone();
                     let prompt = if config.image_paths.is_empty() {
                         config.prompt
                     } else {
@@ -572,6 +579,17 @@ async fn event_loop(
                     };
 
                     let session = crate::session::types::Session::new(prompt, model, mode, None);
+
+                    // Record in prompt history
+                    app.prompt_history.push(
+                        crate::state::prompt_history::PromptHistoryEntry {
+                            prompt: original_prompt,
+                            timestamp: chrono::Utc::now(),
+                            session_id: Some(session.id),
+                            outcome: crate::state::prompt_history::PromptOutcome::Unknown,
+                        },
+                    );
+
                     app.pending_session_launches.push(session);
                 }
             }

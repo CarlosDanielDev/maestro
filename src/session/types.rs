@@ -86,6 +86,55 @@ pub struct ConflictFixContext {
     pub conflicting_files: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_creation_tokens: u64,
+}
+
+impl TokenUsage {
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_creation_tokens
+    }
+
+    /// Fraction of input that came from cache (0.0 to 1.0).
+    pub fn cache_hit_ratio(&self) -> f64 {
+        let total_input = self.input_tokens + self.cache_read_tokens;
+        if total_input == 0 {
+            return 0.0;
+        }
+        self.cache_read_tokens as f64 / total_input as f64
+    }
+
+    /// Fraction of total tokens that were output.
+    pub fn output_ratio(&self) -> f64 {
+        let total = self.total_tokens();
+        if total == 0 {
+            return 0.0;
+        }
+        self.output_tokens as f64 / total as f64
+    }
+
+    /// Cost per 1000 tokens, given a known total cost.
+    pub fn cost_per_kilo_token(&self, cost_usd: f64) -> f64 {
+        let total = self.total_tokens();
+        if total == 0 {
+            return 0.0;
+        }
+        cost_usd / (total as f64 / 1000.0)
+    }
+
+    /// Add another TokenUsage into this one (for aggregation across sessions).
+    pub fn accumulate(&mut self, other: &TokenUsage) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.cache_read_tokens += other.cache_read_tokens;
+        self.cache_creation_tokens += other.cache_creation_tokens;
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
@@ -98,6 +147,9 @@ pub struct Session {
     pub finished_at: Option<DateTime<Utc>>,
     pub cost_usd: f64,
     pub context_pct: f64,
+    /// Accumulated token usage from Claude CLI stream-json.
+    #[serde(default)]
+    pub token_usage: TokenUsage,
     pub current_activity: String,
     pub last_message: String,
     pub activity_log: Vec<ActivityEntry>,
@@ -133,6 +185,9 @@ pub struct Session {
     /// Gate results from the last gate check run (empty if gates not configured or not run yet).
     #[serde(default)]
     pub gate_results: Vec<GateResultEntry>,
+    /// Whether this session completed without performing any observable work.
+    #[serde(default)]
+    pub is_hollow_completion: bool,
     /// Whether this session is currently in a thinking state.
     #[serde(skip)]
     pub is_thinking: bool,
@@ -187,6 +242,7 @@ impl Session {
             finished_at: None,
             cost_usd: 0.0,
             context_pct: 0.0,
+            token_usage: TokenUsage::default(),
             current_activity: String::new(),
             last_message: String::new(),
             activity_log: Vec::new(),
@@ -202,6 +258,7 @@ impl Session {
             conflict_fix_context: None,
             image_paths: Vec::new(),
             gate_results: Vec::new(),
+            is_hollow_completion: false,
             is_thinking: false,
             thinking_started_at: None,
         }
@@ -222,6 +279,42 @@ impl Session {
         if self.activity_log.len() > 100 {
             self.activity_log.drain(..self.activity_log.len() - 100);
         }
+    }
+
+    /// Threshold in seconds below which a zero-cost, zero-file session is suspicious.
+    const HOLLOW_DURATION_THRESHOLD_SECS: i64 = 30;
+
+    /// Check whether this session shows signs of a hollow completion —
+    /// completed without spending money, touching files, or using tools.
+    pub fn detect_hollow_completion(&self) -> bool {
+        if self.cost_usd > 0.0 {
+            return false;
+        }
+        if !self.files_touched.is_empty() {
+            return false;
+        }
+        if self.has_tool_calls() {
+            return false;
+        }
+        let duration_secs = self
+            .elapsed()
+            .map(|d| d.num_seconds())
+            .unwrap_or(i64::MAX);
+        duration_secs < Self::HOLLOW_DURATION_THRESHOLD_SECS
+    }
+
+    /// Whether the activity log contains any tool-use entries.
+    pub fn has_tool_calls(&self) -> bool {
+        self.activity_log.iter().any(|e| {
+            e.message.starts_with("Tool ")
+                || e.message.starts_with("Tool:")
+                || e.message.starts_with("Bash: ")
+                || e.message.starts_with("Read: ")
+                || e.message.starts_with("Edit: ")
+                || e.message.starts_with("Write: ")
+                || e.message.starts_with("Glob: ")
+                || e.message.starts_with("Grep: ")
+        })
     }
 
     pub fn elapsed(&self) -> Option<chrono::Duration> {
@@ -271,6 +364,8 @@ pub enum StreamEvent {
     Error { message: String },
     /// Context window usage update
     ContextUpdate { context_pct: f64 },
+    /// Token usage update from usage data in stream-json
+    TokenUpdate { usage: TokenUsage },
     /// Assistant is thinking (extended thinking block)
     Thinking { text: String },
     /// Raw line we couldn't parse
@@ -664,5 +759,249 @@ mod tests {
         let stripped = json.replace(r#","conflict_fix_context":null"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
         assert!(rt.conflict_fix_context.is_none());
+    }
+
+    // --- Issue #169: Hollow completion detection ---
+
+    fn make_session_for_hollow() -> Session {
+        Session::new(
+            "test prompt".into(),
+            "claude-sonnet-4-6".into(),
+            "orchestrator".into(),
+            None,
+        )
+    }
+
+    fn with_timestamps(mut s: Session, started_secs_ago: i64) -> Session {
+        let now = Utc::now();
+        s.started_at = Some(now - chrono::Duration::seconds(started_secs_ago));
+        s.finished_at = Some(now);
+        s
+    }
+
+    #[test]
+    fn has_tool_calls_returns_false_when_activity_log_is_empty() {
+        let s = make_session_for_hollow();
+        assert!(!s.has_tool_calls());
+    }
+
+    #[test]
+    fn has_tool_calls_returns_true_when_log_contains_tool_prefix() {
+        let mut s = make_session_for_hollow();
+        s.log_activity("Tool: WebSearch".into());
+        assert!(s.has_tool_calls());
+    }
+
+    #[test]
+    fn has_tool_calls_returns_true_when_log_contains_bash_prefix() {
+        let mut s = make_session_for_hollow();
+        s.log_activity("Bash: $ cargo build".into());
+        assert!(s.has_tool_calls());
+    }
+
+    #[test]
+    fn has_tool_calls_returns_false_for_non_tool_activity_entries() {
+        let mut s = make_session_for_hollow();
+        s.log_activity("Session spawned (pid: 1234)".into());
+        s.log_activity("Context: 12%".into());
+        s.log_activity("Session completed".into());
+        assert!(!s.has_tool_calls());
+    }
+
+    #[test]
+    fn has_tool_calls_returns_true_for_file_path_tool_entry() {
+        let mut s = make_session_for_hollow();
+        s.log_activity("Read: src/main.rs".into());
+        assert!(s.has_tool_calls());
+    }
+
+    #[test]
+    fn detect_hollow_completion_returns_true_for_all_hollow_conditions_met() {
+        let mut s = with_timestamps(make_session_for_hollow(), 10);
+        s.cost_usd = 0.0;
+        s.log_activity("Session spawned (pid: 1)".into());
+        s.log_activity("Session completed".into());
+        assert!(s.detect_hollow_completion());
+    }
+
+    #[test]
+    fn detect_hollow_completion_returns_false_when_cost_is_nonzero() {
+        let mut s = with_timestamps(make_session_for_hollow(), 10);
+        s.cost_usd = 0.05;
+        assert!(!s.detect_hollow_completion());
+    }
+
+    #[test]
+    fn detect_hollow_completion_returns_false_when_files_touched_is_nonempty() {
+        let mut s = with_timestamps(make_session_for_hollow(), 10);
+        s.cost_usd = 0.0;
+        s.files_touched = vec!["src/main.rs".into()];
+        assert!(!s.detect_hollow_completion());
+    }
+
+    #[test]
+    fn detect_hollow_completion_returns_false_when_activity_log_has_tool_calls() {
+        let mut s = with_timestamps(make_session_for_hollow(), 10);
+        s.cost_usd = 0.0;
+        s.log_activity("Bash: $ echo hi".into());
+        assert!(!s.detect_hollow_completion());
+    }
+
+    #[test]
+    fn detect_hollow_completion_returns_false_when_duration_is_exactly_30s() {
+        let mut s = with_timestamps(make_session_for_hollow(), 30);
+        s.cost_usd = 0.0;
+        assert!(!s.detect_hollow_completion());
+    }
+
+    #[test]
+    fn detect_hollow_completion_returns_true_at_duration_just_below_30s() {
+        let mut s = with_timestamps(make_session_for_hollow(), 29);
+        s.cost_usd = 0.0;
+        assert!(s.detect_hollow_completion());
+    }
+
+    #[test]
+    fn detect_hollow_completion_returns_false_when_started_at_is_none() {
+        let mut s = make_session_for_hollow();
+        s.cost_usd = 0.0;
+        s.started_at = None;
+        s.finished_at = None;
+        assert!(!s.detect_hollow_completion());
+    }
+
+    #[test]
+    fn detect_hollow_completion_returns_false_for_long_zero_cost_session() {
+        let mut s = with_timestamps(make_session_for_hollow(), 120);
+        s.cost_usd = 0.0;
+        assert!(!s.detect_hollow_completion());
+    }
+
+    #[test]
+    fn is_hollow_completion_field_round_trips_via_serde() {
+        let mut s = make_session_for_hollow();
+        s.is_hollow_completion = true;
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert!(rt.is_hollow_completion);
+    }
+
+    // --- Issue #161: TokenUsage tests ---
+
+    #[test]
+    fn token_usage_default_is_all_zeros() {
+        let t = TokenUsage::default();
+        assert_eq!(t.input_tokens, 0);
+        assert_eq!(t.output_tokens, 0);
+        assert_eq!(t.cache_read_tokens, 0);
+        assert_eq!(t.cache_creation_tokens, 0);
+    }
+
+    #[test]
+    fn token_usage_total_tokens() {
+        let t = TokenUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_tokens: 30,
+            cache_creation_tokens: 20,
+        };
+        assert_eq!(t.total_tokens(), 200);
+    }
+
+    #[test]
+    fn token_usage_cache_hit_ratio_zero_when_no_input() {
+        let t = TokenUsage::default();
+        assert!((t.cache_hit_ratio() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn token_usage_cache_hit_ratio_computes_correctly() {
+        let t = TokenUsage {
+            input_tokens: 25000,
+            output_tokens: 1000,
+            cache_read_tokens: 45000,
+            cache_creation_tokens: 0,
+        };
+        // cache_read / (input + cache_read) = 45000 / 70000
+        let expected = 45000.0 / 70000.0;
+        assert!((t.cache_hit_ratio() - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn token_usage_output_ratio_zero_when_empty() {
+        let t = TokenUsage::default();
+        assert!((t.output_ratio() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn token_usage_cost_per_kilo_token() {
+        let t = TokenUsage {
+            input_tokens: 10000,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+        };
+        // $1.00 / (10000/1000) = $0.10 per kTok
+        let cpk = t.cost_per_kilo_token(1.0);
+        assert!((cpk - 0.1).abs() < 0.001);
+    }
+
+    #[test]
+    fn token_usage_accumulate_adds_fields() {
+        let mut a = TokenUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_tokens: 30,
+            cache_creation_tokens: 20,
+        };
+        let b = TokenUsage {
+            input_tokens: 200,
+            output_tokens: 100,
+            cache_read_tokens: 60,
+            cache_creation_tokens: 40,
+        };
+        a.accumulate(&b);
+        assert_eq!(a.input_tokens, 300);
+        assert_eq!(a.output_tokens, 150);
+        assert_eq!(a.cache_read_tokens, 90);
+        assert_eq!(a.cache_creation_tokens, 60);
+    }
+
+    #[test]
+    fn token_usage_round_trips_via_serde() {
+        let t = TokenUsage {
+            input_tokens: 42000,
+            output_tokens: 1500,
+            cache_read_tokens: 30000,
+            cache_creation_tokens: 2000,
+        };
+        let json = serde_json::to_string(&t).unwrap();
+        let rt: TokenUsage = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.input_tokens, 42000);
+        assert_eq!(rt.output_tokens, 1500);
+        assert_eq!(rt.cache_read_tokens, 30000);
+        assert_eq!(rt.cache_creation_tokens, 2000);
+    }
+
+    #[test]
+    fn session_token_usage_defaults_when_absent_in_json() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let json = serde_json::to_string(&s).unwrap();
+        // Strip the token_usage field to simulate old JSON
+        let stripped = json.replace(
+            r#","token_usage":{"input_tokens":0,"output_tokens":0,"cache_read_tokens":0,"cache_creation_tokens":0}"#,
+            "",
+        );
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert_eq!(rt.token_usage.total_tokens(), 0);
+    }
+
+    #[test]
+    fn is_hollow_completion_defaults_to_false_when_absent_in_json() {
+        let s = make_session_for_hollow();
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json.replace(",\"is_hollow_completion\":false", "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert!(!rt.is_hollow_completion);
     }
 }

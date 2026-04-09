@@ -223,10 +223,12 @@ fn unknown_event_is_silent() {
 #[test]
 fn roundtrip_assistant_text_updates_session() {
     let line = r#"{"type":"assistant","message":{"type":"text","text":"I will fix the bug."}}"#;
-    let event = parse_stream_line(line);
+    let events = parse_stream_line(line);
 
     let mut managed = ManagedSession::new(make_session("s"));
-    managed.handle_event(&event);
+    for event in &events {
+        managed.handle_event(event);
+    }
 
     assert_eq!(managed.session.last_message, "I will fix the bug.");
     assert_eq!(managed.session.current_activity, "I will fix the bug.");
@@ -235,10 +237,12 @@ fn roundtrip_assistant_text_updates_session() {
 #[test]
 fn roundtrip_tool_use_with_file_path_updates_files_touched() {
     let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Write","input":{"file_path":"src/session/pool.rs"}}}"#;
-    let event = parse_stream_line(line);
+    let events = parse_stream_line(line);
 
     let mut managed = ManagedSession::new(make_session("s"));
-    managed.handle_event(&event);
+    for event in &events {
+        managed.handle_event(event);
+    }
 
     assert!(
         managed
@@ -251,10 +255,12 @@ fn roundtrip_tool_use_with_file_path_updates_files_touched() {
 #[test]
 fn roundtrip_result_event_transitions_to_completed() {
     let line = r#"{"type":"result","cost_usd":2.10,"duration_ms":45000}"#;
-    let event = parse_stream_line(line);
+    let events = parse_stream_line(line);
 
     let mut managed = ManagedSession::new(make_session("s"));
-    managed.handle_event(&event);
+    for event in &events {
+        managed.handle_event(event);
+    }
 
     assert_eq!(managed.session.status, SessionStatus::Completed);
     assert!((managed.session.cost_usd - 2.10).abs() < f64::EPSILON);
@@ -263,10 +269,12 @@ fn roundtrip_result_event_transitions_to_completed() {
 #[test]
 fn roundtrip_error_event_transitions_to_errored() {
     let line = r#"{"type":"error","error":{"message":"context window exceeded"}}"#;
-    let event = parse_stream_line(line);
+    let events = parse_stream_line(line);
 
     let mut managed = ManagedSession::new(make_session("s"));
-    managed.handle_event(&event);
+    for event in &events {
+        managed.handle_event(event);
+    }
 
     assert_eq!(managed.session.status, SessionStatus::Errored);
     assert!(
@@ -281,10 +289,12 @@ fn roundtrip_error_event_transitions_to_errored() {
 #[test]
 fn roundtrip_context_update_from_usage_tokens() {
     let line = r#"{"type":"system","usage":{"input_tokens":80000,"max_input_tokens":200000}}"#;
-    let event = parse_stream_line(line);
+    let events = parse_stream_line(line);
 
     let mut managed = ManagedSession::new(make_session("s"));
-    managed.handle_event(&event);
+    for event in &events {
+        managed.handle_event(event);
+    }
 
     assert!(
         (managed.session.context_pct - 0.4).abs() < 0.001,
@@ -307,8 +317,10 @@ fn roundtrip_full_session_transcript() {
 
     let mut managed = ManagedSession::new(make_session("s"));
     for line in &lines {
-        let event = parse_stream_line(line);
-        managed.handle_event(&event);
+        let events = parse_stream_line(line);
+        for event in &events {
+            managed.handle_event(event);
+        }
     }
 
     assert_eq!(managed.session.status, SessionStatus::Completed);
@@ -647,10 +659,12 @@ fn thinking_stop_logs_elapsed_time() {
 #[test]
 fn roundtrip_tool_use_bash_command_preview_preserved_through_parse_and_handle() {
     let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Bash","input":{"command":"cargo test --lib"}}}"#;
-    let event = parse_stream_line(line);
+    let events = parse_stream_line(line);
 
     let mut managed = ManagedSession::new(make_session("s"));
-    managed.handle_event(&event);
+    for event in &events {
+        managed.handle_event(event);
+    }
 
     assert_eq!(managed.session.current_activity, "$ cargo test --lib");
 }
