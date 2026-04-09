@@ -1,4 +1,4 @@
-use super::Flag;
+use super::{Flag, FlagSource};
 use std::collections::HashMap;
 
 /// Runtime feature flag store.
@@ -6,7 +6,7 @@ use std::collections::HashMap;
 /// Resolution priority: CLI disable > CLI enable > config file > compiled defaults.
 #[derive(Debug, Clone, Default)]
 pub struct FeatureFlags {
-    overrides: HashMap<Flag, bool>,
+    overrides: HashMap<Flag, (bool, FlagSource)>,
 }
 
 impl FeatureFlags {
@@ -25,21 +25,21 @@ impl FeatureFlags {
         // Layer 1: config overrides
         for (name, value) in config_flags {
             if let Some(flag) = Self::parse_flag(&name) {
-                overrides.insert(flag, value);
+                overrides.insert(flag, (value, FlagSource::Config));
             }
         }
 
         // Layer 2: CLI enable (beats config)
         for name in cli_enable {
             if let Some(flag) = Self::parse_flag(&name) {
-                overrides.insert(flag, true);
+                overrides.insert(flag, (true, FlagSource::Cli));
             }
         }
 
         // Layer 3: CLI disable (beats CLI enable)
         for name in cli_disable {
             if let Some(flag) = Self::parse_flag(&name) {
-                overrides.insert(flag, false);
+                overrides.insert(flag, (false, FlagSource::Cli));
             }
         }
 
@@ -51,8 +51,16 @@ impl FeatureFlags {
     pub fn is_enabled(&self, flag: Flag) -> bool {
         self.overrides
             .get(&flag)
-            .copied()
+            .map(|(val, _)| *val)
             .unwrap_or_else(|| flag.default_enabled())
+    }
+
+    /// Returns the source that determined the flag's current value.
+    pub fn source(&self, flag: Flag) -> FlagSource {
+        self.overrides
+            .get(&flag)
+            .map(|(_, src)| *src)
+            .unwrap_or(FlagSource::Default)
     }
 
     /// All flags with their resolved state, for TUI display.
@@ -60,6 +68,14 @@ impl FeatureFlags {
         Flag::all()
             .iter()
             .map(|&f| (f, self.is_enabled(f)))
+            .collect()
+    }
+
+    /// All flags with resolved state and source, for TUI display.
+    pub fn all_with_source(&self) -> Vec<(Flag, bool, FlagSource)> {
+        Flag::all()
+            .iter()
+            .map(|&f| (f, self.is_enabled(f), self.source(f)))
             .collect()
     }
 
@@ -230,6 +246,86 @@ mod tests {
             ci_entry.1,
             "all_with_state must reflect config-enabled state"
         );
+    }
+
+    // -- source --
+
+    #[test]
+    fn feature_flags_source_default_when_no_override() {
+        let flags = FeatureFlags::default();
+        for &flag in Flag::all() {
+            assert_eq!(
+                flags.source(flag),
+                FlagSource::Default,
+                "source must be Default for {:?} with no overrides",
+                flag
+            );
+        }
+    }
+
+    #[test]
+    fn feature_flags_source_config_when_config_override() {
+        let mut config = HashMap::new();
+        config.insert("ci_auto_fix".to_string(), true);
+        let flags = FeatureFlags::new(config, vec![], vec![]);
+        assert_eq!(flags.source(Flag::CiAutoFix), FlagSource::Config);
+    }
+
+    #[test]
+    fn feature_flags_source_cli_when_cli_enable() {
+        let flags = FeatureFlags::new(HashMap::new(), vec!["ci_auto_fix".to_string()], vec![]);
+        assert_eq!(flags.source(Flag::CiAutoFix), FlagSource::Cli);
+    }
+
+    #[test]
+    fn feature_flags_source_cli_when_cli_disable() {
+        let flags = FeatureFlags::new(HashMap::new(), vec![], vec!["continuous_mode".to_string()]);
+        assert_eq!(flags.source(Flag::ContinuousMode), FlagSource::Cli);
+    }
+
+    #[test]
+    fn feature_flags_source_cli_beats_config() {
+        let mut config = HashMap::new();
+        config.insert("ci_auto_fix".to_string(), false);
+        let flags = FeatureFlags::new(config, vec!["ci_auto_fix".to_string()], vec![]);
+        assert_eq!(flags.source(Flag::CiAutoFix), FlagSource::Cli);
+    }
+
+    // -- all_with_source --
+
+    #[test]
+    fn feature_flags_all_with_source_returns_all_six_flags() {
+        let flags = FeatureFlags::default();
+        assert_eq!(flags.all_with_source().len(), 6);
+    }
+
+    #[test]
+    fn feature_flags_all_with_source_reflects_resolved_state_and_source() {
+        let mut config = HashMap::new();
+        config.insert("ci_auto_fix".to_string(), true);
+        let flags = FeatureFlags::new(config, vec!["model_routing".to_string()], vec![]);
+        let entries = flags.all_with_source();
+
+        let ci = entries
+            .iter()
+            .find(|(f, _, _)| *f == Flag::CiAutoFix)
+            .unwrap();
+        assert!(ci.1); // enabled
+        assert_eq!(ci.2, FlagSource::Config);
+
+        let mr = entries
+            .iter()
+            .find(|(f, _, _)| *f == Flag::ModelRouting)
+            .unwrap();
+        assert!(mr.1); // enabled
+        assert_eq!(mr.2, FlagSource::Cli);
+
+        let af = entries
+            .iter()
+            .find(|(f, _, _)| *f == Flag::AutoFork)
+            .unwrap();
+        assert!(af.1); // default enabled
+        assert_eq!(af.2, FlagSource::Default);
     }
 
     #[test]
