@@ -89,6 +89,8 @@ pub enum ScreenAction {
     LaunchConflictFix(ConflictFixConfig),
     /// Retry a hollow-completed session by ID.
     RetryHollow(uuid::Uuid),
+    /// Trigger a version check and self-update.
+    CheckForUpdate,
     /// Quit the application.
     Quit,
 }
