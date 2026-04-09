@@ -78,7 +78,8 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::Settings => {
                     if let Some(ref config) = app.config {
-                        let mut screen = screens::SettingsScreen::new(config.clone());
+                        let mut screen =
+                            screens::SettingsScreen::new(config.clone(), app.flags.clone());
                         // Try to find the config file path for save
                         for candidate in &["maestro.toml", ".maestro/config.toml"] {
                             let path = std::path::PathBuf::from(candidate);
