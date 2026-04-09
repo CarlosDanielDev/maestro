@@ -21,17 +21,30 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Advance spinner animation on each draw cycle
     app.spinner_tick = app.spinner_tick.wrapping_add(1);
 
+    let log_height = app
+        .config
+        .as_ref()
+        .map(|c| {
+            let pct = c.tui.layout.activity_log_height.clamp(10, 50);
+            let total = f.area().height;
+            ((total as u32 * pct as u32) / 100).max(4) as u16
+        })
+        .unwrap_or(10);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // status bar
-            Constraint::Min(10),    // main content
-            Constraint::Length(10), // activity log
-            Constraint::Length(1),  // help bar
+            Constraint::Length(3),          // status bar
+            Constraint::Min(10),            // main content
+            Constraint::Length(log_height), // activity log
+            Constraint::Length(1),          // help bar
         ])
         .split(f.area());
 
     draw_status_bar(f, app, chunks[0]);
+
+    // Use preview theme if active, otherwise base theme
+    let theme = app.active_theme().clone();
 
     // Render main content based on TUI mode
     let spinner_tick = app.spinner_tick;
@@ -43,7 +56,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &sessions,
                 Some(&app.pool.file_claims),
                 chunks[1],
-                &app.theme,
+                &theme,
                 spinner_tick,
             );
         }
@@ -56,7 +69,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &app.progress_tracker,
                     Some(&app.pool.file_claims),
                     chunks[1],
-                    &app.theme,
+                    &theme,
                 );
             } else {
                 app.panel_view.draw_with_claims(
@@ -64,7 +77,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &sessions,
                     Some(&app.pool.file_claims),
                     chunks[1],
-                    &app.theme,
+                    &theme,
                     spinner_tick,
                 );
             }
@@ -80,12 +93,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     session,
                     &app.progress_tracker,
                     chunks[1],
-                    &app.theme,
+                    &theme,
                     spinner_tick,
                 );
             } else {
                 app.panel_view
-                    .draw(f, &sessions, chunks[1], &app.theme, spinner_tick);
+                    .draw(f, &sessions, chunks[1], &theme, spinner_tick);
             }
         }
         TuiMode::CostDashboard => {
@@ -97,7 +110,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 app.total_cost,
                 budget_limit,
                 chunks[1],
-                &app.theme,
+                &theme,
             );
         }
         TuiMode::Dashboard => {
@@ -133,7 +146,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &sessions,
                 Some(&app.pool.file_claims),
                 chunks[1],
-                &app.theme,
+                &theme,
                 spinner_tick,
             );
             // Draw queue progress overlay
@@ -149,7 +162,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &sessions,
                 Some(&app.pool.file_claims),
                 chunks[1],
-                &app.theme,
+                &theme,
                 spinner_tick,
             );
             // Draw overlay on top
@@ -164,7 +177,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &sessions,
                 Some(&app.pool.file_claims),
                 chunks[1],
-                &app.theme,
+                &theme,
                 spinner_tick,
             );
             if let Some(ref cont) = app.continuous_mode {
@@ -178,11 +191,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &sessions,
                 app.total_cost,
                 chunks[1],
-                &app.theme,
+                &theme,
             );
         }
         TuiMode::Sanitize => {
             if let Some(ref mut screen) = app.sanitize_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
+        TuiMode::Settings => {
+            if let Some(ref mut screen) = app.settings_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -193,7 +211,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &sessions,
                 Some(&app.pool.file_claims),
                 chunks[1],
-                &app.theme,
+                &theme,
                 spinner_tick,
             );
             if let Some(ref mut screen) = app.hollow_retry_screen {
@@ -288,6 +306,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 .sanitize_screen
                 .as_ref()
                 .map(|s| (s.keybindings(), s.desired_input_mode())),
+            TuiMode::Settings => app
+                .settings_screen
+                .as_ref()
+                .map(|s| (s.keybindings(), s.desired_input_mode())),
             _ => None,
         }
         .map(|(b, m)| (b, m.unwrap_or(InputMode::Normal)))
@@ -298,13 +320,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             &screen_bindings,
             input_mode,
             app.help_scroll,
-            &app.theme,
+            &theme,
         );
     }
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let theme = &app.theme;
+    let theme = app.active_theme();
     let elapsed = Utc::now() - app.start_time;
     let elapsed_str = format!(
         "{:02}:{:02}:{:02}",
@@ -440,7 +462,7 @@ fn draw_notification_banner(
 }
 
 fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
-    let theme = &app.theme;
+    let theme = app.active_theme();
     let mode_label = match app.tui_mode {
         TuiMode::Overview => "Overview",
         TuiMode::Detail(_) => "Detail",
@@ -458,6 +480,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::HollowRetry => "Hollow Retry",
         TuiMode::TokenDashboard => "Tokens",
         TuiMode::Sanitize => "Sanitize",
+        TuiMode::Settings => "Settings",
     };
 
     let help = Line::from(vec![

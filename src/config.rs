@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     pub project: ProjectConfig,
     pub sessions: SessionsConfig,
@@ -35,19 +35,68 @@ pub struct Config {
     pub flags: FlagsConfig,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct FlagsConfig {
     #[serde(flatten)]
     pub entries: HashMap<String, bool>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TuiConfig {
     #[serde(default)]
     pub theme: ThemeConfig,
+    #[serde(default)]
+    pub layout: LayoutConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Layout configuration for the Issues screen.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LayoutConfig {
+    /// Panel arrangement mode.
+    #[serde(default)]
+    pub mode: LayoutMode,
+    /// Information density level.
+    #[serde(default)]
+    pub density: Density,
+    /// Percentage of width (horizontal) or height (vertical) for preview panel.
+    #[serde(default = "default_preview_ratio")]
+    pub preview_ratio: u8,
+    /// Percentage of height for activity log panel.
+    #[serde(default = "default_activity_log_height")]
+    pub activity_log_height: u8,
+}
+
+impl Default for LayoutConfig {
+    fn default() -> Self {
+        Self {
+            mode: LayoutMode::default(),
+            density: Density::default(),
+            preview_ratio: default_preview_ratio(),
+            activity_log_height: default_activity_log_height(),
+        }
+    }
+}
+
+/// Panel arrangement mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LayoutMode {
+    #[default]
+    Vertical,
+    Horizontal,
+}
+
+/// Information density level.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Density {
+    #[default]
+    Default,
+    Comfortable,
+    Compact,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectConfig {
     #[serde(default)]
     pub repo: String,
@@ -55,7 +104,7 @@ pub struct ProjectConfig {
     pub base_branch: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionsConfig {
     #[serde(default = "default_max_concurrent")]
     pub max_concurrent: usize,
@@ -99,7 +148,7 @@ pub struct SessionsConfig {
     pub completion_gates: CompletionGatesConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompletionGatesConfig {
     /// Whether completion gates are enabled. Default: true.
     #[serde(default = "default_true")]
@@ -118,7 +167,7 @@ impl Default for CompletionGatesConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompletionGateEntry {
     /// Display name for activity log (e.g., "fmt", "clippy").
     pub name: String,
@@ -129,7 +178,7 @@ pub struct CompletionGateEntry {
     pub required: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextOverflowConfig {
     /// Context usage percentage at which auto-fork triggers. Default: 70.
     #[serde(default = "default_overflow_threshold_pct")]
@@ -192,7 +241,7 @@ impl ConflictPolicy {
 }
 
 /// Conflict detection configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConflictConfig {
     /// Whether real-time conflict detection is enabled. Default: true.
     #[serde(default = "default_true")]
@@ -211,7 +260,7 @@ impl Default for ConflictConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BudgetConfig {
     #[serde(default = "default_per_session_usd")]
     pub per_session_usd: f64,
@@ -221,7 +270,7 @@ pub struct BudgetConfig {
     pub alert_threshold_pct: u8,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GithubConfig {
     #[serde(default = "default_issue_labels")]
     pub issue_filter_labels: Vec<String>,
@@ -250,7 +299,7 @@ impl Default for GithubConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProviderConfig {
     /// Provider type: "github" or "azure_devops". Default: github.
     #[serde(default)]
@@ -293,7 +342,7 @@ impl Default for ProviderConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NotificationsConfig {
     #[serde(default = "default_true")]
     pub desktop: bool,
@@ -307,7 +356,7 @@ pub struct NotificationsConfig {
     pub slack_rate_limit_per_min: u32,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MergeMethod {
     Merge,
@@ -326,7 +375,7 @@ impl MergeMethod {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GatesConfig {
     /// Whether gates are enabled. Default: true.
     #[serde(default = "default_true")]
@@ -357,7 +406,7 @@ impl Default for GatesConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CiAutoFixConfig {
     /// Whether CI auto-fix is enabled. Default: true.
     #[serde(default = "default_true")]
@@ -384,7 +433,7 @@ fn default_test_command() -> String {
     "cargo test".into()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReviewConfig {
     /// Whether review dispatch is enabled.
     #[serde(default)]
@@ -397,7 +446,7 @@ pub struct ReviewConfig {
     pub reviewers: Vec<ReviewerEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReviewerEntry {
     pub name: String,
     pub command: String,
@@ -419,7 +468,7 @@ fn default_review_command() -> String {
     "gh pr review {pr_number} --comment --body 'Automated review by Maestro'".into()
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModelsConfig {
     /// Routing rules: label pattern -> model name. First match wins.
     /// Example: { "priority:P0" = "opus", "type:docs" = "haiku" }
@@ -427,7 +476,7 @@ pub struct ModelsConfig {
     pub routing: std::collections::HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConcurrencyConfig {
     /// Labels that mark a task as "heavy" (resource-intensive).
     #[serde(default)]
@@ -446,7 +495,7 @@ impl Default for ConcurrencyConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonitoringConfig {
     /// Interval in seconds for work assigner ticks. Default: 10.
     #[serde(default = "default_work_tick_interval")]
@@ -462,7 +511,7 @@ impl Default for MonitoringConfig {
 }
 
 /// Plugin configuration: shell commands triggered on hook events.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginConfig {
     /// Display name for the plugin.
     pub name: String,
@@ -476,7 +525,7 @@ pub struct PluginConfig {
 }
 
 /// Mode configuration: defines system prompt and allowed tools for a named mode.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModeConfig {
     /// System prompt override for this mode.
     #[serde(default)]
@@ -494,6 +543,13 @@ fn default_heavy_task_limit() -> usize {
 }
 fn default_work_tick_interval() -> u64 {
     10
+}
+
+fn default_preview_ratio() -> u8 {
+    50
+}
+fn default_activity_log_height() -> u8 {
+    25
 }
 
 fn default_base_branch() -> String {
@@ -568,6 +624,13 @@ impl Config {
         let content =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         toml::from_str(&content).with_context(|| format!("parsing {}", path.display()))
+    }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        let content = toml::to_string_pretty(self).context("serializing config to TOML")?;
+        std::fs::write(path, content)
+            .with_context(|| format!("writing config to {}", path.display()))?;
+        Ok(())
     }
 
     pub fn find_and_load() -> Result<Self> {
@@ -957,6 +1020,269 @@ alert_threshold_pct = 80
         .unwrap();
         let cfg = Config::load(f.path()).expect("load failed");
         assert_eq!(cfg.sessions.hollow_max_retries, 1);
+    }
+
+    // --- Issue #121: LayoutConfig tests ---
+
+    #[test]
+    fn layout_config_defaults() {
+        let cfg = LayoutConfig::default();
+        assert_eq!(cfg.mode, LayoutMode::Vertical);
+        assert_eq!(cfg.density, Density::Default);
+        assert_eq!(cfg.preview_ratio, 50);
+        assert_eq!(cfg.activity_log_height, 25);
+    }
+
+    #[test]
+    fn layout_config_deserializes_from_toml() {
+        let toml_str = r#"
+mode = "horizontal"
+density = "compact"
+preview_ratio = 60
+activity_log_height = 30
+"#;
+        let cfg: LayoutConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.mode, LayoutMode::Horizontal);
+        assert_eq!(cfg.density, Density::Compact);
+        assert_eq!(cfg.preview_ratio, 60);
+        assert_eq!(cfg.activity_log_height, 30);
+    }
+
+    #[test]
+    fn layout_config_partial_deserializes() {
+        let toml_str = r#"mode = "horizontal""#;
+        let cfg: LayoutConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.mode, LayoutMode::Horizontal);
+        assert_eq!(cfg.density, Density::Default);
+        assert_eq!(cfg.preview_ratio, 50);
+    }
+
+    #[test]
+    fn layout_config_round_trips() {
+        let cfg = LayoutConfig {
+            mode: LayoutMode::Horizontal,
+            density: Density::Comfortable,
+            preview_ratio: 40,
+            activity_log_height: 20,
+        };
+        let toml_str = toml::to_string_pretty(&cfg).unwrap();
+        let reloaded: LayoutConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(cfg, reloaded);
+    }
+
+    #[test]
+    fn full_config_layout_defaults_when_section_absent() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+"#
+        )
+        .unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert_eq!(cfg.tui.layout.mode, LayoutMode::Vertical);
+        assert_eq!(cfg.tui.layout.density, Density::Default);
+    }
+
+    // --- Issue #70: Config round-trip (save/load) tests ---
+
+    #[test]
+    fn config_save_round_trip_minimal() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+"#
+        )
+        .unwrap();
+        let original = Config::load(f.path()).expect("load failed");
+        let out = tempfile::NamedTempFile::new().unwrap();
+        original.save(out.path()).expect("save failed");
+        let reloaded = Config::load(out.path()).expect("reload failed");
+        assert_eq!(original, reloaded);
+    }
+
+    #[test]
+    fn config_save_round_trip_full() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+base_branch = "develop"
+[sessions]
+max_concurrent = 5
+stall_timeout_secs = 600
+default_model = "sonnet"
+default_mode = "plan"
+permission_mode = "default"
+allowed_tools = ["Read", "Write"]
+max_retries = 3
+retry_cooldown_secs = 30
+hollow_max_retries = 2
+max_prompt_history = 50
+[sessions.context_overflow]
+overflow_threshold_pct = 85
+auto_fork = false
+commit_prompt_pct = 60
+max_fork_depth = 3
+[sessions.conflict]
+enabled = false
+policy = "kill"
+[budget]
+per_session_usd = 10.0
+total_usd = 100.0
+alert_threshold_pct = 90
+[github]
+issue_filter_labels = ["ready", "approved"]
+auto_pr = false
+cache_ttl_secs = 600
+auto_merge = true
+merge_method = "rebase"
+[notifications]
+desktop = false
+slack = true
+slack_webhook_url = "https://hooks.slack.com/test"
+slack_rate_limit_per_min = 5
+[gates]
+enabled = false
+test_command = "make test"
+ci_poll_interval_secs = 60
+ci_max_wait_secs = 3600
+[gates.ci_auto_fix]
+enabled = false
+max_retries = 5
+[concurrency]
+heavy_task_labels = ["gpu", "large"]
+heavy_task_limit = 1
+[monitoring]
+work_tick_interval_secs = 30
+[flags]
+ci_auto_fix = true
+review_council = false
+"#
+        )
+        .unwrap();
+        let original = Config::load(f.path()).expect("load failed");
+        let out = tempfile::NamedTempFile::new().unwrap();
+        original.save(out.path()).expect("save failed");
+        let reloaded = Config::load(out.path()).expect("reload failed");
+        assert_eq!(original, reloaded);
+    }
+
+    #[test]
+    fn config_save_writes_all_sections() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+"#
+        )
+        .unwrap();
+        let original = Config::load(f.path()).unwrap();
+        let out = tempfile::NamedTempFile::new().unwrap();
+        original.save(out.path()).unwrap();
+        let content = std::fs::read_to_string(out.path()).unwrap();
+        assert!(content.contains("[project]"));
+        assert!(content.contains("[sessions]"));
+        assert!(content.contains("[budget]"));
+        assert!(content.contains("max_concurrent"));
+        assert!(content.contains("stall_timeout_secs"));
+    }
+
+    #[test]
+    fn config_save_round_trip_with_completion_gates() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[sessions.completion_gates]
+enabled = true
+[[sessions.completion_gates.commands]]
+name = "fmt"
+run = "cargo fmt --check"
+required = true
+[[sessions.completion_gates.commands]]
+name = "clippy"
+run = "cargo clippy"
+required = false
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+"#
+        )
+        .unwrap();
+        let original = Config::load(f.path()).expect("load failed");
+        let out = tempfile::NamedTempFile::new().unwrap();
+        original.save(out.path()).expect("save failed");
+        let reloaded = Config::load(out.path()).expect("reload failed");
+        assert_eq!(original, reloaded);
+        assert_eq!(reloaded.sessions.completion_gates.commands.len(), 2);
+    }
+
+    #[test]
+    fn config_partial_eq_detects_difference() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+"#
+        )
+        .unwrap();
+        let mut cfg1 = Config::load(f.path()).unwrap();
+        let cfg2 = Config::load(f.path()).unwrap();
+        assert_eq!(cfg1, cfg2);
+        cfg1.sessions.max_concurrent = 999;
+        assert_ne!(cfg1, cfg2);
     }
 
     #[test]
