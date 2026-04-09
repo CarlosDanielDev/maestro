@@ -95,10 +95,9 @@ impl App {
                 self.context_monitor.mark_overflow_triggered(session_id);
 
                 if let Some(managed) = self.pool.get_active_mut(session_id) {
-                    let _ = managed.session.transition_to(
-                        SessionStatus::Completed,
-                        TransitionReason::ContextOverflow,
-                    );
+                    let _ = managed
+                        .session
+                        .transition_to(SessionStatus::Completed, TransitionReason::ContextOverflow);
                     managed.session.current_activity = "Forked".into();
                     managed.session.log_activity(format!(
                         "Session forked to child {}",
