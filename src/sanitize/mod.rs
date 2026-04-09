@@ -9,9 +9,9 @@ use analyzer::ClaudeAnalyzer;
 pub use analyzer::SmellAnalyzer;
 pub use config::{OutputFormat, SanitizeConfig};
 pub use scanner::{CodeScanner, RustScanner};
-pub use types::{AnalysisResult, Finding, SanitizeReport, ScanResult, Severity, SmellCategory};
 #[cfg(test)]
 pub use types::SourceLocation;
+pub use types::{AnalysisResult, Finding, SanitizeReport, ScanResult, Severity, SmellCategory};
 
 pub async fn cmd_sanitize(config: SanitizeConfig) -> anyhow::Result<()> {
     use reporter::{JsonReporter, MarkdownReporter, ReportGenerator, TextReporter};
