@@ -95,23 +95,98 @@ jobs:
     name: Update Homebrew Tap
     needs: release
     runs-on: ubuntu-latest
+    env:
+      TAG_REF: ${{ github.ref }}
+      REPO_NAME: ${{ github.repository }}
     steps:
-      - name: Trigger homebrew-tap update
-        env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Compute checksums from release assets
+        id: shas
         run: |
-          if [ -z "${TAP_TOKEN}" ]; then
-            echo "::warning::HOMEBREW_TAP_TOKEN secret is not set — skipping tap update"
-            exit 0
-          fi
-          TAG="${GITHUB_REF#refs/tags/}"
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${TAP_TOKEN}" \
-            https://api.github.com/repos/CarlosDanielDev/homebrew-tap/dispatches \
-            -d "{\"event_type\": \"formula-update\", \"client_payload\": {\"version\": \"${TAG#v}\", \"tag\": \"${TAG}\"}}")
-          if [ "${HTTP_CODE}" != "204" ]; then
-            echo "::error::Failed to trigger homebrew tap update — HTTP ${HTTP_CODE}"
-            exit 1
-          fi
-          echo "Homebrew tap update triggered successfully"
+          TAG="${TAG_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          BASE_URL="https://github.com/${REPO_NAME}/releases/download/${TAG}"
+
+          for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu; do
+            FILE="maestro-${TAG}-${target}.tar.gz"
+            echo "Downloading ${FILE}..."
+            curl -sL --retry 5 --retry-delay 3 -o "${FILE}" "${BASE_URL}/${FILE}"
+            if [ ! -s "${FILE}" ]; then
+              echo "::error::Failed to download ${FILE}"
+              exit 1
+            fi
+          done
+
+          {
+            echo "sha_aarch64=$(sha256sum "maestro-${TAG}-aarch64-apple-darwin.tar.gz" | awk '{print $1}')"
+            echo "sha_x86_64_mac=$(sha256sum "maestro-${TAG}-x86_64-apple-darwin.tar.gz" | awk '{print $1}')"
+            echo "sha_linux=$(sha256sum "maestro-${TAG}-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}')"
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+            echo "base_url=${BASE_URL}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: CarlosDanielDev/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update formula
+        env:
+          VERSION: ${{ steps.shas.outputs.version }}
+          TAG: ${{ steps.shas.outputs.tag }}
+          BASE_URL: ${{ steps.shas.outputs.base_url }}
+          SHA_AARCH64: ${{ steps.shas.outputs.sha_aarch64 }}
+          SHA_X86_64_MAC: ${{ steps.shas.outputs.sha_x86_64_mac }}
+          SHA_LINUX: ${{ steps.shas.outputs.sha_linux }}
+        run: |
+          cat > homebrew-tap/Formula/maestro.rb << EOF
+          class Maestro < Formula
+            desc "Multi-session Claude Code orchestrator with Matrix-style TUI"
+            homepage "https://github.com/CarlosDanielDev/maestro"
+            license "MIT"
+            version "${VERSION}"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "${BASE_URL}/maestro-${TAG}-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_AARCH64}"
+              else
+                url "${BASE_URL}/maestro-${TAG}-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_X86_64_MAC}"
+              end
+            end
+
+            on_linux do
+              url "${BASE_URL}/maestro-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "${SHA_LINUX}"
+            end
+
+            def install
+              bin.install "maestro"
+            end
+
+            test do
+              assert_match "maestro", shell_output("#{bin}/maestro --help")
+            end
+          end
+          EOF
+
+          # Remove heredoc indentation (10 spaces)
+          sed -i 's/^          //' homebrew-tap/Formula/maestro.rb
+
+          echo "=== Generated formula ==="
+          cat homebrew-tap/Formula/maestro.rb
+
+      - name: Commit and push formula
+        env:
+          VERSION: ${{ steps.shas.outputs.version }}
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/maestro.rb
+          git diff --cached --quiet && echo "No changes to formula" && exit 0
+          git commit -m "feat: update maestro to ${VERSION}"
+          git push

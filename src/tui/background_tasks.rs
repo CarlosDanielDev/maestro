@@ -27,7 +27,7 @@ pub(super) fn spawn_issue_fetch(
 }
 
 /// Spawn a non-blocking version check that sends the result via the data channel.
-pub(super) fn spawn_version_check(tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>) {
+pub(crate) fn spawn_version_check(tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>) {
     tokio::spawn(async move {
         use crate::updater::checker::{GitHubReleaseChecker, UpdateChecker};
         let checker = GitHubReleaseChecker::new(crate::updater::GITHUB_REPO.to_string());
