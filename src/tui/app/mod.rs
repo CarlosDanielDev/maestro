@@ -101,6 +101,7 @@ pub struct App {
     pub sanitize_screen: Option<crate::sanitize::screen::SanitizeScreen>,
     pub settings_screen: Option<crate::tui::screens::SettingsScreen>,
     pub prompt_history: crate::state::prompt_history::PromptHistoryStore,
+    pub session_switcher: Option<crate::tui::session_switcher::SessionSwitcher>,
 }
 
 impl App {
@@ -177,6 +178,7 @@ impl App {
                 crate::state::prompt_history::PromptHistoryStore::default_path(),
                 crate::config::default_max_prompt_history(),
             ),
+            session_switcher: None,
         }
     }
 

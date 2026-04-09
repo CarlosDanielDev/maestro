@@ -5,6 +5,7 @@ use crate::github::labels::LabelManager;
 use crate::github::pr::{PrCreator, PrRetryPolicy};
 use crate::github::types::{PendingPr, PendingPrStatus};
 use crate::plugins::hooks::{HookContext, HookPoint};
+use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;
 use std::time::Instant;
@@ -208,7 +209,9 @@ impl App {
 
                         // Update session status to NeedsPr
                         if let Some(managed) = self.pool.find_by_issue_mut(issue_number) {
-                            managed.session.status = SessionStatus::NeedsPr;
+                            let _ = managed
+                                .session
+                                .transition_to(SessionStatus::NeedsPr, TransitionReason::PrNeeded);
                         }
 
                         self.activity_log.push_simple(

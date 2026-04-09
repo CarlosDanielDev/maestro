@@ -9,7 +9,7 @@ use crate::session::types::{SessionStatus, StreamEvent};
 
 #[test]
 fn assistant_message_updates_last_message_and_activity() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::AssistantMessage {
         text: "Hello from Claude".to_string(),
@@ -21,7 +21,7 @@ fn assistant_message_updates_last_message_and_activity() {
 
 #[test]
 fn assistant_message_appends_with_newline() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::AssistantMessage {
         text: "Line 1".to_string(),
@@ -37,7 +37,7 @@ fn assistant_message_appends_with_newline() {
 
 #[test]
 fn assistant_message_empty_text_is_ignored() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::AssistantMessage {
         text: String::new(),
@@ -48,7 +48,7 @@ fn assistant_message_empty_text_is_ignored() {
 
 #[test]
 fn tool_use_sets_activity_and_logs() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Read".to_string(),
@@ -76,7 +76,7 @@ fn tool_use_file_touching_tools_track_files() {
         ("Glob", "src/glob_target.rs"),
         ("Grep", "src/grep_target.rs"),
     ] {
-        let mut managed = ManagedSession::new(make_session("s"));
+        let mut managed = ManagedSession::new(make_running_session("s"));
         managed.handle_event(&StreamEvent::ToolUse {
             tool: tool.to_string(),
 
@@ -93,7 +93,7 @@ fn tool_use_file_touching_tools_track_files() {
 
 #[test]
 fn tool_use_bash_does_not_track_file_path() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Bash".to_string(),
@@ -107,7 +107,7 @@ fn tool_use_bash_does_not_track_file_path() {
 
 #[test]
 fn tool_use_deduplicates_files_touched() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     for _ in 0..3 {
         managed.handle_event(&StreamEvent::ToolUse {
@@ -132,7 +132,7 @@ fn tool_use_deduplicates_files_touched() {
 
 #[test]
 fn tool_result_error_logs_activity() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::ToolResult {
         tool: "Write".to_string(),
@@ -150,7 +150,7 @@ fn tool_result_error_logs_activity() {
 
 #[test]
 fn tool_result_success_logs_done_with_elapsed() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
     let initial_log_len = managed.session.activity_log.len();
 
     managed.handle_event(&StreamEvent::ToolResult {
@@ -166,7 +166,7 @@ fn tool_result_success_logs_done_with_elapsed() {
 
 #[test]
 fn cost_update_sets_cost_usd() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::CostUpdate { cost_usd: 0.42 });
 
@@ -175,7 +175,7 @@ fn cost_update_sets_cost_usd() {
 
 #[test]
 fn context_update_sets_context_pct() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::ContextUpdate { context_pct: 0.75 });
 
@@ -191,7 +191,7 @@ fn context_update_sets_context_pct() {
 
 #[test]
 fn completed_zero_cost_does_not_overwrite_existing_cost() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::CostUpdate { cost_usd: 2.50 });
     managed.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
@@ -225,7 +225,7 @@ fn roundtrip_assistant_text_updates_session() {
     let line = r#"{"type":"assistant","message":{"type":"text","text":"I will fix the bug."}}"#;
     let events = parse_stream_line(line);
 
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
     for event in &events {
         managed.handle_event(event);
     }
@@ -239,7 +239,7 @@ fn roundtrip_tool_use_with_file_path_updates_files_touched() {
     let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Write","input":{"file_path":"src/session/pool.rs"}}}"#;
     let events = parse_stream_line(line);
 
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
     for event in &events {
         managed.handle_event(event);
     }
@@ -257,7 +257,7 @@ fn roundtrip_result_event_transitions_to_completed() {
     let line = r#"{"type":"result","cost_usd":2.10,"duration_ms":45000}"#;
     let events = parse_stream_line(line);
 
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
     for event in &events {
         managed.handle_event(event);
     }
@@ -271,7 +271,7 @@ fn roundtrip_error_event_transitions_to_errored() {
     let line = r#"{"type":"error","error":{"message":"context window exceeded"}}"#;
     let events = parse_stream_line(line);
 
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
     for event in &events {
         managed.handle_event(event);
     }
@@ -291,7 +291,7 @@ fn roundtrip_context_update_from_usage_tokens() {
     let line = r#"{"type":"system","usage":{"input_tokens":80000,"max_input_tokens":200000}}"#;
     let events = parse_stream_line(line);
 
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
     for event in &events {
         managed.handle_event(event);
     }
@@ -315,7 +315,7 @@ fn roundtrip_full_session_transcript() {
         r#"{"type":"result","cost_usd":1.50,"duration_ms":30000}"#,
     ];
 
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
     for line in &lines {
         let events = parse_stream_line(line);
         for event in &events {
@@ -345,7 +345,7 @@ fn roundtrip_full_session_transcript() {
 
 #[test]
 fn tool_use_read_with_file_path_formats_activity_as_read_basename() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Read".to_string(),
@@ -359,7 +359,7 @@ fn tool_use_read_with_file_path_formats_activity_as_read_basename() {
 
 #[test]
 fn tool_use_write_with_file_path_formats_activity_as_write_basename() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Write".to_string(),
@@ -373,7 +373,7 @@ fn tool_use_write_with_file_path_formats_activity_as_write_basename() {
 
 #[test]
 fn tool_use_bash_with_command_preview_formats_activity_with_dollar_prefix() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Bash".to_string(),
@@ -387,7 +387,7 @@ fn tool_use_bash_with_command_preview_formats_activity_with_dollar_prefix() {
 
 #[test]
 fn tool_use_without_file_path_and_without_command_preview_falls_back() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "WebSearch".to_string(),
@@ -401,7 +401,7 @@ fn tool_use_without_file_path_and_without_command_preview_falls_back() {
 
 #[test]
 fn tool_result_success_logs_elapsed_time_string() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Read".to_string(),
@@ -435,7 +435,7 @@ fn tool_result_success_logs_elapsed_time_string() {
 
 #[test]
 fn thinking_event_sets_current_activity_to_thinking() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::Thinking {
         text: "some internal reasoning".to_string(),
@@ -446,7 +446,7 @@ fn thinking_event_sets_current_activity_to_thinking() {
 
 #[test]
 fn multiple_thinking_events_do_not_flood_activity_log() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     for _ in 0..3 {
         managed.handle_event(&StreamEvent::Thinking {
@@ -463,7 +463,7 @@ fn multiple_thinking_events_do_not_flood_activity_log() {
 
 #[test]
 fn non_thinking_event_after_thinking_logs_thought_duration() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::Thinking {
         text: "pondering".to_string(),
@@ -488,7 +488,7 @@ fn non_thinking_event_after_thinking_logs_thought_duration() {
 
 #[test]
 fn multiple_thinking_events_produce_single_duration_log_on_transition() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     for _ in 0..3 {
         managed.handle_event(&StreamEvent::Thinking {
@@ -522,7 +522,7 @@ fn multiple_thinking_events_produce_single_duration_log_on_transition() {
 
 #[test]
 fn assistant_message_long_sets_truncated_preview_in_current_activity() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
     let long_text = "A".repeat(80);
 
     managed.handle_event(&StreamEvent::AssistantMessage { text: long_text });
@@ -543,7 +543,7 @@ fn assistant_message_long_sets_truncated_preview_in_current_activity() {
 
 #[test]
 fn assistant_message_short_shown_fully_in_current_activity() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::AssistantMessage {
         text: "Fixed.".to_string(),
@@ -554,7 +554,7 @@ fn assistant_message_short_shown_fully_in_current_activity() {
 
 #[test]
 fn assistant_message_does_not_add_to_activity_log() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     for i in 0..5 {
         managed.handle_event(&StreamEvent::AssistantMessage {
@@ -573,7 +573,7 @@ fn assistant_message_does_not_add_to_activity_log() {
 
 #[test]
 fn thinking_event_sets_is_thinking_and_started_at() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     assert!(!managed.session.is_thinking);
     assert!(managed.session.thinking_started_at.is_none());
@@ -588,7 +588,7 @@ fn thinking_event_sets_is_thinking_and_started_at() {
 
 #[test]
 fn non_thinking_event_clears_thinking_state() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     // Start thinking
     managed.handle_event(&StreamEvent::Thinking {
@@ -606,7 +606,7 @@ fn non_thinking_event_clears_thinking_state() {
 
 #[test]
 fn multiple_thinking_events_keep_original_start_time() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::Thinking {
         text: "first".to_string(),
@@ -622,7 +622,7 @@ fn multiple_thinking_events_keep_original_start_time() {
 
 #[test]
 fn thinking_elapsed_increases_over_time() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::Thinking {
         text: "reasoning".to_string(),
@@ -636,7 +636,7 @@ fn thinking_elapsed_increases_over_time() {
 
 #[test]
 fn thinking_stop_logs_elapsed_time() {
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
 
     managed.handle_event(&StreamEvent::Thinking {
         text: "reasoning".to_string(),
@@ -661,7 +661,7 @@ fn roundtrip_tool_use_bash_command_preview_preserved_through_parse_and_handle() 
     let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Bash","input":{"command":"cargo test --lib"}}}"#;
     let events = parse_stream_line(line);
 
-    let mut managed = ManagedSession::new(make_session("s"));
+    let mut managed = ManagedSession::new(make_running_session("s"));
     for event in &events {
         managed.handle_event(event);
     }

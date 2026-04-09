@@ -75,7 +75,7 @@ impl Screen for HollowRetryScreen {
                     return ScreenAction::Pop;
                 }
                 KeyCode::Char('v') => {
-                    return ScreenAction::Push(TuiMode::Detail(0));
+                    return ScreenAction::Push(TuiMode::Detail(self.session_id));
                 }
                 _ => {}
             }
@@ -183,6 +183,6 @@ mod tests {
         let id = Uuid::new_v4();
         let mut screen = HollowRetryScreen::new(id, "S-test".into(), 1, 1);
         let action = screen.handle_input(&key_event(KeyCode::Char('v')), InputMode::Normal);
-        assert_eq!(action, ScreenAction::Push(TuiMode::Detail(0)));
+        assert_eq!(action, ScreenAction::Push(TuiMode::Detail(id)));
     }
 }

@@ -5,10 +5,10 @@ use crate::config::ConflictPolicy;
 use crate::notifications::slack::SlackEvent;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::manager::SessionEvent;
+use crate::session::transition::TransitionReason;
 use crate::session::types::{SessionStatus, StreamEvent};
 use crate::state::file_claims::{ClaimResult, FILE_CONFLICT_SENTINEL};
 use crate::tui::activity_log::LogLevel;
-use chrono::Utc;
 
 impl App {
     /// Process a stream event from a session.
@@ -68,7 +68,10 @@ impl App {
                         #[cfg(unix)]
                         if let Some(managed) = self.pool.get_active_mut(session_id) {
                             let _ = managed.pause();
-                            managed.session.status = SessionStatus::Paused;
+                            let _ = managed.session.transition_to(
+                                SessionStatus::Paused,
+                                TransitionReason::ConflictPolicy,
+                            );
                             managed
                                 .session
                                 .log_activity(format!("Paused due to conflict on {}", path));
@@ -81,8 +84,10 @@ impl App {
                     }
                     ConflictPolicy::Kill => {
                         if let Some(managed) = self.pool.get_active_mut(session_id) {
-                            managed.session.status = SessionStatus::Killed;
-                            managed.session.finished_at = Some(Utc::now());
+                            let _ = managed.session.transition_to(
+                                SessionStatus::Killed,
+                                TransitionReason::ConflictPolicy,
+                            );
                             managed
                                 .session
                                 .log_activity(format!("Killed due to conflict on {}", path));

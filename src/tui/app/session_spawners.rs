@@ -1,6 +1,7 @@
 use super::App;
 use super::helpers::build_gate_fix_prompt;
 use super::types::{CompletionSessionLine, TuiCommand};
+use crate::session::transition::TransitionReason;
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::activity_log::LogLevel;
 
@@ -35,7 +36,7 @@ impl App {
         let prompt = build_ci_fix_prompt(pr_number, issue_number, &branch, attempt, failure_log);
 
         let mut session = Session::new(prompt, model, mode, Some(issue_number));
-        session.status = SessionStatus::CiFix;
+        let _ = session.transition_to(SessionStatus::CiFix, TransitionReason::CiFixStarted);
         session.issue_title = Some(format!("CI Fix #{} for PR #{}", attempt, pr_number));
         session.ci_fix_context = Some(CiFixContext {
             pr_number,
@@ -101,7 +102,10 @@ impl App {
         );
 
         let mut session = Session::new(prompt, model, mode, Some(config.issue_number));
-        session.status = SessionStatus::ConflictFix;
+        let _ = session.transition_to(
+            SessionStatus::ConflictFix,
+            TransitionReason::ConflictFixStarted,
+        );
         session.issue_title = Some(format!("Conflict Fix for PR #{}", config.pr_number));
         session.conflict_fix_context = Some(ConflictFixContext {
             pr_number: config.pr_number,

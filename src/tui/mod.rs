@@ -11,6 +11,7 @@ pub mod navigation;
 pub mod panels;
 mod screen_dispatch;
 pub mod screens;
+pub mod session_switcher;
 pub mod spinner;
 mod summary;
 pub mod theme;
@@ -386,6 +387,43 @@ async fn event_loop(
                         continue;
                     }
 
+                    // Handle SessionSwitcher input
+                    if app.tui_mode == app::TuiMode::SessionSwitcher {
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.session_switcher = None;
+                                app.tui_mode = app::TuiMode::Overview;
+                            }
+                            KeyCode::Up => {
+                                if let Some(sw) = &mut app.session_switcher {
+                                    sw.move_up();
+                                }
+                            }
+                            KeyCode::Down => {
+                                if let Some(sw) = &mut app.session_switcher {
+                                    let count = {
+                                        let sessions = app.pool.all_sessions();
+                                        let refs: Vec<&crate::session::types::Session> = sessions;
+                                        sw.filtered_sessions(&refs).len()
+                                    };
+                                    sw.move_down(count);
+                                }
+                            }
+                            KeyCode::Enter => {
+                                let selected_id = app.session_switcher.as_ref().and_then(|sw| {
+                                    let sessions = app.pool.all_sessions();
+                                    sw.selected_session(&sessions).map(|s| s.id)
+                                });
+                                if let Some(id) = selected_id {
+                                    app.session_switcher = None;
+                                    app.tui_mode = app::TuiMode::Detail(id);
+                                }
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     match (key.code, key.modifiers) {
                         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                             app.running = false;
@@ -404,7 +442,9 @@ async fn event_loop(
                         }
                         (KeyCode::Char('f'), _) => {
                             let selected = app.panel_view.selected_index();
-                            app.tui_mode = app::TuiMode::Fullscreen(selected);
+                            if let Some(id) = app.pool.session_id_at_index(selected) {
+                                app.tui_mode = app::TuiMode::Fullscreen(id);
+                            }
                         }
                         (KeyCode::Char('$'), _) => {
                             app.tui_mode = app::TuiMode::CostDashboard;
@@ -430,7 +470,8 @@ async fn event_loop(
                                 | app::TuiMode::QueueExecution
                                 | app::TuiMode::HollowRetry
                                 | app::TuiMode::Sanitize
-                                | app::TuiMode::Settings => app::TuiMode::Overview,
+                                | app::TuiMode::Settings
+                                | app::TuiMode::SessionSwitcher => app::TuiMode::Overview,
                             };
                         }
                         (KeyCode::Esc, _) => {
@@ -442,13 +483,20 @@ async fn event_loop(
                         }
                         (KeyCode::Enter, _) => {
                             let selected = app.panel_view.selected_index();
-                            app.tui_mode = app::TuiMode::Detail(selected);
+                            if let Some(id) = app.pool.session_id_at_index(selected) {
+                                app.tui_mode = app::TuiMode::Detail(id);
+                            }
                         }
                         (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
                             let idx = (c as usize) - ('1' as usize);
-                            if idx < app.pool.all_sessions().len() {
-                                app.tui_mode = app::TuiMode::Detail(idx);
+                            if let Some(id) = app.pool.session_id_at_index(idx) {
+                                app.tui_mode = app::TuiMode::Detail(id);
                             }
+                        }
+                        (KeyCode::Char('w'), _) => {
+                            app.session_switcher =
+                                Some(crate::tui::session_switcher::SessionSwitcher::default());
+                            app.tui_mode = app::TuiMode::SessionSwitcher;
                         }
                         (KeyCode::Char('d'), _) => {
                             app.notifications.dismiss_latest();

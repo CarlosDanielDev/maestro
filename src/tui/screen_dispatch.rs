@@ -1,6 +1,7 @@
 use super::app;
 use super::screens::{self, Screen, ScreenAction};
 use crate::github::types::GhIssue;
+use crate::session::transition::TransitionReason;
 use crossterm::event::Event;
 
 pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Option<ScreenAction> {
@@ -204,7 +205,10 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     let progress = app.progress_tracker.get(&session_id).cloned();
                     let retry = policy.prepare_retry(&managed.session, progress.as_ref(), None);
                     let label = crate::tui::app::helpers::session_label(&managed.session);
-                    managed.session.status = crate::session::types::SessionStatus::Retrying;
+                    let _ = managed.session.transition_to(
+                        crate::session::types::SessionStatus::Retrying,
+                        TransitionReason::RetryTriggered,
+                    );
                     app.activity_log.push_simple(
                         label,
                         "Manual retry (hollow completion)".into(),
