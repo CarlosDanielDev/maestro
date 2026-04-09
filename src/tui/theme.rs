@@ -287,7 +287,7 @@ pub enum ThemePreset {
 }
 
 /// Top-level theme configuration, embeddable in maestro.toml.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ThemeConfig {
     #[serde(default)]
     pub preset: ThemePreset,
@@ -305,7 +305,7 @@ impl Default for ThemeConfig {
 }
 
 /// Optional per-field color overrides. Applied on top of the preset.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ThemeOverrides {
     pub branding_fg: Option<SerializableColor>,
     pub branding_bg: Option<SerializableColor>,

@@ -14,6 +14,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::QueueConfirmation => app.queue_confirmation_screen.as_mut()?,
         app::TuiMode::HollowRetry => app.hollow_retry_screen.as_mut()?,
         app::TuiMode::Sanitize => app.sanitize_screen.as_mut()?,
+        app::TuiMode::Settings => app.settings_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -49,12 +50,19 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         ScreenAction::Push(mode) => {
             match mode {
                 app::TuiMode::IssueBrowser => {
+                    let layout = app
+                        .config
+                        .as_ref()
+                        .map(|c| c.tui.layout.clone())
+                        .unwrap_or_default();
                     if let Some(issues) = milestone_issues_if_applicable(app) {
-                        app.issue_browser_screen = Some(screens::IssueBrowserScreen::new(issues));
+                        app.issue_browser_screen =
+                            Some(screens::IssueBrowserScreen::new(issues).with_layout(layout));
                     } else {
                         // Fresh screen for "All Issues" — never reuse a
                         // milestone-scoped screen (fixes #117).
-                        let mut screen = screens::IssueBrowserScreen::new(vec![]);
+                        let mut screen =
+                            screens::IssueBrowserScreen::new(vec![]).with_layout(layout);
                         screen.loading = true;
                         app.issue_browser_screen = Some(screen);
                         app.pending_commands.push(app::TuiCommand::FetchIssues);
@@ -66,6 +74,20 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         screen.loading = true;
                         app.milestone_screen = Some(screen);
                         app.pending_commands.push(app::TuiCommand::FetchMilestones);
+                    }
+                }
+                app::TuiMode::Settings => {
+                    if let Some(ref config) = app.config {
+                        let mut screen = screens::SettingsScreen::new(config.clone());
+                        // Try to find the config file path for save
+                        for candidate in &["maestro.toml", ".maestro/config.toml"] {
+                            let path = std::path::PathBuf::from(candidate);
+                            if path.exists() {
+                                screen = screen.with_config_path(path);
+                                break;
+                            }
+                        }
+                        app.settings_screen = Some(screen);
                     }
                 }
                 app::TuiMode::PromptInput => {
@@ -105,6 +127,10 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app::TuiMode::Sanitize => {
                     app.sanitize_screen = None;
                 }
+                app::TuiMode::Settings => {
+                    app.preview_theme = None;
+                    app.settings_screen = None;
+                }
                 _ => {}
             }
             app.tui_mode = app::TuiMode::Dashboard;
@@ -129,6 +155,18 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 crate::tui::activity_log::LogLevel::Info,
             );
             crate::tui::background_tasks::spawn_version_check(app.data_tx.clone());
+        }
+        ScreenAction::UpdateConfig(config) => {
+            app.config = Some(*config);
+        }
+        ScreenAction::PreviewTheme(theme_config) => {
+            if let Some(tc) = theme_config {
+                let mut theme = crate::tui::theme::Theme::from_config(&tc);
+                theme.apply_capability(crate::tui::theme::ColorCapability::detect());
+                app.preview_theme = Some(theme);
+            } else {
+                app.preview_theme = None;
+            }
         }
         ScreenAction::Quit => {
             app.running = false;

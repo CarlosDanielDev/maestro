@@ -13,20 +13,44 @@ use ratatui::{
 
 impl IssueBrowserScreen {
     pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let chunks = Layout::default()
+        use crate::config::LayoutMode;
+
+        let preview_pct = self.layout.preview_ratio.clamp(10, 90) as u16;
+
+        // Split off keybinds bar at the bottom
+        let outer = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(6),    // issue list
-                Constraint::Length(8), // preview pane
-                Constraint::Length(1), // keybinds bar
-            ])
+            .constraints([Constraint::Min(6), Constraint::Length(1)])
             .split(area);
 
-        self.draw_issue_list(f, chunks[0], theme);
-        self.draw_preview(f, chunks[1], theme);
+        match self.layout.mode {
+            LayoutMode::Vertical => {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(100 - preview_pct),
+                        Constraint::Percentage(preview_pct),
+                    ])
+                    .split(outer[0]);
+                self.draw_issue_list(f, chunks[0], theme);
+                self.draw_preview(f, chunks[1], theme);
+            }
+            LayoutMode::Horizontal => {
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(100 - preview_pct),
+                        Constraint::Percentage(preview_pct),
+                    ])
+                    .split(outer[0]);
+                self.draw_issue_list(f, chunks[0], theme);
+                self.draw_preview(f, chunks[1], theme);
+            }
+        }
+
         draw_keybinds_bar(
             f,
-            chunks[2],
+            outer[1],
             &[
                 ("Enter", "Run"),
                 ("Space", "Select"),
