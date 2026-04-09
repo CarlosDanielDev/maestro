@@ -22,7 +22,12 @@ pub struct HollowRetryScreen {
 }
 
 impl HollowRetryScreen {
-    pub fn new(session_id: Uuid, session_label: String, retry_count: u32, max_retries: u32) -> Self {
+    pub fn new(
+        session_id: Uuid,
+        session_label: String,
+        retry_count: u32,
+        max_retries: u32,
+    ) -> Self {
         Self {
             session_id,
             session_label,
@@ -37,9 +42,18 @@ impl KeymapProvider for HollowRetryScreen {
         vec![KeyBindingGroup {
             title: "Hollow Retry",
             bindings: vec![
-                KeyBinding { key: "r", description: "Retry session" },
-                KeyBinding { key: "s/Esc", description: "Skip" },
-                KeyBinding { key: "v", description: "View logs" },
+                KeyBinding {
+                    key: "r",
+                    description: "Retry session",
+                },
+                KeyBinding {
+                    key: "s/Esc",
+                    description: "Skip",
+                },
+                KeyBinding {
+                    key: "v",
+                    description: "View logs",
+                },
             ],
         }]
     }
@@ -96,7 +110,7 @@ impl Screen for HollowRetryScreen {
             .constraints([
                 Constraint::Length(2), // info
                 Constraint::Length(3), // message
-                Constraint::Min(1),   // keybinds
+                Constraint::Min(1),    // keybinds
             ])
             .split(inner);
 
@@ -120,9 +134,10 @@ impl Screen for HollowRetryScreen {
         ]);
         f.render_widget(info, chunks[0]);
 
-        let message = Paragraph::new("The session completed without performing any observable work.")
-            .style(Style::default().fg(theme.accent_warning))
-            .wrap(Wrap { trim: true });
+        let message =
+            Paragraph::new("The session completed without performing any observable work.")
+                .style(Style::default().fg(theme.accent_warning))
+                .wrap(Wrap { trim: true });
         f.render_widget(message, chunks[1]);
 
         draw_keybinds_bar(

@@ -46,7 +46,8 @@ impl RetryPolicy {
         let eligible = matches!(
             session.status,
             SessionStatus::Stalled | SessionStatus::Errored
-        ) || (session.status == SessionStatus::Completed && session.is_hollow_completion);
+        ) || (session.status == SessionStatus::Completed
+            && session.is_hollow_completion);
 
         if !eligible {
             return false;

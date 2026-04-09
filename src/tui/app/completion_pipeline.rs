@@ -255,15 +255,11 @@ impl App {
 
         // Show hollow retry prompt for sessions that exceeded auto-retry limits
         if self.hollow_retry_screen.is_none()
-            && let Some(hollow_session) = self
-                .pool
-                .all_sessions()
-                .iter()
-                .find(|s| {
-                    s.status == SessionStatus::Completed
-                        && s.is_hollow_completion
-                        && !retryable_ids.contains(&s.id)
-                })
+            && let Some(hollow_session) = self.pool.all_sessions().iter().find(|s| {
+                s.status == SessionStatus::Completed
+                    && s.is_hollow_completion
+                    && !retryable_ids.contains(&s.id)
+            })
         {
             // This session wasn't retried (exceeded limits) — prompt user
             let label = session_label(hollow_session);

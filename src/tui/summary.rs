@@ -23,7 +23,9 @@ pub(super) fn print_summary(app: &App) {
         );
 
         if session.is_hollow_completion {
-            println!("    \u{26A0} Hollow completion: session completed without performing any work");
+            println!(
+                "    \u{26A0} Hollow completion: session completed without performing any work"
+            );
         }
         if !session.last_message.is_empty() {
             println!("    Last: {}", session.last_message);

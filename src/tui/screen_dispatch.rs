@@ -152,10 +152,8 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 if let Some(policy) = policy {
                     let progress = app.progress_tracker.get(&session_id).cloned();
                     let retry = policy.prepare_retry(&managed.session, progress.as_ref(), None);
-                    let label =
-                        crate::tui::app::helpers::session_label(&managed.session);
-                    managed.session.status =
-                        crate::session::types::SessionStatus::Retrying;
+                    let label = crate::tui::app::helpers::session_label(&managed.session);
+                    managed.session.status = crate::session::types::SessionStatus::Retrying;
                     app.activity_log.push_simple(
                         label,
                         "Manual retry (hollow completion)".into(),

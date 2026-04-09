@@ -162,8 +162,14 @@ fn parse_tool_result(v: &Value) -> StreamEvent {
 
 /// Extract TokenUsage from a `usage` JSON object if token fields are present.
 fn extract_token_usage(usage: &Value) -> Option<TokenUsage> {
-    let input = usage.get("input_tokens").and_then(|t| t.as_u64()).unwrap_or(0);
-    let output = usage.get("output_tokens").and_then(|t| t.as_u64()).unwrap_or(0);
+    let input = usage
+        .get("input_tokens")
+        .and_then(|t| t.as_u64())
+        .unwrap_or(0);
+    let output = usage
+        .get("output_tokens")
+        .and_then(|t| t.as_u64())
+        .unwrap_or(0);
     let cache_read = usage
         .get("cache_read_input_tokens")
         .and_then(|t| t.as_u64())
@@ -489,10 +495,7 @@ mod tests {
     #[test]
     fn parse_system_event_unknown_subtype_falls_through() {
         let line = r#"{"type":"system","event":"something_new"}"#;
-        assert!(matches!(
-            first_event(line),
-            StreamEvent::Unknown { .. }
-        ));
+        assert!(matches!(first_event(line), StreamEvent::Unknown { .. }));
     }
 
     // --- Issue #161: Token usage extraction ---
@@ -516,22 +519,42 @@ mod tests {
     fn parse_system_event_emits_both_token_and_context_updates() {
         let line = r#"{"type":"system","usage":{"input_tokens":70000,"output_tokens":1200,"max_input_tokens":200000}}"#;
         let events = parse_stream_line(line);
-        assert!(events.iter().any(|e| matches!(e, StreamEvent::TokenUpdate { .. })));
-        assert!(events.iter().any(|e| matches!(e, StreamEvent::ContextUpdate { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::TokenUpdate { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::ContextUpdate { .. }))
+        );
     }
 
     #[test]
     fn parse_result_event_extracts_token_usage() {
         let line = r#"{"type":"result","cost_usd":1.5,"usage":{"input_tokens":50000,"output_tokens":2000,"cache_read_input_tokens":30000,"cache_creation_input_tokens":1000}}"#;
         let events = parse_stream_line(line);
-        assert!(events.iter().any(|e| matches!(e, StreamEvent::TokenUpdate { .. })));
-        assert!(events.iter().any(|e| matches!(e, StreamEvent::Completed { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::TokenUpdate { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::Completed { .. }))
+        );
     }
 
     #[test]
     fn parse_system_event_no_tokens_no_token_update() {
         let line = r#"{"type":"system","context_pct":50.0}"#;
         let events = parse_stream_line(line);
-        assert!(!events.iter().any(|e| matches!(e, StreamEvent::TokenUpdate { .. })));
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::TokenUpdate { .. }))
+        );
     }
 }

@@ -31,7 +31,7 @@ pub fn draw_token_dashboard(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(7), // aggregate stats
-            Constraint::Min(5),   // per-session breakdown
+            Constraint::Min(5),    // per-session breakdown
         ])
         .split(area);
 
@@ -53,10 +53,7 @@ fn draw_aggregate_stats(
 
     let lines = vec![
         Line::from(vec![
-            Span::styled(
-                " Input: ",
-                Style::default().fg(theme.text_secondary),
-            ),
+            Span::styled(" Input: ", Style::default().fg(theme.text_secondary)),
             Span::styled(
                 format_tokens(aggregate.input_tokens),
                 Style::default()
@@ -89,10 +86,7 @@ fn draw_aggregate_stats(
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                "  Cache Hit: ",
-                Style::default().fg(theme.text_secondary),
-            ),
+            Span::styled("  Cache Hit: ", Style::default().fg(theme.text_secondary)),
             Span::styled(
                 format!("{:.1}%", aggregate.cache_hit_ratio() * 100.0),
                 Style::default().fg(if aggregate.cache_hit_ratio() > 0.5 {
@@ -111,10 +105,7 @@ fn draw_aggregate_stats(
             ),
         ]),
         Line::from(vec![
-            Span::styled(
-                " Cost/kTok: ",
-                Style::default().fg(theme.text_secondary),
-            ),
+            Span::styled(" Cost/kTok: ", Style::default().fg(theme.text_secondary)),
             Span::styled(
                 format!("${:.4}", aggregate.cost_per_kilo_token(total_cost)),
                 Style::default().fg(theme.accent_warning),
@@ -143,14 +134,15 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
             .cmp(&a.token_usage.total_tokens())
     });
 
-    let header = Line::from(vec![
-        Span::styled(
-            format!(" {:>8}  {:>18}  {:>8}  {:>8}  {:>8}  {:>8}  {:>6}", "ID", "Title", "Input", "Output", "Cache R", "Cache W", "$/kT"),
-            Style::default()
-                .fg(theme.text_secondary)
-                .add_modifier(Modifier::BOLD),
+    let header = Line::from(vec![Span::styled(
+        format!(
+            " {:>8}  {:>18}  {:>8}  {:>8}  {:>8}  {:>8}  {:>6}",
+            "ID", "Title", "Input", "Output", "Cache R", "Cache W", "$/kT"
         ),
-    ]);
+        Style::default()
+            .fg(theme.text_secondary)
+            .add_modifier(Modifier::BOLD),
+    )]);
 
     let max_rows = area.height.saturating_sub(3) as usize;
     let mut lines = vec![header];
@@ -170,8 +162,14 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
         let cost_per_k = s.token_usage.cost_per_kilo_token(s.cost_usd);
 
         lines.push(Line::from(vec![
-            Span::styled(format!(" {:>8}", label), Style::default().fg(theme.accent_info)),
-            Span::styled(format!("  {:>18}", title), Style::default().fg(theme.text_primary)),
+            Span::styled(
+                format!(" {:>8}", label),
+                Style::default().fg(theme.accent_info),
+            ),
+            Span::styled(
+                format!("  {:>18}", title),
+                Style::default().fg(theme.text_primary),
+            ),
             Span::styled(
                 format!("  {:>8}", format_tokens(s.token_usage.input_tokens)),
                 Style::default().fg(theme.text_primary),
@@ -185,7 +183,10 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
                 Style::default().fg(theme.accent_info),
             ),
             Span::styled(
-                format!("  {:>8}", format_tokens(s.token_usage.cache_creation_tokens)),
+                format!(
+                    "  {:>8}",
+                    format_tokens(s.token_usage.cache_creation_tokens)
+                ),
                 Style::default().fg(theme.accent_warning),
             ),
             Span::styled(

@@ -178,14 +178,12 @@ fn draw_single_panel(
         .split(inner);
 
     // Status line
-    let mut status_spans = vec![
-        Span::styled(
-            format!("{} {} ", session.status.symbol(), session.status.label()),
-            Style::default()
-                .fg(status_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
+    let mut status_spans = vec![Span::styled(
+        format!("{} {} ", session.status.symbol(), session.status.label()),
+        Style::default()
+            .fg(status_color)
+            .add_modifier(Modifier::BOLD),
+    )];
     if session.is_hollow_completion {
         status_spans.push(Span::styled(
             "HOLLOW ",

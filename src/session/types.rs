@@ -296,10 +296,7 @@ impl Session {
         if self.has_tool_calls() {
             return false;
         }
-        let duration_secs = self
-            .elapsed()
-            .map(|d| d.num_seconds())
-            .unwrap_or(i64::MAX);
+        let duration_secs = self.elapsed().map(|d| d.num_seconds()).unwrap_or(i64::MAX);
         duration_secs < Self::HOLLOW_DURATION_THRESHOLD_SECS
     }
 
