@@ -181,6 +181,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &app.theme,
             );
         }
+        TuiMode::Sanitize => {
+            if let Some(ref mut screen) = app.sanitize_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
         TuiMode::HollowRetry => {
             let sessions = app.pool.all_sessions();
             app.panel_view.draw_with_claims(
@@ -279,6 +284,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             TuiMode::QueueExecution => None,
             TuiMode::CompletionSummary => None,
             TuiMode::ContinuousPause => None,
+            TuiMode::Sanitize => app
+                .sanitize_screen
+                .as_ref()
+                .map(|s| (s.keybindings(), s.desired_input_mode())),
             _ => None,
         }
         .map(|(b, m)| (b, m.unwrap_or(InputMode::Normal)))
@@ -448,6 +457,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::QueueExecution => "Executing",
         TuiMode::HollowRetry => "Hollow Retry",
         TuiMode::TokenDashboard => "Tokens",
+        TuiMode::Sanitize => "Sanitize",
     };
 
     let help = Line::from(vec![

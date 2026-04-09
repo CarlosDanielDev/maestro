@@ -1,5 +1,21 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
+
+/// Output format for sanitize reports (CLI-local, converted to sanitize::OutputFormat in main).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SanitizeOutputFormat {
+    Text,
+    Json,
+    Markdown,
+}
+
+/// Severity filter for sanitize reports (CLI-local, converted to sanitize::Severity in main).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SanitizeSeverityFilter {
+    Critical,
+    Warning,
+    Info,
+}
 
 #[derive(Parser)]
 #[command(
@@ -112,6 +128,28 @@ pub enum Commands {
     },
     /// Check environment setup and required tools
     Doctor,
+    /// Analyze codebase for dead code and code smells
+    Sanitize {
+        /// Path to scan (defaults to current directory)
+        #[arg(short, long, default_value = ".")]
+        path: std::path::PathBuf,
+
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = SanitizeOutputFormat::Text)]
+        output: SanitizeOutputFormat,
+
+        /// Minimum severity to report
+        #[arg(short, long, value_enum, default_value_t = SanitizeSeverityFilter::Info)]
+        severity: SanitizeSeverityFilter,
+
+        /// Skip AI-powered analysis (Phase 2)
+        #[arg(long)]
+        skip_ai: bool,
+
+        /// AI model to use for analysis
+        #[arg(short, long)]
+        model: Option<String>,
+    },
     /// Generate man page (hidden, for packaging)
     #[command(hide = true)]
     Mangen {
@@ -528,5 +566,181 @@ mod tests {
             result.is_err(),
             "mangen must fail when out_dir cannot be created"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Sanitize subcommand parsing
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn sanitize_subcommand_parses_with_no_flags() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Sanitize { .. })));
+    }
+
+    #[test]
+    fn sanitize_output_defaults_to_text() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize"]).unwrap();
+        if let Some(Commands::Sanitize { output, .. }) = cli.command {
+            assert_eq!(output, SanitizeOutputFormat::Text);
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_output_accepts_json() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize", "--output", "json"]).unwrap();
+        if let Some(Commands::Sanitize { output, .. }) = cli.command {
+            assert_eq!(output, SanitizeOutputFormat::Json);
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_output_accepts_markdown() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize", "--output", "markdown"]).unwrap();
+        if let Some(Commands::Sanitize { output, .. }) = cli.command {
+            assert_eq!(output, SanitizeOutputFormat::Markdown);
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_output_rejects_invalid_value() {
+        let result = Cli::try_parse_from(["maestro", "sanitize", "--output", "html"]);
+        assert!(result.is_err(), "--output html must be rejected by clap");
+    }
+
+    #[test]
+    fn sanitize_severity_defaults_to_info() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize"]).unwrap();
+        if let Some(Commands::Sanitize { severity, .. }) = cli.command {
+            assert_eq!(severity, SanitizeSeverityFilter::Info);
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_severity_accepts_warning() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize", "--severity", "warning"]).unwrap();
+        if let Some(Commands::Sanitize { severity, .. }) = cli.command {
+            assert_eq!(severity, SanitizeSeverityFilter::Warning);
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_severity_accepts_critical() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize", "--severity", "critical"]).unwrap();
+        if let Some(Commands::Sanitize { severity, .. }) = cli.command {
+            assert_eq!(severity, SanitizeSeverityFilter::Critical);
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_severity_rejects_invalid_value() {
+        let result = Cli::try_parse_from(["maestro", "sanitize", "--severity", "bogus"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn sanitize_skip_ai_defaults_to_false() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize"]).unwrap();
+        if let Some(Commands::Sanitize { skip_ai, .. }) = cli.command {
+            assert!(!skip_ai, "--skip-ai must default to false");
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_skip_ai_is_set_when_provided() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize", "--skip-ai"]).unwrap();
+        if let Some(Commands::Sanitize { skip_ai, .. }) = cli.command {
+            assert!(skip_ai, "--skip-ai must be true when flag is provided");
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_model_defaults_to_none() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize"]).unwrap();
+        if let Some(Commands::Sanitize { model, .. }) = cli.command {
+            assert!(model.is_none());
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_model_accepts_value() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize", "--model", "opus"]).unwrap();
+        if let Some(Commands::Sanitize { model, .. }) = cli.command {
+            assert_eq!(model.as_deref(), Some("opus"));
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_path_defaults_to_current_dir() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize"]).unwrap();
+        if let Some(Commands::Sanitize { path, .. }) = cli.command {
+            assert_eq!(path, PathBuf::from("."));
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_path_accepts_value() {
+        let cli = Cli::try_parse_from(["maestro", "sanitize", "--path", "/src"]).unwrap();
+        if let Some(Commands::Sanitize { path, .. }) = cli.command {
+            assert_eq!(path, PathBuf::from("/src"));
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    #[test]
+    fn sanitize_all_flags_coexist() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "sanitize",
+            "--path",
+            "/project",
+            "--output",
+            "json",
+            "--severity",
+            "warning",
+            "--skip-ai",
+            "--model",
+            "haiku",
+        ])
+        .unwrap();
+        if let Some(Commands::Sanitize {
+            path,
+            output,
+            severity,
+            skip_ai,
+            model,
+        }) = cli.command
+        {
+            assert_eq!(path, PathBuf::from("/project"));
+            assert_eq!(output, SanitizeOutputFormat::Json);
+            assert_eq!(severity, SanitizeSeverityFilter::Warning);
+            assert!(skip_ai);
+            assert_eq!(model.as_deref(), Some("haiku"));
+        } else {
+            panic!("Expected Commands::Sanitize");
+        }
     }
 }
