@@ -125,6 +125,22 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::QueueExecution => {
+            // Draw overview underneath
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &app.theme,
+                spinner_tick,
+            );
+            // Draw queue progress overlay
+            if let Some(ref executor) = app.queue_executor {
+                draw_queue_execution_overlay(f, executor, chunks[1], &app.theme);
+            }
+        }
         TuiMode::CompletionSummary => {
             // Draw overview underneath as backdrop
             let sessions = app.pool.all_sessions();
@@ -236,6 +252,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 .queue_confirmation_screen
                 .as_ref()
                 .map(|s| (s.keybindings(), s.desired_input_mode())),
+            TuiMode::QueueExecution => None,
             TuiMode::CompletionSummary => None,
             TuiMode::ContinuousPause => None,
             _ => None,
@@ -404,6 +421,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::CompletionSummary => "Summary",
         TuiMode::ContinuousPause => "Paused",
         TuiMode::QueueConfirmation => "Queue",
+        TuiMode::QueueExecution => "Executing",
     };
 
     let help = Line::from(vec![
@@ -520,11 +538,65 @@ fn draw_completion_overlay(
         )),
     ]));
 
+    // Conflict suggestions section
+    if !summary.suggestions.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                "Merge Conflicts:",
+                Style::default()
+                    .fg(theme.accent_warning)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        for (i, suggestion) in summary.suggestions.iter().enumerate() {
+            let is_selected = i == summary.selected_suggestion;
+            let prefix = if is_selected { " \u{25b8} " } else { "   " };
+            let style = if is_selected {
+                Style::default()
+                    .fg(theme.accent_warning)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.accent_warning)
+            };
+            let safe_message = crate::tui::screens::sanitize_for_terminal(&suggestion.message);
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("{}PR #{} — {}", prefix, suggestion.pr_number, safe_message),
+                    style,
+                ),
+            ]));
+            if !suggestion.conflicting_files.is_empty() {
+                let files_str = suggestion
+                    .conflicting_files
+                    .iter()
+                    .take(3)
+                    .map(|f| crate::tui::screens::sanitize_for_terminal(f))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let suffix = if suggestion.conflicting_files.len() > 3 {
+                    format!(" (+{})", suggestion.conflicting_files.len() - 3)
+                } else {
+                    String::new()
+                };
+                lines.push(Line::from(vec![
+                    Span::raw("      Files: "),
+                    Span::styled(
+                        format!("{}{}", files_str, suffix),
+                        Style::default().fg(theme.text_muted),
+                    ),
+                ]));
+            }
+        }
+    }
+
     lines.push(Line::from(""));
 
     let mut keybind_spans = vec![Span::raw("  ")];
 
-    if summary.has_needs_review() {
+    if summary.has_needs_review() || summary.has_conflict_suggestions() {
         keybind_spans.push(Span::styled("[f]", Style::default().fg(theme.keybind_key)));
         keybind_spans.push(Span::raw(" Fix  "));
     }
@@ -549,6 +621,104 @@ fn draw_completion_overlay(
         .title(" Session Complete ")
         .title_alignment(ratatui::layout::Alignment::Center)
         .border_style(Style::default().fg(theme.accent_success));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    f.render_widget(paragraph, overlay_area);
+}
+
+fn draw_queue_execution_overlay(
+    f: &mut Frame,
+    executor: &crate::work::executor::QueueExecutor,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    use crate::work::executor::{ExecutorPhase, QueueItemState};
+    use ratatui::widgets::Clear;
+
+    let overlay_area = help::centered_rect(60, 50, area);
+    f.render_widget(Clear, overlay_area);
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+
+    // Queue progress line
+    let mut progress_spans = vec![Span::raw("  Queue: ")];
+    for item in executor.items() {
+        let (symbol, color) = match item.state {
+            QueueItemState::Succeeded => ("✓", theme.accent_success),
+            QueueItemState::Running => ("●", theme.accent_info),
+            QueueItemState::Failed => ("✗", theme.accent_error),
+            QueueItemState::Skipped => ("○", theme.accent_warning),
+            QueueItemState::Pending => ("○", theme.text_muted),
+        };
+        let label = format!("{} #{}", symbol, item.queued.issue_number);
+        progress_spans.push(Span::styled(
+            format!("[{}] ", label),
+            Style::default().fg(color),
+        ));
+    }
+    lines.push(Line::from(progress_spans));
+    lines.push(Line::from(""));
+
+    // Status line
+    let status_text = match executor.phase() {
+        ExecutorPhase::Idle => "Preparing next session...".to_string(),
+        ExecutorPhase::Running { current_index } => {
+            let issue_num = executor.items()[current_index].queued.issue_number;
+            format!(
+                "Running #{} ({}/{})",
+                issue_num,
+                current_index + 1,
+                executor.total_count()
+            )
+        }
+        ExecutorPhase::AwaitingDecision { failed_index } => {
+            let issue_num = executor.items()[failed_index].queued.issue_number;
+            format!("#{} failed — choose action", issue_num)
+        }
+        ExecutorPhase::Finished => format!(
+            "Queue complete: {}/{} done",
+            executor.completed_count(),
+            executor.total_count()
+        ),
+    };
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(status_text, Style::default().fg(theme.accent_info)),
+    ]));
+
+    lines.push(Line::from(""));
+
+    // Keybind bar
+    let mut keybind_spans = vec![Span::raw("  ")];
+    if matches!(executor.phase(), ExecutorPhase::AwaitingDecision { .. }) {
+        keybind_spans.extend([
+            Span::styled("[r]", Style::default().fg(theme.keybind_key)),
+            Span::raw(" Retry  "),
+            Span::styled("[s]", Style::default().fg(theme.keybind_key)),
+            Span::raw(" Skip  "),
+            Span::styled("[a]", Style::default().fg(theme.keybind_key)),
+            Span::raw(" Abort  "),
+        ]);
+    }
+    keybind_spans.extend([
+        Span::styled("[Esc]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" View logs  "),
+        Span::styled("[q]", Style::default().fg(theme.keybind_key)),
+        Span::raw(" Quit"),
+    ]);
+    lines.push(Line::from(keybind_spans));
+
+    let title = format!(
+        " Queue: {}/{} ",
+        executor.completed_count(),
+        executor.total_count()
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_alignment(ratatui::layout::Alignment::Center)
+        .border_style(Style::default().fg(theme.accent_info));
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, overlay_area);
