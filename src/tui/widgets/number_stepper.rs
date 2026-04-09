@@ -60,24 +60,31 @@ impl NumberStepper {
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
-        let label_style = Style::default().fg(if focused {
-            theme.text_primary
+        let label_style = if focused {
+            Style::default()
+                .fg(theme.accent_success)
+                .add_modifier(Modifier::BOLD)
         } else {
-            theme.text_secondary
-        });
+            Style::default().fg(theme.text_primary)
+        };
 
         let left_dim = self.value <= self.min;
         let right_dim = self.value >= self.max;
 
+        let arrow_color = if focused {
+            theme.accent_success
+        } else {
+            theme.text_muted
+        };
         let left_arrow = if left_dim {
             Style::default().fg(theme.text_muted)
         } else {
-            Style::default().fg(theme.accent_info)
+            Style::default().fg(arrow_color)
         };
         let right_arrow = if right_dim {
             Style::default().fg(theme.text_muted)
         } else {
-            Style::default().fg(theme.accent_info)
+            Style::default().fg(arrow_color)
         };
 
         let value_style = if focused {

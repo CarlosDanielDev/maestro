@@ -91,11 +91,13 @@ impl TextInput {
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
-        let label_style = Style::default().fg(if focused {
-            theme.text_primary
+        let label_style = if focused {
+            Style::default()
+                .fg(theme.accent_success)
+                .add_modifier(Modifier::BOLD)
         } else {
-            theme.text_secondary
-        });
+            Style::default().fg(theme.text_primary)
+        };
 
         if self.editing {
             let (before, after) = self.value.split_at(self.cursor_position);
@@ -108,21 +110,21 @@ impl TextInput {
 
             let line = Line::from(vec![
                 Span::styled(format!("{}: ", self.label), label_style),
-                Span::raw(before),
+                Span::styled(before, Style::default().fg(theme.accent_success)),
                 Span::styled(
                     cursor_char.to_string(),
                     Style::default()
-                        .fg(theme.text_primary)
+                        .fg(theme.accent_success)
                         .add_modifier(Modifier::REVERSED),
                 ),
-                Span::raw(rest),
+                Span::styled(rest, Style::default().fg(theme.accent_success)),
             ]);
             f.render_widget(Paragraph::new(line), area);
         } else {
             let value_style = if focused {
-                Style::default().fg(theme.accent_info)
+                Style::default().fg(theme.text_primary)
             } else {
-                Style::default().fg(theme.text_muted)
+                Style::default().fg(theme.text_secondary)
             };
             let line = Line::from(vec![
                 Span::styled(format!("{}: ", self.label), label_style),

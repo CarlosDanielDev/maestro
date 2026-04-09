@@ -696,10 +696,10 @@ impl SettingsScreen {
         for (i, tab) in SettingsTab::ALL.iter().enumerate() {
             let style = if i == self.active_tab {
                 Style::default()
-                    .fg(theme.accent_info)
+                    .fg(theme.accent_success)
                     .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
             } else {
-                Style::default().fg(theme.text_muted)
+                Style::default().fg(theme.text_secondary)
             };
             if i > 0 {
                 spans.push(Span::styled(
@@ -802,7 +802,7 @@ impl Screen for SettingsScreen {
                 self.live_preview = false;
                 ScreenAction::PreviewTheme(None)
             }
-            (KeyCode::Tab, _) | (KeyCode::BackTab, KeyModifiers::SHIFT) => {
+            (KeyCode::Tab, _) => {
                 self.next_tab();
                 ScreenAction::None
             }
@@ -851,11 +851,11 @@ impl Screen for SettingsScreen {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border_active))
+            .border_style(Style::default().fg(theme.accent_success))
             .title(Span::styled(
                 title,
                 Style::default()
-                    .fg(theme.text_primary)
+                    .fg(theme.accent_success)
                     .add_modifier(Modifier::BOLD),
             ));
         let inner = block.inner(area);

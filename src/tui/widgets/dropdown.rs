@@ -63,32 +63,34 @@ impl Dropdown {
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
-        let label_style = Style::default().fg(if focused {
-            theme.text_primary
+        let label_style = if focused {
+            Style::default()
+                .fg(theme.accent_success)
+                .add_modifier(Modifier::BOLD)
         } else {
-            theme.text_secondary
-        });
+            Style::default().fg(theme.text_primary)
+        };
 
         let value = self.options.get(self.selected).map_or("", |s| s.as_str());
         let value_style = if focused {
             Style::default()
-                .fg(theme.accent_info)
+                .fg(theme.text_primary)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme.text_secondary)
         };
 
-        let arrow_style = Style::default().fg(if focused {
-            theme.accent_info
+        let arrow_color = if focused {
+            theme.accent_success
         } else {
             theme.text_muted
-        });
+        };
 
         let line = Line::from(vec![
             Span::styled(format!("{}: ", self.label), label_style),
-            Span::styled("< ", arrow_style),
+            Span::styled("< ", Style::default().fg(arrow_color)),
             Span::styled(value, value_style),
-            Span::styled(" >", arrow_style),
+            Span::styled(" >", Style::default().fg(arrow_color)),
         ]);
         f.render_widget(Paragraph::new(line), area);
     }
