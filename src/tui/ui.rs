@@ -171,6 +171,30 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 draw_continuous_pause_overlay(f, cont, chunks[1], &app.theme);
             }
         }
+        TuiMode::TokenDashboard => {
+            let sessions = app.pool.all_sessions();
+            crate::tui::token_dashboard::draw_token_dashboard(
+                f,
+                &sessions,
+                app.total_cost,
+                chunks[1],
+                &app.theme,
+            );
+        }
+        TuiMode::HollowRetry => {
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &app.theme,
+                spinner_tick,
+            );
+            if let Some(ref mut screen) = app.hollow_retry_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
     }
 
     // Conditionally split activity area for CI monitor
@@ -422,6 +446,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::ContinuousPause => "Paused",
         TuiMode::QueueConfirmation => "Queue",
         TuiMode::QueueExecution => "Executing",
+        TuiMode::HollowRetry => "Hollow Retry",
+        TuiMode::TokenDashboard => "Tokens",
     };
 
     let help = Line::from(vec![

@@ -80,6 +80,12 @@ pub struct PromptInputScreen {
     pub(crate) clipboard: Box<dyn ClipboardProvider>,
     /// Transient status message shown after clipboard paste.
     pub(crate) status_message: Option<String>,
+    /// Snapshot of prompt history strings, most recent last.
+    pub(crate) history: Vec<String>,
+    /// Current position in history. None = user is typing a new prompt.
+    pub(crate) history_cursor: Option<usize>,
+    /// Stashed user input when browsing history.
+    pub(crate) draft_prompt: String,
 }
 
 impl PromptInputScreen {
@@ -100,7 +106,17 @@ impl PromptInputScreen {
             selected_image: 0,
             clipboard,
             status_message: None,
+            history: Vec::new(),
+            history_cursor: None,
+            draft_prompt: String::new(),
         }
+    }
+
+    /// Inject prompt history from the App.
+    pub fn set_history(&mut self, prompts: Vec<String>) {
+        self.history = prompts;
+        self.history_cursor = None;
+        self.draft_prompt.clear();
     }
 
     fn is_prompt_editor_focused(&self) -> bool {
@@ -243,6 +259,7 @@ impl PromptInputScreen {
                 &[
                     ("Enter", "Submit"),
                     ("Shift+Enter", "New line"),
+                    ("\u{2191}/\u{2193}", "History"),
                     ("Ctrl+V", "Paste"),
                     ("Tab", "Switch"),
                     ("Esc", "Cancel"),
@@ -274,6 +291,10 @@ impl KeymapProvider for PromptInputScreen {
                     KeyBinding {
                         key: "Tab",
                         description: "Toggle focus (editor/images)",
+                    },
+                    KeyBinding {
+                        key: "Up/Down",
+                        description: "Browse prompt history",
                     },
                     KeyBinding {
                         key: "Esc",
@@ -373,9 +394,35 @@ impl Screen for PromptInputScreen {
                             || *modifiers == KeyModifiers::SHIFT =>
                     {
                         self.prompt_text.push(*c);
+                        self.history_cursor = None;
                     }
                     KeyCode::Backspace => {
                         self.prompt_text.pop();
+                        self.history_cursor = None;
+                    }
+                    KeyCode::Up => {
+                        if !self.history.is_empty() && self.history_cursor.is_none() {
+                            self.draft_prompt = self.prompt_text.clone();
+                            let idx = self.history.len() - 1;
+                            self.history_cursor = Some(idx);
+                            self.prompt_text = self.history[idx].clone();
+                        } else if let Some(idx) = self.history_cursor
+                            && idx > 0
+                        {
+                            self.history_cursor = Some(idx - 1);
+                            self.prompt_text = self.history[idx - 1].clone();
+                        }
+                    }
+                    KeyCode::Down => {
+                        if let Some(idx) = self.history_cursor {
+                            if idx + 1 < self.history.len() {
+                                self.history_cursor = Some(idx + 1);
+                                self.prompt_text = self.history[idx + 1].clone();
+                            } else {
+                                self.history_cursor = None;
+                                self.prompt_text = self.draft_prompt.clone();
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -873,6 +920,86 @@ mod tests {
             screen.image_paths,
             vec!["/tmp/existing.png".to_string(), "/tmp/new.png".to_string()]
         );
+    }
+
+    // --- Group 12: Prompt history navigation ---
+
+    fn screen_with_history(prompts: &[&str]) -> PromptInputScreen {
+        let mut s = mock_screen();
+        s.set_history(prompts.iter().map(|p| p.to_string()).collect());
+        s
+    }
+
+    #[test]
+    fn arrow_up_with_empty_history_is_noop() {
+        let mut screen = mock_screen();
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "");
+        assert!(screen.history_cursor.is_none());
+    }
+
+    #[test]
+    fn arrow_up_enters_history_and_shows_last_entry() {
+        let mut screen = screen_with_history(&["first", "second"]);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "second");
+        assert_eq!(screen.history_cursor, Some(1));
+    }
+
+    #[test]
+    fn arrow_up_twice_shows_previous_entry() {
+        let mut screen = screen_with_history(&["first", "second"]);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "first");
+        assert_eq!(screen.history_cursor, Some(0));
+    }
+
+    #[test]
+    fn arrow_up_at_oldest_entry_stays() {
+        let mut screen = screen_with_history(&["only"]);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "only");
+        assert_eq!(screen.history_cursor, Some(0));
+    }
+
+    #[test]
+    fn arrow_down_past_history_restores_draft() {
+        let mut screen = screen_with_history(&["old"]);
+        screen.prompt_text = "my draft".to_string();
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "old");
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "my draft");
+        assert!(screen.history_cursor.is_none());
+    }
+
+    #[test]
+    fn arrow_down_without_history_cursor_is_noop() {
+        let mut screen = screen_with_history(&["old"]);
+        screen.prompt_text = "current".to_string();
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "current");
+        assert!(screen.history_cursor.is_none());
+    }
+
+    #[test]
+    fn typing_resets_history_cursor() {
+        let mut screen = screen_with_history(&["old"]);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.history_cursor, Some(0));
+        screen.handle_input(&key_event(KeyCode::Char('x')), InputMode::Normal);
+        assert!(screen.history_cursor.is_none());
+    }
+
+    #[test]
+    fn backspace_resets_history_cursor() {
+        let mut screen = screen_with_history(&["old"]);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
+        assert!(screen.history_cursor.is_none());
     }
 
     #[test]

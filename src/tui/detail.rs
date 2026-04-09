@@ -131,6 +131,51 @@ fn draw_detail_header(
         .as_deref()
         .unwrap_or(&session.prompt[..session.prompt.len().min(60)]);
 
+    let mut detail_spans = vec![
+        Span::styled(
+            format!(" {} ", session.status.label()),
+            Style::default().fg(theme.accent_warning),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            format!("Phase: {}", phase_label),
+            Style::default().fg(theme.accent_info),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            format!("${:.2}", session.cost_usd),
+            Style::default().fg(theme.accent_warning),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            format!("{} tools", tools_count),
+            Style::default().fg(theme.text_primary),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            session.elapsed_display(),
+            Style::default().fg(theme.text_primary),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            format!("Retries: {}", session.retry_count),
+            Style::default().fg(if session.retry_count > 0 {
+                theme.accent_error
+            } else {
+                theme.text_secondary
+            }),
+        ),
+    ];
+    if session.is_hollow_completion {
+        detail_spans.push(Span::raw("  "));
+        detail_spans.push(Span::styled(
+            "\u{26A0} HOLLOW COMPLETION",
+            Style::default()
+                .fg(theme.accent_warning)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
     let lines = vec![
         Line::from(vec![
             Span::styled(
@@ -143,41 +188,7 @@ fn draw_detail_header(
             Span::raw(" "),
             Span::styled(title_text, Style::default().fg(theme.text_primary)),
         ]),
-        Line::from(vec![
-            Span::styled(
-                format!(" {} ", session.status.label()),
-                Style::default().fg(theme.accent_warning),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format!("Phase: {}", phase_label),
-                Style::default().fg(theme.accent_info),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format!("${:.2}", session.cost_usd),
-                Style::default().fg(theme.accent_warning),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format!("{} tools", tools_count),
-                Style::default().fg(theme.text_primary),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                session.elapsed_display(),
-                Style::default().fg(theme.text_primary),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format!("Retries: {}", session.retry_count),
-                Style::default().fg(if session.retry_count > 0 {
-                    theme.accent_error
-                } else {
-                    theme.text_secondary
-                }),
-            ),
-        ]),
+        Line::from(detail_spans),
     ];
 
     let block = Block::default()

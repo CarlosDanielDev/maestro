@@ -1,3 +1,4 @@
+pub mod hollow_retry;
 pub mod home;
 #[allow(dead_code)]
 pub mod issue_browser;
@@ -5,6 +6,7 @@ pub mod milestone;
 pub mod prompt_input;
 pub mod queue_confirmation;
 
+pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
 pub use issue_browser::IssueBrowserScreen;
 pub use milestone::MilestoneScreen;
@@ -85,6 +87,8 @@ pub enum ScreenAction {
     LaunchQueue(Vec<SessionConfig>),
     /// Launch a conflict-fix session for a PR with merge conflicts.
     LaunchConflictFix(ConflictFixConfig),
+    /// Retry a hollow-completed session by ID.
+    RetryHollow(uuid::Uuid),
     /// Quit the application.
     Quit,
 }

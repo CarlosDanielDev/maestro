@@ -148,12 +148,21 @@ impl App {
                     progress.on_message(text);
                 }
                 StreamEvent::Thinking { .. } => {}
+                StreamEvent::TokenUpdate { .. } => {}
                 StreamEvent::Completed { cost_usd } => {
                     self.activity_log.push_simple(
-                        label,
+                        label.clone(),
                         format!("Completed (${:.2})", cost_usd),
                         LogLevel::Info,
                     );
+                    if managed.session.is_hollow_completion {
+                        self.activity_log.push_simple(
+                            label,
+                            "Hollow completion: session completed without performing any work"
+                                .into(),
+                            LogLevel::Warn,
+                        );
+                    }
                     self.notifications
                         .notify_slack(SlackEvent::SessionCompleted {
                             session_id: managed.session.id.to_string(),
@@ -170,6 +179,15 @@ impl App {
                             .with_cost(*cost_usd)
                             .with_files(&managed.session.files_touched),
                     });
+                    // Update prompt history outcome
+                    let outcome = if managed.session.is_hollow_completion {
+                        crate::state::prompt_history::PromptOutcome::Hollow
+                    } else {
+                        crate::state::prompt_history::PromptOutcome::Completed
+                    };
+                    self.prompt_history
+                        .update_outcome(managed.session.id, outcome);
+
                     if let Some(issue_num) = managed.session.issue_number {
                         self.pending_issue_completions
                             .push(super::types::PendingIssueCompletion {
@@ -188,6 +206,10 @@ impl App {
                         label,
                         format!("ERROR: {}", message),
                         LogLevel::Error,
+                    );
+                    self.prompt_history.update_outcome(
+                        managed.session.id,
+                        crate::state::prompt_history::PromptOutcome::Errored,
                     );
                     self.notifications.notify_slack(SlackEvent::SessionErrored {
                         session_id: managed.session.id.to_string(),

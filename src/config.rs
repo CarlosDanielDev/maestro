@@ -78,6 +78,12 @@ pub struct SessionsConfig {
     /// Cooldown in seconds between retries.
     #[serde(default = "default_retry_cooldown")]
     pub retry_cooldown_secs: u64,
+    /// Maximum number of automatic retries for hollow completions (default: 1).
+    #[serde(default = "default_hollow_max_retries")]
+    pub hollow_max_retries: u32,
+    /// Maximum number of prompt history entries to retain. Default: 100.
+    #[serde(default = "default_max_prompt_history")]
+    pub max_prompt_history: usize,
     /// Context overflow detection and auto-fork configuration.
     #[serde(default)]
     pub context_overflow: ContextOverflowConfig,
@@ -514,6 +520,12 @@ fn default_max_retries() -> u32 {
 fn default_retry_cooldown() -> u64 {
     60
 }
+fn default_hollow_max_retries() -> u32 {
+    1
+}
+pub(crate) fn default_max_prompt_history() -> usize {
+    100
+}
 fn default_per_session_usd() -> f64 {
     5.0
 }
@@ -894,6 +906,57 @@ review_council = false
         let cfg = Config::load(f.path()).expect("load failed");
         assert_eq!(cfg.flags.entries.get("ci_auto_fix"), Some(&true));
         assert_eq!(cfg.flags.entries.get("review_council"), Some(&false));
+    }
+
+    // --- Issue #171: hollow_max_retries config ---
+
+    #[test]
+    fn hollow_max_retries_defaults_to_one() {
+        let cfg: SessionsConfig = toml::from_str("").expect("parse failed");
+        assert_eq!(cfg.hollow_max_retries, 1);
+    }
+
+    #[test]
+    fn hollow_max_retries_deserializes_from_toml() {
+        let toml_str = r#"hollow_max_retries = 3"#;
+        let cfg: SessionsConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.hollow_max_retries, 3);
+    }
+
+    #[test]
+    fn max_prompt_history_defaults_to_100() {
+        let cfg: SessionsConfig = toml::from_str("").expect("parse failed");
+        assert_eq!(cfg.max_prompt_history, 100);
+    }
+
+    #[test]
+    fn max_prompt_history_deserializes_from_toml() {
+        let toml_str = r#"max_prompt_history = 50"#;
+        let cfg: SessionsConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.max_prompt_history, 50);
+    }
+
+    #[test]
+    fn full_config_hollow_max_retries_defaults_when_absent() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+"#
+        )
+        .unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert_eq!(cfg.sessions.hollow_max_retries, 1);
     }
 
     #[test]

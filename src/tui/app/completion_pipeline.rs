@@ -1,5 +1,6 @@
 use super::App;
 use super::helpers::session_label;
+use super::types::TuiMode;
 use crate::gates::runner::{self, GateCheck, GateRunner};
 use crate::gates::types::{CompletionGate, GateResult};
 use crate::git::GitOps;
@@ -194,15 +195,18 @@ impl App {
         let retry_policy = self
             .config
             .as_ref()
-            .map(|c| RetryPolicy::new(c.sessions.max_retries, c.sessions.retry_cooldown_secs));
+            .map(|c| RetryPolicy::from_config(&c.sessions));
 
-        let retryable_ids: Vec<uuid::Uuid> = self
-            .pool
-            .all_sessions()
-            .iter()
-            .filter(|s| matches!(s.status, SessionStatus::Stalled | SessionStatus::Errored))
-            .map(|s| s.id)
-            .collect();
+        let retryable_ids: Vec<uuid::Uuid> = if let Some(ref policy) = retry_policy {
+            self.pool
+                .all_sessions()
+                .iter()
+                .filter(|s| policy.should_retry(s))
+                .map(|s| s.id)
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let mut retry_sessions = Vec::new();
         for id in &retryable_ids {
@@ -225,12 +229,18 @@ impl App {
                     progress.as_ref(),
                     last_error.as_deref(),
                 );
+                let reason = if managed.session.is_hollow_completion {
+                    "hollow completion"
+                } else {
+                    "stalled/errored"
+                };
+                let max = policy.effective_max(&managed.session);
                 managed.session.status = SessionStatus::Retrying;
                 self.activity_log.push_simple(
                     label,
                     format!(
-                        "Retrying (attempt {}/{})",
-                        retry.retry_count, policy.max_retries
+                        "Retrying (attempt {}/{}) — reason: {}",
+                        retry.retry_count, max, reason
                     ),
                     LogLevel::Warn,
                 );
@@ -241,6 +251,29 @@ impl App {
         // Enqueue retry sessions
         for session in retry_sessions {
             self.add_session(session).await?;
+        }
+
+        // Show hollow retry prompt for sessions that exceeded auto-retry limits
+        if self.hollow_retry_screen.is_none()
+            && let Some(hollow_session) = self.pool.all_sessions().iter().find(|s| {
+                s.status == SessionStatus::Completed
+                    && s.is_hollow_completion
+                    && !retryable_ids.contains(&s.id)
+            })
+        {
+            // This session wasn't retried (exceeded limits) — prompt user
+            let label = session_label(hollow_session);
+            let max = retry_policy
+                .as_ref()
+                .map(|p| p.hollow_max_retries)
+                .unwrap_or(0);
+            self.hollow_retry_screen = Some(crate::tui::screens::HollowRetryScreen::new(
+                hollow_session.id,
+                label,
+                hollow_session.retry_count,
+                max,
+            ));
+            self.tui_mode = TuiMode::HollowRetry;
         }
 
         // Find terminal sessions in the active list (including Retrying which is now done)
