@@ -54,7 +54,10 @@ impl App {
                 && let Some(wt_path) = &completion.worktree_path
             {
                 if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
-                    managed.session.status = SessionStatus::GatesRunning;
+                    let _ = managed.session.transition_to(
+                        SessionStatus::GatesRunning,
+                        crate::session::transition::TransitionReason::GatesStarted,
+                    );
                 }
 
                 let gate_runner = GateRunner;
@@ -105,7 +108,10 @@ impl App {
 
                     if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
                         managed.session.gate_results = failed_gate_results;
-                        managed.session.status = SessionStatus::NeedsReview;
+                        let _ = managed.session.transition_to(
+                            SessionStatus::NeedsReview,
+                            crate::session::transition::TransitionReason::GatesFailed,
+                        );
                         managed
                             .session
                             .log_activity(format!("Gates failed: {}", failures.join("; ")));
@@ -178,7 +184,10 @@ impl App {
             if let Some(managed) = self.pool.get_active_mut(*id)
                 && managed.session.status == SessionStatus::Running
             {
-                managed.session.status = SessionStatus::Stalled;
+                let _ = managed.session.transition_to(
+                    SessionStatus::Stalled,
+                    crate::session::transition::TransitionReason::HealthStall,
+                );
                 let label = session_label(&managed.session);
                 self.activity_log.push_simple(
                     label,
@@ -235,7 +244,10 @@ impl App {
                     "stalled/errored"
                 };
                 let max = policy.effective_max(&managed.session);
-                managed.session.status = SessionStatus::Retrying;
+                let _ = managed.session.transition_to(
+                    SessionStatus::Retrying,
+                    crate::session::transition::TransitionReason::RetryTriggered,
+                );
                 self.activity_log.push_simple(
                     label,
                     format!(

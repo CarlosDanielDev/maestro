@@ -208,7 +208,10 @@ impl App {
 
                         // Update session status to NeedsPr
                         if let Some(managed) = self.pool.find_by_issue_mut(issue_number) {
-                            managed.session.status = SessionStatus::NeedsPr;
+                            let _ = managed.session.transition_to(
+                                SessionStatus::NeedsPr,
+                                crate::session::transition::TransitionReason::PrNeeded,
+                            );
                         }
 
                         self.activity_log.push_simple(

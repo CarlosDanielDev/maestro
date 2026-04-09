@@ -5,7 +5,6 @@ use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::fork::{ForkReason, ForkResult, SessionForker};
 use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;
-use chrono::Utc;
 
 impl App {
     pub(super) fn check_context_overflow(&mut self, session_id: uuid::Uuid) {
@@ -95,8 +94,10 @@ impl App {
                 self.context_monitor.mark_overflow_triggered(session_id);
 
                 if let Some(managed) = self.pool.get_active_mut(session_id) {
-                    managed.session.status = SessionStatus::Completed;
-                    managed.session.finished_at = Some(Utc::now());
+                    let _ = managed.session.transition_to(
+                        SessionStatus::Completed,
+                        crate::session::transition::TransitionReason::ContextOverflow,
+                    );
                     managed.session.current_activity = "Forked".into();
                     managed.session.log_activity(format!(
                         "Session forked to child {}",

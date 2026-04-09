@@ -56,7 +56,10 @@ impl App {
                     Ok(pr_num) => {
                         completed_indices.push(idx);
                         if let Some(managed) = self.pool.find_by_issue_mut(issue_number) {
-                            managed.session.status = SessionStatus::Completed;
+                            let _ = managed.session.transition_to(
+                                SessionStatus::Completed,
+                                crate::session::transition::TransitionReason::StreamCompleted,
+                            );
                         }
                         self.activity_log.push_simple(
                             format!("#{}", issue_number),
