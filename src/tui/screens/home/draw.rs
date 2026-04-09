@@ -71,7 +71,8 @@ impl HomeScreen {
             2 => ScreenAction::Push(TuiMode::PromptInput),
             3 => ScreenAction::Push(TuiMode::Overview),
             4 => ScreenAction::Push(TuiMode::CostDashboard),
-            5 => ScreenAction::Quit,
+            5 => ScreenAction::Push(TuiMode::TokenDashboard),
+            6 => ScreenAction::Quit,
             _ => ScreenAction::None,
         }
     }
