@@ -81,8 +81,21 @@ pub enum ScreenAction {
     LaunchPromptSession(PromptSessionConfig),
     /// Request a refresh of dashboard suggestion data.
     RefreshSuggestions,
+    /// Launch a sequential queue execution from confirmed queue.
+    LaunchQueue(Vec<SessionConfig>),
+    /// Launch a conflict-fix session for a PR with merge conflicts.
+    LaunchConflictFix(ConflictFixConfig),
     /// Quit the application.
     Quit,
+}
+
+/// Configuration for launching a conflict-fix session.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConflictFixConfig {
+    pub pr_number: u64,
+    pub issue_number: u64,
+    pub branch: String,
+    pub conflicting_files: Vec<String>,
 }
 
 /// Configuration for launching a session from a screen action.

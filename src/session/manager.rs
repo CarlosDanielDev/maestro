@@ -387,6 +387,7 @@ mod tests {
             child_session_ids: vec![],
             fork_depth: 0,
             ci_fix_context: None,
+            conflict_fix_context: None,
             image_paths: vec![],
             gate_results: vec![],
             is_thinking: false,
