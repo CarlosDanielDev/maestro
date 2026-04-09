@@ -24,8 +24,7 @@ mod updater;
 mod util;
 mod work;
 
-#[cfg(feature = "experimental-sanitizer")]
-mod sanitizer;
+mod sanitize;
 
 #[cfg(test)]
 mod integration_tests;
@@ -63,6 +62,32 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Completions { shell }) => cli::cmd_completions(shell),
         Some(Commands::Mangen { out_dir }) => cli::cmd_mangen(&out_dir),
         Some(Commands::Doctor) => cmd_doctor(),
+        Some(Commands::Sanitize {
+            path,
+            output,
+            severity,
+            skip_ai,
+            model,
+        }) => {
+            let output_fmt = match output {
+                cli::SanitizeOutputFormat::Text => sanitize::OutputFormat::Text,
+                cli::SanitizeOutputFormat::Json => sanitize::OutputFormat::Json,
+                cli::SanitizeOutputFormat::Markdown => sanitize::OutputFormat::Markdown,
+            };
+            let sev = match severity {
+                cli::SanitizeSeverityFilter::Critical => sanitize::Severity::Critical,
+                cli::SanitizeSeverityFilter::Warning => sanitize::Severity::Warning,
+                cli::SanitizeSeverityFilter::Info => sanitize::Severity::Info,
+            };
+            sanitize::cmd_sanitize(sanitize::SanitizeConfig {
+                path,
+                output: output_fmt,
+                severity: sev,
+                skip_ai,
+                model,
+            })
+            .await
+        }
         Some(Commands::Status) => cmd_status(),
         Some(Commands::Cost) => cmd_cost(),
         Some(Commands::Queue) => cmd_queue().await,

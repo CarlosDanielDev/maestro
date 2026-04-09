@@ -13,6 +13,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
         app::TuiMode::QueueConfirmation => app.queue_confirmation_screen.as_mut()?,
         app::TuiMode::HollowRetry => app.hollow_retry_screen.as_mut()?,
+        app::TuiMode::Sanitize => app.sanitize_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -100,6 +101,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::HollowRetry => {
                     app.hollow_retry_screen = None;
+                }
+                app::TuiMode::Sanitize => {
+                    app.sanitize_screen = None;
                 }
                 _ => {}
             }
