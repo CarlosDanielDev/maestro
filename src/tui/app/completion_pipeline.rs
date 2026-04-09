@@ -6,6 +6,7 @@ use crate::gates::types::{CompletionGate, GateResult};
 use crate::git::GitOps;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::retry::RetryPolicy;
+use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;
 use std::time::{Duration, Instant};
@@ -56,7 +57,7 @@ impl App {
                 if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
                     let _ = managed.session.transition_to(
                         SessionStatus::GatesRunning,
-                        crate::session::transition::TransitionReason::GatesStarted,
+                        TransitionReason::GatesStarted,
                     );
                 }
 
@@ -110,7 +111,7 @@ impl App {
                         managed.session.gate_results = failed_gate_results;
                         let _ = managed.session.transition_to(
                             SessionStatus::NeedsReview,
-                            crate::session::transition::TransitionReason::GatesFailed,
+                            TransitionReason::GatesFailed,
                         );
                         managed
                             .session
@@ -186,7 +187,7 @@ impl App {
             {
                 let _ = managed.session.transition_to(
                     SessionStatus::Stalled,
-                    crate::session::transition::TransitionReason::HealthStall,
+                    TransitionReason::HealthStall,
                 );
                 let label = session_label(&managed.session);
                 self.activity_log.push_simple(
@@ -246,7 +247,7 @@ impl App {
                 let max = policy.effective_max(&managed.session);
                 let _ = managed.session.transition_to(
                     SessionStatus::Retrying,
-                    crate::session::transition::TransitionReason::RetryTriggered,
+                    TransitionReason::RetryTriggered,
                 );
                 self.activity_log.push_simple(
                     label,

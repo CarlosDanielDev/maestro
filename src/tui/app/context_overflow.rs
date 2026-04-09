@@ -3,6 +3,7 @@ use super::helpers::session_label;
 use super::types::PendingHook;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::fork::{ForkReason, ForkResult, SessionForker};
+use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;
 
@@ -96,7 +97,7 @@ impl App {
                 if let Some(managed) = self.pool.get_active_mut(session_id) {
                     let _ = managed.session.transition_to(
                         SessionStatus::Completed,
-                        crate::session::transition::TransitionReason::ContextOverflow,
+                        TransitionReason::ContextOverflow,
                     );
                     managed.session.current_activity = "Forked".into();
                     managed.session.log_activity(format!(

@@ -3,6 +3,7 @@ use super::helpers::session_label;
 use super::types::PendingHook;
 use crate::budget::{BudgetAction, BudgetCheck};
 use crate::plugins::hooks::{HookContext, HookPoint};
+use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;
 
@@ -23,7 +24,7 @@ impl App {
                 if let Some(managed) = self.pool.get_active_mut(session_id) {
                     let _ = managed.session.transition_to(
                         SessionStatus::Errored,
-                        crate::session::transition::TransitionReason::StreamError,
+                        TransitionReason::StreamError,
                     );
                     let label = session_label(&managed.session);
                     self.activity_log.push_simple(

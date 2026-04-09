@@ -5,6 +5,7 @@ use crate::config::ConflictPolicy;
 use crate::notifications::slack::SlackEvent;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::manager::SessionEvent;
+use crate::session::transition::TransitionReason;
 use crate::session::types::{SessionStatus, StreamEvent};
 use crate::state::file_claims::{ClaimResult, FILE_CONFLICT_SENTINEL};
 use crate::tui::activity_log::LogLevel;
@@ -69,7 +70,7 @@ impl App {
                             let _ = managed.pause();
                             let _ = managed.session.transition_to(
                                 SessionStatus::Paused,
-                                crate::session::transition::TransitionReason::ConflictPolicy,
+                                TransitionReason::ConflictPolicy,
                             );
                             managed
                                 .session
@@ -85,7 +86,7 @@ impl App {
                         if let Some(managed) = self.pool.get_active_mut(session_id) {
                             let _ = managed.session.transition_to(
                                 SessionStatus::Killed,
-                                crate::session::transition::TransitionReason::ConflictPolicy,
+                                TransitionReason::ConflictPolicy,
                             );
                             managed
                                 .session
