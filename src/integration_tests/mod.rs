@@ -45,6 +45,14 @@ mod helpers {
         )
     }
 
+    /// Create a session pre-set to Running status (for event handling tests).
+    pub fn make_running_session(prompt: &str) -> Session {
+        let mut s = make_session(prompt);
+        s.status = crate::session::types::SessionStatus::Running;
+        s.started_at = Some(chrono::Utc::now());
+        s
+    }
+
     pub fn make_session_with_issue(issue: u64) -> Session {
         Session::new(
             format!("work on issue {}", issue),
@@ -52,6 +60,14 @@ mod helpers {
             "orchestrator".to_string(),
             Some(issue),
         )
+    }
+
+    /// Create a session with an issue number pre-set to Running status.
+    pub fn make_running_session_with_issue(issue: u64) -> Session {
+        let mut s = make_session_with_issue(issue);
+        s.status = crate::session::types::SessionStatus::Running;
+        s.started_at = Some(chrono::Utc::now());
+        s
     }
 
     pub fn make_gh_issue(number: u64) -> GhIssue {

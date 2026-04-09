@@ -132,7 +132,7 @@ fn all_done_only_true_after_every_session_finishes() {
 
 #[test]
 fn handle_event_completed_transitions_session_status() {
-    let session = make_session("s");
+    let session = make_running_session("s");
     let mut managed = ManagedSession::new(session);
 
     managed.handle_event(&StreamEvent::Completed { cost_usd: 1.23 });
@@ -145,7 +145,7 @@ fn handle_event_completed_transitions_session_status() {
 
 #[test]
 fn handle_event_error_transitions_session_status() {
-    let session = make_session("s");
+    let session = make_running_session("s");
     let mut managed = ManagedSession::new(session);
 
     managed.handle_event(&StreamEvent::Error {
@@ -153,7 +153,7 @@ fn handle_event_error_transitions_session_status() {
     });
 
     assert_eq!(managed.session.status, SessionStatus::Errored);
-    assert!(managed.session.finished_at.is_some());
+    // Errored is now recoverable (can transition to Retrying), so finished_at is not set
     assert_eq!(managed.session.current_activity, "Error");
     assert!(
         managed
@@ -169,16 +169,15 @@ fn completed_does_not_re_transition_terminal_session() {
     let session = make_session("s");
     let mut managed = ManagedSession::new(session);
 
-    managed.handle_event(&StreamEvent::Error {
-        message: "boom".to_string(),
-    });
-    assert_eq!(managed.session.status, SessionStatus::Errored);
+    // Use Killed (hard terminal) instead of Errored (now recoverable)
+    managed.session.status = SessionStatus::Running;
+    managed.session.status = SessionStatus::Killed;
 
     managed.handle_event(&StreamEvent::Completed { cost_usd: 0.5 });
 
     assert_eq!(
         managed.session.status,
-        SessionStatus::Errored,
+        SessionStatus::Killed,
         "a terminal session must not be re-transitioned by a Completed event"
     );
 }

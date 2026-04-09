@@ -126,7 +126,7 @@ impl SessionPool {
                 system_prompt = combined;
             }
 
-            session.status = SessionStatus::Queued; // Still queued until spawned
+            // Session remains Queued until ManagedSession::spawn() transitions it
             let mut managed =
                 ManagedSession::with_worktree(session, worktree_path, branch, system_prompt);
             managed.permission_mode = Some(self.permission_mode.clone());
@@ -168,6 +168,26 @@ impl SessionPool {
             out.push(s);
         }
         out
+    }
+
+    /// Get session UUID at a given display index (from all_sessions ordering).
+    pub fn session_id_at_index(&self, index: usize) -> Option<Uuid> {
+        self.all_sessions().get(index).map(|s| s.id)
+    }
+
+    /// Find a session by UUID from any bucket.
+    pub fn get_session(&self, session_id: Uuid) -> Option<&Session> {
+        self.active
+            .iter()
+            .find(|m| m.session.id == session_id)
+            .map(|m| &m.session)
+            .or_else(|| {
+                self.finished
+                    .iter()
+                    .find(|m| m.session.id == session_id)
+                    .map(|m| &m.session)
+            })
+            .or_else(|| self.queue.iter().find(|s| s.id == session_id))
     }
 
     /// Mutable access to a managed session by ID (active only).

@@ -111,7 +111,10 @@ impl ManagedSession {
 
     /// Spawn the Claude CLI process and start streaming events.
     pub async fn spawn(&mut self, tx: mpsc::UnboundedSender<SessionEvent>) -> Result<()> {
-        self.session.status = SessionStatus::Spawning;
+        use crate::session::transition::TransitionReason;
+        let _ = self
+            .session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted);
         self.session.started_at = Some(Utc::now());
 
         let mut cmd = Command::new("claude");
@@ -130,7 +133,9 @@ impl ManagedSession {
 
         let pid = child.id().unwrap_or(0);
         self.session.pid = Some(pid);
-        self.session.status = SessionStatus::Running;
+        let _ = self
+            .session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned);
         self.session
             .log_activity(format!("Session spawned (pid: {})", pid));
 
@@ -222,8 +227,10 @@ impl ManagedSession {
         if let Some(ref mut child) = self.child {
             child.kill().await.context("Failed to kill session")?;
         }
-        self.session.status = SessionStatus::Killed;
-        self.session.finished_at = Some(Utc::now());
+        let _ = self.session.transition_to(
+            SessionStatus::Killed,
+            crate::session::transition::TransitionReason::UserKill,
+        );
         self.session.log_activity("Session killed".into());
         Ok(())
     }
@@ -313,9 +320,14 @@ impl ManagedSession {
                 if *cost_usd > 0.0 {
                     self.session.cost_usd = *cost_usd;
                 }
-                if !self.session.status.is_terminal() {
-                    self.session.status = SessionStatus::Completed;
-                    self.session.finished_at = Some(Utc::now());
+                if self
+                    .session
+                    .transition_to(
+                        SessionStatus::Completed,
+                        crate::session::transition::TransitionReason::StreamCompleted,
+                    )
+                    .is_ok()
+                {
                     self.session.current_activity = "Done".into();
                     self.session.log_activity("Session completed".into());
 
@@ -328,8 +340,10 @@ impl ManagedSession {
                 }
             }
             StreamEvent::Error { message } => {
-                self.session.status = SessionStatus::Errored;
-                self.session.finished_at = Some(Utc::now());
+                let _ = self.session.transition_to(
+                    SessionStatus::Errored,
+                    crate::session::transition::TransitionReason::StreamError,
+                );
                 self.session.current_activity = "Error".into();
                 self.session.log_activity(format!("Error: {}", message));
             }
@@ -406,6 +420,7 @@ mod tests {
             is_hollow_completion: false,
             is_thinking: false,
             thinking_started_at: None,
+            transition_history: vec![],
         };
         ManagedSession::new(session)
     }
@@ -459,6 +474,7 @@ mod tests {
 
     fn make_managed_with_start(prompt: &str, started_secs_ago: i64) -> ManagedSession {
         let mut ms = make_managed(prompt);
+        ms.session.status = SessionStatus::Running;
         let now = chrono::Utc::now();
         ms.session.started_at = Some(now - chrono::Duration::seconds(started_secs_ago));
         ms
@@ -526,10 +542,10 @@ mod tests {
     #[test]
     fn handle_event_completed_does_not_mutate_hollow_flag_for_already_terminal_session() {
         let mut ms = make_managed_with_start("test", 10);
-        ms.session.status = SessionStatus::Errored;
+        ms.session.status = SessionStatus::Killed;
         ms.session.is_hollow_completion = false;
         ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
-        assert_eq!(ms.session.status, SessionStatus::Errored);
+        assert_eq!(ms.session.status, SessionStatus::Killed);
         assert!(!ms.session.is_hollow_completion);
     }
 }
