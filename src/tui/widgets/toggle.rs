@@ -46,7 +46,9 @@ impl Toggle {
             }
         };
         let check_style = if focused {
-            Style::default().fg(check_color).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(check_color)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(check_color)
         };
