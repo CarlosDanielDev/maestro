@@ -7,6 +7,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-04-09
+
+### Fixed
+
+- Remove `--bare` flag from Claude CLI session invocation — fixes OAuth/Max plan authentication broken in Claude CLI v2.1.97 (#188)
+- Add `maestro-prompt-history.json` to `.gitignore`
+
 ## [0.6.1] - 2026-04-09
 
 ### Added
