@@ -83,6 +83,7 @@ pub struct App {
     pub data_tx: mpsc::UnboundedSender<TuiDataEvent>,
     pub data_rx: mpsc::UnboundedReceiver<TuiDataEvent>,
     pub theme: Theme,
+    pub preview_theme: Option<Theme>,
     pub once_mode: bool,
     pub completion_summary: Option<CompletionSummaryData>,
     pub continuous_mode: Option<ContinuousModeState>,
@@ -98,6 +99,7 @@ pub struct App {
     pub queue_launch_configs: Option<Vec<crate::tui::screens::SessionConfig>>,
     pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
     pub sanitize_screen: Option<crate::sanitize::screen::SanitizeScreen>,
+    pub settings_screen: Option<crate::tui::screens::SettingsScreen>,
     pub prompt_history: crate::state::prompt_history::PromptHistoryStore,
 }
 
@@ -154,6 +156,7 @@ impl App {
             data_tx,
             data_rx,
             theme: Theme::default(),
+            preview_theme: None,
             once_mode: false,
             completion_summary: None,
             continuous_mode: None,
@@ -169,6 +172,7 @@ impl App {
             queue_launch_configs: None,
             hollow_retry_screen: None,
             sanitize_screen: None,
+            settings_screen: None,
             prompt_history: crate::state::prompt_history::PromptHistoryStore::new(
                 crate::state::prompt_history::PromptHistoryStore::default_path(),
                 crate::config::default_max_prompt_history(),
@@ -198,6 +202,11 @@ impl App {
             );
         }
         self.config = Some(config);
+    }
+
+    /// Returns the preview theme if set, otherwise the base theme.
+    pub fn active_theme(&self) -> &Theme {
+        self.preview_theme.as_ref().unwrap_or(&self.theme)
     }
 
     fn check_gh_auth_error(&mut self, e: &anyhow::Error) -> bool {

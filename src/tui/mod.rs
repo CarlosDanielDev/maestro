@@ -429,7 +429,8 @@ async fn event_loop(
                                 | app::TuiMode::QueueConfirmation
                                 | app::TuiMode::QueueExecution
                                 | app::TuiMode::HollowRetry
-                                | app::TuiMode::Sanitize => app::TuiMode::Overview,
+                                | app::TuiMode::Sanitize
+                                | app::TuiMode::Settings => app::TuiMode::Overview,
                             };
                         }
                         (KeyCode::Esc, _) => {

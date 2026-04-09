@@ -92,6 +92,8 @@ pub struct IssueBrowserScreen {
     last_visible_height: usize,
     /// Prompt overlay shown before launching issue session(s).
     pub(crate) prompt_overlay: Option<IssuePromptOverlay>,
+    /// Layout configuration for panel arrangement.
+    pub(crate) layout: crate::config::LayoutConfig,
 }
 
 impl IssueBrowserScreen {
@@ -109,7 +111,13 @@ impl IssueBrowserScreen {
             loading: false,
             last_visible_height: 20,
             prompt_overlay: None,
+            layout: crate::config::LayoutConfig::default(),
         }
+    }
+
+    pub fn with_layout(mut self, layout: crate::config::LayoutConfig) -> Self {
+        self.layout = layout;
+        self
     }
 
     pub fn set_issues(&mut self, issues: Vec<GhIssue>) {
