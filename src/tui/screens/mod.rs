@@ -5,6 +5,7 @@ pub mod issue_browser;
 pub mod milestone;
 pub mod prompt_input;
 pub mod queue_confirmation;
+pub mod settings;
 
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
@@ -12,6 +13,7 @@ pub use issue_browser::IssueBrowserScreen;
 pub use milestone::MilestoneScreen;
 pub use prompt_input::PromptInputScreen;
 pub use queue_confirmation::QueueConfirmationScreen;
+pub use settings::SettingsScreen;
 
 use crate::tui::app::TuiMode;
 use crate::tui::navigation::InputMode;
@@ -91,6 +93,10 @@ pub enum ScreenAction {
     RetryHollow(uuid::Uuid),
     /// Trigger a version check and self-update.
     CheckForUpdate,
+    /// Update the live app config (e.g., after Settings save).
+    UpdateConfig(Box<crate::config::Config>),
+    /// Preview a theme temporarily (reverted on discard).
+    PreviewTheme(Option<crate::tui::theme::ThemeConfig>),
     /// Quit the application.
     Quit,
 }
