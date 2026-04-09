@@ -12,6 +12,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::MilestoneView => app.milestone_screen.as_mut()?,
         app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
         app::TuiMode::QueueConfirmation => app.queue_confirmation_screen.as_mut()?,
+        app::TuiMode::HollowRetry => app.hollow_retry_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -68,7 +69,15 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::PromptInput => {
                     if app.prompt_input_screen.is_none() {
-                        app.prompt_input_screen = Some(screens::PromptInputScreen::new());
+                        let mut screen = screens::PromptInputScreen::new();
+                        let prompts: Vec<String> = app
+                            .prompt_history
+                            .entries()
+                            .iter()
+                            .map(|e| e.prompt.clone())
+                            .collect();
+                        screen.set_history(prompts);
+                        app.prompt_input_screen = Some(screen);
                     }
                 }
                 _ => {}
@@ -88,6 +97,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::QueueConfirmation => {
                     app.queue_confirmation_screen = None;
+                }
+                app::TuiMode::HollowRetry => {
+                    app.hollow_retry_screen = None;
                 }
                 _ => {}
             }
@@ -128,6 +140,29 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         ScreenAction::LaunchConflictFix(config) => {
             app.spawn_conflict_fix_session(&config);
             app.completion_summary = None;
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::RetryHollow(session_id) => {
+            // Queue a retry for the hollow session
+            if let Some(managed) = app.pool.get_active_mut(session_id) {
+                let policy = app
+                    .config
+                    .as_ref()
+                    .map(|c| crate::session::retry::RetryPolicy::from_config(&c.sessions));
+                if let Some(policy) = policy {
+                    let progress = app.progress_tracker.get(&session_id).cloned();
+                    let retry = policy.prepare_retry(&managed.session, progress.as_ref(), None);
+                    let label = crate::tui::app::helpers::session_label(&managed.session);
+                    managed.session.status = crate::session::types::SessionStatus::Retrying;
+                    app.activity_log.push_simple(
+                        label,
+                        "Manual retry (hollow completion)".into(),
+                        crate::tui::activity_log::LogLevel::Warn,
+                    );
+                    app.pending_session_launches.push(retry);
+                }
+            }
+            app.hollow_retry_screen = None;
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchQueue(configs) => {

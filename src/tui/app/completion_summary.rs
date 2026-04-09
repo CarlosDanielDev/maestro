@@ -48,6 +48,8 @@ impl App {
                     .or_else(|| s.activity_log.last())
                     .map(|e| truncate_with_ellipsis(&e.message, 77))
                     .unwrap_or_default()
+            } else if s.is_hollow_completion {
+                "Hollow completion: no cost, no files, no tool calls".to_string()
             } else {
                 String::new()
             };

@@ -178,18 +178,25 @@ fn draw_single_panel(
         .split(inner);
 
     // Status line
-    let status_line = Line::from(vec![
-        Span::styled(
-            format!("{} {} ", session.status.symbol(), session.status.label()),
+    let mut status_spans = vec![Span::styled(
+        format!("{} {} ", session.status.symbol(), session.status.label()),
+        Style::default()
+            .fg(status_color)
+            .add_modifier(Modifier::BOLD),
+    )];
+    if session.is_hollow_completion {
+        status_spans.push(Span::styled(
+            "HOLLOW ",
             Style::default()
-                .fg(status_color)
+                .fg(theme.accent_warning)
                 .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            session.elapsed_display(),
-            Style::default().fg(theme.text_primary),
-        ),
-    ]);
+        ));
+    }
+    status_spans.push(Span::styled(
+        session.elapsed_display(),
+        Style::default().fg(theme.text_primary),
+    ));
+    let status_line = Line::from(status_spans);
     f.render_widget(Paragraph::new(status_line), chunks[0]);
 
     // Cost + file count
@@ -227,6 +234,8 @@ fn draw_single_panel(
             .map(|t| t.elapsed())
             .unwrap_or_default();
         format!("> {}", spinner::thinking_activity(spinner_tick, elapsed))
+    } else if session.is_hollow_completion {
+        "> \u{26A0} Session completed without performing any work".to_string()
     } else {
         format!("> {}", session.current_activity)
     };
