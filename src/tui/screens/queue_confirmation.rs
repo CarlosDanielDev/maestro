@@ -275,7 +275,7 @@ impl Screen for QueueConfirmationScreen {
                                 custom_prompt: None,
                             })
                             .collect();
-                        return ScreenAction::LaunchSessions(configs);
+                        return ScreenAction::LaunchQueue(configs);
                     }
                 }
                 KeyCode::Esc => return ScreenAction::Pop,
@@ -430,16 +430,16 @@ mod tests {
     }
 
     #[test]
-    fn enter_launches_sessions() {
+    fn enter_launches_queue() {
         let mut screen = make_screen(&[10, 20]);
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         match action {
-            ScreenAction::LaunchSessions(configs) => {
+            ScreenAction::LaunchQueue(configs) => {
                 assert_eq!(configs.len(), 2);
                 assert_eq!(configs[0].issue_number, Some(10));
                 assert_eq!(configs[1].issue_number, Some(20));
             }
-            other => panic!("Expected LaunchSessions, got {:?}", other),
+            other => panic!("Expected LaunchQueue, got {:?}", other),
         }
     }
 

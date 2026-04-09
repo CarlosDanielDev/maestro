@@ -584,6 +584,7 @@ impl Theme {
             SessionStatus::NeedsReview => self.status_needs_review,
             SessionStatus::CiFix => self.status_ci_fix,
             SessionStatus::NeedsPr => self.status_stalled, // Reuse stalled color (amber warning)
+            SessionStatus::ConflictFix => self.status_ci_fix, // Reuse CI fix color (repair yellow)
         }
     }
 
@@ -762,6 +763,8 @@ mod tests {
             SessionStatus::Stalled,
             SessionStatus::Retrying,
             SessionStatus::CiFix,
+            SessionStatus::NeedsPr,
+            SessionStatus::ConflictFix,
         ];
         for variant in all_variants {
             let color = t.status_color(variant);

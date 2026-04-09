@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-08 14:00 (UTC)
+> Last updated: 2026-04-08 15:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -96,6 +96,7 @@ maestro/
 │   │   ├── client.rs                      # GitHubClient trait + list_milestones(); GhCliClient; MockGitHubClient (set_milestones()); parse_issues_json; parse_milestones_json; is_auth_error(); is_gh_auth_error(); auth error detection in run_gh() surfaces gh CLI authentication failures; list_prs_for_branch() on GitHubClient trait — returns open PR numbers for a given head branch; MockGitHubClient gains set_list_prs_for_branch() helper  [Issue #31-33, #46-48, #158, #159]
 │   │   ├── ci.rs                          # CiCheck trait (check_pr_status, check_pr_details, fetch_failure_log); CiChecker impl; CiStatus enum (Pending, Passed, Failed, NoneConfigured); CheckStatus enum (Queued, InProgress, Completed, Waiting, Pending, Requested, Unknown) with serde aliases; CheckConclusion enum (Success, Failure, Neutral, Cancelled, TimedOut, ActionRequired, Skipped, Stale, StartupFailure, None) with serde aliases; CheckRunDetail struct (name, status, conclusion, started_at, elapsed_secs); CiPollAction enum (Wait, SpawnFix, Abandon); PendingPrCheck (fix_attempt, awaiting_fix_ci); build_ci_fix_prompt(); truncate_log(); parse_ci_json(); parse_check_details(); decide_ci_action()  [Phase 3, Issue #41, #123]
 │   │   ├── labels.rs                      # LabelManager: ready→in-progress→done/failed lifecycle transitions
+│   │   ├── merge.rs                       # PrMergeCheck trait (mockable); PrMergeChecker impl using `gh pr view` + `git diff`; MergeState enum (Clean, Conflicting, Blocked, Unknown); PrConflictStatus struct; parse_merge_json(); parse_conflicting_files(); build_conflict_fix_prompt()
 │   │   └── pr.rs                          # PrCreator: build_pr_body, create_for_issue auto-PR creation; PrRetryPolicy (max_attempts, base_delay_secs, multiplier) with exponential back-off via delay_for_attempt(); OrphanBranch struct with from_branch_name() — parses issue number from maestro/issue-N branch names  [Issue #159]
 │   ├── modes/                             # Session mode definitions and resolution  [Phase 3]
 │   │   └── mod.rs                         # builtin_modes, resolve_mode, mode_from_labels
@@ -183,6 +184,7 @@ maestro/
 │       ├── assigner.rs                    # WorkAssigner: topo sort tiebreaker, cycle detection; mark_pending() transitions an item back to Pending; mark_pending_undo_cascade() cascades undo to dependents  [Phase 3, Issue #85]
 │       ├── conflicts.rs                   # Conflict detection for concurrent work items
 │       ├── dependencies.rs               # DependencyGraph: topological sort, cycle detection
+│       ├── executor.rs                    # QueueExecutor state machine for sequential queue execution; ExecutorPhase enum (Idle, Running, AwaitingDecision, Finished); ExecutorItem struct; QueueItemState enum; FailureAction enum (Retry, Skip, Abort); advance(), mark_success(), mark_failure(), apply_decision(), set_session_id()
 │       └── queue.rs                       # WorkQueue, QueuedItem, QueueValidationError; validate_selection()  [Issue #65]
 ├── template/
 │   ├── README-TEMPLATE.md                 # Template usage instructions
@@ -255,6 +257,7 @@ maestro/
 | `src/github/client.rs` | GitHubClient trait + `list_milestones()`; GhCliClient; MockGitHubClient; `parse_issues_json`; `parse_milestones_json`; `is_auth_error()`, `is_gh_auth_error()`; auth error detection in `run_gh()` (Issue #158) |
 | `src/github/ci.rs` | `CiChecker` (`check_pr_status`, `fetch_failure_log`); `CiStatus`; `CiPollAction`; `PendingPrCheck` (with `fix_attempt`, `awaiting_fix_ci`); `build_ci_fix_prompt`; `truncate_log`; `parse_ci_json`; `decide_ci_action` (Issue #41) |
 | `src/github/labels.rs` | Issue label lifecycle transitions |
+| `src/github/merge.rs` | `PrMergeCheck` trait (mockable); `PrMergeChecker` impl (`gh pr view` + `git diff`); `MergeState` enum; `PrConflictStatus` struct; `parse_merge_json()`; `parse_conflicting_files()`; `build_conflict_fix_prompt()` |
 | `src/github/pr.rs` | Automated PR creation |
 | `src/modes/` | Session mode definitions: orchestrator, vibe, review (Phase 3) |
 | `src/notifications/` | Interruption system with Info/Warning/Critical/Blocker levels (Phase 3) |
@@ -321,6 +324,7 @@ maestro/
 | `src/work/assigner.rs` | Priority-ordered work assignment; `mark_pending()` and `mark_pending_undo_cascade()` for continuous mode retry/skip (Issue #85) |
 | `src/work/conflicts.rs` | Conflict detection for concurrent work items |
 | `src/work/dependencies.rs` | Dependency graph, topological sort |
+| `src/work/executor.rs` | `QueueExecutor` state machine: `ExecutorPhase` (Idle, Running, AwaitingDecision, Finished); `ExecutorItem`; `QueueItemState`; `FailureAction` (Retry, Skip, Abort); `advance()`, `mark_success()`, `mark_failure()`, `apply_decision()`, `set_session_id()` |
 | `template/` | Reproducible project template |
 | `CHANGELOG.md` | Release history |
 | `ROADMAP.md` | Project milestones and implementation order |

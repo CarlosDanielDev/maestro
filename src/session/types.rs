@@ -20,6 +20,7 @@ pub enum SessionStatus {
     Retrying,
     CiFix,
     NeedsPr,
+    ConflictFix,
 }
 
 impl SessionStatus {
@@ -38,6 +39,7 @@ impl SessionStatus {
             Self::Retrying => "🔁",
             Self::CiFix => "🔧",
             Self::NeedsPr => "📋",
+            Self::ConflictFix => "🔀",
         }
     }
 
@@ -56,6 +58,7 @@ impl SessionStatus {
             Self::Retrying => "RETRYING",
             Self::CiFix => "CI_FIX",
             Self::NeedsPr => "NEEDS_PR",
+            Self::ConflictFix => "CONFLICT_FIX",
         }
     }
 
@@ -73,6 +76,14 @@ pub struct CiFixContext {
     pub issue_number: u64,
     pub branch: String,
     pub attempt: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConflictFixContext {
+    pub pr_number: u64,
+    pub issue_number: u64,
+    pub branch: String,
+    pub conflicting_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +124,9 @@ pub struct Session {
     /// If this session is a CI fix, tracks the PR and attempt number.
     #[serde(default)]
     pub ci_fix_context: Option<CiFixContext>,
+    /// If this session is a conflict fix, tracks the PR and conflicting files.
+    #[serde(default)]
+    pub conflict_fix_context: Option<ConflictFixContext>,
     /// Image paths attached to this session for visual context.
     #[serde(default)]
     pub image_paths: Vec<PathBuf>,
@@ -185,6 +199,7 @@ impl Session {
             child_session_ids: Vec::new(),
             fork_depth: 0,
             ci_fix_context: None,
+            conflict_fix_context: None,
             image_paths: Vec::new(),
             gate_results: Vec::new(),
             is_thinking: false,
@@ -557,5 +572,97 @@ mod tests {
         let stripped = json.replace(r#","gate_results":[]"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
         assert!(rt.gate_results.is_empty());
+    }
+
+    // --- Issue #140: SessionStatus::ConflictFix and ConflictFixContext ---
+
+    #[test]
+    fn conflict_fix_status_is_not_terminal() {
+        assert!(!SessionStatus::ConflictFix.is_terminal());
+    }
+
+    #[test]
+    fn conflict_fix_status_has_non_empty_symbol() {
+        assert!(!SessionStatus::ConflictFix.symbol().is_empty());
+    }
+
+    #[test]
+    fn conflict_fix_status_has_correct_label() {
+        assert_eq!(SessionStatus::ConflictFix.label(), "CONFLICT_FIX");
+    }
+
+    #[test]
+    fn conflict_fix_status_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionStatus::ConflictFix).unwrap();
+        assert_eq!(json, r#""conflict_fix""#);
+    }
+
+    #[test]
+    fn conflict_fix_status_deserializes_from_snake_case() {
+        let status: SessionStatus = serde_json::from_str(r#""conflict_fix""#).unwrap();
+        assert_eq!(status, SessionStatus::ConflictFix);
+    }
+
+    #[test]
+    fn conflict_fix_context_stores_all_fields() {
+        let ctx = ConflictFixContext {
+            pr_number: 42,
+            issue_number: 10,
+            branch: "feat/fix".to_string(),
+            conflicting_files: vec!["src/a.rs".to_string(), "src/b.rs".to_string()],
+        };
+        assert_eq!(ctx.pr_number, 42);
+        assert_eq!(ctx.issue_number, 10);
+        assert_eq!(ctx.branch, "feat/fix");
+        assert_eq!(ctx.conflicting_files.len(), 2);
+    }
+
+    #[test]
+    fn conflict_fix_context_conflicting_files_is_a_vec() {
+        let ctx = ConflictFixContext {
+            pr_number: 1,
+            issue_number: 1,
+            branch: "b".to_string(),
+            conflicting_files: vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()],
+        };
+        assert_eq!(ctx.conflicting_files, vec!["a.rs", "b.rs", "c.rs"]);
+    }
+
+    #[test]
+    fn session_conflict_fix_context_defaults_to_none() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        assert!(s.conflict_fix_context.is_none());
+    }
+
+    #[test]
+    fn session_with_conflict_fix_context_round_trips_via_serde() {
+        let mut s = Session::new(
+            "prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+        );
+        s.conflict_fix_context = Some(ConflictFixContext {
+            pr_number: 99,
+            issue_number: 42,
+            branch: "feat/merge-fix".into(),
+            conflicting_files: vec!["src/main.rs".into(), "src/lib.rs".into()],
+        });
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        let ctx = rt.conflict_fix_context.unwrap();
+        assert_eq!(ctx.pr_number, 99);
+        assert_eq!(ctx.issue_number, 42);
+        assert_eq!(ctx.branch, "feat/merge-fix");
+        assert_eq!(ctx.conflicting_files.len(), 2);
+    }
+
+    #[test]
+    fn session_conflict_fix_context_deserializes_with_default_when_field_absent() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json.replace(r#","conflict_fix_context":null"#, "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert!(rt.conflict_fix_context.is_none());
     }
 }
