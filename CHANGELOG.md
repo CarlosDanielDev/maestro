@@ -7,6 +7,42 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-09
+
+### Added
+
+- Token consumption tracking: capture granular token metrics (input, output, cache read, cache write) from Claude CLI stream-json output (#161)
+- Token analytics dashboard (`[t]` keybinding) with per-session breakdown, cache hit ratio, and cost-per-kToken (#161)
+- Token Report entry in Dashboard Quick Actions menu (#161)
+- Prompt history persistence to disk with Up/Down arrow navigation in prompt input screen (#170)
+- Configurable `max_prompt_history` (default: 100) in `maestro.toml` (#170)
+- Automatic retry for hollow/failed session completions with configurable `hollow_max_retries` (default: 1) (#171)
+- Hollow retry screen (Retry/Skip/View Logs) when auto-retries are exhausted (#171)
+- Custom prompt input when selecting an issue for session launch (#99)
+- Shared prompt overlay for multi-selected issues (#130)
+- Work queue planner with dependency validation (#65)
+- File conflict predictor for pre-launch validation (#66)
+- Queue confirmation screen with conflict warnings (#67)
+- Sequential session executor for work queues (#68)
+- Granular CI check-run details from `gh pr checks` (#123)
+- CI monitor TUI widget — live progress box for PR checks (#124)
+- CI monitor integration into issues screen and session detail (#125)
+- PR merge conflict detection after queue execution (#138)
+- Conflict resolution suggestions in completion summary (#139)
+- Conflict resolver session launcher from completion summary (#140)
+
+### Fixed
+
+- Detect and flag "hollow" session completions (zero cost, zero files, no tool calls, <30s) with visual warnings across all TUI views (#169)
+
+### Changed
+
+- Decompose oversized files into focused modules under 500-line limit (#172-#179)
+- CI file size lint enforcing 500-line max per `.rs` file (#172)
+- Parser `parse_stream_line` now returns `Vec<StreamEvent>` for multi-event extraction (#161)
+- `RetryPolicy` extended with `hollow_max_retries` field and `from_config` constructor (#171)
+- `session_label` helper visibility changed to `pub(crate)` for cross-module reuse
+
 ## [0.5.3] - 2026-04-08
 
 ### Added
