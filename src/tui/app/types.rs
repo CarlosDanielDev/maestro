@@ -1,5 +1,5 @@
-use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
 use crate::adapt::AdaptConfig;
+use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
 use crate::github::types::{GhIssue, GhMilestone};
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::types::SessionStatus;

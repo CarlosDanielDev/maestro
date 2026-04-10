@@ -88,10 +88,7 @@ impl AdaptScreen {
     }
 
     /// Advance the wizard after a successful analyze phase.
-    pub fn complete_analyze(
-        &mut self,
-        report: AdaptReport,
-    ) -> Option<crate::tui::app::TuiCommand> {
+    pub fn complete_analyze(&mut self, report: AdaptReport) -> Option<crate::tui::app::TuiCommand> {
         self.set_analyze_result(report.clone());
         let config = self.build_adapt_config();
         if config.no_issues {
@@ -108,10 +105,7 @@ impl AdaptScreen {
     }
 
     /// Advance the wizard after a successful plan phase.
-    pub fn complete_plan(
-        &mut self,
-        plan: AdaptPlan,
-    ) -> Option<crate::tui::app::TuiCommand> {
+    pub fn complete_plan(&mut self, plan: AdaptPlan) -> Option<crate::tui::app::TuiCommand> {
         self.set_plan_result(plan.clone());
         let config = self.build_adapt_config();
         if config.dry_run {
@@ -166,17 +160,15 @@ impl AdaptScreen {
                     _ => {}
                 }
             }
-            KeyCode::Backspace => {
-                match self.selected_field {
-                    0 => {
-                        self.config.path.pop();
-                    }
-                    4 => {
-                        self.config.model.pop();
-                    }
-                    _ => {}
+            KeyCode::Backspace => match self.selected_field {
+                0 => {
+                    self.config.path.pop();
                 }
-            }
+                4 => {
+                    self.config.model.pop();
+                }
+                _ => {}
+            },
             KeyCode::Char(c) if self.selected_field == 0 => {
                 self.config.path.push(c);
             }

@@ -301,7 +301,11 @@ fn phase_summary(screen: &AdaptScreen, phase_idx: usize) -> String {
         }
         1 => {
             if let Some(ref r) = screen.results.report {
-                format!(" — {} modules, {} debt items", r.modules.len(), r.tech_debt_items.len())
+                format!(
+                    " — {} modules, {} debt items",
+                    r.modules.len(),
+                    r.tech_debt_items.len()
+                )
             } else {
                 String::new()
             }

@@ -1,5 +1,5 @@
-use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
 use crate::adapt::AdaptConfig;
+use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
 use std::path::PathBuf;
 
 /// Wizard step state machine for the adapt pipeline.

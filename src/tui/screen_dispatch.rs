@@ -94,8 +94,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     }
                 }
                 app::TuiMode::AdaptWizard => {
-                    app.adapt_screen =
-                        Some(crate::tui::screens::adapt::AdaptScreen::new());
+                    app.adapt_screen = Some(crate::tui::screens::adapt::AdaptScreen::new());
                 }
                 app::TuiMode::PromptInput => {
                     if app.prompt_input_screen.is_none() {
@@ -239,27 +238,25 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     }
                     AdaptStep::Analyzing => {
                         if let Some(profile) = screen.results.profile.clone() {
-                            app.pending_commands.push(app::TuiCommand::RunAdaptAnalyze(
-                                config, profile,
-                            ));
+                            app.pending_commands
+                                .push(app::TuiCommand::RunAdaptAnalyze(config, profile));
                         }
                     }
                     AdaptStep::Planning => {
-                        if let (Some(profile), Some(report)) =
-                            (screen.results.profile.clone(), screen.results.report.clone())
-                        {
-                            app.pending_commands.push(app::TuiCommand::RunAdaptPlan(
-                                config, profile, report,
-                            ));
+                        if let (Some(profile), Some(report)) = (
+                            screen.results.profile.clone(),
+                            screen.results.report.clone(),
+                        ) {
+                            app.pending_commands
+                                .push(app::TuiCommand::RunAdaptPlan(config, profile, report));
                         }
                     }
                     AdaptStep::Materializing => {
                         if let (Some(plan), Some(report)) =
                             (screen.results.plan.clone(), screen.results.report.clone())
                         {
-                            app.pending_commands.push(
-                                app::TuiCommand::RunAdaptMaterialize(plan, report),
-                            );
+                            app.pending_commands
+                                .push(app::TuiCommand::RunAdaptMaterialize(plan, report));
                         }
                     }
                     _ => {}
