@@ -7,6 +7,39 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-04-10
+
+### Added
+
+- `maestro adapt` — onboard existing projects to maestro workflow (#87)
+- `adapt` module scaffolding and data types (#88)
+- Project scanner for `maestro adapt` Phase 1 (#89)
+- Extend GitHubClient with `create_issue` and `create_milestone` (#90)
+- Claude analyzer for `maestro adapt` Phase 2 (#91)
+- Adaptation planner for `maestro adapt` Phase 3 (#92)
+- Plan materializer for `maestro adapt` Phase 4 (#93)
+- CLI integration and `cmd_adapt` entry point (#94)
+- Tech debt catalog issue generation for `maestro adapt` (#95)
+- AdaptWizard types and TuiMode variant (#207)
+- AdaptScreen struct with Screen trait impl (#208)
+- AdaptScreen rendering (#209)
+- HomeScreen quick action for Adapt Project (#210)
+- Wire AdaptScreen into App and screen dispatch (#211)
+- Async adapt pipeline commands and data chaining (#212)
+- End-to-end integration test for TUI adapt wizard (#213)
+- PR Review screen with interactive TUI and markdown rendering (#229)
+
+### Security
+
+- Fix command injection via plugin system (#220)
+- Fix argument injection via review dispatcher template variables (#221)
+- Add checksum verification to auto-updater (#222)
+- Remove crate-level `#![allow(dead_code)]` (#223)
+- Fix worktree slug path traversal (#224)
+- Fix state file race condition due to missing file locking (#225)
+- Fix log file fallback panic on non-Unix platforms (#226)
+- Replace `expect()` and `panic!()` in production code paths (#227)
+
 ## [0.9.0] - 2026-04-09
 
 ### Added
