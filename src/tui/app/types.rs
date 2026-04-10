@@ -1,3 +1,5 @@
+use crate::adapt::AdaptConfig;
+use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
 use crate::github::types::{GhIssue, GhMilestone};
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::types::SessionStatus;
@@ -24,6 +26,7 @@ pub enum TuiMode {
     Sanitize,
     Settings,
     SessionSwitcher,
+    AdaptWizard,
 }
 
 /// Payload for suggestion data fetched from GitHub.
@@ -41,6 +44,10 @@ pub enum TuiCommand {
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
     LaunchPromptSession(PromptSessionConfig),
+    RunAdaptScan(AdaptConfig),
+    RunAdaptAnalyze(AdaptConfig, ProjectProfile),
+    RunAdaptPlan(AdaptConfig, ProjectProfile, AdaptReport),
+    RunAdaptMaterialize(AdaptPlan, AdaptReport),
 }
 
 /// Data events delivered from background fetch tasks.
@@ -51,6 +58,10 @@ pub enum TuiDataEvent {
     SuggestionData(SuggestionDataPayload),
     VersionCheckResult(Option<crate::updater::ReleaseInfo>),
     UpgradeResult(Result<String, String>),
+    AdaptScanResult(anyhow::Result<Box<ProjectProfile>>),
+    AdaptAnalyzeResult(anyhow::Result<AdaptReport>),
+    AdaptPlanResult(anyhow::Result<AdaptPlan>),
+    AdaptMaterializeResult(anyhow::Result<MaterializeResult>),
 }
 
 /// A merge conflict suggestion shown in the completion overlay.

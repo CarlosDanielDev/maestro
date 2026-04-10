@@ -17,6 +17,7 @@ const QUICK_ACTIONS: &[(&str, char)] = &[
     ("Browse Issues", 'i'),
     ("Browse Milestones", 'm'),
     ("Run Prompt", 'r'),
+    ("Adapt Project", 'a'),
     ("Status", 's'),
     ("Cost Report", 'c'),
     ("Token Report", 't'),
@@ -47,7 +48,7 @@ pub struct HomeScreen {
 
 impl HomeScreen {
     pub const NUM_ACTIONS: usize = QUICK_ACTIONS.len();
-    pub const QUIT_ACTION_INDEX: usize = 8;
+    pub const QUIT_ACTION_INDEX: usize = 9;
     pub const QUICK_ACTIONS_PANE: FocusId = FocusId("home:quick_actions");
     pub const SUGGESTIONS_PANE: FocusId = FocusId("home:suggestions");
 
@@ -117,6 +118,10 @@ impl KeymapProvider for HomeScreen {
                         description: "Run Prompt",
                     },
                     KeyBinding {
+                        key: "a",
+                        description: "Adapt Project",
+                    },
+                    KeyBinding {
                         key: "R",
                         description: "Refresh Suggestions",
                     },
@@ -146,6 +151,7 @@ impl Screen for HomeScreen {
                 KeyCode::Char('i') => return ScreenAction::Push(TuiMode::IssueBrowser),
                 KeyCode::Char('m') => return ScreenAction::Push(TuiMode::MilestoneView),
                 KeyCode::Char('r') => return ScreenAction::Push(TuiMode::PromptInput),
+                KeyCode::Char('a') => return ScreenAction::Push(TuiMode::AdaptWizard),
                 KeyCode::Char('R') => return ScreenAction::RefreshSuggestions,
                 KeyCode::Char('s') => return ScreenAction::Push(TuiMode::Overview),
                 KeyCode::Char('c') => return ScreenAction::Push(TuiMode::CostDashboard),

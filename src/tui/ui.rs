@@ -220,6 +220,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 sw.draw(f, chunks[1], &sessions, &theme);
             }
         }
+        TuiMode::AdaptWizard => {
+            if let Some(ref mut screen) = app.adapt_screen {
+                screen.tick();
+                screen.draw(f, chunks[1], &theme);
+            }
+        }
         TuiMode::HollowRetry => {
             let sessions = app.pool.all_sessions();
             app.panel_view.draw_with_claims(
@@ -499,6 +505,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::Sanitize => "Sanitize",
         TuiMode::Settings => "Settings",
         TuiMode::SessionSwitcher => "Sessions",
+        TuiMode::AdaptWizard => "Adapt",
     };
 
     let help = Line::from(vec![
