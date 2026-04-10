@@ -1364,9 +1364,7 @@ mod adapt_chaining {
     #[test]
     fn scan_ok_chains_to_analyze() {
         let mut app = app_with_adapt_screen();
-        app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(
-            make_profile(),
-        ))));
+        app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(make_profile()))));
 
         let screen = app.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Analyzing);
@@ -1383,9 +1381,7 @@ mod adapt_chaining {
         let mut app = app_with_adapt_screen();
         app.adapt_screen.as_mut().unwrap().config.scan_only = true;
 
-        app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(
-            make_profile(),
-        ))));
+        app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(make_profile()))));
 
         let screen = app.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Complete);
@@ -1523,9 +1519,9 @@ mod adapt_chaining {
         let mut app = app_with_adapt_screen();
         app.adapt_screen.as_mut().unwrap().step = AdaptStep::Materializing;
 
-        app.handle_data_event(TuiDataEvent::AdaptMaterializeResult(Err(
-            anyhow::anyhow!("materialize failed"),
-        )));
+        app.handle_data_event(TuiDataEvent::AdaptMaterializeResult(Err(anyhow::anyhow!(
+            "materialize failed"
+        ))));
 
         let screen = app.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Failed);
@@ -1540,9 +1536,7 @@ mod adapt_chaining {
         let mut app = app_with_adapt_screen();
         app.adapt_screen.as_mut().unwrap().cancelled = true;
 
-        app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(
-            make_profile(),
-        ))));
+        app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(make_profile()))));
 
         let screen = app.adapt_screen.as_ref().unwrap();
         // Step stays at Scanning (not transitioned)
@@ -1556,9 +1550,7 @@ mod adapt_chaining {
         let mut app = app_with_adapt_screen();
 
         // Phase 1: Scan
-        app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(
-            make_profile(),
-        ))));
+        app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(make_profile()))));
         assert_eq!(
             app.adapt_screen.as_ref().unwrap().step,
             AdaptStep::Analyzing
@@ -1568,10 +1560,7 @@ mod adapt_chaining {
         let cmd = app.pending_commands.pop().unwrap();
         assert!(matches!(cmd, TuiCommand::RunAdaptAnalyze(_, _)));
         app.handle_data_event(TuiDataEvent::AdaptAnalyzeResult(Ok(make_report())));
-        assert_eq!(
-            app.adapt_screen.as_ref().unwrap().step,
-            AdaptStep::Planning
-        );
+        assert_eq!(app.adapt_screen.as_ref().unwrap().step, AdaptStep::Planning);
 
         // Phase 3: Plan
         let cmd = app.pending_commands.pop().unwrap();
@@ -1588,10 +1577,7 @@ mod adapt_chaining {
         app.handle_data_event(TuiDataEvent::AdaptMaterializeResult(Ok(
             make_materialize_result(),
         )));
-        assert_eq!(
-            app.adapt_screen.as_ref().unwrap().step,
-            AdaptStep::Complete
-        );
+        assert_eq!(app.adapt_screen.as_ref().unwrap().step, AdaptStep::Complete);
 
         // All results stored
         let screen = app.adapt_screen.as_ref().unwrap();
