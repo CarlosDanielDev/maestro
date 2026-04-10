@@ -24,6 +24,7 @@ mod updater;
 mod util;
 mod work;
 
+mod adapt;
 mod sanitize;
 
 #[cfg(test)]
@@ -62,6 +63,22 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Completions { shell }) => cli::cmd_completions(shell),
         Some(Commands::Mangen { out_dir }) => cli::cmd_mangen(&out_dir),
         Some(Commands::Doctor) => cmd_doctor(),
+        Some(Commands::Adapt {
+            path,
+            dry_run,
+            no_issues,
+            scan_only,
+            model,
+        }) => {
+            adapt::cmd_adapt(adapt::AdaptConfig {
+                path,
+                dry_run,
+                no_issues,
+                scan_only,
+                model,
+            })
+            .await
+        }
         Some(Commands::Sanitize {
             path,
             output,

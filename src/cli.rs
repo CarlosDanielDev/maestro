@@ -128,6 +128,28 @@ pub enum Commands {
     },
     /// Check environment setup and required tools
     Doctor,
+    /// Onboard an existing project to the maestro workflow
+    Adapt {
+        /// Path to the project to onboard (defaults to current directory)
+        #[arg(short, long, default_value = ".")]
+        path: std::path::PathBuf,
+
+        /// Preview what would be created without making changes
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Analyze and plan but do not create GitHub issues
+        #[arg(long)]
+        no_issues: bool,
+
+        /// Only run Phase 1 (project scanning), output profile as JSON
+        #[arg(long)]
+        scan_only: bool,
+
+        /// AI model to use for analysis and planning
+        #[arg(short, long)]
+        model: Option<String>,
+    },
     /// Analyze codebase for dead code and code smells
     Sanitize {
         /// Path to scan (defaults to current directory)
@@ -741,6 +763,148 @@ mod tests {
             assert_eq!(model.as_deref(), Some("haiku"));
         } else {
             panic!("Expected Commands::Sanitize");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Adapt subcommand parsing
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn adapt_subcommand_parses_with_no_flags() {
+        let cli = Cli::try_parse_from(["maestro", "adapt"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Adapt { .. })));
+    }
+
+    #[test]
+    fn adapt_path_defaults_to_current_dir() {
+        let cli = Cli::try_parse_from(["maestro", "adapt"]).unwrap();
+        if let Some(Commands::Adapt { path, .. }) = cli.command {
+            assert_eq!(path, PathBuf::from("."));
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_path_accepts_value() {
+        let cli = Cli::try_parse_from(["maestro", "adapt", "--path", "/project"]).unwrap();
+        if let Some(Commands::Adapt { path, .. }) = cli.command {
+            assert_eq!(path, PathBuf::from("/project"));
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_dry_run_defaults_to_false() {
+        let cli = Cli::try_parse_from(["maestro", "adapt"]).unwrap();
+        if let Some(Commands::Adapt { dry_run, .. }) = cli.command {
+            assert!(!dry_run);
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_dry_run_is_set_when_provided() {
+        let cli = Cli::try_parse_from(["maestro", "adapt", "--dry-run"]).unwrap();
+        if let Some(Commands::Adapt { dry_run, .. }) = cli.command {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_no_issues_defaults_to_false() {
+        let cli = Cli::try_parse_from(["maestro", "adapt"]).unwrap();
+        if let Some(Commands::Adapt { no_issues, .. }) = cli.command {
+            assert!(!no_issues);
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_no_issues_is_set_when_provided() {
+        let cli = Cli::try_parse_from(["maestro", "adapt", "--no-issues"]).unwrap();
+        if let Some(Commands::Adapt { no_issues, .. }) = cli.command {
+            assert!(no_issues);
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_scan_only_defaults_to_false() {
+        let cli = Cli::try_parse_from(["maestro", "adapt"]).unwrap();
+        if let Some(Commands::Adapt { scan_only, .. }) = cli.command {
+            assert!(!scan_only);
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_scan_only_is_set_when_provided() {
+        let cli = Cli::try_parse_from(["maestro", "adapt", "--scan-only"]).unwrap();
+        if let Some(Commands::Adapt { scan_only, .. }) = cli.command {
+            assert!(scan_only);
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_model_defaults_to_none() {
+        let cli = Cli::try_parse_from(["maestro", "adapt"]).unwrap();
+        if let Some(Commands::Adapt { model, .. }) = cli.command {
+            assert!(model.is_none());
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_model_accepts_value() {
+        let cli = Cli::try_parse_from(["maestro", "adapt", "--model", "opus"]).unwrap();
+        if let Some(Commands::Adapt { model, .. }) = cli.command {
+            assert_eq!(model.as_deref(), Some("opus"));
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn adapt_all_flags_coexist() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "adapt",
+            "--path",
+            "/project",
+            "--dry-run",
+            "--no-issues",
+            "--scan-only",
+            "--model",
+            "haiku",
+        ])
+        .unwrap();
+        if let Some(Commands::Adapt {
+            path,
+            dry_run,
+            no_issues,
+            scan_only,
+            model,
+        }) = cli.command
+        {
+            assert_eq!(path, PathBuf::from("/project"));
+            assert!(dry_run);
+            assert!(no_issues);
+            assert!(scan_only);
+            assert_eq!(model.as_deref(), Some("haiku"));
+        } else {
+            panic!("Expected Commands::Adapt");
         }
     }
 }
