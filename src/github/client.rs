@@ -20,6 +20,7 @@ pub trait GitHubClient: Send + Sync {
         base_branch: &str,
     ) -> Result<u64>;
     /// List open PR numbers for a given head branch.
+    #[allow(dead_code)] // Reason: orphan branch detection feature
     async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>>;
 
     /// Create a GitHub milestone and return its number.
@@ -189,17 +190,7 @@ pub fn is_gh_auth_error(err: &anyhow::Error) -> bool {
     err.to_string().contains(GH_AUTH_ERROR_SENTINEL)
 }
 
-/// Validate user-provided strings before passing to `gh` CLI.
-/// Prevents argument injection (values starting with `-`).
-fn validate_gh_arg(value: &str, field_name: &str) -> Result<()> {
-    if value.starts_with('-') {
-        anyhow::bail!("{} must not start with '-' (got {:?})", field_name, value);
-    }
-    if value.contains('\0') {
-        anyhow::bail!("{} must not contain null bytes", field_name);
-    }
-    Ok(())
-}
+use crate::util::validate_gh_arg;
 
 /// Implementation that shells out to `gh` CLI.
 pub struct GhCliClient;

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::collections::VecDeque;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -210,6 +209,7 @@ impl SessionPool {
     }
 
     /// Mutable access to a session by ID across all buckets.
+    #[allow(dead_code)] // Reason: session mutation by ID — to be used in orchestration
     pub fn get_session_mut(&mut self, session_id: Uuid) -> Option<&mut Session> {
         if let Some(m) = self.active.iter_mut().find(|m| m.session.id == session_id) {
             return Some(&mut m.session);
@@ -231,6 +231,7 @@ impl SessionPool {
         self.active.len()
     }
 
+    #[allow(dead_code)] // Reason: queue size for TUI display
     pub fn queued_count(&self) -> usize {
         self.queue.len()
     }

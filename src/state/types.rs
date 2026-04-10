@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::github::types::{GhIssue, PendingPr};
 use crate::session::types::Session;
 use chrono::{DateTime, Utc};
@@ -40,6 +39,7 @@ impl MaestroState {
     }
 
     /// Get the fork chain for a session (from root to leaf).
+    #[allow(dead_code)] // Reason: fork chain traversal — to be used in session view
     pub fn fork_chain(&self, session_id: uuid::Uuid) -> Vec<uuid::Uuid> {
         let mut chain = vec![session_id];
         let mut current = session_id;
@@ -57,6 +57,7 @@ impl MaestroState {
     }
 
     /// Get the fork depth for a session.
+    #[allow(dead_code)] // Reason: fork depth for session view display
     pub fn fork_depth(&self, session_id: uuid::Uuid) -> usize {
         self.fork_chain(session_id).len() - 1
     }

@@ -1,5 +1,5 @@
-#![allow(dead_code)]
 use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -23,6 +23,7 @@ impl Installer {
     }
 
     /// Write bytes to a staging area (same dir, `.tmp` suffix).
+    #[allow(dead_code)] // Reason: staging step for two-phase install
     pub async fn write_to_staging(&self, bytes: &[u8]) -> Result<PathBuf> {
         let staging = self.dest_path.with_extension("tmp");
         fs::write(&staging, bytes)
@@ -70,10 +71,57 @@ impl Installer {
         }
     }
 
+    /// Verify SHA-256 checksum of downloaded bytes against expected hex hash.
+    pub fn verify_checksum(bytes: &[u8], expected_hex: &str) -> Result<()> {
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        let actual = format!("{:x}", hasher.finalize());
+        if actual != expected_hex.to_lowercase() {
+            anyhow::bail!(
+                "Checksum mismatch: expected {}, got {}",
+                expected_hex,
+                actual
+            );
+        }
+        Ok(())
+    }
+
+    /// Fetch the SHA256SUMS file from the same release directory and extract
+    /// the hash for the given asset filename.
+    async fn fetch_expected_checksum(
+        client: &reqwest::Client,
+        download_url: &str,
+        asset_name: &str,
+    ) -> Result<String> {
+        let sums_url = download_url
+            .rsplit_once('/')
+            .map(|(base, _)| format!("{}/SHA256SUMS", base))
+            .ok_or_else(|| anyhow::anyhow!("Cannot derive SHA256SUMS URL from download URL"))?;
+
+        let resp = client
+            .get(&sums_url)
+            .header("User-Agent", concat!("maestro/", env!("CARGO_PKG_VERSION")))
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("Failed to fetch SHA256SUMS: HTTP {}", resp.status());
+        }
+
+        let body = resp.text().await?;
+        for line in body.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() == 2 && parts[1] == asset_name {
+                return Ok(parts[0].to_string());
+            }
+        }
+        anyhow::bail!("No checksum found for {} in SHA256SUMS", asset_name);
+    }
+
     /// Download a binary from a URL and install it with backup.
     ///
     /// Validates the URL against trusted domains, enforces a size limit,
-    /// and uses a 120-second download timeout.
+    /// verifies SHA-256 checksum, and uses a 120-second download timeout.
     pub async fn download_and_install(&self, download_url: &str) -> Result<String> {
         if !crate::updater::is_trusted_download_url(download_url) {
             anyhow::bail!("Untrusted download URL: only HTTPS from github.com is allowed");
@@ -104,6 +152,17 @@ impl Installer {
         }
 
         let bytes = resp.bytes().await?;
+
+        // Verify SHA-256 checksum before installing
+        let asset_name = download_url
+            .rsplit_once('/')
+            .map(|(_, name)| name)
+            .unwrap_or("maestro");
+
+        let expected_hash =
+            Self::fetch_expected_checksum(&client, download_url, asset_name).await?;
+        Self::verify_checksum(&bytes, &expected_hash)?;
+
         self.install_with_backup(&bytes).await?;
 
         Ok(self.backup_path().to_string_lossy().to_string())
@@ -192,6 +251,29 @@ mod tests {
         let installer = Installer::new(dest);
         let result = installer.install_with_backup(b"new bytes").await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_checksum_matches() {
+        let data = b"hello world";
+        // SHA-256 of "hello world"
+        let expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+        assert!(Installer::verify_checksum(data, expected).is_ok());
+    }
+
+    #[test]
+    fn verify_checksum_mismatch_fails() {
+        let data = b"hello world";
+        let wrong = "0000000000000000000000000000000000000000000000000000000000000000";
+        let err = Installer::verify_checksum(data, wrong).unwrap_err();
+        assert!(err.to_string().contains("Checksum mismatch"));
+    }
+
+    #[test]
+    fn verify_checksum_case_insensitive() {
+        let data = b"hello world";
+        let expected = "B94D27B9934D3E08A52E52D7DA7DABFAC484EFE37A5380EE9088F7ACE2EFCDE9";
+        assert!(Installer::verify_checksum(data, expected).is_ok());
     }
 
     #[tokio::test]

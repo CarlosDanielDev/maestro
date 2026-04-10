@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::fmt;
 
 /// Unique identifier for a focusable pane within a screen.
@@ -51,6 +50,7 @@ impl FocusRing {
     }
 
     /// Jump to a specific pane by id. Returns true if found.
+    #[allow(dead_code)] // Reason: direct pane focus — to be used by keyboard shortcuts
     pub fn set(&mut self, id: FocusId) -> bool {
         if let Some(pos) = self.panes.iter().position(|p| *p == id) {
             self.current = pos;

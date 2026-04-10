@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reason: future merge conflict detection system — not yet wired into pipeline
 use anyhow::Result;
 use serde::Deserialize;
 

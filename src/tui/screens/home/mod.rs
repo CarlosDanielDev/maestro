@@ -48,6 +48,7 @@ pub struct HomeScreen {
 
 impl HomeScreen {
     pub const NUM_ACTIONS: usize = QUICK_ACTIONS.len();
+    #[allow(dead_code)] // Reason: quit action index for keyboard shortcut
     pub const QUIT_ACTION_INDEX: usize = 9;
     pub const QUICK_ACTIONS_PANE: FocusId = FocusId("home:quick_actions");
     pub const SUGGESTIONS_PANE: FocusId = FocusId("home:suggestions");

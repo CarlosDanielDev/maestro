@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reason: restart builder for update flow — to be wired into updater pipeline
 use std::path::PathBuf;
 
 /// A restart command to be executed by the caller (never spawned internally).

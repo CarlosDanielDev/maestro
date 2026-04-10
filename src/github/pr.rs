@@ -92,11 +92,13 @@ impl PrRetryPolicy {
 
 /// A remote branch with no corresponding open PR.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Reason: orphan branch cleanup feature
 pub struct OrphanBranch {
     pub branch: String,
     pub issue_number: Option<u64>,
 }
 
+#[allow(dead_code)] // Reason: orphan branch cleanup feature
 impl OrphanBranch {
     /// Parse an issue number from a branch name like "maestro/issue-42".
     pub fn from_branch_name(branch: &str) -> Self {

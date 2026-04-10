@@ -60,6 +60,7 @@ impl HomeScreen {
         self.loading_suggestions = false;
     }
 
+    #[allow(dead_code)] // Reason: tick for animation/refresh — to be wired into event loop
     pub fn tick(&mut self) {
         // No-op for now; could refresh recent sessions
     }

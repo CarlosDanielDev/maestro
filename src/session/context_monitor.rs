@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reason: context overflow monitoring — to be wired into session manager
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 

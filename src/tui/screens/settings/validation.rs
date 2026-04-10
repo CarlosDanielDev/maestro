@@ -4,6 +4,7 @@ use crate::config::Config;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationSeverity {
     Valid,
+    #[allow(dead_code)] // Reason: validation severity — to be used in settings validation
     Warning,
     Error,
 }
@@ -23,6 +24,7 @@ impl ValidationFeedback {
         }
     }
 
+    #[allow(dead_code)] // Reason: validation feedback constructor — to be used in settings validation
     pub fn warning(message: impl Into<String>) -> Self {
         Self {
             severity: ValidationSeverity::Warning,

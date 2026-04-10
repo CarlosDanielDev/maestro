@@ -62,6 +62,7 @@ pub struct SanitizeScreen {
     filtered_indices: Vec<usize>,
 }
 
+#[allow(dead_code)] // Reason: sanitize TUI screen — to be wired into screen dispatch
 impl SanitizeScreen {
     pub fn new(report: SanitizeReport) -> Self {
         let sorted_findings: Vec<Finding> = {

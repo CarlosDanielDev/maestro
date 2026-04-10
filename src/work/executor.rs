@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reason: work executor for session orchestration — to be wired into main pipeline
 use super::queue::{QueuedItem, WorkQueue};
 
 /// Execution state of a single queue item.

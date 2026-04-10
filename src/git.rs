@@ -7,6 +7,7 @@ pub trait GitOps: Send + Sync {
     /// Stage all changes, commit, and push to remote.
     fn commit_and_push(&self, worktree_path: &Path, branch: &str, message: &str) -> Result<()>;
     /// List remote branches matching a prefix.
+    #[allow(dead_code)] // Reason: orphan branch cleanup feature
     fn list_remote_branches(&self, prefix: &str) -> Result<Vec<String>>;
 }
 

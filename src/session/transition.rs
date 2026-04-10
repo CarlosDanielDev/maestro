@@ -55,6 +55,7 @@ impl std::fmt::Display for IllegalTransition {
 impl std::error::Error for IllegalTransition {}
 
 /// Observer notified of session state transitions.
+#[allow(dead_code)] // Reason: transition hooks — to be wired into session lifecycle
 pub trait TransitionObserver: Send {
     fn on_transition(&mut self, session_id: uuid::Uuid, transition: &SessionTransition);
 }

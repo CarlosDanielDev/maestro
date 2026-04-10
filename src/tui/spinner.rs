@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 const BRAILLE_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /// Returns the braille spinner character for a given tick index.
@@ -27,6 +25,7 @@ pub fn thinking_activity(tick: usize, elapsed: std::time::Duration) -> String {
 }
 
 /// Total number of braille frames in the spinner cycle.
+#[allow(dead_code)] // Reason: public constant for spinner consumers
 pub const FRAME_COUNT: usize = 10;
 
 #[cfg(test)]
