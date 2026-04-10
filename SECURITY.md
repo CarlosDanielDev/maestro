@@ -22,7 +22,7 @@ All user-controlled inputs are validated before use:
 
 ### Binary Update Integrity
 
-The auto-updater verifies SHA-256 checksums from a `SHA256SUMS` file published alongside release binaries. If verification fails, the update is aborted and the existing binary is not modified.
+The auto-updater verifies SHA-256 checksums from a `sha256sums.txt` file published alongside release binaries. If verification fails, the update is aborted and the existing binary is not modified.
 
 ### State File Locking
 

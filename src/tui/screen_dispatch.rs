@@ -103,17 +103,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     app.pending_commands.push(app::TuiCommand::FetchOpenPrs);
                 }
                 app::TuiMode::PromptInput => {
-                    if app.prompt_input_screen.is_none() {
-                        let mut screen = screens::PromptInputScreen::new();
-                        let prompts: Vec<String> = app
-                            .prompt_history
-                            .entries()
-                            .iter()
-                            .map(|e| e.prompt.clone())
-                            .collect();
-                        screen.set_history(prompts);
-                        app.prompt_input_screen = Some(screen);
-                    }
+                    app.prompt_input_screen = Some(
+                        app::helpers::create_prompt_input_screen(&app.prompt_history),
+                    );
                 }
                 _ => {}
             }

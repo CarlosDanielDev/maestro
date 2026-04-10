@@ -37,6 +37,8 @@ pulldown-cmark = { version = "0.12", default-features = false }
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 syn = { version = "2", features = ["full", "visit"] }
 walkdir = "2"
+flate2 = "1"
+tar = "0.4"
 
 [build-dependencies]
 clap = { version = "4", features = ["derive"] }

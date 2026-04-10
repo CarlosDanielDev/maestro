@@ -68,31 +68,33 @@ impl GitHubReleaseChecker {
         Self { repo }
     }
 
-    fn platform_asset_name() -> &'static str {
+    /// Returns the Rust target triple suffix used in release asset names.
+    /// Assets follow the pattern: `maestro-v{VERSION}-{TARGET_TRIPLE}.tar.gz`
+    pub(crate) fn platform_asset_suffix() -> &'static str {
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
-            "maestro-darwin-arm64"
+            "aarch64-apple-darwin"
         }
         #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
         {
-            "maestro-darwin-x86_64"
+            "x86_64-apple-darwin"
         }
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
         {
-            "maestro-linux-x86_64"
+            "x86_64-unknown-linux-gnu"
         }
         #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
         {
-            "maestro-linux-arm64"
+            "aarch64-unknown-linux-gnu"
         }
     }
 
-    fn extract_download_url(resp: &serde_json::Value) -> Option<String> {
-        let asset_name = Self::platform_asset_name();
+    pub(crate) fn extract_download_url(resp: &serde_json::Value) -> Option<String> {
+        let suffix = Self::platform_asset_suffix();
         resp["assets"].as_array().and_then(|assets| {
             assets.iter().find_map(|a| {
                 let name = a["name"].as_str()?;
-                if name.contains(asset_name) {
+                if name.contains(suffix) && name.ends_with(".tar.gz") {
                     a["browser_download_url"].as_str().map(|s| s.to_string())
                 } else {
                     None
@@ -127,7 +129,15 @@ impl UpdateChecker for GitHubReleaseChecker {
             return Ok(None);
         }
 
-        let download_url = Self::extract_download_url(&resp).unwrap_or_default();
+        let download_url = match Self::extract_download_url(&resp) {
+            Some(url) => url,
+            None => {
+                return Err(anyhow!(
+                    "No compatible binary found for this platform in release {}",
+                    tag
+                ))
+            }
+        };
 
         Ok(Some(crate::updater::ReleaseInfo {
             tag: tag.to_string(),
@@ -314,5 +324,85 @@ mod tests {
         let json = r#"[]"#;
         let result = parse_releases_response(json).unwrap();
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn platform_asset_suffix_returns_target_triple() {
+        let suffix = GitHubReleaseChecker::platform_asset_suffix();
+        // Must be a valid Rust target triple
+        assert!(
+            suffix.contains('-'),
+            "Expected a target triple like 'aarch64-apple-darwin', got: {}",
+            suffix
+        );
+        // Must not use the old naming convention
+        assert!(
+            !suffix.contains("darwin-arm64") && !suffix.contains("linux-x86_64"),
+            "Should use Rust target triples, not the old naming: {}",
+            suffix
+        );
+    }
+
+    #[test]
+    fn extract_download_url_matches_tar_gz_asset_naming() {
+        let json = serde_json::json!({
+            "assets": [
+                {
+                    "name": "maestro-v0.10.0-aarch64-apple-darwin.tar.gz",
+                    "browser_download_url": "https://github.com/CarlosDanielDev/maestro/releases/download/v0.10.0/maestro-v0.10.0-aarch64-apple-darwin.tar.gz"
+                },
+                {
+                    "name": "maestro-v0.10.0-x86_64-unknown-linux-gnu.tar.gz",
+                    "browser_download_url": "https://github.com/CarlosDanielDev/maestro/releases/download/v0.10.0/maestro-v0.10.0-x86_64-unknown-linux-gnu.tar.gz"
+                },
+                {
+                    "name": "sha256sums.txt",
+                    "browser_download_url": "https://github.com/CarlosDanielDev/maestro/releases/download/v0.10.0/sha256sums.txt"
+                }
+            ]
+        });
+        let url = GitHubReleaseChecker::extract_download_url(&json);
+        assert!(url.is_some(), "Should find a matching asset");
+        let url = url.unwrap();
+        assert!(url.ends_with(".tar.gz"), "URL should point to tar.gz: {}", url);
+    }
+
+    #[test]
+    fn extract_download_url_ignores_non_tar_gz_assets() {
+        let json = serde_json::json!({
+            "assets": [
+                {
+                    "name": "sha256sums.txt",
+                    "browser_download_url": "https://example.com/sha256sums.txt"
+                }
+            ]
+        });
+        let url = GitHubReleaseChecker::extract_download_url(&json);
+        assert!(url.is_none(), "Should not match non-tar.gz assets");
+    }
+
+    #[test]
+    fn extract_download_url_returns_none_for_wrong_platform() {
+        // Only include an asset for a platform that doesn't match the current one
+        let wrong_platform = if cfg!(target_os = "macos") {
+            "x86_64-unknown-linux-gnu"
+        } else {
+            "aarch64-apple-darwin"
+        };
+        let json = serde_json::json!({
+            "assets": [
+                {
+                    "name": format!("maestro-v0.10.0-{}.tar.gz", wrong_platform),
+                    "browser_download_url": format!("https://example.com/maestro-v0.10.0-{}.tar.gz", wrong_platform)
+                }
+            ]
+        });
+        let url = GitHubReleaseChecker::extract_download_url(&json);
+        assert!(url.is_none(), "Should not match wrong platform asset");
+    }
+
+    #[test]
+    fn version_comparison_minor_bump_0_9_to_0_10() {
+        assert!(Version::is_newer_than("0.10.0", "0.9.0").unwrap());
     }
 }

@@ -3,6 +3,31 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::fs;
 
+/// Extract the maestro binary from a tar.gz archive.
+pub(crate) fn extract_binary_from_tar_gz(archive_bytes: &[u8]) -> Result<Vec<u8>> {
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+    use tar::Archive;
+
+    let decoder = GzDecoder::new(archive_bytes);
+    let mut archive = Archive::new(decoder);
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?;
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        if file_name == "maestro" {
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes)?;
+            return Ok(bytes);
+        }
+    }
+    anyhow::bail!("No 'maestro' binary found in tar.gz archive")
+}
+
 pub struct Installer {
     pub dest_path: PathBuf,
 }
@@ -95,7 +120,7 @@ impl Installer {
     ) -> Result<String> {
         let sums_url = download_url
             .rsplit_once('/')
-            .map(|(base, _)| format!("{}/SHA256SUMS", base))
+            .map(|(base, _)| format!("{}/sha256sums.txt", base))
             .ok_or_else(|| anyhow::anyhow!("Cannot derive SHA256SUMS URL from download URL"))?;
 
         let resp = client
@@ -163,7 +188,14 @@ impl Installer {
             Self::fetch_expected_checksum(&client, download_url, asset_name).await?;
         Self::verify_checksum(&bytes, &expected_hash)?;
 
-        self.install_with_backup(&bytes).await?;
+        // Extract binary from tar.gz if applicable
+        let binary_bytes = if asset_name.ends_with(".tar.gz") {
+            extract_binary_from_tar_gz(&bytes)?
+        } else {
+            bytes.to_vec()
+        };
+
+        self.install_with_backup(&binary_bytes).await?;
 
         Ok(self.backup_path().to_string_lossy().to_string())
     }
@@ -274,6 +306,68 @@ mod tests {
         let data = b"hello world";
         let expected = "B94D27B9934D3E08A52E52D7DA7DABFAC484EFE37A5380EE9088F7ACE2EFCDE9";
         assert!(Installer::verify_checksum(data, expected).is_ok());
+    }
+
+    #[test]
+    fn checksum_url_uses_sha256sums_txt_filename() {
+        // The SHA256SUMS URL should use "sha256sums.txt", not "SHA256SUMS"
+        let download_url = "https://github.com/CarlosDanielDev/maestro/releases/download/v0.10.0/maestro-v0.10.0-aarch64-apple-darwin.tar.gz";
+        let expected_base = "https://github.com/CarlosDanielDev/maestro/releases/download/v0.10.0";
+        let sums_url = download_url
+            .rsplit_once('/')
+            .map(|(base, _)| format!("{}/sha256sums.txt", base))
+            .unwrap();
+        assert_eq!(sums_url, format!("{}/sha256sums.txt", expected_base));
+    }
+
+    #[test]
+    fn extract_binary_from_tar_gz_finds_maestro_binary() {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+
+        // Create a tar.gz archive containing a "maestro" binary
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        {
+            let mut builder = tar::Builder::new(&mut encoder);
+            let binary_content = b"fake maestro binary";
+            let mut header = tar::Header::new_gnu();
+            header.set_size(binary_content.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, "maestro", &binary_content[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+        let archive_bytes = encoder.finish().unwrap();
+
+        let result = extract_binary_from_tar_gz(&archive_bytes);
+        assert!(result.is_ok(), "Should extract binary: {:?}", result.err());
+        assert_eq!(result.unwrap(), b"fake maestro binary");
+    }
+
+    #[test]
+    fn extract_binary_from_tar_gz_fails_when_no_maestro_binary() {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        {
+            let mut builder = tar::Builder::new(&mut encoder);
+            let content = b"some other file";
+            let mut header = tar::Header::new_gnu();
+            header.set_size(content.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, "not-maestro", &content[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+        let archive_bytes = encoder.finish().unwrap();
+
+        let result = extract_binary_from_tar_gz(&archive_bytes);
+        assert!(result.is_err(), "Should fail when no maestro binary in archive");
     }
 
     #[tokio::test]

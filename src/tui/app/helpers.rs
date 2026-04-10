@@ -1,4 +1,14 @@
 use crate::session::types::Session;
+use crate::tui::screens::PromptInputScreen;
+
+pub(crate) fn create_prompt_input_screen(
+    history: &crate::state::prompt_history::PromptHistoryStore,
+) -> PromptInputScreen {
+    let mut screen = PromptInputScreen::new();
+    let prompts: Vec<String> = history.entries().iter().map(|e| e.prompt.clone()).collect();
+    screen.set_history(prompts);
+    screen
+}
 
 pub(crate) fn session_label(session: &Session) -> String {
     match session.issue_number {
