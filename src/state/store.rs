@@ -51,8 +51,7 @@ impl StateStore {
             Ok(content) => serde_json::from_str(&content)
                 .with_context(|| format!("parsing state from {}", self.path.display())),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(MaestroState::default()),
-            Err(e) => Err(e)
-                .with_context(|| format!("reading state from {}", self.path.display())),
+            Err(e) => Err(e).with_context(|| format!("reading state from {}", self.path.display())),
         }
     }
 
