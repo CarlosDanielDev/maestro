@@ -96,6 +96,8 @@ pub struct App {
     pub ci_check_details: std::collections::HashMap<u64, Vec<crate::github::ci::CheckRunDetail>>,
     pub queue_executor: Option<crate::work::executor::QueueExecutor>,
     pub queue_launch_configs: Option<Vec<crate::tui::screens::SessionConfig>>,
+    pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
+    pub prompt_history: crate::state::prompt_history::PromptHistoryStore,
 }
 
 impl App {
@@ -164,6 +166,11 @@ impl App {
             ci_check_details: std::collections::HashMap::new(),
             queue_executor: None,
             queue_launch_configs: None,
+            hollow_retry_screen: None,
+            prompt_history: crate::state::prompt_history::PromptHistoryStore::new(
+                crate::state::prompt_history::PromptHistoryStore::default_path(),
+                crate::config::default_max_prompt_history(),
+            ),
         }
     }
 
@@ -179,6 +186,15 @@ impl App {
         let mut theme = Theme::from_config(&config.tui.theme);
         theme.apply_capability(crate::tui::theme::ColorCapability::detect());
         self.theme = theme;
+        self.prompt_history
+            .set_max_entries(config.sessions.max_prompt_history);
+        if let Err(e) = self.prompt_history.load() {
+            self.activity_log.push_simple(
+                "HISTORY".into(),
+                format!("Failed to load prompt history: {}", e),
+                LogLevel::Warn,
+            );
+        }
         self.config = Some(config);
     }
 

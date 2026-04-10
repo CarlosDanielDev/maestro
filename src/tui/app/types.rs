@@ -19,6 +19,8 @@ pub enum TuiMode {
     ContinuousPause,
     QueueConfirmation,
     QueueExecution,
+    HollowRetry,
+    TokenDashboard,
 }
 
 /// Payload for suggestion data fetched from GitHub.

@@ -1,6 +1,6 @@
 use crate::session::types::Session;
 
-pub(super) fn session_label(session: &Session) -> String {
+pub(crate) fn session_label(session: &Session) -> String {
     match session.issue_number {
         Some(n) => format!("#{}", n),
         None => format!("S-{}", &session.id.to_string()[..8]),
