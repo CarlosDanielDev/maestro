@@ -6,7 +6,7 @@ pub mod scanner;
 pub mod types;
 
 /// Configuration for the `maestro adapt` command.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AdaptConfig {
     pub path: std::path::PathBuf,
     pub dry_run: bool,

@@ -102,6 +102,7 @@ pub struct App {
     pub settings_screen: Option<crate::tui::screens::SettingsScreen>,
     pub prompt_history: crate::state::prompt_history::PromptHistoryStore,
     pub session_switcher: Option<crate::tui::session_switcher::SessionSwitcher>,
+    pub adapt_screen: Option<crate::tui::screens::adapt::AdaptScreen>,
 }
 
 impl App {
@@ -179,6 +180,7 @@ impl App {
                 crate::config::default_max_prompt_history(),
             ),
             session_switcher: None,
+            adapt_screen: None,
         }
     }
 

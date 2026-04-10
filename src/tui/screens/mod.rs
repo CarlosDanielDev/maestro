@@ -1,3 +1,4 @@
+pub mod adapt;
 pub mod hollow_retry;
 pub mod home;
 #[allow(dead_code)]
@@ -97,6 +98,8 @@ pub enum ScreenAction {
     UpdateConfig(Box<crate::config::Config>),
     /// Preview a theme temporarily (reverted on discard).
     PreviewTheme(Option<crate::tui::theme::ThemeConfig>),
+    /// Start the adapt pipeline from the wizard screen.
+    StartAdaptPipeline(crate::adapt::AdaptConfig),
     /// Quit the application.
     Quit,
 }
