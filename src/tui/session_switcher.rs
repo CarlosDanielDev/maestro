@@ -68,7 +68,12 @@ impl SessionSwitcher {
         let overlay_height = (area.height as f32 * 0.7).max(10.0) as u16;
         let x = area.x + (area.width.saturating_sub(overlay_width)) / 2;
         let y = area.y + (area.height.saturating_sub(overlay_height)) / 2;
-        let overlay = Rect::new(x, y, overlay_width.min(area.width), overlay_height.min(area.height));
+        let overlay = Rect::new(
+            x,
+            y,
+            overlay_width.min(area.width),
+            overlay_height.min(area.height),
+        );
 
         f.render_widget(Clear, overlay);
 
@@ -162,12 +167,7 @@ mod tests {
     use crate::session::types::Session;
 
     fn make_session(prompt: &str, issue: Option<u64>) -> Session {
-        Session::new(
-            prompt.into(),
-            "opus".into(),
-            "orchestrator".into(),
-            issue,
-        )
+        Session::new(prompt.into(), "opus".into(), "orchestrator".into(), issue)
     }
 
     #[test]

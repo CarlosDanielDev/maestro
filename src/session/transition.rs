@@ -83,7 +83,10 @@ mod tests {
             TransitionReason::StreamError
         );
         assert_ne!(TransitionReason::UserKill, TransitionReason::UserPause);
-        assert_ne!(TransitionReason::GatesStarted, TransitionReason::GatesFailed);
+        assert_ne!(
+            TransitionReason::GatesStarted,
+            TransitionReason::GatesFailed
+        );
         assert_ne!(
             TransitionReason::ConflictPolicy,
             TransitionReason::ContextOverflow

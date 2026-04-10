@@ -36,10 +36,7 @@ impl App {
         let prompt = build_ci_fix_prompt(pr_number, issue_number, &branch, attempt, failure_log);
 
         let mut session = Session::new(prompt, model, mode, Some(issue_number));
-        let _ = session.transition_to(
-            SessionStatus::CiFix,
-            TransitionReason::CiFixStarted,
-        );
+        let _ = session.transition_to(SessionStatus::CiFix, TransitionReason::CiFixStarted);
         session.issue_title = Some(format!("CI Fix #{} for PR #{}", attempt, pr_number));
         session.ci_fix_context = Some(CiFixContext {
             pr_number,

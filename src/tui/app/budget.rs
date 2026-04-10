@@ -22,10 +22,9 @@ impl App {
         match enforcer.check_session(session_cost) {
             BudgetAction::Kill => {
                 if let Some(managed) = self.pool.get_active_mut(session_id) {
-                    let _ = managed.session.transition_to(
-                        SessionStatus::Errored,
-                        TransitionReason::StreamError,
-                    );
+                    let _ = managed
+                        .session
+                        .transition_to(SessionStatus::Errored, TransitionReason::StreamError);
                     let label = session_label(&managed.session);
                     self.activity_log.push_simple(
                         label,
