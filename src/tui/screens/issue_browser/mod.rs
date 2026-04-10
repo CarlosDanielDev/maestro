@@ -176,8 +176,7 @@ impl Screen for IssueBrowserScreen {
                     return ScreenAction::None;
                 }
                 OverlayAction::Confirm(custom_prompt) => {
-                    let selected_issues =
-                        self.prompt_overlay.take().unwrap().selected_issues;
+                    let selected_issues = self.prompt_overlay.take().unwrap().selected_issues;
 
                     if selected_issues.len() == 1 {
                         let (number, title) = selected_issues.into_iter().next().unwrap();
