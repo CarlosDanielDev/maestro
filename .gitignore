@@ -4,6 +4,7 @@ Cargo.lock
 
 # Maestro runtime
 maestro-state.json
+maestro-state.json.lock
 maestro.log
 maestro-prompt-history.json
 .maestro/worktrees/
