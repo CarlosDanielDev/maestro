@@ -110,11 +110,13 @@ impl ListEditor {
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
-        let label_style = Style::default().fg(if focused {
-            theme.text_primary
+        let label_style = if focused {
+            Style::default()
+                .fg(theme.accent_success)
+                .add_modifier(Modifier::BOLD)
         } else {
-            theme.text_secondary
-        });
+            Style::default().fg(theme.text_primary)
+        };
 
         let mut lines = vec![Line::from(Span::styled(
             format!("{}:", self.label),
@@ -126,10 +128,10 @@ impl ListEditor {
             let prefix = if is_selected { "> " } else { "  " };
             let style = if is_selected {
                 Style::default()
-                    .fg(theme.accent_info)
+                    .fg(theme.accent_success)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(theme.text_secondary)
+                Style::default().fg(theme.text_primary)
             };
             lines.push(Line::from(Span::styled(
                 format!("{}{}", prefix, item),

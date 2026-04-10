@@ -36,27 +36,31 @@ impl Toggle {
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
         let indicator = if self.value { "[x]" } else { "[ ]" };
-        let color = if self.value {
+        let check_color = if self.value {
             theme.accent_success
         } else {
-            theme.text_muted
+            if focused {
+                theme.text_primary
+            } else {
+                theme.text_muted
+            }
         };
-        let style = if focused {
-            Style::default().fg(color).add_modifier(Modifier::BOLD)
+        let check_style = if focused {
+            Style::default().fg(check_color).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(color)
+            Style::default().fg(check_color)
+        };
+        let label_style = if focused {
+            Style::default()
+                .fg(theme.accent_success)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.text_primary)
         };
 
         let line = Line::from(vec![
-            Span::styled(format!("{} ", indicator), style),
-            Span::styled(
-                &self.label,
-                Style::default().fg(if focused {
-                    theme.text_primary
-                } else {
-                    theme.text_secondary
-                }),
-            ),
+            Span::styled(format!("{} ", indicator), check_style),
+            Span::styled(&self.label, label_style),
         ]);
         f.render_widget(Paragraph::new(line), area);
     }
