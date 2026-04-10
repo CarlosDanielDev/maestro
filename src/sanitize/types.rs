@@ -140,9 +140,7 @@ pub fn collect_rs_files(root: &std::path::Path) -> Vec<PathBuf> {
     walkdir::WalkDir::new(root)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().extension().is_some_and(|ext| ext == "rs") && e.file_type().is_file()
-        })
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs") && e.file_type().is_file())
         .map(|e| e.path().to_path_buf())
         .collect()
 }
@@ -185,7 +183,10 @@ mod tests {
     fn severity_critical_sorts_first() {
         let mut v = vec![Severity::Info, Severity::Critical, Severity::Warning];
         v.sort();
-        assert_eq!(v, vec![Severity::Critical, Severity::Warning, Severity::Info]);
+        assert_eq!(
+            v,
+            vec![Severity::Critical, Severity::Warning, Severity::Info]
+        );
     }
 
     #[test]

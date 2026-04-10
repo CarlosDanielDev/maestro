@@ -66,7 +66,11 @@ mod tests {
     #[test]
     fn output_format_all_variants_exist() {
         // Verify all three variants are usable
-        let variants = [OutputFormat::Text, OutputFormat::Json, OutputFormat::Markdown];
+        let variants = [
+            OutputFormat::Text,
+            OutputFormat::Json,
+            OutputFormat::Markdown,
+        ];
         assert_eq!(variants.len(), 3);
     }
 }
