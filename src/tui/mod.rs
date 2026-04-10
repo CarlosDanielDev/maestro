@@ -2,7 +2,6 @@ pub mod activity_log;
 pub mod app;
 mod background_tasks;
 pub mod cost_dashboard;
-pub mod token_dashboard;
 pub mod dep_graph;
 pub mod detail;
 pub mod fullscreen;
@@ -15,6 +14,7 @@ pub mod screens;
 pub mod spinner;
 mod summary;
 pub mod theme;
+pub mod token_dashboard;
 pub mod ui;
 pub mod widgets;
 
@@ -581,14 +581,13 @@ async fn event_loop(
                     let session = crate::session::types::Session::new(prompt, model, mode, None);
 
                     // Record in prompt history
-                    app.prompt_history.push(
-                        crate::state::prompt_history::PromptHistoryEntry {
+                    app.prompt_history
+                        .push(crate::state::prompt_history::PromptHistoryEntry {
                             prompt: original_prompt,
                             timestamp: chrono::Utc::now(),
                             session_id: Some(session.id),
                             outcome: crate::state::prompt_history::PromptOutcome::Unknown,
-                        },
-                    );
+                        });
 
                     app.pending_session_launches.push(session);
                 }

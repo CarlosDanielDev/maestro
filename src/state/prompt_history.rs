@@ -63,21 +63,15 @@ impl PromptHistoryStore {
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, &content)
             .with_context(|| format!("writing prompt history to {}", tmp.display()))?;
-        std::fs::rename(&tmp, &self.path).with_context(|| {
-            format!(
-                "renaming {} to {}",
-                tmp.display(),
-                self.path.display()
-            )
-        })?;
+        std::fs::rename(&tmp, &self.path)
+            .with_context(|| format!("renaming {} to {}", tmp.display(), self.path.display()))?;
         Ok(())
     }
 
     pub fn push(&mut self, entry: PromptHistoryEntry) {
         self.entries.push(entry);
         if self.entries.len() > self.max_entries {
-            self.entries
-                .drain(..self.entries.len() - self.max_entries);
+            self.entries.drain(..self.entries.len() - self.max_entries);
         }
         let _ = self.save();
     }
@@ -155,7 +149,8 @@ mod tests {
 
     #[test]
     fn load_missing_file_returns_empty() {
-        let mut store = PromptHistoryStore::new(PathBuf::from("/tmp/nonexistent-maestro-test.json"), 100);
+        let mut store =
+            PromptHistoryStore::new(PathBuf::from("/tmp/nonexistent-maestro-test.json"), 100);
         store.load().expect("load should succeed for missing file");
         assert_eq!(store.len(), 0);
     }
