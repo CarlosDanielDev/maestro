@@ -1,3 +1,7 @@
+pub mod validation;
+
+use std::collections::HashMap;
+
 use crate::config::Config;
 use crate::flags::FlagSource;
 use crate::flags::store::FeatureFlags;
@@ -7,6 +11,10 @@ use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
     Dropdown, ListEditor, NumberStepper, TextInput, Toggle, WidgetAction, WidgetKind,
+};
+
+use self::validation::{
+    FieldKey, ValidationFeedback, ValidationSeverity, ValidatorFn, build_validator_map,
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -85,12 +93,15 @@ pub struct SettingsScreen {
     pub live_preview: bool,
     feature_flags: FeatureFlags,
     flags_selected: usize,
+    validators: HashMap<FieldKey, ValidatorFn>,
+    validation_results: HashMap<FieldKey, ValidationFeedback>,
 }
 
 impl SettingsScreen {
     pub fn new(config: Config, flags: FeatureFlags) -> Self {
         let fields_per_tab = Self::build_fields(&config);
-        Self {
+        let validators = build_validator_map();
+        let mut screen = Self {
             original_config: config.clone(),
             config,
             config_path: None,
@@ -103,7 +114,11 @@ impl SettingsScreen {
             live_preview: false,
             feature_flags: flags,
             flags_selected: 0,
-        }
+            validators,
+            validation_results: HashMap::new(),
+        };
+        screen.run_all_validations();
+        screen
     }
 
     pub fn with_config_path(mut self, path: std::path::PathBuf) -> Self {
@@ -127,6 +142,24 @@ impl SettingsScreen {
         self.original_config = self.config.clone();
         self.save_flash = Some(std::time::Instant::now());
         Ok(())
+    }
+
+    fn run_all_validations(&mut self) {
+        self.validation_results.clear();
+        for (&key, validator) in &self.validators {
+            let result = validator(&self.config);
+            if result.severity != ValidationSeverity::Valid {
+                self.validation_results.insert(key, result);
+            }
+        }
+    }
+
+    pub fn has_validation_errors(&self) -> bool {
+        self.validation_results.values().any(|v| v.is_error())
+    }
+
+    fn feedback_for(&self, tab: usize, field: usize) -> Option<&ValidationFeedback> {
+        self.validation_results.get(&(tab, field))
     }
 
     fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
@@ -724,33 +757,65 @@ impl SettingsScreen {
         f.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 
+    fn field_height(&self, tab: usize, field_idx: usize) -> u16 {
+        if self
+            .feedback_for(tab, field_idx)
+            .is_some_and(|fb| !fb.message.is_empty())
+        {
+            2
+        } else {
+            1
+        }
+    }
+
     fn draw_fields(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let visible_rows = area.height as usize;
+        let visible_height = area.height;
         let field_count = self.field_count();
         let field_index = self.field_index;
         let tab = self.active_tab;
 
-        // Adjust scroll so focused field is visible
+        // Compute cumulative heights to determine scroll position
+        let field_heights: Vec<u16> = (0..field_count)
+            .map(|i| self.field_height(tab, i))
+            .collect();
+
+        // Adjust scroll so the focused field is visible
         if field_index < self.scroll_offset {
             self.scroll_offset = field_index;
-        } else if field_index >= self.scroll_offset + visible_rows {
-            self.scroll_offset = field_index.saturating_sub(visible_rows - 1);
+        }
+        // Scroll down if focused is below viewport
+        loop {
+            let mut y: u16 = 0;
+            for i in self.scroll_offset..=field_index.min(field_count.saturating_sub(1)) {
+                y += field_heights.get(i).copied().unwrap_or(1);
+            }
+            if y > visible_height && self.scroll_offset < field_index {
+                self.scroll_offset += 1;
+            } else {
+                break;
+            }
         }
 
         let scroll_offset = self.scroll_offset;
         let fields = &self.fields_per_tab[tab];
-        for (draw_row, field_idx) in (scroll_offset..).take(visible_rows).enumerate() {
-            if field_idx >= field_count {
+        let mut y_offset: u16 = 0;
+        for (field_idx, field) in fields.iter().enumerate().skip(scroll_offset) {
+            let h = field_heights.get(field_idx).copied().unwrap_or(1);
+            if y_offset + h > visible_height {
                 break;
             }
             let focused = field_idx == field_index;
             let field_area = Rect {
                 x: area.x,
-                y: area.y + draw_row as u16,
+                y: area.y + y_offset,
                 width: area.width,
-                height: 1,
+                height: h,
             };
-            fields[field_idx].widget.draw(f, field_area, theme, focused);
+            let validation = self.feedback_for(tab, field_idx).cloned();
+            field
+                .widget
+                .draw(f, field_area, theme, focused, validation.as_ref());
+            y_offset += h;
         }
     }
 
@@ -839,6 +904,7 @@ impl Screen for SettingsScreen {
                 field.widget.handle_input(key_event);
             }
             self.sync_widgets_to_config();
+            self.run_all_validations();
             return ScreenAction::None;
         }
 
@@ -867,6 +933,9 @@ impl Screen for SettingsScreen {
                 }
             }
             (KeyCode::Char('s'), KeyModifiers::CONTROL) => {
+                if self.has_validation_errors() {
+                    return ScreenAction::None;
+                }
                 let _ = self.save_config();
                 let config = self.config.clone();
                 // Promote preview to actual theme on save
@@ -920,6 +989,7 @@ impl Screen for SettingsScreen {
                     == Some(WidgetAction::Changed);
                 if changed {
                     self.sync_widgets_to_config();
+                    self.run_all_validations();
                     if self.live_preview {
                         return ScreenAction::PreviewTheme(Some(self.config.tui.theme.clone()));
                     }
@@ -930,21 +1000,23 @@ impl Screen for SettingsScreen {
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let title = if self.is_dirty() {
-            " Settings [Modified] "
+        let (title, title_color) = if self.has_validation_errors() {
+            (" Settings [Errors] ", theme.accent_error)
+        } else if self.is_dirty() {
+            (" Settings [Modified] ", theme.accent_success)
         } else if self.save_flash.is_some_and(|t| t.elapsed().as_secs() < 2) {
-            " Settings [Saved] "
+            (" Settings [Saved] ", theme.accent_success)
         } else {
-            " Settings "
+            (" Settings ", theme.accent_success)
         };
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.accent_success))
+            .border_style(Style::default().fg(title_color))
             .title(Span::styled(
                 title,
                 Style::default()
-                    .fg(theme.accent_success)
+                    .fg(title_color)
                     .add_modifier(Modifier::BOLD),
             ));
         let inner = block.inner(area);
@@ -1680,5 +1752,89 @@ alert_threshold_pct = 80
             .unwrap();
         assert!(mr.1);
         assert_eq!(mr.2, crate::flags::FlagSource::Cli);
+    }
+
+    // --- Issue #75: Field-level validation tests ---
+
+    #[test]
+    fn valid_config_has_no_validation_errors() {
+        let screen = SettingsScreen::new(make_config(), make_flags());
+        assert!(!screen.has_validation_errors());
+    }
+
+    #[test]
+    fn validation_runs_on_field_change() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        assert!(!screen.has_validation_errors());
+        // Navigate to Project tab, field 0 (repo), enter edit mode, clear value
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        // Select all and delete
+        screen.handle_input(&key_event(KeyCode::Home), InputMode::Normal);
+        // Delete all chars
+        for _ in 0..20 {
+            screen.handle_input(&key_event(KeyCode::Delete), InputMode::Normal);
+        }
+        screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert!(screen.has_validation_errors());
+    }
+
+    #[test]
+    fn save_blocked_when_validation_errors_exist() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        // Make repo invalid
+        screen.config.project.repo = String::new();
+        screen.run_all_validations();
+        assert!(screen.has_validation_errors());
+
+        let ctrl_s = Event::Key(KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        });
+        let action = screen.handle_input(&ctrl_s, InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+    }
+
+    #[test]
+    fn save_allowed_when_no_validation_errors() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        assert!(!screen.has_validation_errors());
+
+        let ctrl_s = Event::Key(KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        });
+        let action = screen.handle_input(&ctrl_s, InputMode::Normal);
+        assert!(matches!(action, ScreenAction::UpdateConfig(_)));
+    }
+
+    #[test]
+    fn feedback_for_returns_none_for_valid_field() {
+        let screen = SettingsScreen::new(make_config(), make_flags());
+        assert!(screen.feedback_for(0, 0).is_none()); // repo is valid
+    }
+
+    #[test]
+    fn feedback_for_returns_error_for_invalid_field() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        screen.config.project.repo = String::new();
+        screen.run_all_validations();
+        let fb = screen.feedback_for(0, 0);
+        assert!(fb.is_some());
+        assert!(fb.unwrap().is_error());
+    }
+
+    #[test]
+    fn cross_field_validation_ci_wait_vs_poll() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        screen.config.gates.ci_poll_interval_secs = 60;
+        screen.config.gates.ci_max_wait_secs = 60;
+        screen.run_all_validations();
+        let fb = screen.feedback_for(5, 3);
+        assert!(fb.is_some());
+        assert!(fb.unwrap().is_error());
     }
 }
