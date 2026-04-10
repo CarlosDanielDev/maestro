@@ -226,10 +226,7 @@ alert_threshold_pct = 80
     #[test]
     fn base_branch_valid() {
         let c = test_config();
-        assert_eq!(
-            validate_base_branch(&c).severity,
-            ValidationSeverity::Valid
-        );
+        assert_eq!(validate_base_branch(&c).severity, ValidationSeverity::Valid);
     }
 
     #[test]
