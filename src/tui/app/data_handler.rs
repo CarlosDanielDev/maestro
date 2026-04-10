@@ -174,6 +174,43 @@ impl App {
                     }
                 }
             }
+            TuiDataEvent::PullRequests(Ok(prs)) => {
+                if let Some(ref mut screen) = self.pr_review_screen {
+                    screen.set_prs(prs);
+                }
+            }
+            TuiDataEvent::PullRequests(Err(e)) => {
+                self.check_gh_auth_error(&e);
+                self.activity_log.push_simple(
+                    "PRs".into(),
+                    format!("Failed to fetch pull requests: {}", e),
+                    LogLevel::Error,
+                );
+                if let Some(ref mut screen) = self.pr_review_screen {
+                    screen.set_loading_error(&format!("{}", e));
+                }
+            }
+            TuiDataEvent::PrReviewSubmitted(Ok(())) => {
+                self.activity_log.push_simple(
+                    "PR Review".into(),
+                    "Review submitted successfully".into(),
+                    LogLevel::Info,
+                );
+                if let Some(ref mut screen) = self.pr_review_screen {
+                    screen.set_done();
+                }
+            }
+            TuiDataEvent::PrReviewSubmitted(Err(e)) => {
+                self.check_gh_auth_error(&e);
+                self.activity_log.push_simple(
+                    "PR Review".into(),
+                    format!("Failed to submit review: {}", e),
+                    LogLevel::Error,
+                );
+                if let Some(ref mut screen) = self.pr_review_screen {
+                    screen.set_error(&format!("{}", e));
+                }
+            }
             TuiDataEvent::AdaptMaterializeResult(result) => {
                 if let Some(ref mut screen) = self.adapt_screen {
                     if screen.is_cancelled() {

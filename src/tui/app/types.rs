@@ -29,6 +29,7 @@ pub enum TuiMode {
     Settings,
     SessionSwitcher,
     AdaptWizard,
+    PrReview,
 }
 
 /// Payload for suggestion data fetched from GitHub.
@@ -50,6 +51,12 @@ pub enum TuiCommand {
     RunAdaptAnalyze(AdaptConfig, ProjectProfile),
     RunAdaptPlan(AdaptConfig, ProjectProfile, AdaptReport),
     RunAdaptMaterialize(AdaptPlan, AdaptReport),
+    FetchOpenPrs,
+    SubmitPrReview {
+        pr_number: u64,
+        event: crate::github::types::PrReviewEvent,
+        body: String,
+    },
 }
 
 /// Data events delivered from background fetch tasks.
@@ -64,6 +71,8 @@ pub enum TuiDataEvent {
     AdaptAnalyzeResult(anyhow::Result<AdaptReport>),
     AdaptPlanResult(anyhow::Result<AdaptPlan>),
     AdaptMaterializeResult(anyhow::Result<MaterializeResult>),
+    PullRequests(anyhow::Result<Vec<crate::github::types::GhPullRequest>>),
+    PrReviewSubmitted(anyhow::Result<()>),
 }
 
 /// A merge conflict suggestion shown in the completion overlay.

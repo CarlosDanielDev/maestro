@@ -171,10 +171,14 @@ maestro/
 │   │       ├── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter inserts newline, Ctrl+V pastes from clipboard (image or text), Esc cancels; image attachment list with [a]/[d]; keybinds bar always visible  [Issue #101]
 │   │       ├── queue_confirmation.rs      # QueueConfirmationScreen: confirmation overlay before bulk-queuing selected issues from the issue browser
 │   │       ├── settings.rs               # SettingsScreen: interactive Settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent  [Issue #124, #146]
-│   │       └── adapt/                    # Adapt wizard screen components  [Issue #88]
-│   │           ├── mod.rs                # AdaptScreen struct with Screen trait impl; wizard entry point
-│   │           ├── types.rs              # AdaptStep, AdaptWizardConfig, AdaptResults, AdaptError
-│   │           └── draw.rs              # ratatui rendering for adapt wizard steps and layout
+│   │       ├── adapt/                    # Adapt wizard screen components  [Issue #88]
+│   │       │   ├── mod.rs                # AdaptScreen struct with Screen trait impl; wizard entry point
+│   │       │   ├── types.rs              # AdaptStep, AdaptWizardConfig, AdaptResults, AdaptError
+│   │       │   └── draw.rs              # ratatui rendering for adapt wizard steps and layout
+│   │       └── pr_review/               # PR review screen components
+│   │           ├── mod.rs               # PrReviewScreen struct with Screen trait impl
+│   │           ├── types.rs             # PrReviewStep state machine, ReviewForm types
+│   │           └── draw.rs             # ratatui rendering logic with markdown integration
 │   │   └── widgets/                       # Reusable TUI widget components  [Issue #124]
 │   │       ├── mod.rs                     # Module re-exports for all widgets
 │   │       └── ci_monitor.rs              # CiMonitorWidget: compact bordered box rendering live CI check-run status for a PR; status icons, check names, elapsed times, and a summary footer
@@ -318,6 +322,10 @@ maestro/
 | `src/tui/screens/adapt/mod.rs` | `AdaptScreen` struct implementing the `Screen` trait; wizard entry point and step coordination |
 | `src/tui/screens/adapt/types.rs` | `AdaptStep`, `AdaptWizardConfig`, `AdaptResults`, `AdaptError` type definitions |
 | `src/tui/screens/adapt/draw.rs` | ratatui rendering functions for adapt wizard steps and layout |
+| `src/tui/screens/pr_review/` | PR review screen: multi-step TUI screen for reviewing and submitting pull request feedback |
+| `src/tui/screens/pr_review/mod.rs` | `PrReviewScreen` struct implementing the `Screen` trait |
+| `src/tui/screens/pr_review/types.rs` | `PrReviewStep` state machine, `ReviewForm` and related type definitions |
+| `src/tui/screens/pr_review/draw.rs` | ratatui rendering logic with markdown integration |
 | `src/tui/screen_dispatch.rs` | `ScreenDispatch`: routes key events and render calls to the active screen; constructor accepts `FeatureFlags` to supply the settings screen (Issue #146) |
 | `src/tui/spinner.rs` | Braille spinner helpers: `spinner_frame()`, `format_thinking_elapsed()`, full spinner activity string builder |
 | `src/tui/snapshot_tests/` | TUI snapshot test suite; 33 tests across 7 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issue #16) |
