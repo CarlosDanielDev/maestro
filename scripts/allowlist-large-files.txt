@@ -1,0 +1,26 @@
+# Temporary allowlist for files exceeding the 500-line limit.
+# Remove entries as files are refactored (v0.9.0 milestone).
+src/tui/screens/issue_browser/mod.rs
+# issue_browser/mod.rs: ~260 lines code + 665 tests
+src/tui/screens/home/mod.rs
+# home/mod.rs: 205 lines code + 640 tests
+src/tui/mod.rs
+# event loop is tightly coupled — 872 lines with ~210 of tests
+src/tui/theme.rs
+src/config.rs
+src/github/client.rs
+src/tui/ui.rs
+src/tui/screens/prompt_input.rs
+src/tui/markdown.rs
+src/github/ci.rs
+src/doctor.rs
+src/work/assigner.rs
+src/session/types.rs
+src/integration_tests/stream_parsing.rs
+src/tui/widgets/ci_monitor.rs
+src/tui/screens/milestone.rs
+src/session/pool.rs
+src/github/types.rs
+src/cli.rs
+src/prompts.rs
+src/tui/screens/queue_confirmation.rs
