@@ -1,0 +1,312 @@
+use super::App;
+use super::helpers::session_label;
+use crate::gates::runner::{self, GateCheck, GateRunner};
+use crate::gates::types::{CompletionGate, GateResult};
+use crate::git::GitOps;
+use crate::plugins::hooks::{HookContext, HookPoint};
+use crate::session::retry::RetryPolicy;
+use crate::session::types::SessionStatus;
+use crate::tui::activity_log::LogLevel;
+use std::time::{Duration, Instant};
+
+impl App {
+    pub async fn check_completions(&mut self) -> anyhow::Result<()> {
+        // Fire pending plugin hooks
+        let pending_hooks = std::mem::take(&mut self.pending_hooks);
+        for ph in pending_hooks {
+            self.fire_plugin_hook(ph.hook, ph.ctx).await;
+        }
+
+        // Process pending PR retries
+        self.process_pending_pr_retries().await;
+
+        // Process pending issue completions (gates, git push, label updates, PR creation)
+        let pending = std::mem::take(&mut self.pending_issue_completions);
+
+        // Build gates once from config (independent of individual completions)
+        let gates: Vec<CompletionGate> = if let Some(ref cfg) = self.config
+            && cfg.sessions.completion_gates.enabled
+            && !cfg.sessions.completion_gates.commands.is_empty()
+        {
+            cfg.sessions
+                .completion_gates
+                .commands
+                .iter()
+                .map(CompletionGate::from_config_entry)
+                .collect()
+        } else if let Some(ref cfg) = self.config
+            && cfg.gates.enabled
+        {
+            vec![CompletionGate::TestsPass {
+                command: cfg.gates.test_command.clone(),
+            }]
+        } else {
+            vec![]
+        };
+
+        for mut completion in pending {
+            let issue_label = format!("#{}", completion.issue_number);
+
+            // Run completion gates before accepting the result
+            if completion.success
+                && !gates.is_empty()
+                && let Some(wt_path) = &completion.worktree_path
+            {
+                if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
+                    managed.session.status = SessionStatus::GatesRunning;
+                }
+
+                let gate_runner = GateRunner;
+                let results = gate_runner.run_gates(&gates, wt_path);
+
+                let paired: Vec<(GateResult, bool)> = results
+                    .into_iter()
+                    .zip(gates.iter().map(|g| g.is_required()))
+                    .collect();
+
+                let all_required_passed = runner::all_required_gates_passed(&paired);
+
+                // Log individual gate results (failed-level differs by outcome)
+                let fail_level = if all_required_passed {
+                    LogLevel::Warn
+                } else {
+                    LogLevel::Error
+                };
+                for (result, _) in &paired {
+                    let level = if result.passed {
+                        LogLevel::Info
+                    } else {
+                        fail_level
+                    };
+                    self.activity_log.push_simple(
+                        issue_label.clone(),
+                        format!("Gate [{}]: {}", result.gate, result.message),
+                        level,
+                    );
+                }
+
+                if !all_required_passed {
+                    let failures: Vec<String> = paired
+                        .iter()
+                        .filter(|(r, required)| !r.passed && *required)
+                        .map(|(r, _)| r.message.clone())
+                        .collect();
+
+                    let failed_gate_results: Vec<crate::session::types::GateResultEntry> = paired
+                        .iter()
+                        .filter(|(r, _)| !r.passed)
+                        .map(|(r, _)| crate::session::types::GateResultEntry {
+                            gate: r.gate.clone(),
+                            passed: r.passed,
+                            message: r.message.clone(),
+                        })
+                        .collect();
+
+                    if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
+                        managed.session.gate_results = failed_gate_results;
+                        managed.session.status = SessionStatus::NeedsReview;
+                        managed
+                            .session
+                            .log_activity(format!("Gates failed: {}", failures.join("; ")));
+                    }
+
+                    completion.success = false;
+                    let ctx = HookContext::new()
+                        .with_session("", Some(completion.issue_number))
+                        .with_var("MAESTRO_GATE_FAILURES", &failures.join("; "));
+                    self.fire_plugin_hook(HookPoint::TestsFailed, ctx).await;
+                } else {
+                    self.activity_log.push_simple(
+                        issue_label.clone(),
+                        "All required gates passed".into(),
+                        LogLevel::Info,
+                    );
+                    let ctx = HookContext::new().with_session("", Some(completion.issue_number));
+                    self.fire_plugin_hook(HookPoint::TestsPassed, ctx).await;
+                }
+            }
+
+            // If successful and we have a worktree, commit and push changes
+            if completion.success
+                && let (Some(branch), Some(wt_path)) =
+                    (&completion.worktree_branch, &completion.worktree_path)
+            {
+                let git_ops = crate::git::CliGitOps;
+                let commit_msg = format!(
+                    "feat: implement changes for issue #{}",
+                    completion.issue_number
+                );
+                match git_ops.commit_and_push(wt_path, branch, &commit_msg) {
+                    Ok(()) => {
+                        self.activity_log.push_simple(
+                            format!("#{}", completion.issue_number),
+                            format!("Pushed to branch {}", branch),
+                            LogLevel::Info,
+                        );
+                    }
+                    Err(e) => {
+                        self.activity_log.push_simple(
+                            format!("#{}", completion.issue_number),
+                            format!("Git push failed: {}", e),
+                            LogLevel::Error,
+                        );
+                    }
+                }
+            }
+
+            self.on_issue_session_completed(
+                completion.issue_number,
+                completion.success,
+                completion.cost_usd,
+                completion.files_touched,
+                completion.worktree_branch,
+                completion.is_ci_fix,
+            )
+            .await;
+        }
+
+        // Stall detection: check for sessions that haven't produced events
+        let stall_timeout = self
+            .config
+            .as_ref()
+            .map(|c| Duration::from_secs(c.sessions.stall_timeout_secs))
+            .unwrap_or(Duration::from_secs(300));
+
+        let stalled_ids = self.health_monitor.check_stalls(stall_timeout);
+        for id in &stalled_ids {
+            if let Some(managed) = self.pool.get_active_mut(*id)
+                && managed.session.status == SessionStatus::Running
+            {
+                managed.session.status = SessionStatus::Stalled;
+                let label = session_label(&managed.session);
+                self.activity_log.push_simple(
+                    label,
+                    format!(
+                        "Session stalled (no activity for {}s)",
+                        stall_timeout.as_secs()
+                    ),
+                    LogLevel::Error,
+                );
+            }
+        }
+
+        // Retry eligible sessions (stalled or errored) before finalizing
+        let retry_policy = self
+            .config
+            .as_ref()
+            .map(|c| RetryPolicy::new(c.sessions.max_retries, c.sessions.retry_cooldown_secs));
+
+        let retryable_ids: Vec<uuid::Uuid> = self
+            .pool
+            .all_sessions()
+            .iter()
+            .filter(|s| matches!(s.status, SessionStatus::Stalled | SessionStatus::Errored))
+            .map(|s| s.id)
+            .collect();
+
+        let mut retry_sessions = Vec::new();
+        for id in &retryable_ids {
+            if let Some(policy) = &retry_policy
+                && let Some(managed) = self.pool.get_active_mut(*id)
+                && policy.should_retry(&managed.session)
+            {
+                let label = session_label(&managed.session);
+                // Gather progress and last error for rich retry context
+                let progress = self.progress_tracker.get(id).cloned();
+                let last_error = managed
+                    .session
+                    .activity_log
+                    .iter()
+                    .rev()
+                    .find(|e| e.message.starts_with("ERROR:") || e.message.contains("failed"))
+                    .map(|e| e.message.clone());
+                let retry = policy.prepare_retry(
+                    &managed.session,
+                    progress.as_ref(),
+                    last_error.as_deref(),
+                );
+                managed.session.status = SessionStatus::Retrying;
+                self.activity_log.push_simple(
+                    label,
+                    format!(
+                        "Retrying (attempt {}/{})",
+                        retry.retry_count, policy.max_retries
+                    ),
+                    LogLevel::Warn,
+                );
+                retry_sessions.push(retry);
+            }
+        }
+
+        // Enqueue retry sessions
+        for session in retry_sessions {
+            self.add_session(session).await?;
+        }
+
+        // Find terminal sessions in the active list (including Retrying which is now done)
+        let completed_ids: Vec<uuid::Uuid> = self
+            .pool
+            .all_sessions()
+            .iter()
+            .filter(|s| s.status.is_terminal() || s.status == SessionStatus::Retrying)
+            .map(|s| s.id)
+            .collect();
+
+        // Only process sessions that are actually in the active list
+        for id in &completed_ids {
+            if self.pool.get_active_mut(*id).is_some() {
+                self.pool.on_session_completed(*id);
+                self.health_monitor.remove(*id);
+                self.progress_tracker.remove(id);
+            }
+        }
+
+        // Medium tier: work assigner tick (every ~10s)
+        let work_tick_interval = self
+            .config
+            .as_ref()
+            .map(|c| Duration::from_secs(c.monitoring.work_tick_interval_secs))
+            .unwrap_or(Duration::from_secs(10));
+
+        if self.last_work_tick.elapsed() >= work_tick_interval {
+            self.last_work_tick = Instant::now();
+            // Tick the work assigner to fill available slots from GitHub issues
+            self.tick_work_assigner().await?;
+        }
+
+        // Slow tier: CI status polling (every ~30s)
+        self.poll_ci_status();
+
+        // Try to promote queued sessions
+        let promoted_ids = self.pool.try_promote();
+        if !promoted_ids.is_empty() {
+            let tx = self.pool.event_tx();
+            for id in promoted_ids {
+                if let Some(managed) = self.pool.get_active_mut(id) {
+                    let label = session_label(&managed.session);
+                    self.activity_log.push_simple(
+                        label.clone(),
+                        "Spawning session...".into(),
+                        LogLevel::Info,
+                    );
+                    if let Err(e) = managed.spawn(tx.clone()).await {
+                        self.activity_log.push_simple(
+                            label,
+                            format!("Spawn failed: {}", e),
+                            LogLevel::Error,
+                        );
+                    } else {
+                        self.activity_log.push_simple(
+                            label,
+                            "Session started".into(),
+                            LogLevel::Info,
+                        );
+                    }
+                }
+            }
+        }
+
+        self.sync_state();
+        Ok(())
+    }
+}
