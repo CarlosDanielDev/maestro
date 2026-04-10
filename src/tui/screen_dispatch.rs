@@ -16,6 +16,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::HollowRetry => app.hollow_retry_screen.as_mut()?,
         app::TuiMode::Sanitize => app.sanitize_screen.as_mut()?,
         app::TuiMode::Settings => app.settings_screen.as_mut()?,
+        app::TuiMode::AdaptWizard => app.adapt_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -92,6 +93,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         app.settings_screen = Some(screen);
                     }
                 }
+                app::TuiMode::AdaptWizard => {
+                    app.adapt_screen = Some(crate::tui::screens::adapt::AdaptScreen::new());
+                }
                 app::TuiMode::PromptInput => {
                     if app.prompt_input_screen.is_none() {
                         let mut screen = screens::PromptInputScreen::new();
@@ -132,6 +136,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app::TuiMode::Settings => {
                     app.preview_theme = None;
                     app.settings_screen = None;
+                }
+                app::TuiMode::AdaptWizard => {
+                    app.adapt_screen = None;
                 }
                 _ => {}
             }
@@ -219,6 +226,42 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             }
             app.hollow_retry_screen = None;
             app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::StartAdaptPipeline(config) => {
+            if let Some(ref mut screen) = app.adapt_screen {
+                use crate::tui::screens::adapt::types::AdaptStep;
+                match screen.step {
+                    AdaptStep::Configure | AdaptStep::Scanning => {
+                        screen.step = AdaptStep::Scanning;
+                        app.pending_commands
+                            .push(app::TuiCommand::RunAdaptScan(config));
+                    }
+                    AdaptStep::Analyzing => {
+                        if let Some(profile) = screen.results.profile.clone() {
+                            app.pending_commands
+                                .push(app::TuiCommand::RunAdaptAnalyze(config, profile));
+                        }
+                    }
+                    AdaptStep::Planning => {
+                        if let (Some(profile), Some(report)) = (
+                            screen.results.profile.clone(),
+                            screen.results.report.clone(),
+                        ) {
+                            app.pending_commands
+                                .push(app::TuiCommand::RunAdaptPlan(config, profile, report));
+                        }
+                    }
+                    AdaptStep::Materializing => {
+                        if let (Some(plan), Some(report)) =
+                            (screen.results.plan.clone(), screen.results.report.clone())
+                        {
+                            app.pending_commands
+                                .push(app::TuiCommand::RunAdaptMaterialize(plan, report));
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
         ScreenAction::LaunchQueue(configs) => {
             use crate::work::dependencies::DependencyGraph;

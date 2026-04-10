@@ -471,7 +471,8 @@ async fn event_loop(
                                 | app::TuiMode::HollowRetry
                                 | app::TuiMode::Sanitize
                                 | app::TuiMode::Settings
-                                | app::TuiMode::SessionSwitcher => app::TuiMode::Overview,
+                                | app::TuiMode::SessionSwitcher
+                                | app::TuiMode::AdaptWizard => app::TuiMode::Overview,
                             };
                         }
                         (KeyCode::Esc, _) => {
@@ -640,6 +641,46 @@ async fn event_loop(
                         });
 
                     app.pending_session_launches.push(session);
+                }
+                app::TuiCommand::RunAdaptScan(config) => {
+                    let tx = app.data_tx.clone();
+                    let path = config.path.clone();
+                    tokio::spawn(async move {
+                        use crate::adapt::scanner::{LocalProjectScanner, ProjectScanner};
+                        let scanner = LocalProjectScanner::new();
+                        let result = scanner.scan(&path).await.map(Box::new);
+                        let _ = tx.send(app::TuiDataEvent::AdaptScanResult(result));
+                    });
+                }
+                app::TuiCommand::RunAdaptAnalyze(config, profile) => {
+                    let tx = app.data_tx.clone();
+                    let model = config.model.unwrap_or_else(|| "sonnet".to_string());
+                    tokio::spawn(async move {
+                        use crate::adapt::analyzer::{ClaudeAnalyzer, ProjectAnalyzer};
+                        let analyzer = ClaudeAnalyzer::new(model);
+                        let result = analyzer.analyze(&profile).await;
+                        let _ = tx.send(app::TuiDataEvent::AdaptAnalyzeResult(result));
+                    });
+                }
+                app::TuiCommand::RunAdaptPlan(config, profile, report) => {
+                    let tx = app.data_tx.clone();
+                    let model = config.model.unwrap_or_else(|| "sonnet".to_string());
+                    tokio::spawn(async move {
+                        use crate::adapt::planner::{AdaptPlanner, ClaudePlanner};
+                        let planner = ClaudePlanner::new(model);
+                        let result = planner.plan(&profile, &report).await;
+                        let _ = tx.send(app::TuiDataEvent::AdaptPlanResult(result));
+                    });
+                }
+                app::TuiCommand::RunAdaptMaterialize(plan, report) => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        use crate::adapt::materializer::{GhMaterializer, PlanMaterializer};
+                        let github = crate::github::client::GhCliClient::new();
+                        let materializer = GhMaterializer::new(github);
+                        let result = materializer.materialize(&plan, &report, false).await;
+                        let _ = tx.send(app::TuiDataEvent::AdaptMaterializeResult(result));
+                    });
                 }
             }
         }

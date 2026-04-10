@@ -114,6 +114,84 @@ impl App {
             TuiDataEvent::UpgradeResult(Err(msg)) => {
                 self.upgrade_state = crate::updater::UpgradeState::Failed(msg);
             }
+            TuiDataEvent::AdaptScanResult(result) => {
+                if let Some(ref mut screen) = self.adapt_screen {
+                    if screen.is_cancelled() {
+                        return;
+                    }
+                    match result {
+                        Ok(profile) => {
+                            if let Some(cmd) = screen.complete_scan(*profile) {
+                                self.pending_commands.push(cmd);
+                            }
+                        }
+                        Err(e) => {
+                            screen.set_error(
+                                crate::tui::screens::adapt::AdaptStep::Scanning,
+                                format!("{}", e),
+                            );
+                        }
+                    }
+                }
+            }
+            TuiDataEvent::AdaptAnalyzeResult(result) => {
+                if let Some(ref mut screen) = self.adapt_screen {
+                    if screen.is_cancelled() {
+                        return;
+                    }
+                    match result {
+                        Ok(report) => {
+                            if let Some(cmd) = screen.complete_analyze(report) {
+                                self.pending_commands.push(cmd);
+                            }
+                        }
+                        Err(e) => {
+                            screen.set_error(
+                                crate::tui::screens::adapt::AdaptStep::Analyzing,
+                                format!("{}", e),
+                            );
+                        }
+                    }
+                }
+            }
+            TuiDataEvent::AdaptPlanResult(result) => {
+                if let Some(ref mut screen) = self.adapt_screen {
+                    if screen.is_cancelled() {
+                        return;
+                    }
+                    match result {
+                        Ok(plan) => {
+                            if let Some(cmd) = screen.complete_plan(plan) {
+                                self.pending_commands.push(cmd);
+                            }
+                        }
+                        Err(e) => {
+                            screen.set_error(
+                                crate::tui::screens::adapt::AdaptStep::Planning,
+                                format!("{}", e),
+                            );
+                        }
+                    }
+                }
+            }
+            TuiDataEvent::AdaptMaterializeResult(result) => {
+                if let Some(ref mut screen) = self.adapt_screen {
+                    if screen.is_cancelled() {
+                        return;
+                    }
+                    match result {
+                        Ok(mat_result) => {
+                            screen.complete_materialize(mat_result);
+                        }
+                        Err(e) => {
+                            screen.set_error(
+                                crate::tui::screens::adapt::AdaptStep::Materializing,
+                                format!("{}", e),
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 }
