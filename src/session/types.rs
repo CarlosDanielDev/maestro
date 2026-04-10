@@ -62,11 +62,43 @@ impl SessionStatus {
         }
     }
 
+    /// Returns the set of valid target states from this state.
+    pub fn valid_transitions(&self) -> &'static [SessionStatus] {
+        use SessionStatus::*;
+        match self {
+            Queued => &[Spawning, Killed, CiFix, ConflictFix],
+            Spawning => &[Running, Errored, Killed],
+            Running => &[
+                Completed,
+                Errored,
+                Paused,
+                Stalled,
+                Killed,
+                GatesRunning,
+                NeedsPr,
+                CiFix,
+                ConflictFix,
+            ],
+            Paused => &[Running, Killed],
+            Stalled => &[Retrying, Killed, Errored],
+            Completed => &[],
+            GatesRunning => &[NeedsReview, Completed, Errored],
+            NeedsReview => &[],
+            Errored => &[Retrying],
+            Retrying => &[Spawning, Errored, Killed],
+            CiFix => &[Spawning, Errored, Killed],
+            NeedsPr => &[Completed, Errored],
+            ConflictFix => &[Spawning, Errored, Killed],
+            Killed => &[],
+        }
+    }
+
+    pub fn can_transition_to(&self, target: SessionStatus) -> bool {
+        self.valid_transitions().contains(&target)
+    }
+
     pub fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            Self::Completed | Self::Errored | Self::Killed | Self::NeedsReview
-        )
+        self.valid_transitions().is_empty()
     }
 }
 
@@ -194,6 +226,9 @@ pub struct Session {
     /// When the current thinking block started (for elapsed display).
     #[serde(skip)]
     pub thinking_started_at: Option<std::time::Instant>,
+    /// History of state transitions for audit trail.
+    #[serde(default)]
+    pub transition_history: Vec<super::transition::SessionTransition>,
 }
 
 /// Lightweight gate result stored on a session for post-completion display.
@@ -261,7 +296,36 @@ impl Session {
             is_hollow_completion: false,
             is_thinking: false,
             thinking_started_at: None,
+            transition_history: Vec::new(),
         }
+    }
+
+    /// Validated state transition. Records the transition in history.
+    pub fn transition_to(
+        &mut self,
+        target: SessionStatus,
+        reason: super::transition::TransitionReason,
+    ) -> Result<(), super::transition::IllegalTransition> {
+        if !self.status.can_transition_to(target) {
+            return Err(super::transition::IllegalTransition {
+                from: self.status,
+                to: target,
+            });
+        }
+        let transition = super::transition::SessionTransition {
+            from: self.status,
+            to: target,
+            reason,
+            timestamp: Utc::now(),
+        };
+        self.status = target;
+        self.transition_history.push(transition);
+
+        if target.is_terminal() && self.finished_at.is_none() {
+            self.finished_at = Some(Utc::now());
+        }
+
+        Ok(())
     }
 
     /// Builder method to attach image paths to a session.

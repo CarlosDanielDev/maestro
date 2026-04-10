@@ -60,9 +60,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 spinner_tick,
             );
         }
-        TuiMode::Detail(idx) => {
-            let sessions = app.pool.all_sessions();
-            if let Some(session) = sessions.get(idx) {
+        TuiMode::Detail(id) => {
+            if let Some(session) = app.pool.get_session(id) {
                 detail::draw_detail_with_claims(
                     f,
                     session,
@@ -72,6 +71,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &theme,
                 );
             } else {
+                let sessions = app.pool.all_sessions();
                 app.panel_view.draw_with_claims(
                     f,
                     &sessions,
@@ -85,9 +85,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         TuiMode::DependencyGraph => {
             dep_graph::draw_dep_graph(f, app.work_assigner.as_ref(), chunks[1], &app.theme);
         }
-        TuiMode::Fullscreen(idx) => {
-            let sessions = app.pool.all_sessions();
-            if let Some(session) = sessions.get(idx) {
+        TuiMode::Fullscreen(id) => {
+            if let Some(session) = app.pool.get_session(id) {
                 fullscreen::draw_fullscreen(
                     f,
                     session,
@@ -97,6 +96,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     spinner_tick,
                 );
             } else {
+                let sessions = app.pool.all_sessions();
                 app.panel_view
                     .draw(f, &sessions, chunks[1], &theme, spinner_tick);
             }
@@ -202,6 +202,22 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         TuiMode::Settings => {
             if let Some(ref mut screen) = app.settings_screen {
                 screen.draw(f, chunks[1], &app.theme);
+            }
+        }
+        TuiMode::SessionSwitcher => {
+            // Draw Overview underneath, then the switcher overlay on top
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &theme,
+                spinner_tick,
+            );
+            if let Some(ref sw) = app.session_switcher {
+                let sessions = app.pool.all_sessions();
+                sw.draw(f, chunks[1], &sessions, &theme);
             }
         }
         TuiMode::HollowRetry => {
@@ -310,6 +326,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 .settings_screen
                 .as_ref()
                 .map(|s| (s.keybindings(), s.desired_input_mode())),
+            TuiMode::SessionSwitcher => None,
             _ => None,
         }
         .map(|(b, m)| (b, m.unwrap_or(InputMode::Normal)))
@@ -481,6 +498,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::TokenDashboard => "Tokens",
         TuiMode::Sanitize => "Sanitize",
         TuiMode::Settings => "Settings",
+        TuiMode::SessionSwitcher => "Sessions",
     };
 
     let help = Line::from(vec![

@@ -44,9 +44,10 @@ impl SessionForker for ForkPolicy {
         if session.status.is_terminal() {
             return false;
         }
-        if matches!(
+        // Only Running and Paused sessions can be forked
+        if !matches!(
             session.status,
-            SessionStatus::Queued | SessionStatus::Spawning
+            SessionStatus::Running | SessionStatus::Paused
         ) {
             return false;
         }

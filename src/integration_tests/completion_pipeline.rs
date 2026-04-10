@@ -74,7 +74,7 @@ async fn full_pipeline_label_and_pr_for_completed_session() {
     let label_mgr = LabelManager::new(client.clone());
     let pr_creator = PrCreator::new(client.clone(), "main".to_string());
 
-    let mut managed = ManagedSession::new(make_session_with_issue(15));
+    let mut managed = ManagedSession::new(make_running_session_with_issue(15));
 
     managed.handle_event(&StreamEvent::ToolUse {
         tool: "Write".to_string(),
@@ -117,7 +117,7 @@ async fn full_pipeline_label_and_pr_for_completed_session() {
 async fn error_session_marks_failed_not_done() {
     let client = MockGitHubClient::new();
     let label_mgr = LabelManager::new(client.clone());
-    let mut managed = ManagedSession::new(make_session_with_issue(20));
+    let mut managed = ManagedSession::new(make_running_session_with_issue(20));
 
     managed.handle_event(&StreamEvent::Error {
         message: "process died".to_string(),

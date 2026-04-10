@@ -7,9 +7,9 @@ use crate::tui::screens::{PromptSessionConfig, SessionConfig};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TuiMode {
     Overview,
-    Detail(usize),
+    Detail(uuid::Uuid),
     DependencyGraph,
-    Fullscreen(usize),
+    Fullscreen(uuid::Uuid),
     CostDashboard,
     Dashboard,
     IssueBrowser,
@@ -23,6 +23,7 @@ pub enum TuiMode {
     TokenDashboard,
     Sanitize,
     Settings,
+    SessionSwitcher,
 }
 
 /// Payload for suggestion data fetched from GitHub.
