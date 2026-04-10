@@ -1,6 +1,7 @@
 use super::app;
 use super::screens::{self, Screen, ScreenAction};
 use crate::github::types::GhIssue;
+use crate::session::transition::TransitionReason;
 use crossterm::event::Event;
 
 pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Option<ScreenAction> {
@@ -206,7 +207,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     let label = crate::tui::app::helpers::session_label(&managed.session);
                     let _ = managed.session.transition_to(
                         crate::session::types::SessionStatus::Retrying,
-                        crate::session::transition::TransitionReason::RetryTriggered,
+                        TransitionReason::RetryTriggered,
                     );
                     app.activity_log.push_simple(
                         label,

@@ -2,6 +2,7 @@ use super::App;
 use crate::github::ci::PendingPrCheck;
 use crate::github::pr::{PrCreator, PrRetryPolicy};
 use crate::github::types::PendingPrStatus;
+use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;
 use std::time::Instant;
@@ -58,7 +59,7 @@ impl App {
                         if let Some(managed) = self.pool.find_by_issue_mut(issue_number) {
                             let _ = managed.session.transition_to(
                                 SessionStatus::Completed,
-                                crate::session::transition::TransitionReason::StreamCompleted,
+                                TransitionReason::StreamCompleted,
                             );
                         }
                         self.activity_log.push_simple(
