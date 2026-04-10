@@ -15,10 +15,7 @@ pub(crate) fn extract_binary_from_tar_gz(archive_bytes: &[u8]) -> Result<Vec<u8>
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?;
-        let file_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if file_name == "maestro" {
             let mut bytes = Vec::new();
             entry.read_to_end(&mut bytes)?;
@@ -322,8 +319,8 @@ mod tests {
 
     #[test]
     fn extract_binary_from_tar_gz_finds_maestro_binary() {
-        use flate2::write::GzEncoder;
         use flate2::Compression;
+        use flate2::write::GzEncoder;
 
         // Create a tar.gz archive containing a "maestro" binary
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
@@ -348,8 +345,8 @@ mod tests {
 
     #[test]
     fn extract_binary_from_tar_gz_fails_when_no_maestro_binary() {
-        use flate2::write::GzEncoder;
         use flate2::Compression;
+        use flate2::write::GzEncoder;
 
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         {
@@ -367,7 +364,10 @@ mod tests {
         let archive_bytes = encoder.finish().unwrap();
 
         let result = extract_binary_from_tar_gz(&archive_bytes);
-        assert!(result.is_err(), "Should fail when no maestro binary in archive");
+        assert!(
+            result.is_err(),
+            "Should fail when no maestro binary in archive"
+        );
     }
 
     #[tokio::test]

@@ -103,9 +103,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     app.pending_commands.push(app::TuiCommand::FetchOpenPrs);
                 }
                 app::TuiMode::PromptInput => {
-                    app.prompt_input_screen = Some(
-                        app::helpers::create_prompt_input_screen(&app.prompt_history),
-                    );
+                    app.prompt_input_screen = Some(app::helpers::create_prompt_input_screen(
+                        &app.prompt_history,
+                    ));
                 }
                 _ => {}
             }

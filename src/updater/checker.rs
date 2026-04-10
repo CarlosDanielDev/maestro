@@ -135,7 +135,7 @@ impl UpdateChecker for GitHubReleaseChecker {
                 return Err(anyhow!(
                     "No compatible binary found for this platform in release {}",
                     tag
-                ))
+                ));
             }
         };
 
@@ -364,7 +364,11 @@ mod tests {
         let url = GitHubReleaseChecker::extract_download_url(&json);
         assert!(url.is_some(), "Should find a matching asset");
         let url = url.unwrap();
-        assert!(url.ends_with(".tar.gz"), "URL should point to tar.gz: {}", url);
+        assert!(
+            url.ends_with(".tar.gz"),
+            "URL should point to tar.gz: {}",
+            url
+        );
     }
 
     #[test]
