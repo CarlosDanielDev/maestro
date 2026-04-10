@@ -1,6 +1,6 @@
 use super::AdaptScreen;
 use super::types::AdaptStep;
-use crate::tui::screens::draw_keybinds_bar;
+use crate::tui::screens::{draw_keybinds_bar, sanitize_for_terminal};
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
@@ -266,7 +266,7 @@ fn draw_failed(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
         )));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            &error.message,
+            sanitize_for_terminal(&error.message),
             Style::default().fg(theme.text_primary),
         )));
     }
