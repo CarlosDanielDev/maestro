@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reason: file claim/conflict tracking — to be wired into multi-session orchestration
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};

@@ -120,6 +120,7 @@ impl App {
     }
 
     /// Trigger a manual PR retry for a specific issue. Called from TUI key handler.
+    #[allow(dead_code)] // Reason: manual PR retry from TUI — to be wired into key handler
     pub fn trigger_manual_pr_retry(&mut self, issue_number: u64) {
         if let Some(pending) = self
             .pending_prs

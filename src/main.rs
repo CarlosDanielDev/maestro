@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod budget;
 mod cli;
 mod commands;
@@ -34,21 +32,44 @@ use clap::Parser;
 use cli::{Cli, Commands};
 use commands::*;
 
+/// Cross-platform log writer that falls back to `io::sink()` if the log file
+/// cannot be opened (avoids the `/dev/null` panic on non-Unix platforms).
+enum LogWriter {
+    File(std::fs::File),
+    Sink(std::io::Sink),
+}
+
+impl std::io::Write for LogWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::File(f) => f.write(buf),
+            Self::Sink(s) => s.write(buf),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::File(f) => f.flush(),
+            Self::Sink(s) => s.flush(),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter("maestro=debug")
-        .with_writer(|| {
-            std::fs::OpenOptions::new()
+        .with_writer(|| -> LogWriter {
+            match std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open("maestro.log")
-                .unwrap_or_else(|_| {
-                    std::fs::OpenOptions::new()
-                        .write(true)
-                        .open("/dev/null")
-                        .unwrap()
-                })
+            {
+                Ok(f) => LogWriter::File(f),
+                Err(e) => {
+                    eprintln!("Warning: cannot open maestro.log: {e}");
+                    LogWriter::Sink(std::io::sink())
+                }
+            }
         })
         .init();
 

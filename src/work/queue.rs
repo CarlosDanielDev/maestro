@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
 
@@ -113,11 +112,13 @@ impl WorkQueue {
     }
 
     /// Returns the number of items in the queue.
+    #[allow(dead_code)] // Reason: standard collection API surface
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
     /// Returns true if the queue is empty.
+    #[allow(dead_code)] // Reason: standard collection API surface
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }

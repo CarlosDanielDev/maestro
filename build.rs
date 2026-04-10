@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used)] // Build scripts conventionally use expect()
 // NOTE: cli.rs must remain self-contained (no imports from other src/ modules)
 // because build.rs includes it directly via #[path].
 #[path = "src/cli.rs"]

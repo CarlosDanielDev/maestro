@@ -91,6 +91,10 @@ impl HookContext {
     }
 
     pub fn with_var(mut self, key: &str, value: &str) -> Self {
+        if let Err(e) = crate::util::validate_env_var_name(key) {
+            tracing::warn!("Rejected env var {}: {}", key, e);
+            return self;
+        }
         self.vars.insert(key.into(), value.into());
         self
     }

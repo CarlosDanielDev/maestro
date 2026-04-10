@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reason: dependency resolution for work queue — to be wired into orchestration
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::types::WorkItem;

@@ -19,10 +19,12 @@ pub enum TuiMode {
     PromptInput,
     CompletionSummary,
     ContinuousPause,
+    #[allow(dead_code)] // Reason: TUI mode — to be wired into queue screen
     QueueConfirmation,
     QueueExecution,
     HollowRetry,
     TokenDashboard,
+    #[allow(dead_code)] // Reason: TUI mode — to be wired into sanitize screen
     Sanitize,
     Settings,
     SessionSwitcher,
