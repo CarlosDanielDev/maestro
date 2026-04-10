@@ -7,6 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-09
+
+### Added
+
+- TOML serialization and write-back for Config (#70)
+- Reusable TUI widget primitives for settings forms: TextInput, NumberStepper, Toggle, Dropdown, ListEditor (#71)
+- SettingsScreen with tabbed section navigation across 11 config categories (#72)
+- Settings widgets wired to Config fields across all tabs with sync-on-change (#73)
+- Dirty state tracking, save (Ctrl+s), and reset (Ctrl+r) for Settings (#74)
+- Live theme preview toggle in Settings theme tab (#76)
+- Settings screen integration tests and help overlay (#77)
+- Configurable Issues screen layout mode (vertical/horizontal) and density (default/comfortable/compact) in maestro.toml (#121)
+- Layout and density settings wired to interactive Settings screen (#122)
+- Feature flags display in Settings screen with name, state, source, and description (#146)
+
 ## [0.7.0] - 2026-04-09
 
 ### Added
