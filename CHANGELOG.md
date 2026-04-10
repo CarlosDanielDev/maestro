@@ -7,6 +7,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-09
+
+### Added
+
+- `maestro sanitize` CLI command for codebase health analysis (#106)
+- Phase 1: Static dead-code scanner via `syn` AST parsing — detects unused functions, structs, enums, imports, modules, and files (#107)
+- Phase 2: AI-powered code smell analyzer using Claude CLI — detects Fowler catalog smells (Feature Envy, Data Clumps, Primitive Obsession, Divergent Change, Shotgun Surgery, Duplicated Code) (#108)
+- Phase 3: Multi-format report generator — terminal (colored), JSON (machine-readable), and Markdown output (#109)
+- End-to-end sanitize pipeline with `--path`, `--output`, `--severity`, `--skip-ai`, `--model` flags (#110)
+- Long Method heuristic (>50 lines warning, >100 critical) and Large Class heuristic (>200 lines warning, >400 critical) (#107)
+- Interactive TUI sanitize results screen with two-panel layout, severity filtering, and j/k navigation (#111)
+- `--skip-ai` flag to run static analysis only without spawning Claude CLI (#110)
+- Graceful AI failure fallback — scan-only results reported if Claude CLI fails (#110)
+
 ## [0.6.2] - 2026-04-09
 
 ### Fixed
