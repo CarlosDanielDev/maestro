@@ -25,20 +25,20 @@ pub enum SessionStatus {
 impl SessionStatus {
     pub fn nerd_symbol(&self) -> &'static str {
         match self {
-            Self::Queued => "\u{f251}",      //  hourglass
-            Self::Spawning => "\u{f46a}",    //  sync
-            Self::Running => "\u{f40a}",     //  play
-            Self::Completed => "\u{f42e}",   //  check_circle
-            Self::GatesRunning => "\u{f422}",//  search
-            Self::NeedsReview => "\u{f41b}", //  issue_opened
-            Self::Errored => "\u{f467}",     //  x_circle
-            Self::Paused => "\u{f04c}",      //  pause
-            Self::Killed => "\u{f2d3}",      //  skull
-            Self::Stalled => "\u{f421}",     //  alert
-            Self::Retrying => "\u{f363}",    //  refresh
-            Self::CiFix => "\u{f7d9}",       //  wrench
-            Self::NeedsPr => "\u{f407}",     //  git_pull_request
-            Self::ConflictFix => "\u{f419}", //  git_merge
+            Self::Queued => "\u{f251}",       //  hourglass
+            Self::Spawning => "\u{f46a}",     //  sync
+            Self::Running => "\u{f40a}",      //  play
+            Self::Completed => "\u{f42e}",    //  check_circle
+            Self::GatesRunning => "\u{f422}", //  search
+            Self::NeedsReview => "\u{f41b}",  //  issue_opened
+            Self::Errored => "\u{f467}",      //  x_circle
+            Self::Paused => "\u{f04c}",       //  pause
+            Self::Killed => "\u{f2d3}",       //  skull
+            Self::Stalled => "\u{f421}",      //  alert
+            Self::Retrying => "\u{f363}",     //  refresh
+            Self::CiFix => "\u{f7d9}",        //  wrench
+            Self::NeedsPr => "\u{f407}",      //  git_pull_request
+            Self::ConflictFix => "\u{f419}",  //  git_merge
         }
     }
 

@@ -676,7 +676,10 @@ mod tests {
         s.selected_row = 1;
         s.selected_col = 2; // index 5
         s.move_down(&layout, 7);
-        assert_eq!(s.selected_row, 1, "move_down must be a no-op when target index >= total_sessions");
+        assert_eq!(
+            s.selected_row, 1,
+            "move_down must be a no-op when target index >= total_sessions"
+        );
     }
 
     #[test]
@@ -706,7 +709,10 @@ mod tests {
         s.selected_row = 2;
         s.selected_col = 0; // index 6 — the last session
         s.move_right(&layout, 7);
-        assert_eq!(s.selected_col, 0, "move_right must be a no-op when target index >= total_sessions");
+        assert_eq!(
+            s.selected_col, 0,
+            "move_right must be a no-op when target index >= total_sessions"
+        );
     }
 
     #[test]
@@ -808,7 +814,8 @@ mod tests {
         for pct in [0.0_f64, 10.0, 33.3, 50.0, 66.6, 85.0, 99.9, 100.0] {
             let (filled, empty) = compact_gauge_bar_counts(pct, 10);
             assert_eq!(
-                filled + empty, 10,
+                filled + empty,
+                10,
                 "filled+empty must equal bar_width=10 at pct={pct}"
             );
         }

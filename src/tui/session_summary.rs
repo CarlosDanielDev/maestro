@@ -70,10 +70,7 @@ pub fn draw_session_summary(
                     .fg(status_color)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                sl.label.clone(),
-                Style::default().fg(theme.text_primary),
-            ),
+            Span::styled(sl.label.clone(), Style::default().fg(theme.text_primary)),
             Span::raw("  "),
             Span::styled(
                 format!("${:.2}", sl.cost_usd),

@@ -6,14 +6,14 @@ pub mod dep_graph;
 pub mod detail;
 pub mod fullscreen;
 pub mod help;
+pub mod icons;
 pub mod log_viewer;
 pub mod markdown;
 pub mod navigation;
-pub mod icons;
 pub mod panels;
 mod screen_dispatch;
-pub mod session_summary;
 pub mod screens;
+pub mod session_summary;
 pub mod session_switcher;
 pub mod spinner;
 mod summary;
@@ -424,7 +424,9 @@ async fn event_loop(
                                 }
                             }
                             (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
-                                let max_idx = app.completion_summary.as_ref()
+                                let max_idx = app
+                                    .completion_summary
+                                    .as_ref()
                                     .map(|s| s.sessions.len().saturating_sub(1))
                                     .unwrap_or(0);
                                 if let Some(state) = app.session_summary_state.as_mut() {
@@ -436,7 +438,9 @@ async fn event_loop(
                             }
                             (KeyCode::Enter, _) => {
                                 let session_id = app.completion_summary.as_ref().and_then(|s| {
-                                    let idx = app.session_summary_state.as_ref()
+                                    let idx = app
+                                        .session_summary_state
+                                        .as_ref()
                                         .map(|st| st.selected_index)
                                         .unwrap_or(0);
                                     s.sessions.get(idx).map(|sl| sl.session_id)
@@ -683,9 +687,14 @@ async fn event_loop(
                             let total_sessions = app.pool.total_count();
                             match key.code {
                                 KeyCode::Up => app.panel_view.grid_state.move_up(),
-                                KeyCode::Down => app.panel_view.grid_state.move_down(&layout, total_sessions),
+                                KeyCode::Down => {
+                                    app.panel_view.grid_state.move_down(&layout, total_sessions)
+                                }
                                 KeyCode::Left => app.panel_view.grid_state.move_left(),
-                                KeyCode::Right => app.panel_view.grid_state.move_right(&layout, total_sessions),
+                                KeyCode::Right => app
+                                    .panel_view
+                                    .grid_state
+                                    .move_right(&layout, total_sessions),
                                 KeyCode::Char('[') => app.panel_view.grid_state.prev_page(&layout),
                                 KeyCode::Char(']') => app.panel_view.grid_state.next_page(&layout),
                                 _ => {}

@@ -1359,7 +1359,10 @@ fn session_summary_scroll_up_does_not_underflow() {
 #[test]
 fn tui_mode_session_summary_variant_exists() {
     let mode = crate::tui::app::types::TuiMode::SessionSummary;
-    assert!(matches!(mode, crate::tui::app::types::TuiMode::SessionSummary));
+    assert!(matches!(
+        mode,
+        crate::tui::app::types::TuiMode::SessionSummary
+    ));
 }
 
 // -- Adapt pipeline data chaining integration tests --

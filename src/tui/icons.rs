@@ -44,8 +44,20 @@ mod tests {
     fn nerd_symbol_all_variants_are_nonempty() {
         use SessionStatus::*;
         let variants = [
-            Queued, Spawning, Running, Completed, GatesRunning, NeedsReview,
-            Errored, Paused, Killed, Stalled, Retrying, CiFix, NeedsPr, ConflictFix,
+            Queued,
+            Spawning,
+            Running,
+            Completed,
+            GatesRunning,
+            NeedsReview,
+            Errored,
+            Paused,
+            Killed,
+            Stalled,
+            Retrying,
+            CiFix,
+            NeedsPr,
+            ConflictFix,
         ];
         for v in variants {
             assert!(!v.nerd_symbol().is_empty(), "{v:?}.nerd_symbol() is empty");
@@ -56,8 +68,20 @@ mod tests {
     fn ascii_symbol_all_variants_are_ascii_bracketed() {
         use SessionStatus::*;
         let variants = [
-            Queued, Spawning, Running, Completed, GatesRunning, NeedsReview,
-            Errored, Paused, Killed, Stalled, Retrying, CiFix, NeedsPr, ConflictFix,
+            Queued,
+            Spawning,
+            Running,
+            Completed,
+            GatesRunning,
+            NeedsReview,
+            Errored,
+            Paused,
+            Killed,
+            Stalled,
+            Retrying,
+            CiFix,
+            NeedsPr,
+            ConflictFix,
         ];
         for v in variants {
             let s = v.ascii_symbol();
@@ -73,6 +97,9 @@ mod tests {
     fn nerd_and_ascii_symbols_are_distinct_for_running() {
         let nerd = SessionStatus::Running.nerd_symbol();
         let ascii = SessionStatus::Running.ascii_symbol();
-        assert_ne!(nerd, ascii, "nerd and ascii symbols must be distinct for Running");
+        assert_ne!(
+            nerd, ascii,
+            "nerd and ascii symbols must be distinct for Running"
+        );
     }
 }
