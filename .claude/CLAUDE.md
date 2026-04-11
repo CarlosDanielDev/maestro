@@ -128,6 +128,14 @@ A conforming issue contains these sections (enforced by GitHub issue templates):
 
 **Violation of this rule means the issue/milestone is malformed and MUST be corrected before proceeding.**
 
+**Rules for Milestone Updates After Issue Closure (MANDATORY):**
+- When an issue is closed, its entry in the milestone dependency graph MUST be updated with ✅
+- Change `• #NNN` to `• ✅ #NNN` in the milestone description
+- If ALL issues in a level are now ✅, mark the level header as `(COMPLETED ✅)`
+- Update the `Sequence:` line to reflect completed levels with `✅(LN)`
+- This is done via `gh api repos/<owner>/<repo>/milestones/<number> -X PATCH -f description="..."`
+- **This is NON-NEGOTIABLE.** Every closed issue MUST be reflected in the milestone graph immediately after closure. Skipping this step is a violation.
+
 ### 5. TDD IS MANDATORY — NON-NEGOTIABLE
 
 **Every implementation MUST follow Test-Driven Development. No exceptions.**
