@@ -149,11 +149,17 @@ impl PromptInputScreen {
     }
 
     fn paste_from_clipboard(&mut self) {
+        let editor_focused = self.is_prompt_editor_focused();
         match self.clipboard.read() {
             ClipboardContent::Image(path) => {
                 let path_str = path.to_string_lossy().to_string();
                 self.status_message = Some(format!("Pasted image: {}", path_str));
                 self.image_paths.push(path_str);
+            }
+            ClipboardContent::Text(text) if editor_focused => {
+                self.prompt_text.push_str(&text);
+                self.status_message = Some("Pasted text into prompt".to_string());
+                self.history_cursor = None;
             }
             ClipboardContent::Text(text) => {
                 self.status_message = Some(format!("Pasted path: {}", text));
@@ -906,17 +912,45 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_ctrl_v_with_text_adds_text_as_path() {
+    fn prompt_input_ctrl_v_text_in_editor_inserts_into_prompt() {
+        let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_text("hello world"));
+        assert!(
+            screen
+                .focus_ring
+                .is_focused(PromptInputScreen::PROMPT_EDITOR_PANE)
+        );
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "hello world");
+        assert!(screen.image_paths.is_empty());
+        assert!(screen.status_message.unwrap().contains("Pasted text"));
+    }
+
+    #[test]
+    fn prompt_input_ctrl_v_text_in_editor_appends_to_existing_prompt() {
+        let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_text(" world"));
+        screen.prompt_text = "hello".to_string();
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "hello world");
+    }
+
+    #[test]
+    fn prompt_input_ctrl_v_text_in_image_list_adds_as_path() {
         let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_text(
             "/home/user/screenshot.png",
         ));
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
-        assert_eq!(action, ScreenAction::None);
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        assert!(
+            screen
+                .focus_ring
+                .is_focused(PromptInputScreen::IMAGE_LIST_PANE)
+        );
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(
             screen.image_paths,
             vec!["/home/user/screenshot.png".to_string()]
         );
         assert!(screen.status_message.unwrap().contains("Pasted path"));
+        assert_eq!(screen.prompt_text, "");
     }
 
     #[test]
@@ -928,10 +962,9 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_ctrl_v_works_from_prompt_editor_focus() {
+    fn prompt_input_ctrl_v_image_from_editor_focus_adds_to_attachments() {
         let mut screen =
-            PromptInputScreen::with_clipboard(MockClipboard::with_text("/tmp/shot.png"));
-        // Default focus is PromptEditor — Ctrl+V should still work
+            PromptInputScreen::with_clipboard(MockClipboard::with_image("/tmp/shot.png"));
         assert!(
             screen
                 .focus_ring
@@ -939,18 +972,28 @@ mod tests {
         );
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(screen.image_paths, vec!["/tmp/shot.png".to_string()]);
+        assert_eq!(screen.prompt_text, "");
     }
 
     #[test]
-    fn prompt_input_ctrl_v_appends_to_existing_images() {
+    fn prompt_input_ctrl_v_text_in_image_list_appends_to_existing() {
         let mut screen =
             PromptInputScreen::with_clipboard(MockClipboard::with_text("/tmp/new.png"));
         screen.image_paths = vec!["/tmp/existing.png".to_string()];
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(
             screen.image_paths,
             vec!["/tmp/existing.png".to_string(), "/tmp/new.png".to_string()]
         );
+    }
+
+    #[test]
+    fn prompt_input_ctrl_v_text_in_editor_resets_history_cursor() {
+        let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_text("pasted"));
+        screen.history_cursor = Some(2);
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert!(screen.history_cursor.is_none());
     }
 
     // --- Group 12: Clipboard unavailability (WSL / headless — issue #235) ---
@@ -1050,9 +1093,25 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_normal_text_still_works_after_unavailable_variant_added() {
+    fn clipboard_normal_text_in_editor_still_works_after_unavailable_variant_added() {
+        let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_text("pasted text"));
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "pasted text");
+        assert!(screen.image_paths.is_empty());
+        assert!(
+            screen
+                .status_message
+                .as_deref()
+                .unwrap()
+                .contains("Pasted text")
+        );
+    }
+
+    #[test]
+    fn clipboard_normal_text_in_image_list_still_works_after_unavailable_variant_added() {
         let mut screen =
             PromptInputScreen::with_clipboard(MockClipboard::with_text("/tmp/file.png"));
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(screen.image_paths, vec!["/tmp/file.png".to_string()]);
         assert!(
@@ -1164,11 +1223,11 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_ctrl_v_does_not_affect_prompt_text() {
+    fn prompt_input_ctrl_v_text_in_editor_appends_to_prompt() {
         let mut screen =
             PromptInputScreen::with_clipboard(MockClipboard::with_text("/tmp/img.png"));
-        screen.prompt_text = "my prompt".to_string();
+        screen.prompt_text = "my prompt ".to_string();
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "my prompt");
+        assert_eq!(screen.prompt_text, "my prompt /tmp/img.png");
     }
 }
