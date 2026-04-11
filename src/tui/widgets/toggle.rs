@@ -35,7 +35,11 @@ impl Toggle {
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
-        let indicator = if self.value { "[x]" } else { "[ ]" };
+        let indicator = if crate::tui::icons::use_nerd_font() {
+            if self.value { "\u{f46c}" } else { "\u{f096}" } // nf checkbox / empty_checkbox
+        } else {
+            if self.value { "[x]" } else { "[ ]" }
+        };
         let check_color = if self.value {
             theme.accent_success
         } else {
