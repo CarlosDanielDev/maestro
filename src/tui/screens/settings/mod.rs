@@ -695,7 +695,8 @@ impl SettingsScreen {
             if let Some(WidgetKind::Dropdown(w)) = fields.get(1).map(|f| &f.widget) {
                 self.config.tui.theme.preset = match w.selected {
                     0 => crate::tui::theme::ThemePreset::Dark,
-                    _ => crate::tui::theme::ThemePreset::Light,
+                    1 => crate::tui::theme::ThemePreset::Light,
+                    _ => crate::tui::theme::ThemePreset::Retro,
                 };
             }
         }
