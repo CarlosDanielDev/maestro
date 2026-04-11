@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Gauge, Paragraph, Wrap},
 };
 
 /// Minimum dimensions for a single session cell.
@@ -308,6 +308,16 @@ impl PanelView {
     }
 }
 
+fn panel_border_type(is_selected: bool, has_conflict: bool) -> BorderType {
+    if has_conflict {
+        BorderType::Double
+    } else if is_selected {
+        BorderType::Thick
+    } else {
+        BorderType::Plain
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_single_panel(
     f: &mut Frame,
@@ -364,10 +374,18 @@ fn draw_single_panel(
         Style::default().fg(status_color)
     };
 
+    let border_type = panel_border_type(is_selected, has_conflict);
+    let display_title = if is_selected && !has_conflict {
+        format!("▸{}", title)
+    } else {
+        title
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(border_type)
         .border_style(border_style)
-        .title(title);
+        .title(display_title);
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -590,5 +608,39 @@ mod tests {
         s.selected_col = 1; // index 3
         s.clamp(&layout, 2); // only 2 sessions
         assert!(s.selected_index(&layout) < 2);
+    }
+
+    // --- Panel selection indicator (#257) ---
+
+    #[test]
+    fn panel_border_type_selected_no_conflict_returns_thick() {
+        assert_eq!(
+            panel_border_type(true, false),
+            ratatui::widgets::BorderType::Thick,
+        );
+    }
+
+    #[test]
+    fn panel_border_type_not_selected_no_conflict_returns_plain() {
+        assert_eq!(
+            panel_border_type(false, false),
+            ratatui::widgets::BorderType::Plain,
+        );
+    }
+
+    #[test]
+    fn panel_border_type_not_selected_with_conflict_returns_double() {
+        assert_eq!(
+            panel_border_type(false, true),
+            ratatui::widgets::BorderType::Double,
+        );
+    }
+
+    #[test]
+    fn panel_border_type_selected_with_conflict_returns_double() {
+        assert_eq!(
+            panel_border_type(true, true),
+            ratatui::widgets::BorderType::Double,
+        );
     }
 }

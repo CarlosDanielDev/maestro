@@ -89,6 +89,33 @@ gh issue close <issue-number>
 gh pr checks <pr-number> 2>/dev/null || echo "No checks configured or still running"
 ```
 
+### Step 6.5: Update Milestone Dependency Graph (MANDATORY)
+
+After closing each issue, update the milestone's dependency graph to mark it with ✅.
+
+1. **Fetch the issue's milestone:**
+```bash
+gh issue view <issue-number> --json milestone --jq '.milestone.number'
+```
+
+2. **If the issue has a milestone**, fetch its current description:
+```bash
+gh api repos/<owner>/<repo>/milestones/<milestone-number> --jq '.description'
+```
+
+3. **Update the issue entry** in the dependency graph from `• #<issue-number>` to `• ✅ #<issue-number>`.
+
+4. **If all issues in a level are now ✅**, mark the level header as `(COMPLETED ✅)`.
+
+5. **Update the `Sequence:` line** to reflect completed levels with `✅(LN)`.
+
+6. **PATCH the milestone:**
+```bash
+gh api repos/<owner>/<repo>/milestones/<milestone-number> -X PATCH -f description="<updated-description>"
+```
+
+**This step is NON-NEGOTIABLE.** Every closed issue MUST be reflected in the milestone graph.
+
 ### Step 7: Summary
 
 Print a final summary:

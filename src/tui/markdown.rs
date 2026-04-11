@@ -126,6 +126,49 @@ impl<'t> MarkdownRenderer<'t> {
         }
     }
 
+    fn wrap_and_push_text(&mut self, text: &str, style: Style) {
+        if self.width == 0 || self.in_code_block || self.in_heading {
+            self.active_spans.push(Span::styled(text.to_owned(), style));
+            return;
+        }
+
+        let current_width: usize = self
+            .active_spans
+            .iter()
+            .map(|s| s.content.chars().count())
+            .sum();
+        let max_width = self.width as usize;
+
+        let mut line_buf = String::new();
+        let mut line_len = current_width;
+
+        for word in text.split(' ') {
+            let word_len = word.chars().count();
+            let sep_len = if line_len > 0 { 1 } else { 0 };
+
+            if line_len + sep_len + word_len > max_width && line_len > current_width {
+                if !line_buf.is_empty() {
+                    self.active_spans
+                        .push(Span::styled(std::mem::take(&mut line_buf), style));
+                }
+                self.flush_line();
+                line_buf.push_str(word);
+                line_len = word_len;
+            } else {
+                if !line_buf.is_empty() {
+                    line_buf.push(' ');
+                    line_len += 1;
+                }
+                line_buf.push_str(word);
+                line_len += word_len;
+            }
+        }
+
+        if !line_buf.is_empty() {
+            self.active_spans.push(Span::styled(line_buf, style));
+        }
+    }
+
     fn list_indent(&self) -> String {
         let depth = self.list_stack.len();
         if depth > 1 {
@@ -329,8 +372,7 @@ impl<'t> MarkdownRenderer<'t> {
                         }
                     }
                     let style = self.current_style();
-                    self.active_spans
-                        .push(Span::styled(text.into_string(), style));
+                    self.wrap_and_push_text(&text.into_string(), style);
                 }
             }
 
@@ -863,6 +905,123 @@ mod tests {
             elapsed.as_millis() < 500,
             "highlighting 200 lines took {}ms (expected <500ms debug, <50ms release)",
             elapsed.as_millis()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Group 5 — Word-wrapping at narrow widths (#256)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn long_paragraph_wraps_into_multiple_lines_at_narrow_width() {
+        let input = "This is a very long paragraph that must wrap at narrow width.";
+        let wide = render_markdown(input, &theme(), 80);
+        let narrow = render_markdown(input, &theme(), 20);
+
+        let wide_content_lines = wide
+            .lines
+            .iter()
+            .filter(|l| l.spans.iter().any(|s| !s.content.trim().is_empty()))
+            .count();
+        let narrow_content_lines = narrow
+            .lines
+            .iter()
+            .filter(|l| l.spans.iter().any(|s| !s.content.trim().is_empty()))
+            .count();
+
+        assert!(
+            narrow_content_lines > wide_content_lines,
+            "expected more lines at width=20 ({}) than at width=80 ({})",
+            narrow_content_lines,
+            wide_content_lines
+        );
+    }
+
+    #[test]
+    fn list_item_with_long_text_wraps_at_narrow_width() {
+        let input = "- This is a very long list item that definitely exceeds twenty characters";
+        let wide = render_markdown(input, &theme(), 80);
+        let narrow = render_markdown(input, &theme(), 20);
+
+        let wide_content_lines = wide
+            .lines
+            .iter()
+            .filter(|l| l.spans.iter().any(|s| !s.content.trim().is_empty()))
+            .count();
+        let narrow_content_lines = narrow
+            .lines
+            .iter()
+            .filter(|l| l.spans.iter().any(|s| !s.content.trim().is_empty()))
+            .count();
+
+        assert!(
+            narrow_content_lines > wide_content_lines,
+            "expected list item to wrap at width=20: narrow={} lines, wide={} lines",
+            narrow_content_lines,
+            wide_content_lines
+        );
+    }
+
+    #[test]
+    fn code_block_does_not_wrap_at_narrow_width() {
+        let input = "```\nlet very_long_variable_name = some_function_call(argument_one, argument_two);\n```";
+        let wide = render_markdown(input, &theme(), 80);
+        let narrow = render_markdown(input, &theme(), 20);
+
+        let wide_code_lines = wide
+            .lines
+            .iter()
+            .filter(|l| {
+                l.spans
+                    .iter()
+                    .any(|s| s.content.contains("very_long_variable_name"))
+            })
+            .count();
+        let narrow_code_lines = narrow
+            .lines
+            .iter()
+            .filter(|l| {
+                l.spans
+                    .iter()
+                    .any(|s| s.content.contains("very_long_variable_name"))
+            })
+            .count();
+
+        assert_eq!(wide_code_lines, 1);
+        assert_eq!(
+            narrow_code_lines, 1,
+            "code block must NOT be wrapped at narrow width"
+        );
+    }
+
+    #[test]
+    fn heading_does_not_wrap_at_narrow_width() {
+        let input = "## A Very Long Heading That Exceeds Twenty Characters Easily";
+        let wide = render_markdown(input, &theme(), 80);
+        let narrow = render_markdown(input, &theme(), 20);
+
+        let wide_heading_lines = wide
+            .lines
+            .iter()
+            .filter(|l| {
+                l.spans
+                    .iter()
+                    .any(|s| s.content.contains("Very Long Heading"))
+            })
+            .count();
+        let narrow_heading_lines = narrow
+            .lines
+            .iter()
+            .filter(|l| {
+                l.spans
+                    .iter()
+                    .any(|s| s.content.contains("Very Long Heading"))
+            })
+            .count();
+
+        assert_eq!(
+            wide_heading_lines, narrow_heading_lines,
+            "heading line count must be the same at width=80 and width=20"
         );
     }
 
