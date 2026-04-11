@@ -68,6 +68,7 @@ impl WidgetKind {
         }
     }
 
+    #[allow(dead_code)] // Reason: widget label accessor — standard API surface
     pub fn label(&self) -> &str {
         match self {
             Self::Toggle(w) => &w.label,

@@ -31,6 +31,7 @@ impl QueueConfirmationScreen {
     /// Create a new queue confirmation screen from issue data and a conflict report.
     ///
     /// `issues` provides display data (title) and file scope for re-validation on removal.
+    #[allow(dead_code)] // Reason: queue confirmation screen — to be wired into queue flow
     pub fn new(
         issues: Vec<IssueWithFiles>,
         titles: &std::collections::HashMap<u64, String>,
@@ -68,6 +69,7 @@ impl QueueConfirmationScreen {
     }
 
     /// Returns the current conflict report.
+    #[allow(dead_code)] // Reason: conflict report accessor — to be used in queue UI rendering
     pub fn conflict_report(&self) -> &ConflictReport {
         &self.conflict_report
     }

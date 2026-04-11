@@ -1,6 +1,7 @@
-#![allow(dead_code)]
 use anyhow::Result;
 use std::process::Command;
+
+use crate::util::validate_branch_name;
 
 /// Configuration for the review pipeline.
 #[derive(Debug, Clone)]
@@ -20,6 +21,7 @@ impl ReviewDispatcher {
     }
 
     /// Check if review dispatch is enabled.
+    #[allow(dead_code)] // Reason: review dispatch toggle — to be used in PR creation flow
     pub fn is_enabled(&self) -> bool {
         self.config.enabled
     }
@@ -45,6 +47,8 @@ impl ReviewDispatcher {
         branch: &str,
         reviewer_name: Option<&str>,
     ) -> Result<ReviewResult> {
+        validate_branch_name(branch)?;
+
         let command = command
             .replace("{pr_number}", &pr_number.to_string())
             .replace("{branch}", branch);
@@ -167,5 +171,32 @@ mod tests {
             ReviewDispatcher::run_review_command("true", 1, "main", Some("claude")).unwrap();
         assert!(result.success);
         assert_eq!(result.reviewer_name, Some("claude".into()));
+    }
+
+    #[test]
+    fn dispatch_rejects_branch_with_spaces() {
+        let dispatcher = ReviewDispatcher::new(ReviewConfig {
+            enabled: true,
+            command: "echo {branch}".into(),
+        });
+        assert!(dispatcher.dispatch(1, "feat branch").is_err());
+    }
+
+    #[test]
+    fn dispatch_rejects_branch_with_semicolons() {
+        let dispatcher = ReviewDispatcher::new(ReviewConfig {
+            enabled: true,
+            command: "echo {branch}".into(),
+        });
+        assert!(dispatcher.dispatch(1, "main;rm -rf /").is_err());
+    }
+
+    #[test]
+    fn dispatch_rejects_branch_with_double_dots() {
+        let dispatcher = ReviewDispatcher::new(ReviewConfig {
+            enabled: true,
+            command: "echo {branch}".into(),
+        });
+        assert!(dispatcher.dispatch(1, "../../etc").is_err());
     }
 }

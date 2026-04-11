@@ -80,6 +80,7 @@ impl PromptHistoryStore {
         &self.entries
     }
 
+    #[allow(dead_code)] // Reason: collection length — standard API surface
     pub fn len(&self) -> usize {
         self.entries.len()
     }

@@ -55,8 +55,14 @@ impl PluginRunner {
             let mut cmd = Command::new("sh");
             cmd.args(["-c", &plugin.run]);
 
-            // Inject environment variables from context
+            // Defense-in-depth: re-validate env vars at execution time.
+            // HookContext::with_var() validates at insertion, but ctx.vars
+            // is a public HashMap that can be mutated directly.
             for (key, value) in &ctx.vars {
+                if let Err(e) = crate::util::validate_env_var_name(key) {
+                    tracing::warn!("Skipping unsafe env var {}: {}", key, e);
+                    continue;
+                }
                 cmd.env(key, value);
             }
 
@@ -182,5 +188,33 @@ mod tests {
         let results = runner.fire(HookPoint::SessionCompleted, &ctx).await;
         assert_eq!(results.len(), 1);
         assert!(!results[0].success);
+    }
+
+    #[tokio::test]
+    async fn fire_rejects_non_maestro_env_vars() {
+        let plugins = vec![make_plugin("env-test", "session_started", "echo $PATH")];
+        let runner = PluginRunner::new(plugins, 5);
+        let mut ctx = HookContext::new();
+        // Manually inject a dangerous env var (bypassing with_var validation)
+        ctx.vars.insert("PATH".into(), "/evil".into());
+        ctx.vars
+            .insert("MAESTRO_SESSION_ID".into(), "safe-id".into());
+        let results = runner.fire(HookPoint::SessionStarted, &ctx).await;
+        assert_eq!(results.len(), 1);
+        // The plugin should NOT have received PATH=/evil
+        // (it gets the system PATH instead)
+        assert!(!results[0].output.contains("/evil"));
+    }
+
+    #[test]
+    fn hook_context_with_var_rejects_non_maestro() {
+        let ctx = HookContext::new().with_var("PATH", "/evil");
+        assert!(!ctx.vars.contains_key("PATH"));
+    }
+
+    #[test]
+    fn hook_context_with_var_accepts_maestro_prefix() {
+        let ctx = HookContext::new().with_var("MAESTRO_CUSTOM", "value");
+        assert_eq!(ctx.vars.get("MAESTRO_CUSTOM").unwrap(), "value");
     }
 }

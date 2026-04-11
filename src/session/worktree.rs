@@ -1,6 +1,7 @@
-#![allow(dead_code)]
 use anyhow::Result;
 use std::path::PathBuf;
+
+use crate::util::validate_slug;
 
 /// Trait for managing git worktrees. Mockable in tests.
 pub trait WorktreeManager: Send {
@@ -12,6 +13,7 @@ pub trait WorktreeManager: Send {
     fn remove(&self, slug: &str) -> Result<()>;
 
     /// Check if a worktree exists for the given slug.
+    #[allow(dead_code)] // Reason: worktree existence check — used in session orchestration
     fn exists(&self, slug: &str) -> bool;
 }
 
@@ -40,6 +42,7 @@ impl GitWorktreeManager {
 
 impl WorktreeManager for GitWorktreeManager {
     fn create(&self, slug: &str) -> Result<PathBuf> {
+        validate_slug(slug)?;
         let path = self.worktree_path(slug);
         let branch = self.branch_name(slug);
 
@@ -81,6 +84,7 @@ impl WorktreeManager for GitWorktreeManager {
     }
 
     fn remove(&self, slug: &str) -> Result<()> {
+        validate_slug(slug)?;
         let path = self.worktree_path(slug);
         let output = std::process::Command::new("git")
             .arg("worktree")
@@ -98,16 +102,21 @@ impl WorktreeManager for GitWorktreeManager {
     }
 
     fn exists(&self, slug: &str) -> bool {
+        if validate_slug(slug).is_err() {
+            return false;
+        }
         self.worktree_path(slug).exists()
     }
 }
 
 /// Mock worktree manager for testing.
+#[allow(dead_code)] // Reason: test mock — used in integration tests
 pub struct MockWorktreeManager {
     created: std::sync::Mutex<Vec<String>>,
     fail_create: std::sync::Mutex<bool>,
 }
 
+#[allow(dead_code)] // Reason: test mock API — used in integration tests
 impl MockWorktreeManager {
     pub fn new() -> Self {
         Self {
@@ -127,6 +136,7 @@ impl MockWorktreeManager {
 
 impl WorktreeManager for MockWorktreeManager {
     fn create(&self, slug: &str) -> Result<PathBuf> {
+        validate_slug(slug)?;
         if *self.fail_create.lock().unwrap() {
             anyhow::bail!("mock: create error");
         }
@@ -212,5 +222,29 @@ mod tests {
         mock.create("b").unwrap();
         let slugs = mock.created_slugs();
         assert_eq!(slugs, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn create_rejects_path_traversal() {
+        let mock = MockWorktreeManager::new();
+        assert!(mock.create("../../../etc").is_err());
+    }
+
+    #[test]
+    fn create_rejects_slashes() {
+        let mock = MockWorktreeManager::new();
+        assert!(mock.create("foo/bar").is_err());
+    }
+
+    #[test]
+    fn create_rejects_empty_slug() {
+        let mock = MockWorktreeManager::new();
+        assert!(mock.create("").is_err());
+    }
+
+    #[test]
+    fn exists_returns_false_for_invalid_slug() {
+        let mock = MockWorktreeManager::new();
+        assert!(!mock.exists("../escape"));
     }
 }

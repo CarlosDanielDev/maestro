@@ -89,6 +89,7 @@ pub enum ScreenAction {
     /// Launch a sequential queue execution from confirmed queue.
     LaunchQueue(Vec<SessionConfig>),
     /// Launch a conflict-fix session for a PR with merge conflicts.
+    #[allow(dead_code)] // Reason: conflict fix flow — to be wired into PR merge screen
     LaunchConflictFix(ConflictFixConfig),
     /// Retry a hollow-completed session by ID.
     RetryHollow(uuid::Uuid),

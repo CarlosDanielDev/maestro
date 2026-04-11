@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use super::parser::parse_stream_line;
 use super::types::{Session, SessionStatus, StreamEvent};
 use anyhow::{Context, Result};
@@ -34,6 +33,7 @@ pub struct ManagedSession {
 }
 
 impl ManagedSession {
+    #[allow(dead_code)] // Reason: constructor for managed session — used by session pool
     pub fn new(session: Session) -> Self {
         Self {
             session,

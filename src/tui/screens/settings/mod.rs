@@ -501,6 +501,7 @@ impl SettingsScreen {
         &self.fields_per_tab[self.active_tab]
     }
 
+    #[allow(dead_code)] // Reason: mutable field access for inline editing
     fn current_fields_mut(&mut self) -> &mut [SettingsField] {
         &mut self.fields_per_tab[self.active_tab]
     }
