@@ -110,6 +110,33 @@ impl ChangelogData {
         items.sort_by_key(|(prio, _)| *prio);
         items.into_iter().take(max).map(|(_, item)| item).collect()
     }
+
+    pub fn highlights_with_category(
+        &self,
+        version: &str,
+        max: usize,
+    ) -> Vec<(ChangeCategory, &ChangeItem)> {
+        let Some(entry) = self.entries.iter().find(|e| e.version == version) else {
+            return vec![];
+        };
+
+        let mut items: Vec<(u8, ChangeCategory, &ChangeItem)> = entry
+            .sections
+            .iter()
+            .flat_map(|s| {
+                let prio = s.category.priority();
+                let cat = s.category;
+                s.items.iter().map(move |item| (prio, cat, item))
+            })
+            .collect();
+
+        items.sort_by_key(|(prio, _, _)| *prio);
+        items
+            .into_iter()
+            .take(max)
+            .map(|(_, cat, item)| (cat, item))
+            .collect()
+    }
 }
 
 pub fn changelog() -> &'static ChangelogData {
@@ -191,6 +218,25 @@ mod tests {
         let data = ChangelogData::parse(fixture_highlights());
         let result = data.highlights("9.9.9", 5);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn highlights_with_category_returns_category_and_item() {
+        let data = ChangelogData::parse(fixture_highlights());
+        let result = data.highlights_with_category("1.0.0", 10);
+        assert_eq!(result.len(), 6);
+        assert_eq!(result[0].0, ChangeCategory::Added);
+        assert!(result[0].1.text.starts_with("Item A"));
+        assert_eq!(result[3].0, ChangeCategory::Fixed);
+        assert!(result[3].1.text.starts_with("Item F"));
+        assert_eq!(result[5].0, ChangeCategory::Changed);
+    }
+
+    #[test]
+    fn highlights_with_category_respects_max() {
+        let data = ChangelogData::parse(fixture_highlights());
+        let result = data.highlights_with_category("1.0.0", 2);
+        assert_eq!(result.len(), 2);
     }
 
     #[test]

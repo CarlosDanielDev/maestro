@@ -475,7 +475,8 @@ async fn event_loop(
                                 | app::TuiMode::Settings
                                 | app::TuiMode::SessionSwitcher
                                 | app::TuiMode::AdaptWizard
-                                | app::TuiMode::PrReview => app::TuiMode::Overview,
+                                | app::TuiMode::PrReview
+                                | app::TuiMode::ReleaseNotes => app::TuiMode::Overview,
                             };
                         }
                         (KeyCode::Esc, _) => {

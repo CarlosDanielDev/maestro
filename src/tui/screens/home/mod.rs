@@ -128,6 +128,10 @@ impl KeymapProvider for HomeScreen {
                         description: "Review PRs",
                     },
                     KeyBinding {
+                        key: "n",
+                        description: "Release Notes",
+                    },
+                    KeyBinding {
                         key: "R",
                         description: "Refresh Suggestions",
                     },
@@ -158,6 +162,7 @@ impl Screen for HomeScreen {
                 KeyCode::Char('m') => return ScreenAction::Push(TuiMode::MilestoneView),
                 KeyCode::Char('r') => return ScreenAction::Push(TuiMode::PromptInput),
                 KeyCode::Char('a') => return ScreenAction::Push(TuiMode::AdaptWizard),
+                KeyCode::Char('n') => return ScreenAction::Push(TuiMode::ReleaseNotes),
                 KeyCode::Char('p') => return ScreenAction::Push(TuiMode::PrReview),
                 KeyCode::Char('R') => return ScreenAction::RefreshSuggestions,
                 KeyCode::Char('s') => return ScreenAction::Push(TuiMode::Overview),
@@ -856,5 +861,33 @@ mod tests {
         screen.loading_suggestions = true;
         screen.set_suggestions(vec![]);
         assert!(!screen.loading_suggestions);
+    }
+
+    // --- Issue #238: What's New / Release Notes keybinding ---
+
+    #[test]
+    fn home_key_n_returns_push_release_notes() {
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        let action = screen.handle_input(&key_event(KeyCode::Char('n')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Push(TuiMode::ReleaseNotes));
+    }
+
+    #[test]
+    fn home_key_n_works_from_suggestions_pane() {
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        focus_suggestions(&mut screen);
+        let action = screen.handle_input(&key_event(KeyCode::Char('n')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Push(TuiMode::ReleaseNotes));
+    }
+
+    #[test]
+    fn home_keybindings_contains_release_notes() {
+        let screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        let groups = screen.keybindings();
+        let all_bindings: Vec<&str> = groups
+            .iter()
+            .flat_map(|g| g.bindings.iter().map(|b| b.key))
+            .collect();
+        assert!(all_bindings.contains(&"n"));
     }
 }

@@ -30,6 +30,7 @@ pub enum TuiMode {
     SessionSwitcher,
     AdaptWizard,
     PrReview,
+    ReleaseNotes,
 }
 
 /// Payload for suggestion data fetched from GitHub.
