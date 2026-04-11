@@ -3,10 +3,9 @@ source: src/tui/snapshot_tests/overview.rs
 expression: terminal.backend()
 ---
 "┏▸ #42 — Add login flow ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-"┃▶ RUNNING 2m30s                                                                                                       ┃"
+"┃ RUNNING 2m30s                                                                                                       ┃"
 "┃$0.12  0 files                                                                                                        ┃"
-"┃█████████████████████████████████████████                                                                             ┃"
-"┃█████████████████████████████████████████              ctx: 35%                                                       ┃"
+"┃ctx: [▓▓▓▓░░░░░░] 35%                                                                                                 ┃"
 "┃> _ Writing tests                                                                                                     ┃"
 "┃First paragraph with boldtext.                                                                                        ┃"
 "┃                                                                                                                      ┃"
@@ -15,6 +14,7 @@ expression: terminal.backend()
 "┃Third paragraph.                                                                                                      ┃"
 "┃                                                                                                                      ┃"
 "┃Fourth paragraph.                                                                                                     ┃"
+"┃                                                                                                                      ┃"
 "┃                                                                                                                      ┃"
 "┃                                                                                                                      ┃"
 "┃                                                                                                                      ┃"

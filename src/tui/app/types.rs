@@ -33,6 +33,7 @@ pub enum TuiMode {
     ReleaseNotes,
     LogViewer(uuid::Uuid),
     ConfirmKill(uuid::Uuid),
+    SessionSummary,
 }
 
 /// Per-session ephemeral UI state (not persisted).
@@ -136,6 +137,30 @@ impl CompletionSummaryData {
 
     pub fn has_conflict_suggestions(&self) -> bool {
         !self.suggestions.is_empty()
+    }
+}
+
+/// State for the on-demand session summary page ([S] keybinding).
+#[derive(Debug, Clone, Default)]
+pub struct SessionSummaryState {
+    pub scroll_offset: u16,
+    pub selected_index: usize,
+    pub expanded: std::collections::HashSet<uuid::Uuid>,
+}
+
+impl SessionSummaryState {
+    pub fn toggle_expand(&mut self, id: uuid::Uuid) {
+        if !self.expanded.remove(&id) {
+            self.expanded.insert(id);
+        }
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+    }
+
+    pub fn scroll_down(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_add(1);
     }
 }
 

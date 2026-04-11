@@ -9,8 +9,10 @@ pub mod help;
 pub mod log_viewer;
 pub mod markdown;
 pub mod navigation;
+pub mod icons;
 pub mod panels;
 mod screen_dispatch;
+pub mod session_summary;
 pub mod screens;
 pub mod session_switcher;
 pub mod spinner;
@@ -401,6 +403,55 @@ async fn event_loop(
                         continue;
                     }
 
+                    // Handle SessionSummary input
+                    if app.tui_mode == app::TuiMode::SessionSummary {
+                        match (key.code, key.modifiers) {
+                            (KeyCode::Esc, _) => {
+                                app.session_summary_state = None;
+                                app.tui_mode = app::TuiMode::Overview;
+                            }
+                            (KeyCode::Char('q'), _)
+                            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                                app.running = false;
+                                return Ok(());
+                            }
+                            (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+                                if let Some(state) = app.session_summary_state.as_mut() {
+                                    if state.selected_index > 0 {
+                                        state.selected_index -= 1;
+                                    }
+                                    state.scroll_up();
+                                }
+                            }
+                            (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+                                let max_idx = app.completion_summary.as_ref()
+                                    .map(|s| s.sessions.len().saturating_sub(1))
+                                    .unwrap_or(0);
+                                if let Some(state) = app.session_summary_state.as_mut() {
+                                    if state.selected_index < max_idx {
+                                        state.selected_index += 1;
+                                    }
+                                    state.scroll_down();
+                                }
+                            }
+                            (KeyCode::Enter, _) => {
+                                let session_id = app.completion_summary.as_ref().and_then(|s| {
+                                    let idx = app.session_summary_state.as_ref()
+                                        .map(|st| st.selected_index)
+                                        .unwrap_or(0);
+                                    s.sessions.get(idx).map(|sl| sl.session_id)
+                                });
+                                if let (Some(id), Some(state)) =
+                                    (session_id, app.session_summary_state.as_mut())
+                                {
+                                    state.toggle_expand(id);
+                                }
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     // Handle LogViewer input
                     if let app::TuiMode::LogViewer(id) = app.tui_mode {
                         match (key.code, key.modifiers) {
@@ -518,6 +569,13 @@ async fn event_loop(
                         (KeyCode::Char('t'), _) => {
                             app.tui_mode = app::TuiMode::TokenDashboard;
                         }
+                        (KeyCode::Char('S'), _) => {
+                            let summary = app.build_completion_summary();
+                            app.completion_summary = Some(summary);
+                            app.session_summary_state =
+                                Some(crate::tui::app::types::SessionSummaryState::default());
+                            app.tui_mode = app::TuiMode::SessionSummary;
+                        }
                         (KeyCode::Tab, _) => {
                             app.tui_mode = match app.tui_mode {
                                 app::TuiMode::Overview => app::TuiMode::DependencyGraph,
@@ -542,7 +600,8 @@ async fn event_loop(
                                 | app::TuiMode::PrReview
                                 | app::TuiMode::ReleaseNotes
                                 | app::TuiMode::LogViewer(_)
-                                | app::TuiMode::ConfirmKill(_) => app::TuiMode::Overview,
+                                | app::TuiMode::ConfirmKill(_)
+                                | app::TuiMode::SessionSummary => app::TuiMode::Overview,
                             };
                         }
                         (KeyCode::Esc, _) => {
@@ -621,11 +680,12 @@ async fn event_loop(
                                 term_size.width,
                                 term_size.height,
                             );
+                            let total_sessions = app.pool.total_count();
                             match key.code {
                                 KeyCode::Up => app.panel_view.grid_state.move_up(),
-                                KeyCode::Down => app.panel_view.grid_state.move_down(&layout),
+                                KeyCode::Down => app.panel_view.grid_state.move_down(&layout, total_sessions),
                                 KeyCode::Left => app.panel_view.grid_state.move_left(),
-                                KeyCode::Right => app.panel_view.grid_state.move_right(&layout),
+                                KeyCode::Right => app.panel_view.grid_state.move_right(&layout, total_sessions),
                                 KeyCode::Char('[') => app.panel_view.grid_state.prev_page(&layout),
                                 KeyCode::Char(']') => app.panel_view.grid_state.next_page(&layout),
                                 _ => {}
