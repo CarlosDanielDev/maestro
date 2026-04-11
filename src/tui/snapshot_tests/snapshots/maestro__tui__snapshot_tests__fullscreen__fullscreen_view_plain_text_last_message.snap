@@ -3,7 +3,7 @@ source: src/tui/snapshot_tests/fullscreen.rs
 expression: terminal.backend()
 ---
 "┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
-"│ ▶ RUNNING   #99 — Add login flow  model: claude-opus-4-5  mode: orchestrator                                         │"
+"│  RUNNING   #99 — Add login flow  model: claude-opus-4-5  mode: orchestrator                                         │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
 "┌ Agent Output ────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
 "│Running tests, please wait...                                                                                         │"

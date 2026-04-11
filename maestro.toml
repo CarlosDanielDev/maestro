@@ -1,41 +1,30 @@
+plugins = []
+
 [project]
 repo = "CarlosDanielDev/maestro"
 base_branch = "main"
 
 [sessions]
-max_concurrent = 3
+max_concurrent = 4
 stall_timeout_secs = 300
 default_model = "opus"
 default_mode = "orchestrator"
-permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
-allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
-# guardrail_prompt = "..."              # Custom guardrail injected into every session prompt
-                                        # If unset, auto-detected from project language (Rust/TS/Python/Go)
+permission_mode = "bypassPermissions"
+allowed_tools = []
+max_retries = 2
+retry_cooldown_secs = 60
+hollow_max_retries = 1
+max_prompt_history = 100
 
 [sessions.context_overflow]
-overflow_threshold_pct = 70             # Context % at which auto-fork triggers
-auto_fork = true                        # Whether to auto-fork on overflow
-commit_prompt_pct = 50                  # Context % at which to prompt a commit
-max_fork_depth = 5                      # Maximum fork chain depth
+overflow_threshold_pct = 70
+auto_fork = true
+commit_prompt_pct = 50
+max_fork_depth = 5
 
-[budget]
-per_session_usd = 5.0
-total_usd = 50.0
-alert_threshold_pct = 80
-
-[github]
-issue_filter_labels = ["maestro:ready"]
-auto_pr = true
-
-[notifications]
-desktop = true
-slack = false
-# slack_webhook_url = "https://hooks.slack.com/services/T.../B.../xxx"
-# slack_rate_limit_per_min = 10
-
-[models]
-# Model routing rules: label pattern -> model name. First match wins.
-# routing = { "priority:P0" = "opus", "type:docs" = "haiku" }
+[sessions.conflict]
+enabled = true
+policy = "warn"
 
 [sessions.completion_gates]
 enabled = true
@@ -55,23 +44,66 @@ name = "test"
 run = "cargo test"
 required = true
 
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+
+[github]
+issue_filter_labels = ["maestro:ready"]
+auto_pr = true
+cache_ttl_secs = 300
+auto_merge = false
+merge_method = "squash"
+
+[notifications]
+desktop = true
+slack = false
+slack_rate_limit_per_min = 10
+
+[provider]
+kind = "github"
+issue_filter_labels = ["maestro:ready"]
+auto_pr = true
+auto_merge = false
+merge_method = "squash"
+cache_ttl_secs = 300
+
+[models.routing]
+
 [gates]
 enabled = true
 test_command = "cargo test"
+ci_poll_interval_secs = 30
+ci_max_wait_secs = 1800
+
+[gates.ci_auto_fix]
+enabled = true
+max_retries = 3
 
 [review]
-enabled = false
+enabled = true
 command = "gh pr review {pr_number} --comment --body 'Automated review by Maestro'"
-auto_approve = false
+reviewers = []
+
+[concurrency]
+heavy_task_labels = []
+heavy_task_limit = 2
+
+[monitoring]
+work_tick_interval_secs = 10
+
+[modes]
 
 [tui.theme]
-preset = "dark"
+preset = "retro"
+
+[tui.theme.overrides]
+
+[tui.layout]
+mode = "horizontal"
+density = "compact"
+preview_ratio = 65
+activity_log_height = 20
 
 [flags]
-# Feature flag overrides. Uncomment to enable/disable.
-# continuous_mode = true   # default: true
-# auto_fork = true         # default: true
-# ci_auto_fix = false      # default: false
-# review_council = false   # experimental — disabled by default
-# model_routing = false    # experimental — disabled by default
-# context_overflow = false # default: false

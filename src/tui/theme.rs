@@ -632,11 +632,25 @@ impl Theme {
     }
 
     /// Gauge color by percentage (0.0 - 1.0 scale, where values are pre-multiplied by 100).
-    /// Matches the existing threshold logic in panels.rs.
+    #[allow(dead_code)] // Reason: kept for 3-tier gauge use in other widgets; tested
     pub fn gauge_color(&self, pct: f64) -> Color {
         if pct > 70.0 {
             self.gauge_high
         } else if pct > 40.0 {
+            self.gauge_medium
+        } else {
+            self.gauge_low
+        }
+    }
+
+    /// Compact gauge color with 4-tier thresholds for the retro context indicator.
+    /// green < 50%, yellow 50-70%, orange 70-85%, red > 85%
+    pub fn compact_gauge_color(&self, pct: f64) -> Color {
+        if pct > 85.0 {
+            self.gauge_high
+        } else if pct > 70.0 {
+            Color::Rgb(255, 165, 0) // orange
+        } else if pct > 50.0 {
             self.gauge_medium
         } else {
             self.gauge_low
@@ -883,6 +897,60 @@ mod tests {
     #[test]
     fn budget_color_at_hundred_does_not_panic() {
         assert_ne!(Theme::dark().budget_color(100), Color::Reset);
+    }
+
+    // --- Theme::compact_gauge_color (#266) ---
+
+    #[test]
+    fn compact_gauge_color_zero_percent_is_green() {
+        assert_eq!(Theme::dark().compact_gauge_color(0.0), Color::Green);
+    }
+
+    #[test]
+    fn compact_gauge_color_below_50_is_green() {
+        assert_eq!(Theme::dark().compact_gauge_color(49.9), Color::Green);
+    }
+
+    #[test]
+    fn compact_gauge_color_exactly_50_is_green() {
+        // 50.0 is NOT > 50, so it's green (<=50 tier)
+        assert_eq!(Theme::dark().compact_gauge_color(50.0), Color::Green);
+    }
+
+    #[test]
+    fn compact_gauge_color_above_50_is_yellow() {
+        assert_eq!(Theme::dark().compact_gauge_color(50.1), Color::Yellow);
+    }
+
+    #[test]
+    fn compact_gauge_color_at_70_is_yellow() {
+        assert_eq!(Theme::dark().compact_gauge_color(70.0), Color::Yellow);
+    }
+
+    #[test]
+    fn compact_gauge_color_above_70_is_orange() {
+        assert_eq!(
+            Theme::dark().compact_gauge_color(70.1),
+            Color::Rgb(255, 165, 0),
+        );
+    }
+
+    #[test]
+    fn compact_gauge_color_at_85_is_orange() {
+        assert_eq!(
+            Theme::dark().compact_gauge_color(85.0),
+            Color::Rgb(255, 165, 0),
+        );
+    }
+
+    #[test]
+    fn compact_gauge_color_above_85_is_red() {
+        assert_eq!(Theme::dark().compact_gauge_color(85.1), Color::Red);
+    }
+
+    #[test]
+    fn compact_gauge_color_100_percent_is_red() {
+        assert_eq!(Theme::dark().compact_gauge_color(100.0), Color::Red);
     }
 
     // --- SerializableColor serde ---

@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Gauge, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
 
 /// Minimum dimensions for a single session cell.
@@ -118,9 +118,14 @@ impl GridState {
         self.selected_col = self.selected_col.saturating_sub(1);
     }
 
-    pub fn move_right(&mut self, layout: &GridLayout) {
+    pub fn move_right(&mut self, layout: &GridLayout, total_sessions: usize) {
         if self.selected_col + 1 < layout.cols {
-            self.selected_col += 1;
+            let candidate_idx = self.current_page * layout.sessions_per_page
+                + self.selected_row * layout.cols
+                + (self.selected_col + 1);
+            if candidate_idx < total_sessions {
+                self.selected_col += 1;
+            }
         }
     }
 
@@ -128,9 +133,14 @@ impl GridState {
         self.selected_row = self.selected_row.saturating_sub(1);
     }
 
-    pub fn move_down(&mut self, layout: &GridLayout) {
+    pub fn move_down(&mut self, layout: &GridLayout, total_sessions: usize) {
         if self.selected_row + 1 < layout.rows {
-            self.selected_row += 1;
+            let candidate_idx = self.current_page * layout.sessions_per_page
+                + (self.selected_row + 1) * layout.cols
+                + self.selected_col;
+            if candidate_idx < total_sessions {
+                self.selected_row += 1;
+            }
         }
     }
 
@@ -395,7 +405,7 @@ fn draw_single_panel(
         .constraints([
             Constraint::Length(1), // status + elapsed
             Constraint::Length(1), // cost + files
-            Constraint::Length(2), // context gauge
+            Constraint::Length(1), // context gauge (compact)
             Constraint::Length(1), // current activity
             Constraint::Min(1),    // last message (scrollable)
         ])
@@ -437,19 +447,19 @@ fn draw_single_panel(
     ]);
     f.render_widget(Paragraph::new(cost_line), chunks[1]);
 
-    // Context gauge
+    // Context gauge (compact single-line)
     let ctx_pct = (session.context_pct * 100.0).min(100.0);
-    let gauge_color = theme.gauge_color(ctx_pct);
-    let gauge_label = if ctx_pct > 70.0 {
-        format!("ctx: {:.0}% OVERFLOW", ctx_pct)
-    } else {
-        format!("ctx: {:.0}%", ctx_pct)
-    };
-    let gauge = Gauge::default()
-        .gauge_style(Style::default().fg(gauge_color))
-        .label(gauge_label)
-        .percent(ctx_pct as u16);
-    f.render_widget(gauge, chunks[2]);
+    let gauge_color = theme.compact_gauge_color(ctx_pct);
+    let bar_width: usize = 10;
+    let (filled, empty) = compact_gauge_bar_counts(ctx_pct, bar_width);
+    let bar = format!(
+        "ctx: [{}{}] {:.0}%",
+        "\u{2593}".repeat(filled), // ▓
+        "\u{2591}".repeat(empty),  // ░
+        ctx_pct,
+    );
+    let gauge_line = Line::from(Span::styled(bar, Style::default().fg(gauge_color)));
+    f.render_widget(Paragraph::new(gauge_line), chunks[2]);
 
     // Current activity (phase-aware animation)
     let activity_text = if session.is_hollow_completion {
@@ -491,6 +501,14 @@ fn draw_single_panel(
         .wrap(Wrap { trim: true })
         .scroll((scroll, 0));
     f.render_widget(msg, chunks[4]);
+}
+
+/// Returns (filled_count, empty_count) for a compact gauge bar.
+pub(crate) fn compact_gauge_bar_counts(pct: f64, bar_width: usize) -> (usize, usize) {
+    let filled = ((pct / 100.0) * bar_width as f64).round() as usize;
+    let filled = filled.min(bar_width);
+    let empty = bar_width - filled;
+    (filled, empty)
 }
 
 #[cfg(test)]
@@ -553,7 +571,7 @@ mod tests {
         };
         let mut s = GridState::new();
         s.selected_col = 2;
-        s.move_right(&layout);
+        s.move_right(&layout, 6);
         assert_eq!(s.selected_col, 2);
     }
 
@@ -642,5 +660,164 @@ mod tests {
             panel_border_type(true, true),
             ratatui::widgets::BorderType::Double,
         );
+    }
+
+    // --- Grid navigation bounds (#264) ---
+
+    #[test]
+    fn move_down_blocked_when_target_cell_has_no_session() {
+        let layout = GridLayout {
+            cols: 3,
+            rows: 3,
+            total_pages: 1,
+            sessions_per_page: 9,
+        };
+        let mut s = GridState::new();
+        s.selected_row = 1;
+        s.selected_col = 2; // index 5
+        s.move_down(&layout, 7);
+        assert_eq!(
+            s.selected_row, 1,
+            "move_down must be a no-op when target index >= total_sessions"
+        );
+    }
+
+    #[test]
+    fn move_down_allowed_when_target_cell_has_session() {
+        let layout = GridLayout {
+            cols: 3,
+            rows: 3,
+            total_pages: 1,
+            sessions_per_page: 9,
+        };
+        let mut s = GridState::new();
+        s.selected_row = 0;
+        s.selected_col = 1;
+        s.move_down(&layout, 7);
+        assert_eq!(s.selected_row, 1);
+    }
+
+    #[test]
+    fn move_right_blocked_at_end_of_partial_row() {
+        let layout = GridLayout {
+            cols: 3,
+            rows: 3,
+            total_pages: 1,
+            sessions_per_page: 9,
+        };
+        let mut s = GridState::new();
+        s.selected_row = 2;
+        s.selected_col = 0; // index 6 — the last session
+        s.move_right(&layout, 7);
+        assert_eq!(
+            s.selected_col, 0,
+            "move_right must be a no-op when target index >= total_sessions"
+        );
+    }
+
+    #[test]
+    fn move_right_allowed_when_target_cell_has_session() {
+        let layout = GridLayout {
+            cols: 3,
+            rows: 3,
+            total_pages: 1,
+            sessions_per_page: 9,
+        };
+        let mut s = GridState::new();
+        s.selected_row = 0;
+        s.selected_col = 1;
+        s.move_right(&layout, 7);
+        assert_eq!(s.selected_col, 2);
+    }
+
+    #[test]
+    fn move_right_full_grid_works_normally() {
+        let layout = GridLayout {
+            cols: 3,
+            rows: 3,
+            total_pages: 1,
+            sessions_per_page: 9,
+        };
+        let mut s = GridState::new();
+        s.selected_row = 1;
+        s.selected_col = 0;
+        s.move_right(&layout, 9);
+        assert_eq!(s.selected_col, 1);
+    }
+
+    #[test]
+    fn move_down_full_grid_works_normally() {
+        let layout = GridLayout {
+            cols: 3,
+            rows: 3,
+            total_pages: 1,
+            sessions_per_page: 9,
+        };
+        let mut s = GridState::new();
+        s.selected_row = 0;
+        s.selected_col = 0;
+        s.move_down(&layout, 9);
+        assert_eq!(s.selected_row, 1);
+    }
+
+    #[test]
+    fn move_up_regression_still_works() {
+        let mut s = GridState::new();
+        s.selected_row = 1;
+        s.move_up();
+        assert_eq!(s.selected_row, 0);
+        s.move_up();
+        assert_eq!(s.selected_row, 0);
+    }
+
+    #[test]
+    fn move_left_regression_still_works() {
+        let mut s = GridState::new();
+        s.selected_col = 1;
+        s.move_left();
+        assert_eq!(s.selected_col, 0);
+        s.move_left();
+        assert_eq!(s.selected_col, 0);
+    }
+
+    // --- Compact gauge bar (#266) ---
+
+    #[test]
+    fn compact_gauge_bar_0_percent_all_empty() {
+        let (filled, empty) = compact_gauge_bar_counts(0.0, 10);
+        assert_eq!(filled, 0);
+        assert_eq!(empty, 10);
+    }
+
+    #[test]
+    fn compact_gauge_bar_50_percent_half_filled() {
+        let (filled, empty) = compact_gauge_bar_counts(50.0, 10);
+        assert_eq!(filled, 5);
+        assert_eq!(empty, 5);
+    }
+
+    #[test]
+    fn compact_gauge_bar_100_percent_all_filled() {
+        let (filled, empty) = compact_gauge_bar_counts(100.0, 10);
+        assert_eq!(filled, 10);
+        assert_eq!(empty, 0);
+    }
+
+    #[test]
+    fn compact_gauge_bar_35_percent() {
+        let (filled, empty) = compact_gauge_bar_counts(35.0, 10);
+        assert_eq!(filled + empty, 10);
+    }
+
+    #[test]
+    fn compact_gauge_bar_filled_plus_empty_always_equals_bar_width() {
+        for pct in [0.0_f64, 10.0, 33.3, 50.0, 66.6, 85.0, 99.9, 100.0] {
+            let (filled, empty) = compact_gauge_bar_counts(pct, 10);
+            assert_eq!(
+                filled + empty,
+                10,
+                "filled+empty must equal bar_width=10 at pct={pct}"
+            );
+        }
     }
 }

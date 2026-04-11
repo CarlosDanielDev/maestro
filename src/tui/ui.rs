@@ -276,6 +276,17 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::SessionSummary => {
+            if let Some(ref summary) = app.completion_summary {
+                crate::tui::session_summary::draw_session_summary(
+                    f,
+                    summary,
+                    app.session_summary_state.as_ref(),
+                    chunks[1],
+                    &theme,
+                );
+            }
+        }
     }
 
     // Conditionally split activity area for CI monitor
@@ -558,6 +569,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::ReleaseNotes => "Release Notes",
         TuiMode::LogViewer(_) => "Logs",
         TuiMode::ConfirmKill(_) => "Confirm Kill",
+        TuiMode::SessionSummary => "Summary",
     };
 
     // Get selected session status for context-aware dimming
@@ -598,6 +610,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("ismiss "),
         Span::styled("[l]", keybind_style(theme, ctx.logs_active)),
         Span::raw("ogs "),
+        Span::styled("[S]", Style::default().fg(theme.keybind_key)),
+        Span::raw("ummary "),
         Span::styled("[↑↓]", Style::default().fg(theme.keybind_key)),
         Span::raw("scroll"),
     ]);
