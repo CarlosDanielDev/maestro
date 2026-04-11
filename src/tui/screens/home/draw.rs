@@ -271,11 +271,20 @@ impl HomeScreen {
         let mut lines = Vec::new();
         for (idx, suggestion) in self.suggestions.iter().enumerate() {
             let is_selected = is_focused && idx == self.selected_suggestion;
-            let icon = match &suggestion.kind {
-                SuggestionKind::ReadyIssues { .. } => ">>",
-                SuggestionKind::MilestoneProgress { .. } => "~~",
-                SuggestionKind::IdleSessions => "--",
-                SuggestionKind::FailedIssues { .. } => "!!",
+            let icon = if crate::tui::icons::use_nerd_font() {
+                match &suggestion.kind {
+                    SuggestionKind::ReadyIssues { .. } => "\u{f41b}", // nf issue_opened
+                    SuggestionKind::MilestoneProgress { .. } => "\u{f43e}", // nf milestone
+                    SuggestionKind::IdleSessions => "\u{f04c}",       // nf pause
+                    SuggestionKind::FailedIssues { .. } => "\u{f467}", // nf x_circle
+                }
+            } else {
+                match &suggestion.kind {
+                    SuggestionKind::ReadyIssues { .. } => ">>",
+                    SuggestionKind::MilestoneProgress { .. } => "~~",
+                    SuggestionKind::IdleSessions => "--",
+                    SuggestionKind::FailedIssues { .. } => "!!",
+                }
             };
             let color = match &suggestion.kind {
                 SuggestionKind::ReadyIssues { .. } => theme.accent_success,
@@ -325,11 +334,20 @@ impl HomeScreen {
                     "errored" => Style::default().fg(theme.accent_error),
                     _ => Style::default().fg(theme.text_secondary),
                 };
-                let symbol = match s.status.as_str() {
-                    "completed" => "✅",
-                    "running" => "▶ ",
-                    "errored" => "❌",
-                    _ => "⏳",
+                let symbol = if crate::tui::icons::use_nerd_font() {
+                    match s.status.as_str() {
+                        "completed" => "\u{f42e}", // nf check_circle
+                        "running" => "\u{f40a}",   // nf play
+                        "errored" => "\u{f467}",   // nf x_circle
+                        _ => "\u{f251}",           // nf hourglass
+                    }
+                } else {
+                    match s.status.as_str() {
+                        "completed" => "[+]",
+                        "running" => "[>]",
+                        "errored" => "[X]",
+                        _ => "[Q]",
+                    }
                 };
                 Line::from(vec![
                     Span::styled(format!("  {} ", symbol), status_style),

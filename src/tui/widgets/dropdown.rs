@@ -88,9 +88,23 @@ impl Dropdown {
 
         let line = Line::from(vec![
             Span::styled(format!("{}: ", self.label), label_style),
-            Span::styled("< ", Style::default().fg(arrow_color)),
+            Span::styled(
+                if crate::tui::icons::use_nerd_font() {
+                    "\u{f104} "
+                } else {
+                    "< "
+                }, // nf chevron_left
+                Style::default().fg(arrow_color),
+            ),
             Span::styled(value, value_style),
-            Span::styled(" >", Style::default().fg(arrow_color)),
+            Span::styled(
+                if crate::tui::icons::use_nerd_font() {
+                    " \u{f105}"
+                } else {
+                    " >"
+                }, // nf chevron_right
+                Style::default().fg(arrow_color),
+            ),
         ]);
         f.render_widget(Paragraph::new(line), area);
     }
