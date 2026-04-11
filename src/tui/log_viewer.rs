@@ -38,6 +38,7 @@ impl LogViewerCache {
         &self.content
     }
 
+    #[allow(dead_code)] // Reason: public API for cache invalidation on session events
     pub fn invalidate(&mut self) {
         self.session_id = None;
     }

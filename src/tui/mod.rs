@@ -496,12 +496,11 @@ async fn event_loop(
                         }
                         (KeyCode::Char('k'), _) => {
                             let selected = app.panel_view.selected_index();
-                            if let Some(id) = app.pool.session_id_at_index(selected) {
-                                if let Some(session) = app.pool.get_session(id) {
-                                    if !session.status.is_terminal() {
-                                        app.tui_mode = app::TuiMode::ConfirmKill(id);
-                                    }
-                                }
+                            if let Some(id) = app.pool.session_id_at_index(selected)
+                                && let Some(session) = app.pool.get_session(id)
+                                && !session.status.is_terminal()
+                            {
+                                app.tui_mode = app::TuiMode::ConfirmKill(id);
                             }
                         }
                         (KeyCode::Char('K'), _) => {
@@ -555,13 +554,13 @@ async fn event_loop(
                         }
                         (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
                             let selected = app.panel_view.selected_index();
-                            if let Some(id) = app.pool.session_id_at_index(selected) {
-                                if let Some(session) = app.pool.get_session(id) {
-                                    if session.status.is_terminal() {
-                                        app.toggle_session_summary(id);
-                                    } else {
-                                        app.tui_mode = app::TuiMode::Detail(id);
-                                    }
+                            if let Some(id) = app.pool.session_id_at_index(selected)
+                                && let Some(session) = app.pool.get_session(id)
+                            {
+                                if session.status.is_terminal() {
+                                    app.toggle_session_summary(id);
+                                } else {
+                                    app.tui_mode = app::TuiMode::Detail(id);
                                 }
                             }
                         }
@@ -578,14 +577,11 @@ async fn event_loop(
                         }
                         (KeyCode::Char('d'), _) => {
                             let selected = app.panel_view.selected_index();
-                            if let Some(id) = app.pool.session_id_at_index(selected) {
-                                if let Some(session) = app.pool.get_session(id) {
-                                    if session.status.is_terminal() {
-                                        app.dismiss_session(id);
-                                    } else {
-                                        app.notifications.dismiss_latest();
-                                    }
-                                }
+                            if let Some(id) = app.pool.session_id_at_index(selected)
+                                && let Some(session) = app.pool.get_session(id)
+                                && session.status.is_terminal()
+                            {
+                                app.dismiss_session(id);
                             } else {
                                 app.notifications.dismiss_latest();
                             }

@@ -142,7 +142,7 @@ impl GridState {
         }
     }
 
-    pub fn prev_page(&mut self, layout: &GridLayout) {
+    pub fn prev_page(&mut self, _layout: &GridLayout) {
         if self.current_page > 0 {
             self.current_page -= 1;
             self.selected_col = 0;
@@ -151,6 +151,7 @@ impl GridState {
     }
 
     /// Clamp selection to valid bounds after layout change or session removal.
+    #[allow(dead_code)] // Reason: public API for grid state management after session changes
     pub fn clamp(&mut self, layout: &GridLayout, total_sessions: usize) {
         if layout.total_pages > 0 && self.current_page >= layout.total_pages {
             self.current_page = layout.total_pages - 1;

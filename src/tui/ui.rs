@@ -602,7 +602,7 @@ fn draw_confirm_kill_overlay(
     let label = app
         .pool
         .get_session(session_id)
-        .map(|s| crate::tui::app::helpers::session_label(s))
+        .map(crate::tui::app::helpers::session_label)
         .unwrap_or_else(|| format!("S-{}", &session_id.to_string()[..8]));
 
     let lines = vec![
