@@ -7,6 +7,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- Prompt history navigation — Up/Down arrows in the Compose Prompt screen now correctly recall previous prompts; history is always injected when creating `PromptInputScreen` (#232)
+- Self-update asset resolution — asset names now use Rust target triples (e.g. `aarch64-apple-darwin`), checksum file resolves to `sha256sums.txt`, and `.tar.gz` archives are correctly extracted using the `flate2` + `tar` pipeline (#233)
+
 ## [0.10.0] - 2026-04-10
 
 ### Added

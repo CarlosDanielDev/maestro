@@ -243,7 +243,9 @@ async fn event_loop(
                                 app.tui_mode = app::TuiMode::IssueBrowser;
                             }
                             (KeyCode::Char('r'), _) => {
-                                app.prompt_input_screen = Some(screens::PromptInputScreen::new());
+                                app.prompt_input_screen = Some(
+                                    app::helpers::create_prompt_input_screen(&app.prompt_history),
+                                );
                                 app.tui_mode = app::TuiMode::PromptInput;
                             }
                             (KeyCode::Char('l'), _) => {
