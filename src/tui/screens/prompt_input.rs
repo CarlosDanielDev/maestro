@@ -314,9 +314,9 @@ impl PromptInputScreen {
                 f,
                 chunks[2],
                 &[
-                    ("Enter", "Submit"),
-                    ("Shift+Enter", "New line"),
-                    ("\u{2191}/\u{2193}", "History"),
+                    ("Ctrl+S", "Submit"),
+                    ("Enter", "New line"),
+                    ("Alt+\u{2191}/\u{2193}", "History"),
                     ("Ctrl+V", "Paste"),
                     ("Tab", "Switch"),
                     ("Esc", "Cancel"),
@@ -334,11 +334,11 @@ impl KeymapProvider for PromptInputScreen {
                 title: "Prompt Editor",
                 bindings: vec![
                     KeyBinding {
-                        key: "Enter",
+                        key: "Ctrl+s",
                         description: "Submit prompt",
                     },
                     KeyBinding {
-                        key: "Shift+Enter",
+                        key: "Enter",
                         description: "New line",
                     },
                     KeyBinding {
@@ -435,8 +435,8 @@ impl Screen for PromptInputScreen {
 
             if self.is_prompt_editor_focused() {
                 match (code, modifiers) {
-                    // Enter alone → submit prompt
-                    (KeyCode::Enter, m) if *m == KeyModifiers::NONE => {
+                    // Ctrl+S → submit prompt
+                    (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => {
                         let text = self.editor_text();
                         if !text.trim().is_empty() {
                             return ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -445,35 +445,50 @@ impl Screen for PromptInputScreen {
                             });
                         }
                     }
-                    // Shift+Enter or Alt+Enter → insert newline
+                    // Enter (any modifier) → insert newline
                     (KeyCode::Enter, _) => {
                         self.editor.insert_newline();
                     }
-                    // Alt+Up → history navigation up
-                    (KeyCode::Up, m) if m.contains(KeyModifiers::ALT) => {
-                        if !self.history.is_empty() && self.history_cursor.is_none() {
-                            self.draft_prompt = self.editor_text();
-                            let idx = self.history.len() - 1;
-                            self.history_cursor = Some(idx);
-                            self.set_editor_text(&self.history[idx].clone());
-                        } else if let Some(idx) = self.history_cursor
-                            && idx > 0
-                        {
-                            self.history_cursor = Some(idx - 1);
-                            self.set_editor_text(&self.history[idx - 1].clone());
+                    // Up → history navigation when cursor is on first line
+                    (KeyCode::Up, _) => {
+                        let cursor_row = self.editor.cursor().0;
+                        if cursor_row == 0 {
+                            // On first line — navigate history
+                            if !self.history.is_empty() && self.history_cursor.is_none() {
+                                self.draft_prompt = self.editor_text();
+                                let idx = self.history.len() - 1;
+                                self.history_cursor = Some(idx);
+                                self.set_editor_text(&self.history[idx].clone());
+                            } else if let Some(idx) = self.history_cursor
+                                && idx > 0
+                            {
+                                self.history_cursor = Some(idx - 1);
+                                self.set_editor_text(&self.history[idx - 1].clone());
+                            }
+                        } else {
+                            // Multi-line: move cursor up
+                            self.editor.input(event.clone());
                         }
                     }
-                    // Alt+Down → history navigation down
-                    (KeyCode::Down, m) if m.contains(KeyModifiers::ALT) => {
-                        if let Some(idx) = self.history_cursor {
-                            if idx + 1 < self.history.len() {
-                                self.history_cursor = Some(idx + 1);
-                                self.set_editor_text(&self.history[idx + 1].clone());
-                            } else {
-                                self.history_cursor = None;
-                                let draft = self.draft_prompt.clone();
-                                self.set_editor_text(&draft);
+                    // Down → history navigation when cursor is on last line
+                    (KeyCode::Down, _) => {
+                        let cursor_row = self.editor.cursor().0;
+                        let last_row = self.editor.lines().len().saturating_sub(1);
+                        if cursor_row == last_row {
+                            // On last line — navigate history
+                            if let Some(idx) = self.history_cursor {
+                                if idx + 1 < self.history.len() {
+                                    self.history_cursor = Some(idx + 1);
+                                    self.set_editor_text(&self.history[idx + 1].clone());
+                                } else {
+                                    self.history_cursor = None;
+                                    let draft = self.draft_prompt.clone();
+                                    self.set_editor_text(&draft);
+                                }
                             }
+                        } else {
+                            // Multi-line: move cursor down
+                            self.editor.input(event.clone());
                         }
                     }
                     // All other keys → delegate to TextArea
@@ -646,35 +661,35 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_shift_enter_inserts_newline() {
+    fn prompt_input_enter_inserts_newline() {
         let mut screen = screen_with_prompt("hello");
-        let action = screen.handle_input(&shift_key(KeyCode::Enter), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "hello\n");
         assert_eq!(action, ScreenAction::None);
     }
 
     #[test]
-    fn prompt_input_shift_enter_increases_line_count() {
+    fn prompt_input_enter_increases_line_count() {
         let mut screen = screen_with_prompt("hello");
         let before = screen.editor.lines().len();
-        screen.handle_input(&shift_key(KeyCode::Enter), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         let after = screen.editor.lines().len();
         assert!(
             after > before,
-            "Shift+Enter must increase editor line count: before={}, after={}",
+            "Enter must increase editor line count: before={}, after={}",
             before,
             after
         );
     }
 
     #[test]
-    fn prompt_input_alt_enter_inserts_newline() {
+    fn prompt_input_shift_enter_also_inserts_newline() {
         let mut screen = screen_with_prompt("hello");
-        let action = screen.handle_input(&alt_key(KeyCode::Enter), InputMode::Normal);
+        let action = screen.handle_input(&shift_key(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
         assert!(
             screen.editor.lines().len() >= 2,
-            "Alt+Enter must split the editor into at least 2 lines, got {}",
+            "Shift+Enter must also insert newline, got {} lines",
             screen.editor.lines().len()
         );
     }
@@ -694,12 +709,12 @@ mod tests {
         assert_eq!(action, ScreenAction::None);
     }
 
-    // --- Group 3: Submit (Enter) ---
+    // --- Group 3: Submit (Ctrl+S) ---
 
     #[test]
-    fn prompt_input_enter_with_prompt_returns_launch_prompt_session() {
+    fn prompt_input_ctrl_s_with_prompt_returns_launch_prompt_session() {
         let mut screen = screen_with_prompt("fix the bug");
-        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
         assert_eq!(
             action,
             ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -710,10 +725,10 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_enter_with_prompt_and_images_includes_image_paths() {
+    fn prompt_input_ctrl_s_with_prompt_and_images_includes_image_paths() {
         let mut screen = screen_with_prompt("describe this");
         screen.image_paths = vec!["/tmp/a.png".to_string(), "/tmp/b.png".to_string()];
-        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
         assert_eq!(
             action,
             ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -724,25 +739,17 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_enter_with_empty_prompt_is_rejected() {
+    fn prompt_input_ctrl_s_with_empty_prompt_is_rejected() {
         let mut screen = mock_screen();
-        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        assert_eq!(action, ScreenAction::None);
-    }
-
-    #[test]
-    fn prompt_input_enter_with_whitespace_only_prompt_is_rejected() {
-        let mut screen = screen_with_prompt("   \n  ");
-        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        assert_eq!(action, ScreenAction::None);
-    }
-
-    #[test]
-    fn prompt_input_ctrl_s_is_ignored() {
-        let mut screen = screen_with_prompt("fix the bug");
         let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
-        assert_eq!(screen.prompt_text(), "fix the bug");
+    }
+
+    #[test]
+    fn prompt_input_ctrl_s_with_whitespace_only_prompt_is_rejected() {
+        let mut screen = screen_with_prompt("   \n  ");
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
     }
 
     #[test]
