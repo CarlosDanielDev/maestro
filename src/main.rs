@@ -1,4 +1,6 @@
 mod budget;
+#[allow(dead_code)]
+mod changelog;
 mod cli;
 mod commands;
 mod config;
