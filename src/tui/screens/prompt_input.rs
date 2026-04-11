@@ -12,6 +12,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 /// Result of reading the system clipboard.
 pub enum ClipboardContent {
@@ -21,6 +22,8 @@ pub enum ClipboardContent {
     Text(String),
     /// Clipboard was empty or unreadable.
     Empty,
+    /// Clipboard backend failed to initialise (e.g. no display on WSL).
+    Unavailable,
 }
 
 /// Trait for clipboard access, enabling test mocking.
@@ -28,14 +31,32 @@ pub trait ClipboardProvider: Send {
     fn read(&self) -> ClipboardContent;
 }
 
+/// Caches whether the clipboard backend is available. Once a failure is
+/// recorded, subsequent paste attempts skip `arboard::Clipboard::new()`.
+static CLIPBOARD_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
 /// Production clipboard using arboard.
+///
+/// Wraps clipboard access in `catch_unwind` because `arboard::Clipboard::new()`
+/// can panic on WSL environments without a display server (X11/Wayland).
 pub struct SystemClipboard;
 
 impl ClipboardProvider for SystemClipboard {
     fn read(&self) -> ClipboardContent {
+        let available = CLIPBOARD_AVAILABLE.get_or_init(|| {
+            std::panic::catch_unwind(arboard::Clipboard::new)
+                .ok()
+                .and_then(|r| r.ok())
+                .is_some()
+        });
+
+        if !available {
+            return ClipboardContent::Unavailable;
+        }
+
         let mut clipboard = match arboard::Clipboard::new() {
             Ok(c) => c,
-            Err(_) => return ClipboardContent::Empty,
+            Err(_) => return ClipboardContent::Unavailable,
         };
 
         // Try image first
@@ -140,6 +161,9 @@ impl PromptInputScreen {
             }
             ClipboardContent::Empty => {
                 self.status_message = Some("Clipboard is empty".to_string());
+            }
+            ClipboardContent::Unavailable => {
+                self.status_message = Some("Clipboard not available on this platform".to_string());
             }
         }
     }
@@ -501,6 +525,12 @@ mod tests {
                 content: ClipboardContent::Image(PathBuf::from(path)),
             })
         }
+
+        fn unavailable() -> Box<Self> {
+            Box::new(Self {
+                content: ClipboardContent::Unavailable,
+            })
+        }
     }
 
     impl ClipboardProvider for MockClipboard {
@@ -509,6 +539,7 @@ mod tests {
                 ClipboardContent::Image(p) => ClipboardContent::Image(p.clone()),
                 ClipboardContent::Text(t) => ClipboardContent::Text(t.clone()),
                 ClipboardContent::Empty => ClipboardContent::Empty,
+                ClipboardContent::Unavailable => ClipboardContent::Unavailable,
             }
         }
     }
@@ -922,7 +953,137 @@ mod tests {
         );
     }
 
-    // --- Group 12: Prompt history navigation ---
+    // --- Group 12: Clipboard unavailability (WSL / headless — issue #235) ---
+
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    fn unavailable_screen() -> PromptInputScreen {
+        PromptInputScreen::with_clipboard(MockClipboard::unavailable())
+    }
+
+    struct CountingUnavailableClipboard {
+        read_count: Arc<AtomicUsize>,
+    }
+
+    impl ClipboardProvider for CountingUnavailableClipboard {
+        fn read(&self) -> ClipboardContent {
+            self.read_count.fetch_add(1, Ordering::SeqCst);
+            ClipboardContent::Unavailable
+        }
+    }
+
+    #[test]
+    fn clipboard_unavailable_returns_no_image_paths() {
+        let mut screen = unavailable_screen();
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert!(screen.image_paths.is_empty());
+    }
+
+    #[test]
+    fn clipboard_unavailable_sets_status_message() {
+        let mut screen = unavailable_screen();
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert!(
+            screen
+                .status_message
+                .as_deref()
+                .unwrap()
+                .contains("not available")
+        );
+    }
+
+    #[test]
+    fn clipboard_unavailable_action_is_none() {
+        let mut screen = unavailable_screen();
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+    }
+
+    #[test]
+    fn clipboard_unavailable_multiple_ctrl_v_no_crash() {
+        let mut screen = unavailable_screen();
+        for _ in 0..5 {
+            screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        }
+        assert!(screen.image_paths.is_empty());
+        assert!(screen.status_message.is_some());
+    }
+
+    #[test]
+    fn clipboard_unavailable_status_message_is_stable_across_presses() {
+        let mut screen = unavailable_screen();
+        for _ in 0..3 {
+            screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+            assert!(
+                screen
+                    .status_message
+                    .as_deref()
+                    .unwrap()
+                    .contains("not available")
+            );
+        }
+    }
+
+    #[test]
+    fn clipboard_unavailable_read_count_mock_documents_call_pattern() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let mut screen =
+            PromptInputScreen::with_clipboard(Box::new(CountingUnavailableClipboard {
+                read_count: Arc::clone(&counter),
+            }));
+        for _ in 0..3 {
+            screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        }
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+        assert!(screen.image_paths.is_empty());
+    }
+
+    #[test]
+    fn clipboard_unavailable_does_not_affect_prompt_text() {
+        let mut screen = unavailable_screen();
+        screen.prompt_text = "my prompt".to_string();
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert_eq!(screen.prompt_text, "my prompt");
+    }
+
+    #[test]
+    fn clipboard_normal_text_still_works_after_unavailable_variant_added() {
+        let mut screen =
+            PromptInputScreen::with_clipboard(MockClipboard::with_text("/tmp/file.png"));
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert_eq!(screen.image_paths, vec!["/tmp/file.png".to_string()]);
+        assert!(
+            screen
+                .status_message
+                .as_deref()
+                .unwrap()
+                .contains("Pasted path")
+        );
+    }
+
+    #[test]
+    fn clipboard_normal_image_still_works_after_unavailable_variant_added() {
+        let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_image(
+            "/tmp/maestro-clips/clip-xyz.png",
+        ));
+        screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
+        assert_eq!(
+            screen.image_paths,
+            vec!["/tmp/maestro-clips/clip-xyz.png".to_string()]
+        );
+        assert!(
+            screen
+                .status_message
+                .as_deref()
+                .unwrap()
+                .contains("Pasted image")
+        );
+    }
+
+    // --- Group 13: Prompt history navigation ---
 
     fn screen_with_history(prompts: &[&str]) -> PromptInputScreen {
         let mut s = mock_screen();
