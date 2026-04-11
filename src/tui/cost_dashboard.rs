@@ -2,10 +2,10 @@ use crate::session::types::{Session, SessionStatus};
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Gauge, Paragraph},
 };
 
 /// Draw the cost dashboard view showing spending breakdown.
@@ -60,11 +60,9 @@ fn draw_budget_gauge(
 
     let gauge = Gauge::default()
         .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(color))
-                .title(" Budget ")
-                .title_alignment(Alignment::Center),
+            theme
+                .styled_block("Budget", false)
+                .border_style(Style::default().fg(color)),
         )
         .gauge_style(Style::default().fg(color).bg(theme.gauge_background))
         .ratio(ratio)
@@ -132,9 +130,7 @@ fn draw_summary_stats(
         ),
     ]);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_inactive));
+    let block = theme.styled_block_plain(false);
 
     f.render_widget(Paragraph::new(stats).block(block), area);
 }
@@ -205,13 +201,7 @@ fn draw_session_costs(f: &mut Frame, sessions: &[&Session], area: Rect, theme: &
         ]));
     }
 
-    let paragraph = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border_inactive))
-            .title(" Session Costs ")
-            .title_alignment(Alignment::Center),
-    );
+    let paragraph = Paragraph::new(lines).block(theme.styled_block("Session Costs", false));
 
     f.render_widget(paragraph, area);
 }

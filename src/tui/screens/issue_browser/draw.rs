@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Clear, Paragraph, Wrap},
 };
 
 impl IssueBrowserScreen {
@@ -187,9 +187,8 @@ impl IssueBrowserScreen {
             " Issues ".to_string()
         };
 
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
+        let block = theme
+            .styled_block(&title, false)
             .border_style(Style::default().fg(theme.accent_info));
 
         if self.loading {
@@ -233,8 +232,8 @@ impl IssueBrowserScreen {
 
                 let style = if is_selected {
                     Style::default()
-                        .fg(theme.branding_fg)
-                        .bg(theme.accent_info)
+                        .fg(theme.selection_fg)
+                        .bg(theme.selection_bg)
                         .add_modifier(Modifier::BOLD)
                 } else if is_multi {
                     Style::default().fg(theme.accent_success)
@@ -255,10 +254,7 @@ impl IssueBrowserScreen {
     }
 
     fn draw_preview(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = Block::default()
-            .title(" Preview ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border_inactive));
+        let block = theme.styled_block("Preview", false);
 
         if let Some(&idx) = self.filtered_indices.get(self.selected) {
             let issue = &self.issues[idx];
@@ -314,9 +310,8 @@ impl IssueBrowserScreen {
             format!(" #{} — {} ", number, title)
         };
 
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
+        let block = theme
+            .styled_block(&title, false)
             .border_style(Style::default().fg(theme.accent_info));
 
         let inner = block.inner(overlay_area);
@@ -357,9 +352,7 @@ impl IssueBrowserScreen {
                     ])
                 })
                 .collect();
-            let issue_block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.border_inactive));
+            let issue_block = theme.styled_block_plain(false);
             f.render_widget(Paragraph::new(issue_lines).block(issue_block), chunks[1]);
 
             Self::draw_overlay_text_area(f, chunks[2], overlay, theme);
@@ -421,9 +414,7 @@ impl IssueBrowserScreen {
                 .style(Style::default().fg(theme.text_primary))
                 .wrap(Wrap { trim: false })
         };
-        let text_block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border_inactive));
+        let text_block = theme.styled_block_plain(false);
         f.render_widget(text_content.block(text_block), area);
     }
 }

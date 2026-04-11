@@ -295,6 +295,7 @@ impl ManagedSession {
                     && matches!(tool.as_str(), "Read" | "Edit" | "Write" | "Glob" | "Grep")
                     && !self.session.files_touched.contains(path)
                 {
+                    self.session.files_touched_previous = self.session.files_touched.len();
                     self.session.files_touched.push(path.clone());
                 }
             }
@@ -406,6 +407,7 @@ mod tests {
             last_message: String::new(),
             activity_log: vec![],
             files_touched: vec![],
+            files_touched_previous: 0,
             pid: None,
             issue_title: None,
             retry_count: 0,

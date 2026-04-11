@@ -10,7 +10,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Gauge, Paragraph},
 };
 
 #[derive(Debug, Clone)]
@@ -136,9 +136,8 @@ impl MilestoneScreen {
     }
 
     fn draw_milestone_list(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = Block::default()
-            .title(" Milestones ")
-            .borders(Borders::ALL)
+        let block = theme
+            .styled_block("Milestones", false)
             .border_style(Style::default().fg(theme.status_retrying));
 
         if self.loading {
@@ -181,8 +180,8 @@ impl MilestoneScreen {
 
             let title_style = if is_selected {
                 Style::default()
-                    .fg(theme.branding_fg)
-                    .bg(theme.status_retrying)
+                    .fg(theme.selection_fg)
+                    .bg(theme.selection_bg)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -230,10 +229,7 @@ impl MilestoneScreen {
     }
 
     fn draw_detail(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = Block::default()
-            .title(" Issues ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border_inactive));
+        let block = theme.styled_block("Issues", false);
 
         if let Some(entry) = self.milestones.get(self.selected) {
             if entry.issues.is_empty() {

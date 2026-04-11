@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 /// An entry in the confirmation list, combining queue position with display data.
@@ -92,15 +92,8 @@ impl QueueConfirmationScreen {
     }
 
     fn draw_issue_list(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border_inactive))
-            .title(Span::styled(
-                format!(" Queue ({} issues) ", self.entries.len()),
-                Style::default()
-                    .fg(theme.text_primary)
-                    .add_modifier(Modifier::BOLD),
-            ));
+        let title = format!("Queue ({} issues)", self.entries.len());
+        let block = theme.styled_block(&title, false);
 
         let inner = block.inner(area);
         f.render_widget(block, area);
@@ -174,15 +167,9 @@ impl QueueConfirmationScreen {
             (theme.accent_error, " Conflicts ")
         };
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .title(Span::styled(
-                title,
-                Style::default()
-                    .fg(border_color)
-                    .add_modifier(Modifier::BOLD),
-            ));
+        let block = theme
+            .styled_block(title, false)
+            .border_style(Style::default().fg(border_color));
 
         let inner = block.inner(area);
         f.render_widget(block, area);

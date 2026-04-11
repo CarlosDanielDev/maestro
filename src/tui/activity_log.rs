@@ -5,7 +5,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{List, ListItem, Paragraph},
 };
 
 #[derive(Debug, Clone)]
@@ -128,10 +128,7 @@ impl ActivityLog {
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border_inactive))
-            .title(" Activity Log ");
+        let block = theme.styled_block("Activity Log", false);
 
         let inner_height = area.height.saturating_sub(2) as usize;
         let total = self.entries.len();

@@ -1,4 +1,7 @@
-use ratatui::style::Color;
+use ratatui::layout::Alignment;
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Span;
+use ratatui::widgets::{Block, BorderType, Borders};
 use serde::{Deserialize, Serialize};
 
 use crate::session::types::SessionStatus;
@@ -331,6 +334,9 @@ pub struct ThemeOverrides {
     pub keybind_key: Option<SerializableColor>,
     pub keybind_label_bg: Option<SerializableColor>,
     pub keybind_label_fg: Option<SerializableColor>,
+    pub selection_bg: Option<SerializableColor>,
+    pub selection_fg: Option<SerializableColor>,
+    pub title_accent: Option<SerializableColor>,
 }
 
 // ---------------------------------------------------------------------------
@@ -390,6 +396,13 @@ pub struct Theme {
     pub keybind_key: Color,
     pub keybind_label_bg: Color,
     pub keybind_label_fg: Color,
+
+    // Selection highlighting (#217)
+    pub selection_bg: Color,
+    pub selection_fg: Color,
+
+    // Retro title accent (#215)
+    pub title_accent: Color,
 }
 
 impl Default for Theme {
@@ -437,6 +450,9 @@ impl Theme {
             keybind_key: Color::Yellow,
             keybind_label_bg: Color::DarkGray,
             keybind_label_fg: Color::Black,
+            selection_bg: Color::Cyan,
+            selection_fg: Color::Black,
+            title_accent: Color::Yellow,
         }
     }
 
@@ -478,6 +494,9 @@ impl Theme {
             keybind_key: Color::Blue,
             keybind_label_bg: Color::Gray,
             keybind_label_fg: Color::White,
+            selection_bg: Color::Blue,
+            selection_fg: Color::White,
+            title_accent: Color::Blue,
         }
     }
 
@@ -519,6 +538,9 @@ impl Theme {
             keybind_key: Color::Rgb(255, 175, 0),
             keybind_label_bg: Color::Rgb(0, 40, 10),
             keybind_label_fg: Color::Rgb(0, 255, 65),
+            selection_bg: Color::Rgb(255, 140, 0),
+            selection_fg: Color::Black,
+            title_accent: Color::Rgb(255, 175, 0),
         }
     }
 
@@ -561,6 +583,9 @@ impl Theme {
         apply_override!(keybind_key);
         apply_override!(keybind_label_bg);
         apply_override!(keybind_label_fg);
+        apply_override!(selection_bg);
+        apply_override!(selection_fg);
+        apply_override!(title_accent);
 
         theme
     }
@@ -608,6 +633,9 @@ impl Theme {
             keybind_key,
             keybind_label_bg,
             keybind_label_fg,
+            selection_bg,
+            selection_fg,
+            title_accent,
         );
     }
 
@@ -665,6 +693,45 @@ impl Theme {
         } else {
             self.accent_warning
         }
+    }
+
+    /// Compute the border style for a given focus state.
+    fn border_style(&self, focused: bool) -> Style {
+        let color = if focused {
+            self.border_focused
+        } else {
+            self.border_inactive
+        };
+        let style = Style::default().fg(color);
+        if focused {
+            style.add_modifier(Modifier::BOLD)
+        } else {
+            style
+        }
+    }
+
+    /// Build a standard block with themed double borders and DOS-style centered title.
+    pub fn styled_block<'a>(&self, title: &'a str, focused: bool) -> Block<'a> {
+        let formatted_title = format!("[ {} ]", title.trim());
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Double)
+            .border_style(self.border_style(focused))
+            .title(Span::styled(
+                formatted_title,
+                Style::default()
+                    .fg(self.title_accent)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .title_alignment(Alignment::Center)
+    }
+
+    /// Build a standard block with themed double borders but no title.
+    pub fn styled_block_plain(&self, focused: bool) -> Block<'static> {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Double)
+            .border_style(self.border_style(focused))
     }
 }
 
@@ -1227,5 +1294,83 @@ mod tests {
             "expected Indexed after extended downgrade, got {:?}",
             t.text_primary
         );
+    }
+
+    // --- Issue #217: Selection highlight fields ---
+
+    #[test]
+    fn theme_has_selection_bg_field_not_reset() {
+        assert_ne!(Theme::dark().selection_bg, Color::Reset);
+    }
+
+    #[test]
+    fn theme_has_selection_fg_field_not_reset() {
+        assert_ne!(Theme::dark().selection_fg, Color::Reset);
+    }
+
+    #[test]
+    fn theme_has_title_accent_field_not_reset() {
+        assert_ne!(Theme::dark().title_accent, Color::Reset);
+    }
+
+    #[test]
+    fn retro_preset_selection_bg_is_amber() {
+        assert_eq!(Theme::retro().selection_bg, Color::Rgb(255, 140, 0));
+    }
+
+    #[test]
+    fn retro_preset_selection_fg_is_black() {
+        assert_eq!(Theme::retro().selection_fg, Color::Black);
+    }
+
+    #[test]
+    fn dark_preset_selection_bg_is_cyan() {
+        assert_eq!(Theme::dark().selection_bg, Color::Cyan);
+    }
+
+    #[test]
+    fn dark_preset_selection_fg_is_black() {
+        assert_eq!(Theme::dark().selection_fg, Color::Black);
+    }
+
+    #[test]
+    fn light_preset_selection_bg_is_blue() {
+        assert_eq!(Theme::light().selection_bg, Color::Blue);
+    }
+
+    #[test]
+    fn light_preset_selection_fg_is_white() {
+        assert_eq!(Theme::light().selection_fg, Color::White);
+    }
+
+    #[test]
+    fn from_config_overrides_selection_bg() {
+        let mut overrides = ThemeOverrides::default();
+        overrides.selection_bg = Some(SerializableColor(Color::Magenta));
+        let cfg = ThemeConfig {
+            preset: ThemePreset::Dark,
+            overrides,
+        };
+        assert_eq!(Theme::from_config(&cfg).selection_bg, Color::Magenta);
+    }
+
+    #[test]
+    fn from_config_overrides_selection_fg() {
+        let mut overrides = ThemeOverrides::default();
+        overrides.selection_fg = Some(SerializableColor(Color::LightYellow));
+        let cfg = ThemeConfig {
+            preset: ThemePreset::Dark,
+            overrides,
+        };
+        assert_eq!(Theme::from_config(&cfg).selection_fg, Color::LightYellow);
+    }
+
+    #[test]
+    fn all_presets_selection_fields_are_non_reset() {
+        for theme in [Theme::dark(), Theme::light(), Theme::retro()] {
+            assert_ne!(theme.selection_bg, Color::Reset);
+            assert_ne!(theme.selection_fg, Color::Reset);
+            assert_ne!(theme.title_accent, Color::Reset);
+        }
     }
 }

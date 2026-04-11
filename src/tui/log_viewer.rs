@@ -5,7 +5,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 use uuid::Uuid;
 
@@ -80,10 +80,8 @@ pub fn draw_log_viewer(
         })
         .collect();
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .title_alignment(ratatui::layout::Alignment::Center)
+    let block = theme
+        .styled_block(&title, true)
         .border_style(Style::default().fg(theme.border_active));
 
     let paragraph = Paragraph::new(lines)

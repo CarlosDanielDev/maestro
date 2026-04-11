@@ -121,16 +121,17 @@ impl TextInput {
                 ""
             };
 
+            let input_style = Style::default()
+                .fg(theme.selection_fg)
+                .bg(theme.accent_success);
             let line = Line::from(vec![
                 Span::styled(format!("{}: ", self.label), label_style),
-                Span::styled(before, Style::default().fg(theme.accent_success)),
+                Span::styled(before, input_style),
                 Span::styled(
                     cursor_char.to_string(),
-                    Style::default()
-                        .fg(theme.accent_success)
-                        .add_modifier(Modifier::REVERSED),
+                    input_style.add_modifier(Modifier::REVERSED),
                 ),
-                Span::styled(rest, Style::default().fg(theme.accent_success)),
+                Span::styled(rest, input_style),
             ]);
             f.render_widget(Paragraph::new(line), area);
         } else {

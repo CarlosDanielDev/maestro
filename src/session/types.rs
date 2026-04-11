@@ -226,6 +226,9 @@ pub struct Session {
     pub last_message: String,
     pub activity_log: Vec<ActivityEntry>,
     pub files_touched: Vec<String>,
+    /// Previous file count for delta display in panels.
+    #[serde(default)]
+    pub files_touched_previous: usize,
     pub pid: Option<u32>,
     /// Issue title for display in TUI panels.
     #[serde(default)]
@@ -323,6 +326,7 @@ impl Session {
             last_message: String::new(),
             activity_log: Vec::new(),
             files_touched: Vec::new(),
+            files_touched_previous: 0,
             pid: None,
             issue_title: None,
             retry_count: 0,

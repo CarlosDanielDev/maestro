@@ -132,9 +132,8 @@ impl HomeScreen {
     }
 
     fn draw_warnings(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = Block::default()
-            .title(" Warnings ")
-            .borders(Borders::ALL)
+        let block = theme
+            .styled_block("Warnings", false)
             .border_style(Style::default().fg(theme.accent_warning));
 
         let lines: Vec<Line> = self
@@ -164,10 +163,10 @@ impl HomeScreen {
         items: &[(ChangeCategory, &ChangeItem)],
     ) {
         let version = env!("CARGO_PKG_VERSION");
-        let block = Block::default()
-            .title(format!(" What's New in v{} ", version))
+        let whats_new_title = format!("What's New in v{}", version);
+        let block = theme
+            .styled_block(&whats_new_title, false)
             .title_bottom(Line::from(" Press [n] for full release notes ").centered())
-            .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.accent_info));
 
         let inner_width = area.width.saturating_sub(2) as usize;
@@ -202,15 +201,7 @@ impl HomeScreen {
 
     fn draw_quick_actions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let is_focused = self.is_quick_actions_focused();
-        let border_color = if is_focused {
-            theme.border_active
-        } else {
-            theme.border_inactive
-        };
-        let block = Block::default()
-            .title(" Quick Actions ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color));
+        let block = theme.styled_block("Quick Actions", is_focused);
 
         let selected_style = Style::default()
             .fg(theme.branding_fg)
@@ -242,15 +233,7 @@ impl HomeScreen {
 
     fn draw_suggestions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let is_focused = self.is_suggestions_focused();
-        let border_color = if is_focused {
-            theme.border_active
-        } else {
-            theme.border_inactive
-        };
-        let block = Block::default()
-            .title(" Suggestions ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color));
+        let block = theme.styled_block("Suggestions", is_focused);
 
         if self.loading_suggestions {
             let para = Paragraph::new("  Loading...")
@@ -311,10 +294,7 @@ impl HomeScreen {
     }
 
     fn draw_recent_sessions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = Block::default()
-            .title(" Recent Activity ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border_inactive));
+        let block = theme.styled_block("Recent Activity", false);
 
         if self.recent_sessions.is_empty() {
             let para = Paragraph::new("  No recent sessions")

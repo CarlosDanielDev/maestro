@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 pub fn draw_pr_review_screen(
@@ -42,9 +42,8 @@ pub fn draw_pr_review_screen(
 }
 
 fn draw_loading(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = Block::default()
-        .title(" PR Review ")
-        .borders(Borders::ALL)
+    let block = theme
+        .styled_block("PR Review", false)
         .border_style(Style::default().fg(theme.accent_info));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -82,9 +81,9 @@ fn draw_loading(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Them
 }
 
 fn draw_pr_list(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = Block::default()
-        .title(format!(" Pull Requests ({}) ", screen.prs.len()))
-        .borders(Borders::ALL)
+    let title = format!("Pull Requests ({})", screen.prs.len());
+    let block = theme
+        .styled_block(&title, false)
         .border_style(Style::default().fg(theme.accent_info));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -176,13 +175,9 @@ fn draw_pr_detail(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Th
         None => return,
     };
 
-    let block = Block::default()
-        .title(format!(
-            " PR #{}: {} ",
-            pr.number,
-            sanitize_for_terminal(&pr.title)
-        ))
-        .borders(Borders::ALL)
+    let title = format!("PR #{}: {}", pr.number, sanitize_for_terminal(&pr.title));
+    let block = theme
+        .styled_block(&title, false)
         .border_style(Style::default().fg(theme.accent_info));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -271,9 +266,9 @@ fn draw_submit_review(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme:
         None => return,
     };
 
-    let block = Block::default()
-        .title(format!(" Review PR #{} ", pr.number))
-        .borders(Borders::ALL)
+    let title = format!("Review PR #{}", pr.number);
+    let block = theme
+        .styled_block(&title, false)
         .border_style(Style::default().fg(theme.accent_info));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -331,9 +326,8 @@ fn draw_submit_review(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme:
 }
 
 fn draw_done(f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = Block::default()
-        .title(" PR Review ")
-        .borders(Borders::ALL)
+    let block = theme
+        .styled_block("PR Review", false)
         .border_style(Style::default().fg(theme.accent_success));
     let inner = block.inner(area);
     f.render_widget(block, area);

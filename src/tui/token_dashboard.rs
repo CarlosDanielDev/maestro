@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 /// Format a token count for display (e.g., "245.0k", "1.2M").
@@ -117,10 +117,9 @@ fn draw_aggregate_stats(
         ]),
     ];
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent_info))
-        .title(" Aggregate Token Usage ");
+    let block = theme
+        .styled_block("Aggregate Token Usage", false)
+        .border_style(Style::default().fg(theme.accent_info));
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);
@@ -196,10 +195,7 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
         ]));
     }
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_inactive))
-        .title(" Per-Session Token Breakdown ");
+    let block = theme.styled_block("Per-Session Token Breakdown", false);
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);

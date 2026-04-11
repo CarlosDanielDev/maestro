@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -220,20 +220,7 @@ impl PromptInputScreen {
             .split(area);
 
         // Prompt editor
-        let editor_border_color = if self.is_prompt_editor_focused() {
-            theme.border_active
-        } else {
-            theme.border_inactive
-        };
-        let editor_block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(editor_border_color))
-            .title(Span::styled(
-                " Compose Prompt ",
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD),
-            ));
+        let editor_block = theme.styled_block("Compose Prompt", self.is_prompt_editor_focused());
 
         // Note: we cannot mutate self.editor here since draw takes &self.
         // We create a clone for rendering with the styled block.
@@ -244,18 +231,8 @@ impl PromptInputScreen {
         f.render_widget(&editor_widget, chunks[0]);
 
         // Image list
-        let image_border_color = if self.is_image_list_focused() {
-            theme.border_active
-        } else {
-            theme.border_inactive
-        };
-        let image_block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(image_border_color))
-            .title(Span::styled(
-                format!(" Attachments ({}) ", self.image_paths.len()),
-                Style::default().fg(theme.accent_info),
-            ));
+        let image_title = format!("Attachments ({})", self.image_paths.len());
+        let image_block = theme.styled_block(&image_title, self.is_image_list_focused());
 
         let mut lines: Vec<Line> = Vec::new();
         if self.image_paths.is_empty() && !self.editing_image_path {

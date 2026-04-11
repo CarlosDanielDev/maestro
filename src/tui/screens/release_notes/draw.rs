@@ -7,7 +7,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 pub fn draw_release_notes(
@@ -21,9 +21,8 @@ pub fn draw_release_notes(
         .constraints([Constraint::Min(3), Constraint::Length(1)])
         .split(area);
 
-    let block = Block::default()
-        .title(" Release Notes ")
-        .borders(Borders::ALL)
+    let block = theme
+        .styled_block("Release Notes", false)
         .border_style(Style::default().fg(theme.accent_info));
     let inner = block.inner(chunks[0]);
 

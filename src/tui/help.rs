@@ -3,10 +3,10 @@ use crate::tui::navigation::keymap::{KeyBindingGroup, global_keybindings};
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Clear, Paragraph, Wrap},
 };
 
 /// Draw the help overlay popup centered on the screen.
@@ -60,11 +60,9 @@ pub fn draw_help_overlay(
 
     let paragraph = Paragraph::new(help_text)
         .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.accent_info))
-                .title(" Help ")
-                .title_alignment(Alignment::Center),
+            theme
+                .styled_block("Help", false)
+                .border_style(Style::default().fg(theme.accent_info)),
         )
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0));

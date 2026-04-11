@@ -5,7 +5,7 @@ use crate::tui::spinner;
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
@@ -234,10 +234,7 @@ impl PanelView {
         spinner_tick: usize,
     ) {
         if sessions.is_empty() {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.border_inactive))
-                .title(" No sessions ");
+            let block = theme.styled_block("No sessions", false);
             let msg = Paragraph::new("Waiting for sessions to start…")
                 .style(Style::default().fg(theme.text_secondary))
                 .block(block)
@@ -318,14 +315,8 @@ impl PanelView {
     }
 }
 
-fn panel_border_type(is_selected: bool, has_conflict: bool) -> BorderType {
-    if has_conflict {
-        BorderType::Double
-    } else if is_selected {
-        BorderType::Thick
-    } else {
-        BorderType::Plain
-    }
+fn panel_border_type(_is_selected: bool, _has_conflict: bool) -> BorderType {
+    BorderType::Double
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -385,122 +376,245 @@ fn draw_single_panel(
     };
 
     let border_type = panel_border_type(is_selected, has_conflict);
-    let display_title = if is_selected && !has_conflict {
-        format!("▸{}", title)
-    } else {
-        title
-    };
+    let display_title = format!("[ {} ]", title.trim());
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(border_type)
         .border_style(border_style)
-        .title(display_title);
+        .title(Span::styled(
+            display_title,
+            Style::default()
+                .fg(theme.title_accent)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
 
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // status + elapsed
-            Constraint::Length(1), // cost + files
-            Constraint::Length(1), // context gauge (compact)
-            Constraint::Length(1), // current activity
-            Constraint::Min(1),    // last message (scrollable)
-        ])
-        .split(inner);
+    let compact = inner.height < 10;
 
-    // Status line
-    let mut status_spans = vec![Span::styled(
-        format!("{} {} ", session.status.symbol(), session.status.label()),
-        Style::default()
-            .fg(status_color)
-            .add_modifier(Modifier::BOLD),
-    )];
-    if session.is_hollow_completion {
-        status_spans.push(Span::styled(
-            "HOLLOW ",
+    if compact {
+        // Compact layout: status+cost | context | last message
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // status + elapsed + cost
+                Constraint::Length(1), // context gauge
+                Constraint::Min(1),    // last message
+            ])
+            .split(inner);
+
+        // Compact header: status + elapsed + cost all in one line
+        let header_line = Line::from(vec![
+            Span::styled(
+                format!("{} {} ", session.status.symbol(), session.status.label()),
+                Style::default()
+                    .fg(status_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                session.elapsed_display(),
+                Style::default().fg(theme.text_primary),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!("${:.2}", session.cost_usd),
+                Style::default().fg(theme.accent_warning),
+            ),
+        ]);
+        f.render_widget(Paragraph::new(header_line), chunks[0]);
+
+        // Context gauge
+        let ctx_pct = (session.context_pct * 100.0).min(100.0);
+        let gauge_color = theme.compact_gauge_color(ctx_pct);
+        let bar_width: usize = 10;
+        let (filled, empty) = compact_gauge_bar_counts(ctx_pct, bar_width);
+        let bar = format!(
+            "ctx: [{}{}] {:.0}%",
+            "\u{2593}".repeat(filled),
+            "\u{2591}".repeat(empty),
+            ctx_pct,
+        );
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                bar,
+                Style::default().fg(gauge_color),
+            ))),
+            chunks[1],
+        );
+
+        // Last message
+        let md_text = if session.last_message.is_empty() {
+            ratatui::text::Text::raw("Waiting for output...")
+        } else {
+            render_markdown(
+                &session.last_message,
+                theme,
+                chunks[2].width.saturating_sub(2),
+            )
+        };
+        let msg = Paragraph::new(md_text)
+            .wrap(Wrap { trim: true })
+            .scroll((scroll, 0));
+        f.render_widget(msg, chunks[2]);
+    } else {
+        // Full layout: header | context | token bar | tools | files | activity | last message
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // compact header: status + elapsed + cost
+                Constraint::Length(1), // context gauge
+                Constraint::Length(1), // token usage mini-bar
+                Constraint::Length(1), // files touched with delta
+                Constraint::Length(1), // current activity
+                Constraint::Min(1),    // last message (scrollable)
+            ])
+            .split(inner);
+
+        // Compact header: status + elapsed + cost in one line
+        let mut header_spans = vec![Span::styled(
+            format!("{} {} ", session.status.symbol(), session.status.label()),
             Style::default()
-                .fg(theme.accent_warning)
+                .fg(status_color)
                 .add_modifier(Modifier::BOLD),
+        )];
+        if session.is_hollow_completion {
+            header_spans.push(Span::styled(
+                "HOLLOW ",
+                Style::default()
+                    .fg(theme.accent_warning)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        header_spans.push(Span::styled(
+            session.elapsed_display(),
+            Style::default().fg(theme.text_primary),
         ));
-    }
-    status_spans.push(Span::styled(
-        session.elapsed_display(),
-        Style::default().fg(theme.text_primary),
-    ));
-    let status_line = Line::from(status_spans);
-    f.render_widget(Paragraph::new(status_line), chunks[0]);
-
-    // Cost + file count
-    let cost_line = Line::from(vec![
-        Span::styled(
+        header_spans.push(Span::raw("  "));
+        header_spans.push(Span::styled(
             format!("${:.2}", session.cost_usd),
             Style::default().fg(theme.accent_warning),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!("{} files", session.files_touched.len()),
-            Style::default().fg(theme.text_secondary),
-        ),
-    ]);
-    f.render_widget(Paragraph::new(cost_line), chunks[1]);
+        ));
+        f.render_widget(Paragraph::new(Line::from(header_spans)), chunks[0]);
 
-    // Context gauge (compact single-line)
-    let ctx_pct = (session.context_pct * 100.0).min(100.0);
-    let gauge_color = theme.compact_gauge_color(ctx_pct);
-    let bar_width: usize = 10;
-    let (filled, empty) = compact_gauge_bar_counts(ctx_pct, bar_width);
-    let bar = format!(
-        "ctx: [{}{}] {:.0}%",
-        "\u{2593}".repeat(filled), // ▓
-        "\u{2591}".repeat(empty),  // ░
-        ctx_pct,
-    );
-    let gauge_line = Line::from(Span::styled(bar, Style::default().fg(gauge_color)));
-    f.render_widget(Paragraph::new(gauge_line), chunks[2]);
-
-    // Current activity (phase-aware animation)
-    let activity_text = if session.is_hollow_completion {
-        "> \u{26A0} Session completed without performing any work".to_string()
-    } else {
-        let phase = spinner::animation_phase(
-            session.status,
-            session.is_thinking,
-            &session.current_activity,
+        // Context gauge (compact single-line)
+        let ctx_pct = (session.context_pct * 100.0).min(100.0);
+        let gauge_color = theme.compact_gauge_color(ctx_pct);
+        let bar_width: usize = 10;
+        let (filled, empty) = compact_gauge_bar_counts(ctx_pct, bar_width);
+        let bar = format!(
+            "ctx: [{}{}] {:.0}%",
+            "\u{2593}".repeat(filled),
+            "\u{2591}".repeat(empty),
+            ctx_pct,
         );
-        let thinking_elapsed = session.thinking_started_at.map(|t| t.elapsed());
-        format!(
-            "> {}",
-            spinner::animated_activity(
-                phase,
-                spinner_tick,
-                &session.current_activity,
-                thinking_elapsed
-            )
-        )
-    };
-    let activity = Line::from(Span::styled(
-        activity_text,
-        Style::default().fg(theme.accent_info),
-    ));
-    f.render_widget(Paragraph::new(activity), chunks[3]);
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                bar,
+                Style::default().fg(gauge_color),
+            ))),
+            chunks[1],
+        );
 
-    // Last message (scrollable, rendered as markdown)
-    let md_text = if session.last_message.is_empty() {
-        ratatui::text::Text::raw("Waiting for output...")
-    } else {
-        render_markdown(
-            &session.last_message,
-            theme,
-            chunks[4].width.saturating_sub(2),
-        )
-    };
-    let msg = Paragraph::new(md_text)
-        .wrap(Wrap { trim: true })
-        .scroll((scroll, 0));
-    f.render_widget(msg, chunks[4]);
+        // Token usage mini-bar
+        let usage = &session.token_usage;
+        let (in_r, out_r, cache_r) = token_bar_ratios(
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cache_read_tokens,
+        );
+        let tok_bar_width: usize = 10;
+        let tok_line = if in_r == 0.0 && out_r == 0.0 && cache_r == 0.0 {
+            Line::from(Span::styled(
+                "tok: ---",
+                Style::default().fg(theme.text_muted),
+            ))
+        } else {
+            let in_chars = (in_r * tok_bar_width as f64).round() as usize;
+            let out_chars = (out_r * tok_bar_width as f64).round() as usize;
+            let cache_chars = tok_bar_width.saturating_sub(in_chars + out_chars);
+            Line::from(vec![
+                Span::styled("tok: ", Style::default().fg(theme.text_muted)),
+                Span::styled("I".repeat(in_chars), Style::default().fg(theme.accent_info)),
+                Span::styled(
+                    "O".repeat(out_chars),
+                    Style::default().fg(theme.accent_warning),
+                ),
+                Span::styled(
+                    "C".repeat(cache_chars),
+                    Style::default().fg(theme.accent_success),
+                ),
+            ])
+        };
+        f.render_widget(Paragraph::new(tok_line), chunks[2]);
+
+        // Files touched with delta
+        let file_count = session.files_touched.len();
+        let delta = file_count.saturating_sub(session.files_touched_previous);
+        let delta_str = if delta > 0 {
+            format!(" (+{})", delta)
+        } else {
+            String::new()
+        };
+        let files_line = Line::from(Span::styled(
+            format!("{} files{}", file_count, delta_str),
+            Style::default().fg(theme.text_secondary),
+        ));
+        f.render_widget(Paragraph::new(files_line), chunks[3]);
+
+        // Current activity (phase-aware animation)
+        let activity_text = if session.is_hollow_completion {
+            "> \u{26A0} Session completed without performing any work".to_string()
+        } else {
+            let phase = spinner::animation_phase(
+                session.status,
+                session.is_thinking,
+                &session.current_activity,
+            );
+            let thinking_elapsed = session.thinking_started_at.map(|t| t.elapsed());
+            format!(
+                "> {}",
+                spinner::animated_activity(
+                    phase,
+                    spinner_tick,
+                    &session.current_activity,
+                    thinking_elapsed,
+                )
+            )
+        };
+        let activity = Line::from(Span::styled(
+            activity_text,
+            Style::default().fg(theme.accent_info),
+        ));
+        f.render_widget(Paragraph::new(activity), chunks[4]);
+
+        // Last message (scrollable, rendered as markdown)
+        let md_text = if session.last_message.is_empty() {
+            ratatui::text::Text::raw("Waiting for output...")
+        } else {
+            render_markdown(
+                &session.last_message,
+                theme,
+                chunks[5].width.saturating_sub(2),
+            )
+        };
+        let msg = Paragraph::new(md_text)
+            .wrap(Wrap { trim: true })
+            .scroll((scroll, 0));
+        f.render_widget(msg, chunks[5]);
+    }
+}
+
+/// Returns (input_ratio, output_ratio, cache_ratio) for token usage display.
+pub(crate) fn token_bar_ratios(input: u64, output: u64, cache: u64) -> (f64, f64, f64) {
+    let total = input + output + cache;
+    if total == 0 {
+        return (0.0, 0.0, 0.0);
+    }
+    let t = total as f64;
+    (input as f64 / t, output as f64 / t, cache as f64 / t)
 }
 
 /// Returns (filled_count, empty_count) for a compact gauge bar.
@@ -628,34 +742,22 @@ mod tests {
         assert!(s.selected_index(&layout) < 2);
     }
 
-    // --- Panel selection indicator (#257) ---
+    // --- Panel selection indicator (#215 — all borders now Double) ---
 
     #[test]
-    fn panel_border_type_selected_no_conflict_returns_thick() {
+    fn panel_border_type_always_returns_double() {
         assert_eq!(
             panel_border_type(true, false),
-            ratatui::widgets::BorderType::Thick,
+            ratatui::widgets::BorderType::Double,
         );
-    }
-
-    #[test]
-    fn panel_border_type_not_selected_no_conflict_returns_plain() {
         assert_eq!(
             panel_border_type(false, false),
-            ratatui::widgets::BorderType::Plain,
+            ratatui::widgets::BorderType::Double,
         );
-    }
-
-    #[test]
-    fn panel_border_type_not_selected_with_conflict_returns_double() {
         assert_eq!(
             panel_border_type(false, true),
             ratatui::widgets::BorderType::Double,
         );
-    }
-
-    #[test]
-    fn panel_border_type_selected_with_conflict_returns_double() {
         assert_eq!(
             panel_border_type(true, true),
             ratatui::widgets::BorderType::Double,
@@ -819,5 +921,67 @@ mod tests {
                 "filled+empty must equal bar_width=10 at pct={pct}"
             );
         }
+    }
+
+    // --- Issue #201: Token mini-bar ratio calculations ---
+
+    #[test]
+    fn token_bar_ratios_zero_total_returns_all_zeros() {
+        let (i, o, c) = token_bar_ratios(0, 0, 0);
+        assert_eq!(i, 0.0);
+        assert_eq!(o, 0.0);
+        assert_eq!(c, 0.0);
+    }
+
+    #[test]
+    fn token_bar_ratios_only_input_tokens() {
+        let (i, o, c) = token_bar_ratios(100, 0, 0);
+        assert!((i - 1.0).abs() < 1e-9);
+        assert_eq!(o, 0.0);
+        assert_eq!(c, 0.0);
+    }
+
+    #[test]
+    fn token_bar_ratios_only_output_tokens() {
+        let (i, o, c) = token_bar_ratios(0, 100, 0);
+        assert_eq!(i, 0.0);
+        assert!((o - 1.0).abs() < 1e-9);
+        assert_eq!(c, 0.0);
+    }
+
+    #[test]
+    fn token_bar_ratios_only_cache_tokens() {
+        let (i, o, c) = token_bar_ratios(0, 0, 100);
+        assert_eq!(i, 0.0);
+        assert_eq!(o, 0.0);
+        assert!((c - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn token_bar_ratios_equal_split_is_one_third_each() {
+        let (i, o, c) = token_bar_ratios(100, 100, 100);
+        let third = 1.0_f64 / 3.0;
+        assert!((i - third).abs() < 1e-9, "input ratio {i} != 1/3");
+        assert!((o - third).abs() < 1e-9, "output ratio {o} != 1/3");
+        assert!((c - third).abs() < 1e-9, "cache ratio {c} != 1/3");
+    }
+
+    #[test]
+    fn token_bar_ratios_sum_to_one_for_nonzero_total() {
+        let (i, o, c) = token_bar_ratios(1000, 500, 2000);
+        assert!(
+            (i + o + c - 1.0).abs() < 1e-9,
+            "ratios must sum to 1.0, got {}",
+            i + o + c
+        );
+    }
+
+    #[test]
+    fn token_bar_ratios_large_cache_dominates() {
+        let (_i, _o, c) = token_bar_ratios(100, 50, 9850);
+        assert!(
+            c > 0.97,
+            "cache ratio {c} should dominate when cache tokens >> others"
+        );
     }
 }
