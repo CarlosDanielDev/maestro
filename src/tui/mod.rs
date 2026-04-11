@@ -472,7 +472,8 @@ async fn event_loop(
                                 | app::TuiMode::Sanitize
                                 | app::TuiMode::Settings
                                 | app::TuiMode::SessionSwitcher
-                                | app::TuiMode::AdaptWizard => app::TuiMode::Overview,
+                                | app::TuiMode::AdaptWizard
+                                | app::TuiMode::PrReview => app::TuiMode::Overview,
                             };
                         }
                         (KeyCode::Esc, _) => {
@@ -641,6 +642,26 @@ async fn event_loop(
                         });
 
                     app.pending_session_launches.push(session);
+                }
+                app::TuiCommand::FetchOpenPrs => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result = client.list_open_prs().await;
+                        let _ = tx.send(app::TuiDataEvent::PullRequests(result));
+                    });
+                }
+                app::TuiCommand::SubmitPrReview {
+                    pr_number,
+                    event,
+                    body,
+                } => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result = client.submit_pr_review(pr_number, event, &body).await;
+                        let _ = tx.send(app::TuiDataEvent::PrReviewSubmitted(result));
+                    });
                 }
                 app::TuiCommand::RunAdaptScan(config) => {
                     let tx = app.data_tx.clone();

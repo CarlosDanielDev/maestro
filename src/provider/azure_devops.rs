@@ -364,6 +364,23 @@ impl GitHubClient for AzDevOpsClient {
     ) -> Result<u64> {
         anyhow::bail!("create_issue is not supported for Azure DevOps")
     }
+
+    async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
+        anyhow::bail!("list_open_prs is not supported for Azure DevOps")
+    }
+
+    async fn get_pr(&self, _number: u64) -> Result<crate::github::types::GhPullRequest> {
+        anyhow::bail!("get_pr is not supported for Azure DevOps")
+    }
+
+    async fn submit_pr_review(
+        &self,
+        _pr_number: u64,
+        _event: crate::github::types::PrReviewEvent,
+        _body: &str,
+    ) -> Result<()> {
+        anyhow::bail!("submit_pr_review is not supported for Azure DevOps")
+    }
 }
 
 #[cfg(test)]

@@ -103,6 +103,7 @@ pub struct App {
     pub prompt_history: crate::state::prompt_history::PromptHistoryStore,
     pub session_switcher: Option<crate::tui::session_switcher::SessionSwitcher>,
     pub adapt_screen: Option<crate::tui::screens::adapt::AdaptScreen>,
+    pub pr_review_screen: Option<crate::tui::screens::pr_review::PrReviewScreen>,
 }
 
 impl App {
@@ -181,6 +182,7 @@ impl App {
             ),
             session_switcher: None,
             adapt_screen: None,
+            pr_review_screen: None,
         }
     }
 
