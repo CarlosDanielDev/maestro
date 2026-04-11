@@ -1,9 +1,9 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{Paragraph, Widget},
 };
 
 use crate::github::ci::{CheckConclusion, CheckRunDetail, CheckStatus};
@@ -166,15 +166,7 @@ impl Widget for CiMonitorWidget<'_> {
             None => " CI Monitor ".to_string(),
         };
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.theme.border_inactive))
-            .title(Span::styled(
-                title,
-                Style::default()
-                    .fg(self.theme.text_primary)
-                    .add_modifier(Modifier::BOLD),
-            ));
+        let block = self.theme.styled_block(&title, false);
 
         let inner = block.inner(area);
         block.render(area, buf);

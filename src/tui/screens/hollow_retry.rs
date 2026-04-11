@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Clear, Paragraph, Wrap},
 };
 use uuid::Uuid;
 
@@ -93,14 +93,13 @@ impl Screen for HollowRetryScreen {
 
         f.render_widget(Clear, popup_area);
 
-        let block = Block::default()
-            .borders(Borders::ALL)
+        let block = theme
+            .styled_block("Hollow Completion Detected", false)
             .border_style(
                 Style::default()
                     .fg(theme.accent_warning)
                     .add_modifier(Modifier::BOLD),
-            )
-            .title(" Hollow Completion Detected ");
+            );
 
         let inner = block.inner(popup_area);
         f.render_widget(block, popup_area);

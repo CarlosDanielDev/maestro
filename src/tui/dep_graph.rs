@@ -6,7 +6,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 /// Render an ASCII dependency graph visualization.
@@ -19,10 +19,9 @@ pub fn draw_dep_graph(f: &mut Frame, assigner: Option<&WorkAssigner>, area: Rect
         ))],
     };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent_info))
-        .title(" Dependency Graph ");
+    let block = theme
+        .styled_block("Dependency Graph", false)
+        .border_style(Style::default().fg(theme.accent_info));
 
     let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);

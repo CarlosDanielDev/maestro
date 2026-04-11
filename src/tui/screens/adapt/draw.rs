@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 use crate::tui::spinner::spinner_frame;
@@ -42,9 +42,8 @@ pub fn draw_adapt_screen(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme:
 }
 
 fn draw_configure(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = Block::default()
-        .title(" Adapt Project ")
-        .borders(Borders::ALL)
+    let block = theme
+        .styled_block("Adapt Project", false)
         .border_style(Style::default().fg(theme.accent_info));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -87,9 +86,8 @@ fn draw_configure(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme
 }
 
 fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = Block::default()
-        .title(" Adapt Pipeline ")
-        .borders(Borders::ALL)
+    let block = theme
+        .styled_block("Adapt Pipeline", false)
         .border_style(Style::default().fg(theme.accent_info));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -146,9 +144,8 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
 }
 
 fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = Block::default()
-        .title(" Adapt Complete ")
-        .borders(Borders::ALL)
+    let block = theme
+        .styled_block("Adapt Complete", false)
         .border_style(Style::default().fg(theme.accent_success));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -249,9 +246,8 @@ fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
 }
 
 fn draw_failed(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme) {
-    let block = Block::default()
-        .title(" Adapt Failed ")
-        .borders(Borders::ALL)
+    let block = theme
+        .styled_block("Adapt Failed", false)
         .border_style(Style::default().fg(theme.accent_error));
     let inner = block.inner(area);
     f.render_widget(block, area);

@@ -5,7 +5,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 pub fn draw_session_summary(
@@ -19,11 +19,10 @@ pub fn draw_session_summary(
     let selected_index = state.map(|s| s.selected_index).unwrap_or(0);
     let expanded = state.map(|s| &s.expanded);
 
-    let title = format!(" Session Summary ({} sessions) ", summary.session_count);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_focused))
-        .title(title);
+    let title = format!("Session Summary ({} sessions)", summary.session_count);
+    let block = theme
+        .styled_block(&title, true)
+        .border_style(Style::default().fg(theme.border_focused));
 
     let inner = block.inner(area);
     f.render_widget(block, area);

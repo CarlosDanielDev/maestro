@@ -74,7 +74,8 @@ impl Dropdown {
         let value = self.options.get(self.selected).map_or("", |s| s.as_str());
         let value_style = if focused {
             Style::default()
-                .fg(theme.text_primary)
+                .fg(theme.selection_fg)
+                .bg(theme.selection_bg)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme.text_secondary)

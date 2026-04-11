@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 /// Render a detail view for a single session.
@@ -95,10 +95,10 @@ fn draw_conflict_log(
         })
         .collect();
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent_error))
-        .title(format!(" Conflicts ({}) ", conflicts.len()));
+    let title = format!("Conflicts ({})", conflicts.len());
+    let block = theme
+        .styled_block(&title, false)
+        .border_style(Style::default().fg(theme.accent_error));
 
     let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
@@ -191,10 +191,9 @@ fn draw_detail_header(
         Line::from(detail_spans),
     ];
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent_info))
-        .title(" Session Detail ");
+    let block = theme
+        .styled_block("Session Detail", false)
+        .border_style(Style::default().fg(theme.accent_info));
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);
@@ -217,10 +216,7 @@ fn draw_detail_activity(f: &mut Frame, session: &Session, area: Rect, theme: &Th
         })
         .collect();
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_inactive))
-        .title(" Activity Log ");
+    let block = theme.styled_block("Activity Log", false);
 
     let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
@@ -233,10 +229,8 @@ fn draw_detail_files(f: &mut Frame, session: &Session, area: Rect, theme: &Theme
         session.files_touched.join(", ")
     };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_inactive))
-        .title(format!(" Files ({}) ", session.files_touched.len()));
+    let title = format!("Files ({})", session.files_touched.len());
+    let block = theme.styled_block(&title, false);
 
     let paragraph = Paragraph::new(files_text)
         .block(block)

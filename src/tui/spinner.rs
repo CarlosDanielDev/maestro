@@ -1,6 +1,6 @@
 use crate::session::types::SessionStatus;
 
-const BRAILLE_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const ASCII_SPINNER_FRAMES: &[char] = &['|', '/', '-', '\\'];
 
 /// Tool-use animation: progress bar style.
 const TOOL_FRAMES: &[&str] = &["[>  ]", "[>> ]", "[>>>]", "[ >>]", "[  >]", "[   ]"];
@@ -53,9 +53,9 @@ pub fn animation_phase(
     }
 }
 
-/// Returns the braille spinner character for a given tick index.
+/// Returns the ASCII spinner character for a given tick index.
 pub fn spinner_frame(tick: usize) -> char {
-    BRAILLE_FRAMES[tick % BRAILLE_FRAMES.len()]
+    ASCII_SPINNER_FRAMES[tick % ASCII_SPINNER_FRAMES.len()]
 }
 
 /// Returns the tool-use animation frame for a given tick.
@@ -83,11 +83,17 @@ pub fn format_thinking_elapsed(d: std::time::Duration) -> String {
     }
 }
 
-/// Build the full spinner activity string: `⠹ Thinking... 3.2s`
+/// Trailing dots animation for thinking state (3 phases, intentionally out-of-phase
+/// with the 4-frame spinner to create a more organic animation rhythm).
+const THINKING_DOTS: &[&str] = &["Thinking.", "Thinking..", "Thinking..."];
+
+/// Build the full spinner activity string: `| Thinking... 3.2s`
 pub fn thinking_activity(tick: usize, elapsed: std::time::Duration) -> String {
+    let dots_text = THINKING_DOTS[tick % THINKING_DOTS.len()];
     format!(
-        "{} Thinking... {}",
+        "{} {} {}",
         spinner_frame(tick),
+        dots_text,
         format_thinking_elapsed(elapsed)
     )
 }
@@ -121,9 +127,9 @@ pub fn animated_activity(
     }
 }
 
-/// Total number of braille frames in the spinner cycle.
+/// Total number of ASCII frames in the spinner cycle.
 #[allow(dead_code)] // Reason: public constant for spinner consumers
-pub const FRAME_COUNT: usize = 10;
+pub const FRAME_COUNT: usize = 4;
 
 #[cfg(test)]
 mod tests {
@@ -131,23 +137,23 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn spinner_cycles_through_all_10_braille_frames() {
-        let expected = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    fn ascii_spinner_cycles_through_all_4_frames() {
+        let expected = ['|', '/', '-', '\\'];
         for (i, &ch) in expected.iter().enumerate() {
-            assert_eq!(spinner_frame(i), ch, "frame {} mismatch", i);
+            assert_eq!(spinner_frame(i), ch, "ascii frame {} mismatch", i);
         }
     }
 
     #[test]
-    fn spinner_wraps_around_after_10_frames() {
-        assert_eq!(spinner_frame(0), spinner_frame(10));
-        assert_eq!(spinner_frame(3), spinner_frame(13));
-        assert_eq!(spinner_frame(9), spinner_frame(19));
+    fn ascii_spinner_wraps_at_4_not_10() {
+        assert_eq!(spinner_frame(0), spinner_frame(4));
+        assert_eq!(spinner_frame(3), spinner_frame(7));
+        assert_ne!(spinner_frame(0), spinner_frame(1));
     }
 
     #[test]
-    fn frame_count_matches_braille_frames_len() {
-        assert_eq!(FRAME_COUNT, BRAILLE_FRAMES.len());
+    fn frame_count_equals_4() {
+        assert_eq!(FRAME_COUNT, 4);
     }
 
     #[test]
@@ -190,15 +196,69 @@ mod tests {
     fn thinking_activity_combines_frame_and_elapsed() {
         let d = Duration::from_secs_f64(3.2);
         let result = thinking_activity(2, d);
-        assert_eq!(result, "⠹ Thinking... 3.2s");
+        assert_eq!(result, "- Thinking... 3.2s");
     }
 
     #[test]
     fn thinking_activity_with_different_tick() {
         let d = Duration::from_secs(0);
         let result = thinking_activity(0, d);
-        assert!(result.starts_with('⠋'));
-        assert!(result.contains("Thinking..."));
+        assert!(result.starts_with('|'));
+        assert!(result.contains("Thinking."));
+    }
+
+    #[test]
+    fn thinking_activity_uses_animated_dots_at_tick_0() {
+        let result = thinking_activity(0, Duration::from_secs(0));
+        assert!(
+            result.contains("Thinking."),
+            "tick 0 must contain 'Thinking.'"
+        );
+        assert!(
+            !result.contains("Thinking.."),
+            "tick 0 must NOT contain 'Thinking..'"
+        );
+    }
+
+    #[test]
+    fn thinking_activity_uses_animated_dots_at_tick_1() {
+        let result = thinking_activity(1, Duration::from_secs(0));
+        assert!(
+            result.contains("Thinking.."),
+            "tick 1 must contain 'Thinking..'"
+        );
+        assert!(
+            !result.contains("Thinking..."),
+            "tick 1 must NOT contain 'Thinking...'"
+        );
+    }
+
+    #[test]
+    fn thinking_activity_uses_animated_dots_at_tick_2() {
+        let result = thinking_activity(2, Duration::from_secs(0));
+        assert!(
+            result.contains("Thinking..."),
+            "tick 2 must contain 'Thinking...'"
+        );
+    }
+
+    #[test]
+    fn thinking_activity_dots_wrap_at_3() {
+        // tick 0 and tick 3 use same dot text ("Thinking.") but different spinner frame
+        let r0 = thinking_activity(0, Duration::from_secs(0));
+        let r3 = thinking_activity(3, Duration::from_secs(0));
+        // Both contain "Thinking." (single dot) since 0%3 == 3%3 == 0
+        assert!(r0.contains("Thinking.") && !r0.contains("Thinking.."));
+        assert!(r3.contains("Thinking.") && !r3.contains("Thinking.."));
+    }
+
+    #[test]
+    fn thinking_activity_still_includes_elapsed() {
+        let result = thinking_activity(0, Duration::from_secs(5));
+        assert!(
+            result.contains("5.0s"),
+            "elapsed time must appear in output"
+        );
     }
 
     // --- Issue #199: Multi-phase animation tests ---
@@ -289,7 +349,7 @@ mod tests {
             "",
             Some(Duration::from_secs(5)),
         );
-        assert!(result.contains("Thinking..."));
+        assert!(result.contains("Thinking."));
         assert!(result.contains("5.0s"));
     }
 

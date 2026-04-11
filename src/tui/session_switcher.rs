@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Clear, Paragraph},
 };
 
 use crate::tui::theme::Theme;
@@ -77,15 +77,9 @@ impl SessionSwitcher {
 
         f.render_widget(Clear, overlay);
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.accent_success))
-            .title(Span::styled(
-                " Sessions [w] ",
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD),
-            ));
+        let block = theme
+            .styled_block("Sessions [w]", false)
+            .border_style(Style::default().fg(theme.accent_success));
         let inner = block.inner(overlay);
         f.render_widget(block, overlay);
 

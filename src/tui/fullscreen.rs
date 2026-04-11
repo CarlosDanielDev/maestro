@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 /// Draw a full-screen view for a single agent session.
@@ -72,8 +72,8 @@ fn draw_session_header(f: &mut Frame, session: &Session, area: Rect, theme: &The
         ),
     ]);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
+    let block = theme
+        .styled_block_plain(false)
         .border_style(Style::default().fg(status_color));
 
     f.render_widget(Paragraph::new(header).block(block), area);
@@ -92,12 +92,7 @@ fn draw_session_output(f: &mut Frame, session: &Session, area: Rect, theme: &The
     let scroll_offset = line_count.saturating_sub(inner_height);
 
     let paragraph = Paragraph::new(md_text)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.border_inactive))
-                .title(" Agent Output "),
-        )
+        .block(theme.styled_block("Agent Output", false))
         .wrap(Wrap { trim: false })
         .scroll((scroll_offset, 0));
 
@@ -164,9 +159,7 @@ fn draw_session_footer(
         ),
     ]);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_inactive));
+    let block = theme.styled_block_plain(false);
 
     f.render_widget(Paragraph::new(footer).block(block), area);
 }

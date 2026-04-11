@@ -22,7 +22,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 use super::Screen;
@@ -1020,15 +1020,9 @@ impl Screen for SettingsScreen {
             (" Settings ", theme.accent_success)
         };
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(title_color))
-            .title(Span::styled(
-                title,
-                Style::default()
-                    .fg(title_color)
-                    .add_modifier(Modifier::BOLD),
-            ));
+        let block = theme
+            .styled_block(title, false)
+            .border_style(Style::default().fg(title_color));
         let inner = block.inner(area);
         f.render_widget(block, area);
 

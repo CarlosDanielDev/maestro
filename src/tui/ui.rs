@@ -13,7 +13,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 /// Render the entire TUI.
@@ -473,10 +473,9 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let text = Line::from(spans);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_active))
-        .title_alignment(ratatui::layout::Alignment::Center);
+    let block = theme
+        .styled_block_plain(false)
+        .border_style(Style::default().fg(theme.border_active));
 
     let paragraph = Paragraph::new(text).block(block);
     f.render_widget(paragraph, area);
@@ -652,10 +651,9 @@ fn draw_confirm_kill_overlay(
         ]),
     ];
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent_warning))
-        .title(" Confirm Kill ");
+    let block = theme
+        .styled_block("Confirm Kill", false)
+        .border_style(Style::default().fg(theme.accent_warning));
 
     f.render_widget(Paragraph::new(lines).block(block), popup);
 }
@@ -822,10 +820,8 @@ fn draw_completion_overlay(
 
     lines.push(Line::from(keybind_spans));
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Session Complete ")
-        .title_alignment(ratatui::layout::Alignment::Center)
+    let block = theme
+        .styled_block("Session Complete", false)
         .border_style(Style::default().fg(theme.accent_success));
 
     let paragraph = Paragraph::new(lines).block(block);
@@ -920,10 +916,8 @@ fn draw_queue_execution_overlay(
         executor.completed_count(),
         executor.total_count()
     );
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .title_alignment(ratatui::layout::Alignment::Center)
+    let block = theme
+        .styled_block(&title, false)
         .border_style(Style::default().fg(theme.accent_info));
 
     let paragraph = Paragraph::new(lines).block(block);
@@ -996,10 +990,8 @@ fn draw_continuous_pause_overlay(
         Span::raw(" Stop"),
     ]));
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Session Failed — Continuous Mode ")
-        .title_alignment(ratatui::layout::Alignment::Center)
+    let block = theme
+        .styled_block("Session Failed — Continuous Mode", false)
         .border_style(Style::default().fg(theme.accent_error));
 
     let paragraph = Paragraph::new(lines).block(block);
