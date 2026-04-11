@@ -314,9 +314,9 @@ impl PromptInputScreen {
                 f,
                 chunks[2],
                 &[
-                    ("Ctrl+S", "Submit"),
-                    ("Enter", "New line"),
-                    ("Alt+\u{2191}/\u{2193}", "History"),
+                    ("Enter", "Submit"),
+                    ("Ctrl+J", "New line"),
+                    ("\u{2191}/\u{2193}", "History"),
                     ("Ctrl+V", "Paste"),
                     ("Tab", "Switch"),
                     ("Esc", "Cancel"),
@@ -334,11 +334,11 @@ impl KeymapProvider for PromptInputScreen {
                 title: "Prompt Editor",
                 bindings: vec![
                     KeyBinding {
-                        key: "Ctrl+s",
+                        key: "Enter",
                         description: "Submit prompt",
                     },
                     KeyBinding {
-                        key: "Enter",
+                        key: "Ctrl+j",
                         description: "New line",
                     },
                     KeyBinding {
@@ -435,8 +435,8 @@ impl Screen for PromptInputScreen {
 
             if self.is_prompt_editor_focused() {
                 match (code, modifiers) {
-                    // Ctrl+S → submit prompt
-                    (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => {
+                    // Enter alone → submit prompt
+                    (KeyCode::Enter, m) if *m == KeyModifiers::NONE => {
                         let text = self.editor_text();
                         if !text.trim().is_empty() {
                             return ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -445,7 +445,10 @@ impl Screen for PromptInputScreen {
                             });
                         }
                     }
-                    // Enter (any modifier) → insert newline
+                    // Ctrl+J or Shift+Enter or Alt+Enter → insert newline
+                    (KeyCode::Char('j'), m) if m.contains(KeyModifiers::CONTROL) => {
+                        self.editor.insert_newline();
+                    }
                     (KeyCode::Enter, _) => {
                         self.editor.insert_newline();
                     }
@@ -661,35 +664,35 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_enter_inserts_newline() {
+    fn prompt_input_ctrl_j_inserts_newline() {
         let mut screen = screen_with_prompt("hello");
-        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let action = screen.handle_input(&ctrl_key(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "hello\n");
         assert_eq!(action, ScreenAction::None);
     }
 
     #[test]
-    fn prompt_input_enter_increases_line_count() {
+    fn prompt_input_ctrl_j_increases_line_count() {
         let mut screen = screen_with_prompt("hello");
         let before = screen.editor.lines().len();
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.handle_input(&ctrl_key(KeyCode::Char('j')), InputMode::Normal);
         let after = screen.editor.lines().len();
         assert!(
             after > before,
-            "Enter must increase editor line count: before={}, after={}",
+            "Ctrl+J must increase editor line count: before={}, after={}",
             before,
             after
         );
     }
 
     #[test]
-    fn prompt_input_shift_enter_also_inserts_newline() {
+    fn prompt_input_shift_enter_inserts_newline() {
         let mut screen = screen_with_prompt("hello");
         let action = screen.handle_input(&shift_key(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
         assert!(
             screen.editor.lines().len() >= 2,
-            "Shift+Enter must also insert newline, got {} lines",
+            "Shift+Enter must insert newline, got {} lines",
             screen.editor.lines().len()
         );
     }
@@ -709,12 +712,12 @@ mod tests {
         assert_eq!(action, ScreenAction::None);
     }
 
-    // --- Group 3: Submit (Ctrl+S) ---
+    // --- Group 3: Submit (Enter) ---
 
     #[test]
-    fn prompt_input_ctrl_s_with_prompt_returns_launch_prompt_session() {
+    fn prompt_input_enter_with_prompt_returns_launch_prompt_session() {
         let mut screen = screen_with_prompt("fix the bug");
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(
             action,
             ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -725,10 +728,10 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_ctrl_s_with_prompt_and_images_includes_image_paths() {
+    fn prompt_input_enter_with_prompt_and_images_includes_image_paths() {
         let mut screen = screen_with_prompt("describe this");
         screen.image_paths = vec!["/tmp/a.png".to_string(), "/tmp/b.png".to_string()];
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(
             action,
             ScreenAction::LaunchPromptSession(PromptSessionConfig {
@@ -739,16 +742,16 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_ctrl_s_with_empty_prompt_is_rejected() {
+    fn prompt_input_enter_with_empty_prompt_is_rejected() {
         let mut screen = mock_screen();
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
     #[test]
-    fn prompt_input_ctrl_s_with_whitespace_only_prompt_is_rejected() {
+    fn prompt_input_enter_with_whitespace_only_prompt_is_rejected() {
         let mut screen = screen_with_prompt("   \n  ");
-        let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
     }
 
