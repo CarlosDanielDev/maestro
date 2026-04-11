@@ -132,7 +132,11 @@ impl<'t> MarkdownRenderer<'t> {
             return;
         }
 
-        let current_width: usize = self.active_spans.iter().map(|s| s.content.chars().count()).sum();
+        let current_width: usize = self
+            .active_spans
+            .iter()
+            .map(|s| s.content.chars().count())
+            .sum();
         let max_width = self.width as usize;
 
         let mut line_buf = String::new();
@@ -144,7 +148,8 @@ impl<'t> MarkdownRenderer<'t> {
 
             if line_len + sep_len + word_len > max_width && line_len > current_width {
                 if !line_buf.is_empty() {
-                    self.active_spans.push(Span::styled(std::mem::take(&mut line_buf), style));
+                    self.active_spans
+                        .push(Span::styled(std::mem::take(&mut line_buf), style));
                 }
                 self.flush_line();
                 line_buf.push_str(word);
