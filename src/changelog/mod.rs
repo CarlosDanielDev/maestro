@@ -95,21 +95,10 @@ impl ChangelogData {
 
     #[allow(dead_code)]
     pub fn highlights(&self, version: &str, max: usize) -> Vec<&ChangeItem> {
-        let Some(entry) = self.entries.iter().find(|e| e.version == version) else {
-            return vec![];
-        };
-
-        let mut items: Vec<(u8, &ChangeItem)> = entry
-            .sections
-            .iter()
-            .flat_map(|s| {
-                let prio = s.category.priority();
-                s.items.iter().map(move |item| (prio, item))
-            })
-            .collect();
-
-        items.sort_by_key(|(prio, _)| *prio);
-        items.into_iter().take(max).map(|(_, item)| item).collect()
+        self.highlights_with_category(version, max)
+            .into_iter()
+            .map(|(_, item)| item)
+            .collect()
     }
 
     pub fn highlights_with_category(

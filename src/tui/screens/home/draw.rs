@@ -177,8 +177,10 @@ impl HomeScreen {
             .map(|(cat, item)| {
                 let prefix = format!("  [{}] ", cat.label());
                 let max_text = inner_width.saturating_sub(prefix.len());
-                let text = if item.text.len() > max_text {
-                    format!("{}...", &item.text[..max_text.saturating_sub(3)])
+                let text = if item.text.chars().count() > max_text {
+                    let truncated: String =
+                        item.text.chars().take(max_text.saturating_sub(3)).collect();
+                    format!("{}...", truncated)
                 } else {
                     item.text.clone()
                 };
