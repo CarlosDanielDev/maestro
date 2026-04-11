@@ -33,7 +33,7 @@ pub fn parse_stream_line(line: &str) -> Vec<StreamEvent> {
         }];
     };
 
-    match v.get("type").and_then(|t| t.as_str()) {
+    let mut events = match v.get("type").and_then(|t| t.as_str()) {
         Some("assistant") => vec![parse_assistant_event(&v)],
         Some("tool_result") => vec![parse_tool_result(&v)],
         Some("result") => parse_result(&v),
@@ -50,7 +50,43 @@ pub fn parse_stream_line(line: &str) -> Vec<StreamEvent> {
         _ => vec![StreamEvent::Unknown {
             raw: line.to_string(),
         }],
+    };
+
+    // Extract context percentage from message.usage (present in assistant events).
+    // The Claude CLI reports input_tokens (new) + cache_read_input_tokens (prior context)
+    // but no max_input_tokens. We compute total and use model context limits.
+    if let Some(usage) = v.get("message").and_then(|m| m.get("usage")) {
+        let input = usage
+            .get("input_tokens")
+            .and_then(|t| t.as_f64())
+            .unwrap_or(0.0);
+        let cache_read = usage
+            .get("cache_read_input_tokens")
+            .and_then(|t| t.as_f64())
+            .unwrap_or(0.0);
+        let cache_create = usage
+            .get("cache_creation_input_tokens")
+            .and_then(|t| t.as_f64())
+            .unwrap_or(0.0);
+        let total_input = input + cache_read + cache_create;
+
+        if total_input > 0.0 {
+            // Use max_input_tokens if present, otherwise estimate from model context window.
+            // Claude Opus 4.6 = 1M tokens, Sonnet 4.6 = 200K, Haiku 4.5 = 200K.
+            // Default to 200K as a safe lower bound.
+            let max = usage
+                .get("max_input_tokens")
+                .and_then(|t| t.as_f64())
+                .unwrap_or(200_000.0);
+            if max > 0.0 {
+                events.push(StreamEvent::ContextUpdate {
+                    context_pct: total_input / max,
+                });
+            }
+        }
     }
+
+    events
 }
 
 fn parse_assistant_event(v: &Value) -> StreamEvent {
@@ -608,6 +644,41 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, StreamEvent::ContextUpdate { .. })),
             "Should NOT produce ContextUpdate when max_input_tokens is 0"
+        );
+    }
+
+    // --- Context percentage from assistant message.usage (cache tokens) ---
+
+    #[test]
+    fn parse_assistant_event_extracts_context_from_cache_tokens() {
+        let line = r#"{"type":"assistant","message":{"type":"text","text":"hello","usage":{"input_tokens":3,"cache_read_input_tokens":50000,"cache_creation_input_tokens":10000,"output_tokens":25}}}"#;
+        let events = parse_stream_line(line);
+        let ctx = events
+            .iter()
+            .find(|e| matches!(e, StreamEvent::ContextUpdate { .. }))
+            .expect("Expected ContextUpdate from assistant event with cache tokens");
+        match ctx {
+            StreamEvent::ContextUpdate { context_pct } => {
+                // total = 3 + 50000 + 10000 = 60003, max = 200000 (default)
+                assert!(
+                    (*context_pct - 0.30).abs() < 0.01,
+                    "expected ~30%, got {:.1}%",
+                    context_pct * 100.0
+                );
+            }
+            other => panic!("Expected ContextUpdate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_assistant_event_no_usage_no_context_update() {
+        let line = r#"{"type":"assistant","message":{"type":"text","text":"hello"}}"#;
+        let events = parse_stream_line(line);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::ContextUpdate { .. })),
+            "Should NOT produce ContextUpdate without usage"
         );
     }
 }
