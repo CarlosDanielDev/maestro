@@ -524,6 +524,14 @@ fn draw_notification_banner(
     f.render_widget(banner, area);
 }
 
+fn keybind_style(theme: &crate::tui::theme::Theme, active: bool) -> Style {
+    if active {
+        Style::default().fg(theme.keybind_key)
+    } else {
+        Style::default().fg(theme.text_muted)
+    }
+}
+
 fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
     let theme = app.active_theme();
     let mode_label = match app.tui_mode {
@@ -552,6 +560,14 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::ConfirmKill(_) => "Confirm Kill",
     };
 
+    // Get selected session status for context-aware dimming
+    let selected_status = {
+        let sessions = app.pool.all_sessions();
+        let idx = app.panel_view.selected_index();
+        sessions.get(idx).map(|s| s.status)
+    };
+    let ctx = HelpBarContext::from_status(selected_status);
+
     let help = Line::from(vec![
         Span::styled(
             format!(" {} ", mode_label),
@@ -564,7 +580,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("uit "),
         Span::styled("[Tab]", Style::default().fg(theme.keybind_key)),
         Span::raw("mode "),
-        Span::styled("[f]", Style::default().fg(theme.keybind_key)),
+        Span::styled("[f]", keybind_style(theme, ctx.full_active)),
         Span::raw("ull "),
         Span::styled("[$]", Style::default().fg(theme.keybind_key)),
         Span::raw("cost "),
@@ -574,13 +590,13 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("help "),
         Span::styled("[Esc]", Style::default().fg(theme.keybind_key)),
         Span::raw("back "),
-        Span::styled("[p]", Style::default().fg(theme.keybind_key)),
+        Span::styled("[p]", keybind_style(theme, ctx.pause_active)),
         Span::raw("ause "),
-        Span::styled("[k]", Style::default().fg(theme.keybind_key)),
+        Span::styled("[k]", keybind_style(theme, ctx.kill_active)),
         Span::raw("ill "),
-        Span::styled("[d]", Style::default().fg(theme.keybind_key)),
+        Span::styled("[d]", keybind_style(theme, ctx.dismiss_active)),
         Span::raw("ismiss "),
-        Span::styled("[l]", Style::default().fg(theme.keybind_key)),
+        Span::styled("[l]", keybind_style(theme, ctx.logs_active)),
         Span::raw("ogs "),
         Span::styled("[↑↓]", Style::default().fg(theme.keybind_key)),
         Span::raw("scroll"),
@@ -1064,5 +1080,127 @@ fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
     } else {
         let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
         std::borrow::Cow::Owned(format!("{}...", truncated))
+    }
+}
+
+struct HelpBarContext {
+    kill_active: bool,
+    dismiss_active: bool,
+    pause_active: bool,
+    logs_active: bool,
+    full_active: bool,
+}
+
+impl HelpBarContext {
+    fn from_status(status: Option<crate::session::types::SessionStatus>) -> Self {
+        use crate::session::types::SessionStatus;
+
+        let has_session = status.is_some();
+        let is_terminal = status.is_some_and(|s| s.is_terminal());
+        let is_running = matches!(status, Some(SessionStatus::Running));
+
+        Self {
+            kill_active: has_session && !is_terminal,
+            dismiss_active: has_session && is_terminal,
+            pause_active: is_running,
+            logs_active: has_session,
+            full_active: has_session,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::types::SessionStatus;
+
+    #[test]
+    fn help_bar_context_none_status_all_inactive() {
+        let ctx = HelpBarContext::from_status(None);
+        assert!(!ctx.kill_active);
+        assert!(!ctx.dismiss_active);
+        assert!(!ctx.pause_active);
+        assert!(!ctx.logs_active);
+        assert!(!ctx.full_active);
+    }
+
+    #[test]
+    fn help_bar_context_running_status() {
+        let ctx = HelpBarContext::from_status(Some(SessionStatus::Running));
+        assert!(ctx.kill_active);
+        assert!(!ctx.dismiss_active);
+        assert!(ctx.pause_active);
+        assert!(ctx.logs_active);
+        assert!(ctx.full_active);
+    }
+
+    #[test]
+    fn help_bar_context_completed_status() {
+        let ctx = HelpBarContext::from_status(Some(SessionStatus::Completed));
+        assert!(!ctx.kill_active);
+        assert!(ctx.dismiss_active);
+        assert!(!ctx.pause_active);
+        assert!(ctx.logs_active);
+        assert!(ctx.full_active);
+    }
+
+    #[test]
+    fn help_bar_context_killed_status() {
+        let ctx = HelpBarContext::from_status(Some(SessionStatus::Killed));
+        assert!(!ctx.kill_active);
+        assert!(ctx.dismiss_active);
+        assert!(!ctx.pause_active);
+        assert!(ctx.logs_active);
+        assert!(ctx.full_active);
+    }
+
+    #[test]
+    fn help_bar_context_paused_status() {
+        let ctx = HelpBarContext::from_status(Some(SessionStatus::Paused));
+        assert!(ctx.kill_active);
+        assert!(!ctx.dismiss_active);
+        assert!(!ctx.pause_active);
+        assert!(ctx.logs_active);
+        assert!(ctx.full_active);
+    }
+
+    #[test]
+    fn help_bar_context_spawning_status() {
+        let ctx = HelpBarContext::from_status(Some(SessionStatus::Spawning));
+        assert!(ctx.kill_active);
+        assert!(!ctx.dismiss_active);
+        assert!(!ctx.pause_active);
+        assert!(ctx.logs_active);
+        assert!(ctx.full_active);
+    }
+
+    #[test]
+    fn help_bar_context_queued_status() {
+        let ctx = HelpBarContext::from_status(Some(SessionStatus::Queued));
+        assert!(ctx.kill_active);
+        assert!(!ctx.dismiss_active);
+        assert!(!ctx.pause_active);
+        assert!(ctx.logs_active);
+        assert!(ctx.full_active);
+    }
+
+    #[test]
+    fn help_bar_context_errored_status() {
+        let ctx = HelpBarContext::from_status(Some(SessionStatus::Errored));
+        assert!(ctx.kill_active);
+        assert!(!ctx.dismiss_active);
+        assert!(!ctx.pause_active);
+        assert!(ctx.logs_active);
+        assert!(ctx.full_active);
+    }
+
+    #[test]
+    fn help_bar_context_needs_review_status() {
+        let ctx = HelpBarContext::from_status(Some(SessionStatus::NeedsReview));
+        assert!(!ctx.kill_active);
+        assert!(ctx.dismiss_active);
+        assert!(!ctx.pause_active);
+        assert!(ctx.logs_active);
+        assert!(ctx.full_active);
     }
 }

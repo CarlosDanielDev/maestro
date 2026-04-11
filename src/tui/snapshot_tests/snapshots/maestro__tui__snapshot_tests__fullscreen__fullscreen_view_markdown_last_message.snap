@@ -8,7 +8,7 @@ expression: terminal.backend()
 "┌ Agent Output ────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
 "│# Status Update                                                                                                       │"
 "│                                                                                                                      │"
-"│Running all tests now.                                                                                                │"
+"│Running all testsnow.                                                                                                 │"
 "│                                                                                                                      │"
 "│• unit tests                                                                                                          │"
 "│• integration tests                                                                                                   │"

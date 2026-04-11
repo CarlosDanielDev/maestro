@@ -445,9 +445,9 @@ impl Screen for PromptInputScreen {
                             });
                         }
                     }
-                    // Shift+Enter or Alt+Enter → newline (delegate to TextArea)
+                    // Shift+Enter or Alt+Enter → insert newline
                     (KeyCode::Enter, _) => {
-                        self.editor.input(event.clone());
+                        self.editor.insert_newline();
                     }
                     // Alt+Up → history navigation up
                     (KeyCode::Up, m) if m.contains(KeyModifiers::ALT) => {
@@ -651,6 +651,32 @@ mod tests {
         let action = screen.handle_input(&shift_key(KeyCode::Enter), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "hello\n");
         assert_eq!(action, ScreenAction::None);
+    }
+
+    #[test]
+    fn prompt_input_shift_enter_increases_line_count() {
+        let mut screen = screen_with_prompt("hello");
+        let before = screen.editor.lines().len();
+        screen.handle_input(&shift_key(KeyCode::Enter), InputMode::Normal);
+        let after = screen.editor.lines().len();
+        assert!(
+            after > before,
+            "Shift+Enter must increase editor line count: before={}, after={}",
+            before,
+            after
+        );
+    }
+
+    #[test]
+    fn prompt_input_alt_enter_inserts_newline() {
+        let mut screen = screen_with_prompt("hello");
+        let action = screen.handle_input(&alt_key(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        assert!(
+            screen.editor.lines().len() >= 2,
+            "Alt+Enter must split the editor into at least 2 lines, got {}",
+            screen.editor.lines().len()
+        );
     }
 
     #[test]
