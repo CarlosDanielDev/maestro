@@ -30,6 +30,7 @@ fn tui_mode_completion_summary_variant_exists() {
 #[test]
 fn completion_session_line_fields_are_accessible() {
     let line = CompletionSessionLine {
+        session_id: uuid::Uuid::nil(),
         label: "#42".to_string(),
         status: crate::session::types::SessionStatus::Completed,
         cost_usd: 1.23,
@@ -235,6 +236,7 @@ fn suggestion_data_event_clears_loading_flag_on_home_screen() {
 #[test]
 fn completion_session_line_pr_link_defaults_to_empty() {
     let line = CompletionSessionLine {
+        session_id: uuid::Uuid::nil(),
         label: "#1".to_string(),
         status: crate::session::types::SessionStatus::Completed,
         cost_usd: 0.0,
@@ -251,6 +253,7 @@ fn completion_session_line_pr_link_defaults_to_empty() {
 #[test]
 fn completion_session_line_holds_pr_link_value() {
     let line = CompletionSessionLine {
+        session_id: uuid::Uuid::nil(),
         label: "#42".to_string(),
         status: crate::session::types::SessionStatus::Completed,
         cost_usd: 0.0,
@@ -267,6 +270,7 @@ fn completion_session_line_holds_pr_link_value() {
 #[test]
 fn completion_session_line_holds_error_summary_value() {
     let line = CompletionSessionLine {
+        session_id: uuid::Uuid::nil(),
         label: "#7".to_string(),
         status: crate::session::types::SessionStatus::Errored,
         cost_usd: 0.0,
@@ -502,6 +506,7 @@ fn gate_failure_info_can_be_cloned() {
 #[test]
 fn completion_session_line_gate_failures_defaults_to_empty() {
     let line = CompletionSessionLine {
+        session_id: uuid::Uuid::nil(),
         label: "#42".to_string(),
         status: crate::session::types::SessionStatus::NeedsReview,
         cost_usd: 0.0,
@@ -518,6 +523,7 @@ fn completion_session_line_gate_failures_defaults_to_empty() {
 #[test]
 fn completion_session_line_holds_gate_failures() {
     let line = CompletionSessionLine {
+        session_id: uuid::Uuid::nil(),
         label: "#7".to_string(),
         status: crate::session::types::SessionStatus::NeedsReview,
         cost_usd: 0.0,
@@ -551,6 +557,7 @@ fn has_needs_review_returns_false_when_no_sessions() {
 fn has_needs_review_returns_false_when_all_completed() {
     let data = CompletionSummaryData {
         sessions: vec![CompletionSessionLine {
+            session_id: uuid::Uuid::nil(),
             label: "#1".to_string(),
             status: crate::session::types::SessionStatus::Completed,
             cost_usd: 0.0,
@@ -573,6 +580,7 @@ fn has_needs_review_returns_false_when_all_completed() {
 fn has_needs_review_returns_true_when_one_session_needs_review() {
     let data = CompletionSummaryData {
         sessions: vec![CompletionSessionLine {
+            session_id: uuid::Uuid::nil(),
             label: "#2".to_string(),
             status: crate::session::types::SessionStatus::NeedsReview,
             cost_usd: 0.0,
@@ -599,6 +607,7 @@ fn has_needs_review_returns_true_when_mixed_statuses() {
     let data = CompletionSummaryData {
         sessions: vec![
             CompletionSessionLine {
+                session_id: uuid::Uuid::nil(),
                 label: "#1".to_string(),
                 status: crate::session::types::SessionStatus::Completed,
                 cost_usd: 0.0,
@@ -610,6 +619,7 @@ fn has_needs_review_returns_true_when_mixed_statuses() {
                 model: "opus".to_string(),
             },
             CompletionSessionLine {
+                session_id: uuid::Uuid::nil(),
                 label: "#2".to_string(),
                 status: crate::session::types::SessionStatus::NeedsReview,
                 cost_usd: 0.0,
@@ -823,6 +833,7 @@ fn spawn_gate_fix_session_queues_pending_launch() {
     let mut app = make_app();
 
     let line = CompletionSessionLine {
+        session_id: uuid::Uuid::nil(),
         label: "#55".to_string(),
         status: crate::session::types::SessionStatus::NeedsReview,
         cost_usd: 1.0,
@@ -848,6 +859,7 @@ fn spawn_gate_fix_session_queues_pending_launch() {
 fn spawn_gate_fix_session_does_nothing_when_no_issue_number() {
     let mut app = make_app();
     let line = CompletionSessionLine {
+        session_id: uuid::Uuid::nil(),
         label: "abc123".to_string(),
         status: crate::session::types::SessionStatus::NeedsReview,
         cost_usd: 0.0,

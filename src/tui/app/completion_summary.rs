@@ -68,6 +68,7 @@ impl App {
             };
 
             lines.push(CompletionSessionLine {
+                session_id: s.id,
                 label: session_label(s),
                 status: s.status,
                 cost_usd: s.cost_usd,

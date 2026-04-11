@@ -141,14 +141,19 @@ fn draw_session_footer(
         Span::raw("  "),
         Span::styled(" Activity: ", Style::default().fg(theme.text_secondary)),
         Span::styled(
-            if session.is_thinking {
-                let elapsed = session
-                    .thinking_started_at
-                    .map(|t| t.elapsed())
-                    .unwrap_or_default();
-                spinner::thinking_activity(spinner_tick, elapsed)
-            } else {
-                session.current_activity.clone()
+            {
+                let phase = spinner::animation_phase(
+                    session.status,
+                    session.is_thinking,
+                    &session.current_activity,
+                );
+                let thinking_elapsed = session.thinking_started_at.map(|t| t.elapsed());
+                spinner::animated_activity(
+                    phase,
+                    spinner_tick,
+                    &session.current_activity,
+                    thinking_elapsed,
+                )
             },
             Style::default().fg(theme.text_primary),
         ),

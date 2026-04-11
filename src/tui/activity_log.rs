@@ -9,11 +9,31 @@ use ratatui::{
 };
 
 #[derive(Debug, Clone)]
+pub struct ToolMeta {
+    pub tool_name: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct LogEntry {
     pub timestamp: DateTime<Utc>,
     pub session_label: String,
     pub message: String,
     pub level: LogLevel,
+    pub tool_meta: Option<ToolMeta>,
+}
+
+/// Map a tool name to an ASCII prefix icon for the activity log.
+pub fn tool_icon_ascii(tool_name: &str) -> &'static str {
+    match tool_name {
+        "Read" => "[R]",
+        "Write" => "[W]",
+        "Edit" => "[E]",
+        "Bash" => "[$]",
+        "Grep" => "[?]",
+        "Glob" => "[*]",
+        "WebFetch" => "[@]",
+        _ => "[~]",
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,13 +90,32 @@ impl ActivityLog {
             session_label: label,
             message,
             level,
+            tool_meta: None,
         });
     }
 
+    pub fn push_tool(
+        &mut self,
+        label: String,
+        message: String,
+        level: LogLevel,
+        tool_name: String,
+    ) {
+        self.push(LogEntry {
+            timestamp: Utc::now(),
+            session_label: label,
+            message,
+            level,
+            tool_meta: Some(ToolMeta { tool_name }),
+        });
+    }
+
+    #[allow(dead_code)] // Reason: public API for future activity log scroll keybindings
     pub fn scroll_up(&mut self) {
         self.scroll_offset = self.scroll_offset.saturating_sub(1);
     }
 
+    #[allow(dead_code)] // Reason: public API for future activity log scroll keybindings
     pub fn scroll_down(&mut self) {
         let max = self.entries.len().saturating_sub(1);
         if self.scroll_offset < max {
@@ -112,7 +151,7 @@ impl ActivityLog {
             .iter()
             .map(|entry| {
                 let time = entry.timestamp.format("%H:%M:%S");
-                ListItem::new(Line::from(vec![
+                let mut spans = vec![
                     Span::styled(
                         format!("{} ", time),
                         Style::default().fg(theme.text_secondary),
@@ -121,11 +160,21 @@ impl ActivityLog {
                         format!("[{}] ", entry.session_label),
                         Style::default().fg(theme.accent_identifier),
                     ),
-                    Span::styled(
-                        entry.message.clone(),
-                        Style::default().fg(entry.level.color(theme)),
-                    ),
-                ]))
+                ];
+
+                if let Some(ref meta) = entry.tool_meta {
+                    spans.push(Span::styled(
+                        format!("{} ", tool_icon_ascii(&meta.tool_name)),
+                        Style::default().fg(theme.accent_info),
+                    ));
+                }
+
+                spans.push(Span::styled(
+                    entry.message.clone(),
+                    Style::default().fg(entry.level.color(theme)),
+                ));
+
+                ListItem::new(Line::from(spans))
             })
             .collect();
 
@@ -144,6 +193,7 @@ mod tests {
             session_label: "S-test".to_string(),
             message: msg.to_string(),
             level: LogLevel::Info,
+            tool_meta: None,
         }
     }
 
@@ -284,6 +334,7 @@ mod tests {
             session_label: "S-test".to_string(),
             message: "Thinking block started".to_string(),
             level: LogLevel::Thinking,
+            tool_meta: None,
         });
         assert_eq!(log.entries().len(), 1);
         assert_eq!(log.entries()[0].level, LogLevel::Thinking);
@@ -300,6 +351,48 @@ mod tests {
         assert_eq!(log.entries().len(), 1);
         assert_eq!(log.entries()[0].level, LogLevel::Thinking);
         assert_eq!(log.entries()[0].message, "Thought for 3s");
+    }
+
+    // --- Issue #200: Tool icon and tool metadata tests ---
+
+    #[test]
+    fn tool_icon_ascii_maps_known_tools() {
+        assert_eq!(tool_icon_ascii("Read"), "[R]");
+        assert_eq!(tool_icon_ascii("Write"), "[W]");
+        assert_eq!(tool_icon_ascii("Edit"), "[E]");
+        assert_eq!(tool_icon_ascii("Bash"), "[$]");
+        assert_eq!(tool_icon_ascii("Grep"), "[?]");
+        assert_eq!(tool_icon_ascii("Glob"), "[*]");
+        assert_eq!(tool_icon_ascii("WebFetch"), "[@]");
+    }
+
+    #[test]
+    fn tool_icon_ascii_unknown_tool_returns_generic() {
+        assert_eq!(tool_icon_ascii("SomeNewTool"), "[~]");
+        assert_eq!(tool_icon_ascii(""), "[~]");
+    }
+
+    #[test]
+    fn push_simple_has_no_tool_meta() {
+        let mut log = ActivityLog::new(100);
+        log.push_simple("S-1".into(), "test".into(), LogLevel::Info);
+        assert!(log.entries()[0].tool_meta.is_none());
+    }
+
+    #[test]
+    fn push_tool_includes_tool_meta() {
+        let mut log = ActivityLog::new(100);
+        log.push_tool(
+            "S-1".into(),
+            "Read: /foo".into(),
+            LogLevel::Tool,
+            "Read".into(),
+        );
+        assert!(log.entries()[0].tool_meta.is_some());
+        assert_eq!(
+            log.entries()[0].tool_meta.as_ref().unwrap().tool_name,
+            "Read"
+        );
     }
 
     #[test]

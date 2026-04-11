@@ -11,13 +11,175 @@ use ratatui::{
     widgets::{Block, Borders, Gauge, Paragraph, Wrap},
 };
 
-/// Maximum columns to display side-by-side.
-const MAX_VISIBLE_COLUMNS: usize = 6;
+/// Minimum dimensions for a single session cell.
+const MIN_CELL_WIDTH: u16 = 40;
+const MIN_CELL_HEIGHT: u16 = 8;
+
+/// Grid layout calculation result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GridLayout {
+    pub cols: usize,
+    pub rows: usize,
+    pub total_pages: usize,
+    pub sessions_per_page: usize,
+}
+
+impl GridLayout {
+    /// Calculate optimal grid layout from session count and available area.
+    pub fn calculate(session_count: usize, area_width: u16, area_height: u16) -> Self {
+        if session_count == 0 {
+            return Self {
+                cols: 1,
+                rows: 1,
+                total_pages: 1,
+                sessions_per_page: 0,
+            };
+        }
+
+        let max_cols = (area_width / MIN_CELL_WIDTH).max(1) as usize;
+        let max_rows = (area_height / MIN_CELL_HEIGHT).max(1) as usize;
+
+        let (cols, rows) = match session_count {
+            1 => (1, 1),
+            2..=3 => (session_count.min(max_cols), 1),
+            4 => {
+                if max_cols >= 2 && max_rows >= 2 {
+                    (2, 2)
+                } else {
+                    (session_count.min(max_cols), 1)
+                }
+            }
+            5..=6 => {
+                if max_cols >= 3 && max_rows >= 2 {
+                    (3, 2)
+                } else if max_cols >= 2 && max_rows >= 3 {
+                    (2, 3)
+                } else {
+                    (session_count.min(max_cols), 1)
+                }
+            }
+            7..=9 => {
+                if max_cols >= 3 && max_rows >= 3 {
+                    (3, 3)
+                } else if max_cols >= 3 && max_rows >= 2 {
+                    (3, 2)
+                } else {
+                    (session_count.min(max_cols), 1)
+                }
+            }
+            _ => {
+                let cols = max_cols.min(3);
+                let rows = max_rows.min(3);
+                (cols, rows)
+            }
+        };
+
+        let sessions_per_page = cols * rows;
+        let total_pages = if sessions_per_page == 0 {
+            1
+        } else {
+            session_count.div_ceil(sessions_per_page)
+        };
+
+        Self {
+            cols,
+            rows,
+            total_pages,
+            sessions_per_page,
+        }
+    }
+}
+
+/// Grid navigation state.
+#[derive(Debug, Clone)]
+pub struct GridState {
+    pub current_page: usize,
+    pub selected_col: usize,
+    pub selected_row: usize,
+}
+
+impl GridState {
+    pub fn new() -> Self {
+        Self {
+            current_page: 0,
+            selected_col: 0,
+            selected_row: 0,
+        }
+    }
+
+    /// Flat index into the session list.
+    pub fn selected_index(&self, layout: &GridLayout) -> usize {
+        self.current_page * layout.sessions_per_page
+            + self.selected_row * layout.cols
+            + self.selected_col
+    }
+
+    pub fn move_left(&mut self) {
+        self.selected_col = self.selected_col.saturating_sub(1);
+    }
+
+    pub fn move_right(&mut self, layout: &GridLayout) {
+        if self.selected_col + 1 < layout.cols {
+            self.selected_col += 1;
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        self.selected_row = self.selected_row.saturating_sub(1);
+    }
+
+    pub fn move_down(&mut self, layout: &GridLayout) {
+        if self.selected_row + 1 < layout.rows {
+            self.selected_row += 1;
+        }
+    }
+
+    pub fn next_page(&mut self, layout: &GridLayout) {
+        if self.current_page + 1 < layout.total_pages {
+            self.current_page += 1;
+            self.selected_col = 0;
+            self.selected_row = 0;
+        }
+    }
+
+    pub fn prev_page(&mut self, _layout: &GridLayout) {
+        if self.current_page > 0 {
+            self.current_page -= 1;
+            self.selected_col = 0;
+            self.selected_row = 0;
+        }
+    }
+
+    /// Clamp selection to valid bounds after layout change or session removal.
+    #[allow(dead_code)] // Reason: public API for grid state management after session changes
+    pub fn clamp(&mut self, layout: &GridLayout, total_sessions: usize) {
+        if layout.total_pages > 0 && self.current_page >= layout.total_pages {
+            self.current_page = layout.total_pages - 1;
+        }
+        if self.selected_col >= layout.cols {
+            self.selected_col = layout.cols.saturating_sub(1);
+        }
+        if self.selected_row >= layout.rows {
+            self.selected_row = layout.rows.saturating_sub(1);
+        }
+        let idx = self.selected_index(layout);
+        if idx >= total_sessions && total_sessions > 0 {
+            let page_start = self.current_page * layout.sessions_per_page;
+            let on_page = total_sessions.saturating_sub(page_start);
+            if on_page > 0 {
+                let last = on_page - 1;
+                self.selected_row = last / layout.cols;
+                self.selected_col = last % layout.cols;
+            }
+        }
+    }
+}
 
 pub struct PanelView {
     pub selected: Option<usize>,
     /// Scroll offset for the message area in agent panels.
     pub scroll_offset: u16,
+    pub grid_state: GridState,
 }
 
 impl PanelView {
@@ -25,6 +187,7 @@ impl PanelView {
         Self {
             selected: None,
             scroll_offset: 0,
+            grid_state: GridState::new(),
         }
     }
 
@@ -73,30 +236,73 @@ impl PanelView {
             return;
         }
 
-        let visible = sessions.len().min(MAX_VISIBLE_COLUMNS);
-        let constraints: Vec<Constraint> = (0..visible)
-            .map(|_| Constraint::Ratio(1, visible as u32))
+        let layout = GridLayout::calculate(sessions.len(), area.width, area.height);
+
+        let page_start = self.grid_state.current_page * layout.sessions_per_page;
+        let page_end = sessions.len().min(page_start + layout.sessions_per_page);
+        let page_sessions = &sessions[page_start..page_end];
+
+        // Reserve space for page indicator if paginated
+        let (grid_area, indicator_area) = if layout.total_pages > 1 {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(1)])
+                .split(area);
+            (chunks[0], Some(chunks[1]))
+        } else {
+            (area, None)
+        };
+
+        // Split into rows
+        let row_constraints: Vec<Constraint> = (0..layout.rows)
+            .map(|_| Constraint::Ratio(1, layout.rows as u32))
             .collect();
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(row_constraints)
+            .split(grid_area);
 
-        let columns = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(constraints)
-            .split(area);
+        for row_idx in 0..layout.rows {
+            let col_constraints: Vec<Constraint> = (0..layout.cols)
+                .map(|_| Constraint::Ratio(1, layout.cols as u32))
+                .collect();
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(col_constraints)
+                .split(rows[row_idx]);
 
-        for (i, session) in sessions.iter().take(visible).enumerate() {
-            let is_selected = self.selected == Some(i);
-            let has_conflict = file_claims
-                .map(|fc| fc.has_active_conflict(session.id))
-                .unwrap_or(false);
-            draw_single_panel(
-                f,
-                session,
-                columns[i],
-                is_selected,
-                has_conflict,
-                self.scroll_offset,
-                theme,
-                spinner_tick,
+            for col_idx in 0..layout.cols {
+                let session_idx = row_idx * layout.cols + col_idx;
+                if session_idx < page_sessions.len() {
+                    let is_selected = self.grid_state.selected_row == row_idx
+                        && self.grid_state.selected_col == col_idx;
+                    let has_conflict = file_claims
+                        .map(|fc| fc.has_active_conflict(page_sessions[session_idx].id))
+                        .unwrap_or(false);
+                    draw_single_panel(
+                        f,
+                        page_sessions[session_idx],
+                        cols[col_idx],
+                        is_selected,
+                        has_conflict,
+                        if is_selected { self.scroll_offset } else { 0 },
+                        theme,
+                        spinner_tick,
+                    );
+                }
+            }
+        }
+
+        // Page indicator
+        if let Some(ind_area) = indicator_area {
+            let text = format!(
+                " Page {}/{} — [/] prev/next ",
+                self.grid_state.current_page + 1,
+                layout.total_pages
+            );
+            f.render_widget(
+                Paragraph::new(text).style(Style::default().fg(theme.text_muted)),
+                ind_area,
             );
         }
     }
@@ -227,17 +433,25 @@ fn draw_single_panel(
         .percent(ctx_pct as u16);
     f.render_widget(gauge, chunks[2]);
 
-    // Current activity (animated spinner when thinking)
-    let activity_text = if session.is_thinking {
-        let elapsed = session
-            .thinking_started_at
-            .map(|t| t.elapsed())
-            .unwrap_or_default();
-        format!("> {}", spinner::thinking_activity(spinner_tick, elapsed))
-    } else if session.is_hollow_completion {
+    // Current activity (phase-aware animation)
+    let activity_text = if session.is_hollow_completion {
         "> \u{26A0} Session completed without performing any work".to_string()
     } else {
-        format!("> {}", session.current_activity)
+        let phase = spinner::animation_phase(
+            session.status,
+            session.is_thinking,
+            &session.current_activity,
+        );
+        let thinking_elapsed = session.thinking_started_at.map(|t| t.elapsed());
+        format!(
+            "> {}",
+            spinner::animated_activity(
+                phase,
+                spinner_tick,
+                &session.current_activity,
+                thinking_elapsed
+            )
+        )
     };
     let activity = Line::from(Span::styled(
         activity_text,
@@ -259,4 +473,122 @@ fn draw_single_panel(
         .wrap(Wrap { trim: true })
         .scroll((scroll, 0));
     f.render_widget(msg, chunks[4]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grid_layout_zero_sessions() {
+        let l = GridLayout::calculate(0, 120, 40);
+        assert_eq!(l.cols, 1);
+        assert_eq!(l.rows, 1);
+        assert_eq!(l.total_pages, 1);
+        assert_eq!(l.sessions_per_page, 0);
+    }
+
+    #[test]
+    fn grid_layout_two_sessions() {
+        let l = GridLayout::calculate(2, 120, 40);
+        assert_eq!(l.cols, 2);
+        assert_eq!(l.rows, 1);
+    }
+
+    #[test]
+    fn grid_layout_four_sessions_wide_terminal() {
+        let l = GridLayout::calculate(4, 120, 40);
+        assert_eq!(l.cols, 2);
+        assert_eq!(l.rows, 2);
+    }
+
+    #[test]
+    fn grid_layout_four_sessions_narrow_terminal() {
+        // 60px wide / 40 min = 1 col max
+        let l = GridLayout::calculate(4, 60, 40);
+        assert_eq!(l.cols, 1);
+    }
+
+    #[test]
+    fn grid_layout_ten_sessions_paginated() {
+        let l = GridLayout::calculate(10, 120, 40);
+        assert_eq!(l.cols, 3);
+        assert_eq!(l.rows, 3);
+        assert_eq!(l.sessions_per_page, 9);
+        assert_eq!(l.total_pages, 2);
+    }
+
+    #[test]
+    fn grid_state_move_left_at_zero_stays() {
+        let mut s = GridState::new();
+        s.move_left();
+        assert_eq!(s.selected_col, 0);
+    }
+
+    #[test]
+    fn grid_state_move_right_at_boundary_stays() {
+        let layout = GridLayout {
+            cols: 3,
+            rows: 2,
+            total_pages: 1,
+            sessions_per_page: 6,
+        };
+        let mut s = GridState::new();
+        s.selected_col = 2;
+        s.move_right(&layout);
+        assert_eq!(s.selected_col, 2);
+    }
+
+    #[test]
+    fn grid_state_selected_index_calculates_correctly() {
+        let layout = GridLayout {
+            cols: 3,
+            rows: 3,
+            total_pages: 2,
+            sessions_per_page: 9,
+        };
+        let mut s = GridState::new();
+        s.selected_row = 1;
+        s.selected_col = 2;
+        assert_eq!(s.selected_index(&layout), 5); // row 1 * 3 cols + col 2
+
+        s.current_page = 1;
+        s.selected_row = 0;
+        s.selected_col = 0;
+        assert_eq!(s.selected_index(&layout), 9); // page 1 * 9 + 0
+    }
+
+    #[test]
+    fn grid_state_next_page_prev_page() {
+        let layout = GridLayout {
+            cols: 3,
+            rows: 3,
+            total_pages: 3,
+            sessions_per_page: 9,
+        };
+        let mut s = GridState::new();
+        s.next_page(&layout);
+        assert_eq!(s.current_page, 1);
+        s.next_page(&layout);
+        assert_eq!(s.current_page, 2);
+        s.next_page(&layout); // at last page, stays
+        assert_eq!(s.current_page, 2);
+        s.prev_page(&layout);
+        assert_eq!(s.current_page, 1);
+    }
+
+    #[test]
+    fn grid_state_clamp_after_session_removal() {
+        let layout = GridLayout {
+            cols: 2,
+            rows: 2,
+            total_pages: 1,
+            sessions_per_page: 4,
+        };
+        let mut s = GridState::new();
+        s.selected_row = 1;
+        s.selected_col = 1; // index 3
+        s.clamp(&layout, 2); // only 2 sessions
+        assert!(s.selected_index(&layout) < 2);
+    }
 }

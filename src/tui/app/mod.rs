@@ -105,6 +105,10 @@ pub struct App {
     pub adapt_screen: Option<crate::tui::screens::adapt::AdaptScreen>,
     pub pr_review_screen: Option<crate::tui::screens::pr_review::PrReviewScreen>,
     pub release_notes_screen: Option<crate::tui::screens::ReleaseNotesScreen>,
+    pub tool_start_times: std::collections::HashMap<uuid::Uuid, (String, Instant)>,
+    pub session_ui_state: std::collections::HashMap<uuid::Uuid, SessionUiState>,
+    pub log_viewer_scroll: u16,
+    pub log_viewer_cache: crate::tui::log_viewer::LogViewerCache,
 }
 
 impl App {
@@ -185,6 +189,10 @@ impl App {
             adapt_screen: None,
             pr_review_screen: None,
             release_notes_screen: None,
+            tool_start_times: std::collections::HashMap::new(),
+            session_ui_state: std::collections::HashMap::new(),
+            log_viewer_scroll: 0,
+            log_viewer_cache: crate::tui::log_viewer::LogViewerCache::default(),
         }
     }
 

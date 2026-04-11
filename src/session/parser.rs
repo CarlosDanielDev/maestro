@@ -237,10 +237,21 @@ fn parse_result(v: &Value) -> Vec<StreamEvent> {
         })
         .unwrap_or(0.0);
 
-    if let Some(usage) = v.get("usage")
-        && let Some(token_usage) = extract_token_usage(usage)
-    {
-        events.push(StreamEvent::TokenUpdate { usage: token_usage });
+    if let Some(usage) = v.get("usage") {
+        if let Some(token_usage) = extract_token_usage(usage) {
+            events.push(StreamEvent::TokenUpdate { usage: token_usage });
+        }
+
+        // Extract context percentage from input_tokens / max_input_tokens
+        if let (Some(input_f), Some(max)) = (
+            usage.get("input_tokens").and_then(|t| t.as_f64()),
+            usage.get("max_input_tokens").and_then(|t| t.as_f64()),
+        ) && max > 0.0
+        {
+            events.push(StreamEvent::ContextUpdate {
+                context_pct: input_f / max,
+            });
+        }
     }
 
     events.push(StreamEvent::Completed { cost_usd: cost });
@@ -555,6 +566,48 @@ mod tests {
             !events
                 .iter()
                 .any(|e| matches!(e, StreamEvent::TokenUpdate { .. }))
+        );
+    }
+
+    // --- Issue #197: Context percentage from result events ---
+
+    #[test]
+    fn parse_result_event_extracts_context_update() {
+        let line = r#"{"type":"result","cost_usd":1.5,"usage":{"input_tokens":70000,"output_tokens":2000,"max_input_tokens":200000}}"#;
+        let events = parse_stream_line(line);
+        let ctx = events
+            .iter()
+            .find(|e| matches!(e, StreamEvent::ContextUpdate { .. }))
+            .expect("Expected ContextUpdate from result event");
+        match ctx {
+            StreamEvent::ContextUpdate { context_pct } => {
+                assert!((*context_pct - 0.35).abs() < 0.001);
+            }
+            other => panic!("Expected ContextUpdate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_result_event_no_max_tokens_no_context_update() {
+        let line = r#"{"type":"result","cost_usd":1.0,"usage":{"input_tokens":50000,"output_tokens":1000}}"#;
+        let events = parse_stream_line(line);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::ContextUpdate { .. })),
+            "Should NOT produce ContextUpdate when max_input_tokens is absent"
+        );
+    }
+
+    #[test]
+    fn parse_result_event_zero_max_tokens_no_context_update() {
+        let line = r#"{"type":"result","cost_usd":1.0,"usage":{"input_tokens":50000,"output_tokens":1000,"max_input_tokens":0}}"#;
+        let events = parse_stream_line(line);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::ContextUpdate { .. })),
+            "Should NOT produce ContextUpdate when max_input_tokens is 0"
         );
     }
 }

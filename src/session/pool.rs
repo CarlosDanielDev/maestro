@@ -274,6 +274,39 @@ impl SessionPool {
         }
     }
 
+    /// Remove a finished session from the pool entirely.
+    /// Returns true if the session was found and removed.
+    pub fn dismiss_session(&mut self, session_id: Uuid) -> bool {
+        if let Some(idx) = self
+            .finished
+            .iter()
+            .position(|m| m.session.id == session_id)
+        {
+            self.finished.remove(idx);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Remove all finished sessions that are in a terminal state.
+    /// Returns the number of sessions dismissed.
+    pub fn dismiss_all_completed(&mut self) -> usize {
+        let before = self.finished.len();
+        self.finished.retain(|m| !m.session.status.is_terminal());
+        before - self.finished.len()
+    }
+
+    /// Kill a single active session by ID.
+    pub async fn kill_session(&mut self, session_id: Uuid) -> anyhow::Result<bool> {
+        if let Some(managed) = self.active.iter_mut().find(|m| m.session.id == session_id) {
+            managed.kill().await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Get the event sender for spawning sessions.
     pub fn event_tx(&self) -> mpsc::UnboundedSender<SessionEvent> {
         self.event_tx.clone()
@@ -565,5 +598,62 @@ mod tests {
         assert_eq!(pool.all_sessions().len(), 2);
         // 1 active (s2) + 1 finished (s1)
         assert_eq!(pool.active_count(), 1);
+    }
+
+    // --- Issue #203: dismiss/kill tests ---
+
+    #[test]
+    fn dismiss_session_removes_from_finished() {
+        let mut pool = make_pool(1);
+        let s = make_session("A");
+        let id = s.id;
+        pool.enqueue(s);
+        pool.try_promote();
+        pool.on_session_completed(id);
+        assert_eq!(pool.total_count(), 1); // 1 finished
+
+        assert!(pool.dismiss_session(id));
+        assert_eq!(pool.total_count(), 0);
+    }
+
+    #[test]
+    fn dismiss_session_unknown_id_returns_false() {
+        let mut pool = make_pool(1);
+        assert!(!pool.dismiss_session(Uuid::new_v4()));
+    }
+
+    #[test]
+    fn dismiss_all_completed_clears_terminal_sessions() {
+        use crate::session::transition::TransitionReason;
+
+        let mut pool = make_pool(2);
+        let s1 = make_session("A");
+        let s2 = make_session("B");
+        let id1 = s1.id;
+        let id2 = s2.id;
+        pool.enqueue(s1);
+        pool.enqueue(s2);
+        pool.try_promote();
+
+        // Transition through valid state machine: Queued → Spawning → Running → Completed
+        for id in [id1, id2] {
+            if let Some(m) = pool.get_active_mut(id) {
+                let _ = m
+                    .session
+                    .transition_to(SessionStatus::Spawning, TransitionReason::Spawned);
+                let _ = m
+                    .session
+                    .transition_to(SessionStatus::Running, TransitionReason::Promoted);
+                let _ = m
+                    .session
+                    .transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted);
+            }
+            pool.on_session_completed(id);
+        }
+        assert_eq!(pool.total_count(), 2);
+
+        let dismissed = pool.dismiss_all_completed();
+        assert_eq!(dismissed, 2);
+        assert_eq!(pool.total_count(), 0);
     }
 }
