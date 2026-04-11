@@ -143,6 +143,10 @@ pub fn changelog() -> &'static ChangelogData {
     &CHANGELOG
 }
 
+pub fn changelog_raw() -> &'static str {
+    CHANGELOG_RAW
+}
+
 pub fn current_version() -> Option<&'static VersionEntry> {
     let version = env!("CARGO_PKG_VERSION");
     changelog().entries.iter().find(|e| e.version == version)
