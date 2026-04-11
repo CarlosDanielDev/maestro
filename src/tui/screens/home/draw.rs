@@ -1,5 +1,6 @@
 use super::types::{Suggestion, SuggestionKind};
 use super::{HomeScreen, LOGO, QUICK_ACTIONS};
+use crate::changelog::{self, ChangeCategory, ChangeItem};
 use crate::tui::app::TuiMode;
 use crate::tui::screens::ScreenAction;
 use crate::tui::theme::Theme;
@@ -19,13 +20,21 @@ impl HomeScreen {
             (self.warnings.len() as u16 + 2).min(6)
         };
 
+        let whats_new_items = Self::whats_new_highlights();
+        let whats_new_height = if whats_new_items.is_empty() {
+            0
+        } else {
+            (whats_new_items.len() as u16 + 2).min(6)
+        };
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(8),              // logo
-                Constraint::Length(3),              // project info
-                Constraint::Length(warning_height), // warnings (0 if none)
-                Constraint::Min(8),                 // quick actions + recent sessions
+                Constraint::Length(8),                // logo
+                Constraint::Length(3),                // project info
+                Constraint::Length(warning_height),   // warnings (0 if none)
+                Constraint::Length(whats_new_height), // what's new (0 if none)
+                Constraint::Min(8),                   // quick actions + recent sessions
             ])
             .split(area);
 
@@ -36,6 +45,10 @@ impl HomeScreen {
             self.draw_warnings(f, chunks[2], theme);
         }
 
+        if !whats_new_items.is_empty() {
+            Self::draw_whats_new(f, chunks[3], theme, &whats_new_items);
+        }
+
         let bottom = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -43,7 +56,7 @@ impl HomeScreen {
                 Constraint::Percentage(35),
                 Constraint::Percentage(35),
             ])
-            .split(chunks[3]);
+            .split(chunks[4]);
 
         self.draw_quick_actions(f, bottom[0], theme);
         self.draw_suggestions(f, bottom[1], theme);
@@ -131,6 +144,54 @@ impl HomeScreen {
                 Line::from(vec![
                     Span::styled("  ! ", Style::default().fg(theme.accent_warning)),
                     Span::styled(w.as_str(), Style::default().fg(theme.text_primary)),
+                ])
+            })
+            .collect();
+
+        let para = Paragraph::new(lines).block(block);
+        f.render_widget(para, area);
+    }
+
+    fn whats_new_highlights() -> Vec<(ChangeCategory, &'static ChangeItem)> {
+        let version = env!("CARGO_PKG_VERSION");
+        changelog::changelog().highlights_with_category(version, 4)
+    }
+
+    fn draw_whats_new(
+        f: &mut Frame,
+        area: Rect,
+        theme: &Theme,
+        items: &[(ChangeCategory, &ChangeItem)],
+    ) {
+        let version = env!("CARGO_PKG_VERSION");
+        let block = Block::default()
+            .title(format!(" What's New in v{} ", version))
+            .title_bottom(Line::from(" Press [n] for full release notes ").centered())
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.accent_info));
+
+        let inner_width = area.width.saturating_sub(2) as usize;
+
+        let lines: Vec<Line> = items
+            .iter()
+            .map(|(cat, item)| {
+                let prefix = format!("  [{}] ", cat.label());
+                let max_text = inner_width.saturating_sub(prefix.len());
+                let text = if item.text.chars().count() > max_text {
+                    let truncated: String =
+                        item.text.chars().take(max_text.saturating_sub(3)).collect();
+                    format!("{}...", truncated)
+                } else {
+                    item.text.clone()
+                };
+                Line::from(vec![
+                    Span::styled(
+                        prefix,
+                        Style::default()
+                            .fg(theme.accent_success)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(text, Style::default().fg(theme.text_primary)),
                 ])
             })
             .collect();

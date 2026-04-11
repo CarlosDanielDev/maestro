@@ -18,6 +18,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::Settings => app.settings_screen.as_mut()?,
         app::TuiMode::AdaptWizard => app.adapt_screen.as_mut()?,
         app::TuiMode::PrReview => app.pr_review_screen.as_mut()?,
+        app::TuiMode::ReleaseNotes => app.release_notes_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -102,6 +103,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         Some(crate::tui::screens::pr_review::PrReviewScreen::new());
                     app.pending_commands.push(app::TuiCommand::FetchOpenPrs);
                 }
+                app::TuiMode::ReleaseNotes => {
+                    app.release_notes_screen = Some(crate::tui::screens::ReleaseNotesScreen::new());
+                }
                 app::TuiMode::PromptInput => {
                     app.prompt_input_screen = Some(app::helpers::create_prompt_input_screen(
                         &app.prompt_history,
@@ -140,6 +144,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::PrReview => {
                     app.pr_review_screen = None;
+                }
+                app::TuiMode::ReleaseNotes => {
+                    app.release_notes_screen = None;
                 }
                 _ => {}
             }

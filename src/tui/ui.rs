@@ -232,6 +232,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &theme);
             }
         }
+        TuiMode::ReleaseNotes => {
+            if let Some(ref mut screen) = app.release_notes_screen {
+                screen.draw(f, chunks[1], &theme);
+            }
+        }
         TuiMode::HollowRetry => {
             let sessions = app.pool.all_sessions();
             app.panel_view.draw_with_claims(
@@ -517,6 +522,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::SessionSwitcher => "Sessions",
         TuiMode::AdaptWizard => "Adapt",
         TuiMode::PrReview => "PR Review",
+        TuiMode::ReleaseNotes => "Release Notes",
     };
 
     let help = Line::from(vec![

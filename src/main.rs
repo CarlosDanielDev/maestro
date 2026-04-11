@@ -1,4 +1,5 @@
 mod budget;
+mod changelog;
 mod cli;
 mod commands;
 mod config;
