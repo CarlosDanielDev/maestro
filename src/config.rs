@@ -47,6 +47,8 @@ pub struct TuiConfig {
     pub theme: ThemeConfig,
     #[serde(default)]
     pub layout: LayoutConfig,
+    #[serde(default)]
+    pub ascii_icons: bool,
 }
 
 /// Layout configuration for the Issues screen.

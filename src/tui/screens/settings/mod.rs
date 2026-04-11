@@ -421,6 +421,10 @@ impl SettingsScreen {
                 preset_options,
                 preset_idx,
             ))),
+            Self::field(WidgetKind::Toggle(Toggle::new(
+                "ascii_icons",
+                config.tui.ascii_icons,
+            ))),
         ]
     }
 
@@ -698,6 +702,9 @@ impl SettingsScreen {
                     1 => crate::tui::theme::ThemePreset::Light,
                     _ => crate::tui::theme::ThemePreset::Retro,
                 };
+            }
+            if let Some(WidgetKind::Toggle(w)) = fields.get(2).map(|f| &f.widget) {
+                self.config.tui.ascii_icons = w.value;
             }
         }
 

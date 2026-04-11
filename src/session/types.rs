@@ -1,7 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use uuid::Uuid;
+
+static ASCII_ICONS: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -69,14 +72,15 @@ impl SessionStatus {
         }
     }
 
+    /// Set icon mode globally. Called from config init and settings changes.
+    pub fn set_ascii_icons(ascii: bool) {
+        use std::sync::atomic::Ordering;
+        ASCII_ICONS.store(ascii, Ordering::Relaxed);
+    }
+
     fn use_nerd_font() -> bool {
-        use std::sync::OnceLock;
-        static CACHED: OnceLock<bool> = OnceLock::new();
-        *CACHED.get_or_init(|| {
-            std::env::var("MAESTRO_ASCII_ICONS")
-                .map(|v| v != "1")
-                .unwrap_or(true)
-        })
+        use std::sync::atomic::Ordering;
+        !ASCII_ICONS.load(Ordering::Relaxed)
     }
 
     pub fn label(&self) -> &'static str {

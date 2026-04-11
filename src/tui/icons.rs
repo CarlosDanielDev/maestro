@@ -1,10 +1,28 @@
 //! Icon mode detection: Nerd Font vs ASCII fallback.
-//! Set `MAESTRO_ASCII_ICONS=1` to use ASCII-only icons.
+//! Config: `tui.ascii_icons = true` in maestro.toml
+//! Env override: `MAESTRO_ASCII_ICONS=1`
 
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-#[allow(dead_code)] // Reason: referenced by use_nerd_font() which is used in tests
-static USE_NERD_FONT: OnceLock<bool> = OnceLock::new();
+static ASCII_MODE: AtomicBool = AtomicBool::new(false);
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// Initialize icon mode from config. Call once at startup.
+pub fn init_from_config(ascii_icons: bool) {
+    ASCII_MODE.store(ascii_icons, Ordering::Relaxed);
+    INITIALIZED.store(true, Ordering::Relaxed);
+}
+
+/// Returns true if Nerd Font icons should be used.
+/// Checks (in order): config flag, MAESTRO_ASCII_ICONS env var.
+#[allow(dead_code)] // Reason: public API used in tests and available for non-SessionStatus callers
+pub fn use_nerd_font() -> bool {
+    if INITIALIZED.load(Ordering::Relaxed) {
+        return !ASCII_MODE.load(Ordering::Relaxed);
+    }
+    // Fallback: env var check (for lib crate / before config loads)
+    use_nerd_font_from_env(|k| std::env::var(k).ok())
+}
 
 // Testable version: accepts an env-var reader closure.
 #[allow(dead_code)] // Reason: used in tests
@@ -12,12 +30,6 @@ pub(crate) fn use_nerd_font_from_env(get_env: impl Fn(&str) -> Option<String>) -
     get_env("MAESTRO_ASCII_ICONS")
         .map(|v| v != "1")
         .unwrap_or(true)
-}
-
-/// Returns true if Nerd Font icons should be used (cached at first call).
-#[allow(dead_code)] // Reason: public API for icon mode, used in tests
-pub fn use_nerd_font() -> bool {
-    *USE_NERD_FONT.get_or_init(|| use_nerd_font_from_env(|k| std::env::var(k).ok()))
 }
 
 #[cfg(test)]
@@ -38,6 +50,14 @@ mod tests {
     #[test]
     fn returns_true_when_ascii_icons_set_to_0() {
         assert!(use_nerd_font_from_env(|_| Some("0".to_string())));
+    }
+
+    #[test]
+    fn init_from_config_sets_ascii_mode() {
+        init_from_config(true);
+        assert!(!use_nerd_font());
+        // Reset for other tests
+        init_from_config(false);
     }
 
     #[test]
