@@ -7,10 +7,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-04-11
+
+### Added
+
+- Changelog parser module (#237)
+- What's New widget on HomeScreen (#238)
+- ReleaseNotes screen with scrollable changelog (#239)
+- Wire ReleaseNotes screen into App and screen dispatch (#240)
+
 ### Fixed
 
 - Prompt history navigation — Up/Down arrows in the Compose Prompt screen now correctly recall previous prompts; history is always injected when creating `PromptInputScreen` (#232)
 - Self-update asset resolution — asset names now use Rust target triples (e.g. `aarch64-apple-darwin`), checksum file resolves to `sha256sums.txt`, and `.tar.gz` archives are correctly extracted using the `flate2` + `tar` pipeline (#233)
+- Ctrl+V paste causes flickering errors and app crash on Windows WSL (#235)
 
 ## [0.10.0] - 2026-04-10
 
