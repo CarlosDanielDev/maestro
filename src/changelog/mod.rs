@@ -93,6 +93,7 @@ impl ChangelogData {
         parser::parse(raw)
     }
 
+    #[allow(dead_code)]
     pub fn highlights(&self, version: &str, max: usize) -> Vec<&ChangeItem> {
         let Some(entry) = self.entries.iter().find(|e| e.version == version) else {
             return vec![];
@@ -147,11 +148,13 @@ pub fn changelog_raw() -> &'static str {
     CHANGELOG_RAW
 }
 
+#[allow(dead_code)]
 pub fn current_version() -> Option<&'static VersionEntry> {
     let version = env!("CARGO_PKG_VERSION");
     changelog().entries.iter().find(|e| e.version == version)
 }
 
+#[allow(dead_code)]
 pub fn highlights(version: &str, max: usize) -> Vec<&'static ChangeItem> {
     changelog().highlights(version, max)
 }

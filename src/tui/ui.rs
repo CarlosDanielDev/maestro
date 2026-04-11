@@ -233,7 +233,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::ReleaseNotes => {
-            // Placeholder — full rendering wired in #240
+            if let Some(ref mut screen) = app.release_notes_screen {
+                screen.draw(f, chunks[1], &theme);
+            }
         }
         TuiMode::HollowRetry => {
             let sessions = app.pool.all_sessions();

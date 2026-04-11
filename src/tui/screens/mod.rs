@@ -7,7 +7,6 @@ pub mod milestone;
 pub mod pr_review;
 pub mod prompt_input;
 pub mod queue_confirmation;
-#[allow(dead_code)]
 pub mod release_notes;
 pub mod settings;
 
@@ -17,7 +16,6 @@ pub use issue_browser::IssueBrowserScreen;
 pub use milestone::MilestoneScreen;
 pub use prompt_input::PromptInputScreen;
 pub use queue_confirmation::QueueConfirmationScreen;
-#[allow(unused_imports)]
 pub use release_notes::ReleaseNotesScreen;
 pub use settings::SettingsScreen;
 
