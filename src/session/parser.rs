@@ -13,6 +13,15 @@ fn char_boundary(s: &str, max_bytes: usize) -> usize {
     i
 }
 
+/// Return the max input token limit for a given Claude model identifier.
+fn model_max_input_tokens(model: &str) -> f64 {
+    if model.contains("opus") {
+        1_000_000.0
+    } else {
+        200_000.0
+    }
+}
+
 /// Parse a single line of Claude CLI `--output-format stream-json` output.
 ///
 /// The stream-json format emits one JSON object per line. Key event types:
@@ -55,7 +64,9 @@ pub fn parse_stream_line(line: &str) -> Vec<StreamEvent> {
     // Extract context percentage from message.usage (present in assistant events).
     // The Claude CLI reports input_tokens (new) + cache_read_input_tokens (prior context)
     // but no max_input_tokens. We compute total and use model context limits.
-    if let Some(usage) = v.get("message").and_then(|m| m.get("usage")) {
+    if let Some(msg) = v.get("message")
+        && let Some(usage) = msg.get("usage")
+    {
         let input = usage
             .get("input_tokens")
             .and_then(|t| t.as_f64())
@@ -71,13 +82,12 @@ pub fn parse_stream_line(line: &str) -> Vec<StreamEvent> {
         let total_input = input + cache_read + cache_create;
 
         if total_input > 0.0 {
-            // Use max_input_tokens if present, otherwise estimate from model context window.
-            // Claude Opus 4.6 = 1M tokens, Sonnet 4.6 = 200K, Haiku 4.5 = 200K.
-            // Default to 200K as a safe lower bound.
             let max = usage
                 .get("max_input_tokens")
                 .and_then(|t| t.as_f64())
-                .unwrap_or(200_000.0);
+                .unwrap_or_else(|| {
+                    model_max_input_tokens(msg.get("model").and_then(|m| m.as_str()).unwrap_or(""))
+                });
             if max > 0.0 {
                 events.push(StreamEvent::ContextUpdate {
                     context_pct: total_input / max,
@@ -680,5 +690,43 @@ mod tests {
                 .any(|e| matches!(e, StreamEvent::ContextUpdate { .. })),
             "Should NOT produce ContextUpdate without usage"
         );
+    }
+
+    #[test]
+    fn parse_assistant_event_opus_model_uses_1m_max() {
+        let line = r#"{"type":"assistant","message":{"model":"claude-opus-4-6","type":"text","text":"hi","usage":{"input_tokens":3,"cache_read_input_tokens":50000,"cache_creation_input_tokens":10000,"output_tokens":25}}}"#;
+        let events = parse_stream_line(line);
+        let ctx = events
+            .iter()
+            .find(|e| matches!(e, StreamEvent::ContextUpdate { .. }))
+            .expect("Expected ContextUpdate from opus assistant event");
+        match ctx {
+            StreamEvent::ContextUpdate { context_pct } => {
+                // total = 60003, max = 1_000_000 (opus)
+                assert!(
+                    (*context_pct - 0.06).abs() < 0.01,
+                    "expected ~6% for opus (1M ctx), got {:.1}%",
+                    context_pct * 100.0
+                );
+            }
+            other => panic!("Expected ContextUpdate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn model_max_tokens_opus_is_1m() {
+        assert_eq!(model_max_input_tokens("claude-opus-4-6"), 1_000_000.0);
+        assert_eq!(model_max_input_tokens("claude-opus-4-6[1m]"), 1_000_000.0);
+    }
+
+    #[test]
+    fn model_max_tokens_sonnet_is_200k() {
+        assert_eq!(model_max_input_tokens("claude-sonnet-4-6"), 200_000.0);
+    }
+
+    #[test]
+    fn model_max_tokens_unknown_defaults_200k() {
+        assert_eq!(model_max_input_tokens("some-future-model"), 200_000.0);
+        assert_eq!(model_max_input_tokens(""), 200_000.0);
     }
 }
