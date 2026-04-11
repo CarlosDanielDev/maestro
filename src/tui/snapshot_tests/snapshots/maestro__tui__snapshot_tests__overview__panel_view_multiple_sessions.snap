@@ -7,7 +7,7 @@ expression: terminal.backend()
 "│$0.12  0 files                        ││$0.50  0 files                        ││$0.03  0 files                        │"
 "│█████████████                         ││█████████████                         ││█████████████                         │"
 "│█████████████  ctx: 35%               ││█████████████  ctx: 35%               ││█████████████  ctx: 35%               │"
-"│> Writing tests                       ││> Writing tests                       ││> Writing tests                       │"
+"│> _ Writing tests                     ││> Writing tests                       ││> _ Writing tests                     │"
 "│Analyzing codebase...                 ││Analyzing codebase...                 ││Analyzing codebase...                 │"
 "│                                      ││                                      ││                                      │"
 "│                                      ││                                      ││                                      │"

@@ -284,6 +284,7 @@ pub enum ThemePreset {
     #[default]
     Dark,
     Light,
+    Retro,
 }
 
 /// Top-level theme configuration, embeddable in maestro.toml.
@@ -480,11 +481,53 @@ impl Theme {
         }
     }
 
+    /// Retro CRT theme — DOS-era green/amber on black.
+    pub fn retro() -> Self {
+        Self {
+            branding_fg: Color::Black,
+            branding_bg: Color::Rgb(0, 255, 65),
+            text_primary: Color::Rgb(0, 255, 65),
+            text_secondary: Color::Rgb(0, 180, 45),
+            text_muted: Color::Rgb(0, 100, 25),
+            border_active: Color::Rgb(255, 140, 0),
+            border_inactive: Color::Rgb(0, 100, 25),
+            border_focused: Color::Rgb(255, 175, 0),
+            status_running: Color::Rgb(0, 255, 65),
+            status_completed: Color::Rgb(0, 180, 45),
+            status_errored: Color::Rgb(255, 60, 0),
+            status_paused: Color::Rgb(255, 140, 0),
+            status_killed: Color::Rgb(255, 60, 0),
+            status_queued: Color::Rgb(0, 100, 25),
+            status_spawning: Color::Rgb(255, 175, 0),
+            status_stalled: Color::Rgb(255, 140, 0),
+            status_retrying: Color::Rgb(255, 200, 0),
+            status_gates_running: Color::Rgb(0, 200, 50),
+            status_needs_review: Color::Rgb(255, 175, 0),
+            status_ci_fix: Color::Rgb(255, 140, 0),
+            accent_success: Color::Rgb(0, 255, 65),
+            accent_warning: Color::Rgb(255, 140, 0),
+            accent_error: Color::Rgb(255, 60, 0),
+            accent_info: Color::Rgb(0, 200, 50),
+            accent_identifier: Color::Rgb(255, 175, 0),
+            gauge_low: Color::Rgb(0, 255, 65),
+            gauge_medium: Color::Rgb(255, 140, 0),
+            gauge_high: Color::Rgb(255, 60, 0),
+            gauge_background: Color::Rgb(0, 40, 10),
+            notification_critical: Color::Rgb(255, 60, 0),
+            notification_blocker: Color::Rgb(255, 140, 0),
+            notification_default: Color::Rgb(255, 175, 0),
+            keybind_key: Color::Rgb(255, 175, 0),
+            keybind_label_bg: Color::Rgb(0, 40, 10),
+            keybind_label_fg: Color::Rgb(0, 255, 65),
+        }
+    }
+
     /// Build a theme from config, applying overrides on top of the preset.
     pub fn from_config(config: &ThemeConfig) -> Self {
         let mut theme = match config.preset {
             ThemePreset::Dark => Self::dark(),
             ThemePreset::Light => Self::light(),
+            ThemePreset::Retro => Self::retro(),
         };
 
         macro_rules! apply_override {
@@ -1047,6 +1090,74 @@ mod tests {
         assert_eq!(
             ColorCapability::TrueColor.downgrade(Color::Green),
             Color::Green
+        );
+    }
+
+    // --- Issue #214: Retro theme preset ---
+
+    #[test]
+    fn retro_preset_uses_crt_green() {
+        let t = Theme::retro();
+        assert_eq!(t.text_primary, Color::Rgb(0, 255, 65));
+    }
+
+    #[test]
+    fn retro_preset_uses_amber_border() {
+        let t = Theme::retro();
+        assert_eq!(t.border_active, Color::Rgb(255, 140, 0));
+    }
+
+    #[test]
+    fn retro_preset_differs_from_dark_and_light() {
+        let retro = Theme::retro();
+        let dark = Theme::dark();
+        let light = Theme::light();
+        assert_ne!(retro.text_primary, dark.text_primary);
+        assert_ne!(retro.text_primary, light.text_primary);
+    }
+
+    #[test]
+    fn from_config_retro_preset_matches_retro_constructor() {
+        let cfg = ThemeConfig {
+            preset: ThemePreset::Retro,
+            overrides: ThemeOverrides::default(),
+        };
+        let from_cfg = Theme::from_config(&cfg);
+        let direct = Theme::retro();
+        assert_eq!(from_cfg.text_primary, direct.text_primary);
+        assert_eq!(from_cfg.border_active, direct.border_active);
+    }
+
+    #[test]
+    fn theme_preset_deserializes_retro_lowercase() {
+        let cfg: ThemeConfig = toml::from_str(r#"preset = "retro""#).expect("parse failed");
+        assert_eq!(cfg.preset, ThemePreset::Retro);
+    }
+
+    #[test]
+    fn retro_downgrade_to_basic_produces_named_colors() {
+        let mut t = Theme::retro();
+        t.apply_capability(ColorCapability::Basic);
+        assert!(
+            !matches!(t.text_primary, Color::Rgb(_, _, _)),
+            "expected non-Rgb after basic downgrade, got {:?}",
+            t.text_primary
+        );
+        assert!(
+            !matches!(t.text_primary, Color::Indexed(_)),
+            "expected non-Indexed after basic downgrade, got {:?}",
+            t.text_primary
+        );
+    }
+
+    #[test]
+    fn retro_downgrade_to_extended_produces_indexed_colors() {
+        let mut t = Theme::retro();
+        t.apply_capability(ColorCapability::Extended);
+        assert!(
+            matches!(t.text_primary, Color::Indexed(_)),
+            "expected Indexed after extended downgrade, got {:?}",
+            t.text_primary
         );
     }
 }

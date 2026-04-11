@@ -144,9 +144,28 @@ impl App {
                         (t, Some(path), _) => format!("{}: {}", t, path),
                         (t, None, _) => format!("Using {}", t),
                     };
-                    self.activity_log.push_simple(label, detail, LogLevel::Tool);
+                    self.activity_log
+                        .push_tool(label, detail, LogLevel::Tool, tool.clone());
+                    self.tool_start_times
+                        .insert(session_id, (tool.clone(), std::time::Instant::now()));
                     let progress = self.progress_tracker.get_or_create(session_id);
                     progress.on_tool_use(tool, file_path.as_deref());
+                }
+                StreamEvent::ToolResult { tool, is_error } => {
+                    let duration_str = self
+                        .tool_start_times
+                        .remove(&session_id)
+                        .map(|(_, start)| format!(" ({:.1}s)", start.elapsed().as_secs_f64()))
+                        .unwrap_or_default();
+                    let status = if *is_error { "FAILED" } else { "done" };
+                    let detail = format!("{} {}{}", tool, status, duration_str);
+                    let level = if *is_error {
+                        LogLevel::Error
+                    } else {
+                        LogLevel::Tool
+                    };
+                    self.activity_log
+                        .push_tool(label, detail, level, tool.clone());
                 }
                 StreamEvent::AssistantMessage { text } => {
                     let progress = self.progress_tracker.get_or_create(session_id);

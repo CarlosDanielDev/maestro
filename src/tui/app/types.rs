@@ -31,6 +31,15 @@ pub enum TuiMode {
     AdaptWizard,
     PrReview,
     ReleaseNotes,
+    LogViewer(uuid::Uuid),
+    ConfirmKill(uuid::Uuid),
+}
+
+/// Per-session ephemeral UI state (not persisted).
+#[derive(Debug, Clone, Default)]
+pub struct SessionUiState {
+    /// Whether the completion summary popup is shown for this session.
+    pub show_summary_popup: bool,
 }
 
 /// Payload for suggestion data fetched from GitHub.
@@ -106,6 +115,7 @@ pub struct GateFailureInfo {
 /// Per-session line in the completion summary.
 #[derive(Debug, Clone)]
 pub struct CompletionSessionLine {
+    pub session_id: uuid::Uuid,
     pub label: String,
     pub status: SessionStatus,
     pub cost_usd: f64,

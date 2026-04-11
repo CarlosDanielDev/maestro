@@ -9,10 +9,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
 };
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use tui_textarea::TextArea;
 
 /// Result of reading the system clipboard.
 pub enum ClipboardContent {
@@ -92,7 +93,7 @@ fn save_clipboard_image(img: &arboard::ImageData) -> Option<PathBuf> {
 }
 
 pub struct PromptInputScreen {
-    pub(crate) prompt_text: String,
+    pub(crate) editor: TextArea<'static>,
     pub(crate) image_paths: Vec<String>,
     pub(crate) focus_ring: FocusRing,
     pub(crate) image_path_input: String,
@@ -110,6 +111,37 @@ pub struct PromptInputScreen {
 }
 
 impl PromptInputScreen {
+    /// Get the current editor text as a single string.
+    pub fn editor_text(&self) -> String {
+        self.editor.lines().join("\n")
+    }
+
+    /// Backward-compatible accessor for tests and external code.
+    #[cfg(test)]
+    pub fn prompt_text(&self) -> String {
+        self.editor_text()
+    }
+
+    /// Replace editor content with new text, cursor at end.
+    pub fn set_editor_text(&mut self, text: &str) {
+        let lines: Vec<String> = if text.is_empty() {
+            vec![String::new()]
+        } else {
+            text.lines().map(String::from).collect()
+        };
+        self.editor = TextArea::new(lines);
+        self.editor.set_cursor_line_style(Style::default());
+        // Move cursor to end of text
+        let last_row = self.editor.lines().len().saturating_sub(1);
+        let last_col = self.editor.lines().last().map(|l| l.len()).unwrap_or(0);
+        self.editor.move_cursor(tui_textarea::CursorMove::Jump(
+            last_row as u16,
+            last_col as u16,
+        ));
+    }
+}
+
+impl PromptInputScreen {
     pub fn new() -> Self {
         Self::with_clipboard(Box::new(SystemClipboard))
     }
@@ -118,8 +150,11 @@ impl PromptInputScreen {
     pub const IMAGE_LIST_PANE: FocusId = FocusId("prompt:images");
 
     pub fn with_clipboard(clipboard: Box<dyn ClipboardProvider>) -> Self {
+        let mut editor = TextArea::default();
+        editor.set_cursor_line_style(Style::default());
+        editor.set_placeholder_text("Type your prompt here...");
         Self {
-            prompt_text: String::new(),
+            editor,
             image_paths: Vec::new(),
             focus_ring: FocusRing::new(vec![Self::PROMPT_EDITOR_PANE, Self::IMAGE_LIST_PANE]),
             image_path_input: String::new(),
@@ -157,7 +192,7 @@ impl PromptInputScreen {
                 self.image_paths.push(path_str);
             }
             ClipboardContent::Text(text) if editor_focused => {
-                self.prompt_text.push_str(&text);
+                self.editor.insert_str(&text);
                 self.status_message = Some("Pasted text into prompt".to_string());
                 self.history_cursor = None;
             }
@@ -200,21 +235,13 @@ impl PromptInputScreen {
                     .add_modifier(Modifier::BOLD),
             ));
 
-        let display_text = if self.prompt_text.is_empty() {
-            "Type your prompt here...".to_string()
-        } else {
-            self.prompt_text.clone()
-        };
-        let text_style = if self.prompt_text.is_empty() {
-            Style::default().fg(theme.text_secondary)
-        } else {
-            Style::default().fg(theme.text_primary)
-        };
-        let editor = Paragraph::new(display_text)
-            .style(text_style)
-            .block(editor_block)
-            .wrap(Wrap { trim: false });
-        f.render_widget(editor, chunks[0]);
+        // Note: we cannot mutate self.editor here since draw takes &self.
+        // We create a clone for rendering with the styled block.
+        let mut editor_widget = self.editor.clone();
+        editor_widget.set_block(editor_block);
+        editor_widget.set_style(Style::default().fg(theme.text_primary));
+        editor_widget.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+        f.render_widget(&editor_widget, chunks[0]);
 
         // Image list
         let image_border_color = if self.is_image_list_focused() {
@@ -407,54 +434,53 @@ impl Screen for PromptInputScreen {
             }
 
             if self.is_prompt_editor_focused() {
-                match code {
-                    KeyCode::Enter if *modifiers == KeyModifiers::SHIFT => {
-                        self.prompt_text.push('\n');
-                    }
-                    KeyCode::Enter => {
-                        if !self.prompt_text.trim().is_empty() {
+                match (code, modifiers) {
+                    // Enter alone → submit prompt
+                    (KeyCode::Enter, m) if *m == KeyModifiers::NONE => {
+                        let text = self.editor_text();
+                        if !text.trim().is_empty() {
                             return ScreenAction::LaunchPromptSession(PromptSessionConfig {
-                                prompt: self.prompt_text.clone(),
+                                prompt: text,
                                 image_paths: self.image_paths.clone(),
                             });
                         }
                     }
-                    KeyCode::Char(c)
-                        if *modifiers == KeyModifiers::NONE
-                            || *modifiers == KeyModifiers::SHIFT =>
-                    {
-                        self.prompt_text.push(*c);
-                        self.history_cursor = None;
+                    // Shift+Enter or Alt+Enter → newline (delegate to TextArea)
+                    (KeyCode::Enter, _) => {
+                        self.editor.input(event.clone());
                     }
-                    KeyCode::Backspace => {
-                        self.prompt_text.pop();
-                        self.history_cursor = None;
-                    }
-                    KeyCode::Up => {
+                    // Alt+Up → history navigation up
+                    (KeyCode::Up, m) if m.contains(KeyModifiers::ALT) => {
                         if !self.history.is_empty() && self.history_cursor.is_none() {
-                            self.draft_prompt = self.prompt_text.clone();
+                            self.draft_prompt = self.editor_text();
                             let idx = self.history.len() - 1;
                             self.history_cursor = Some(idx);
-                            self.prompt_text = self.history[idx].clone();
+                            self.set_editor_text(&self.history[idx].clone());
                         } else if let Some(idx) = self.history_cursor
                             && idx > 0
                         {
                             self.history_cursor = Some(idx - 1);
-                            self.prompt_text = self.history[idx - 1].clone();
+                            self.set_editor_text(&self.history[idx - 1].clone());
                         }
                     }
-                    KeyCode::Down => {
+                    // Alt+Down → history navigation down
+                    (KeyCode::Down, m) if m.contains(KeyModifiers::ALT) => {
                         if let Some(idx) = self.history_cursor {
                             if idx + 1 < self.history.len() {
                                 self.history_cursor = Some(idx + 1);
-                                self.prompt_text = self.history[idx + 1].clone();
+                                self.set_editor_text(&self.history[idx + 1].clone());
                             } else {
                                 self.history_cursor = None;
-                                self.prompt_text = self.draft_prompt.clone();
+                                let draft = self.draft_prompt.clone();
+                                self.set_editor_text(&draft);
                             }
                         }
                     }
-                    _ => {}
+                    // All other keys → delegate to TextArea
+                    _ => {
+                        self.editor.input(event.clone());
+                        self.history_cursor = None;
+                    }
                 }
             } else if self.is_image_list_focused() {
                 match code {
@@ -558,13 +584,17 @@ mod tests {
         key_event_with_modifiers(code, KeyModifiers::SHIFT)
     }
 
+    fn alt_key(code: KeyCode) -> crossterm::event::Event {
+        key_event_with_modifiers(code, KeyModifiers::ALT)
+    }
+
     fn mock_screen() -> PromptInputScreen {
         PromptInputScreen::with_clipboard(MockClipboard::empty())
     }
 
     fn screen_with_prompt(text: &str) -> PromptInputScreen {
         let mut s = mock_screen();
-        s.prompt_text = text.to_string();
+        s.set_editor_text(text);
         s
     }
 
@@ -585,7 +615,7 @@ mod tests {
     #[test]
     fn prompt_input_initial_state_prompt_is_empty() {
         let screen = mock_screen();
-        assert_eq!(screen.prompt_text, "");
+        assert_eq!(screen.prompt_text(), "");
     }
 
     #[test]
@@ -612,14 +642,14 @@ mod tests {
         screen.handle_input(&key_event(KeyCode::Char('h')), InputMode::Normal);
         screen.handle_input(&key_event(KeyCode::Char('i')), InputMode::Normal);
         screen.handle_input(&key_event(KeyCode::Char('!')), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "hi!");
+        assert_eq!(screen.prompt_text(), "hi!");
     }
 
     #[test]
     fn prompt_input_shift_enter_inserts_newline() {
         let mut screen = screen_with_prompt("hello");
         let action = screen.handle_input(&shift_key(KeyCode::Enter), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "hello\n");
+        assert_eq!(screen.prompt_text(), "hello\n");
         assert_eq!(action, ScreenAction::None);
     }
 
@@ -627,14 +657,14 @@ mod tests {
     fn prompt_input_backspace_removes_last_character() {
         let mut screen = screen_with_prompt("abc");
         screen.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "ab");
+        assert_eq!(screen.prompt_text(), "ab");
     }
 
     #[test]
     fn prompt_input_backspace_on_empty_prompt_is_noop() {
         let mut screen = mock_screen();
         let action = screen.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "");
+        assert_eq!(screen.prompt_text(), "");
         assert_eq!(action, ScreenAction::None);
     }
 
@@ -686,7 +716,7 @@ mod tests {
         let mut screen = screen_with_prompt("fix the bug");
         let action = screen.handle_input(&ctrl_key(KeyCode::Char('s')), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
-        assert_eq!(screen.prompt_text, "fix the bug");
+        assert_eq!(screen.prompt_text(), "fix the bug");
     }
 
     #[test]
@@ -755,12 +785,12 @@ mod tests {
     fn prompt_input_typing_in_image_path_input_accumulates_text() {
         let mut screen = screen_in_image_list_focus();
         screen.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal); // enter editing mode
-        let original_prompt = screen.prompt_text.clone();
+        let original_prompt = screen.prompt_text();
         for ch in ['/', 't', 'm', 'p'] {
             screen.handle_input(&key_event(KeyCode::Char(ch)), InputMode::Normal);
         }
         assert_eq!(screen.image_path_input, "/tmp");
-        assert_eq!(screen.prompt_text, original_prompt);
+        assert_eq!(screen.prompt_text(), original_prompt);
     }
 
     #[test]
@@ -864,12 +894,12 @@ mod tests {
     #[test]
     fn prompt_input_image_list_keys_do_not_mutate_prompt_text() {
         let mut screen = screen_in_image_list_focus();
-        screen.prompt_text = "existing".to_string();
+        screen.set_editor_text("existing");
         screen.image_paths = vec!["/x.png".to_string()];
         for code in [KeyCode::Char('j'), KeyCode::Char('k'), KeyCode::Char('d')] {
             screen.handle_input(&key_event(code), InputMode::Normal);
         }
-        assert_eq!(screen.prompt_text, "existing");
+        assert_eq!(screen.prompt_text(), "existing");
     }
 
     // --- Group 10: PromptSessionConfig ---
@@ -920,7 +950,7 @@ mod tests {
                 .is_focused(PromptInputScreen::PROMPT_EDITOR_PANE)
         );
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "hello world");
+        assert_eq!(screen.prompt_text(), "hello world");
         assert!(screen.image_paths.is_empty());
         assert!(screen.status_message.unwrap().contains("Pasted text"));
     }
@@ -928,9 +958,9 @@ mod tests {
     #[test]
     fn prompt_input_ctrl_v_text_in_editor_appends_to_existing_prompt() {
         let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_text(" world"));
-        screen.prompt_text = "hello".to_string();
+        screen.set_editor_text("hello");
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "hello world");
+        assert_eq!(screen.prompt_text(), "hello world");
     }
 
     #[test]
@@ -949,8 +979,14 @@ mod tests {
             screen.image_paths,
             vec!["/home/user/screenshot.png".to_string()]
         );
-        assert!(screen.status_message.unwrap().contains("Pasted path"));
-        assert_eq!(screen.prompt_text, "");
+        assert!(
+            screen
+                .status_message
+                .as_deref()
+                .unwrap()
+                .contains("Pasted path")
+        );
+        assert_eq!(screen.prompt_text(), "");
     }
 
     #[test]
@@ -972,7 +1008,7 @@ mod tests {
         );
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(screen.image_paths, vec!["/tmp/shot.png".to_string()]);
-        assert_eq!(screen.prompt_text, "");
+        assert_eq!(screen.prompt_text(), "");
     }
 
     #[test]
@@ -1087,16 +1123,16 @@ mod tests {
     #[test]
     fn clipboard_unavailable_does_not_affect_prompt_text() {
         let mut screen = unavailable_screen();
-        screen.prompt_text = "my prompt".to_string();
+        screen.set_editor_text("my prompt");
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "my prompt");
+        assert_eq!(screen.prompt_text(), "my prompt");
     }
 
     #[test]
     fn clipboard_normal_text_in_editor_still_works_after_unavailable_variant_added() {
         let mut screen = PromptInputScreen::with_clipboard(MockClipboard::with_text("pasted text"));
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "pasted text");
+        assert_eq!(screen.prompt_text(), "pasted text");
         assert!(screen.image_paths.is_empty());
         assert!(
             screen
@@ -1151,64 +1187,64 @@ mod tests {
     }
 
     #[test]
-    fn arrow_up_with_empty_history_is_noop() {
+    fn alt_up_with_empty_history_is_noop() {
         let mut screen = mock_screen();
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "");
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "");
         assert!(screen.history_cursor.is_none());
     }
 
     #[test]
     fn arrow_up_enters_history_and_shows_last_entry() {
         let mut screen = screen_with_history(&["first", "second"]);
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "second");
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "second");
         assert_eq!(screen.history_cursor, Some(1));
     }
 
     #[test]
     fn arrow_up_twice_shows_previous_entry() {
         let mut screen = screen_with_history(&["first", "second"]);
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "first");
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "first");
         assert_eq!(screen.history_cursor, Some(0));
     }
 
     #[test]
     fn arrow_up_at_oldest_entry_stays() {
         let mut screen = screen_with_history(&["only"]);
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "only");
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "only");
         assert_eq!(screen.history_cursor, Some(0));
     }
 
     #[test]
     fn arrow_down_past_history_restores_draft() {
         let mut screen = screen_with_history(&["old"]);
-        screen.prompt_text = "my draft".to_string();
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "old");
-        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "my draft");
+        screen.set_editor_text("my draft");
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "old");
+        screen.handle_input(&alt_key(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "my draft");
         assert!(screen.history_cursor.is_none());
     }
 
     #[test]
-    fn arrow_down_without_history_cursor_is_noop() {
+    fn alt_down_without_history_cursor_is_noop() {
         let mut screen = screen_with_history(&["old"]);
-        screen.prompt_text = "current".to_string();
-        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "current");
+        screen.set_editor_text("current");
+        screen.handle_input(&alt_key(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "current");
         assert!(screen.history_cursor.is_none());
     }
 
     #[test]
     fn typing_resets_history_cursor() {
         let mut screen = screen_with_history(&["old"]);
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.history_cursor, Some(0));
         screen.handle_input(&key_event(KeyCode::Char('x')), InputMode::Normal);
         assert!(screen.history_cursor.is_none());
@@ -1217,7 +1253,7 @@ mod tests {
     #[test]
     fn backspace_resets_history_cursor() {
         let mut screen = screen_with_history(&["old"]);
-        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
         screen.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
         assert!(screen.history_cursor.is_none());
     }
@@ -1226,8 +1262,8 @@ mod tests {
     fn prompt_input_ctrl_v_text_in_editor_appends_to_prompt() {
         let mut screen =
             PromptInputScreen::with_clipboard(MockClipboard::with_text("/tmp/img.png"));
-        screen.prompt_text = "my prompt ".to_string();
+        screen.set_editor_text("my prompt ");
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
-        assert_eq!(screen.prompt_text, "my prompt /tmp/img.png");
+        assert_eq!(screen.prompt_text(), "my prompt /tmp/img.png");
     }
 }

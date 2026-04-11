@@ -6,6 +6,7 @@ pub mod dep_graph;
 pub mod detail;
 pub mod fullscreen;
 pub mod help;
+pub mod log_viewer;
 pub mod markdown;
 pub mod navigation;
 pub mod panels;
@@ -249,7 +250,18 @@ async fn event_loop(
                                 app.tui_mode = app::TuiMode::PromptInput;
                             }
                             (KeyCode::Char('l'), _) => {
-                                app.tui_mode = app::TuiMode::Overview;
+                                if let Some(ref summary) = app.completion_summary {
+                                    if let Some(first) = summary.sessions.first() {
+                                        let sid = first.session_id;
+                                        app.log_viewer_scroll = 0;
+                                        app.completion_summary = None;
+                                        app.tui_mode = app::TuiMode::LogViewer(sid);
+                                    } else {
+                                        app.tui_mode = app::TuiMode::Overview;
+                                    }
+                                } else {
+                                    app.tui_mode = app::TuiMode::Overview;
+                                }
                             }
                             (KeyCode::Char('f'), _) => {
                                 let has_suggestions = app
@@ -389,6 +401,49 @@ async fn event_loop(
                         continue;
                     }
 
+                    // Handle LogViewer input
+                    if let app::TuiMode::LogViewer(id) = app.tui_mode {
+                        match (key.code, key.modifiers) {
+                            (KeyCode::Esc, _) => {
+                                app.tui_mode = app::TuiMode::Detail(id);
+                            }
+                            (KeyCode::Char('q'), _)
+                            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                                app.running = false;
+                                return Ok(());
+                            }
+                            (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+                                app.log_viewer_scroll = app.log_viewer_scroll.saturating_sub(1);
+                            }
+                            (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+                                app.log_viewer_scroll = app.log_viewer_scroll.saturating_add(1);
+                            }
+                            (KeyCode::Char('G'), _) => {
+                                app.log_viewer_scroll = u16::MAX;
+                            }
+                            (KeyCode::Char('g'), _) => {
+                                app.log_viewer_scroll = 0;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
+                    // Handle ConfirmKill input
+                    if let app::TuiMode::ConfirmKill(session_id) = app.tui_mode {
+                        match key.code {
+                            KeyCode::Char('y') | KeyCode::Enter => {
+                                app.kill_selected_session(session_id).await;
+                                app.tui_mode = app::TuiMode::Overview;
+                            }
+                            KeyCode::Char('n') | KeyCode::Esc => {
+                                app.tui_mode = app::TuiMode::Overview;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     // Handle SessionSwitcher input
                     if app.tui_mode == app::TuiMode::SessionSwitcher {
                         match key.code {
@@ -440,6 +495,16 @@ async fn event_loop(
                             app.resume_all();
                         }
                         (KeyCode::Char('k'), _) => {
+                            let selected = app.panel_view.selected_index();
+                            if let Some(id) = app.pool.session_id_at_index(selected) {
+                                if let Some(session) = app.pool.get_session(id) {
+                                    if !session.status.is_terminal() {
+                                        app.tui_mode = app::TuiMode::ConfirmKill(id);
+                                    }
+                                }
+                            }
+                        }
+                        (KeyCode::Char('K'), _) => {
                             app.kill_all().await;
                         }
                         (KeyCode::Char('f'), _) => {
@@ -476,7 +541,9 @@ async fn event_loop(
                                 | app::TuiMode::SessionSwitcher
                                 | app::TuiMode::AdaptWizard
                                 | app::TuiMode::PrReview
-                                | app::TuiMode::ReleaseNotes => app::TuiMode::Overview,
+                                | app::TuiMode::ReleaseNotes
+                                | app::TuiMode::LogViewer(_)
+                                | app::TuiMode::ConfirmKill(_) => app::TuiMode::Overview,
                             };
                         }
                         (KeyCode::Esc, _) => {
@@ -486,10 +553,16 @@ async fn event_loop(
                                 app.tui_mode = app::TuiMode::Overview;
                             }
                         }
-                        (KeyCode::Enter, _) => {
+                        (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
                             let selected = app.panel_view.selected_index();
                             if let Some(id) = app.pool.session_id_at_index(selected) {
-                                app.tui_mode = app::TuiMode::Detail(id);
+                                if let Some(session) = app.pool.get_session(id) {
+                                    if session.status.is_terminal() {
+                                        app.toggle_session_summary(id);
+                                    } else {
+                                        app.tui_mode = app::TuiMode::Detail(id);
+                                    }
+                                }
                             }
                         }
                         (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
@@ -504,19 +577,68 @@ async fn event_loop(
                             app.tui_mode = app::TuiMode::SessionSwitcher;
                         }
                         (KeyCode::Char('d'), _) => {
-                            app.notifications.dismiss_latest();
+                            let selected = app.panel_view.selected_index();
+                            if let Some(id) = app.pool.session_id_at_index(selected) {
+                                if let Some(session) = app.pool.get_session(id) {
+                                    if session.status.is_terminal() {
+                                        app.dismiss_session(id);
+                                    } else {
+                                        app.notifications.dismiss_latest();
+                                    }
+                                }
+                            } else {
+                                app.notifications.dismiss_latest();
+                            }
                         }
+                        (KeyCode::Char('D'), _) => {
+                            app.dismiss_all_completed();
+                        }
+                        (KeyCode::Char('l'), _) => match app.tui_mode {
+                            app::TuiMode::Detail(id) => {
+                                app.log_viewer_scroll = 0;
+                                app.tui_mode = app::TuiMode::LogViewer(id);
+                            }
+                            app::TuiMode::Overview => {
+                                let selected = app.panel_view.selected_index();
+                                if let Some(id) = app.pool.session_id_at_index(selected) {
+                                    app.log_viewer_scroll = 0;
+                                    app.tui_mode = app::TuiMode::LogViewer(id);
+                                }
+                            }
+                            _ => {}
+                        },
                         (KeyCode::Up, KeyModifiers::SHIFT) => {
-                            app.activity_log.scroll_down();
-                        }
-                        (KeyCode::Down, KeyModifiers::SHIFT) => {
-                            app.activity_log.scroll_up();
-                        }
-                        (KeyCode::Up, _) => {
                             app.panel_view.scroll_up();
                         }
-                        (KeyCode::Down, _) => {
+                        (KeyCode::Down, KeyModifiers::SHIFT) => {
                             app.panel_view.scroll_down();
+                        }
+                        (KeyCode::Up, _)
+                        | (KeyCode::Down, _)
+                        | (KeyCode::Left, _)
+                        | (KeyCode::Right, _)
+                        | (KeyCode::Char('['), _)
+                        | (KeyCode::Char(']'), _) => {
+                            let term_size = terminal.size().unwrap_or_default();
+                            let layout = crate::tui::panels::GridLayout::calculate(
+                                app.pool.total_count(),
+                                term_size.width,
+                                term_size.height,
+                            );
+                            match key.code {
+                                KeyCode::Up => app.panel_view.grid_state.move_up(),
+                                KeyCode::Down => app.panel_view.grid_state.move_down(&layout),
+                                KeyCode::Left => app.panel_view.grid_state.move_left(),
+                                KeyCode::Right => app.panel_view.grid_state.move_right(&layout),
+                                KeyCode::Char('[') => app.panel_view.grid_state.prev_page(&layout),
+                                KeyCode::Char(']') => app.panel_view.grid_state.next_page(&layout),
+                                _ => {}
+                            }
+                            app.panel_view.selected =
+                                Some(app.panel_view.grid_state.selected_index(&layout));
+                            if !matches!(key.code, KeyCode::Char('[') | KeyCode::Char(']')) {
+                                app.panel_view.scroll_offset = 0;
+                            }
                         }
                         _ => {}
                     }

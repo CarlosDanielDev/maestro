@@ -408,10 +408,11 @@ impl SettingsScreen {
 
     fn build_theme_fields(config: &Config) -> Vec<SettingsField> {
         use crate::tui::theme::ThemePreset;
-        let preset_options: Vec<String> = vec!["dark".into(), "light".into()];
+        let preset_options: Vec<String> = vec!["dark".into(), "light".into(), "retro".into()];
         let preset_idx = match config.tui.theme.preset {
             ThemePreset::Dark => 0,
             ThemePreset::Light => 1,
+            ThemePreset::Retro => 2,
         };
         vec![
             Self::field(WidgetKind::Toggle(Toggle::new("live_preview", false))),

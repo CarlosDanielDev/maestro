@@ -76,4 +76,76 @@ impl App {
     pub fn active_count(&self) -> usize {
         self.pool.active_count()
     }
+
+    /// Dismiss a single completed/terminal session from the TUI.
+    pub fn dismiss_session(&mut self, session_id: uuid::Uuid) {
+        let label = self
+            .pool
+            .get_session(session_id)
+            .map(session_label)
+            .unwrap_or_else(|| format!("S-{}", &session_id.to_string()[..8]));
+        if self.pool.dismiss_session(session_id) {
+            self.session_ui_state.remove(&session_id);
+            self.tool_start_times.remove(&session_id);
+            self.activity_log
+                .push_simple(label, "Session dismissed".into(), LogLevel::Info);
+            self.sync_state();
+        }
+    }
+
+    /// Dismiss all completed sessions from the TUI.
+    pub fn dismiss_all_completed(&mut self) {
+        let count = self.pool.dismiss_all_completed();
+        if count > 0 {
+            self.session_ui_state
+                .retain(|id, _| self.pool.get_session(*id).is_some());
+            self.tool_start_times
+                .retain(|id, _| self.pool.get_session(*id).is_some());
+            self.activity_log.push_simple(
+                "SYSTEM".into(),
+                format!("Dismissed {} completed session(s)", count),
+                LogLevel::Info,
+            );
+            self.sync_state();
+        }
+    }
+
+    /// Kill a single session (called after user confirms).
+    pub async fn kill_selected_session(&mut self, session_id: uuid::Uuid) {
+        let label = self
+            .pool
+            .get_session(session_id)
+            .map(session_label)
+            .unwrap_or_else(|| format!("S-{}", &session_id.to_string()[..8]));
+        match self.pool.kill_session(session_id).await {
+            Ok(true) => {
+                self.activity_log.push_simple(
+                    label,
+                    "Session killed by user".into(),
+                    LogLevel::Warn,
+                );
+                self.sync_state();
+            }
+            Ok(false) => {
+                self.activity_log.push_simple(
+                    label,
+                    "Session not found or already finished".into(),
+                    LogLevel::Warn,
+                );
+            }
+            Err(e) => {
+                self.activity_log.push_simple(
+                    label,
+                    format!("Kill failed: {}", e),
+                    LogLevel::Error,
+                );
+            }
+        }
+    }
+
+    /// Toggle the summary popup for a completed session.
+    pub fn toggle_session_summary(&mut self, session_id: uuid::Uuid) {
+        let entry = self.session_ui_state.entry(session_id).or_default();
+        entry.show_summary_popup = !entry.show_summary_popup;
+    }
 }

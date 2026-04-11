@@ -237,6 +237,31 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &theme);
             }
         }
+        TuiMode::LogViewer(id) => {
+            crate::tui::log_viewer::draw_log_viewer(
+                f,
+                &mut app.log_viewer_cache,
+                &app.session_logger,
+                id,
+                app.log_viewer_scroll,
+                chunks[1],
+                &theme,
+            );
+        }
+        TuiMode::ConfirmKill(_) => {
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &theme,
+                spinner_tick,
+            );
+            if let TuiMode::ConfirmKill(id) = app.tui_mode {
+                draw_confirm_kill_overlay(f, id, app, chunks[1], &theme);
+            }
+        }
         TuiMode::HollowRetry => {
             let sessions = app.pool.all_sessions();
             app.panel_view.draw_with_claims(
@@ -523,6 +548,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::AdaptWizard => "Adapt",
         TuiMode::PrReview => "PR Review",
         TuiMode::ReleaseNotes => "Release Notes",
+        TuiMode::LogViewer(_) => "Logs",
+        TuiMode::ConfirmKill(_) => "Confirm Kill",
     };
 
     let help = Line::from(vec![
@@ -551,10 +578,56 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("ause "),
         Span::styled("[k]", Style::default().fg(theme.keybind_key)),
         Span::raw("ill "),
+        Span::styled("[d]", Style::default().fg(theme.keybind_key)),
+        Span::raw("ismiss "),
+        Span::styled("[l]", Style::default().fg(theme.keybind_key)),
+        Span::raw("ogs "),
         Span::styled("[↑↓]", Style::default().fg(theme.keybind_key)),
         Span::raw("scroll"),
     ]);
     f.render_widget(Paragraph::new(help), area);
+}
+
+fn draw_confirm_kill_overlay(
+    f: &mut Frame,
+    session_id: uuid::Uuid,
+    app: &App,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    use ratatui::widgets::Clear;
+    let popup = help::centered_rect(40, 20, area);
+    f.render_widget(Clear, popup);
+
+    let label = app
+        .pool
+        .get_session(session_id)
+        .map(|s| crate::tui::app::helpers::session_label(s))
+        .unwrap_or_else(|| format!("S-{}", &session_id.to_string()[..8]));
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  Kill session {}?", label),
+            Style::default()
+                .fg(theme.accent_warning)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  [y]", Style::default().fg(theme.accent_success)),
+            Span::raw("es  "),
+            Span::styled("[n]", Style::default().fg(theme.accent_error)),
+            Span::raw("o"),
+        ]),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent_warning))
+        .title(" Confirm Kill ");
+
+    f.render_widget(Paragraph::new(lines).block(block), popup);
 }
 
 fn draw_completion_overlay(
