@@ -226,6 +226,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &theme);
             }
         }
+        TuiMode::PrReview => {
+            if let Some(ref mut screen) = app.pr_review_screen {
+                screen.tick();
+                screen.draw(f, chunks[1], &theme);
+            }
+        }
         TuiMode::HollowRetry => {
             let sessions = app.pool.all_sessions();
             app.panel_view.draw_with_claims(
@@ -330,6 +336,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 .map(|s| (s.keybindings(), s.desired_input_mode())),
             TuiMode::Settings => app
                 .settings_screen
+                .as_ref()
+                .map(|s| (s.keybindings(), s.desired_input_mode())),
+            TuiMode::PrReview => app
+                .pr_review_screen
                 .as_ref()
                 .map(|s| (s.keybindings(), s.desired_input_mode())),
             TuiMode::SessionSwitcher => None,
@@ -506,6 +516,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: Rect) {
         TuiMode::Settings => "Settings",
         TuiMode::SessionSwitcher => "Sessions",
         TuiMode::AdaptWizard => "Adapt",
+        TuiMode::PrReview => "PR Review",
     };
 
     let help = Line::from(vec![

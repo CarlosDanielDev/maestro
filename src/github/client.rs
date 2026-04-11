@@ -34,6 +34,37 @@ pub trait GitHubClient: Send + Sync {
         labels: &[String],
         milestone: Option<u64>,
     ) -> Result<u64>;
+
+    /// List open pull requests for the current repository.
+    async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>>;
+
+    /// Get a single pull request by number.
+    #[allow(dead_code)] // Reason: PR detail view — currently PR data comes from list
+    async fn get_pr(&self, number: u64) -> Result<crate::github::types::GhPullRequest>;
+
+    /// Submit a review on a pull request.
+    async fn submit_pr_review(
+        &self,
+        pr_number: u64,
+        event: crate::github::types::PrReviewEvent,
+        body: &str,
+    ) -> Result<()>;
+}
+
+/// Extract label names from a JSON value containing `{"labels": [{"name": "..."}, ...]}`.
+fn extract_label_names(v: &serde_json::Value) -> Vec<String> {
+    v.get("labels")
+        .and_then(|l| l.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|lv| {
+                    lv.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Parse JSON output from `gh issue list --json ...`.
@@ -42,19 +73,7 @@ pub fn parse_issues_json(json_str: &str) -> Result<Vec<GhIssue>> {
         serde_json::from_str(json_str).context("Failed to parse GitHub issues JSON")?;
     let mut issues = Vec::new();
     for v in raw {
-        let labels: Vec<String> = v
-            .get("labels")
-            .and_then(|l| l.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|lv| {
-                        lv.get("name")
-                            .and_then(|n| n.as_str())
-                            .map(|s| s.to_string())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let labels = extract_label_names(&v);
 
         let milestone = v.get("milestone").and_then(|m| {
             if m.is_null() {
@@ -120,6 +139,83 @@ pub fn parse_milestones_json(json_str: &str) -> Result<Vec<GhMilestone>> {
     serde_json::from_str(json_str).context("Failed to parse milestones JSON")
 }
 
+/// Parse JSON output from `gh pr list --json ...`.
+pub fn parse_prs_json(json_str: &str) -> Result<Vec<crate::github::types::GhPullRequest>> {
+    let raw: Vec<serde_json::Value> =
+        serde_json::from_str(json_str).context("Failed to parse GitHub PRs JSON")?;
+    let mut prs = Vec::new();
+    for v in raw {
+        let labels = extract_label_names(&v);
+
+        let author = v
+            .get("author")
+            .and_then(|a| {
+                if a.is_string() {
+                    a.as_str().map(|s| s.to_string())
+                } else {
+                    a.get("login")
+                        .and_then(|l| l.as_str())
+                        .map(|s| s.to_string())
+                }
+            })
+            .unwrap_or_default();
+
+        prs.push(crate::github::types::GhPullRequest {
+            number: v
+                .get("number")
+                .and_then(|n| n.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("Missing 'number' field in PR JSON"))?,
+            title: v
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string(),
+            body: v
+                .get("body")
+                .and_then(|b| b.as_str())
+                .unwrap_or("")
+                .to_string(),
+            state: v
+                .get("state")
+                .and_then(|s| s.as_str())
+                .unwrap_or("open")
+                .to_lowercase(),
+            html_url: v
+                .get("url")
+                .and_then(|u| u.as_str())
+                .unwrap_or("")
+                .to_string(),
+            head_branch: v
+                .get("headRefName")
+                .and_then(|h| h.as_str())
+                .unwrap_or("")
+                .to_string(),
+            base_branch: v
+                .get("baseRefName")
+                .and_then(|b| b.as_str())
+                .unwrap_or("")
+                .to_string(),
+            author,
+            labels,
+            draft: v.get("isDraft").and_then(|d| d.as_bool()).unwrap_or(false),
+            mergeable: v
+                .get("mergeable")
+                .and_then(|m| {
+                    if m.is_boolean() {
+                        m.as_bool()
+                    } else {
+                        m.as_str().map(|s| s == "MERGEABLE")
+                    }
+                })
+                .unwrap_or(false),
+            additions: v.get("additions").and_then(|a| a.as_u64()).unwrap_or(0),
+            deletions: v.get("deletions").and_then(|d| d.as_u64()).unwrap_or(0),
+            changed_files: v.get("changedFiles").and_then(|c| c.as_u64()).unwrap_or(0),
+        });
+    }
+    Ok(prs)
+}
+
 /// Blanket impl: if T: GitHubClient, then &T is also a GitHubClient.
 #[async_trait]
 impl<T: GitHubClient + ?Sized> GitHubClient for &T {
@@ -168,6 +264,20 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     ) -> Result<u64> {
         (**self).create_issue(title, body, labels, milestone).await
     }
+    async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
+        (**self).list_open_prs().await
+    }
+    async fn get_pr(&self, number: u64) -> Result<crate::github::types::GhPullRequest> {
+        (**self).get_pr(number).await
+    }
+    async fn submit_pr_review(
+        &self,
+        pr_number: u64,
+        event: crate::github::types::PrReviewEvent,
+        body: &str,
+    ) -> Result<()> {
+        (**self).submit_pr_review(pr_number, event, body).await
+    }
 }
 
 /// Check if a stderr string indicates a GitHub CLI authentication failure.
@@ -184,6 +294,9 @@ pub fn is_auth_error(stderr: &str) -> bool {
 
 /// Sentinel prefix used to tag gh auth errors in anyhow messages.
 const GH_AUTH_ERROR_SENTINEL: &str = "[gh-auth-error]";
+
+/// JSON fields requested from `gh pr list/view`.
+const PR_JSON_FIELDS: &str = "number,title,body,state,url,headRefName,baseRefName,author,labels,isDraft,mergeable,additions,deletions,changedFiles";
 
 /// Check if an anyhow error is a gh CLI auth error (by sentinel prefix).
 pub fn is_gh_auth_error(err: &anyhow::Error) -> bool {
@@ -448,6 +561,51 @@ impl GitHubClient for GhCliClient {
             })?;
         Ok(number)
     }
+
+    async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
+        let json_str = self
+            .run_gh(&[
+                "pr",
+                "list",
+                "--state",
+                "open",
+                "--limit",
+                "100",
+                "--json",
+                PR_JSON_FIELDS,
+            ])
+            .await?;
+        parse_prs_json(&json_str)
+    }
+
+    async fn get_pr(&self, number: u64) -> Result<crate::github::types::GhPullRequest> {
+        let num_str = number.to_string();
+        let json_str = self
+            .run_gh(&["pr", "view", &num_str, "--json", PR_JSON_FIELDS])
+            .await?;
+        let prs = parse_prs_json(&format!("[{}]", json_str))?;
+        prs.into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("PR #{} not found", number))
+    }
+
+    async fn submit_pr_review(
+        &self,
+        pr_number: u64,
+        event: crate::github::types::PrReviewEvent,
+        body: &str,
+    ) -> Result<()> {
+        let num_str = pr_number.to_string();
+        let mut args = vec!["pr", "review", &num_str];
+        let flag = format!("--{}", event.as_gh_arg());
+        args.push(&flag);
+        if !body.is_empty() {
+            args.push("--body");
+            args.push(body);
+        }
+        self.run_gh(&args).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -479,6 +637,20 @@ pub mod mock {
         create_milestone_counter: u64,
         create_issue_calls: Vec<CreateIssueCallRecord>,
         create_issue_counter: u64,
+
+        // PR review fields
+        pull_requests: Vec<crate::github::types::GhPullRequest>,
+        list_open_prs_error: Option<String>,
+        get_pr_errors: std::collections::HashMap<u64, String>,
+        submit_pr_review_error: Option<String>,
+        submit_pr_review_calls: Vec<SubmitPrReviewCallRecord>,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct SubmitPrReviewCallRecord {
+        pub pr_number: u64,
+        pub event: crate::github::types::PrReviewEvent,
+        pub body: String,
     }
 
     #[derive(Debug, Clone)]
@@ -561,6 +733,30 @@ pub mod mock {
 
         pub fn create_issue_calls(&self) -> Vec<CreateIssueCallRecord> {
             self.inner.lock().unwrap().create_issue_calls.clone()
+        }
+
+        pub fn set_pull_requests(&self, prs: Vec<crate::github::types::GhPullRequest>) {
+            self.inner.lock().unwrap().pull_requests = prs;
+        }
+
+        pub fn set_list_open_prs_error(&self, msg: &str) {
+            self.inner.lock().unwrap().list_open_prs_error = Some(msg.to_string());
+        }
+
+        pub fn set_get_pr_error(&self, number: u64, msg: &str) {
+            self.inner
+                .lock()
+                .unwrap()
+                .get_pr_errors
+                .insert(number, msg.to_string());
+        }
+
+        pub fn set_submit_pr_review_error(&self, msg: &str) {
+            self.inner.lock().unwrap().submit_pr_review_error = Some(msg.to_string());
+        }
+
+        pub fn submit_pr_review_calls(&self) -> Vec<SubmitPrReviewCallRecord> {
+            self.inner.lock().unwrap().submit_pr_review_calls.clone()
         }
     }
 
@@ -677,6 +873,45 @@ pub mod mock {
                 milestone,
             });
             Ok(state.create_issue_counter)
+        }
+
+        async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
+            let state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.list_open_prs_error {
+                anyhow::bail!("{}", err);
+            }
+            Ok(state.pull_requests.clone())
+        }
+
+        async fn get_pr(&self, number: u64) -> Result<crate::github::types::GhPullRequest> {
+            let state = self.inner.lock().unwrap();
+            if let Some(err_msg) = state.get_pr_errors.get(&number) {
+                anyhow::bail!("{}", err_msg);
+            }
+            state
+                .pull_requests
+                .iter()
+                .find(|p| p.number == number)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("mock: PR #{} not found", number))
+        }
+
+        async fn submit_pr_review(
+            &self,
+            pr_number: u64,
+            event: crate::github::types::PrReviewEvent,
+            body: &str,
+        ) -> Result<()> {
+            let mut state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.submit_pr_review_error {
+                anyhow::bail!("{}", err);
+            }
+            state.submit_pr_review_calls.push(SubmitPrReviewCallRecord {
+                pr_number,
+                event,
+                body: body.to_string(),
+            });
+            Ok(())
         }
     }
 }
@@ -1075,5 +1310,165 @@ mod tests {
         assert_eq!(n1, 1);
         assert_eq!(n2, 2);
         assert_eq!(n3, 3);
+    }
+
+    // -- PR review mock tests --
+
+    fn make_pr(number: u64) -> crate::github::types::GhPullRequest {
+        crate::github::types::GhPullRequest {
+            number,
+            title: format!("PR #{}", number),
+            body: String::new(),
+            state: "open".to_string(),
+            html_url: format!("https://github.com/owner/repo/pull/{}", number),
+            head_branch: format!("fix/issue-{}", number),
+            base_branch: "main".to_string(),
+            author: "bot".to_string(),
+            labels: vec![],
+            draft: false,
+            mergeable: true,
+            additions: 0,
+            deletions: 0,
+            changed_files: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn mock_list_open_prs_returns_configured_prs() {
+        let client = MockGitHubClient::new();
+        client.set_pull_requests(vec![make_pr(10), make_pr(11)]);
+        let prs = client.list_open_prs().await.unwrap();
+        assert_eq!(prs.len(), 2);
+        assert_eq!(prs[0].number, 10);
+        assert_eq!(prs[1].number, 11);
+    }
+
+    #[tokio::test]
+    async fn mock_list_open_prs_returns_empty_by_default() {
+        let client = MockGitHubClient::new();
+        let prs = client.list_open_prs().await.unwrap();
+        assert!(prs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mock_list_open_prs_propagates_configured_error() {
+        let client = MockGitHubClient::new();
+        client.set_list_open_prs_error("connection refused");
+        let result = client.list_open_prs().await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("connection refused")
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_get_pr_returns_pr_by_number() {
+        let client = MockGitHubClient::new();
+        client.set_pull_requests(vec![make_pr(42)]);
+        let pr = client.get_pr(42).await.unwrap();
+        assert_eq!(pr.number, 42);
+    }
+
+    #[tokio::test]
+    async fn mock_get_pr_returns_not_found_for_missing_number() {
+        let client = MockGitHubClient::new();
+        let result = client.get_pr(99).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn mock_get_pr_propagates_configured_error() {
+        let client = MockGitHubClient::new();
+        client.set_get_pr_error(5, "rate limited");
+        client.set_pull_requests(vec![make_pr(5)]);
+        let result = client.get_pr(5).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("rate limited"));
+    }
+
+    #[tokio::test]
+    async fn mock_submit_pr_review_records_approve_call() {
+        use crate::github::types::PrReviewEvent;
+        let client = MockGitHubClient::new();
+        client
+            .submit_pr_review(7, PrReviewEvent::Approve, "LGTM")
+            .await
+            .unwrap();
+        let calls = client.submit_pr_review_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].pr_number, 7);
+        assert_eq!(calls[0].event, PrReviewEvent::Approve);
+        assert_eq!(calls[0].body, "LGTM");
+    }
+
+    #[tokio::test]
+    async fn mock_submit_pr_review_records_request_changes_call() {
+        use crate::github::types::PrReviewEvent;
+        let client = MockGitHubClient::new();
+        client
+            .submit_pr_review(3, PrReviewEvent::RequestChanges, "needs work")
+            .await
+            .unwrap();
+        let calls = client.submit_pr_review_calls();
+        assert_eq!(calls[0].event, PrReviewEvent::RequestChanges);
+    }
+
+    #[tokio::test]
+    async fn mock_submit_pr_review_records_comment_call() {
+        use crate::github::types::PrReviewEvent;
+        let client = MockGitHubClient::new();
+        client
+            .submit_pr_review(1, PrReviewEvent::Comment, "nice")
+            .await
+            .unwrap();
+        let calls = client.submit_pr_review_calls();
+        assert_eq!(calls[0].event, PrReviewEvent::Comment);
+    }
+
+    #[tokio::test]
+    async fn mock_submit_pr_review_propagates_configured_error() {
+        use crate::github::types::PrReviewEvent;
+        let client = MockGitHubClient::new();
+        client.set_submit_pr_review_error("forbidden");
+        let result = client.submit_pr_review(1, PrReviewEvent::Approve, "").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("forbidden"));
+    }
+
+    // -- parse_prs_json --
+
+    #[test]
+    fn parse_prs_json_valid_array() {
+        let json = r#"[
+            {"number": 1, "title": "Fix bug", "body": "desc", "state": "OPEN", "url": "https://github.com/r/p/1",
+             "headRefName": "fix/bug", "baseRefName": "main", "author": {"login": "user1"},
+             "labels": [{"name": "enhancement"}], "isDraft": false, "mergeable": "MERGEABLE",
+             "additions": 10, "deletions": 5, "changedFiles": 3}
+        ]"#;
+        let prs = parse_prs_json(json).unwrap();
+        assert_eq!(prs.len(), 1);
+        assert_eq!(prs[0].number, 1);
+        assert_eq!(prs[0].title, "Fix bug");
+        assert_eq!(prs[0].head_branch, "fix/bug");
+        assert_eq!(prs[0].base_branch, "main");
+        assert_eq!(prs[0].author, "user1");
+        assert_eq!(prs[0].state, "open");
+        assert!(prs[0].mergeable);
+        assert_eq!(prs[0].additions, 10);
+        assert_eq!(prs[0].labels, vec!["enhancement"]);
+    }
+
+    #[test]
+    fn parse_prs_json_empty_array() {
+        let prs = parse_prs_json("[]").unwrap();
+        assert!(prs.is_empty());
+    }
+
+    #[test]
+    fn parse_prs_json_invalid_json_returns_err() {
+        assert!(parse_prs_json("{not json}").is_err());
     }
 }

@@ -17,6 +17,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::Sanitize => app.sanitize_screen.as_mut()?,
         app::TuiMode::Settings => app.settings_screen.as_mut()?,
         app::TuiMode::AdaptWizard => app.adapt_screen.as_mut()?,
+        app::TuiMode::PrReview => app.pr_review_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -96,6 +97,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app::TuiMode::AdaptWizard => {
                     app.adapt_screen = Some(crate::tui::screens::adapt::AdaptScreen::new());
                 }
+                app::TuiMode::PrReview => {
+                    app.pr_review_screen =
+                        Some(crate::tui::screens::pr_review::PrReviewScreen::new());
+                    app.pending_commands.push(app::TuiCommand::FetchOpenPrs);
+                }
                 app::TuiMode::PromptInput => {
                     if app.prompt_input_screen.is_none() {
                         let mut screen = screens::PromptInputScreen::new();
@@ -139,6 +145,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::AdaptWizard => {
                     app.adapt_screen = None;
+                }
+                app::TuiMode::PrReview => {
+                    app.pr_review_screen = None;
                 }
                 _ => {}
             }
@@ -226,6 +235,26 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             }
             app.hollow_retry_screen = None;
             app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::FetchPrDetail(pr_number) => {
+            let pr = app
+                .pr_review_screen
+                .as_ref()
+                .and_then(|s| s.find_pr(pr_number));
+            if let (Some(pr), Some(ref mut screen)) = (pr, app.pr_review_screen.as_mut()) {
+                screen.set_pr_detail(pr);
+            }
+        }
+        ScreenAction::SubmitPrReview {
+            pr_number,
+            event,
+            body,
+        } => {
+            app.pending_commands.push(app::TuiCommand::SubmitPrReview {
+                pr_number,
+                event,
+                body,
+            });
         }
         ScreenAction::StartAdaptPipeline(config) => {
             if let Some(ref mut screen) = app.adapt_screen {

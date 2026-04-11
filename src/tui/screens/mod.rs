@@ -4,6 +4,7 @@ pub mod home;
 #[allow(dead_code)]
 pub mod issue_browser;
 pub mod milestone;
+pub mod pr_review;
 pub mod prompt_input;
 pub mod queue_confirmation;
 pub mod settings;
@@ -101,6 +102,14 @@ pub enum ScreenAction {
     PreviewTheme(Option<crate::tui::theme::ThemeConfig>),
     /// Start the adapt pipeline from the wizard screen.
     StartAdaptPipeline(crate::adapt::AdaptConfig),
+    /// Fetch PR detail for a specific PR number.
+    FetchPrDetail(u64),
+    /// Submit a PR review.
+    SubmitPrReview {
+        pr_number: u64,
+        event: crate::github::types::PrReviewEvent,
+        body: String,
+    },
     /// Quit the application.
     Quit,
 }

@@ -171,6 +171,75 @@ impl GhIssue {
     }
 }
 
+/// A pull request from the GitHub API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GhPullRequest {
+    pub number: u64,
+    pub title: String,
+    pub body: String,
+    pub state: String,
+    pub html_url: String,
+    pub head_branch: String,
+    pub base_branch: String,
+    pub author: String,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub mergeable: bool,
+    #[serde(default)]
+    pub additions: u64,
+    #[serde(default)]
+    pub deletions: u64,
+    #[serde(default)]
+    pub changed_files: u64,
+}
+
+/// The type of review action to submit on a pull request.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PrReviewEvent {
+    Approve,
+    RequestChanges,
+    #[default]
+    Comment,
+}
+
+impl PrReviewEvent {
+    pub fn as_gh_arg(&self) -> &'static str {
+        match self {
+            Self::Approve => "approve",
+            Self::RequestChanges => "request-changes",
+            Self::Comment => "comment",
+        }
+    }
+
+    #[allow(dead_code)] // Reason: used by PR review screen rendering
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Approve => "Approve",
+            Self::RequestChanges => "Request Changes",
+            Self::Comment => "Comment",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            Self::Comment => Self::Approve,
+            Self::Approve => Self::RequestChanges,
+            Self::RequestChanges => Self::Comment,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            Self::Comment => Self::RequestChanges,
+            Self::Approve => Self::Comment,
+            Self::RequestChanges => Self::Approve,
+        }
+    }
+}
+
 /// A PR creation that failed and is queued for retry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingPr {
@@ -536,5 +605,85 @@ mod tests {
     fn has_maestro_label_returns_false_with_no_labels() {
         let issue = make_issue(10, &[], "");
         assert!(!issue.has_maestro_label(MaestroLabel::Done));
+    }
+
+    // --- PrReviewEvent ---
+
+    #[test]
+    fn pr_review_event_default_is_comment() {
+        assert_eq!(PrReviewEvent::default(), PrReviewEvent::Comment);
+    }
+
+    #[test]
+    fn pr_review_event_approve_as_gh_arg() {
+        assert_eq!(PrReviewEvent::Approve.as_gh_arg(), "approve");
+    }
+
+    #[test]
+    fn pr_review_event_request_changes_as_gh_arg() {
+        assert_eq!(PrReviewEvent::RequestChanges.as_gh_arg(), "request-changes");
+    }
+
+    #[test]
+    fn pr_review_event_comment_as_gh_arg() {
+        assert_eq!(PrReviewEvent::Comment.as_gh_arg(), "comment");
+    }
+
+    #[test]
+    fn pr_review_event_label_approve() {
+        assert_eq!(PrReviewEvent::Approve.label(), "Approve");
+    }
+
+    #[test]
+    fn pr_review_event_label_request_changes() {
+        assert_eq!(PrReviewEvent::RequestChanges.label(), "Request Changes");
+    }
+
+    #[test]
+    fn pr_review_event_label_comment() {
+        assert_eq!(PrReviewEvent::Comment.label(), "Comment");
+    }
+
+    #[test]
+    fn pr_review_event_next_cycles_forward() {
+        assert_eq!(PrReviewEvent::Comment.next(), PrReviewEvent::Approve);
+        assert_eq!(PrReviewEvent::Approve.next(), PrReviewEvent::RequestChanges);
+        assert_eq!(PrReviewEvent::RequestChanges.next(), PrReviewEvent::Comment);
+    }
+
+    #[test]
+    fn pr_review_event_prev_cycles_backward() {
+        assert_eq!(PrReviewEvent::Comment.prev(), PrReviewEvent::RequestChanges);
+        assert_eq!(PrReviewEvent::Approve.prev(), PrReviewEvent::Comment);
+        assert_eq!(PrReviewEvent::RequestChanges.prev(), PrReviewEvent::Approve);
+    }
+
+    // --- GhPullRequest ---
+
+    #[test]
+    fn gh_pull_request_round_trips_via_serde() {
+        let pr = GhPullRequest {
+            number: 42,
+            title: "Fix bug".to_string(),
+            body: "## Summary\nFixes issue".to_string(),
+            state: "open".to_string(),
+            html_url: "https://github.com/owner/repo/pull/42".to_string(),
+            head_branch: "fix/bug".to_string(),
+            base_branch: "main".to_string(),
+            author: "bot".to_string(),
+            labels: vec!["enhancement".to_string()],
+            draft: false,
+            mergeable: true,
+            additions: 10,
+            deletions: 5,
+            changed_files: 3,
+        };
+        let json = serde_json::to_string(&pr).unwrap();
+        let rt: GhPullRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.number, 42);
+        assert_eq!(rt.title, "Fix bug");
+        assert_eq!(rt.head_branch, "fix/bug");
+        assert_eq!(rt.additions, 10);
+        assert_eq!(rt.changed_files, 3);
     }
 }
