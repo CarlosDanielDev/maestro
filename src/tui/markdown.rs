@@ -143,12 +143,17 @@ impl<'t> MarkdownRenderer<'t> {
             .find_syntax_by_token(lang)
             .unwrap_or_else(|| ss.find_syntax_plain_text());
 
-        let highlight_theme = ts.themes.get("base16-ocean.dark").unwrap_or_else(|| {
-            ts.themes
-                .values()
-                .next()
-                .expect("syntect must have at least one theme")
-        });
+        let Some(highlight_theme) = ts
+            .themes
+            .get("base16-ocean.dark")
+            .or_else(|| ts.themes.values().next())
+        else {
+            // No syntax themes available — render plain text without highlighting
+            for line in text.split('\n') {
+                self.lines.push(Line::from(Span::raw(line.to_string())));
+            }
+            return;
+        };
 
         let mut highlighter = HighlightLines::new(syntax, highlight_theme);
 

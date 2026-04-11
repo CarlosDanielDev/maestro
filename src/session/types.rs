@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -240,6 +239,7 @@ pub struct GateResultEntry {
     pub message: String,
 }
 
+#[allow(dead_code)] // Reason: gate result constructors — to be used by completion gates
 impl GateResultEntry {
     pub fn pass(gate: &str, message: impl Into<String>) -> Self {
         Self {
@@ -418,6 +418,7 @@ pub enum StreamEvent {
     /// Tool result received
     ToolResult { tool: String, is_error: bool },
     /// Cost update from usage data
+    #[allow(dead_code)] // Reason: cost tracking event — to be emitted by budget enforcer
     CostUpdate { cost_usd: f64 },
     /// Session completed
     Completed { cost_usd: f64 },

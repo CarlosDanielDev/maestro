@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -92,6 +91,7 @@ impl SessionProgress {
     }
 
     /// Generate a progress summary for retry context.
+    #[allow(dead_code)] // Reason: progress summary for retry context prompt
     pub fn summary(&self) -> String {
         format!(
             "Phase: {}, Tools used: {}, Files touched: {}",

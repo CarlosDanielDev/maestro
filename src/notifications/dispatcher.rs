@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reason: notification dispatch system — to be wired into session lifecycle
 use std::process::Command;
 
 use super::slack::{SlackClient, SlackEvent, level_to_slack_event};

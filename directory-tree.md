@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-09 12:00 (UTC)
+> Last updated: 2026-04-10 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -216,6 +216,7 @@ maestro/
 ├── LICENSE
 ├── README.md                              # Project front door
 ├── ROADMAP.md                             # Project milestones and implementation order
+├── SECURITY.md                            # Security policy: supported versions, vulnerability reporting, and disclosure process
 ├── directory-tree.md                      # This file — SINGLE SOURCE OF TRUTH for structure
 ├── maestro-state.json                     # Runtime state persistence file
 └── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section; guardrail_prompt option (commented); [sessions.completion_gates] with fmt, clippy, test defaults  [Issue #12, #40, #43]

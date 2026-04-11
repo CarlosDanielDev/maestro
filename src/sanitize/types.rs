@@ -56,6 +56,7 @@ pub enum SmellCategory {
 }
 
 impl SmellCategory {
+    #[allow(dead_code)] // Reason: category predicate — used in sanitize filtering
     pub fn is_dead_code(self) -> bool {
         matches!(
             self,

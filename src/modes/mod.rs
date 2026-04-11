@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reason: built-in mode resolution — to be wired via CLI mode flag
 use crate::config::{Config, ModeConfig};
 
 /// Built-in mode definitions. These are available even without config.

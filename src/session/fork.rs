@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use super::types::{Session, SessionStatus};
 use crate::state::progress::SessionProgress;
 
@@ -11,6 +10,7 @@ pub enum ForkReason {
 pub enum ForkResult {
     Forked {
         child: Box<Session>,
+        #[allow(dead_code)] // Reason: fork continuation — to be used in session resume flow
         continuation_prompt: String,
     },
     Denied {

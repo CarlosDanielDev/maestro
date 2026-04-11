@@ -64,6 +64,7 @@ impl FeatureFlags {
     }
 
     /// All flags with their resolved state, for TUI display.
+    #[allow(dead_code)] // Reason: TUI flag display — to be wired into settings screen
     pub fn all_with_state(&self) -> Vec<(Flag, bool)> {
         Flag::all()
             .iter()

@@ -30,6 +30,7 @@ tokio-stream = "0.1"
 regex = "1"
 async-trait = "0.1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+sha2 = "0.10"
 arboard = "3.6.1"
 image = { version = "0.25.10", features = ["png"], default-features = false }
 pulldown-cmark = { version = "0.12", default-features = false }
@@ -51,6 +52,9 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "parser"
 harness = false
+
+[lints.clippy]
+expect_used = "warn"
 
 [profile.release]
 lto = "fat"

@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reason: multi-provider support (Azure DevOps) — planned feature
 pub mod azure_devops;
 pub mod types;
 

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 pub mod checker;
 pub mod installer;
 pub mod restart;
@@ -49,6 +48,7 @@ pub struct ReleaseInfo {
 }
 
 impl UpgradeState {
+    #[allow(dead_code)] // Reason: TUI upgrade banner visibility check
     pub fn is_visible(&self) -> bool {
         !matches!(self, Self::Hidden)
     }

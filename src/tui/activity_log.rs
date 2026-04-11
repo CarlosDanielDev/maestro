@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::tui::theme::Theme;
 use chrono::{DateTime, Utc};
 use ratatui::{
@@ -21,6 +20,7 @@ pub struct LogEntry {
 pub enum LogLevel {
     Info,
     Tool,
+    #[allow(dead_code)] // Reason: thinking event display — to be wired into stream event handler
     Thinking,
     Warn,
     Error,

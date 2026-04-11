@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 
@@ -42,6 +41,7 @@ pub trait UpdateChecker: Send + Sync {
 }
 
 /// Parse the GitHub Releases API JSON response and return the latest stable tag name.
+#[allow(dead_code)] // Reason: version check flow — to be wired into update checker
 pub fn parse_releases_response(json: &str) -> Result<Option<String>> {
     let releases: Vec<serde_json::Value> =
         serde_json::from_str(json).context("Failed to parse releases JSON")?;
