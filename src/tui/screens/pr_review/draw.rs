@@ -118,7 +118,7 @@ fn draw_pr_list(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Them
         let row_area = Rect::new(inner.x, y, inner.width, 1);
         let is_selected = i == screen.selected;
 
-        let marker = if is_selected { "▸ " } else { "  " };
+        let marker = if is_selected { "\u{f054} " } else { "  " };
         let draft_tag = if pr.draft { " [DRAFT]" } else { "" };
         let title = sanitize_for_terminal(&pr.title);
 
@@ -210,7 +210,7 @@ fn draw_pr_detail(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Th
                 sanitize_for_terminal(&pr.head_branch),
                 Style::default().fg(theme.accent_info),
             ),
-            Span::styled(" → ", Style::default().fg(theme.text_secondary)),
+            Span::styled(" \u{f061} ", Style::default().fg(theme.text_secondary)),
             Span::styled(
                 sanitize_for_terminal(&pr.base_branch),
                 Style::default().fg(theme.text_primary),
@@ -290,7 +290,11 @@ fn draw_submit_review(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme:
     // Show review type selector
     for event in &events {
         let is_selected = *event == screen.form.event;
-        let marker = if is_selected { "● " } else { "○ " };
+        let marker = if is_selected {
+            "\u{f444} "
+        } else {
+            "\u{f4a3} "
+        };
         let style = if is_selected {
             Style::default()
                 .fg(theme.accent_success)
@@ -335,7 +339,7 @@ fn draw_done(f: &mut Frame, area: Rect, theme: &Theme) {
     let lines = vec![
         Line::from(""),
         Line::from(vec![Span::styled(
-            "  ✓ Review submitted successfully!",
+            "  \u{f42e} Review submitted successfully!",
             Style::default()
                 .fg(theme.accent_success)
                 .add_modifier(Modifier::BOLD),

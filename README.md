@@ -55,6 +55,8 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Automatic preflight checks** — `maestro run` validates that `claude`, `gh`/`az`, and `git` are correctly installed and authenticated before spending any API credits; use `--skip-doctor` to bypass when needed
 - **Rich real-time activity feedback** — the activity log shows detailed, human-readable messages for every tool call: file-touching tools display the file path, Bash tool calls show the command preview (`$ cargo test`), and tool results include elapsed time; when Claude uses extended thinking, the activity log shows `"Thinking..."` while the block runs and `"Thought for Xs"` when it finishes; text chunks are suppressed from the global log to prevent flooding
 - **Self-upgrade** — async version check on startup notifies you when a new release is available; press `[u]` to download and install the update with automatic backup and restart confirmation
+- **Visual status transition effects** — panel borders flash briefly (4 frames) when a session changes state; the activity log records a `STATUS: OLD → NEW` entry for every transition, giving an at-a-glance audit trail without leaving the dashboard
+- **DOS-style F-key status bar** — the bottom bar is split into an info strip (agent count, total cost, elapsed time) and an F-key legend (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit) with amber badge styling and responsive width truncation; badge colors are configurable via `fkey_badge_bg` / `fkey_badge_fg` in `maestro.toml`
 
 ### Roadmap
 

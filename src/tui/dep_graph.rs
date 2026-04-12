@@ -44,18 +44,18 @@ fn build_graph_lines<'a>(assigner: &WorkAssigner, theme: &Theme) -> Vec<Line<'a>
         };
 
         let status_symbol = match item.status {
-            WorkStatus::Pending => "○",
-            WorkStatus::Blocked => "⊘",
-            WorkStatus::InProgress => "●",
-            WorkStatus::Done => "✓",
-            WorkStatus::Failed => "✗",
+            WorkStatus::Pending => "\u{f4a3}",    // nf-oct-circle
+            WorkStatus::Blocked => "\u{f4a7}",    // nf-oct-skip
+            WorkStatus::InProgress => "\u{f444}", // nf-oct-dot_fill
+            WorkStatus::Done => "\u{f42e}",       // nf-oct-check_circle
+            WorkStatus::Failed => "\u{f467}",     // nf-oct-x_circle
         };
 
         let deps_str = if item.blocked_by.is_empty() {
             String::new()
         } else {
             let deps: Vec<String> = item.blocked_by.iter().map(|d| format!("#{}", d)).collect();
-            format!(" ← [{}]", deps.join(", "))
+            format!(" \u{f060} [{}]", deps.join(", "))
         };
 
         lines.push(Line::from(vec![

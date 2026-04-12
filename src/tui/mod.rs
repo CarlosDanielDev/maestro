@@ -381,10 +381,73 @@ async fn event_loop(
                         continue;
                     }
 
-                    if key.code == KeyCode::Char('?') {
+                    if key.code == KeyCode::Char('?') || key.code == KeyCode::F(1) {
                         app.show_help = true;
                         app.help_scroll = 0;
                         continue;
+                    }
+
+                    // F-key aliases for DOS-style function key bar (#218)
+                    if let KeyCode::F(n) = key.code {
+                        match n {
+                            2 => {
+                                let summary = app.build_completion_summary();
+                                app.completion_summary = Some(summary);
+                                app.session_summary_state =
+                                    Some(crate::tui::app::types::SessionSummaryState::default());
+                                app.tui_mode = app::TuiMode::SessionSummary;
+                                continue;
+                            }
+                            3 => {
+                                let selected = app.panel_view.selected_index();
+                                if let Some(id) = app.pool.session_id_at_index(selected) {
+                                    app.tui_mode = app::TuiMode::Fullscreen(id);
+                                }
+                                continue;
+                            }
+                            4 => {
+                                app.tui_mode = app::TuiMode::CostDashboard;
+                                continue;
+                            }
+                            5 => {
+                                app.tui_mode = app::TuiMode::TokenDashboard;
+                                continue;
+                            }
+                            6 => {
+                                app.tui_mode = match app.tui_mode {
+                                    app::TuiMode::Overview => app::TuiMode::DependencyGraph,
+                                    app::TuiMode::DependencyGraph => app::TuiMode::CostDashboard,
+                                    app::TuiMode::CostDashboard => app::TuiMode::TokenDashboard,
+                                    app::TuiMode::TokenDashboard => app::TuiMode::Overview,
+                                    _ => app::TuiMode::Overview,
+                                };
+                                continue;
+                            }
+                            #[cfg(unix)]
+                            9 => {
+                                app.pause_all();
+                                continue;
+                            }
+                            10 => {
+                                let selected = app.panel_view.selected_index();
+                                if let Some(id) = app.pool.session_id_at_index(selected)
+                                    && let Some(session) = app.pool.get_session(id)
+                                    && !session.status.is_terminal()
+                                {
+                                    app.tui_mode = app::TuiMode::ConfirmKill(id);
+                                }
+                                continue;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // Ctrl-X to exit (#218)
+                    if key.code == KeyCode::Char('x')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
+                        app.running = false;
+                        return Ok(());
                     }
 
                     let event = Event::Key(key);

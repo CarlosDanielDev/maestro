@@ -43,7 +43,7 @@ pub fn global_keybindings() -> Vec<KeyBindingGroup> {
                     description: "Jump to session detail by index",
                 },
                 KeyBinding {
-                    key: "?",
+                    key: "? / F1",
                     description: "Toggle help overlay",
                 },
             ],
@@ -52,12 +52,20 @@ pub fn global_keybindings() -> Vec<KeyBindingGroup> {
             title: "Views",
             bindings: vec![
                 KeyBinding {
-                    key: "f",
+                    key: "f / F3",
                     description: "Full-screen view for selected session",
                 },
                 KeyBinding {
-                    key: "$",
+                    key: "$ / F4",
                     description: "Cost dashboard view",
+                },
+                KeyBinding {
+                    key: "t / F5",
+                    description: "Token dashboard view",
+                },
+                KeyBinding {
+                    key: "Tab / F6",
+                    description: "Cycle view mode",
                 },
             ],
         },
@@ -65,7 +73,7 @@ pub fn global_keybindings() -> Vec<KeyBindingGroup> {
             title: "Session Control",
             bindings: vec![
                 KeyBinding {
-                    key: "p",
+                    key: "p / F9",
                     description: "Pause all running sessions (SIGSTOP)",
                 },
                 KeyBinding {
@@ -73,8 +81,8 @@ pub fn global_keybindings() -> Vec<KeyBindingGroup> {
                     description: "Resume all paused sessions (SIGCONT)",
                 },
                 KeyBinding {
-                    key: "k",
-                    description: "Kill all sessions",
+                    key: "k / F10",
+                    description: "Kill selected session",
                 },
                 KeyBinding {
                     key: "d",
@@ -101,10 +109,16 @@ pub fn global_keybindings() -> Vec<KeyBindingGroup> {
         },
         KeyBindingGroup {
             title: "General",
-            bindings: vec![KeyBinding {
-                key: "q / Ctrl+c",
-                description: "Quit maestro",
-            }],
+            bindings: vec![
+                KeyBinding {
+                    key: "S / F2",
+                    description: "Session summary",
+                },
+                KeyBinding {
+                    key: "q / Ctrl+c / ^X",
+                    description: "Quit maestro",
+                },
+            ],
         },
     ]
 }
@@ -166,6 +180,21 @@ mod tests {
             groups.iter().flat_map(|g| g.bindings.iter()).collect();
         let has_tab = all_bindings.iter().any(|b| b.key.contains("Tab"));
         assert!(has_tab);
+    }
+
+    #[test]
+    fn global_keybindings_include_fkey_labels() {
+        let groups = global_keybindings();
+        let all_keys: Vec<&str> = groups
+            .iter()
+            .flat_map(|g| g.bindings.iter())
+            .map(|b| b.key)
+            .collect();
+        assert!(
+            all_keys.iter().any(|k| k.contains("F1")),
+            "expected F1 in global keybindings, got: {:?}",
+            all_keys
+        );
     }
 
     #[test]

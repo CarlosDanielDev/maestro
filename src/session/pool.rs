@@ -311,6 +311,15 @@ impl SessionPool {
     pub fn event_tx(&self) -> mpsc::UnboundedSender<SessionEvent> {
         self.event_tx.clone()
     }
+
+    /// Decrement transition flash counters for all sessions (called once per render tick).
+    pub fn tick_flash_counters(&mut self) {
+        for managed in self.active.iter_mut().chain(self.finished.iter_mut()) {
+            if managed.session.transition_flash_remaining > 0 {
+                managed.session.transition_flash_remaining -= 1;
+            }
+        }
+    }
 }
 
 fn session_slug(session: &Session) -> String {
@@ -655,5 +664,73 @@ mod tests {
         let dismissed = pool.dismiss_all_completed();
         assert_eq!(dismissed, 2);
         assert_eq!(pool.total_count(), 0);
+    }
+
+    // --- Issue #202: tick_flash_counters ---
+
+    #[test]
+    fn tick_flash_counters_decrements_nonzero() {
+        let mut pool = make_pool(2);
+        let session = make_session("flash");
+        let id = session.id;
+        pool.enqueue(session);
+        pool.try_promote();
+        pool.get_active_mut(id)
+            .unwrap()
+            .session
+            .transition_flash_remaining = 3;
+        pool.tick_flash_counters();
+        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 2);
+    }
+
+    #[test]
+    fn tick_flash_counters_does_not_go_below_zero() {
+        let mut pool = make_pool(2);
+        let session = make_session("zero");
+        let id = session.id;
+        pool.enqueue(session);
+        pool.try_promote();
+        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 0);
+        pool.tick_flash_counters();
+        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 0);
+    }
+
+    #[test]
+    fn tick_flash_counters_decrements_all_sessions() {
+        let mut pool = make_pool(3);
+        let s1 = make_session("A");
+        let s2 = make_session("B");
+        let id1 = s1.id;
+        let id2 = s2.id;
+        pool.enqueue(s1);
+        pool.enqueue(s2);
+        pool.try_promote();
+        pool.get_active_mut(id1)
+            .unwrap()
+            .session
+            .transition_flash_remaining = 4;
+        pool.get_active_mut(id2)
+            .unwrap()
+            .session
+            .transition_flash_remaining = 2;
+        pool.tick_flash_counters();
+        assert_eq!(pool.get_session(id1).unwrap().transition_flash_remaining, 3);
+        assert_eq!(pool.get_session(id2).unwrap().transition_flash_remaining, 1);
+    }
+
+    #[test]
+    fn tick_flash_counters_decrements_finished_sessions() {
+        let mut pool = make_pool(2);
+        let s = make_session("done");
+        let id = s.id;
+        pool.enqueue(s);
+        pool.try_promote();
+        pool.get_active_mut(id)
+            .unwrap()
+            .session
+            .transition_flash_remaining = 3;
+        pool.on_session_completed(id);
+        pool.tick_flash_counters();
+        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 2);
     }
 }

@@ -363,10 +363,19 @@ fn draw_single_panel(
         ),
     };
 
+    let is_flashing = session.transition_flash_remaining > 0;
+
     let border_style = if has_conflict {
         Style::default()
             .fg(theme.accent_error)
             .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
+    } else if is_flashing {
+        let flash_mod = if session.transition_flash_remaining.is_multiple_of(2) {
+            Modifier::BOLD | Modifier::REVERSED
+        } else {
+            Modifier::BOLD
+        };
+        Style::default().fg(status_color).add_modifier(flash_mod)
     } else if is_selected {
         Style::default()
             .fg(theme.border_focused)

@@ -227,8 +227,8 @@ impl IssueBrowserScreen {
                 let is_selected = display_idx == self.selected;
                 let is_multi = self.selected_set.contains(&issue.number);
 
-                let marker = if is_multi { "◉" } else { " " };
-                let cursor = if is_selected { "▸" } else { " " };
+                let marker = if is_multi { "\u{f058}" } else { " " };
+                let cursor = if is_selected { "\u{f054}" } else { " " };
 
                 let style = if is_selected {
                     Style::default()
