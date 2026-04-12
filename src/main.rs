@@ -24,6 +24,7 @@ mod util;
 mod work;
 
 mod adapt;
+mod mascot;
 mod sanitize;
 
 #[cfg(test)]
@@ -145,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
             continuous,
             enable_flags,
             disable_flags,
+            no_splash,
         }) => {
             cmd_run(
                 prompt,
@@ -160,6 +162,7 @@ async fn main() -> anyhow::Result<()> {
                 continuous,
                 enable_flags,
                 disable_flags,
+                no_splash,
             )
             .await
         }

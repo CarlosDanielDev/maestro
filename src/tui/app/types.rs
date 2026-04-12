@@ -41,6 +41,8 @@ pub enum TuiMode {
 pub struct SessionUiState {
     /// Whether the completion summary popup is shown for this session.
     pub show_summary_popup: bool,
+    /// Per-session mascot animator for detail view.
+    pub mascot_animator: Option<crate::mascot::MascotAnimator>,
 }
 
 /// Payload for suggestion data fetched from GitHub.
