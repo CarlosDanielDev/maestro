@@ -675,12 +675,12 @@ mod tests {
         let id = session.id;
         pool.enqueue(session);
         pool.try_promote();
-        pool.get_active_mut(id).unwrap().session.transition_flash_remaining = 3;
+        pool.get_active_mut(id)
+            .unwrap()
+            .session
+            .transition_flash_remaining = 3;
         pool.tick_flash_counters();
-        assert_eq!(
-            pool.get_session(id).unwrap().transition_flash_remaining,
-            2
-        );
+        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 2);
     }
 
     #[test]
@@ -690,15 +690,9 @@ mod tests {
         let id = session.id;
         pool.enqueue(session);
         pool.try_promote();
-        assert_eq!(
-            pool.get_session(id).unwrap().transition_flash_remaining,
-            0
-        );
+        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 0);
         pool.tick_flash_counters();
-        assert_eq!(
-            pool.get_session(id).unwrap().transition_flash_remaining,
-            0
-        );
+        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 0);
     }
 
     #[test]
@@ -711,8 +705,14 @@ mod tests {
         pool.enqueue(s1);
         pool.enqueue(s2);
         pool.try_promote();
-        pool.get_active_mut(id1).unwrap().session.transition_flash_remaining = 4;
-        pool.get_active_mut(id2).unwrap().session.transition_flash_remaining = 2;
+        pool.get_active_mut(id1)
+            .unwrap()
+            .session
+            .transition_flash_remaining = 4;
+        pool.get_active_mut(id2)
+            .unwrap()
+            .session
+            .transition_flash_remaining = 2;
         pool.tick_flash_counters();
         assert_eq!(pool.get_session(id1).unwrap().transition_flash_remaining, 3);
         assert_eq!(pool.get_session(id2).unwrap().transition_flash_remaining, 1);
@@ -725,7 +725,10 @@ mod tests {
         let id = s.id;
         pool.enqueue(s);
         pool.try_promote();
-        pool.get_active_mut(id).unwrap().session.transition_flash_remaining = 3;
+        pool.get_active_mut(id)
+            .unwrap()
+            .session
+            .transition_flash_remaining = 3;
         pool.on_session_completed(id);
         pool.tick_flash_counters();
         assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 2);

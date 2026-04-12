@@ -328,7 +328,11 @@ mod tests {
             Some(12),
         )];
         let output = render_widget(&checks, Some(1), 8);
-        assert!(output.contains("\u{f42e}"), "Expected check icon:\n{}", output);
+        assert!(
+            output.contains("\u{f42e}"),
+            "Expected check icon:\n{}",
+            output
+        );
         assert!(output.contains("build"), "Expected check name:\n{}", output);
         assert!(output.contains("12s"), "Expected elapsed time:\n{}", output);
         assert!(
@@ -368,14 +372,26 @@ mod tests {
         ];
         let output = render_widget(&checks, Some(42), 8);
 
-        assert!(output.contains("\u{f42e}"), "Expected check icon for passed:\n{}", output);
+        assert!(
+            output.contains("\u{f42e}"),
+            "Expected check icon for passed:\n{}",
+            output
+        );
         assert!(
             output.contains("\u{f251}"),
             "Expected hourglass for in-progress:\n{}",
             output
         );
-        assert!(output.contains("\u{f467}"), "Expected x-circle for failed:\n{}", output);
-        assert!(output.contains("\u{f4a7}"), "Expected skip icon for skipped:\n{}", output);
+        assert!(
+            output.contains("\u{f467}"),
+            "Expected x-circle for failed:\n{}",
+            output
+        );
+        assert!(
+            output.contains("\u{f4a7}"),
+            "Expected skip icon for skipped:\n{}",
+            output
+        );
     }
 
     #[test]

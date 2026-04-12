@@ -95,6 +95,9 @@ work_tick_interval_secs = 10
 
 [modes]
 
+[tui]
+ascii_icons = false
+
 [tui.theme]
 preset = "retro"
 

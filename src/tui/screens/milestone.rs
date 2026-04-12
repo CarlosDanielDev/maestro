@@ -3,9 +3,9 @@ use crate::github::types::{GhIssue, GhMilestone};
 use crate::tui::app::TuiMode;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
+use crate::tui::panels::compact_gauge_bar_counts;
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
-use crate::tui::panels::compact_gauge_bar_counts;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -251,7 +251,11 @@ impl MilestoneScreen {
                 .iter()
                 .take(5)
                 .map(|i| {
-                    let symbol = if i.state == "closed" { "\u{f42e}" } else { "\u{f251}" };
+                    let symbol = if i.state == "closed" {
+                        "\u{f42e}"
+                    } else {
+                        "\u{f251}"
+                    };
                     Line::from(vec![
                         Span::raw(format!("  {} ", symbol)),
                         Span::styled(

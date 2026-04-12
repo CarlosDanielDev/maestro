@@ -373,7 +373,11 @@ impl Session {
 
         // Visual transition flash (#202)
         self.transition_flash_remaining = 4;
-        self.log_activity(format!("STATUS: {} \u{2192} {}", from.label(), target.label()));
+        self.log_activity(format!(
+            "STATUS: {} \u{2192} {}",
+            from.label(),
+            target.label()
+        ));
 
         if target.is_terminal() && self.finished_at.is_none() {
             self.finished_at = Some(Utc::now());
@@ -1154,7 +1158,10 @@ mod tests {
     fn failed_transition_does_not_set_flash_counter() {
         let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
         // Queued -> Completed is invalid
-        let _ = s.transition_to(SessionStatus::Completed, crate::session::transition::TransitionReason::StreamCompleted);
+        let _ = s.transition_to(
+            SessionStatus::Completed,
+            crate::session::transition::TransitionReason::StreamCompleted,
+        );
         assert_eq!(s.transition_flash_remaining, 0);
     }
 
@@ -1164,10 +1171,25 @@ mod tests {
         let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
         s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
             .unwrap();
-        let last = s.activity_log.last().expect("activity log should have entry");
-        assert!(last.message.contains("STATUS:"), "expected STATUS: prefix, got: {}", last.message);
-        assert!(last.message.contains("QUEUED"), "expected QUEUED in message, got: {}", last.message);
-        assert!(last.message.contains("SPAWNING"), "expected SPAWNING in message, got: {}", last.message);
+        let last = s
+            .activity_log
+            .last()
+            .expect("activity log should have entry");
+        assert!(
+            last.message.contains("STATUS:"),
+            "expected STATUS: prefix, got: {}",
+            last.message
+        );
+        assert!(
+            last.message.contains("QUEUED"),
+            "expected QUEUED in message, got: {}",
+            last.message
+        );
+        assert!(
+            last.message.contains("SPAWNING"),
+            "expected SPAWNING in message, got: {}",
+            last.message
+        );
     }
 
     #[test]

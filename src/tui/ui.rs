@@ -519,7 +519,10 @@ fn draw_info_bar(f: &mut Frame, app: &App, area: Rect) {
         None => theme.accent_warning,
     };
 
-    let sep = Span::styled(" \u{2550}\u{2550} ", Style::default().fg(theme.border_inactive));
+    let sep = Span::styled(
+        " \u{2550}\u{2550} ",
+        Style::default().fg(theme.border_inactive),
+    );
 
     let spans = vec![
         Span::styled(
@@ -1125,15 +1128,51 @@ impl FKeyEntry {
     /// Build the full list of F-key entries with context-aware dimming.
     fn build_entries(ctx: &HelpBarContext) -> Vec<FKeyEntry> {
         vec![
-            FKeyEntry { key: "F1", label: "Help", active: true },
-            FKeyEntry { key: "F2", label: "Summary", active: true },
-            FKeyEntry { key: "F3", label: "Full", active: ctx.full_active },
-            FKeyEntry { key: "F4", label: "Costs", active: true },
-            FKeyEntry { key: "F5", label: "Tokens", active: true },
-            FKeyEntry { key: "F6", label: "Deps", active: true },
-            FKeyEntry { key: "F9", label: "Pause", active: ctx.pause_active },
-            FKeyEntry { key: "F10", label: "Kill", active: ctx.kill_active },
-            FKeyEntry { key: "Alt-X", label: "Exit", active: true },
+            FKeyEntry {
+                key: "F1",
+                label: "Help",
+                active: true,
+            },
+            FKeyEntry {
+                key: "F2",
+                label: "Summary",
+                active: true,
+            },
+            FKeyEntry {
+                key: "F3",
+                label: "Full",
+                active: ctx.full_active,
+            },
+            FKeyEntry {
+                key: "F4",
+                label: "Costs",
+                active: true,
+            },
+            FKeyEntry {
+                key: "F5",
+                label: "Tokens",
+                active: true,
+            },
+            FKeyEntry {
+                key: "F6",
+                label: "Deps",
+                active: true,
+            },
+            FKeyEntry {
+                key: "F9",
+                label: "Pause",
+                active: ctx.pause_active,
+            },
+            FKeyEntry {
+                key: "F10",
+                label: "Kill",
+                active: ctx.kill_active,
+            },
+            FKeyEntry {
+                key: "Alt-X",
+                label: "Exit",
+                active: true,
+            },
         ]
     }
 
@@ -1307,7 +1346,10 @@ mod tests {
         let fitted = FKeyEntry::fit_to_width(&entries, 120);
         assert_eq!(fitted.len(), 9);
         for (_, label) in &fitted {
-            assert!(label.is_some(), "all labels should be present at full width");
+            assert!(
+                label.is_some(),
+                "all labels should be present at full width"
+            );
         }
     }
 

@@ -443,9 +443,7 @@ async fn event_loop(
                     }
 
                     // Alt-X to exit (#218)
-                    if key.code == KeyCode::Char('x')
-                        && key.modifiers.contains(KeyModifiers::ALT)
-                    {
+                    if key.code == KeyCode::Char('x') && key.modifiers.contains(KeyModifiers::ALT) {
                         app.running = false;
                         return Ok(());
                     }

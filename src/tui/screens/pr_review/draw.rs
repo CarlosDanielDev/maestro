@@ -290,7 +290,11 @@ fn draw_submit_review(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme:
     // Show review type selector
     for event in &events {
         let is_selected = *event == screen.form.event;
-        let marker = if is_selected { "\u{f444} " } else { "\u{f4a3} " };
+        let marker = if is_selected {
+            "\u{f444} "
+        } else {
+            "\u{f4a3} "
+        };
         let style = if is_selected {
             Style::default()
                 .fg(theme.accent_success)
