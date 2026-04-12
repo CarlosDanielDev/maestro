@@ -22,15 +22,15 @@ impl MascotEyes {
         let text = match state {
             EyeState::Waiting => {
                 if frame_index == 0 {
-                    "  ( o.o )  "
+                    " \u{25C9}   \u{25C9} " // ◉   ◉
                 } else {
-                    "  ( -.- )  "
+                    " \u{2500}   \u{2500} " // ─   ─
                 }
             }
-            EyeState::Typing => "  ( . . )  ",
-            EyeState::Processing => "  ( o.o )  ",
-            EyeState::Success => "  ( ^.^ )  ",
-            EyeState::Error => "  ( x.x )  ",
+            EyeState::Typing => " \u{00B7}   \u{00B7} ", // ·   ·
+            EyeState::Processing => " \u{25C9}   \u{25C9} ", // ◉   ◉
+            EyeState::Success => " \u{25C6}   \u{25C6} ", // ◆   ◆
+            EyeState::Error => " x   x ",
         };
         Line::from(Span::styled(text, Style::default().fg(CLAWD_ORANGE)))
     }
