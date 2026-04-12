@@ -1,4 +1,9 @@
 use crate::continuous::ContinuousModeState;
+use crate::mascot::MascotAnimator;
+use crate::mascot::animator::SystemClock;
+use crate::mascot::eyes::MascotEyes;
+use crate::mascot::frames::{MASCOT_ROWS, MASCOT_WIDTH};
+use crate::mascot::widget::{CLAWD_ORANGE, MascotWidget};
 use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
@@ -23,6 +28,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Decrement transition flash counters (#202)
     app.pool.tick_flash_counters();
+
+    // Tick mascot animator and derive dashboard state
+    let clock = SystemClock;
+    app.mascot_animator.tick(&clock);
+    let derived = crate::mascot::derive_dashboard_mascot_state(
+        app.pool.all_sessions().iter().map(|s| &s.status),
+    );
+    app.mascot_animator.set_state(derived, &clock);
 
     let log_height = app
         .config
@@ -54,26 +67,77 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let spinner_tick = app.spinner_tick;
     match app.tui_mode {
         TuiMode::Overview => {
+            let content_area = chunks[1];
             let sessions = app.pool.all_sessions();
-            app.panel_view.draw_with_claims(
-                f,
-                &sessions,
-                Some(&app.pool.file_claims),
-                chunks[1],
-                &theme,
-                spinner_tick,
-            );
+            // Show mascot panel as sidebar when terminal wide enough
+            if content_area.width >= 60 {
+                let h_split = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Length(13), Constraint::Min(40)])
+                    .split(content_area);
+                draw_mascot_block(
+                    f,
+                    app.mascot_animator.state(),
+                    app.mascot_animator.frame_index(),
+                    h_split[0],
+                );
+                app.panel_view.draw_with_claims(
+                    f,
+                    &sessions,
+                    Some(&app.pool.file_claims),
+                    h_split[1],
+                    &theme,
+                    spinner_tick,
+                );
+            } else {
+                app.panel_view.draw_with_claims(
+                    f,
+                    &sessions,
+                    Some(&app.pool.file_claims),
+                    content_area,
+                    &theme,
+                    spinner_tick,
+                );
+            }
         }
         TuiMode::Detail(id) => {
             if let Some(session) = app.pool.get_session(id) {
-                detail::draw_detail_with_claims(
-                    f,
-                    session,
-                    &app.progress_tracker,
-                    Some(&app.pool.file_claims),
-                    chunks[1],
-                    &theme,
-                );
+                let detail_area = chunks[1];
+                // Derive per-session mascot state and render sidebar when wide enough
+                if detail_area.width >= 60 {
+                    let session_state = crate::mascot::derive_session_mascot_state(session);
+                    let ui_state = app.session_ui_state.entry(id).or_default();
+                    let animator = ui_state
+                        .mascot_animator
+                        .get_or_insert_with(|| MascotAnimator::new(&SystemClock));
+                    animator.set_state(session_state, &SystemClock);
+                    animator.tick(&SystemClock);
+                    let mascot_state = animator.state();
+                    let mascot_frame = animator.frame_index();
+
+                    let h_split = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Min(40), Constraint::Length(13)])
+                        .split(detail_area);
+                    detail::draw_detail_with_claims(
+                        f,
+                        session,
+                        &app.progress_tracker,
+                        Some(&app.pool.file_claims),
+                        h_split[0],
+                        &theme,
+                    );
+                    draw_mascot_block(f, mascot_state, mascot_frame, h_split[1]);
+                } else {
+                    detail::draw_detail_with_claims(
+                        f,
+                        session,
+                        &app.progress_tracker,
+                        Some(&app.pool.file_claims),
+                        detail_area,
+                        &theme,
+                    );
+                }
             } else {
                 let sessions = app.pool.all_sessions();
                 app.panel_view.draw_with_claims(
@@ -119,7 +183,22 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::Dashboard => {
             if let Some(ref mut screen) = app.home_screen {
-                screen.draw(f, chunks[1], &app.theme);
+                let dash_area = chunks[1];
+                if dash_area.width >= 60 {
+                    let h_split = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Min(40), Constraint::Length(13)])
+                        .split(dash_area);
+                    screen.draw(f, h_split[0], &app.theme);
+                    draw_mascot_block(
+                        f,
+                        app.mascot_animator.state(),
+                        app.mascot_animator.frame_index(),
+                        h_split[1],
+                    );
+                } else {
+                    screen.draw(f, dash_area, &app.theme);
+                }
             }
         }
         TuiMode::IssueBrowser => {
@@ -134,7 +213,28 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::PromptInput => {
             if let Some(ref mut screen) = app.prompt_input_screen {
-                screen.draw(f, chunks[1], &app.theme);
+                let prompt_area = chunks[1];
+                if prompt_area.width >= 60 {
+                    let h_split = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Length(13), Constraint::Min(40)])
+                        .split(prompt_area);
+                    // Eyes gutter
+                    let eyes_line = MascotEyes::render_line(
+                        app.mascot_eye_state,
+                        app.mascot_animator.frame_index(),
+                    );
+                    let eyes_y = h_split[0].y + h_split[0].height / 2;
+                    if eyes_y < h_split[0].y + h_split[0].height {
+                        f.render_widget(
+                            Paragraph::new(eyes_line),
+                            Rect::new(h_split[0].x, eyes_y, h_split[0].width, 1),
+                        );
+                    }
+                    screen.draw(f, h_split[1], &app.theme);
+                } else {
+                    screen.draw(f, prompt_area, &app.theme);
+                }
             }
         }
         TuiMode::QueueConfirmation => {
@@ -404,6 +504,29 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             app.help_scroll,
             &theme,
         );
+    }
+}
+
+fn draw_mascot_block(
+    f: &mut Frame,
+    state: crate::mascot::MascotState,
+    frame_index: usize,
+    area: Rect,
+) {
+    use ratatui::widgets::{Block, Borders};
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(CLAWD_ORANGE))
+        .title(Span::styled(
+            " \u{25C9} ",
+            Style::default().fg(CLAWD_ORANGE),
+        ));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if inner.height >= MASCOT_ROWS as u16 && inner.width >= MASCOT_WIDTH as u16 {
+        f.render_widget(MascotWidget::new(state, frame_index), inner);
     }
 }
 

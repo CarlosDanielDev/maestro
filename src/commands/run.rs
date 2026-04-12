@@ -22,6 +22,7 @@ pub async fn cmd_run(
     continuous: bool,
     enable_flags: Vec<String>,
     disable_flags: Vec<String>,
+    no_splash: bool,
 ) -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
 
@@ -168,6 +169,7 @@ pub async fn cmd_run(
     }
 
     app.once_mode = once;
+    app.no_splash = no_splash;
 
     crate::tui::run(app).await
 }

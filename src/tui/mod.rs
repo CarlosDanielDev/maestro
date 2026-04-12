@@ -16,6 +16,7 @@ pub mod screens;
 pub mod session_summary;
 pub mod session_switcher;
 pub mod spinner;
+pub mod splash;
 mod summary;
 pub mod theme;
 pub mod token_dashboard;
@@ -44,11 +45,17 @@ use summary::print_summary;
 
 /// Run the TUI event loop.
 pub async fn run(mut app: App) -> anyhow::Result<()> {
+    let no_splash = app.no_splash;
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
+    // Show splash screen unless disabled
+    if !no_splash {
+        splash::show_splash(&mut terminal)?;
+    }
 
     let result = event_loop(&mut terminal, &mut app).await;
 

@@ -22,6 +22,8 @@ use crate::config::Config;
 use crate::continuous::ContinuousModeState;
 use crate::github::ci::PendingPrCheck;
 use crate::github::client::GitHubClient;
+use crate::mascot::animator::SystemClock;
+use crate::mascot::{MascotAnimator, eyes::EyeState};
 use crate::models::ModelRouter;
 use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::plugins::runner::PluginRunner;
@@ -106,6 +108,9 @@ pub struct App {
     pub pr_review_screen: Option<crate::tui::screens::pr_review::PrReviewScreen>,
     pub release_notes_screen: Option<crate::tui::screens::ReleaseNotesScreen>,
     pub tool_start_times: std::collections::HashMap<uuid::Uuid, (String, Instant)>,
+    pub no_splash: bool,
+    pub mascot_animator: MascotAnimator,
+    pub mascot_eye_state: EyeState,
     pub session_ui_state: std::collections::HashMap<uuid::Uuid, SessionUiState>,
     pub log_viewer_scroll: u16,
     pub log_viewer_cache: crate::tui::log_viewer::LogViewerCache,
@@ -186,6 +191,9 @@ impl App {
                 crate::state::prompt_history::PromptHistoryStore::default_path(),
                 crate::config::default_max_prompt_history(),
             ),
+            no_splash: false,
+            mascot_animator: MascotAnimator::new(&SystemClock),
+            mascot_eye_state: EyeState::Waiting,
             session_switcher: None,
             adapt_screen: None,
             pr_review_screen: None,
