@@ -5,12 +5,13 @@ use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
+use crate::tui::panels::compact_gauge_bar_counts;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Gauge, Paragraph},
+    widgets::Paragraph,
 };
 
 #[derive(Debug, Clone)]
@@ -176,7 +177,7 @@ impl MilestoneScreen {
             }
 
             let is_selected = *idx == self.selected;
-            let cursor = if is_selected { "▸ " } else { "  " };
+            let cursor = if is_selected { "\u{f054} " } else { "  " }; // nf-fa-chevron_right
 
             let title_style = if is_selected {
                 Style::default()
@@ -197,29 +198,34 @@ impl MilestoneScreen {
             f.render_widget(Paragraph::new(title_line), title_area);
 
             let ratio = entry.progress_ratio();
+            let pct = ratio * 100.0;
             let gauge_area = Rect::new(inner.x + 2, y + 1, inner.width.saturating_sub(4), 1);
-            let gauge = Gauge::default()
-                .ratio(ratio)
-                .gauge_style(
-                    Style::default()
-                        .fg(theme.gauge_low)
-                        .bg(theme.gauge_background),
-                )
-                .label(format!(
-                    "{}/{} issues ({:.0}%)",
-                    entry.closed_issues,
-                    entry.total_issues(),
-                    ratio * 100.0
-                ));
-            f.render_widget(gauge, gauge_area);
+            let bar_width = gauge_area.width.saturating_sub(20) as usize;
+            let (filled, empty) = compact_gauge_bar_counts(pct, bar_width);
+            let gauge_color = theme.compact_gauge_color(pct);
+            let bar = format!(
+                "[{}{}] {}/{} issues ({:.0}%)",
+                "\u{2593}".repeat(filled),
+                "\u{2591}".repeat(empty),
+                entry.closed_issues,
+                entry.total_issues(),
+                pct,
+            );
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    bar,
+                    Style::default().fg(gauge_color),
+                ))),
+                gauge_area,
+            );
 
             let status_line = Line::from(vec![
                 Span::styled(
-                    format!("  ✅ {}  ", entry.closed_issues),
+                    format!("  \u{f42e} {}  ", entry.closed_issues), // nf-oct-check_circle
                     Style::default().fg(theme.accent_success),
                 ),
                 Span::styled(
-                    format!("⏳ {}", entry.open_issues),
+                    format!("\u{f251} {}", entry.open_issues), // nf-fa-hourglass_start
                     Style::default().fg(theme.accent_warning),
                 ),
             ]);
@@ -245,7 +251,7 @@ impl MilestoneScreen {
                 .iter()
                 .take(5)
                 .map(|i| {
-                    let symbol = if i.state == "closed" { "✅" } else { "⏳" };
+                    let symbol = if i.state == "closed" { "\u{f42e}" } else { "\u{f251}" };
                     Line::from(vec![
                         Span::raw(format!("  {} ", symbol)),
                         Span::styled(

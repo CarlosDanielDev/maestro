@@ -47,15 +47,15 @@ impl<'a> CiMonitorWidget<'a> {
 /// Map a check's status+conclusion to a display icon.
 fn status_icon(status: CheckStatus, conclusion: CheckConclusion) -> &'static str {
     match (status, conclusion) {
-        (CheckStatus::Completed, CheckConclusion::Success) => "✓",
+        (CheckStatus::Completed, CheckConclusion::Success) => "\u{f42e}",
         (CheckStatus::Completed, CheckConclusion::Failure)
         | (CheckStatus::Completed, CheckConclusion::TimedOut)
-        | (CheckStatus::Completed, CheckConclusion::StartupFailure) => "✗",
-        (CheckStatus::Completed, CheckConclusion::Skipped) => "⊘",
-        (CheckStatus::Completed, CheckConclusion::Cancelled) => "⊘",
-        (CheckStatus::Completed, _) => "✓", // Neutral, Stale, ActionRequired, None
-        (CheckStatus::InProgress, _) => "⏳",
-        _ => "⏳", // Queued, Pending, Waiting, Requested, Unknown
+        | (CheckStatus::Completed, CheckConclusion::StartupFailure) => "\u{f467}",
+        (CheckStatus::Completed, CheckConclusion::Skipped) => "\u{f4a7}",
+        (CheckStatus::Completed, CheckConclusion::Cancelled) => "\u{f4a7}",
+        (CheckStatus::Completed, _) => "\u{f42e}", // Neutral, Stale, ActionRequired, None
+        (CheckStatus::InProgress, _) => "\u{f251}",
+        _ => "\u{f251}", // Queued, Pending, Waiting, Requested, Unknown
     }
 }
 
@@ -328,7 +328,7 @@ mod tests {
             Some(12),
         )];
         let output = render_widget(&checks, Some(1), 8);
-        assert!(output.contains("✓"), "Expected ✓ icon:\n{}", output);
+        assert!(output.contains("\u{f42e}"), "Expected check icon:\n{}", output);
         assert!(output.contains("build"), "Expected check name:\n{}", output);
         assert!(output.contains("12s"), "Expected elapsed time:\n{}", output);
         assert!(
@@ -368,14 +368,14 @@ mod tests {
         ];
         let output = render_widget(&checks, Some(42), 8);
 
-        assert!(output.contains("✓"), "Expected ✓ for passed:\n{}", output);
+        assert!(output.contains("\u{f42e}"), "Expected check icon for passed:\n{}", output);
         assert!(
-            output.contains("⏳"),
-            "Expected ⏳ for in-progress:\n{}",
+            output.contains("\u{f251}"),
+            "Expected hourglass for in-progress:\n{}",
             output
         );
-        assert!(output.contains("✗"), "Expected ✗ for failed:\n{}", output);
-        assert!(output.contains("⊘"), "Expected ⊘ for skipped:\n{}", output);
+        assert!(output.contains("\u{f467}"), "Expected x-circle for failed:\n{}", output);
+        assert!(output.contains("\u{f4a7}"), "Expected skip icon for skipped:\n{}", output);
     }
 
     #[test]
@@ -512,47 +512,47 @@ mod tests {
         // Passed
         assert_eq!(
             status_icon(CheckStatus::Completed, CheckConclusion::Success),
-            "✓"
+            "\u{f42e}"
         );
         // Failed
         assert_eq!(
             status_icon(CheckStatus::Completed, CheckConclusion::Failure),
-            "✗"
+            "\u{f467}"
         );
         // Timed out
         assert_eq!(
             status_icon(CheckStatus::Completed, CheckConclusion::TimedOut),
-            "✗"
+            "\u{f467}"
         );
         // Skipped
         assert_eq!(
             status_icon(CheckStatus::Completed, CheckConclusion::Skipped),
-            "⊘"
+            "\u{f4a7}"
         );
         // Cancelled
         assert_eq!(
             status_icon(CheckStatus::Completed, CheckConclusion::Cancelled),
-            "⊘"
+            "\u{f4a7}"
         );
         // In progress
         assert_eq!(
             status_icon(CheckStatus::InProgress, CheckConclusion::None),
-            "⏳"
+            "\u{f251}"
         );
         // Queued
         assert_eq!(
             status_icon(CheckStatus::Queued, CheckConclusion::None),
-            "⏳"
+            "\u{f251}"
         );
         // Pending
         assert_eq!(
             status_icon(CheckStatus::Pending, CheckConclusion::None),
-            "⏳"
+            "\u{f251}"
         );
         // Neutral (completed but neutral)
         assert_eq!(
             status_icon(CheckStatus::Completed, CheckConclusion::Neutral),
-            "✓"
+            "\u{f42e}"
         );
     }
 

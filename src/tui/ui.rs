@@ -743,7 +743,7 @@ fn draw_completion_overlay(
             lines.push(Line::from(vec![
                 Span::raw("      "),
                 Span::styled(
-                    format!("✗ {} ", gf.gate),
+                    format!("\u{f467} {} ", gf.gate),
                     Style::default().fg(theme.accent_warning),
                 ),
                 Span::styled(&gf.message, Style::default().fg(theme.accent_error)),
@@ -872,11 +872,11 @@ fn draw_queue_execution_overlay(
     let mut progress_spans = vec![Span::raw("  Queue: ")];
     for item in executor.items() {
         let (symbol, color) = match item.state {
-            QueueItemState::Succeeded => ("✓", theme.accent_success),
-            QueueItemState::Running => ("●", theme.accent_info),
-            QueueItemState::Failed => ("✗", theme.accent_error),
-            QueueItemState::Skipped => ("○", theme.accent_warning),
-            QueueItemState::Pending => ("○", theme.text_muted),
+            QueueItemState::Succeeded => ("\u{f42e}", theme.accent_success),
+            QueueItemState::Running => ("\u{f444}", theme.accent_info),
+            QueueItemState::Failed => ("\u{f467}", theme.accent_error),
+            QueueItemState::Skipped => ("\u{f4a3}", theme.accent_warning),
+            QueueItemState::Pending => ("\u{f4a3}", theme.text_muted),
         };
         let label = format!("{} #{}", symbol, item.queued.issue_number);
         progress_spans.push(Span::styled(

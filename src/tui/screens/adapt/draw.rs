@@ -75,7 +75,7 @@ fn draw_configure(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme
             Style::default().fg(theme.text_primary)
         };
 
-        let marker = if is_selected { "▸ " } else { "  " };
+        let marker = if is_selected { "\u{f054} " } else { "  " };
         let line = Line::from(vec![
             Span::styled(marker, style),
             Span::styled(format!("{}: ", label), style),
@@ -107,7 +107,7 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
             // Completed
             let info = phase_summary(screen, i);
             lines.push(Line::from(vec![
-                Span::styled("  ✓ ", Style::default().fg(theme.accent_success)),
+                Span::styled("  \u{f42e} ", Style::default().fg(theme.accent_success)),
                 Span::styled(
                     *label,
                     Style::default()
@@ -129,7 +129,7 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         } else {
             // Pending
             (
-                "  ○ ".to_string(),
+                "  \u{f4a3} ".to_string(),
                 Style::default().fg(theme.text_secondary),
             )
         };
