@@ -7,6 +7,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Visual status transition effects — panel borders flash for 4 frames when a session changes state; activity log records `STATUS: OLD → NEW` transition entries; flash counter on `Session` struct is decremented each render tick (#202)
+- F-key status bar redesign — bottom bar split into an info bar (agent count, cost, elapsed) and a DOS-style F-key bar; keys: F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit; amber badge styling for key names; responsive width truncation; new theme fields `fkey_badge_bg` / `fkey_badge_fg` (#218)
+
 ## [0.10.1] - 2026-04-11
 
 ### Added

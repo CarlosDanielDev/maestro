@@ -420,6 +420,7 @@ mod tests {
             image_paths: vec![],
             gate_results: vec![],
             is_hollow_completion: false,
+            transition_flash_remaining: 0,
             is_thinking: false,
             thinking_started_at: None,
             transition_history: vec![],

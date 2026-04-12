@@ -263,6 +263,9 @@ pub struct Session {
     /// Whether this session completed without performing any observable work.
     #[serde(default)]
     pub is_hollow_completion: bool,
+    /// Flash counter for visual transition effects. Decrements each render tick.
+    #[serde(skip)]
+    pub transition_flash_remaining: u8,
     /// Whether this session is currently in a thinking state.
     #[serde(skip)]
     pub is_thinking: bool,
@@ -339,6 +342,7 @@ impl Session {
             image_paths: Vec::new(),
             gate_results: Vec::new(),
             is_hollow_completion: false,
+            transition_flash_remaining: 0,
             is_thinking: false,
             thinking_started_at: None,
             transition_history: Vec::new(),
@@ -357,14 +361,19 @@ impl Session {
                 to: target,
             });
         }
+        let from = self.status;
         let transition = super::transition::SessionTransition {
-            from: self.status,
+            from,
             to: target,
             reason,
             timestamp: Utc::now(),
         };
         self.status = target;
         self.transition_history.push(transition);
+
+        // Visual transition flash (#202)
+        self.transition_flash_remaining = 4;
+        self.log_activity(format!("STATUS: {} \u{2192} {}", from.label(), target.label()));
 
         if target.is_terminal() && self.finished_at.is_none() {
             self.finished_at = Some(Utc::now());
@@ -1110,5 +1119,64 @@ mod tests {
         let stripped = json.replace(",\"is_hollow_completion\":false", "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
         assert!(!rt.is_hollow_completion);
+    }
+
+    // --- Issue #202: Transition flash effects ---
+
+    #[test]
+    fn flash_counter_starts_at_zero() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        assert_eq!(s.transition_flash_remaining, 0);
+    }
+
+    #[test]
+    fn transition_to_sets_flash_counter() {
+        use crate::session::transition::TransitionReason;
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        assert_eq!(s.transition_flash_remaining, 4);
+    }
+
+    #[test]
+    fn transition_to_resets_flash_counter_on_each_transition() {
+        use crate::session::transition::TransitionReason;
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        s.transition_flash_remaining = 1; // simulate partial decay
+        s.transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        assert_eq!(s.transition_flash_remaining, 4);
+    }
+
+    #[test]
+    fn failed_transition_does_not_set_flash_counter() {
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        // Queued -> Completed is invalid
+        let _ = s.transition_to(SessionStatus::Completed, crate::session::transition::TransitionReason::StreamCompleted);
+        assert_eq!(s.transition_flash_remaining, 0);
+    }
+
+    #[test]
+    fn transition_to_logs_status_change_in_activity_log() {
+        use crate::session::transition::TransitionReason;
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        let last = s.activity_log.last().expect("activity log should have entry");
+        assert!(last.message.contains("STATUS:"), "expected STATUS: prefix, got: {}", last.message);
+        assert!(last.message.contains("QUEUED"), "expected QUEUED in message, got: {}", last.message);
+        assert!(last.message.contains("SPAWNING"), "expected SPAWNING in message, got: {}", last.message);
+    }
+
+    #[test]
+    fn flash_counter_skipped_in_serde() {
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        s.transition_flash_remaining = 4;
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(!json.contains("transition_flash_remaining"));
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.transition_flash_remaining, 0);
     }
 }

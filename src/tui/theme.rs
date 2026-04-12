@@ -337,6 +337,8 @@ pub struct ThemeOverrides {
     pub selection_bg: Option<SerializableColor>,
     pub selection_fg: Option<SerializableColor>,
     pub title_accent: Option<SerializableColor>,
+    pub fkey_badge_bg: Option<SerializableColor>,
+    pub fkey_badge_fg: Option<SerializableColor>,
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +405,10 @@ pub struct Theme {
 
     // Retro title accent (#215)
     pub title_accent: Color,
+
+    // F-key badge styling (#218)
+    pub fkey_badge_bg: Color,
+    pub fkey_badge_fg: Color,
 }
 
 impl Default for Theme {
@@ -453,6 +459,8 @@ impl Theme {
             selection_bg: Color::Cyan,
             selection_fg: Color::Black,
             title_accent: Color::Yellow,
+            fkey_badge_bg: Color::Yellow,
+            fkey_badge_fg: Color::Black,
         }
     }
 
@@ -497,6 +505,8 @@ impl Theme {
             selection_bg: Color::Blue,
             selection_fg: Color::White,
             title_accent: Color::Blue,
+            fkey_badge_bg: Color::Blue,
+            fkey_badge_fg: Color::White,
         }
     }
 
@@ -541,6 +551,8 @@ impl Theme {
             selection_bg: Color::Rgb(255, 140, 0),
             selection_fg: Color::Black,
             title_accent: Color::Rgb(255, 175, 0),
+            fkey_badge_bg: Color::Rgb(255, 175, 0),
+            fkey_badge_fg: Color::Black,
         }
     }
 
@@ -586,6 +598,8 @@ impl Theme {
         apply_override!(selection_bg);
         apply_override!(selection_fg);
         apply_override!(title_accent);
+        apply_override!(fkey_badge_bg);
+        apply_override!(fkey_badge_fg);
 
         theme
     }
@@ -636,6 +650,8 @@ impl Theme {
             selection_bg,
             selection_fg,
             title_accent,
+            fkey_badge_bg,
+            fkey_badge_fg,
         );
     }
 
@@ -1372,5 +1388,43 @@ mod tests {
             assert_ne!(theme.selection_fg, Color::Reset);
             assert_ne!(theme.title_accent, Color::Reset);
         }
+    }
+
+    // --- Issue #218: F-key badge theme fields ---
+
+    #[test]
+    fn all_presets_have_fkey_badge_colors() {
+        for theme in [Theme::dark(), Theme::light(), Theme::retro()] {
+            assert_ne!(theme.fkey_badge_bg, Color::Reset);
+            assert_ne!(theme.fkey_badge_fg, Color::Reset);
+        }
+    }
+
+    #[test]
+    fn dark_fkey_badge_is_yellow_on_black() {
+        let t = Theme::dark();
+        assert_eq!(t.fkey_badge_bg, Color::Yellow);
+        assert_eq!(t.fkey_badge_fg, Color::Black);
+    }
+
+    #[test]
+    fn retro_fkey_badge_is_amber_on_black() {
+        let t = Theme::retro();
+        assert_eq!(t.fkey_badge_bg, Color::Rgb(255, 175, 0));
+        assert_eq!(t.fkey_badge_fg, Color::Black);
+    }
+
+    #[test]
+    fn fkey_badge_override_applies() {
+        let mut overrides = ThemeOverrides::default();
+        overrides.fkey_badge_bg = Some(SerializableColor(Color::Magenta));
+        let cfg = ThemeConfig {
+            preset: ThemePreset::Dark,
+            overrides,
+        };
+        let t = Theme::from_config(&cfg);
+        assert_eq!(t.fkey_badge_bg, Color::Magenta);
+        // fg should remain default
+        assert_eq!(t.fkey_badge_fg, Color::Black);
     }
 }
