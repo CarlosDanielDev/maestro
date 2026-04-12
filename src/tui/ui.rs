@@ -183,7 +183,22 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::Dashboard => {
             if let Some(ref mut screen) = app.home_screen {
-                screen.draw(f, chunks[1], &app.theme);
+                let dash_area = chunks[1];
+                if dash_area.width >= 60 {
+                    let h_split = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Min(40), Constraint::Length(13)])
+                        .split(dash_area);
+                    screen.draw(f, h_split[0], &app.theme);
+                    draw_mascot_block(
+                        f,
+                        app.mascot_animator.state(),
+                        app.mascot_animator.frame_index(),
+                        h_split[1],
+                    );
+                } else {
+                    screen.draw(f, dash_area, &app.theme);
+                }
             }
         }
         TuiMode::IssueBrowser => {

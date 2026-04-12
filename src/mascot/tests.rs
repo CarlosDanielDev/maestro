@@ -413,8 +413,8 @@ fn eyes_typing_renders_dot_regardless_of_frame() {
     let frame0 = line_to_string(MascotEyes::render_line(EyeState::Typing, 0));
     let frame1 = line_to_string(MascotEyes::render_line(EyeState::Typing, 1));
     assert!(
-        frame0.contains('·'),
-        "Typing should contain '·', got: {frame0:?}"
+        frame0.contains('.'),
+        "Typing should contain '.', got: {frame0:?}"
     );
     assert_eq!(frame0, frame1, "Typing eyes must not animate");
 }
@@ -427,11 +427,11 @@ fn eyes_processing_is_steady() {
 }
 
 #[test]
-fn eyes_success_renders_diamond() {
+fn eyes_success_renders_caret() {
     let output = line_to_string(MascotEyes::render_line(EyeState::Success, 0));
     assert!(
-        output.contains('◆'),
-        "Success should contain '◆', got: {output:?}"
+        output.contains('^'),
+        "Success should contain '^', got: {output:?}"
     );
 }
 
@@ -439,8 +439,8 @@ fn eyes_success_renders_diamond() {
 fn eyes_error_renders_x() {
     let output = line_to_string(MascotEyes::render_line(EyeState::Error, 0));
     assert!(
-        output.contains('✕'),
-        "Error should contain '✕', got: {output:?}"
+        output.contains('x'),
+        "Error should contain 'x', got: {output:?}"
     );
 }
 
