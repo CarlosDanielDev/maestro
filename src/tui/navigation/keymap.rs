@@ -115,7 +115,7 @@ pub fn global_keybindings() -> Vec<KeyBindingGroup> {
                     description: "Session summary",
                 },
                 KeyBinding {
-                    key: "q / Ctrl+c / Alt-X",
+                    key: "q / Ctrl+c / ^X",
                     description: "Quit maestro",
                 },
             ],

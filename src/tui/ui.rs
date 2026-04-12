@@ -1169,7 +1169,7 @@ impl FKeyEntry {
                 active: ctx.kill_active,
             },
             FKeyEntry {
-                key: "Alt-X",
+                key: "^X",
                 label: "Exit",
                 active: true,
             },
@@ -1335,7 +1335,7 @@ mod tests {
         assert_eq!(entries.len(), 9);
         assert_eq!(entries[0].key, "F1");
         assert_eq!(entries[0].label, "Help");
-        assert_eq!(entries[8].key, "Alt-X");
+        assert_eq!(entries[8].key, "^X");
         assert_eq!(entries[8].label, "Exit");
     }
 
@@ -1357,8 +1357,8 @@ mod tests {
     fn fkey_entries_narrow_width_truncates() {
         let ctx = HelpBarContext::from_status(None);
         let entries = FKeyEntry::build_entries(&ctx);
-        let fitted = FKeyEntry::fit_to_width(&entries, 30);
-        // At width 30 in badge-only mode (< 40), should fit several but not all
+        let fitted = FKeyEntry::fit_to_width(&entries, 20);
+        // At width 20 in badge-only mode (< 40), should fit several but not all
         assert!(fitted.len() > 0);
         assert!(fitted.len() < 9);
         for (_, label) in &fitted {
