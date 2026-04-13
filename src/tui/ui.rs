@@ -134,15 +134,23 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 if app.show_mascot && dash_area.width >= 60 {
                     let h_split = Layout::default()
                         .direction(Direction::Horizontal)
-                        .constraints([Constraint::Length(13), Constraint::Min(40)])
+                        .constraints([Constraint::Length(12), Constraint::Min(40)])
                         .split(dash_area);
-                    draw_mascot_block(
-                        f,
-                        app.mascot_animator.state(),
-                        app.mascot_animator.frame_index(),
-                        h_split[0],
-                        &theme,
-                    );
+                    // Bare mascot — no border, just the art
+                    let color = theme.accent_success;
+                    let mascot_h = MASCOT_ROWS as u16;
+                    if h_split[0].height >= mascot_h {
+                        let r =
+                            Rect::new(h_split[0].x, h_split[0].y, MASCOT_WIDTH as u16, mascot_h);
+                        f.render_widget(
+                            MascotWidget::new(
+                                app.mascot_animator.state(),
+                                app.mascot_animator.frame_index(),
+                                color,
+                            ),
+                            r,
+                        );
+                    }
                     screen.draw(f, h_split[1], &app.theme);
                 } else {
                     screen.draw(f, dash_area, &app.theme);
