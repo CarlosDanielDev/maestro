@@ -44,24 +44,29 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         })
         .unwrap_or(10);
 
-    // Hide hints bar on very small terminals to save space
-    let hints_height = if f.area().height < 30 { 0 } else { 1 };
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),            // status bar
-            Constraint::Min(10),              // main content
-            Constraint::Length(log_height),   // activity log
-            Constraint::Length(hints_height), // inline hints bar (#282)
-            Constraint::Length(1),            // F-key bar
+            Constraint::Length(3),          // status bar (includes inline hints)
+            Constraint::Min(10),            // main content
+            Constraint::Length(log_height), // activity log
+            Constraint::Length(1),          // F-key bar
         ])
         .split(f.area());
 
-    draw_status_bar(f, app, chunks[0]);
-
     // Use preview theme if active, otherwise base theme
     let theme = app.active_theme().clone();
+
+    // Compute ModeKeyMap once per frame (#280)
+    let screen_bindings = active_screen_bindings(app);
+    let selected_status = {
+        let sessions = app.pool.all_sessions();
+        let idx = app.panel_view.selected_index();
+        sessions.get(idx).map(|s| s.status)
+    };
+    let mode_km = keymap::mode_keymap(app.tui_mode, selected_status, &screen_bindings);
+
+    draw_status_bar(f, app, &mode_km, chunks[0]);
 
     // Render main content based on TUI mode
     let spinner_tick = app.spinner_tick;
@@ -388,22 +393,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Draw upgrade banner if visible (overlays status bar)
     draw_upgrade_banner(f, &app.upgrade_state, chunks[0], &app.theme);
 
-    // Compute ModeKeyMap once per frame (#280)
-    let screen_bindings = active_screen_bindings(app);
-    let selected_status = {
-        let sessions = app.pool.all_sessions();
-        let idx = app.panel_view.selected_index();
-        sessions.get(idx).map(|s| s.status)
-    };
-    let mode_km = keymap::mode_keymap(app.tui_mode, selected_status, &screen_bindings);
-
-    // Draw inline hints bar (#282 — context-sensitive)
-    if hints_height > 0 {
-        draw_hints_bar(f, &mode_km, chunks[3], &theme);
-    }
-
     // Draw F-key bar (#280 — context-aware)
-    draw_fkey_bar(f, &mode_km, chunks[4], &theme);
+    draw_fkey_bar(f, &mode_km, chunks[3], &theme);
 
     // Draw help overlay on top of everything if active (#281)
     if let Some(ref help) = app.help_state {
@@ -475,7 +466,7 @@ fn draw_mascot_block(
     }
 }
 
-fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
+fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
     let theme = app.active_theme();
     let elapsed = Utc::now() - app.start_time;
     let elapsed_str = format!(
@@ -552,6 +543,33 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
+    // Append inline keybinding hints to the status bar (#282)
+    let inner_width = area.width.saturating_sub(2); // account for borders
+    let status_used: u16 = spans.iter().map(|s| s.width() as u16).sum();
+    let remaining = inner_width.saturating_sub(status_used);
+    if remaining > 10 && !mode_km.hints.is_empty() {
+        let fitted = keymap::fit_hints_to_width(&mode_km.hints, remaining.saturating_sub(4));
+        if !fitted.is_empty() {
+            spans.push(Span::styled(
+                " \u{2550}\u{2550} ",
+                Style::default().fg(theme.border_inactive),
+            ));
+            for (i, (key, action)) in fitted.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::raw("  "));
+                }
+                spans.push(Span::styled(
+                    format!("[{}]", key),
+                    Style::default().fg(theme.accent_success),
+                ));
+                spans.push(Span::styled(
+                    format!(" {}", action),
+                    Style::default().fg(theme.text_secondary),
+                ));
+            }
+        }
+    }
+
     let block = theme
         .styled_block_plain(false)
         .border_style(Style::default().fg(theme.border_active));
@@ -595,33 +613,6 @@ fn draw_fkey_bar(
                 Style::default().fg(label_color),
             ));
         }
-    }
-
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
-}
-
-/// Draw the inline keybinding hints bar (#282).
-fn draw_hints_bar(
-    f: &mut Frame,
-    mode_km: &ModeKeyMap,
-    area: Rect,
-    theme: &crate::tui::theme::Theme,
-) {
-    let fitted = keymap::fit_hints_to_width(&mode_km.hints, area.width);
-
-    let mut spans: Vec<Span> = Vec::new();
-    for (i, (key, action)) in fitted.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::raw("  "));
-        }
-        spans.push(Span::styled(
-            format!("[{}]", key),
-            Style::default().fg(theme.accent_success),
-        ));
-        spans.push(Span::styled(
-            format!(" {}", action),
-            Style::default().fg(theme.text_secondary),
-        ));
     }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
