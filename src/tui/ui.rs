@@ -45,7 +45,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),          // status bar
+            Constraint::Length(3),          // status bar
             Constraint::Min(10),            // main content
             Constraint::Length(log_height), // activity log
             Constraint::Length(1),          // F-key bar
@@ -539,7 +539,11 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    let block = theme
+        .styled_block_plain(false)
+        .border_style(Style::default().fg(theme.border_active));
+
+    f.render_widget(Paragraph::new(Line::from(spans)).block(block), area);
 }
 
 fn draw_fkey_bar(f: &mut Frame, app: &App, area: Rect) {
