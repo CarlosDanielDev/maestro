@@ -45,6 +45,9 @@ pub struct HomeScreen {
     pub selected_suggestion: usize,
     pub loading_suggestions: bool,
     pub focus_ring: FocusRing,
+    mascot_visible: bool,
+    mascot_state: crate::mascot::MascotState,
+    mascot_frame: usize,
 }
 
 impl HomeScreen {
@@ -68,7 +71,16 @@ impl HomeScreen {
             selected_suggestion: 0,
             loading_suggestions: false,
             focus_ring: FocusRing::new(vec![Self::QUICK_ACTIONS_PANE, Self::SUGGESTIONS_PANE]),
+            mascot_visible: false,
+            mascot_state: crate::mascot::MascotState::Idle,
+            mascot_frame: 0,
         }
+    }
+
+    pub fn set_mascot(&mut self, visible: bool, state: crate::mascot::MascotState, frame: usize) {
+        self.mascot_visible = visible;
+        self.mascot_state = state;
+        self.mascot_frame = frame;
     }
 
     fn is_quick_actions_focused(&self) -> bool {

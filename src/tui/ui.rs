@@ -1,4 +1,7 @@
 use crate::continuous::ContinuousModeState;
+use crate::mascot::animator::SystemClock;
+use crate::mascot::frames::{MASCOT_ROWS, MASCOT_WIDTH};
+use crate::mascot::widget::MascotWidget;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
@@ -23,6 +26,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Decrement transition flash counters (#202)
     app.pool.tick_flash_counters();
+
+    // Tick mascot animator and derive dashboard state
+    let clock = SystemClock;
+    app.mascot_animator.tick(&clock);
+    let derived = crate::mascot::derive_dashboard_mascot_state(
+        app.pool.all_sessions().iter().map(|s| &s.status),
+    );
+    app.mascot_animator.set_state(derived, &clock);
 
     let log_height = app
         .config
@@ -119,6 +130,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::Dashboard => {
             if let Some(ref mut screen) = app.home_screen {
+                screen.set_mascot(
+                    app.show_mascot,
+                    app.mascot_animator.state(),
+                    app.mascot_animator.frame_index(),
+                );
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -329,7 +345,28 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         app.activity_log.draw(f, activity_chunks[1], &app.theme);
     } else {
-        app.activity_log.draw(f, chunks[2], &app.theme);
+        let is_dashboard = matches!(app.tui_mode, TuiMode::Dashboard);
+        let log_area = chunks[2];
+        if app.show_mascot
+            && !is_dashboard
+            && log_area.width >= 25
+            && log_area.height >= MASCOT_ROWS as u16 + 2
+        {
+            let h_split = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Min(10), Constraint::Length(13)])
+                .split(log_area);
+            app.activity_log.draw(f, h_split[0], &app.theme);
+            draw_mascot_block(
+                f,
+                app.mascot_animator.state(),
+                app.mascot_animator.frame_index(),
+                h_split[1],
+                &theme,
+            );
+        } else {
+            app.activity_log.draw(f, log_area, &app.theme);
+        }
     }
 
     // Draw gh auth warning banner if authentication lost
@@ -404,6 +441,28 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             app.help_scroll,
             &theme,
         );
+    }
+}
+
+fn draw_mascot_block(
+    f: &mut Frame,
+    state: crate::mascot::MascotState,
+    frame_index: usize,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    use ratatui::widgets::{Block, Borders};
+
+    let color = theme.accent_success;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(color))
+        .title(Span::styled(" \u{25C9} ", Style::default().fg(color)));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if inner.height >= MASCOT_ROWS as u16 && inner.width >= MASCOT_WIDTH as u16 {
+        f.render_widget(MascotWidget::new(state, frame_index, color), inner);
     }
 }
 

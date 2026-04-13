@@ -83,6 +83,10 @@ pub enum Commands {
         /// Disable a feature flag (repeatable, e.g. --disable-flag auto_fork)
         #[arg(long = "disable-flag", value_name = "FLAG")]
         disable_flags: Vec<String>,
+
+        /// Skip the startup splash screen
+        #[arg(long)]
+        no_splash: bool,
     },
     /// Show queued/pending issues from GitHub
     Queue,

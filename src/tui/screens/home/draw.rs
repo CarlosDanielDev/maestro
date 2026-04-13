@@ -96,10 +96,33 @@ impl HomeScreen {
     }
 
     fn draw_logo(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        // Render centered MAESTRO logo
         let logo = Paragraph::new(LOGO)
             .style(Style::default().fg(theme.accent_success))
             .alignment(Alignment::Center);
         f.render_widget(logo, area);
+
+        // Render mascot immediately right of the centered logo text
+        if self.mascot_visible && area.width >= 40 && area.height >= 6 {
+            let logo_width = 63u16;
+            let logo_end_x = area.x + area.width.saturating_sub(logo_width) / 2 + logo_width;
+            let mascot_w = 11u16;
+            let mascot_x = logo_end_x + 1;
+            let mascot_h = 6u16.min(area.height);
+            let mascot_y = area.y + area.height.saturating_sub(mascot_h) / 2;
+
+            if mascot_x + mascot_w <= area.x + area.width {
+                let mascot_rect = Rect::new(mascot_x, mascot_y, mascot_w, mascot_h);
+                f.render_widget(
+                    crate::mascot::widget::MascotWidget::new(
+                        self.mascot_state,
+                        self.mascot_frame,
+                        theme.accent_success,
+                    ),
+                    mascot_rect,
+                );
+            }
+        }
     }
 
     fn draw_project_info(&self, f: &mut Frame, area: Rect, theme: &Theme) {
