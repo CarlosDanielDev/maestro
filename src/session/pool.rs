@@ -169,6 +169,15 @@ impl SessionPool {
         out
     }
 
+    /// Iterate over all session statuses without allocating a Vec.
+    pub fn all_statuses(&self) -> impl Iterator<Item = &SessionStatus> {
+        self.active
+            .iter()
+            .map(|m| &m.session.status)
+            .chain(self.finished.iter().map(|m| &m.session.status))
+            .chain(self.queue.iter().map(|s| &s.status))
+    }
+
     /// Get session UUID at a given display index (from all_sessions ordering).
     pub fn session_id_at_index(&self, index: usize) -> Option<Uuid> {
         self.all_sessions().get(index).map(|s| s.id)

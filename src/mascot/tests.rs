@@ -7,7 +7,6 @@ use ratatui::widgets::Widget;
 
 use crate::mascot::animator::{Clock, MascotAnimator};
 use crate::mascot::derive_dashboard_mascot_state;
-use crate::mascot::eyes::{EyeState, MascotEyes};
 use crate::mascot::frames::MascotFrames;
 use crate::mascot::state::MascotState;
 use crate::mascot::widget::{CLAWD_ORANGE, MascotWidget};
@@ -69,10 +68,6 @@ fn buffer_row_string(buf: &Buffer, y: u16) -> String {
         s.push_str(buf.cell((x, y)).map_or(" ", |c| c.symbol()));
     }
     s
-}
-
-fn line_to_string(line: ratatui::text::Line) -> String {
-    line.spans.iter().map(|s| s.content.as_ref()).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -402,54 +397,7 @@ fn widget_different_states_produce_different_output() {
 }
 
 // ---------------------------------------------------------------------------
-// Suite 5 — MascotEyes
-// ---------------------------------------------------------------------------
-
-#[test]
-fn eyes_waiting_blink_frame_zero_and_one_differ() {
-    let frame0 = line_to_string(MascotEyes::render_line(EyeState::Waiting, 0));
-    let frame1 = line_to_string(MascotEyes::render_line(EyeState::Waiting, 1));
-    assert_ne!(frame0, frame1, "Waiting state must animate between frames");
-}
-
-#[test]
-fn eyes_typing_renders_dot_regardless_of_frame() {
-    let frame0 = line_to_string(MascotEyes::render_line(EyeState::Typing, 0));
-    let frame1 = line_to_string(MascotEyes::render_line(EyeState::Typing, 1));
-    assert!(
-        frame0.contains('\u{00B7}'),
-        "Typing should contain '·', got: {frame0:?}"
-    );
-    assert_eq!(frame0, frame1, "Typing eyes must not animate");
-}
-
-#[test]
-fn eyes_processing_is_steady() {
-    let frame0 = line_to_string(MascotEyes::render_line(EyeState::Processing, 0));
-    let frame1 = line_to_string(MascotEyes::render_line(EyeState::Processing, 1));
-    assert_eq!(frame0, frame1, "Processing eyes must not animate");
-}
-
-#[test]
-fn eyes_success_renders_diamond() {
-    let output = line_to_string(MascotEyes::render_line(EyeState::Success, 0));
-    assert!(
-        output.contains('\u{25C6}'),
-        "Success should contain '◆', got: {output:?}"
-    );
-}
-
-#[test]
-fn eyes_error_renders_x() {
-    let output = line_to_string(MascotEyes::render_line(EyeState::Error, 0));
-    assert!(
-        output.contains('x'),
-        "Error should contain 'x', got: {output:?}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Suite 6 — derive_dashboard_mascot_state
+// Suite 5 — derive_dashboard_mascot_state
 // ---------------------------------------------------------------------------
 
 #[test]

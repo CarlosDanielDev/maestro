@@ -11,9 +11,11 @@ use ratatui::widgets::Paragraph;
 use std::io;
 use std::time::{Duration, Instant};
 
+use crate::mascot::frames::{MASCOT_ROWS, MASCOT_WIDTH as MASCOT_WIDTH_USIZE};
+
 const SPLASH_DURATION_MS: u64 = 1200;
-const MASCOT_HEIGHT: u16 = 6;
-const MASCOT_WIDTH: u16 = 11;
+const MASCOT_HEIGHT: u16 = MASCOT_ROWS as u16;
+const MASCOT_WIDTH: u16 = MASCOT_WIDTH_USIZE as u16;
 
 /// CRT green color matching the retro theme.
 const SPLASH_COLOR: Color = Color::Rgb(0, 255, 65);
