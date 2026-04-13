@@ -803,12 +803,10 @@ pub fn fit_hints_to_width(hints: &[InlineHint], width: u16) -> Vec<(&str, &str)>
     let mut used = 0u16;
 
     for hint in hints {
-        let entry_width = hint.key.len() as u16 + hint.action.len() as u16 + 4;
+        let separator = if result.is_empty() { 0u16 } else { 2 };
+        let entry_width = hint.key.len() as u16 + hint.action.len() as u16 + 4 + separator;
         if used + entry_width > width {
             break;
-        }
-        if !result.is_empty() {
-            used += 2;
         }
         result.push((hint.key, hint.action));
         used += entry_width;

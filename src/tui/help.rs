@@ -14,7 +14,6 @@ pub struct HelpOverlayState {
     pub scroll: u16,
     pub search_query: String,
     pub search_active: bool,
-    pub total_lines: u16,
 }
 
 impl HelpOverlayState {
@@ -23,14 +22,11 @@ impl HelpOverlayState {
             scroll: 0,
             search_query: String::new(),
             search_active: false,
-            total_lines: 0,
         }
     }
 
     pub fn scroll_down(&mut self) {
-        if self.scroll < self.total_lines {
-            self.scroll = self.scroll.saturating_add(1);
-        }
+        self.scroll = self.scroll.saturating_add(1);
     }
 
     pub fn scroll_up(&mut self) {
@@ -38,11 +34,7 @@ impl HelpOverlayState {
     }
 
     pub fn page_down(&mut self) {
-        if self.scroll + 10 <= self.total_lines {
-            self.scroll = self.scroll.saturating_add(10);
-        } else {
-            self.scroll = self.total_lines;
-        }
+        self.scroll = self.scroll.saturating_add(10);
     }
 
     pub fn page_up(&mut self) {
@@ -160,7 +152,7 @@ pub fn draw_help_overlay_with_search(
         Span::raw(" Scroll  "),
         Span::styled("[/]", Style::default().fg(theme.accent_success)),
         Span::raw(" Search  "),
-        Span::styled("[Esc]", Style::default().fg(theme.accent_success)),
+        Span::styled("[?/F1/Esc]", Style::default().fg(theme.accent_success)),
         Span::raw(" Close"),
     ]));
 
@@ -269,13 +261,11 @@ mod tests {
         assert_eq!(state.scroll, 0);
         assert!(state.search_query.is_empty());
         assert!(!state.search_active);
-        assert_eq!(state.total_lines, 0);
     }
 
     #[test]
     fn help_overlay_state_scroll_down_increments() {
         let mut state = HelpOverlayState::new();
-        state.total_lines = 10;
         state.scroll = 3;
         state.scroll_down();
         assert_eq!(state.scroll, 4);
@@ -298,14 +288,11 @@ mod tests {
     }
 
     #[test]
-    fn help_overlay_state_scroll_down_clamps_at_total_lines() {
+    fn help_overlay_state_scroll_saturates_at_max() {
         let mut state = HelpOverlayState::new();
-        state.total_lines = 10;
-        state.scroll = 9;
+        state.scroll = u16::MAX;
         state.scroll_down();
-        assert_eq!(state.scroll, 10);
-        state.scroll_down();
-        assert_eq!(state.scroll, 10);
+        assert_eq!(state.scroll, u16::MAX);
     }
 
     #[test]

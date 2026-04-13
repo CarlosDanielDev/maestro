@@ -55,15 +55,24 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Use preview theme if active, otherwise base theme
     let theme = app.active_theme().clone();
 
-    let screen_bindings = active_screen_bindings(app);
     let selected_status = {
         let sessions = app.pool.all_sessions();
         let idx = app.panel_view.selected_index();
         sessions.get(idx).map(|s| s.status)
     };
-    let mode_km = keymap::mode_keymap(app.tui_mode, selected_status, &screen_bindings);
+    let cache_key = (app.tui_mode, selected_status);
+    if app.cached_mode_km.is_none() || app.cached_mode_km_key != cache_key {
+        let screen_bindings = active_screen_bindings(app);
+        app.cached_mode_km = Some(keymap::mode_keymap(
+            app.tui_mode,
+            selected_status,
+            &screen_bindings,
+        ));
+        app.cached_mode_km_key = cache_key;
+    }
+    let mode_km = app.cached_mode_km.as_ref().unwrap();
 
-    draw_status_bar(f, app, &mode_km, chunks[0]);
+    draw_status_bar(f, app, mode_km, chunks[0]);
 
     // Render main content based on TUI mode
     let spinner_tick = app.spinner_tick;
@@ -390,14 +399,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Draw upgrade banner if visible (overlays status bar)
     draw_upgrade_banner(f, &app.upgrade_state, chunks[0], &app.theme);
 
-    draw_fkey_bar(f, &mode_km, chunks[3], &theme);
+    draw_fkey_bar(f, mode_km, chunks[3], &theme);
 
     if let Some(ref help) = app.help_state {
         let input_mode = active_screen_input_mode(app);
         help::draw_help_overlay_with_search(
             f,
             f.area(),
-            &mode_km,
+            mode_km,
             input_mode,
             help.scroll,
             &help.search_query,
