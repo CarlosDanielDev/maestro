@@ -1,5 +1,4 @@
 pub mod animator;
-pub mod eyes;
 pub mod frames;
 pub mod state;
 pub mod widget;
@@ -10,8 +9,7 @@ mod tests;
 pub use animator::MascotAnimator;
 pub use state::MascotState;
 
-use crate::session::types::{Session, SessionStatus};
-use std::time::Duration;
+use crate::session::types::SessionStatus;
 
 /// Derives the mascot display state from session statuses.
 /// Priority: Error > Conducting > Happy > Idle
@@ -31,9 +29,6 @@ pub fn derive_dashboard_mascot_state<'a>(
             SessionStatus::Completed => {}
             _ => all_completed = false,
         }
-        if !matches!(status, SessionStatus::Completed) {
-            all_completed = false;
-        }
     }
 
     if !any {
@@ -48,33 +43,5 @@ pub fn derive_dashboard_mascot_state<'a>(
         MascotState::Happy
     } else {
         MascotState::Idle
-    }
-}
-
-/// Silence threshold for per-session thinking detection.
-#[allow(dead_code)]
-const SILENCE_THRESHOLD: Duration = Duration::from_secs(3);
-
-/// Derives the mascot state for a single session's detail view.
-#[allow(dead_code)]
-pub fn derive_session_mascot_state(session: &Session) -> MascotState {
-    match session.status {
-        SessionStatus::Errored => MascotState::Error,
-        SessionStatus::Completed => MascotState::Happy,
-        SessionStatus::Paused => MascotState::Sleeping,
-        SessionStatus::Running | SessionStatus::Spawning => {
-            if session.is_thinking {
-                MascotState::Thinking
-            } else if let Some(started) = session.thinking_started_at {
-                if started.elapsed() >= SILENCE_THRESHOLD {
-                    MascotState::Thinking
-                } else {
-                    MascotState::Conducting
-                }
-            } else {
-                MascotState::Conducting
-            }
-        }
-        _ => MascotState::Idle,
     }
 }

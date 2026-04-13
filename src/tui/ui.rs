@@ -27,12 +27,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Decrement transition flash counters (#202)
     app.pool.tick_flash_counters();
 
-    // Tick mascot animator and derive dashboard state
     let clock = SystemClock;
     app.mascot_animator.tick(&clock);
-    let derived = crate::mascot::derive_dashboard_mascot_state(
-        app.pool.all_sessions().iter().map(|s| &s.status),
-    );
+    let derived = crate::mascot::derive_dashboard_mascot_state(app.pool.all_statuses());
     app.mascot_animator.set_state(derived, &clock);
 
     let log_height = app
@@ -51,7 +48,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             Constraint::Length(3),          // status bar
             Constraint::Min(10),            // main content
             Constraint::Length(log_height), // activity log
-            Constraint::Length(1),          // info bar
             Constraint::Length(1),          // F-key bar
         ])
         .split(f.area());
@@ -354,7 +350,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         {
             let h_split = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(10), Constraint::Length(13)])
+                .constraints([
+                    Constraint::Min(10),
+                    Constraint::Length(MASCOT_WIDTH as u16 + 2),
+                ])
                 .split(log_area);
             app.activity_log.draw(f, h_split[0], &app.theme);
             draw_mascot_block(
@@ -380,14 +379,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_notification_banner(f, banners[0], chunks[2], &app.theme);
     }
 
-    // Draw info bar (#218)
-    draw_info_bar(f, app, chunks[3]);
-
-    // Draw upgrade banner if visible (overlays info bar)
-    draw_upgrade_banner(f, &app.upgrade_state, chunks[3], &app.theme);
+    // Draw upgrade banner if visible (overlays status bar)
+    draw_upgrade_banner(f, &app.upgrade_state, chunks[0], &app.theme);
 
     // Draw F-key bar (#218)
-    draw_fkey_bar(f, app, chunks[4]);
+    draw_fkey_bar(f, app, chunks[3]);
 
     // Draw help overlay on top of everything if active
     if app.show_help {
@@ -480,88 +476,6 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let total = app.pool.total_count();
 
     let budget_display = match &app.budget_enforcer {
-        Some(enforcer) => format!(" ${:.2}/${:.2} ", app.total_cost, enforcer.total_limit()),
-        None => format!(" ${:.2} spent ", app.total_cost),
-    };
-
-    let budget_color = match &app.budget_enforcer {
-        Some(enforcer) => {
-            let pct = if enforcer.total_limit() > 0.0 {
-                ((app.total_cost / enforcer.total_limit()) * 100.0) as u8
-            } else {
-                0
-            };
-            theme.budget_color(pct)
-        }
-        None => theme.accent_warning,
-    };
-
-    let mut spans = vec![
-        Span::styled(
-            concat!(" MAESTRO v", env!("CARGO_PKG_VERSION"), " "),
-            Style::default()
-                .fg(theme.branding_fg)
-                .bg(theme.branding_bg)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!(
-                " {} agent{} ({} active) ",
-                total,
-                if total != 1 { "s" } else { "" },
-                active
-            ),
-            Style::default().fg(theme.accent_info),
-        ),
-        Span::raw("  "),
-        Span::styled(budget_display, Style::default().fg(budget_color)),
-        Span::raw("  "),
-        Span::styled(
-            format!(" {} ", elapsed_str),
-            Style::default().fg(theme.text_primary),
-        ),
-    ];
-
-    if let Some(ref cont) = app.continuous_mode {
-        spans.push(Span::raw("  "));
-        spans.push(Span::styled(
-            format!(
-                " CONTINUOUS: {}/{} done ",
-                cont.completed_count,
-                cont.total_attempted()
-            ),
-            Style::default()
-                .fg(theme.branding_fg)
-                .bg(theme.accent_info)
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
-
-    let text = Line::from(spans);
-
-    let block = theme
-        .styled_block_plain(false)
-        .border_style(Style::default().fg(theme.border_active));
-
-    let paragraph = Paragraph::new(text).block(block);
-    f.render_widget(paragraph, area);
-}
-
-fn draw_info_bar(f: &mut Frame, app: &App, area: Rect) {
-    let theme = app.active_theme();
-    let elapsed = Utc::now() - app.start_time;
-    let elapsed_str = format!(
-        "{:02}:{:02}:{:02}",
-        elapsed.num_hours(),
-        elapsed.num_minutes() % 60,
-        elapsed.num_seconds() % 60
-    );
-
-    let active = app.active_count();
-    let total = app.pool.total_count();
-
-    let budget_display = match &app.budget_enforcer {
         Some(enforcer) => format!("${:.2}/${:.2}", app.total_cost, enforcer.total_limit()),
         None => format!("${:.2} spent", app.total_cost),
     };
@@ -583,10 +497,18 @@ fn draw_info_bar(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(theme.border_inactive),
     );
 
-    let spans = vec![
+    let mut spans = vec![
+        Span::styled(
+            concat!(" MAESTRO v", env!("CARGO_PKG_VERSION"), " "),
+            Style::default()
+                .fg(theme.branding_fg)
+                .bg(theme.branding_bg)
+                .add_modifier(Modifier::BOLD),
+        ),
+        sep.clone(),
         Span::styled(
             format!(
-                " {} agent{} ({} active)",
+                "{} agent{} ({} active)",
                 total,
                 if total != 1 { "s" } else { "" },
                 active
@@ -599,7 +521,29 @@ fn draw_info_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::styled(elapsed_str, Style::default().fg(theme.text_primary)),
     ];
 
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    if let Some(ref cont) = app.continuous_mode {
+        spans.push(Span::styled(
+            " \u{2550}\u{2550} ",
+            Style::default().fg(theme.border_inactive),
+        ));
+        spans.push(Span::styled(
+            format!(
+                "CONTINUOUS: {}/{} done",
+                cont.completed_count,
+                cont.total_attempted()
+            ),
+            Style::default()
+                .fg(theme.branding_fg)
+                .bg(theme.accent_info)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    let block = theme
+        .styled_block_plain(false)
+        .border_style(Style::default().fg(theme.border_active));
+
+    f.render_widget(Paragraph::new(Line::from(spans)).block(block), area);
 }
 
 fn draw_fkey_bar(f: &mut Frame, app: &App, area: Rect) {
