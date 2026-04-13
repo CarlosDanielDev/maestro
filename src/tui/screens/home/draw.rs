@@ -96,37 +96,32 @@ impl HomeScreen {
     }
 
     fn draw_logo(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        if self.mascot_visible && area.width >= 25 && area.height >= 6 {
-            // Split logo area: mascot on left, logo on right
-            let h_split = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Length(12), Constraint::Min(20)])
-                .split(area);
+        // Render centered MAESTRO logo
+        let logo = Paragraph::new(LOGO)
+            .style(Style::default().fg(theme.accent_success))
+            .alignment(Alignment::Center);
+        f.render_widget(logo, area);
 
-            // Render mascot vertically centered in its column
-            let mascot_h = 6u16.min(h_split[0].height);
-            let mascot_y = h_split[0].y + h_split[0].height.saturating_sub(mascot_h) / 2;
-            let mascot_rect = Rect::new(h_split[0].x, mascot_y, 11.min(h_split[0].width), mascot_h);
-            let color = theme.accent_success;
-            f.render_widget(
-                crate::mascot::widget::MascotWidget::new(
-                    self.mascot_state,
-                    self.mascot_frame,
-                    color,
-                ),
-                mascot_rect,
-            );
+        // Render mascot immediately left of the centered logo text
+        if self.mascot_visible && area.width >= 40 && area.height >= 6 {
+            let logo_width = 63u16; // MAESTRO ASCII art width
+            let logo_start_x = area.x + area.width.saturating_sub(logo_width) / 2;
+            let mascot_w = 11u16;
+            let mascot_x = logo_start_x.saturating_sub(mascot_w + 1);
+            let mascot_h = 6u16.min(area.height);
+            let mascot_y = area.y + area.height.saturating_sub(mascot_h) / 2;
 
-            // Render MAESTRO logo in remaining space
-            let logo = Paragraph::new(LOGO)
-                .style(Style::default().fg(theme.accent_success))
-                .alignment(Alignment::Center);
-            f.render_widget(logo, h_split[1]);
-        } else {
-            let logo = Paragraph::new(LOGO)
-                .style(Style::default().fg(theme.accent_success))
-                .alignment(Alignment::Center);
-            f.render_widget(logo, area);
+            if mascot_x >= area.x {
+                let mascot_rect = Rect::new(mascot_x, mascot_y, mascot_w, mascot_h);
+                f.render_widget(
+                    crate::mascot::widget::MascotWidget::new(
+                        self.mascot_state,
+                        self.mascot_frame,
+                        theme.accent_success,
+                    ),
+                    mascot_rect,
+                );
+            }
         }
     }
 
