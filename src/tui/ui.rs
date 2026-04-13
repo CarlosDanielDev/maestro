@@ -9,7 +9,7 @@ use crate::tui::detail;
 use crate::tui::fullscreen;
 use crate::tui::help;
 use crate::tui::navigation::keymap::{
-    self, KeyBindingGroup, KeymapProvider, ModeKeyMap, fit_fkeys_to_width,
+    self, KeyBindingGroup, ModeKeyMap, fit_fkeys_to_width,
 };
 use crate::tui::screens::Screen;
 use chrono::Utc;
