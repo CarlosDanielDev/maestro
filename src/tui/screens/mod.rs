@@ -9,6 +9,7 @@ pub mod prompt_input;
 pub mod queue_confirmation;
 pub mod release_notes;
 pub mod settings;
+pub mod wrap;
 
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
