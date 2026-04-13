@@ -10,7 +10,7 @@ use crate::mascot::derive_dashboard_mascot_state;
 use crate::mascot::eyes::{EyeState, MascotEyes};
 use crate::mascot::frames::MascotFrames;
 use crate::mascot::state::MascotState;
-use crate::mascot::widget::MascotWidget;
+use crate::mascot::widget::{CLAWD_ORANGE, MascotWidget};
 use crate::session::types::SessionStatus;
 
 // ---------------------------------------------------------------------------
@@ -312,7 +312,7 @@ fn animator_set_state_resets_frame_index_to_zero() {
 
 #[test]
 fn widget_renders_six_rows() {
-    let buf = render_to_buffer(MascotWidget::new(MascotState::Idle, 0), 11, 6);
+    let buf = render_to_buffer(MascotWidget::new(MascotState::Idle, 0, CLAWD_ORANGE), 11, 6);
     for row in 0..6u16 {
         let line = buffer_row_string(&buf, row);
         assert!(!line.trim().is_empty(), "Row {} should not be blank", row);
@@ -323,7 +323,7 @@ fn widget_renders_six_rows() {
 fn widget_content_matches_frames_data() {
     for state in all_states() {
         for frame_index in [0usize, 1] {
-            let buf = render_to_buffer(MascotWidget::new(state, frame_index), 11, 6);
+            let buf = render_to_buffer(MascotWidget::new(state, frame_index, CLAWD_ORANGE), 11, 6);
             for row in 0..6u16 {
                 let rendered = buffer_row_string(&buf, row);
                 let expected = MascotFrames::frames(state, row as usize)[frame_index];
@@ -339,7 +339,11 @@ fn widget_content_matches_frames_data() {
 
 #[test]
 fn widget_applies_clawd_orange_to_non_space_cells() {
-    let buf = render_to_buffer(MascotWidget::new(MascotState::Conducting, 0), 11, 6);
+    let buf = render_to_buffer(
+        MascotWidget::new(MascotState::Conducting, 0, CLAWD_ORANGE),
+        11,
+        6,
+    );
     let expected_fg = Color::Rgb(215, 119, 87);
     for y in 0..buf.area.height {
         for x in 0..buf.area.width {
@@ -361,14 +365,14 @@ fn widget_applies_clawd_orange_to_non_space_cells() {
 
 #[test]
 fn widget_renders_safely_into_smaller_area() {
-    let _buf = render_to_buffer(MascotWidget::new(MascotState::Idle, 0), 5, 3);
+    let _buf = render_to_buffer(MascotWidget::new(MascotState::Idle, 0, CLAWD_ORANGE), 5, 3);
 }
 
 #[test]
 fn widget_renders_safely_into_zero_height_area() {
     let area = Rect::new(0, 0, 11, 0);
     let mut buf = Buffer::empty(area);
-    MascotWidget::new(MascotState::Idle, 0).render(area, &mut buf);
+    MascotWidget::new(MascotState::Idle, 0, CLAWD_ORANGE).render(area, &mut buf);
 }
 
 #[test]
@@ -376,7 +380,7 @@ fn widget_different_states_produce_different_output() {
     let outputs: Vec<String> = all_states()
         .iter()
         .map(|&state| {
-            let buf = render_to_buffer(MascotWidget::new(state, 0), 11, 6);
+            let buf = render_to_buffer(MascotWidget::new(state, 0, CLAWD_ORANGE), 11, 6);
             (0..6u16)
                 .map(|y| buffer_row_string(&buf, y))
                 .collect::<Vec<_>>()

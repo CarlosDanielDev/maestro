@@ -14,10 +14,11 @@ pub enum EyeState {
 }
 
 /// Compact inline mascot — just the eyes row for prompt bar use.
+#[allow(dead_code)]
 pub struct MascotEyes;
 
 impl MascotEyes {
-    /// Render a single line of mascot eyes for the given state and frame index.
+    #[allow(dead_code)]
     pub fn render_line(state: EyeState, frame_index: usize) -> Line<'static> {
         let text = match state {
             EyeState::Waiting => {

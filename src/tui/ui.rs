@@ -1,9 +1,8 @@
 use crate::continuous::ContinuousModeState;
 use crate::mascot::MascotAnimator;
 use crate::mascot::animator::SystemClock;
-use crate::mascot::eyes::MascotEyes;
 use crate::mascot::frames::{MASCOT_ROWS, MASCOT_WIDTH};
-use crate::mascot::widget::{CLAWD_ORANGE, MascotWidget};
+use crate::mascot::widget::MascotWidget;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
@@ -80,6 +79,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     app.mascot_animator.state(),
                     app.mascot_animator.frame_index(),
                     h_split[0],
+                    &theme,
                 );
                 app.panel_view.draw_with_claims(
                     f,
@@ -127,7 +127,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         h_split[0],
                         &theme,
                     );
-                    draw_mascot_block(f, mascot_state, mascot_frame, h_split[1]);
+                    draw_mascot_block(f, mascot_state, mascot_frame, h_split[1], &theme);
                 } else {
                     detail::draw_detail_with_claims(
                         f,
@@ -195,6 +195,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         app.mascot_animator.state(),
                         app.mascot_animator.frame_index(),
                         h_split[1],
+                        &theme,
                     );
                 } else {
                     screen.draw(f, dash_area, &app.theme);
@@ -219,18 +220,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         .direction(Direction::Horizontal)
                         .constraints([Constraint::Length(13), Constraint::Min(40)])
                         .split(prompt_area);
-                    // Eyes gutter
-                    let eyes_line = MascotEyes::render_line(
-                        app.mascot_eye_state,
+                    draw_mascot_block(
+                        f,
+                        app.mascot_animator.state(),
                         app.mascot_animator.frame_index(),
+                        h_split[0],
+                        &theme,
                     );
-                    let eyes_y = h_split[0].y + h_split[0].height / 2;
-                    if eyes_y < h_split[0].y + h_split[0].height {
-                        f.render_widget(
-                            Paragraph::new(eyes_line),
-                            Rect::new(h_split[0].x, eyes_y, h_split[0].width, 1),
-                        );
-                    }
                     screen.draw(f, h_split[1], &app.theme);
                 } else {
                     screen.draw(f, prompt_area, &app.theme);
@@ -512,21 +508,20 @@ fn draw_mascot_block(
     state: crate::mascot::MascotState,
     frame_index: usize,
     area: Rect,
+    theme: &crate::tui::theme::Theme,
 ) {
     use ratatui::widgets::{Block, Borders};
 
+    let color = theme.accent_success;
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(CLAWD_ORANGE))
-        .title(Span::styled(
-            " \u{25C9} ",
-            Style::default().fg(CLAWD_ORANGE),
-        ));
+        .border_style(Style::default().fg(color))
+        .title(Span::styled(" \u{25C9} ", Style::default().fg(color)));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
     if inner.height >= MASCOT_ROWS as u16 && inner.width >= MASCOT_WIDTH as u16 {
-        f.render_widget(MascotWidget::new(state, frame_index), inner);
+        f.render_widget(MascotWidget::new(state, frame_index, color), inner);
     }
 }
 

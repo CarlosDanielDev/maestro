@@ -45,7 +45,8 @@ pub fn show_splash(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> any
                 && x_start + MASCOT_WIDTH <= area.x + area.width
             {
                 let mascot_rect = Rect::new(x_start, y_start, MASCOT_WIDTH, MASCOT_HEIGHT);
-                let widget = MascotWidget::new(MascotState::Idle, animator.frame_index());
+                let widget =
+                    MascotWidget::new(MascotState::Idle, animator.frame_index(), CLAWD_ORANGE);
                 f.render_widget(widget, mascot_rect);
             }
 
