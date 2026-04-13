@@ -1,3 +1,4 @@
+use super::wrap::{scroll_offset_for_cursor, wrap_lines};
 use super::{PromptSessionConfig, Screen, ScreenAction, draw_keybinds_bar};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::focus::{FocusId, FocusRing};
@@ -6,7 +7,7 @@ use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -219,16 +220,56 @@ impl PromptInputScreen {
             ])
             .split(area);
 
-        // Prompt editor
+        // Prompt editor — custom wrapped rendering
         let editor_block = theme.styled_block("Compose Prompt", self.is_prompt_editor_focused());
+        let inner = editor_block.inner(chunks[0]);
 
-        // Note: we cannot mutate self.editor here since draw takes &self.
-        // We create a clone for rendering with the styled block.
-        let mut editor_widget = self.editor.clone();
-        editor_widget.set_block(editor_block);
-        editor_widget.set_style(Style::default().fg(theme.text_primary));
-        editor_widget.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
-        f.render_widget(&editor_widget, chunks[0]);
+        // Read logical lines and cursor from the editing backend
+        let logical_lines: Vec<String> = self.editor.lines().to_vec();
+        let (cursor_row, cursor_col) = self.editor.cursor();
+
+        // Compute wrapped lines and visual cursor position
+        let wrap_result = wrap_lines(&logical_lines, (cursor_row, cursor_col), inner.width);
+        let scroll = scroll_offset_for_cursor(wrap_result.cursor.0 as usize, inner.height as usize);
+
+        // Build styled visual lines
+        let visual_lines: Vec<Line> = wrap_result
+            .lines
+            .iter()
+            .map(|s| {
+                Line::from(Span::styled(
+                    s.as_str(),
+                    Style::default().fg(theme.text_primary),
+                ))
+            })
+            .collect();
+
+        // Render placeholder when empty
+        let paragraph = if logical_lines.len() == 1 && logical_lines[0].is_empty() {
+            Paragraph::new(vec![Line::from(Span::styled(
+                "Type your prompt here...",
+                Style::default().fg(theme.text_secondary),
+            ))])
+        } else {
+            Paragraph::new(visual_lines)
+        };
+
+        f.render_widget(
+            paragraph.block(editor_block).scroll((scroll as u16, 0)),
+            chunks[0],
+        );
+
+        // Place cursor manually
+        if self.is_prompt_editor_focused() {
+            let cursor_visual_row = wrap_result.cursor.0 as usize;
+            let cursor_visual_col = wrap_result.cursor.1;
+            if cursor_visual_row >= scroll && (cursor_visual_row - scroll) < inner.height as usize {
+                f.set_cursor_position(Position::new(
+                    inner.x + cursor_visual_col,
+                    inner.y + (cursor_visual_row - scroll) as u16,
+                ));
+            }
+        }
 
         // Image list
         let image_title = format!("Attachments ({})", self.image_paths.len());

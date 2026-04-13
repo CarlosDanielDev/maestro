@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-12 00:00 (UTC)
+> Last updated: 2026-04-13 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -168,8 +168,9 @@ maestro/
 │   │       ├── hollow_retry.rs            # HollowRetryScreen: minimal retry prompt overlay shown when a session stalls and user confirmation is required
 │   │       ├── issue_browser.rs           # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery; set_issues() calls reapply_filters() so active milestone filters are honoured when new issue data arrives  [Issue #32, #46, #117]
 │   │       ├── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action  [Issue #33]
-│   │       ├── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter/Alt+Enter inserts newline via insert_newline() (not input()), Ctrl+V pastes from clipboard (image or text), Esc cancels; Up/Down arrows navigate prompt history (injected at construction); image attachment list with [a]/[d]; keybinds bar always visible  [Issue #101, #232]
+│   │       ├── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter/Alt+Enter inserts newline via insert_newline() (not input()), Ctrl+V pastes from clipboard (image or text), Esc cancels; Up/Down arrows navigate prompt history (injected at construction); image attachment list with [a]/[d]; keybinds bar always visible; uses wrap::soft_wrap_lines() for word-wrapped rendering  [Issue #101, #232, #263]
 │   │       ├── queue_confirmation.rs      # QueueConfirmationScreen: confirmation overlay before bulk-queuing selected issues from the issue browser
+│   │       ├── wrap.rs                    # Soft-wrap utilities: soft_wrap_lines() splits a multi-line string into display lines that fit within a given column width using unicode-width for correct grapheme measurement  [Issue #263]
 │   │       ├── settings.rs               # SettingsScreen: interactive Settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent  [Issue #124, #146]
 │   │       ├── adapt/                    # Adapt wizard screen components  [Issue #88]
 │   │       │   ├── mod.rs                # AdaptScreen struct with Screen trait impl; wizard entry point
@@ -314,7 +315,8 @@ maestro/
 | `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
 | `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters; `set_issues()` (Issues #32, #46) |
 | `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
-| `src/tui/screens/prompt_input.rs` | `PromptInputScreen`: free-text prompt entry; `Enter` submits, `Shift+Enter`/`Alt+Enter` inserts newline via `insert_newline()` (not `input()`), `Ctrl+V` pastes from clipboard (image or text), `Esc` cancels; Up/Down arrows navigate prompt history; image attachment list with `[a]`/`[d]` (Issues #101, #232) |
+| `src/tui/screens/prompt_input.rs` | `PromptInputScreen`: free-text prompt entry; `Enter` submits, `Shift+Enter`/`Alt+Enter` inserts newline via `insert_newline()` (not `input()`), `Ctrl+V` pastes from clipboard (image or text), `Esc` cancels; Up/Down arrows navigate prompt history; image attachment list with `[a]`/`[d]`; custom wrapped rendering via `wrap::soft_wrap_lines()` replaces tui-textarea widget rendering (Issues #101, #232, #263) |
+| `src/tui/screens/wrap.rs` | Soft-wrap utilities: `soft_wrap_lines()` splits a multi-line string into display lines that fit within a given column width using `unicode-width` for correct grapheme measurement (Issue #263) |
 | `src/tui/screens/hollow_retry.rs` | `HollowRetryScreen`: minimal retry prompt overlay for stalled sessions awaiting user confirmation |
 | `src/tui/screens/queue_confirmation.rs` | `QueueConfirmationScreen`: confirmation overlay before bulk-queuing selected issues from the issue browser |
 | `src/tui/screens/settings.rs` | `SettingsScreen`: tabbed interactive settings UI; `Flags` tab shows all feature flags with name, state, source (`Default`/`Config`/`Cli`), and description; read-only display with green accent on focused fields (Issues #124, #146) |
