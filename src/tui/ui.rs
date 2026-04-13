@@ -187,16 +187,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 if dash_area.width >= 60 {
                     let h_split = Layout::default()
                         .direction(Direction::Horizontal)
-                        .constraints([Constraint::Min(40), Constraint::Length(13)])
+                        .constraints([Constraint::Length(13), Constraint::Min(40)])
                         .split(dash_area);
-                    screen.draw(f, h_split[0], &app.theme);
                     draw_mascot_block(
                         f,
                         app.mascot_animator.state(),
                         app.mascot_animator.frame_index(),
-                        h_split[1],
+                        h_split[0],
                         &theme,
                     );
+                    screen.draw(f, h_split[1], &app.theme);
                 } else {
                     screen.draw(f, dash_area, &app.theme);
                 }
@@ -218,9 +218,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 if prompt_area.width >= 60 {
                     let h_split = Layout::default()
                         .direction(Direction::Horizontal)
-                        .constraints([Constraint::Length(13), Constraint::Min(40)])
+                        .constraints([Constraint::Length(12), Constraint::Min(40)])
                         .split(prompt_area);
-                    draw_mascot_block(
+                    // Render borderless mascot at top-left only
+                    draw_mascot_bare(
                         f,
                         app.mascot_animator.state(),
                         app.mascot_animator.frame_index(),
@@ -500,6 +501,22 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             app.help_scroll,
             &theme,
         );
+    }
+}
+
+/// Render mascot without border, at top of the given area.
+fn draw_mascot_bare(
+    f: &mut Frame,
+    state: crate::mascot::MascotState,
+    frame_index: usize,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    let color = theme.accent_success;
+    let height = MASCOT_ROWS as u16;
+    if area.height >= height && area.width >= MASCOT_WIDTH as u16 {
+        let mascot_rect = Rect::new(area.x, area.y, MASCOT_WIDTH as u16, height);
+        f.render_widget(MascotWidget::new(state, frame_index, color), mascot_rect);
     }
 }
 
