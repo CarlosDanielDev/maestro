@@ -1,6 +1,7 @@
 mod draw;
 use super::{Screen, ScreenAction, SessionConfig, sanitize_for_terminal};
 use crate::github::types::GhIssue;
+use crate::tui::marquee::MarqueeState;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -94,6 +95,8 @@ pub struct IssueBrowserScreen {
     pub(crate) prompt_overlay: Option<IssuePromptOverlay>,
     /// Layout configuration for panel arrangement.
     pub(crate) layout: crate::config::LayoutConfig,
+    /// Marquee animation state for the currently selected issue title.
+    marquee: MarqueeState,
 }
 
 impl IssueBrowserScreen {
@@ -112,6 +115,7 @@ impl IssueBrowserScreen {
             last_visible_height: 20,
             prompt_overlay: None,
             layout: crate::config::LayoutConfig::default(),
+            marquee: MarqueeState::new(),
         }
     }
 
@@ -125,6 +129,7 @@ impl IssueBrowserScreen {
         self.selected = 0;
         self.scroll_offset = 0;
         self.loading = false;
+        self.marquee.reset();
         self.reapply_filters();
     }
 }
@@ -228,11 +233,13 @@ impl Screen for IssueBrowserScreen {
                     {
                         self.selected += 1;
                         self.sync_scroll();
+                        self.marquee.reset();
                     }
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     self.selected = self.selected.saturating_sub(1);
                     self.sync_scroll();
+                    self.marquee.reset();
                 }
                 KeyCode::Char(' ') => {
                     if let Some(&idx) = self.filtered_indices.get(self.selected) {

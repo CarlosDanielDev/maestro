@@ -6,6 +6,7 @@ use ratatui::style::{Color, Style};
 use ratatui::widgets::Widget;
 
 /// Clawd orange: #D77757 — default mascot color when no theme is available.
+#[allow(dead_code)]
 pub const CLAWD_ORANGE: Color = Color::Rgb(215, 119, 87);
 
 /// Renders 6 rows of mascot ASCII art at 11-cell width.

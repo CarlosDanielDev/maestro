@@ -1,5 +1,6 @@
 use super::{FilterMode, IssueBrowserScreen, IssuePromptOverlay, sanitize_for_terminal};
 use crate::tui::help::centered_rect;
+use crate::tui::marquee::{MarqueeConfig, needs_scroll, visible_slice};
 use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
 use crate::tui::theme::Theme;
 use crossterm::event::KeyCode;
@@ -216,13 +217,35 @@ impl IssueBrowserScreen {
         self.last_visible_height = inner.height as usize;
         let visible_height = inner.height as usize;
 
-        let lines: Vec<Line> = self
+        // Prefix width: cursor(1) + marker(1) + space(1) + '#'(1) + number(5) + space(1) = 10
+        let prefix_width = 10usize;
+        let title_max_width = (inner.width as usize).saturating_sub(prefix_width);
+        let marquee_cfg = MarqueeConfig::default();
+
+        // Collect row data, noting which is selected for marquee
+        let rows: Vec<(usize, usize)> = self
             .filtered_indices
             .iter()
             .enumerate()
             .skip(self.scroll_offset)
             .take(visible_height)
-            .map(|(display_idx, &issue_idx)| {
+            .map(|(display_idx, &issue_idx)| (display_idx, issue_idx))
+            .collect();
+
+        // Advance marquee for the selected row if its title overflows
+        if let Some(&(_, issue_idx)) = rows
+            .iter()
+            .find(|(display_idx, _)| *display_idx == self.selected)
+        {
+            let title = sanitize_for_terminal(&self.issues[issue_idx].title);
+            let text_len = title.chars().count();
+            let overflow = text_len.saturating_sub(title_max_width);
+            self.marquee.advance(overflow, &marquee_cfg);
+        }
+
+        let lines: Vec<Line> = rows
+            .iter()
+            .map(|&(display_idx, issue_idx)| {
                 let issue = &self.issues[issue_idx];
                 let is_selected = display_idx == self.selected;
                 let is_multi = self.selected_set.contains(&issue.number);
@@ -241,10 +264,21 @@ impl IssueBrowserScreen {
                     Style::default().fg(theme.text_primary)
                 };
 
+                let title = sanitize_for_terminal(&issue.title);
+                let title_text =
+                    if is_selected && needs_scroll(title.chars().count(), title_max_width) {
+                        visible_slice(&title, self.marquee.offset, title_max_width)
+                    } else if title.chars().count() > title_max_width && title_max_width > 3 {
+                        let truncated: String = title.chars().take(title_max_width - 3).collect();
+                        format!("{truncated}...")
+                    } else {
+                        title
+                    };
+
                 Line::from(vec![
                     Span::styled(format!("{}{} ", cursor, marker), style),
                     Span::styled(format!("#{:<5} ", issue.number), style),
-                    Span::styled(sanitize_for_terminal(&issue.title), style),
+                    Span::styled(title_text, style),
                 ])
             })
             .collect();
