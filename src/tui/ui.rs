@@ -499,8 +499,16 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let mut spans = vec![
         Span::styled(
+            concat!(" MAESTRO v", env!("CARGO_PKG_VERSION"), " "),
+            Style::default()
+                .fg(theme.branding_fg)
+                .bg(theme.branding_bg)
+                .add_modifier(Modifier::BOLD),
+        ),
+        sep.clone(),
+        Span::styled(
             format!(
-                " {} agent{} ({} active)",
+                "{} agent{} ({} active)",
                 total,
                 if total != 1 { "s" } else { "" },
                 active
