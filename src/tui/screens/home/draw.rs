@@ -96,10 +96,38 @@ impl HomeScreen {
     }
 
     fn draw_logo(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let logo = Paragraph::new(LOGO)
-            .style(Style::default().fg(theme.accent_success))
-            .alignment(Alignment::Center);
-        f.render_widget(logo, area);
+        if self.mascot_visible && area.width >= 25 && area.height >= 6 {
+            // Split logo area: mascot on left, logo on right
+            let h_split = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(12), Constraint::Min(20)])
+                .split(area);
+
+            // Render mascot vertically centered in its column
+            let mascot_h = 6u16.min(h_split[0].height);
+            let mascot_y = h_split[0].y + h_split[0].height.saturating_sub(mascot_h) / 2;
+            let mascot_rect = Rect::new(h_split[0].x, mascot_y, 11.min(h_split[0].width), mascot_h);
+            let color = theme.accent_success;
+            f.render_widget(
+                crate::mascot::widget::MascotWidget::new(
+                    self.mascot_state,
+                    self.mascot_frame,
+                    color,
+                ),
+                mascot_rect,
+            );
+
+            // Render MAESTRO logo in remaining space
+            let logo = Paragraph::new(LOGO)
+                .style(Style::default().fg(theme.accent_success))
+                .alignment(Alignment::Center);
+            f.render_widget(logo, h_split[1]);
+        } else {
+            let logo = Paragraph::new(LOGO)
+                .style(Style::default().fg(theme.accent_success))
+                .alignment(Alignment::Center);
+            f.render_widget(logo, area);
+        }
     }
 
     fn draw_project_info(&self, f: &mut Frame, area: Rect, theme: &Theme) {
