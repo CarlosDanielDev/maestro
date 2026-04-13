@@ -161,19 +161,27 @@ async fn event_loop(
                         _ => {}
                     }
 
-                    if app.show_help {
-                        match key.code {
-                            KeyCode::Char('?') | KeyCode::Esc => {
-                                app.show_help = false;
-                                app.help_scroll = 0;
+                    if let Some(ref mut help) = app.help_state {
+                        if help.search_active {
+                            match key.code {
+                                KeyCode::Esc => help.clear_search(),
+                                KeyCode::Enter => { help.search_active = false; }
+                                KeyCode::Backspace => help.pop_char(),
+                                KeyCode::Char(c) => help.push_char(c),
+                                _ => {}
                             }
-                            KeyCode::Char('j') | KeyCode::Down => {
-                                app.help_scroll = app.help_scroll.saturating_add(1);
+                        } else {
+                            match key.code {
+                                KeyCode::Char('?') | KeyCode::Esc | KeyCode::F(1) => {
+                                    app.help_state = None;
+                                }
+                                KeyCode::Char('j') | KeyCode::Down => help.scroll_down(),
+                                KeyCode::Char('k') | KeyCode::Up => help.scroll_up(),
+                                KeyCode::PageDown => help.page_down(),
+                                KeyCode::PageUp => help.page_up(),
+                                KeyCode::Char('/') => help.toggle_search(),
+                                _ => {}
                             }
-                            KeyCode::Char('k') | KeyCode::Up => {
-                                app.help_scroll = app.help_scroll.saturating_sub(1);
-                            }
-                            _ => {}
                         }
                         continue;
                     }
@@ -389,9 +397,16 @@ async fn event_loop(
                         continue;
                     }
 
-                    if key.code == KeyCode::Char('?') || key.code == KeyCode::F(1) {
-                        app.show_help = true;
-                        app.help_scroll = 0;
+                    // Only trigger `?` help when not in a text input mode;
+                    // F1 always works. (#280 fix: `?` was stealing input in PromptInput)
+                    let is_text_input_mode = matches!(
+                        app.tui_mode,
+                        app::TuiMode::PromptInput | app::TuiMode::SessionSwitcher
+                    );
+                    if key.code == KeyCode::F(1)
+                        || (key.code == KeyCode::Char('?') && !is_text_input_mode)
+                    {
+                        app.help_state = Some(crate::tui::help::HelpOverlayState::new());
                         continue;
                     }
 

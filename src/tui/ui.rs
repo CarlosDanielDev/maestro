@@ -8,7 +8,9 @@ use crate::tui::dep_graph;
 use crate::tui::detail;
 use crate::tui::fullscreen;
 use crate::tui::help;
-use crate::tui::navigation::keymap::KeymapProvider;
+use crate::tui::navigation::keymap::{
+    self, KeyBindingGroup, KeymapProvider, ModeKeyMap, fit_fkeys_to_width,
+};
 use crate::tui::screens::Screen;
 use chrono::Utc;
 use ratatui::{
@@ -42,12 +44,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         })
         .unwrap_or(10);
 
+    // Hide hints bar on very small terminals to save space
+    let hints_height = if f.area().height < 30 { 0 } else { 1 };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),          // status bar
             Constraint::Min(10),            // main content
             Constraint::Length(log_height), // activity log
+            Constraint::Length(hints_height), // inline hints bar (#282)
             Constraint::Length(1),          // F-key bar
         ])
         .split(f.area());
@@ -382,62 +388,66 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Draw upgrade banner if visible (overlays status bar)
     draw_upgrade_banner(f, &app.upgrade_state, chunks[0], &app.theme);
 
-    // Draw F-key bar (#218)
-    draw_fkey_bar(f, app, chunks[3]);
+    // Compute ModeKeyMap once per frame (#280)
+    let screen_bindings = active_screen_bindings(app);
+    let selected_status = {
+        let sessions = app.pool.all_sessions();
+        let idx = app.panel_view.selected_index();
+        sessions.get(idx).map(|s| s.status)
+    };
+    let mode_km = keymap::mode_keymap(app.tui_mode, selected_status, &screen_bindings);
 
-    // Draw help overlay on top of everything if active
-    if app.show_help {
-        use crate::tui::navigation::InputMode;
-        let (screen_bindings, input_mode) = match app.tui_mode {
-            TuiMode::Dashboard => app
-                .home_screen
-                .as_ref()
-                .map(|s| (s.keybindings(), s.desired_input_mode())),
-            TuiMode::IssueBrowser => app
-                .issue_browser_screen
-                .as_ref()
-                .map(|s| (s.keybindings(), s.desired_input_mode())),
-            TuiMode::MilestoneView => app
-                .milestone_screen
-                .as_ref()
-                .map(|s| (s.keybindings(), s.desired_input_mode())),
-            TuiMode::PromptInput => app
-                .prompt_input_screen
-                .as_ref()
-                .map(|s| (s.keybindings(), s.desired_input_mode())),
-            TuiMode::QueueConfirmation => app
-                .queue_confirmation_screen
-                .as_ref()
-                .map(|s| (s.keybindings(), s.desired_input_mode())),
-            TuiMode::QueueExecution => None,
-            TuiMode::CompletionSummary => None,
-            TuiMode::ContinuousPause => None,
-            TuiMode::Sanitize => app
-                .sanitize_screen
-                .as_ref()
-                .map(|s| (s.keybindings(), s.desired_input_mode())),
-            TuiMode::Settings => app
-                .settings_screen
-                .as_ref()
-                .map(|s| (s.keybindings(), s.desired_input_mode())),
-            TuiMode::PrReview => app
-                .pr_review_screen
-                .as_ref()
-                .map(|s| (s.keybindings(), s.desired_input_mode())),
-            TuiMode::SessionSwitcher => None,
-            _ => None,
-        }
-        .map(|(b, m)| (b, m.unwrap_or(InputMode::Normal)))
-        .unwrap_or_default();
-        help::draw_help_overlay(
+    // Draw inline hints bar (#282 — context-sensitive)
+    if hints_height > 0 {
+        draw_hints_bar(f, &mode_km, chunks[3], &theme);
+    }
+
+    // Draw F-key bar (#280 — context-aware)
+    draw_fkey_bar(f, &mode_km, chunks[4], &theme);
+
+    // Draw help overlay on top of everything if active (#281)
+    if let Some(ref help) = app.help_state {
+        let input_mode = active_screen_input_mode(app);
+        help::draw_help_overlay_with_search(
             f,
             f.area(),
-            &screen_bindings,
+            &mode_km,
             input_mode,
-            app.help_scroll,
+            help.scroll,
+            &help.search_query,
             &theme,
         );
     }
+}
+
+/// Resolve the active screen (if any) to extract keybindings and input mode.
+fn active_screen(app: &App) -> Option<&dyn Screen> {
+    match app.tui_mode {
+        TuiMode::Dashboard => app.home_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::IssueBrowser => app.issue_browser_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::MilestoneView => app.milestone_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::PromptInput => app.prompt_input_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::QueueConfirmation => app.queue_confirmation_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::Sanitize => app.sanitize_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::Settings => app.settings_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::PrReview => app.pr_review_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::HollowRetry => app.hollow_retry_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::AdaptWizard => app.adapt_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::ReleaseNotes => app.release_notes_screen.as_ref().map(|s| s as &dyn Screen),
+        _ => None,
+    }
+}
+
+fn active_screen_bindings(app: &App) -> Vec<KeyBindingGroup> {
+    active_screen(app)
+        .map(|s| s.keybindings())
+        .unwrap_or_default()
+}
+
+fn active_screen_input_mode(app: &App) -> crate::tui::navigation::InputMode {
+    active_screen(app)
+        .and_then(|s| s.desired_input_mode())
+        .unwrap_or(crate::tui::navigation::InputMode::Normal)
 }
 
 fn draw_mascot_block(
@@ -546,29 +556,21 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(Line::from(spans)).block(block), area);
 }
 
-fn draw_fkey_bar(f: &mut Frame, app: &App, area: Rect) {
-    let theme = app.active_theme();
-
-    let selected_status = {
-        let sessions = app.pool.all_sessions();
-        let idx = app.panel_view.selected_index();
-        sessions.get(idx).map(|s| s.status)
-    };
-    let ctx = HelpBarContext::from_status(selected_status);
-    let entries = FKeyEntry::build_entries(&ctx);
-    let fitted = FKeyEntry::fit_to_width(&entries, area.width);
+fn draw_fkey_bar(
+    f: &mut Frame,
+    mode_km: &ModeKeyMap,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    let fitted = fit_fkeys_to_width(&mode_km.fkeys, area.width);
 
     let mut spans: Vec<Span> = Vec::new();
-    for (i, entry) in entries.iter().enumerate() {
-        let (key, label) = match fitted.get(i) {
-            Some(f) => f,
-            None => break,
-        };
+    for (i, (key, label, active)) in fitted.iter().enumerate() {
         if i > 0 {
             spans.push(Span::raw(" "));
         }
         // Key badge: amber bg, black fg (dimmed if inactive)
-        let badge_style = if entry.active {
+        let badge_style = if *active {
             Style::default()
                 .fg(theme.fkey_badge_fg)
                 .bg(theme.fkey_badge_bg)
@@ -580,7 +582,7 @@ fn draw_fkey_bar(f: &mut Frame, app: &App, area: Rect) {
         spans.push(Span::styled(*key, badge_style));
         // Action label (if present)
         if let Some(lbl) = label {
-            let label_color = if entry.active {
+            let label_color = if *active {
                 theme.keybind_label_fg
             } else {
                 theme.text_muted
@@ -590,6 +592,33 @@ fn draw_fkey_bar(f: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(label_color),
             ));
         }
+    }
+
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// Draw the inline keybinding hints bar (#282).
+fn draw_hints_bar(
+    f: &mut Frame,
+    mode_km: &ModeKeyMap,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    let fitted = keymap::fit_hints_to_width(&mode_km.hints, area.width);
+
+    let mut spans: Vec<Span> = Vec::new();
+    for (i, (key, action)) in fitted.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(
+            format!("[{}]", key),
+            Style::default().fg(theme.accent_success),
+        ));
+        spans.push(Span::styled(
+            format!(" {}", action),
+            Style::default().fg(theme.text_secondary),
+        ));
     }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -1120,289 +1149,3 @@ fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// F-key entry for the DOS-style function key bar (#218).
-struct FKeyEntry {
-    key: &'static str,
-    label: &'static str,
-    active: bool,
-}
-
-impl FKeyEntry {
-    /// Build the full list of F-key entries with context-aware dimming.
-    fn build_entries(ctx: &HelpBarContext) -> Vec<FKeyEntry> {
-        vec![
-            FKeyEntry {
-                key: "F1",
-                label: "Help",
-                active: true,
-            },
-            FKeyEntry {
-                key: "F2",
-                label: "Summary",
-                active: true,
-            },
-            FKeyEntry {
-                key: "F3",
-                label: "Full",
-                active: ctx.full_active,
-            },
-            FKeyEntry {
-                key: "F4",
-                label: "Costs",
-                active: true,
-            },
-            FKeyEntry {
-                key: "F5",
-                label: "Tokens",
-                active: true,
-            },
-            FKeyEntry {
-                key: "F6",
-                label: "Deps",
-                active: true,
-            },
-            FKeyEntry {
-                key: "F9",
-                label: "Pause",
-                active: ctx.pause_active,
-            },
-            FKeyEntry {
-                key: "F10",
-                label: "Kill",
-                active: ctx.kill_active,
-            },
-            FKeyEntry {
-                key: "^X",
-                label: "Exit",
-                active: true,
-            },
-        ]
-    }
-
-    /// Filter entries to fit within the given terminal width.
-    /// Returns entries that fit; if width < 40, labels are dropped.
-    fn fit_to_width(entries: &[FKeyEntry], width: u16) -> Vec<(&str, Option<&str>)> {
-        let mut result = Vec::new();
-        let mut used = 0u16;
-
-        for entry in entries {
-            let entry_width = if width < 40 {
-                // Badge-only mode: key + 1 space gap
-                entry.key.len() as u16 + 1
-            } else {
-                // Full mode: key + space + label + 2-space gap
-                entry.key.len() as u16 + 1 + entry.label.len() as u16 + 2
-            };
-
-            if used + entry_width > width {
-                break;
-            }
-
-            let label = if width < 40 { None } else { Some(entry.label) };
-            result.push((entry.key, label));
-            used += entry_width;
-        }
-
-        result
-    }
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-struct HelpBarContext {
-    kill_active: bool,
-    dismiss_active: bool,
-    pause_active: bool,
-    logs_active: bool,
-    full_active: bool,
-}
-
-impl HelpBarContext {
-    fn from_status(status: Option<crate::session::types::SessionStatus>) -> Self {
-        use crate::session::types::SessionStatus;
-
-        let has_session = status.is_some();
-        let is_terminal = status.is_some_and(|s| s.is_terminal());
-        let is_running = matches!(status, Some(SessionStatus::Running));
-
-        Self {
-            kill_active: has_session && !is_terminal,
-            dismiss_active: has_session && is_terminal,
-            pause_active: is_running,
-            logs_active: has_session,
-            full_active: has_session,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::session::types::SessionStatus;
-
-    #[test]
-    fn help_bar_context_none_status_all_inactive() {
-        let ctx = HelpBarContext::from_status(None);
-        assert!(!ctx.kill_active);
-        assert!(!ctx.dismiss_active);
-        assert!(!ctx.pause_active);
-        assert!(!ctx.logs_active);
-        assert!(!ctx.full_active);
-    }
-
-    #[test]
-    fn help_bar_context_running_status() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::Running));
-        assert!(ctx.kill_active);
-        assert!(!ctx.dismiss_active);
-        assert!(ctx.pause_active);
-        assert!(ctx.logs_active);
-        assert!(ctx.full_active);
-    }
-
-    #[test]
-    fn help_bar_context_completed_status() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::Completed));
-        assert!(!ctx.kill_active);
-        assert!(ctx.dismiss_active);
-        assert!(!ctx.pause_active);
-        assert!(ctx.logs_active);
-        assert!(ctx.full_active);
-    }
-
-    #[test]
-    fn help_bar_context_killed_status() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::Killed));
-        assert!(!ctx.kill_active);
-        assert!(ctx.dismiss_active);
-        assert!(!ctx.pause_active);
-        assert!(ctx.logs_active);
-        assert!(ctx.full_active);
-    }
-
-    #[test]
-    fn help_bar_context_paused_status() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::Paused));
-        assert!(ctx.kill_active);
-        assert!(!ctx.dismiss_active);
-        assert!(!ctx.pause_active);
-        assert!(ctx.logs_active);
-        assert!(ctx.full_active);
-    }
-
-    #[test]
-    fn help_bar_context_spawning_status() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::Spawning));
-        assert!(ctx.kill_active);
-        assert!(!ctx.dismiss_active);
-        assert!(!ctx.pause_active);
-        assert!(ctx.logs_active);
-        assert!(ctx.full_active);
-    }
-
-    #[test]
-    fn help_bar_context_queued_status() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::Queued));
-        assert!(ctx.kill_active);
-        assert!(!ctx.dismiss_active);
-        assert!(!ctx.pause_active);
-        assert!(ctx.logs_active);
-        assert!(ctx.full_active);
-    }
-
-    #[test]
-    fn help_bar_context_errored_status() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::Errored));
-        assert!(ctx.kill_active);
-        assert!(!ctx.dismiss_active);
-        assert!(!ctx.pause_active);
-        assert!(ctx.logs_active);
-        assert!(ctx.full_active);
-    }
-
-    #[test]
-    fn help_bar_context_needs_review_status() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::NeedsReview));
-        assert!(!ctx.kill_active);
-        assert!(ctx.dismiss_active);
-        assert!(!ctx.pause_active);
-        assert!(ctx.logs_active);
-        assert!(ctx.full_active);
-    }
-
-    // --- Issue #218: FKeyEntry tests ---
-
-    #[test]
-    fn fkey_entries_builds_all_entries() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::Running));
-        let entries = FKeyEntry::build_entries(&ctx);
-        assert_eq!(entries.len(), 9);
-        assert_eq!(entries[0].key, "F1");
-        assert_eq!(entries[0].label, "Help");
-        assert_eq!(entries[8].key, "^X");
-        assert_eq!(entries[8].label, "Exit");
-    }
-
-    #[test]
-    fn fkey_entries_full_width_includes_all_labels() {
-        let ctx = HelpBarContext::from_status(None);
-        let entries = FKeyEntry::build_entries(&ctx);
-        let fitted = FKeyEntry::fit_to_width(&entries, 120);
-        assert_eq!(fitted.len(), 9);
-        for (_, label) in &fitted {
-            assert!(
-                label.is_some(),
-                "all labels should be present at full width"
-            );
-        }
-    }
-
-    #[test]
-    fn fkey_entries_narrow_width_truncates() {
-        let ctx = HelpBarContext::from_status(None);
-        let entries = FKeyEntry::build_entries(&ctx);
-        let fitted = FKeyEntry::fit_to_width(&entries, 20);
-        // At width 20 in badge-only mode (< 40), should fit several but not all
-        assert!(fitted.len() > 0);
-        assert!(fitted.len() < 9);
-        for (_, label) in &fitted {
-            assert!(label.is_none(), "labels should be dropped at narrow width");
-        }
-    }
-
-    #[test]
-    fn fkey_entries_very_narrow_drops_labels() {
-        let ctx = HelpBarContext::from_status(None);
-        let entries = FKeyEntry::build_entries(&ctx);
-        let fitted = FKeyEntry::fit_to_width(&entries, 35);
-        for (_, label) in &fitted {
-            assert!(label.is_none(), "labels should be None when width < 40");
-        }
-    }
-
-    #[test]
-    fn fkey_context_dimming_matches_help_bar() {
-        let ctx = HelpBarContext::from_status(Some(SessionStatus::Running));
-        let entries = FKeyEntry::build_entries(&ctx);
-        // F3=Full should be active when session is running
-        let f3 = entries.iter().find(|e| e.key == "F3").unwrap();
-        assert!(f3.active);
-        // F9=Pause should be active when running
-        let f9 = entries.iter().find(|e| e.key == "F9").unwrap();
-        assert!(f9.active);
-        // F10=Kill should be active when running
-        let f10 = entries.iter().find(|e| e.key == "F10").unwrap();
-        assert!(f10.active);
-    }
-
-    #[test]
-    fn fkey_context_dimming_none_status() {
-        let ctx = HelpBarContext::from_status(None);
-        let entries = FKeyEntry::build_entries(&ctx);
-        let f3 = entries.iter().find(|e| e.key == "F3").unwrap();
-        assert!(!f3.active);
-        let f9 = entries.iter().find(|e| e.key == "F9").unwrap();
-        assert!(!f9.active);
-        let f10 = entries.iter().find(|e| e.key == "F10").unwrap();
-        assert!(!f10.active);
-    }
-}
