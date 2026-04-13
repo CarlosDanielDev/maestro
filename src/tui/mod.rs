@@ -9,6 +9,7 @@ pub mod help;
 pub mod icons;
 pub mod log_viewer;
 pub mod markdown;
+pub mod marquee;
 pub mod navigation;
 pub mod panels;
 mod screen_dispatch;
