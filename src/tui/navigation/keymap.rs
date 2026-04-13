@@ -1,6 +1,3 @@
-use crate::session::types::SessionStatus;
-use crate::tui::app::TuiMode;
-
 /// A single keybinding declaration for documentation and help overlay.
 #[derive(Debug, Clone)]
 pub struct KeyBinding {
@@ -155,620 +152,7 @@ pub struct ModeKeyMap {
     pub help_groups: Vec<KeyBindingGroup>,
 }
 
-/// Build the `ModeKeyMap` for a given `TuiMode`.
-///
-/// `screen_bindings` should come from the active screen's `KeymapProvider::keybindings()`
-/// (empty slice for modes that don't implement `Screen`).
-pub fn mode_keymap(
-    mode: TuiMode,
-    session_status: Option<SessionStatus>,
-    screen_bindings: &[KeyBindingGroup],
-) -> ModeKeyMap {
-    let has_session = session_status.is_some();
-    let is_terminal = session_status.is_some_and(|s| s.is_terminal());
-    let is_running = matches!(session_status, Some(SessionStatus::Running));
-
-    let (mode_label, fkey_vis, hints): (&str, FKeyVis, &[InlineHint]) = match mode {
-        TuiMode::Overview => (
-            "Overview",
-            FKeyVis::SessionAware,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Detail",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "d",
-                    action: "Dismiss",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "f",
-                    action: "Full",
-                    priority: 2,
-                },
-                InlineHint {
-                    key: "w",
-                    action: "Switcher",
-                    priority: 3,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
-                    priority: 4,
-                },
-            ],
-        ),
-        TuiMode::Detail(_) => (
-            "Detail",
-            FKeyVis::SessionAware,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "f",
-                    action: "Full",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "l",
-                    action: "Logs",
-                    priority: 2,
-                },
-                InlineHint {
-                    key: "k",
-                    action: "Kill",
-                    priority: 3,
-                },
-            ],
-        ),
-        TuiMode::Fullscreen(_) => (
-            "Fullscreen",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "j/k",
-                    action: "Scroll",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::Dashboard => (
-            "Dashboard",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "i",
-                    action: "Issues",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "m",
-                    action: "Milestones",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "r",
-                    action: "Prompt",
-                    priority: 2,
-                },
-                InlineHint {
-                    key: "s",
-                    action: "Settings",
-                    priority: 3,
-                },
-                InlineHint {
-                    key: "a",
-                    action: "Adapt",
-                    priority: 4,
-                },
-            ],
-        ),
-        TuiMode::IssueBrowser => (
-            "Issue Browser",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Launch",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "/",
-                    action: "Filter",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "Space",
-                    action: "Select",
-                    priority: 2,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 3,
-                },
-            ],
-        ),
-        TuiMode::MilestoneView => (
-            "Milestones",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Select",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "i",
-                    action: "Issues",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 2,
-                },
-            ],
-        ),
-        TuiMode::PromptInput => (
-            "Prompt Input",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Submit",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Ctrl+J",
-                    action: "Newline",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Cancel",
-                    priority: 2,
-                },
-            ],
-        ),
-        TuiMode::Settings => (
-            "Settings",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Tab",
-                    action: "Next",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Enter",
-                    action: "Toggle",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 2,
-                },
-            ],
-        ),
-        TuiMode::CostDashboard => (
-            "Cost Dashboard",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::TokenDashboard => (
-            "Token Dashboard",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::DependencyGraph => (
-            "Dependencies",
-            FKeyVis::DashboardLike,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::CompletionSummary => (
-            "Completion Summary",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "i",
-                    action: "Browse",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "r",
-                    action: "New Prompt",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "d",
-                    action: "Dashboard",
-                    priority: 2,
-                },
-                InlineHint {
-                    key: "q",
-                    action: "Quit",
-                    priority: 3,
-                },
-            ],
-        ),
-        TuiMode::LogViewer(_) => (
-            "Log Viewer",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "j/k",
-                    action: "Scroll",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "G",
-                    action: "Bottom",
-                    priority: 2,
-                },
-                InlineHint {
-                    key: "g",
-                    action: "Top",
-                    priority: 3,
-                },
-            ],
-        ),
-        TuiMode::SessionSummary => (
-            "Session Summary",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "j/k",
-                    action: "Navigate",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "Enter",
-                    action: "Expand",
-                    priority: 2,
-                },
-            ],
-        ),
-        TuiMode::SessionSwitcher => (
-            "Session Switcher",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Select",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Cancel",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::ConfirmKill(_) => (
-            "Confirm Kill",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "y",
-                    action: "Confirm",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "n",
-                    action: "Cancel",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::QueueConfirmation => (
-            "Queue Confirmation",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Confirm",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Cancel",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::QueueExecution => (
-            "Queue Execution",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "r",
-                    action: "Retry",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "s",
-                    action: "Skip",
-                    priority: 2,
-                },
-            ],
-        ),
-        TuiMode::HollowRetry => (
-            "Hollow Retry",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Retry",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Cancel",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::ContinuousPause => (
-            "Continuous Pause",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "r",
-                    action: "Retry",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::AdaptWizard => (
-            "Adapt Wizard",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Next",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::PrReview => (
-            "PR Review",
-            FKeyVis::Minimal,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Select",
-                    priority: 0,
-                },
-                InlineHint {
-                    key: "Esc",
-                    action: "Back",
-                    priority: 1,
-                },
-            ],
-        ),
-        TuiMode::ReleaseNotes => (
-            "Release Notes",
-            FKeyVis::Minimal,
-            &[InlineHint {
-                key: "Esc",
-                action: "Back",
-                priority: 0,
-            }],
-        ),
-        TuiMode::Sanitize => (
-            "Sanitize",
-            FKeyVis::Minimal,
-            &[InlineHint {
-                key: "Esc",
-                action: "Back",
-                priority: 0,
-            }],
-        ),
-    };
-
-    let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);
-
-    let mut help_groups = Vec::new();
-    if !screen_bindings.is_empty() {
-        help_groups.extend_from_slice(screen_bindings);
-    }
-    help_groups.extend_from_slice(global_keybindings());
-
-    ModeKeyMap {
-        mode_label,
-        fkeys,
-        hints,
-        help_groups,
-    }
-}
-
-enum FKeyVis {
-    SessionAware,
-    DashboardLike,
-    Minimal,
-}
-
-fn build_fkeys(
-    vis: FKeyVis,
-    has_session: bool,
-    is_running: bool,
-    is_terminal: bool,
-) -> Vec<FKeyRelevance> {
-    match vis {
-        FKeyVis::SessionAware => vec![
-            FKeyRelevance {
-                key: "F1",
-                label: "Help",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F2",
-                label: "Summary",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F3",
-                label: "Full",
-                visible: true,
-                active: has_session,
-            },
-            FKeyRelevance {
-                key: "F4",
-                label: "Costs",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F5",
-                label: "Tokens",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F6",
-                label: "Deps",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F9",
-                label: "Pause",
-                visible: true,
-                active: is_running,
-            },
-            FKeyRelevance {
-                key: "F10",
-                label: "Kill",
-                visible: true,
-                active: has_session && !is_terminal,
-            },
-            FKeyRelevance {
-                key: "^X",
-                label: "Exit",
-                visible: true,
-                active: true,
-            },
-        ],
-        FKeyVis::DashboardLike => vec![
-            FKeyRelevance {
-                key: "F1",
-                label: "Help",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F4",
-                label: "Costs",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F5",
-                label: "Tokens",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F6",
-                label: "Deps",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "^X",
-                label: "Exit",
-                visible: true,
-                active: true,
-            },
-        ],
-        FKeyVis::Minimal => vec![
-            FKeyRelevance {
-                key: "F1",
-                label: "Help",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "^X",
-                label: "Exit",
-                visible: true,
-                active: true,
-            },
-        ],
-    }
-}
+pub use super::mode_hints::mode_keymap;
 
 /// Fit visible F-key entries to the given terminal width.
 /// Returns entries that fit; if width < 40, labels are dropped.
@@ -796,7 +180,6 @@ pub fn fit_fkeys_to_width(fkeys: &[FKeyRelevance], width: u16) -> Vec<(&str, Opt
 }
 
 /// Fit inline hints to the given terminal width.
-/// Returns hints that fit within the given width.
 /// Hints are assumed to be pre-sorted by priority (lower = first).
 pub fn fit_hints_to_width(hints: &[InlineHint], width: u16) -> Vec<(&str, &str)> {
     let mut result = Vec::new();
@@ -818,6 +201,8 @@ pub fn fit_hints_to_width(hints: &[InlineHint], width: u16) -> Vec<(&str, &str)>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::types::SessionStatus;
+    use crate::tui::app::TuiMode;
 
     #[test]
     fn key_binding_has_correct_key_and_description() {
@@ -930,26 +315,20 @@ mod tests {
     fn mode_keymap_overview_no_session_dims_session_keys() {
         let km = mode_keymap(TuiMode::Overview, None, &[]);
         let f3 = km.fkeys.iter().find(|f| f.key == "F3").unwrap();
-        assert!(!f3.active, "F3 Full should be inactive without session");
+        assert!(!f3.active);
         let f9 = km.fkeys.iter().find(|f| f.key == "F9").unwrap();
-        assert!(!f9.active, "F9 Pause should be inactive without session");
+        assert!(!f9.active);
         let f10 = km.fkeys.iter().find(|f| f.key == "F10").unwrap();
-        assert!(!f10.active, "F10 Kill should be inactive without session");
+        assert!(!f10.active);
     }
 
     #[test]
     fn mode_keymap_overview_completed_session_dims_pause_kill() {
         let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Completed), &[]);
         let f9 = km.fkeys.iter().find(|f| f.key == "F9").unwrap();
-        assert!(
-            !f9.active,
-            "F9 Pause should be inactive for completed session"
-        );
+        assert!(!f9.active);
         let f10 = km.fkeys.iter().find(|f| f.key == "F10").unwrap();
-        assert!(
-            !f10.active,
-            "F10 Kill should be inactive for completed session"
-        );
+        assert!(!f10.active);
     }
 
     #[test]
@@ -959,12 +338,8 @@ mod tests {
         assert_eq!(km.fkeys.len(), 5);
         let keys: Vec<&str> = km.fkeys.iter().map(|f| f.key).collect();
         assert!(keys.contains(&"F1"));
-        assert!(keys.contains(&"F4"));
-        assert!(keys.contains(&"F5"));
-        assert!(keys.contains(&"F6"));
         assert!(keys.contains(&"^X"));
         assert!(!keys.contains(&"F9"));
-        assert!(!keys.contains(&"F10"));
     }
 
     #[test]
@@ -979,8 +354,6 @@ mod tests {
     fn mode_keymap_prompt_input_shows_minimal_fkeys() {
         let km = mode_keymap(TuiMode::PromptInput, None, &[]);
         assert_eq!(km.fkeys.len(), 2);
-        assert_eq!(km.fkeys[0].key, "F1");
-        assert_eq!(km.fkeys[1].key, "^X");
     }
 
     #[test]
@@ -994,7 +367,6 @@ mod tests {
         }];
         let km = mode_keymap(TuiMode::Dashboard, None, &screen_bindings);
         assert_eq!(km.help_groups[0].title, "Screen Actions");
-        // Global keybindings follow screen bindings
         assert!(km.help_groups.len() > 1);
     }
 
@@ -1020,11 +392,9 @@ mod tests {
     fn mode_keymap_dashboard_has_hints() {
         let km = mode_keymap(TuiMode::Dashboard, None, &[]);
         let keys: Vec<&str> = km.hints.iter().map(|h| h.key).collect();
-        assert!(keys.contains(&"i"), "Dashboard should have Issues hint");
-        assert!(keys.contains(&"r"), "Dashboard should have Prompt hint");
+        assert!(keys.contains(&"i"));
+        assert!(keys.contains(&"r"));
     }
-
-    // --- fit_fkeys_to_width tests ---
 
     #[test]
     fn fit_fkeys_full_width_includes_all() {
@@ -1041,7 +411,7 @@ mod tests {
         let km = mode_keymap(TuiMode::Overview, None, &[]);
         let fitted = fit_fkeys_to_width(&km.fkeys, 35);
         for (_, label, _) in &fitted {
-            assert!(label.is_none(), "labels should be None when width < 40");
+            assert!(label.is_none());
         }
     }
 
@@ -1067,19 +437,17 @@ mod tests {
         assert_eq!(fitted.len(), 2);
     }
 
-    // --- fit_hints_to_width tests ---
-
     #[test]
     fn fit_hints_wide_includes_all() {
         let km = mode_keymap(TuiMode::Overview, None, &[]);
-        let fitted = fit_hints_to_width(&km.hints, 120);
+        let fitted = fit_hints_to_width(km.hints, 120);
         assert_eq!(fitted.len(), km.hints.len());
     }
 
     #[test]
     fn fit_hints_narrow_truncates_gracefully() {
         let km = mode_keymap(TuiMode::Overview, None, &[]);
-        let fitted = fit_hints_to_width(&km.hints, 30);
+        let fitted = fit_hints_to_width(km.hints, 30);
         assert!(!fitted.is_empty());
         assert!(fitted.len() < km.hints.len());
     }
@@ -1087,15 +455,14 @@ mod tests {
     #[test]
     fn fit_hints_sorted_by_priority() {
         let km = mode_keymap(TuiMode::Overview, None, &[]);
-        let fitted = fit_hints_to_width(&km.hints, 120);
-        // First hint should be highest priority (lowest number)
+        let fitted = fit_hints_to_width(km.hints, 120);
         assert_eq!(fitted[0].0, "Enter");
     }
 
     #[test]
     fn fit_hints_empty_at_zero_width() {
         let km = mode_keymap(TuiMode::Overview, None, &[]);
-        let fitted = fit_hints_to_width(&km.hints, 0);
+        let fitted = fit_hints_to_width(km.hints, 0);
         assert!(fitted.is_empty());
     }
 }

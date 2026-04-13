@@ -24,3 +24,5 @@ src/github/types.rs
 src/cli.rs
 src/prompts.rs
 src/tui/screens/queue_confirmation.rs
+src/tui/input_handler.rs
+src/tui/navigation/mode_hints.rs

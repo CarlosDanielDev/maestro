@@ -1,5 +1,6 @@
 pub mod focus;
 pub mod keymap;
+mod mode_hints;
 
 /// Vim-style input mode for the entire application.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
