@@ -50,11 +50,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),          // status bar
-            Constraint::Min(10),            // main content
-            Constraint::Length(log_height), // activity log
+            Constraint::Length(3),            // status bar
+            Constraint::Min(10),              // main content
+            Constraint::Length(log_height),   // activity log
             Constraint::Length(hints_height), // inline hints bar (#282)
-            Constraint::Length(1),          // F-key bar
+            Constraint::Length(1),            // F-key bar
         ])
         .split(f.area());
 
@@ -427,7 +427,10 @@ fn active_screen(app: &App) -> Option<&dyn Screen> {
         TuiMode::IssueBrowser => app.issue_browser_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::MilestoneView => app.milestone_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::PromptInput => app.prompt_input_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::QueueConfirmation => app.queue_confirmation_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::QueueConfirmation => app
+            .queue_confirmation_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
         TuiMode::Sanitize => app.sanitize_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::Settings => app.settings_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::PrReview => app.pr_review_screen.as_ref().map(|s| s as &dyn Screen),
@@ -1148,4 +1151,3 @@ fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Owned(format!("{}...", truncated))
     }
 }
-

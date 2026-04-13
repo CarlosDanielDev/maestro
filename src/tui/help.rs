@@ -156,20 +156,11 @@ pub fn draw_help_overlay_with_search(
 
     // Footer with controls
     help_text.push(Line::from(vec![
-        Span::styled(
-            "[j/k]",
-            Style::default().fg(theme.accent_success),
-        ),
+        Span::styled("[j/k]", Style::default().fg(theme.accent_success)),
         Span::raw(" Scroll  "),
-        Span::styled(
-            "[/]",
-            Style::default().fg(theme.accent_success),
-        ),
+        Span::styled("[/]", Style::default().fg(theme.accent_success)),
         Span::raw(" Search  "),
-        Span::styled(
-            "[Esc]",
-            Style::default().fg(theme.accent_success),
-        ),
+        Span::styled("[Esc]", Style::default().fg(theme.accent_success)),
         Span::raw(" Close"),
     ]));
 

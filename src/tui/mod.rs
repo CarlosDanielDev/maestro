@@ -165,7 +165,9 @@ async fn event_loop(
                         if help.search_active {
                             match key.code {
                                 KeyCode::Esc => help.clear_search(),
-                                KeyCode::Enter => { help.search_active = false; }
+                                KeyCode::Enter => {
+                                    help.search_active = false;
+                                }
                                 KeyCode::Backspace => help.pop_char(),
                                 KeyCode::Char(c) => help.push_char(c),
                                 _ => {}
