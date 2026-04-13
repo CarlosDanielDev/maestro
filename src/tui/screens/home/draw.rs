@@ -118,8 +118,7 @@ impl HomeScreen {
                 for row in 0..mascot_h {
                     let y = mascot_y + row;
                     if y < area.y + area.height {
-                        f.buffer_mut()
-                            .set_string(sep_x, y, "\u{2502}", sep_style);
+                        f.buffer_mut().set_string(sep_x, y, "\u{2502}", sep_style);
                     }
                 }
 

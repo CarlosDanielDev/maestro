@@ -350,7 +350,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         {
             let h_split = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(10), Constraint::Length(MASCOT_WIDTH as u16 + 2)])
+                .constraints([
+                    Constraint::Min(10),
+                    Constraint::Length(MASCOT_WIDTH as u16 + 2),
+                ])
                 .split(log_area);
             app.activity_log.draw(f, h_split[0], &app.theme);
             draw_mascot_block(
