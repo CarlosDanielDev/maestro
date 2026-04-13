@@ -8,9 +8,7 @@ use crate::tui::dep_graph;
 use crate::tui::detail;
 use crate::tui::fullscreen;
 use crate::tui::help;
-use crate::tui::navigation::keymap::{
-    self, KeyBindingGroup, ModeKeyMap, fit_fkeys_to_width,
-};
+use crate::tui::navigation::keymap::{self, KeyBindingGroup, ModeKeyMap, fit_fkeys_to_width};
 use crate::tui::screens::Screen;
 use chrono::Utc;
 use ratatui::{
@@ -57,7 +55,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Use preview theme if active, otherwise base theme
     let theme = app.active_theme().clone();
 
-    // Compute ModeKeyMap once per frame (#280)
     let screen_bindings = active_screen_bindings(app);
     let selected_status = {
         let sessions = app.pool.all_sessions();
@@ -393,10 +390,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Draw upgrade banner if visible (overlays status bar)
     draw_upgrade_banner(f, &app.upgrade_state, chunks[0], &app.theme);
 
-    // Draw F-key bar (#280 — context-aware)
     draw_fkey_bar(f, &mode_km, chunks[3], &theme);
 
-    // Draw help overlay on top of everything if active (#281)
     if let Some(ref help) = app.help_state {
         let input_mode = active_screen_input_mode(app);
         help::draw_help_overlay_with_search(
@@ -543,12 +538,12 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
         ));
     }
 
-    // Append inline keybinding hints to the status bar (#282)
+    // Append inline keybinding hints if space remains
     let inner_width = area.width.saturating_sub(2); // account for borders
     let status_used: u16 = spans.iter().map(|s| s.width() as u16).sum();
     let remaining = inner_width.saturating_sub(status_used);
     if remaining > 10 && !mode_km.hints.is_empty() {
-        let fitted = keymap::fit_hints_to_width(&mode_km.hints, remaining.saturating_sub(4));
+        let fitted = keymap::fit_hints_to_width(mode_km.hints, remaining.saturating_sub(4));
         if !fitted.is_empty() {
             spans.push(Span::styled(
                 " \u{2550}\u{2550} ",

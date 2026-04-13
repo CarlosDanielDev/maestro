@@ -24,106 +24,111 @@ pub trait KeymapProvider {
 }
 
 /// Return the global keybindings that apply regardless of active screen.
-pub fn global_keybindings() -> Vec<KeyBindingGroup> {
-    vec![
-        KeyBindingGroup {
-            title: "Navigation",
-            bindings: vec![
-                KeyBinding {
-                    key: "Tab",
-                    description: "Cycle focus between panes",
-                },
-                KeyBinding {
-                    key: "Esc",
-                    description: "Return to previous screen / Close help",
-                },
-                KeyBinding {
-                    key: "Enter",
-                    description: "Open detail / Execute action",
-                },
-                KeyBinding {
-                    key: "1-9",
-                    description: "Jump to session detail by index",
-                },
-                KeyBinding {
-                    key: "? / F1",
-                    description: "Toggle help overlay",
-                },
-            ],
-        },
-        KeyBindingGroup {
-            title: "Views",
-            bindings: vec![
-                KeyBinding {
-                    key: "f / F3",
-                    description: "Full-screen view for selected session",
-                },
-                KeyBinding {
-                    key: "$ / F4",
-                    description: "Cost dashboard view",
-                },
-                KeyBinding {
-                    key: "t / F5",
-                    description: "Token dashboard view",
-                },
-                KeyBinding {
-                    key: "Tab / F6",
-                    description: "Cycle view mode",
-                },
-            ],
-        },
-        KeyBindingGroup {
-            title: "Session Control",
-            bindings: vec![
-                KeyBinding {
-                    key: "p / F9",
-                    description: "Pause all running sessions (SIGSTOP)",
-                },
-                KeyBinding {
-                    key: "r",
-                    description: "Resume all paused sessions (SIGCONT)",
-                },
-                KeyBinding {
-                    key: "k / F10",
-                    description: "Kill selected session",
-                },
-                KeyBinding {
-                    key: "d",
-                    description: "Dismiss notification banner",
-                },
-            ],
-        },
-        KeyBindingGroup {
-            title: "Scrolling",
-            bindings: vec![
-                KeyBinding {
-                    key: "Up/Down",
-                    description: "Scroll agent panel output",
-                },
-                KeyBinding {
-                    key: "Shift+Up/Down",
-                    description: "Scroll activity log",
-                },
-                KeyBinding {
-                    key: "Mouse wheel",
-                    description: "Scroll focused panel",
-                },
-            ],
-        },
-        KeyBindingGroup {
-            title: "General",
-            bindings: vec![
-                KeyBinding {
-                    key: "S / F2",
-                    description: "Session summary",
-                },
-                KeyBinding {
-                    key: "q / Ctrl+c / ^X",
-                    description: "Quit maestro",
-                },
-            ],
-        },
-    ]
+/// Backed by a static allocation to avoid per-frame heap work.
+pub fn global_keybindings() -> &'static [KeyBindingGroup] {
+    use std::sync::LazyLock;
+    static GLOBALS: LazyLock<Vec<KeyBindingGroup>> = LazyLock::new(|| {
+        vec![
+            KeyBindingGroup {
+                title: "Navigation",
+                bindings: vec![
+                    KeyBinding {
+                        key: "Tab",
+                        description: "Cycle focus between panes",
+                    },
+                    KeyBinding {
+                        key: "Esc",
+                        description: "Return to previous screen / Close help",
+                    },
+                    KeyBinding {
+                        key: "Enter",
+                        description: "Open detail / Execute action",
+                    },
+                    KeyBinding {
+                        key: "1-9",
+                        description: "Jump to session detail by index",
+                    },
+                    KeyBinding {
+                        key: "? / F1",
+                        description: "Toggle help overlay",
+                    },
+                ],
+            },
+            KeyBindingGroup {
+                title: "Views",
+                bindings: vec![
+                    KeyBinding {
+                        key: "f / F3",
+                        description: "Full-screen view for selected session",
+                    },
+                    KeyBinding {
+                        key: "$ / F4",
+                        description: "Cost dashboard view",
+                    },
+                    KeyBinding {
+                        key: "t / F5",
+                        description: "Token dashboard view",
+                    },
+                    KeyBinding {
+                        key: "Tab / F6",
+                        description: "Cycle view mode",
+                    },
+                ],
+            },
+            KeyBindingGroup {
+                title: "Session Control",
+                bindings: vec![
+                    KeyBinding {
+                        key: "p / F9",
+                        description: "Pause all running sessions (SIGSTOP)",
+                    },
+                    KeyBinding {
+                        key: "r",
+                        description: "Resume all paused sessions (SIGCONT)",
+                    },
+                    KeyBinding {
+                        key: "k / F10",
+                        description: "Kill selected session",
+                    },
+                    KeyBinding {
+                        key: "d",
+                        description: "Dismiss notification banner",
+                    },
+                ],
+            },
+            KeyBindingGroup {
+                title: "Scrolling",
+                bindings: vec![
+                    KeyBinding {
+                        key: "Up/Down",
+                        description: "Scroll agent panel output",
+                    },
+                    KeyBinding {
+                        key: "Shift+Up/Down",
+                        description: "Scroll activity log",
+                    },
+                    KeyBinding {
+                        key: "Mouse wheel",
+                        description: "Scroll focused panel",
+                    },
+                ],
+            },
+            KeyBindingGroup {
+                title: "General",
+                bindings: vec![
+                    KeyBinding {
+                        key: "S / F2",
+                        description: "Session summary",
+                    },
+                    KeyBinding {
+                        key: "q / Ctrl+c / ^X",
+                        description: "Quit maestro",
+                    },
+                ],
+            },
+        ]
+    });
+    &GLOBALS
 }
 
 #[derive(Debug, Clone)]
@@ -146,7 +151,7 @@ pub struct InlineHint {
 pub struct ModeKeyMap {
     pub mode_label: &'static str,
     pub fkeys: Vec<FKeyRelevance>,
-    pub hints: Vec<InlineHint>,
+    pub hints: &'static [InlineHint],
     pub help_groups: Vec<KeyBindingGroup>,
 }
 
@@ -163,11 +168,11 @@ pub fn mode_keymap(
     let is_terminal = session_status.is_some_and(|s| s.is_terminal());
     let is_running = matches!(session_status, Some(SessionStatus::Running));
 
-    let (mode_label, fkey_vis, hints) = match mode {
+    let (mode_label, fkey_vis, hints): (&str, FKeyVis, &[InlineHint]) = match mode {
         TuiMode::Overview => (
             "Overview",
             FKeyVis::SessionAware,
-            vec![
+            &[
                 InlineHint {
                     key: "Enter",
                     action: "Detail",
@@ -198,7 +203,7 @@ pub fn mode_keymap(
         TuiMode::Detail(_) => (
             "Detail",
             FKeyVis::SessionAware,
-            vec![
+            &[
                 InlineHint {
                     key: "Esc",
                     action: "Back",
@@ -224,7 +229,7 @@ pub fn mode_keymap(
         TuiMode::Fullscreen(_) => (
             "Fullscreen",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Esc",
                     action: "Back",
@@ -240,7 +245,7 @@ pub fn mode_keymap(
         TuiMode::Dashboard => (
             "Dashboard",
             FKeyVis::DashboardLike,
-            vec![
+            &[
                 InlineHint {
                     key: "i",
                     action: "Issues",
@@ -271,7 +276,7 @@ pub fn mode_keymap(
         TuiMode::IssueBrowser => (
             "Issue Browser",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Enter",
                     action: "Launch",
@@ -297,7 +302,7 @@ pub fn mode_keymap(
         TuiMode::MilestoneView => (
             "Milestones",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Enter",
                     action: "Select",
@@ -318,7 +323,7 @@ pub fn mode_keymap(
         TuiMode::PromptInput => (
             "Prompt Input",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Enter",
                     action: "Submit",
@@ -339,7 +344,7 @@ pub fn mode_keymap(
         TuiMode::Settings => (
             "Settings",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Tab",
                     action: "Next",
@@ -360,7 +365,7 @@ pub fn mode_keymap(
         TuiMode::CostDashboard => (
             "Cost Dashboard",
             FKeyVis::DashboardLike,
-            vec![
+            &[
                 InlineHint {
                     key: "Esc",
                     action: "Back",
@@ -376,7 +381,7 @@ pub fn mode_keymap(
         TuiMode::TokenDashboard => (
             "Token Dashboard",
             FKeyVis::DashboardLike,
-            vec![
+            &[
                 InlineHint {
                     key: "Esc",
                     action: "Back",
@@ -392,7 +397,7 @@ pub fn mode_keymap(
         TuiMode::DependencyGraph => (
             "Dependencies",
             FKeyVis::DashboardLike,
-            vec![
+            &[
                 InlineHint {
                     key: "Esc",
                     action: "Back",
@@ -408,7 +413,7 @@ pub fn mode_keymap(
         TuiMode::CompletionSummary => (
             "Completion Summary",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "i",
                     action: "Browse",
@@ -434,7 +439,7 @@ pub fn mode_keymap(
         TuiMode::LogViewer(_) => (
             "Log Viewer",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Esc",
                     action: "Back",
@@ -460,7 +465,7 @@ pub fn mode_keymap(
         TuiMode::SessionSummary => (
             "Session Summary",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Esc",
                     action: "Back",
@@ -481,7 +486,7 @@ pub fn mode_keymap(
         TuiMode::SessionSwitcher => (
             "Session Switcher",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Enter",
                     action: "Select",
@@ -497,7 +502,7 @@ pub fn mode_keymap(
         TuiMode::ConfirmKill(_) => (
             "Confirm Kill",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "y",
                     action: "Confirm",
@@ -513,7 +518,7 @@ pub fn mode_keymap(
         TuiMode::QueueConfirmation => (
             "Queue Confirmation",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Enter",
                     action: "Confirm",
@@ -529,7 +534,7 @@ pub fn mode_keymap(
         TuiMode::QueueExecution => (
             "Queue Execution",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Esc",
                     action: "Back",
@@ -550,7 +555,7 @@ pub fn mode_keymap(
         TuiMode::HollowRetry => (
             "Hollow Retry",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Enter",
                     action: "Retry",
@@ -566,7 +571,7 @@ pub fn mode_keymap(
         TuiMode::ContinuousPause => (
             "Continuous Pause",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "r",
                     action: "Retry",
@@ -582,7 +587,7 @@ pub fn mode_keymap(
         TuiMode::AdaptWizard => (
             "Adapt Wizard",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Enter",
                     action: "Next",
@@ -598,7 +603,7 @@ pub fn mode_keymap(
         TuiMode::PrReview => (
             "PR Review",
             FKeyVis::Minimal,
-            vec![
+            &[
                 InlineHint {
                     key: "Enter",
                     action: "Select",
@@ -614,7 +619,7 @@ pub fn mode_keymap(
         TuiMode::ReleaseNotes => (
             "Release Notes",
             FKeyVis::Minimal,
-            vec![InlineHint {
+            &[InlineHint {
                 key: "Esc",
                 action: "Back",
                 priority: 0,
@@ -623,7 +628,7 @@ pub fn mode_keymap(
         TuiMode::Sanitize => (
             "Sanitize",
             FKeyVis::Minimal,
-            vec![InlineHint {
+            &[InlineHint {
                 key: "Esc",
                 action: "Back",
                 priority: 0,
@@ -637,7 +642,7 @@ pub fn mode_keymap(
     if !screen_bindings.is_empty() {
         help_groups.extend_from_slice(screen_bindings);
     }
-    help_groups.extend(global_keybindings());
+    help_groups.extend_from_slice(global_keybindings());
 
     ModeKeyMap {
         mode_label,
@@ -905,8 +910,6 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].bindings[0].key, "x");
     }
-
-    // --- Issue #280: mode_keymap tests ---
 
     #[test]
     fn mode_keymap_overview_shows_all_fkeys() {

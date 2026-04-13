@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Clear, Paragraph, Wrap},
 };
 
-/// State for the full-screen help overlay (#281).
+/// State for the full-screen help overlay.
 pub struct HelpOverlayState {
     pub scroll: u16,
     pub search_query: String,
