@@ -49,6 +49,13 @@ pub struct TuiConfig {
     pub layout: LayoutConfig,
     #[serde(default)]
     pub ascii_icons: bool,
+    /// Show the Clawd mascot companion in the TUI.
+    #[serde(default = "default_show_mascot")]
+    pub show_mascot: bool,
+}
+
+fn default_show_mascot() -> bool {
+    true
 }
 
 /// Layout configuration for the Issues screen.

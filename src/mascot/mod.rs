@@ -52,10 +52,11 @@ pub fn derive_dashboard_mascot_state<'a>(
 }
 
 /// Silence threshold for per-session thinking detection.
+#[allow(dead_code)]
 const SILENCE_THRESHOLD: Duration = Duration::from_secs(3);
 
 /// Derives the mascot state for a single session's detail view.
-/// Includes silence detection: no stdout for 3s -> Thinking.
+#[allow(dead_code)]
 pub fn derive_session_mascot_state(session: &Session) -> MascotState {
     match session.status {
         SessionStatus::Errored => MascotState::Error,

@@ -109,6 +109,7 @@ pub struct App {
     pub release_notes_screen: Option<crate::tui::screens::ReleaseNotesScreen>,
     pub tool_start_times: std::collections::HashMap<uuid::Uuid, (String, Instant)>,
     pub no_splash: bool,
+    pub show_mascot: bool,
     pub mascot_animator: MascotAnimator,
     pub session_ui_state: std::collections::HashMap<uuid::Uuid, SessionUiState>,
     pub log_viewer_scroll: u16,
@@ -191,6 +192,7 @@ impl App {
                 crate::config::default_max_prompt_history(),
             ),
             no_splash: false,
+            show_mascot: true,
             mascot_animator: MascotAnimator::new(&SystemClock),
             session_switcher: None,
             adapt_screen: None,
@@ -227,6 +229,7 @@ impl App {
         }
         crate::session::types::SessionStatus::set_ascii_icons(config.tui.ascii_icons);
         crate::tui::icons::init_from_config(config.tui.ascii_icons);
+        self.show_mascot = config.tui.show_mascot;
         self.config = Some(config);
     }
 

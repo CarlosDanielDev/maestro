@@ -1,5 +1,6 @@
 /// Mascot visual states — each maps to a distinct 6-row ASCII art set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum MascotState {
     Idle,
     Conducting,
