@@ -354,16 +354,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         {
             let h_split = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Length(13), Constraint::Min(10)])
+                .constraints([Constraint::Min(10), Constraint::Length(13)])
                 .split(log_area);
+            app.activity_log.draw(f, h_split[0], &app.theme);
             draw_mascot_block(
                 f,
                 app.mascot_animator.state(),
                 app.mascot_animator.frame_index(),
-                h_split[0],
+                h_split[1],
                 &theme,
             );
-            app.activity_log.draw(f, h_split[1], &app.theme);
         } else {
             app.activity_log.draw(f, log_area, &app.theme);
         }
