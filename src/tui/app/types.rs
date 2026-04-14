@@ -48,6 +48,8 @@ pub struct SuggestionDataPayload {
     pub ready_issue_count: usize,
     pub failed_issue_count: usize,
     pub milestones: Vec<(String, u32, u32)>,
+    pub open_issue_count: usize,
+    pub closed_issue_count: usize,
 }
 
 /// Commands queued by synchronous screen action handlers for async processing.

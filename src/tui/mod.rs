@@ -158,26 +158,33 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {
                         let client = GhCliClient::new();
-                        let (ready_result, failed_result, milestones_result) = tokio::join!(
+                        let (ready_result, failed_result, milestones_result, all_open_result) = tokio::join!(
                             client.list_issues(&["maestro:ready"]),
                             client.list_issues(&["maestro:failed"]),
                             client.list_milestones("open"),
+                            client.list_issues(&[]),
                         );
                         let ready_count = ready_result.map(|v| v.len()).unwrap_or(0);
                         let failed_count = failed_result.map(|v| v.len()).unwrap_or(0);
-                        let milestones = milestones_result
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|ms| {
-                                let total = ms.open_issues + ms.closed_issues;
-                                (ms.title, ms.closed_issues, total)
-                            })
-                            .collect();
+                        let open_issue_count = all_open_result.map(|v| v.len()).unwrap_or(0);
+                        let milestones_data: Vec<_> = milestones_result
+                            .as_ref()
+                            .map(|ms| ms.iter().map(|m| {
+                                let total = m.open_issues + m.closed_issues;
+                                (m.title.clone(), m.closed_issues, total)
+                            }).collect())
+                            .unwrap_or_default();
+                        let closed_issue_count: usize = milestones_result
+                            .as_ref()
+                            .map(|ms| ms.iter().map(|m| m.closed_issues as usize).sum())
+                            .unwrap_or(0);
                         let _ = tx.send(app::TuiDataEvent::SuggestionData(
                             app::SuggestionDataPayload {
                                 ready_issue_count: ready_count,
                                 failed_issue_count: failed_count,
-                                milestones,
+                                milestones: milestones_data,
+                                open_issue_count,
+                                closed_issue_count,
                             },
                         ));
                     });

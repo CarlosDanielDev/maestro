@@ -2,6 +2,7 @@ mod ci_monitor;
 mod dropdown;
 pub mod header_brand;
 mod list_editor;
+pub mod stats_bar;
 mod number_stepper;
 mod text_input;
 mod toggle;
