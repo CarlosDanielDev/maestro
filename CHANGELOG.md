@@ -7,10 +7,41 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-04-14
+
 ### Added
 
-- Visual status transition effects — panel borders flash for 4 frames when a session changes state; activity log records `STATUS: OLD → NEW` transition entries; flash counter on `Session` struct is decremented each render tick (#202)
-- F-key status bar redesign — bottom bar split into an info bar (agent count, cost, elapsed) and a DOS-style F-key bar; keys: F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit; amber badge styling for key names; responsive width truncation; new theme fields `fkey_badge_bg` / `fkey_badge_fg` (#218)
+- Mascot companion system — core animation engine with Ratatui widget, dashboard panel widget, prompt bar companion, startup splash screen, and running session live feedback (#267, #268, #269, #270, #271)
+- Unified PR workflow — session config for multi-issue PR creation, toggle in issue browser multi-select overlay, toggle in prompt composition with auto-detection (#301, #302, #303)
+- Issue reference `#NNN` detection and highlighting in prompt text (#300)
+- Comprehensive keybinding help overlay with searchable command list (#281)
+- Context-sensitive inline keybinding hints per TUI mode (#282)
+- Centralized icon registry with Nerd Font / ASCII dual variants (#286)
+- Nerd Font icons for status bar header with ASCII fallback (#310)
+- Standardized icons to Nerd Font set across TUI (#260)
+- Marquee/carousel animation for overflowing issue names in issues tab (#262)
+- Consolidated completion summary page for all finished sessions (#265)
+- Redesigned context gauge with compact, retro-styled indicator (#266)
+- Context-aware help bar with dimmed inactive keybindings (#259)
+- Visual status transition effects — panel borders flash on state changes (#202)
+- F-key status bar redesign with DOS-style layout and amber badges (#218)
+- Session Complete summary popup is now toggleable/dismissable (#254)
+
+### Fixed
+
+- Issue browser preview now renders markdown with focus/scroll navigation (#289)
+- Prompt composition text wraps correctly at box boundary (#263)
+- Shift+Enter correctly inserts newline in prompt composition screens (#258)
+- Markdown rendering wraps correctly in narrow session panels (#256)
+- Grid layout panel selection indicator is now visually distinct (#257)
+- Completed sessions are navigable/scrollable in grid view (#264)
+- F-key bar no longer overlaps screen-specific keybindings at narrow widths (#280)
+- MAESTRO logo last row alignment for T, R, O letters (#284)
+- Milestone screen color hierarchy and selection visibility (#299)
+
+### Changed
+
+- Migrated all hardcoded icons to centralized icon registry (#287)
 
 ## [0.10.1] - 2026-04-11
 
