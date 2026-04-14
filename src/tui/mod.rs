@@ -8,6 +8,7 @@ pub mod fullscreen;
 pub mod help;
 pub mod icons;
 mod input_handler;
+pub mod issue_refs;
 pub mod log_viewer;
 pub mod markdown;
 pub mod marquee;
@@ -212,6 +213,34 @@ async fn event_loop(
                     for config in configs {
                         spawn_issue_fetch(app.data_tx.clone(), config);
                     }
+                }
+                app::TuiCommand::LaunchUnifiedSession(config) => {
+                    let tx = app.data_tx.clone();
+                    let issue_numbers: Vec<u64> = config.issues.iter().map(|(n, _)| *n).collect();
+                    let custom_prompt = config.custom_prompt.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let futures: Vec<_> = issue_numbers
+                            .iter()
+                            .map(|num| client.get_issue(*num))
+                            .collect();
+                        let results = futures::future::join_all(futures).await;
+                        let mut issues = Vec::new();
+                        for result in results {
+                            match result {
+                                Ok(issue) => issues.push(issue),
+                                Err(e) => {
+                                    let _ = tx.send(app::TuiDataEvent::UnifiedIssues(
+                                        Err(e),
+                                        custom_prompt,
+                                    ));
+                                    return;
+                                }
+                            }
+                        }
+                        let _ =
+                            tx.send(app::TuiDataEvent::UnifiedIssues(Ok(issues), custom_prompt));
+                    });
                 }
                 app::TuiCommand::LaunchPromptSession(config) => {
                     let model = app

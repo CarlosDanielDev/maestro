@@ -397,6 +397,7 @@ mod tests {
             model: "claude-sonnet-4-5-20250514".to_string(),
             status: SessionStatus::Queued,
             issue_number: None,
+            issue_numbers: vec![],
             mode: "print".to_string(),
             started_at: None,
             finished_at: None,

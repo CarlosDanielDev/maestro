@@ -119,6 +119,7 @@ impl IssueBrowserScreen {
             self.prompt_overlay = Some(IssuePromptOverlay {
                 text: String::new(),
                 selected_issues,
+                unified_pr: false,
             });
             return ScreenAction::None;
         }
@@ -129,6 +130,7 @@ impl IssueBrowserScreen {
             self.prompt_overlay = Some(IssuePromptOverlay {
                 text: String::new(),
                 selected_issues: vec![(issue.number, issue.title.clone())],
+                unified_pr: false,
             });
         }
 
@@ -390,12 +392,15 @@ impl IssueBrowserScreen {
         f.render_widget(block, overlay_area);
 
         if is_multi {
+            let show_toggle = overlay.selected_issues.len() >= 2;
+            let toggle_height = if show_toggle { 1 } else { 0 };
             let issue_list_height = overlay.selected_issues.len().min(8) as u16 + 2;
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(1),                 // hint
                     Constraint::Length(issue_list_height), // issue list
+                    Constraint::Length(toggle_height),     // unified PR toggle
                     Constraint::Min(3),                    // text area
                     Constraint::Length(1),                 // keybinds
                 ])
@@ -427,18 +432,33 @@ impl IssueBrowserScreen {
             let issue_block = theme.styled_block_plain(false);
             f.render_widget(Paragraph::new(issue_lines).block(issue_block), chunks[1]);
 
-            Self::draw_overlay_text_area(f, chunks[2], overlay, theme);
+            // Unified PR toggle
+            if show_toggle {
+                crate::tui::widgets::unified_pr_toggle::draw_unified_pr_toggle(
+                    f,
+                    chunks[2],
+                    overlay.unified_pr,
+                    theme,
+                );
+            }
 
-            draw_keybinds_bar(
-                f,
-                chunks[3],
-                &[
+            Self::draw_overlay_text_area(f, chunks[3], overlay, theme);
+
+            let keybinds: Vec<(&str, &str)> = if show_toggle {
+                vec![
+                    ("Enter", "Launch all"),
+                    ("Ctrl+U", "Unified PR"),
+                    ("Shift+Enter", "New line"),
+                    ("Esc", "Cancel"),
+                ]
+            } else {
+                vec![
                     ("Enter", "Launch all"),
                     ("Shift+Enter", "New line"),
                     ("Esc", "Cancel"),
-                ],
-                theme,
-            );
+                ]
+            };
+            draw_keybinds_bar(f, chunks[4], &keybinds, theme);
         } else {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -482,9 +502,18 @@ impl IssueBrowserScreen {
                 Style::default().fg(theme.text_muted),
             )))
         } else {
-            Paragraph::new(sanitize_for_terminal(&overlay.text))
-                .style(Style::default().fg(theme.text_primary))
-                .wrap(Wrap { trim: false })
+            let sanitized = sanitize_for_terminal(&overlay.text);
+            let spans = crate::tui::issue_refs::highlight_issue_refs(
+                &sanitized,
+                theme.accent_info,
+                theme.text_primary,
+            );
+            // Convert borrowed spans to owned for lifetime safety
+            let owned_spans: Vec<Span<'static>> = spans
+                .into_iter()
+                .map(|s| Span::styled(s.content.to_string(), s.style))
+                .collect();
+            Paragraph::new(Line::from(owned_spans)).wrap(Wrap { trim: false })
         };
         let text_block = theme.styled_block_plain(false);
         f.render_widget(text_content.block(text_block), area);

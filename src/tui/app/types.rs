@@ -3,7 +3,7 @@ use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProf
 use crate::github::types::{GhIssue, GhMilestone};
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::types::SessionStatus;
-use crate::tui::screens::{PromptSessionConfig, SessionConfig};
+use crate::tui::screens::{PromptSessionConfig, SessionConfig, UnifiedSessionConfig};
 
 /// TUI display mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +58,7 @@ pub enum TuiCommand {
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
     LaunchPromptSession(PromptSessionConfig),
+    LaunchUnifiedSession(UnifiedSessionConfig),
     RunAdaptScan(AdaptConfig),
     RunAdaptAnalyze(AdaptConfig, ProjectProfile),
     RunAdaptPlan(AdaptConfig, ProjectProfile, AdaptReport),
@@ -82,6 +83,7 @@ pub enum TuiDataEvent {
     AdaptAnalyzeResult(anyhow::Result<AdaptReport>),
     AdaptPlanResult(anyhow::Result<AdaptPlan>),
     AdaptMaterializeResult(anyhow::Result<MaterializeResult>),
+    UnifiedIssues(anyhow::Result<Vec<GhIssue>>, Option<String>),
     PullRequests(anyhow::Result<Vec<crate::github::types::GhPullRequest>>),
     PrReviewSubmitted(anyhow::Result<()>),
 }

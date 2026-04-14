@@ -190,6 +190,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         ScreenAction::Quit => {
             app.running = false;
         }
+        ScreenAction::LaunchUnifiedSession(config) => {
+            app.pending_commands
+                .push(app::TuiCommand::LaunchUnifiedSession(config));
+            app.tui_mode = app::TuiMode::Overview;
+        }
         ScreenAction::LaunchSession(config) => {
             app.pending_commands
                 .push(app::TuiCommand::LaunchSession(config));

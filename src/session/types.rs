@@ -213,6 +213,9 @@ pub struct Session {
     pub status: SessionStatus,
     pub prompt: String,
     pub issue_number: Option<u64>,
+    /// Additional issue numbers when this session handles multiple issues (unified PR).
+    #[serde(default)]
+    pub issue_numbers: Vec<u64>,
     pub model: String,
     pub mode: String,
     pub started_at: Option<DateTime<Utc>>,
@@ -318,6 +321,7 @@ impl Session {
             status: SessionStatus::Queued,
             prompt,
             issue_number,
+            issue_numbers: Vec::new(),
             model,
             mode,
             started_at: None,

@@ -5,6 +5,41 @@ use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::milestone::MilestoneEntry;
 
 impl App {
+    /// Resolve model and mode from config and issue labels.
+    fn resolve_model_and_mode(&self, labels: &[String]) -> (String, String) {
+        let model = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.default_model.clone())
+            .unwrap_or_else(|| "opus".to_string());
+        let default_mode = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.default_mode.clone())
+            .unwrap_or_else(|| "orchestrator".to_string());
+        let mode = crate::modes::mode_from_labels(labels).unwrap_or(default_mode);
+        (model, mode)
+    }
+
+    /// Build a prompt from issue + optional custom instructions.
+    fn build_issue_prompt_with_custom(
+        &self,
+        gh_issue: &crate::github::types::GhIssue,
+        custom_prompt: &Option<String>,
+    ) -> String {
+        let base = self
+            .config
+            .as_ref()
+            .map(|c| crate::prompts::PromptBuilder::build_issue_prompt(gh_issue, c))
+            .unwrap_or_else(|| gh_issue.unattended_prompt());
+        match custom_prompt {
+            Some(cp) if !cp.trim().is_empty() => {
+                format!("{}\n\n## Additional Instructions\n\n{}", base, cp.trim())
+            }
+            _ => base,
+        }
+    }
+
     /// Process a data event from a background fetch task.
     pub fn handle_data_event(&mut self, evt: TuiDataEvent) {
         match evt {
@@ -42,34 +77,9 @@ impl App {
                 }
             }
             TuiDataEvent::Issue(Ok(gh_issue), custom_prompt) => {
-                let model = self
-                    .config
-                    .as_ref()
-                    .map(|c| c.sessions.default_model.clone())
-                    .unwrap_or_else(|| "opus".to_string());
-                let default_mode = self
-                    .config
-                    .as_ref()
-                    .map(|c| c.sessions.default_mode.clone())
-                    .unwrap_or_else(|| "orchestrator".to_string());
-                let issue_mode =
-                    crate::modes::mode_from_labels(&gh_issue.labels).unwrap_or(default_mode);
+                let (model, issue_mode) = self.resolve_model_and_mode(&gh_issue.labels);
+                let prompt = self.build_issue_prompt_with_custom(&gh_issue, &custom_prompt);
                 let issue_number = gh_issue.number;
-                let base_prompt = self
-                    .config
-                    .as_ref()
-                    .map(|c| crate::prompts::PromptBuilder::build_issue_prompt(&gh_issue, c))
-                    .unwrap_or_else(|| gh_issue.unattended_prompt());
-                let prompt = match custom_prompt {
-                    Some(ref cp) if !cp.trim().is_empty() => {
-                        format!(
-                            "{}\n\n## Additional Instructions\n\n{}",
-                            base_prompt,
-                            cp.trim()
-                        )
-                    }
-                    _ => base_prompt,
-                };
                 let mut session = Session::new(prompt, model, issue_mode, Some(issue_number));
                 session.issue_title = Some(gh_issue.title.clone());
                 self.state.issue_cache.insert(issue_number, gh_issue);
@@ -228,6 +238,55 @@ impl App {
                         }
                     }
                 }
+            }
+            TuiDataEvent::UnifiedIssues(Ok(gh_issues), custom_prompt) => {
+                let first_labels = gh_issues
+                    .first()
+                    .map(|i| i.labels.as_slice())
+                    .unwrap_or(&[]);
+                let (model, issue_mode) = self.resolve_model_and_mode(first_labels);
+                let issue_numbers: Vec<u64> = gh_issues.iter().map(|i| i.number).collect();
+
+                let mut combined_prompt = String::from(
+                    "You are working on multiple related issues in a single unified PR.\n\n",
+                );
+                for (i, issue) in gh_issues.iter().enumerate() {
+                    if i > 0 {
+                        combined_prompt.push_str("\n\n---\n\n");
+                    }
+                    combined_prompt.push_str(&self.build_issue_prompt_with_custom(issue, &None));
+                }
+                if let Some(ref cp) = custom_prompt {
+                    if !cp.trim().is_empty() {
+                        combined_prompt
+                            .push_str(&format!("\n\n## Additional Instructions\n\n{}", cp.trim()));
+                    }
+                }
+
+                let primary_issue = issue_numbers.first().copied();
+                let mut session = Session::new(combined_prompt, model, issue_mode, primary_issue);
+                session.issue_numbers = issue_numbers;
+                session.issue_title = Some(format!(
+                    "Unified: {}",
+                    gh_issues
+                        .iter()
+                        .map(|i| format!("#{}", i.number))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+
+                for issue in &gh_issues {
+                    self.state.issue_cache.insert(issue.number, issue.clone());
+                }
+
+                self.pending_session_launches.push(session);
+            }
+            TuiDataEvent::UnifiedIssues(Err(e), _) => {
+                self.activity_log.push_simple(
+                    "Session".into(),
+                    format!("Failed to fetch issues for unified PR: {}", e),
+                    LogLevel::Error,
+                );
             }
         }
     }

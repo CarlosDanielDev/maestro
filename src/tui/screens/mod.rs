@@ -90,6 +90,9 @@ pub enum ScreenAction {
     LaunchPromptSession(PromptSessionConfig),
     /// Request a refresh of dashboard suggestion data.
     RefreshSuggestions,
+    /// Launch a unified session for multiple issues (single branch, single PR).
+    #[allow(dead_code)] // Reason: unified PR flow — wired in issue browser and prompt screens
+    LaunchUnifiedSession(UnifiedSessionConfig),
     /// Launch a sequential queue execution from confirmed queue.
     LaunchQueue(Vec<SessionConfig>),
     /// Launch a conflict-fix session for a PR with merge conflicts.
@@ -132,6 +135,15 @@ pub struct SessionConfig {
     pub issue_number: Option<u64>,
     pub title: String,
     /// Optional custom prompt to append to the issue prompt.
+    pub custom_prompt: Option<String>,
+}
+
+/// Configuration for launching a unified (multi-issue, single-PR) session.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnifiedSessionConfig {
+    /// All issues to address in a single session: `(number, title)`.
+    pub issues: Vec<(u64, String)>,
+    /// Optional custom prompt.
     pub custom_prompt: Option<String>,
 }
 

@@ -4,6 +4,7 @@ mod list_editor;
 mod number_stepper;
 mod text_input;
 mod toggle;
+pub mod unified_pr_toggle;
 
 pub use ci_monitor::CiMonitorWidget;
 pub use dropdown::Dropdown;
