@@ -53,6 +53,43 @@ enum ListKind {
     Ordered(u64),
 }
 
+struct WrapState {
+    buf: String,
+    line_len: usize,
+    base_width: usize,
+    max_width: usize,
+}
+
+impl WrapState {
+    fn new(current_width: usize, max_width: usize) -> Self {
+        Self {
+            buf: String::new(),
+            line_len: current_width,
+            base_width: current_width,
+            max_width,
+        }
+    }
+
+    fn should_wrap(&self, word_len: usize) -> bool {
+        let sep = if self.line_len > 0 { 1 } else { 0 };
+        self.line_len + sep + word_len > self.max_width && self.line_len > self.base_width
+    }
+
+    fn append_word(&mut self, word: &str, word_len: usize) {
+        if self.line_len > 0 {
+            self.buf.push(' ');
+            self.line_len += 1;
+        }
+        self.buf.push_str(word);
+        self.line_len += word_len;
+    }
+
+    fn start_new_line(&mut self) {
+        self.line_len = 0;
+        self.base_width = 0;
+    }
+}
+
 struct MarkdownRenderer<'t> {
     theme: &'t Theme,
     width: u16,
@@ -132,46 +169,37 @@ impl<'t> MarkdownRenderer<'t> {
             return;
         }
 
-        let current_width: usize = self
-            .active_spans
+        let mut state = WrapState::new(self.active_spans_width(), self.width as usize);
+
+        for word in text.split(' ').filter(|w| !w.is_empty()) {
+            let word_len = word.chars().count();
+
+            if state.should_wrap(word_len) {
+                self.commit_wrap_buf(&mut state, style);
+            }
+
+            state.append_word(word, word_len);
+        }
+
+        if !state.buf.is_empty() {
+            self.active_spans.push(Span::styled(state.buf, style));
+        }
+    }
+
+    fn active_spans_width(&self) -> usize {
+        self.active_spans
             .iter()
             .map(|s| s.content.chars().count())
-            .sum();
-        let max_width = self.width as usize;
+            .sum()
+    }
 
-        let mut line_buf = String::new();
-        let mut line_len = current_width;
-        let mut base_width = current_width;
-
-        for word in text.split(' ') {
-            if word.is_empty() {
-                continue;
-            }
-            let word_len = word.chars().count();
-            let sep_len = if line_len > 0 { 1 } else { 0 };
-
-            if line_len + sep_len + word_len > max_width && line_len > base_width {
-                if !line_buf.is_empty() {
-                    self.active_spans
-                        .push(Span::styled(std::mem::take(&mut line_buf), style));
-                }
-                self.flush_line();
-                line_buf.push_str(word);
-                line_len = word_len;
-                base_width = 0;
-            } else {
-                if line_len > 0 {
-                    line_buf.push(' ');
-                    line_len += 1;
-                }
-                line_buf.push_str(word);
-                line_len += word_len;
-            }
+    fn commit_wrap_buf(&mut self, state: &mut WrapState, style: Style) {
+        if !state.buf.is_empty() {
+            self.active_spans
+                .push(Span::styled(std::mem::take(&mut state.buf), style));
         }
-
-        if !line_buf.is_empty() {
-            self.active_spans.push(Span::styled(line_buf, style));
-        }
+        self.flush_line();
+        state.start_new_line();
     }
 
     fn list_indent(&self) -> String {
