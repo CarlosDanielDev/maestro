@@ -248,6 +248,10 @@ impl<'t> MarkdownRenderer<'t> {
             // --- Block-level start tags ---
             Event::Start(Tag::Heading { level, .. }) => {
                 self.flush_line();
+                // Add blank line before heading for visual section separation
+                if !self.lines.is_empty() {
+                    self.push_blank_line();
+                }
                 self.in_heading = true;
                 let prefix = Self::heading_prefix(level);
                 self.active_spans.push(Span::styled(
