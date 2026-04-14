@@ -9,11 +9,10 @@
 
 pub use crate::icons::*;
 
-// Re-exported for backward compatibility (used by tests and callers
-// that previously imported mode detection from `tui::icons`).
-pub use crate::icon_mode::use_nerd_font;
 #[cfg(test)]
 pub use crate::icon_mode::init_from_config;
+// Re-exported for callers that import mode detection from `tui::icons`.
+pub use crate::icon_mode::use_nerd_font;
 
 #[cfg(test)]
 mod tests {
