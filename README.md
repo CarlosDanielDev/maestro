@@ -4,7 +4,8 @@
 
 Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code) sessions working on the same project simultaneously. It provides real-time visibility into what each agent is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.
 
-<img width="600" height="400" alt="Screenshot 2026-04-14 at 12 17 28 (2)" src="https://github.com/user-attachments/assets/0a22ac4a-c5f1-4e59-95e2-5a32aa98ba9a" />
+<img  width="800" height="600" alt="Screenshot 2026-04-14 at 12 20 07" src="https://github.com/user-attachments/assets/a8cec4e8-1225-4396-b3b8-0c6d8ff0f5ea" />
+
 
 ## Features
 
