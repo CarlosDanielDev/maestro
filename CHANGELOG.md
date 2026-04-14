@@ -7,6 +7,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-04-14
+
+### Added
+
+- Confirm exit dialog on `[q]` with Ctrl+C bypass (#318)
+- Nerd Font icons for milestones and issues across all TUI views (#320)
+- Project stats widget replacing dashboard header area (#323)
+
+### Fixed
+
+- Arrow key history no longer overwrites current prompt input (#317)
+
+### Changed
+
+- Extracted mascot + logo + repo info into reusable header brand widget with Nerd Font icons (#319)
+
 ## [0.11.0] - 2026-04-14
 
 ### Added
