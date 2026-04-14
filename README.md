@@ -4,26 +4,8 @@
 
 Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code) sessions working on the same project simultaneously. It provides real-time visibility into what each agent is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.
 
-```
-+==================================================================+
-|  MAESTRO v0.1.0  |  3 agents  |  $8.45 spent  |  14:32:01       |
-+==================================================================+
-|  AGENT 1          |  AGENT 2          |  AGENT 3                 |
-|  #42 Streaks      |  #43 Animations   |  #44 Bot Profile         |
-|  ▶ RUNNING 4m32s  |  ▶ RUNNING 2m15s  |  ⏳ QUEUED               |
-|  ctx: 45% ████░░  |  ctx: 23% ██░░░░  |  waiting for #43        |
-|  $1.23            |  $0.87            |  $0.00                   |
-|                   |                   |                          |
-|  > Reading        |  > Writing        |  (pending)               |
-|    StreakService   |    GameView.swift |                          |
-+-------------------+-------------------+--------------------------+
-|  ACTIVITY LOG                                                     |
-|  14:32:01  [#42] Reading docs/api-contracts/streaks.json         |
-|  14:31:58  [#43] Wrote GameView.swift                            |
-+-------------------------------------------------------------------+
-|  [q]uit [p]ause [k]ill [r]efresh [?]help                        |
-+-------------------------------------------------------------------+
-```
+<img  width="800" height="600" alt="Screenshot 2026-04-14 at 12 20 07" src="https://github.com/user-attachments/assets/a8cec4e8-1225-4396-b3b8-0c6d8ff0f5ea" />
+
 
 ## Features
 
