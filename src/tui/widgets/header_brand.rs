@@ -10,6 +10,8 @@ use crate::mascot;
 use crate::tui::icons::{self, IconId};
 use crate::tui::theme::Theme;
 
+const LOGO_WIDTH: u16 = 62;
+
 pub const LOGO: &str = r#"
  ███╗   ███╗ █████╗ ███████╗███████╗████████╗██████╗  ██████╗
  ████╗ ████║██╔══██╗██╔════╝██╔════╝╚══██╔══╝██╔══██╗██╔═══██╗
@@ -49,7 +51,7 @@ impl<'a> HeaderBrand<'a> {
         logo.render(area, buf);
 
         if self.props.show_mascot && area.width >= 40 && area.height >= 6 {
-            let logo_width = LOGO.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16;
+            let logo_width = LOGO_WIDTH;
             let logo_end_x = area.x + area.width.saturating_sub(logo_width) / 2 + logo_width;
             let mascot_w = mascot::frames::MASCOT_WIDTH as u16;
             let mascot_x = logo_end_x + 1;
