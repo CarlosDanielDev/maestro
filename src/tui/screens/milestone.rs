@@ -279,10 +279,7 @@ impl MilestoneScreen {
                         (icons::get(IconId::Hourglass), theme.accent_warning)
                     };
                     Line::from(vec![
-                        Span::styled(
-                            format!("  {} ", symbol),
-                            Style::default().fg(symbol_color),
-                        ),
+                        Span::styled(format!("  {} ", symbol), Style::default().fg(symbol_color)),
                         Span::styled(
                             format!("#{} ", i.number),
                             Style::default()
