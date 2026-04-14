@@ -89,7 +89,7 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
                     },
                     KeyBinding {
                         key: "d",
-                        description: "Dismiss notification banner",
+                        description: "Toggle activity log",
                     },
                 ],
             },

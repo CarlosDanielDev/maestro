@@ -41,6 +41,7 @@ pub enum SettingsTab {
     Theme,
     Layout,
     Flags,
+    TurboQuant,
     Advanced,
 }
 
@@ -56,6 +57,7 @@ impl SettingsTab {
         Self::Theme,
         Self::Layout,
         Self::Flags,
+        Self::TurboQuant,
         Self::Advanced,
     ];
 
@@ -71,6 +73,7 @@ impl SettingsTab {
             Self::Theme => "Theme",
             Self::Layout => "Layout",
             Self::Flags => "Flags",
+            Self::TurboQuant => "TurboQuant",
             Self::Advanced => "Advanced",
         }
     }
@@ -175,6 +178,7 @@ impl SettingsScreen {
             Self::build_theme_fields(config),
             Self::build_layout_fields(config),
             vec![], // Flags tab — read-only, custom draw
+            Self::build_turboquant_fields(config),
             Self::build_advanced_fields(config),
         ]
     }
@@ -475,6 +479,47 @@ impl SettingsScreen {
         ]
     }
 
+    fn build_turboquant_fields(config: &Config) -> Vec<SettingsField> {
+        use crate::config::{ApplyTarget, QuantStrategy};
+        let tq = &config.turboquant;
+        let strategy_options: Vec<String> =
+            vec!["turboquant".into(), "polarquant".into(), "qjl".into()];
+        let strategy_idx = match tq.strategy {
+            QuantStrategy::TurboQuant => 0,
+            QuantStrategy::PolarQuant => 1,
+            QuantStrategy::Qjl => 2,
+        };
+        let apply_options: Vec<String> = vec!["keys".into(), "values".into(), "both".into()];
+        let apply_idx = match tq.apply_to {
+            ApplyTarget::Keys => 0,
+            ApplyTarget::Values => 1,
+            ApplyTarget::Both => 2,
+        };
+        vec![
+            Self::field(WidgetKind::Toggle(Toggle::new("enabled", tq.enabled))),
+            Self::field(WidgetKind::NumberStepper(NumberStepper::new(
+                "bit_width",
+                tq.bit_width as i64,
+                1,
+                8,
+            ))),
+            Self::field(WidgetKind::Dropdown(Dropdown::new(
+                "strategy",
+                strategy_options,
+                strategy_idx,
+            ))),
+            Self::field(WidgetKind::Dropdown(Dropdown::new(
+                "apply_to",
+                apply_options,
+                apply_idx,
+            ))),
+            Self::field(WidgetKind::Toggle(Toggle::new(
+                "auto_on_overflow",
+                tq.auto_on_overflow,
+            ))),
+        ]
+    }
+
     fn build_advanced_fields(config: &Config) -> Vec<SettingsField> {
         vec![
             Self::field(WidgetKind::NumberStepper(NumberStepper::new(
@@ -733,8 +778,36 @@ impl SettingsScreen {
             }
         }
 
-        // Advanced (tab 10 — Flags tab at 9 has no widgets)
+        // TurboQuant (tab 10 — Flags tab at 9 has no widgets)
         if let Some(fields) = self.fields_per_tab.get(10) {
+            let tq = &mut self.config.turboquant;
+            if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
+                tq.enabled = w.value;
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
+                tq.bit_width = w.value as u8;
+            }
+            if let Some(WidgetKind::Dropdown(w)) = fields.get(2).map(|f| &f.widget) {
+                tq.strategy = match w.selected {
+                    0 => crate::config::QuantStrategy::TurboQuant,
+                    1 => crate::config::QuantStrategy::PolarQuant,
+                    _ => crate::config::QuantStrategy::Qjl,
+                };
+            }
+            if let Some(WidgetKind::Dropdown(w)) = fields.get(3).map(|f| &f.widget) {
+                tq.apply_to = match w.selected {
+                    0 => crate::config::ApplyTarget::Keys,
+                    1 => crate::config::ApplyTarget::Values,
+                    _ => crate::config::ApplyTarget::Both,
+                };
+            }
+            if let Some(WidgetKind::Toggle(w)) = fields.get(4).map(|f| &f.widget) {
+                tq.auto_on_overflow = w.value;
+            }
+        }
+
+        // Advanced (tab 11 — after TurboQuant)
+        if let Some(fields) = self.fields_per_tab.get(11) {
             if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
                 self.config.concurrency.heavy_task_limit = w.value as usize;
             }

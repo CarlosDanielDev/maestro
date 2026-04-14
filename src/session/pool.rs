@@ -285,6 +285,7 @@ impl SessionPool {
 
     /// Remove a finished session from the pool entirely.
     /// Returns true if the session was found and removed.
+    #[allow(dead_code)]
     pub fn dismiss_session(&mut self, session_id: Uuid) -> bool {
         if let Some(idx) = self
             .finished

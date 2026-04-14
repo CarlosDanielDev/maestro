@@ -28,6 +28,7 @@ mod work;
 mod adapt;
 mod mascot;
 mod sanitize;
+mod turboquant;
 
 #[cfg(test)]
 mod integration_tests;
@@ -130,6 +131,14 @@ async fn main() -> anyhow::Result<()> {
             })
             .await
         }
+        Some(Commands::TurboQuant { action }) => match action {
+            cli::TurboQuantAction::Benchmark {
+                dim,
+                count,
+                bits,
+                output,
+            } => cmd_turboquant_benchmark(dim, count, bits, output),
+        },
         Some(Commands::Status) => cmd_status(),
         Some(Commands::Cost) => cmd_cost(),
         Some(Commands::Queue) => cmd_queue().await,

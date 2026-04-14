@@ -110,12 +110,10 @@ impl ActivityLog {
         });
     }
 
-    #[allow(dead_code)] // Reason: public API for future activity log scroll keybindings
     pub fn scroll_up(&mut self) {
         self.scroll_offset = self.scroll_offset.saturating_sub(1);
     }
 
-    #[allow(dead_code)] // Reason: public API for future activity log scroll keybindings
     pub fn scroll_down(&mut self) {
         let max = self.entries.len().saturating_sub(1);
         if self.scroll_offset < max {

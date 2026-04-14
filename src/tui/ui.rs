@@ -33,15 +33,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let derived = crate::mascot::derive_dashboard_mascot_state(app.pool.all_statuses());
     app.mascot_animator.set_state(derived, &clock);
 
-    let log_height = app
-        .config
-        .as_ref()
-        .map(|c| {
-            let pct = c.tui.layout.activity_log_height.clamp(10, 50);
-            let total = f.area().height;
-            ((total as u32 * pct as u32) / 100).max(4) as u16
-        })
-        .unwrap_or(10);
+    let log_height = if app.show_activity_log {
+        app.config
+            .as_ref()
+            .map(|c| {
+                let pct = c.tui.layout.activity_log_height.clamp(10, 50);
+                let total = f.area().height;
+                ((total as u32 * pct as u32) / 100).max(4) as u16
+            })
+            .unwrap_or(10)
+    } else {
+        0
+    };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -335,66 +338,69 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
     }
 
-    // Conditionally split activity area for CI monitor
-    let has_ci_checks = app.gh_auth_ok && !app.ci_check_details.is_empty();
-    if has_ci_checks {
-        let ci_pr_count = app.ci_check_details.len() as u16;
-        let ci_height = (ci_pr_count * 6).min(chunks[2].height / 2).max(4);
-        let activity_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(ci_height), Constraint::Min(3)])
-            .split(chunks[2]);
+    // Only render activity log area when visible
+    if app.show_activity_log {
+        // Conditionally split activity area for CI monitor
+        let has_ci_checks = app.gh_auth_ok && !app.ci_check_details.is_empty();
+        if has_ci_checks {
+            let ci_pr_count = app.ci_check_details.len() as u16;
+            let ci_height = (ci_pr_count * 6).min(chunks[2].height / 2).max(4);
+            let activity_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(ci_height), Constraint::Min(3)])
+                .split(chunks[2]);
 
-        // Render CI monitor(s)
-        let ci_area = activity_chunks[0];
-        if app.ci_check_details.len() == 1 {
-            let (&pr_number, details) = app.ci_check_details.iter().next().unwrap();
-            let widget =
-                crate::tui::widgets::CiMonitorWidget::new(details, &app.theme).pr_number(pr_number);
-            ratatui::widgets::Widget::render(widget, ci_area, f.buffer_mut());
-        } else {
-            let constraints: Vec<Constraint> = app
-                .ci_check_details
-                .keys()
-                .map(|_| Constraint::Ratio(1, app.ci_check_details.len() as u32))
-                .collect();
-            let pr_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints(constraints)
-                .split(ci_area);
-            for (i, (&pr_number, details)) in app.ci_check_details.iter().enumerate() {
+            // Render CI monitor(s)
+            let ci_area = activity_chunks[0];
+            if app.ci_check_details.len() == 1 {
+                let (&pr_number, details) = app.ci_check_details.iter().next().unwrap();
                 let widget = crate::tui::widgets::CiMonitorWidget::new(details, &app.theme)
-                    .pr_number(pr_number)
-                    .max_visible_rows(3);
-                ratatui::widgets::Widget::render(widget, pr_chunks[i], f.buffer_mut());
+                    .pr_number(pr_number);
+                ratatui::widgets::Widget::render(widget, ci_area, f.buffer_mut());
+            } else {
+                let constraints: Vec<Constraint> = app
+                    .ci_check_details
+                    .keys()
+                    .map(|_| Constraint::Ratio(1, app.ci_check_details.len() as u32))
+                    .collect();
+                let pr_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints(constraints)
+                    .split(ci_area);
+                for (i, (&pr_number, details)) in app.ci_check_details.iter().enumerate() {
+                    let widget = crate::tui::widgets::CiMonitorWidget::new(details, &app.theme)
+                        .pr_number(pr_number)
+                        .max_visible_rows(3);
+                    ratatui::widgets::Widget::render(widget, pr_chunks[i], f.buffer_mut());
+                }
             }
-        }
-        app.activity_log.draw(f, activity_chunks[1], &app.theme);
-    } else {
-        let is_dashboard = matches!(app.tui_mode, TuiMode::Dashboard);
-        let log_area = chunks[2];
-        if app.show_mascot
-            && !is_dashboard
-            && log_area.width >= 25
-            && log_area.height >= MASCOT_ROWS as u16 + 2
-        {
-            let h_split = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Min(10),
-                    Constraint::Length(MASCOT_WIDTH as u16 + 2),
-                ])
-                .split(log_area);
-            app.activity_log.draw(f, h_split[0], &app.theme);
-            draw_mascot_block(
-                f,
-                app.mascot_animator.state(),
-                app.mascot_animator.frame_index(),
-                h_split[1],
-                &theme,
-            );
+            app.activity_log.draw(f, activity_chunks[1], &app.theme);
         } else {
-            app.activity_log.draw(f, log_area, &app.theme);
+            let is_dashboard = matches!(app.tui_mode, TuiMode::Dashboard);
+            let log_area = chunks[2];
+            if app.show_mascot
+                && !is_dashboard
+                && log_area.width >= 25
+                && log_area.height >= MASCOT_ROWS as u16 + 2
+            {
+                let h_split = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Min(10),
+                        Constraint::Length(MASCOT_WIDTH as u16 + 2),
+                    ])
+                    .split(log_area);
+                app.activity_log.draw(f, h_split[0], &app.theme);
+                draw_mascot_block(
+                    f,
+                    app.mascot_animator.state(),
+                    app.mascot_animator.frame_index(),
+                    h_split[1],
+                    &theme,
+                );
+            } else {
+                app.activity_log.draw(f, log_area, &app.theme);
+            }
         }
     }
 

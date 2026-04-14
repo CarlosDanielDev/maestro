@@ -89,6 +89,7 @@ impl FeatureFlags {
             "review_council" => Some(Flag::ReviewCouncil),
             "model_routing" => Some(Flag::ModelRouting),
             "context_overflow" => Some(Flag::ContextOverflow),
+            "turboquant" => Some(Flag::TurboQuant),
             _ => None,
         }
     }
@@ -226,10 +227,10 @@ mod tests {
     // -- all_with_state --
 
     #[test]
-    fn feature_flags_all_with_state_returns_all_six_flags() {
+    fn feature_flags_all_with_state_returns_all_seven_flags() {
         let flags = FeatureFlags::default();
         let state = flags.all_with_state();
-        assert_eq!(state.len(), 6);
+        assert_eq!(state.len(), 7);
     }
 
     #[test]
@@ -295,9 +296,9 @@ mod tests {
     // -- all_with_source --
 
     #[test]
-    fn feature_flags_all_with_source_returns_all_six_flags() {
+    fn feature_flags_all_with_source_returns_all_seven_flags() {
         let flags = FeatureFlags::default();
-        assert_eq!(flags.all_with_source().len(), 6);
+        assert_eq!(flags.all_with_source().len(), 7);
     }
 
     #[test]
