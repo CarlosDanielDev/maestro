@@ -154,7 +154,7 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::Collapse => IconPair::new("\u{f078}", "v"),
 
         // ── Header Metrics ─────────────────────────────────────────
-        IconId::Agents => IconPair::new("\u{f0c0}", "[U]"), // nf-fa-users (multi-user)
+        IconId::Agents => IconPair::new("\u{f064d}", "[U]"), // nf-md-account_group
         IconId::Cost => IconPair::new("$", "$"),
         IconId::Clock => IconPair::new("\u{f251}", "[T]"), // nf-fa-hourglass (⏳)
     }
@@ -373,7 +373,7 @@ mod tests {
             (GaugeEmpty, "\u{2591}"),
             (CheckboxOn, "\u{f46c}"),
             (CheckboxOff, "\u{f096}"),
-            (Agents, "\u{f0c0}"),
+            (Agents, "\u{f064d}"),
             (Cost, "$"),
             (Clock, "\u{f251}"),
         ];
