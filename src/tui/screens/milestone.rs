@@ -140,7 +140,7 @@ impl MilestoneScreen {
     fn draw_milestone_list(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = theme
             .styled_block("Milestones", false)
-            .border_style(Style::default().fg(theme.status_retrying));
+            .border_style(Style::default().fg(theme.border_active));
 
         if self.loading {
             let para = Paragraph::new("  Loading...")
@@ -188,7 +188,7 @@ impl MilestoneScreen {
                 Style::default()
                     .fg(theme.selection_fg)
                     .bg(theme.selection_bg)
-                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
             } else {
                 Style::default()
                     .fg(theme.text_primary)
@@ -207,34 +207,47 @@ impl MilestoneScreen {
             let gauge_area = Rect::new(inner.x + 2, y + 1, inner.width.saturating_sub(4), 1);
             let bar_width = gauge_area.width.saturating_sub(20) as usize;
             let (filled, empty) = compact_gauge_bar_counts(pct, bar_width);
-            let gauge_color = theme.compact_gauge_color(pct);
-            let bar = format!(
-                "[{}{}] {}/{} issues ({:.0}%)",
-                icons::get(IconId::GaugeFilled).repeat(filled),
-                icons::get(IconId::GaugeEmpty).repeat(empty),
-                entry.closed_issues,
-                entry.total_issues(),
-                pct,
-            );
-            f.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    bar,
+            let gauge_color = theme.milestone_gauge_color(pct);
+            let gauge_line = Line::from(vec![
+                Span::styled("[", Style::default().fg(gauge_color)),
+                Span::styled(
+                    icons::get(IconId::GaugeFilled).repeat(filled),
                     Style::default().fg(gauge_color),
-                ))),
-                gauge_area,
-            );
+                ),
+                Span::styled(
+                    icons::get(IconId::GaugeEmpty).repeat(empty),
+                    Style::default().fg(theme.gauge_background),
+                ),
+                Span::styled(
+                    format!(
+                        "] {}/{} issues ({:.0}%)",
+                        entry.closed_issues,
+                        entry.total_issues(),
+                        pct
+                    ),
+                    Style::default().fg(gauge_color),
+                ),
+            ]);
+            f.render_widget(Paragraph::new(gauge_line), gauge_area);
 
             let status_line = Line::from(vec![
                 Span::styled(
-                    format!(
-                        "  {} {}  ",
-                        icons::get(IconId::CheckCircle),
-                        entry.closed_issues
-                    ),
+                    format!("  {} ", icons::get(IconId::CheckCircle)),
                     Style::default().fg(theme.accent_success),
                 ),
                 Span::styled(
-                    format!("{} {}", icons::get(IconId::Hourglass), entry.open_issues),
+                    entry.closed_issues.to_string(),
+                    Style::default()
+                        .fg(theme.accent_success)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    "),
+                Span::styled(
+                    format!("{} ", icons::get(IconId::Hourglass)),
+                    Style::default().fg(theme.accent_warning),
+                ),
+                Span::styled(
+                    entry.open_issues.to_string(),
                     Style::default().fg(theme.accent_warning),
                 ),
             ]);
@@ -260,20 +273,22 @@ impl MilestoneScreen {
                 .iter()
                 .take(5)
                 .map(|i| {
-                    let symbol = if i.state == "closed" {
-                        icons::get(IconId::CheckCircle)
+                    let (symbol, symbol_color) = if i.state == "closed" {
+                        (icons::get(IconId::CheckCircle), theme.accent_success)
                     } else {
-                        icons::get(IconId::Hourglass)
+                        (icons::get(IconId::Hourglass), theme.accent_warning)
                     };
                     Line::from(vec![
-                        Span::raw(format!("  {} ", symbol)),
+                        Span::styled(format!("  {} ", symbol), Style::default().fg(symbol_color)),
                         Span::styled(
                             format!("#{} ", i.number),
-                            Style::default().fg(theme.accent_identifier),
+                            Style::default()
+                                .fg(theme.accent_identifier)
+                                .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(
                             sanitize_for_terminal(&i.title),
-                            Style::default().fg(theme.text_primary),
+                            Style::default().fg(theme.text_secondary),
                         ),
                     ])
                 })

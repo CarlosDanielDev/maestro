@@ -701,6 +701,19 @@ impl Theme {
         }
     }
 
+    /// Milestone progress gauge color — inverted semantics.
+    /// High completion = good (green), low completion = bad (red).
+    /// red 0-30%, yellow 30-70%, green 70-100%
+    pub fn milestone_gauge_color(&self, pct: f64) -> Color {
+        if pct >= 70.0 {
+            self.gauge_low
+        } else if pct >= 30.0 {
+            self.gauge_medium
+        } else {
+            self.gauge_high
+        }
+    }
+
     /// Budget color by percentage (0-100 u8).
     /// Matches the existing logic: >= 90 is error, otherwise warning.
     pub fn budget_color(&self, pct: u8) -> Color {
@@ -1034,6 +1047,64 @@ mod tests {
     #[test]
     fn compact_gauge_color_100_percent_is_red() {
         assert_eq!(Theme::dark().compact_gauge_color(100.0), Color::Red);
+    }
+
+    // --- Theme::milestone_gauge_color (#299) ---
+
+    #[test]
+    fn milestone_gauge_color_zero_percent_is_red() {
+        assert_eq!(Theme::dark().milestone_gauge_color(0.0), Color::Red);
+    }
+
+    #[test]
+    fn milestone_gauge_color_below_30_is_gauge_high() {
+        let t = Theme::dark();
+        assert_eq!(t.milestone_gauge_color(29.9), t.gauge_high);
+    }
+
+    #[test]
+    fn milestone_gauge_color_exactly_30_is_gauge_medium() {
+        let t = Theme::dark();
+        assert_eq!(t.milestone_gauge_color(30.0), t.gauge_medium);
+    }
+
+    #[test]
+    fn milestone_gauge_color_midrange_is_gauge_medium() {
+        let t = Theme::dark();
+        assert_eq!(t.milestone_gauge_color(50.0), t.gauge_medium);
+    }
+
+    #[test]
+    fn milestone_gauge_color_below_70_is_gauge_medium() {
+        let t = Theme::dark();
+        assert_eq!(t.milestone_gauge_color(69.9), t.gauge_medium);
+    }
+
+    #[test]
+    fn milestone_gauge_color_exactly_70_is_gauge_low() {
+        let t = Theme::dark();
+        assert_eq!(t.milestone_gauge_color(70.0), t.gauge_low);
+    }
+
+    #[test]
+    fn milestone_gauge_color_100_percent_is_green() {
+        assert_eq!(Theme::dark().milestone_gauge_color(100.0), Color::Green);
+    }
+
+    #[test]
+    fn milestone_gauge_color_respects_retro_preset_colors() {
+        let t = Theme::retro();
+        assert_eq!(t.milestone_gauge_color(0.0), t.gauge_high);
+        assert_eq!(t.milestone_gauge_color(50.0), t.gauge_medium);
+        assert_eq!(t.milestone_gauge_color(100.0), t.gauge_low);
+    }
+
+    #[test]
+    fn milestone_gauge_color_respects_light_preset_colors() {
+        let t = Theme::light();
+        assert_eq!(t.milestone_gauge_color(0.0), t.gauge_high);
+        assert_eq!(t.milestone_gauge_color(50.0), t.gauge_medium);
+        assert_eq!(t.milestone_gauge_color(100.0), t.gauge_low);
     }
 
     // --- SerializableColor serde ---
