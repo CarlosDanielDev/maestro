@@ -487,9 +487,10 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
     let active = app.active_count();
     let total = app.pool.total_count();
 
+    let cost = app.total_cost + 0.0; // normalize -0.0 → 0.0
     let budget_display = match &app.budget_enforcer {
-        Some(enforcer) => format!("{:.2}/${:.2}", app.total_cost, enforcer.total_limit()),
-        None => format!("{:.2} spent", app.total_cost),
+        Some(enforcer) => format!("{cost:.2}/{:.2}", enforcer.total_limit()),
+        None => format!("{cost:.2} spent"),
     };
 
     let budget_color = match &app.budget_enforcer {
