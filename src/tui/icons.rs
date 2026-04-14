@@ -154,9 +154,9 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::Collapse => IconPair::new("\u{f078}", "v"),
 
         // ── Header Metrics ─────────────────────────────────────────
-        IconId::Agents => IconPair::new("\u{f415}", "[U]"),
-        IconId::Cost => IconPair::new("\u{f155}", "[$]"),
-        IconId::Clock => IconPair::new("\u{f017}", "[T]"),
+        IconId::Agents => IconPair::new("\u{f0c0}", "[U]"), // nf-fa-users (multi-user)
+        IconId::Cost => IconPair::new("$", "$"),
+        IconId::Clock => IconPair::new("\u{f251}", "[T]"), // nf-fa-hourglass (⏳)
     }
 }
 
@@ -345,6 +345,10 @@ mod tests {
     #[test]
     fn nerd_and_ascii_are_distinct_for_all_variants() {
         for &id in ALL_ICON_IDS {
+            // Cost uses "$" universally — no nerd font alternative needed.
+            if matches!(id, IconId::Cost) {
+                continue;
+            }
             let nerd = get_for_mode(id, true);
             let ascii = get_for_mode(id, false);
             assert_ne!(
@@ -369,9 +373,9 @@ mod tests {
             (GaugeEmpty, "\u{2591}"),
             (CheckboxOn, "\u{f46c}"),
             (CheckboxOff, "\u{f096}"),
-            (Agents, "\u{f415}"),
-            (Cost, "\u{f155}"),
-            (Clock, "\u{f017}"),
+            (Agents, "\u{f0c0}"),
+            (Cost, "$"),
+            (Clock, "\u{f251}"),
         ];
         for &(id, expected) in cases {
             assert_eq!(
@@ -394,7 +398,7 @@ mod tests {
             (Warning, "[!]"),
             (IssueOpened, ">>"),
             (Agents, "[U]"),
-            (Cost, "[$]"),
+            (Cost, "$"),
             (Clock, "[T]"),
         ];
         for &(id, expected) in cases {
