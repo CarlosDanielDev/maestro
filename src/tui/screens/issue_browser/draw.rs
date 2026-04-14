@@ -188,9 +188,9 @@ impl IssueBrowserScreen {
 
     fn draw_issue_list(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let title = if self.filter_mode != FilterMode::None {
-            format!(" Issues — Filter: {} ", self.filter_text)
+            format!(" {} Issues — Filter: {} ", icons::get(IconId::IssueOpened), self.filter_text)
         } else {
-            " Issues ".to_string()
+            format!(" {} Issues ", icons::get(IconId::IssueOpened))
         };
 
         let is_list_focused = self.focus == FocusPane::List;

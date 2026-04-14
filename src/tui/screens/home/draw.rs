@@ -2,6 +2,7 @@ use super::types::{Suggestion, SuggestionKind};
 use super::{HomeScreen, LOGO, QUICK_ACTIONS};
 use crate::changelog::{self, ChangeCategory, ChangeItem};
 use crate::tui::app::TuiMode;
+use crate::tui::icons::{self, IconId};
 use crate::tui::screens::ScreenAction;
 use crate::tui::theme::Theme;
 use ratatui::{
@@ -287,20 +288,11 @@ impl HomeScreen {
         let mut lines = Vec::new();
         for (idx, suggestion) in self.suggestions.iter().enumerate() {
             let is_selected = is_focused && idx == self.selected_suggestion;
-            let icon = if crate::tui::icons::use_nerd_font() {
-                match &suggestion.kind {
-                    SuggestionKind::ReadyIssues { .. } => "\u{f41b}", // nf issue_opened
-                    SuggestionKind::MilestoneProgress { .. } => "\u{f43e}", // nf milestone
-                    SuggestionKind::IdleSessions => "\u{f04c}",       // nf pause
-                    SuggestionKind::FailedIssues { .. } => "\u{f467}", // nf x_circle
-                }
-            } else {
-                match &suggestion.kind {
-                    SuggestionKind::ReadyIssues { .. } => ">>",
-                    SuggestionKind::MilestoneProgress { .. } => "~~",
-                    SuggestionKind::IdleSessions => "--",
-                    SuggestionKind::FailedIssues { .. } => "!!",
-                }
+            let icon = match &suggestion.kind {
+                SuggestionKind::ReadyIssues { .. } => icons::get(IconId::IssueOpened),
+                SuggestionKind::MilestoneProgress { .. } => icons::get(IconId::Milestone),
+                SuggestionKind::IdleSessions => icons::get(IconId::Pause),
+                SuggestionKind::FailedIssues { .. } => icons::get(IconId::XCircle),
             };
             let color = match &suggestion.kind {
                 SuggestionKind::ReadyIssues { .. } => theme.accent_success,
@@ -347,20 +339,11 @@ impl HomeScreen {
                     "errored" => Style::default().fg(theme.accent_error),
                     _ => Style::default().fg(theme.text_secondary),
                 };
-                let symbol = if crate::tui::icons::use_nerd_font() {
-                    match s.status.as_str() {
-                        "completed" => "\u{f42e}", // nf check_circle
-                        "running" => "\u{f40a}",   // nf play
-                        "errored" => "\u{f467}",   // nf x_circle
-                        _ => "\u{f251}",           // nf hourglass
-                    }
-                } else {
-                    match s.status.as_str() {
-                        "completed" => "[+]",
-                        "running" => "[>]",
-                        "errored" => "[X]",
-                        _ => "[Q]",
-                    }
+                let symbol = match s.status.as_str() {
+                    "completed" => icons::get(IconId::CheckCircle),
+                    "running" => icons::get(IconId::Play),
+                    "errored" => icons::get(IconId::XCircle),
+                    _ => icons::get(IconId::Hourglass),
                 };
                 Line::from(vec![
                     Span::styled(format!("  {} ", symbol), status_style),
