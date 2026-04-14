@@ -163,6 +163,7 @@ mod tests {
         let mut state = MaestroState::default();
         state.pending_prs.push(PendingPr {
             issue_number: 7,
+            issue_numbers: vec![],
             branch: "maestro/issue-7".into(),
             base_branch: "main".into(),
             files_touched: vec!["src/lib.rs".into()],

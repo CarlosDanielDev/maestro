@@ -244,6 +244,8 @@ impl PrReviewEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingPr {
     pub issue_number: u64,
+    /// Additional issue numbers for unified PR sessions.
+    pub issue_numbers: Vec<u64>,
     pub branch: String,
     pub base_branch: String,
     pub files_touched: Vec<String>,
@@ -300,6 +302,7 @@ mod tests {
     fn pending_pr_round_trips_via_serde() {
         let pending = PendingPr {
             issue_number: 42,
+            issue_numbers: vec![],
             branch: "maestro/issue-42".to_string(),
             base_branch: "main".to_string(),
             files_touched: vec!["src/lib.rs".to_string()],

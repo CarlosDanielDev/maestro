@@ -110,6 +110,10 @@ pub struct PromptInputScreen {
     pub(crate) history_cursor: Option<usize>,
     /// Stashed user input when browsing history.
     pub(crate) draft_prompt: String,
+    /// Whether unified PR mode is enabled (user toggled Ctrl+U).
+    pub(crate) unified_pr: bool,
+    /// Detected issue numbers from the current editor text (cached).
+    pub(crate) detected_issue_numbers: Vec<u64>,
 }
 
 impl PromptInputScreen {
@@ -167,6 +171,8 @@ impl PromptInputScreen {
             history: Vec::new(),
             history_cursor: None,
             draft_prompt: String::new(),
+            unified_pr: false,
+            detected_issue_numbers: Vec::new(),
         }
     }
 
@@ -175,6 +181,16 @@ impl PromptInputScreen {
         self.history = prompts;
         self.history_cursor = None;
         self.draft_prompt.clear();
+    }
+
+    /// Refresh detected issue references from the current editor text.
+    fn refresh_detected_refs(&mut self) {
+        let text = self.editor_text();
+        self.detected_issue_numbers = crate::tui::issue_refs::extract_issue_numbers(&text);
+        // Auto-hide toggle if fewer than 2 distinct refs
+        if self.detected_issue_numbers.len() < 2 {
+            self.unified_pr = false;
+        }
     }
 
     fn is_prompt_editor_focused(&self) -> bool {
@@ -212,12 +228,15 @@ impl PromptInputScreen {
     }
 
     fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let show_toggle = self.detected_issue_numbers.len() >= 2;
+        let toggle_height = if show_toggle { 1 } else { 0 };
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(6),    // prompt editor
-                Constraint::Length(8), // image list
-                Constraint::Length(1), // keybinds bar
+                Constraint::Min(6),                // prompt editor
+                Constraint::Length(toggle_height), // unified PR toggle (conditional)
+                Constraint::Length(8),             // image list
+                Constraint::Length(1),             // keybinds bar
             ])
             .split(area);
 
@@ -233,14 +252,15 @@ impl PromptInputScreen {
         let wrap_result = wrap_lines(&logical_lines, (cursor_row, cursor_col), inner.width);
         let scroll = scroll_offset_for_cursor(wrap_result.cursor.0 as usize, inner.height as usize);
 
-        // Build styled visual lines
+        // Build styled visual lines with issue reference highlighting
         let visual_lines: Vec<Line> = wrap_result
             .lines
             .iter()
             .map(|s| {
-                Line::from(Span::styled(
+                Line::from(crate::tui::issue_refs::highlight_issue_refs(
                     s.as_str(),
-                    Style::default().fg(theme.text_primary),
+                    theme.accent_identifier,
+                    theme.text_primary,
                 ))
             })
             .collect();
@@ -318,8 +338,18 @@ impl PromptInputScreen {
             )));
         }
 
+        // Unified PR toggle (conditional)
+        if show_toggle {
+            crate::tui::widgets::unified_pr_toggle::draw_unified_pr_toggle(
+                f,
+                chunks[1],
+                self.unified_pr,
+                theme,
+            );
+        }
+
         let image_list = Paragraph::new(lines).block(image_block);
-        f.render_widget(image_list, chunks[1]);
+        f.render_widget(image_list, chunks[2]);
 
         // Status message or keybinds bar
         let history_keys = format!(
@@ -332,11 +362,26 @@ impl PromptInputScreen {
                 format!(" {} ", msg),
                 Style::default().fg(theme.accent_warning),
             )));
-            f.render_widget(status, chunks[2]);
+            f.render_widget(status, chunks[3]);
+        } else if show_toggle {
+            draw_keybinds_bar(
+                f,
+                chunks[3],
+                &[
+                    ("Enter", "Submit"),
+                    ("Ctrl+U", "Unified PR"),
+                    ("Ctrl+J", "New line"),
+                    (&history_keys, "History"),
+                    ("Ctrl+V", "Paste"),
+                    ("Tab", "Switch"),
+                    ("Esc", "Cancel"),
+                ],
+                theme,
+            );
         } else {
             draw_keybinds_bar(
                 f,
-                chunks[2],
+                chunks[3],
                 &[
                     ("Enter", "Submit"),
                     ("Ctrl+J", "New line"),
@@ -415,6 +460,14 @@ impl Screen for PromptInputScreen {
         {
             if *modifiers == KeyModifiers::CONTROL && *code == KeyCode::Char('v') {
                 self.paste_from_clipboard();
+                self.refresh_detected_refs();
+                return ScreenAction::None;
+            }
+
+            if *modifiers == KeyModifiers::CONTROL && *code == KeyCode::Char('u') {
+                if self.detected_issue_numbers.len() >= 2 {
+                    self.unified_pr = !self.unified_pr;
+                }
                 return ScreenAction::None;
             }
 
@@ -463,6 +516,20 @@ impl Screen for PromptInputScreen {
                     (KeyCode::Enter, m) if *m == KeyModifiers::NONE => {
                         let text = self.editor_text();
                         if !text.trim().is_empty() {
+                            // Unified PR: launch as unified session if toggled
+                            if self.unified_pr && self.detected_issue_numbers.len() >= 2 {
+                                let issues: Vec<(u64, String)> = self
+                                    .detected_issue_numbers
+                                    .iter()
+                                    .map(|n| (*n, format!("Issue #{}", n)))
+                                    .collect();
+                                return ScreenAction::LaunchUnifiedSession(
+                                    super::UnifiedSessionConfig {
+                                        issues,
+                                        custom_prompt: Some(text),
+                                    },
+                                );
+                            }
                             return ScreenAction::LaunchPromptSession(PromptSessionConfig {
                                 prompt: text,
                                 image_paths: self.image_paths.clone(),
@@ -522,6 +589,7 @@ impl Screen for PromptInputScreen {
                     _ => {
                         self.editor.input(event.clone());
                         self.history_cursor = None;
+                        self.refresh_detected_refs();
                     }
                 }
             } else if self.is_image_list_focused() {
@@ -1325,5 +1393,94 @@ mod tests {
         screen.set_editor_text("my prompt ");
         screen.handle_input(&ctrl_key(KeyCode::Char('v')), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "my prompt /tmp/img.png");
+    }
+
+    // --- Issue #303: Unified PR toggle in prompt composition ---
+
+    #[test]
+    fn detected_refs_update_on_typing() {
+        let mut screen = mock_screen();
+        // Type "fix #10 and #20"
+        for c in "fix #10 and #20".chars() {
+            screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
+        }
+        assert_eq!(screen.detected_issue_numbers, vec![10, 20]);
+    }
+
+    #[test]
+    fn detected_refs_single_ref_no_toggle() {
+        let mut screen = mock_screen();
+        for c in "fix #10 only".chars() {
+            screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
+        }
+        assert_eq!(screen.detected_issue_numbers.len(), 1);
+        assert!(!screen.unified_pr);
+    }
+
+    #[test]
+    fn ctrl_u_toggles_unified_pr_with_two_refs() {
+        let mut screen = mock_screen();
+        screen.set_editor_text("fix #10 and #20");
+        screen.refresh_detected_refs();
+        assert_eq!(screen.detected_issue_numbers.len(), 2);
+        // Toggle on
+        screen.handle_input(&ctrl_key(KeyCode::Char('u')), InputMode::Normal);
+        assert!(screen.unified_pr);
+        // Toggle off
+        screen.handle_input(&ctrl_key(KeyCode::Char('u')), InputMode::Normal);
+        assert!(!screen.unified_pr);
+    }
+
+    #[test]
+    fn ctrl_u_ignored_with_fewer_than_two_refs() {
+        let mut screen = mock_screen();
+        screen.set_editor_text("fix #10 only");
+        screen.refresh_detected_refs();
+        screen.handle_input(&ctrl_key(KeyCode::Char('u')), InputMode::Normal);
+        assert!(!screen.unified_pr);
+    }
+
+    #[test]
+    fn auto_clear_unified_when_refs_drop_below_two() {
+        let mut screen = mock_screen();
+        screen.set_editor_text("fix #10 and #20");
+        screen.refresh_detected_refs();
+        screen.handle_input(&ctrl_key(KeyCode::Char('u')), InputMode::Normal);
+        assert!(screen.unified_pr);
+        // Delete text to remove one ref
+        screen.set_editor_text("fix #10 only");
+        screen.refresh_detected_refs();
+        assert!(!screen.unified_pr);
+    }
+
+    #[test]
+    fn submit_unified_returns_launch_unified_session() {
+        let mut screen = mock_screen();
+        screen.set_editor_text("fix #10 and #20");
+        screen.refresh_detected_refs();
+        screen.handle_input(&ctrl_key(KeyCode::Char('u')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchUnifiedSession(config) => {
+                assert_eq!(config.issues.len(), 2);
+                assert!(config.custom_prompt.unwrap().contains("#10"));
+            }
+            other => panic!("Expected LaunchUnifiedSession, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn submit_normal_when_not_unified() {
+        let mut screen = mock_screen();
+        screen.set_editor_text("fix #10 and #20");
+        screen.refresh_detected_refs();
+        // Don't toggle unified — submit normally
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchPromptSession(config) => {
+                assert!(config.prompt.contains("#10"));
+            }
+            other => panic!("Expected LaunchPromptSession, got {:?}", other),
+        }
     }
 }

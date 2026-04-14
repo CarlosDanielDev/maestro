@@ -332,6 +332,12 @@ impl SessionPool {
 }
 
 fn session_slug(session: &Session) -> String {
+    if session.issue_numbers.len() >= 2 {
+        // Reuse unified_branch_name which returns "maestro/unified-N-M";
+        // strip the "maestro/" prefix since the caller adds it.
+        let full = crate::github::pr::unified_branch_name(&session.issue_numbers);
+        return full.strip_prefix("maestro/").unwrap_or(&full).to_string();
+    }
     match session.issue_number {
         Some(n) => format!("issue-{}", n),
         None => format!("session-{}", &session.id.to_string()[..8]),

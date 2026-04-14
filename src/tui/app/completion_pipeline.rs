@@ -139,10 +139,19 @@ impl App {
                     (&completion.worktree_branch, &completion.worktree_path)
             {
                 let git_ops = crate::git::CliGitOps;
-                let commit_msg = format!(
-                    "feat: implement changes for issue #{}",
-                    completion.issue_number
-                );
+                let commit_msg = if completion.issue_numbers.len() >= 2 {
+                    let refs: Vec<String> = completion
+                        .issue_numbers
+                        .iter()
+                        .map(|n| format!("#{}", n))
+                        .collect();
+                    format!("feat: implement unified changes for {}", refs.join(", "))
+                } else {
+                    format!(
+                        "feat: implement changes for issue #{}",
+                        completion.issue_number
+                    )
+                };
                 match git_ops.commit_and_push(wt_path, branch, &commit_msg) {
                     Ok(()) => {
                         self.activity_log.push_simple(
@@ -163,6 +172,7 @@ impl App {
 
             self.on_issue_session_completed(
                 completion.issue_number,
+                completion.issue_numbers,
                 completion.success,
                 completion.cost_usd,
                 completion.files_touched,

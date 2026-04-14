@@ -216,6 +216,7 @@ impl App {
                         self.pending_issue_completions
                             .push(super::types::PendingIssueCompletion {
                                 issue_number: issue_num,
+                                issue_numbers: managed.session.issue_numbers.clone(),
                                 success: true,
                                 cost_usd: *cost_usd,
                                 files_touched: managed.session.files_touched.clone(),
@@ -244,6 +245,7 @@ impl App {
                         self.pending_issue_completions
                             .push(super::types::PendingIssueCompletion {
                                 issue_number: issue_num,
+                                issue_numbers: managed.session.issue_numbers.clone(),
                                 success: false,
                                 cost_usd: managed.session.cost_usd,
                                 files_touched: managed.session.files_touched.clone(),

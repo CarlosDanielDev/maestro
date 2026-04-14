@@ -27,6 +27,8 @@ pub(crate) struct IssuePromptOverlay {
     /// One entry per selected issue: `(issue_number, issue_title)`.
     /// Always has at least one entry.
     pub selected_issues: Vec<(u64, String)>,
+    /// Whether to launch as a unified PR (single session, single branch).
+    pub unified_pr: bool,
 }
 
 impl IssuePromptOverlay {
@@ -59,6 +61,13 @@ impl IssuePromptOverlay {
                 }
                 KeyCode::Backspace => {
                     self.text.pop();
+                }
+                KeyCode::Char('u')
+                    if modifiers.contains(KeyModifiers::CONTROL)
+                        && self.selected_issues.len() >= 2 =>
+                {
+                    self.unified_pr = !self.unified_pr;
+                    return OverlayAction::None;
                 }
                 KeyCode::Char(c) => {
                     if self.text.len() < 2048 {
@@ -207,13 +216,22 @@ impl Screen for IssueBrowserScreen {
                     return ScreenAction::None;
                 }
                 OverlayAction::Confirm(custom_prompt) => {
-                    let selected_issues = self.prompt_overlay.take().unwrap().selected_issues;
+                    let overlay = self.prompt_overlay.take().unwrap();
+                    let selected_issues = overlay.selected_issues;
+                    let unified = overlay.unified_pr;
 
                     if selected_issues.len() == 1 {
                         let (number, title) = selected_issues.into_iter().next().unwrap();
                         return ScreenAction::LaunchSession(SessionConfig {
                             issue_number: Some(number),
                             title,
+                            custom_prompt,
+                        });
+                    }
+
+                    if unified {
+                        return ScreenAction::LaunchUnifiedSession(super::UnifiedSessionConfig {
+                            issues: selected_issues,
                             custom_prompt,
                         });
                     }
@@ -817,6 +835,7 @@ mod tests {
         IssuePromptOverlay {
             text: String::new(),
             selected_issues: vec![(number, title.to_string())],
+            unified_pr: false,
         }
     }
 
@@ -824,6 +843,7 @@ mod tests {
         IssuePromptOverlay {
             text: text.to_string(),
             selected_issues: vec![(number, title.to_string())],
+            unified_pr: false,
         }
     }
 
@@ -1194,5 +1214,82 @@ mod tests {
         screen.set_issues(make_three_issues());
         assert_eq!(screen.preview_scroll, 0);
         assert_eq!(screen.focus, FocusPane::List);
+    }
+
+    // --- Issue #302: Unified PR toggle in overlay ---
+
+    #[test]
+    fn overlay_starts_with_unified_pr_false() {
+        let mut screen = screen_with_two_selected();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let overlay = screen.prompt_overlay.as_ref().unwrap();
+        assert!(!overlay.unified_pr);
+    }
+
+    #[test]
+    fn overlay_ctrl_u_toggles_unified_pr_with_multi_select() {
+        let mut screen = screen_with_two_selected();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        // Toggle on
+        screen.handle_input(
+            &key_event_with_modifiers(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            InputMode::Normal,
+        );
+        assert!(screen.prompt_overlay.as_ref().unwrap().unified_pr);
+        // Toggle off
+        screen.handle_input(
+            &key_event_with_modifiers(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            InputMode::Normal,
+        );
+        assert!(!screen.prompt_overlay.as_ref().unwrap().unified_pr);
+    }
+
+    #[test]
+    fn overlay_ctrl_u_no_toggle_with_single_issue() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        // Open overlay for single issue (no multi-select)
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let overlay = screen.prompt_overlay.as_ref().unwrap();
+        assert_eq!(overlay.selected_issues.len(), 1);
+        // Press Ctrl+U — should not toggle (only 1 issue)
+        screen.handle_input(
+            &key_event_with_modifiers(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            InputMode::Normal,
+        );
+        assert!(!screen.prompt_overlay.as_ref().unwrap().unified_pr);
+    }
+
+    #[test]
+    fn overlay_confirm_unified_returns_launch_unified_session() {
+        let mut screen = screen_with_two_selected();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        // Toggle unified on
+        screen.handle_input(
+            &key_event_with_modifiers(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            InputMode::Normal,
+        );
+        // Confirm
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchUnifiedSession(config) => {
+                assert_eq!(config.issues.len(), 2);
+                assert!(config.custom_prompt.is_none());
+            }
+            other => panic!("Expected LaunchUnifiedSession, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn overlay_confirm_non_unified_returns_launch_sessions() {
+        let mut screen = screen_with_two_selected();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        // Don't toggle — default is false
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSessions(configs) => {
+                assert_eq!(configs.len(), 2);
+            }
+            other => panic!("Expected LaunchSessions, got {:?}", other),
+        }
     }
 }

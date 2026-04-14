@@ -11,15 +11,18 @@ use crate::tui::activity_log::LogLevel;
 use std::time::Instant;
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub async fn on_issue_session_completed(
         &mut self,
         issue_number: u64,
+        issue_numbers: Vec<u64>,
         success: bool,
         cost_usd: f64,
         files_touched: Vec<String>,
         worktree_branch: Option<String>,
         is_ci_fix: bool,
     ) {
+        let is_unified = issue_numbers.len() >= 2;
         // Update work assigner
         if let Some(ref mut assigner) = self.work_assigner {
             if success {
@@ -96,21 +99,32 @@ impl App {
             }
         }
 
-        // Update GitHub labels
+        // Update GitHub labels (for all issues in unified sessions)
         if let Some(ref client) = self.github_client {
             if !self.gh_auth_ok {
                 self.log_gh_auth_skip(issue_number, "label update");
             } else {
                 let label_mgr = LabelManager::new(client.as_ref());
-                let result = if success {
-                    label_mgr.mark_done(issue_number).await
+                let issues_to_label = if is_unified {
+                    issue_numbers.clone()
                 } else {
-                    label_mgr.mark_failed(issue_number).await
+                    vec![issue_number]
                 };
-                if let Err(e) = result {
+                let mut label_errors: Vec<(u64, anyhow::Error)> = Vec::new();
+                for num in &issues_to_label {
+                    let result = if success {
+                        label_mgr.mark_done(*num).await
+                    } else {
+                        label_mgr.mark_failed(*num).await
+                    };
+                    if let Err(e) = result {
+                        label_errors.push((*num, e));
+                    }
+                }
+                for (num, e) in label_errors {
                     self.check_gh_auth_error(&e);
                     self.activity_log.push_simple(
-                        format!("#{}", issue_number),
+                        format!("#{}", num),
                         format!("Label update failed: {}", e),
                         LogLevel::Error,
                     );
@@ -154,10 +168,36 @@ impl App {
                 let file_refs: Vec<&str> = files_touched.iter().map(|s| s.as_str()).collect();
                 let client = self.github_client.as_ref().unwrap();
                 let pr_creator = PrCreator::new(client.as_ref(), base_branch.clone());
-                match pr_creator
-                    .create_for_issue(issue, branch, &file_refs, cost_usd)
-                    .await
-                {
+
+                let pr_result = if is_unified {
+                    let unified_issues: Vec<&crate::github::types::GhIssue> = issue_numbers
+                        .iter()
+                        .filter_map(|n| self.state.issue_cache.get(n))
+                        .collect();
+                    if unified_issues.is_empty() {
+                        pr_creator
+                            .create_for_issue(issue, branch, &file_refs, cost_usd)
+                            .await
+                    } else {
+                        let body = crate::github::pr::build_unified_pr_body(
+                            &unified_issues,
+                            &file_refs,
+                            cost_usd,
+                        );
+                        let refs: Vec<String> =
+                            issue_numbers.iter().map(|n| format!("#{}", n)).collect();
+                        let title = format!("[Maestro] Unified: {}", refs.join(", "));
+                        client
+                            .create_pr(issue_number, &title, &body, branch, &base_branch)
+                            .await
+                    }
+                } else {
+                    pr_creator
+                        .create_for_issue(issue, branch, &file_refs, cost_usd)
+                        .await
+                };
+
+                match pr_result {
                     Ok(pr_num) => {
                         self.activity_log.push_simple(
                             format!("#{}", issue_number),
@@ -191,6 +231,7 @@ impl App {
                         let now = chrono::Utc::now();
                         let pending = PendingPr {
                             issue_number,
+                            issue_numbers: issue_numbers.clone(),
                             branch: branch.clone(),
                             base_branch: base_branch.clone(),
                             files_touched: files_touched.clone(),
