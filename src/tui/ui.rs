@@ -592,21 +592,22 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
     // TQ badge
     {
         let tq_enabled = app.flags.is_enabled(crate::flags::Flag::TurboQuant);
-        let tq_color = if tq_enabled {
-            theme.accent_success
+        if tq_enabled {
+            spans.push(sep.clone());
+            spans.push(Span::styled(
+                "TQ:ON",
+                Style::default()
+                    .fg(theme.branding_fg)
+                    .bg(theme.accent_success)
+                    .add_modifier(Modifier::BOLD),
+            ));
         } else {
-            theme.text_muted
-        };
-        let tq_modifier = if tq_enabled {
-            Modifier::BOLD
-        } else {
-            Modifier::DIM
-        };
-        spans.push(sep.clone());
-        spans.push(Span::styled(
-            "TQ",
-            Style::default().fg(tq_color).add_modifier(tq_modifier),
-        ));
+            spans.push(sep.clone());
+            spans.push(Span::styled(
+                "TQ:OFF",
+                Style::default().fg(theme.text_secondary),
+            ));
+        }
     }
 
     if let Some(ref cont) = app.continuous_mode {
