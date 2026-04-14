@@ -1,15 +1,16 @@
 use super::types::{Suggestion, SuggestionKind};
-use super::{HomeScreen, LOGO, QUICK_ACTIONS};
+use super::{HomeScreen, QUICK_ACTIONS};
 use crate::changelog::{self, ChangeCategory, ChangeItem};
 use crate::tui::app::TuiMode;
 use crate::tui::screens::ScreenAction;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::header_brand::{HeaderBrand, HeaderBrandProps};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Paragraph, Widget},
 };
 
 impl HomeScreen {
@@ -30,23 +31,30 @@ impl HomeScreen {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(8),                // logo
-                Constraint::Length(3),                // project info
+                Constraint::Length(11),               // header brand (logo + repo info)
                 Constraint::Length(warning_height),   // warnings (0 if none)
                 Constraint::Length(whats_new_height), // what's new (0 if none)
                 Constraint::Min(8),                   // quick actions + recent sessions
             ])
             .split(area);
 
-        self.draw_logo(f, chunks[0], theme);
-        self.draw_project_info(f, chunks[1], theme);
+        let header_props = HeaderBrandProps {
+            show_mascot: self.mascot_visible,
+            show_repo_info: true,
+            mascot_state: self.mascot_state,
+            mascot_frame: self.mascot_frame,
+            repo: self.project_info.repo.clone(),
+            branch: self.project_info.branch.clone(),
+            username: self.project_info.username.clone(),
+        };
+        HeaderBrand::new(header_props, theme).render(chunks[0], f.buffer_mut());
 
         if !self.warnings.is_empty() {
-            self.draw_warnings(f, chunks[2], theme);
+            self.draw_warnings(f, chunks[1], theme);
         }
 
         if !whats_new_items.is_empty() {
-            Self::draw_whats_new(f, chunks[3], theme, &whats_new_items);
+            Self::draw_whats_new(f, chunks[2], theme, &whats_new_items);
         }
 
         let bottom = Layout::default()
@@ -56,7 +64,7 @@ impl HomeScreen {
                 Constraint::Percentage(35),
                 Constraint::Percentage(35),
             ])
-            .split(chunks[4]);
+            .split(chunks[3]);
 
         self.draw_quick_actions(f, bottom[0], theme);
         self.draw_suggestions(f, bottom[1], theme);
@@ -93,75 +101,6 @@ impl HomeScreen {
             10 => ScreenAction::Quit,
             _ => ScreenAction::None,
         }
-    }
-
-    fn draw_logo(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let logo = Paragraph::new(LOGO)
-            .style(Style::default().fg(theme.accent_success))
-            .alignment(Alignment::Center);
-        f.render_widget(logo, area);
-
-        if self.mascot_visible && area.width >= 40 && area.height >= 6 {
-            let logo_width = LOGO.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16;
-            let logo_end_x = area.x + area.width.saturating_sub(logo_width) / 2 + logo_width;
-            let mascot_w = crate::mascot::frames::MASCOT_WIDTH as u16;
-            let mascot_x = logo_end_x + 1;
-            let mascot_h = (crate::mascot::frames::MASCOT_ROWS as u16).min(area.height);
-            let mascot_y = area.y + area.height.saturating_sub(mascot_h) / 2;
-
-            let sep_x = mascot_x;
-            let mascot_x = sep_x + 2;
-
-            if mascot_x + mascot_w <= area.x + area.width {
-                // Draw vertical separator
-                let sep_style = Style::default().fg(theme.text_secondary);
-                for row in 0..mascot_h {
-                    let y = mascot_y + row;
-                    if y < area.y + area.height {
-                        f.buffer_mut().set_string(sep_x, y, "\u{2502}", sep_style);
-                    }
-                }
-
-                let mascot_rect = Rect::new(mascot_x, mascot_y, mascot_w, mascot_h);
-                f.render_widget(
-                    crate::mascot::widget::MascotWidget::new(
-                        self.mascot_state,
-                        self.mascot_frame,
-                        theme.accent_success,
-                    ),
-                    mascot_rect,
-                );
-            }
-        }
-    }
-
-    fn draw_project_info(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let username_display = self.project_info.username.as_deref().unwrap_or("unknown");
-
-        let info = Line::from(vec![
-            Span::styled("  Repo: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                &self.project_info.repo,
-                Style::default().fg(theme.accent_info),
-            ),
-            Span::raw("  |  "),
-            Span::styled("Branch: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                &self.project_info.branch,
-                Style::default().fg(theme.accent_warning),
-            ),
-            Span::raw("  |  "),
-            Span::styled("User: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(
-                format!("@{}", username_display),
-                Style::default().fg(theme.accent_success),
-            ),
-        ]);
-        let block = Block::default().borders(Borders::BOTTOM);
-        let para = Paragraph::new(info)
-            .block(block)
-            .alignment(Alignment::Center);
-        f.render_widget(para, area);
     }
 
     fn draw_warnings(&self, f: &mut Frame, area: Rect, theme: &Theme) {

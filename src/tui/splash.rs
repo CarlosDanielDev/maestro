@@ -20,7 +20,7 @@ const MASCOT_WIDTH: u16 = MASCOT_WIDTH_USIZE as u16;
 /// CRT green color matching the retro theme.
 const SPLASH_COLOR: Color = Color::Rgb(0, 255, 65);
 
-use crate::tui::screens::home::LOGO as SPLASH_LOGO;
+use crate::tui::widgets::header_brand::LOGO as SPLASH_LOGO;
 
 /// Show a centered splash screen with mascot + MAESTRO logo.
 /// Dismissed on any keypress or after 1200ms.
