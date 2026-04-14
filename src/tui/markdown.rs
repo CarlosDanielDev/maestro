@@ -141,12 +141,16 @@ impl<'t> MarkdownRenderer<'t> {
 
         let mut line_buf = String::new();
         let mut line_len = current_width;
+        let mut base_width = current_width;
 
         for word in text.split(' ') {
+            if word.is_empty() {
+                continue;
+            }
             let word_len = word.chars().count();
             let sep_len = if line_len > 0 { 1 } else { 0 };
 
-            if line_len + sep_len + word_len > max_width && line_len > current_width {
+            if line_len + sep_len + word_len > max_width && line_len > base_width {
                 if !line_buf.is_empty() {
                     self.active_spans
                         .push(Span::styled(std::mem::take(&mut line_buf), style));
@@ -154,8 +158,9 @@ impl<'t> MarkdownRenderer<'t> {
                 self.flush_line();
                 line_buf.push_str(word);
                 line_len = word_len;
+                base_width = 0;
             } else {
-                if !line_buf.is_empty() {
+                if line_len > 0 {
                     line_buf.push(' ');
                     line_len += 1;
                 }
@@ -790,6 +795,34 @@ mod tests {
         assert!(
             spans.iter().any(|s| s.content.contains("こんにちは")),
             "unicode content should be preserved in spans"
+        );
+    }
+
+    #[test]
+    fn bold_followed_by_regular_text_has_space_between() {
+        let result = render_markdown("**Started** in the session", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("Started in"),
+            "expected space between bold and regular text, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn inline_code_followed_by_text_has_space_between() {
+        let result = render_markdown("Use `cargo` for building", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("cargo for"),
+            "expected space after inline code, got: {:?}",
+            all_text
         );
     }
 
