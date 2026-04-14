@@ -173,6 +173,8 @@ pub(crate) struct PendingHook {
 
 pub(crate) struct PendingIssueCompletion {
     pub issue_number: u64,
+    /// Additional issue numbers for unified PR sessions.
+    pub issue_numbers: Vec<u64>,
     pub success: bool,
     pub cost_usd: f64,
     pub files_touched: Vec<String>,
