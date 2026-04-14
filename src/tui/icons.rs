@@ -154,9 +154,9 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::Collapse => IconPair::new("\u{f078}", "v"),
 
         // ── Header Metrics ─────────────────────────────────────────
-        IconId::Agents => IconPair::new("\u{f544}", "[U]"),
-        IconId::Cost => IconPair::new("\u{f0d6}", "[$]"),
-        IconId::Clock => IconPair::new("\u{f253}", "[T]"),
+        IconId::Agents => IconPair::new("\u{f415}", "[U]"),
+        IconId::Cost => IconPair::new("\u{f155}", "[$]"),
+        IconId::Clock => IconPair::new("\u{f017}", "[T]"),
     }
 }
 
@@ -369,9 +369,9 @@ mod tests {
             (GaugeEmpty, "\u{2591}"),
             (CheckboxOn, "\u{f46c}"),
             (CheckboxOff, "\u{f096}"),
-            (Agents, "\u{f544}"),
-            (Cost, "\u{f0d6}"),
-            (Clock, "\u{f253}"),
+            (Agents, "\u{f415}"),
+            (Cost, "\u{f155}"),
+            (Clock, "\u{f017}"),
         ];
         for &(id, expected) in cases {
             assert_eq!(
