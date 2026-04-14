@@ -9,6 +9,7 @@ mod run;
 pub(crate) mod setup;
 mod slack;
 mod status;
+pub mod turboquant;
 
 pub use clean::cmd_clean;
 pub use dashboard::cmd_dashboard;
@@ -20,3 +21,4 @@ pub use resume::cmd_resume;
 pub use run::cmd_run;
 pub use slack::cmd_test_slack;
 pub use status::{cmd_cost, cmd_status};
+pub use turboquant::cmd_turboquant_benchmark;

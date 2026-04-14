@@ -28,7 +28,7 @@ pub fn mode_keymap(
                 },
                 InlineHint {
                     key: "d",
-                    action: "Dismiss",
+                    action: "Log",
                     priority: 1,
                 },
                 InlineHint {

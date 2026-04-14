@@ -33,12 +33,52 @@ pub struct Config {
     pub tui: TuiConfig,
     #[serde(default)]
     pub flags: FlagsConfig,
+    #[serde(default)]
+    pub turboquant: TurboQuantConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct FlagsConfig {
     #[serde(flatten)]
     pub entries: HashMap<String, bool>,
+}
+
+pub use crate::turboquant::types::{ApplyTarget, QuantStrategy};
+
+/// TurboQuant quantization configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TurboQuantConfig {
+    /// Whether TurboQuant quantization is active.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Bit width for quantization (1-8).
+    #[serde(default = "default_turbo_bit_width")]
+    pub bit_width: u8,
+    /// Quantization strategy.
+    #[serde(default)]
+    pub strategy: QuantStrategy,
+    /// Which components to compress.
+    #[serde(default)]
+    pub apply_to: ApplyTarget,
+    /// Automatically enable on context overflow events.
+    #[serde(default)]
+    pub auto_on_overflow: bool,
+}
+
+fn default_turbo_bit_width() -> u8 {
+    4
+}
+
+impl Default for TurboQuantConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bit_width: default_turbo_bit_width(),
+            strategy: QuantStrategy::default(),
+            apply_to: ApplyTarget::default(),
+            auto_on_overflow: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -1322,5 +1362,90 @@ text_primary = "cyan"
             cfg.tui.theme.overrides.text_primary,
             Some(SerializableColor(Color::Cyan))
         );
+    }
+
+    // -- TurboQuantConfig --
+
+    #[test]
+    fn turboquant_config_defaults_are_correct() {
+        let cfg = TurboQuantConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.bit_width, 4);
+        assert_eq!(cfg.strategy, QuantStrategy::TurboQuant);
+        assert_eq!(cfg.apply_to, ApplyTarget::Both);
+        assert!(!cfg.auto_on_overflow);
+    }
+
+    #[test]
+    fn turboquant_config_absent_section_uses_defaults() {
+        let toml_str = r#"
+            [project]
+            repo = "owner/repo"
+            base_branch = "main"
+            [sessions]
+            [budget]
+            per_session_usd = 5.0
+            total_usd = 50.0
+            alert_threshold_pct = 80
+            [notifications]
+        "#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.turboquant, TurboQuantConfig::default());
+    }
+
+    #[test]
+    fn turboquant_config_serde_round_trip() {
+        let cfg = TurboQuantConfig {
+            enabled: true,
+            bit_width: 6,
+            strategy: QuantStrategy::PolarQuant,
+            apply_to: ApplyTarget::Keys,
+            auto_on_overflow: true,
+        };
+        let serialized = toml::to_string(&cfg).unwrap();
+        let deserialized: TurboQuantConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(cfg, deserialized);
+    }
+
+    #[test]
+    fn turboquant_config_deserializes_from_toml() {
+        let toml_str = r#"
+            enabled = true
+            bit_width = 2
+            strategy = "qjl"
+            apply_to = "values"
+            auto_on_overflow = true
+        "#;
+        let cfg: TurboQuantConfig = toml::from_str(toml_str).unwrap();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.bit_width, 2);
+        assert_eq!(cfg.strategy, QuantStrategy::Qjl);
+        assert_eq!(cfg.apply_to, ApplyTarget::Values);
+        assert!(cfg.auto_on_overflow);
+    }
+
+    #[test]
+    fn turboquant_config_on_full_config() {
+        let toml_str = r#"
+            [project]
+            repo = "owner/repo"
+            base_branch = "main"
+            [sessions]
+            [budget]
+            per_session_usd = 5.0
+            total_usd = 50.0
+            alert_threshold_pct = 80
+            [notifications]
+            [turboquant]
+            enabled = true
+            bit_width = 3
+            strategy = "polarquant"
+            apply_to = "both"
+            auto_on_overflow = false
+        "#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert!(cfg.turboquant.enabled);
+        assert_eq!(cfg.turboquant.bit_width, 3);
+        assert_eq!(cfg.turboquant.strategy, QuantStrategy::PolarQuant);
     }
 }

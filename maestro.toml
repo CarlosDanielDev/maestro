@@ -110,3 +110,10 @@ preview_ratio = 65
 activity_log_height = 20
 
 [flags]
+
+# [turboquant]
+# enabled = false
+# bit_width = 4
+# strategy = "turboquant"
+# apply_to = "both"
+# auto_on_overflow = false

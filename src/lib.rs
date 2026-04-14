@@ -1,6 +1,7 @@
 /// Library facade — exposes only self-contained modules for benchmarks.
 pub mod icon_mode;
 pub mod icons;
+pub mod turboquant;
 
 #[path = "session"]
 pub mod session {

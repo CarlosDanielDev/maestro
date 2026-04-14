@@ -78,6 +78,7 @@ impl App {
     }
 
     /// Dismiss a single completed/terminal session from the TUI.
+    #[allow(dead_code)]
     pub fn dismiss_session(&mut self, session_id: uuid::Uuid) {
         let label = self
             .pool

@@ -652,15 +652,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             app.tui_mode = app::TuiMode::SessionSwitcher;
         }
         (KeyCode::Char('d'), _) => {
-            let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected)
-                && let Some(session) = app.pool.get_session(id)
-                && session.status.is_terminal()
-            {
-                app.dismiss_session(id);
-            } else {
-                app.notifications.dismiss_latest();
-            }
+            app.show_activity_log = !app.show_activity_log;
         }
         (KeyCode::Char('D'), _) => {
             app.dismiss_all_completed();
@@ -680,10 +672,10 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             _ => {}
         },
         (KeyCode::Up, KeyModifiers::SHIFT) => {
-            app.panel_view.scroll_up();
+            app.activity_log.scroll_up();
         }
         (KeyCode::Down, KeyModifiers::SHIFT) => {
-            app.panel_view.scroll_down();
+            app.activity_log.scroll_down();
         }
         (KeyCode::Up, _)
         | (KeyCode::Down, _)

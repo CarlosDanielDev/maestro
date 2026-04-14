@@ -176,11 +176,42 @@ pub enum Commands {
         #[arg(short, long)]
         model: Option<String>,
     },
+    /// Run TurboQuant vector quantization benchmarks
+    TurboQuant {
+        #[command(subcommand)]
+        action: TurboQuantAction,
+    },
     /// Generate man page (hidden, for packaging)
     #[command(hide = true)]
     Mangen {
         /// Output directory for man page
         out_dir: std::path::PathBuf,
+    },
+}
+
+/// Output format for TurboQuant benchmark reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum BenchmarkOutputFormat {
+    Text,
+    Json,
+}
+
+#[derive(Subcommand)]
+pub enum TurboQuantAction {
+    /// Run compression benchmarks
+    Benchmark {
+        /// Vector dimensionality
+        #[arg(long, default_value_t = 768)]
+        dim: usize,
+        /// Number of vectors to benchmark
+        #[arg(long, default_value_t = 10000)]
+        count: usize,
+        /// Bit width for quantization
+        #[arg(long, default_value_t = 4)]
+        bits: u8,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = BenchmarkOutputFormat::Text)]
+        output: BenchmarkOutputFormat,
     },
 }
 

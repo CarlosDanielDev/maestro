@@ -37,6 +37,7 @@ pulldown-cmark = { version = "0.12", default-features = false }
 tui-textarea = { version = "0.7", features = ["crossterm"] }
 unicode-width = "0.2"
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
+rand = { version = "0.8", features = ["small_rng"] }
 syn = { version = "2", features = ["full", "visit"] }
 walkdir = "2"
 flate2 = "1"
@@ -55,6 +56,10 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
 name = "parser"
+harness = false
+
+[[bench]]
+name = "turboquant"
 harness = false
 
 [lints.clippy]

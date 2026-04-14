@@ -28,6 +28,7 @@ pub enum Flag {
     ReviewCouncil,
     ModelRouting,
     ContextOverflow,
+    TurboQuant,
 }
 
 const ALL_FLAGS: &[Flag] = &[
@@ -37,6 +38,7 @@ const ALL_FLAGS: &[Flag] = &[
     Flag::ReviewCouncil,
     Flag::ModelRouting,
     Flag::ContextOverflow,
+    Flag::TurboQuant,
 ];
 
 impl Flag {
@@ -49,6 +51,7 @@ impl Flag {
             Flag::ReviewCouncil => false,
             Flag::ModelRouting => false,
             Flag::ContextOverflow => false,
+            Flag::TurboQuant => false,
         }
     }
 
@@ -61,6 +64,7 @@ impl Flag {
             Flag::ReviewCouncil => "review_council",
             Flag::ModelRouting => "model_routing",
             Flag::ContextOverflow => "context_overflow",
+            Flag::TurboQuant => "turboquant",
         }
     }
 
@@ -73,6 +77,7 @@ impl Flag {
             Flag::ReviewCouncil => "Enable multi-model review council for code review",
             Flag::ModelRouting => "Route tasks to different models based on complexity",
             Flag::ContextOverflow => "Detect and handle context window overflow",
+            Flag::TurboQuant => "Enable TurboQuant vector quantization for context compression",
         }
     }
 
@@ -118,6 +123,11 @@ mod tests {
         assert!(!Flag::ContextOverflow.default_enabled());
     }
 
+    #[test]
+    fn flag_default_enabled_turboquant_is_false() {
+        assert!(!Flag::TurboQuant.default_enabled());
+    }
+
     // -- Flag::description --
 
     #[test]
@@ -135,8 +145,8 @@ mod tests {
     // -- Flag::all --
 
     #[test]
-    fn flag_all_returns_exactly_six_variants() {
-        assert_eq!(Flag::all().len(), 6);
+    fn flag_all_returns_exactly_seven_variants() {
+        assert_eq!(Flag::all().len(), 7);
     }
 
     #[test]
@@ -148,6 +158,7 @@ mod tests {
         assert!(all.contains(&Flag::ReviewCouncil));
         assert!(all.contains(&Flag::ModelRouting));
         assert!(all.contains(&Flag::ContextOverflow));
+        assert!(all.contains(&Flag::TurboQuant));
     }
 
     // -- Flag::name --
