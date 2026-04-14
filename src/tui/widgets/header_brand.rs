@@ -253,6 +253,15 @@ mod tests {
     }
 
     #[test]
+    fn logo_width_constant_matches_actual_width() {
+        let actual = LOGO.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16;
+        assert_eq!(
+            LOGO_WIDTH, actual,
+            "LOGO_WIDTH constant must match actual logo width"
+        );
+    }
+
+    #[test]
     fn renders_without_panic_at_minimum_size() {
         let theme = Theme::default();
         let props = make_full_props();
