@@ -128,6 +128,14 @@ impl PromptInputScreen {
         self.editor_text()
     }
 
+    /// Returns a display string like "2/3" when browsing history, or None otherwise.
+    pub(crate) fn history_indicator(&self) -> Option<String> {
+        let cursor = self.history_cursor?;
+        let total = self.history.len();
+        let position = cursor + 1;
+        Some(format!("{}/{}", position, total))
+    }
+
     /// Replace editor content with new text, cursor at end.
     pub fn set_editor_text(&mut self, text: &str) {
         let lines: Vec<String> = if text.is_empty() {
@@ -241,7 +249,11 @@ impl PromptInputScreen {
             .split(area);
 
         // Prompt editor — custom wrapped rendering
-        let editor_block = theme.styled_block("Compose Prompt", self.is_prompt_editor_focused());
+        let editor_title = match self.history_indicator() {
+            Some(ref indicator) => format!("Compose Prompt [history {}]", indicator),
+            None => "Compose Prompt".to_string(),
+        };
+        let editor_block = theme.styled_block(&editor_title, self.is_prompt_editor_focused());
         let inner = editor_block.inner(chunks[0]);
 
         // Read logical lines and cursor from the editing backend
@@ -1315,56 +1327,56 @@ mod tests {
     }
 
     #[test]
-    fn alt_up_with_empty_history_is_noop() {
+    fn plain_up_with_empty_history_is_noop() {
         let mut screen = mock_screen();
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "");
         assert!(screen.history_cursor.is_none());
     }
 
     #[test]
-    fn arrow_up_enters_history_and_shows_last_entry() {
+    fn plain_up_enters_history_and_shows_last_entry() {
         let mut screen = screen_with_history(&["first", "second"]);
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "second");
         assert_eq!(screen.history_cursor, Some(1));
     }
 
     #[test]
-    fn arrow_up_twice_shows_previous_entry() {
+    fn plain_up_twice_shows_previous_entry() {
         let mut screen = screen_with_history(&["first", "second"]);
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "first");
         assert_eq!(screen.history_cursor, Some(0));
     }
 
     #[test]
-    fn arrow_up_at_oldest_entry_stays() {
+    fn plain_up_at_oldest_entry_stays() {
         let mut screen = screen_with_history(&["only"]);
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "only");
         assert_eq!(screen.history_cursor, Some(0));
     }
 
     #[test]
-    fn arrow_down_past_history_restores_draft() {
+    fn plain_down_past_history_restores_draft() {
         let mut screen = screen_with_history(&["old"]);
         screen.set_editor_text("my draft");
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "old");
-        screen.handle_input(&alt_key(KeyCode::Down), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "my draft");
         assert!(screen.history_cursor.is_none());
     }
 
     #[test]
-    fn alt_down_without_history_cursor_is_noop() {
+    fn plain_down_without_history_cursor_is_noop() {
         let mut screen = screen_with_history(&["old"]);
         screen.set_editor_text("current");
-        screen.handle_input(&alt_key(KeyCode::Down), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         assert_eq!(screen.prompt_text(), "current");
         assert!(screen.history_cursor.is_none());
     }
@@ -1372,7 +1384,7 @@ mod tests {
     #[test]
     fn typing_resets_history_cursor() {
         let mut screen = screen_with_history(&["old"]);
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.history_cursor, Some(0));
         screen.handle_input(&key_event(KeyCode::Char('x')), InputMode::Normal);
         assert!(screen.history_cursor.is_none());
@@ -1381,9 +1393,108 @@ mod tests {
     #[test]
     fn backspace_resets_history_cursor() {
         let mut screen = screen_with_history(&["old"]);
-        screen.handle_input(&alt_key(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         screen.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
         assert!(screen.history_cursor.is_none());
+    }
+
+    // --- Group 13b: Edge-case tests for draft preservation ---
+
+    #[test]
+    fn up_on_multiline_prompt_moves_cursor_not_history() {
+        let mut screen = screen_with_history(&["old"]);
+        screen.set_editor_text("line one\nline two");
+        assert_eq!(screen.editor.cursor().0, 1, "precondition: cursor on row 1");
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert!(screen.history_cursor.is_none(), "must not enter history");
+        assert_eq!(screen.editor.cursor().0, 0, "cursor moved up within editor");
+    }
+
+    #[test]
+    fn down_on_multiline_prompt_moves_cursor_not_history() {
+        let mut screen = screen_with_history(&["old"]);
+        screen.set_editor_text("line one\nline two");
+        screen
+            .editor
+            .move_cursor(tui_textarea::CursorMove::Jump(0, 0));
+        assert_eq!(screen.editor.cursor().0, 0, "precondition: cursor on row 0");
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert!(screen.history_cursor.is_none(), "no history navigation");
+        assert_eq!(
+            screen.editor.cursor().0,
+            1,
+            "cursor moved down within editor"
+        );
+    }
+
+    #[test]
+    fn draft_is_empty_string_when_no_prior_input() {
+        let mut screen = screen_with_history(&["a", "b"]);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "");
+        assert_eq!(screen.draft_prompt, "");
+    }
+
+    #[test]
+    fn draft_preserved_across_multiple_history_jumps() {
+        let mut screen = screen_with_history(&["a", "b", "c"]);
+        screen.set_editor_text("my draft");
+        // Navigate to oldest entry
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "a");
+        // Navigate all the way back
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.prompt_text(), "my draft");
+        assert!(screen.history_cursor.is_none());
+    }
+
+    #[test]
+    fn navigating_history_then_set_history_clears_draft_and_cursor() {
+        let mut screen = screen_with_history(&["old prompt"]);
+        screen.set_editor_text("work in progress");
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        assert_eq!(screen.history_cursor, Some(0));
+        screen.set_history(vec![]);
+        assert!(screen.history_cursor.is_none());
+        assert_eq!(screen.draft_prompt, "");
+    }
+
+    // --- Group 13c: History indicator ---
+
+    #[test]
+    fn history_indicator_is_none_when_not_in_history_mode() {
+        let screen = screen_with_history(&["a", "b"]);
+        assert!(screen.history_indicator().is_none());
+    }
+
+    #[test]
+    fn history_indicator_shows_one_based_position_and_total() {
+        let mut screen = screen_with_history(&["a", "b", "c"]);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        let indicator = screen
+            .history_indicator()
+            .expect("indicator must be Some in history mode");
+        assert!(
+            indicator.contains("3/3"),
+            "expected '3/3' in indicator, got: {indicator}"
+        );
+    }
+
+    #[test]
+    fn history_indicator_updates_on_further_navigation() {
+        let mut screen = screen_with_history(&["a", "b", "c"]);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+        let indicator = screen.history_indicator().unwrap();
+        assert!(
+            indicator.contains("2/3"),
+            "expected '2/3' in indicator, got: {indicator}"
+        );
     }
 
     #[test]
