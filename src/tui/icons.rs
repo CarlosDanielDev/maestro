@@ -69,6 +69,7 @@ pub enum IconId {
     GitMerge,
     Search,
     IssueOpened,
+    IssueClosed,
     Milestone,
 
     // UI Chrome
@@ -141,8 +142,9 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::GitPr => IconPair::new("\u{f407}", "[P]"),
         IconId::GitMerge => IconPair::new("\u{f419}", "[M]"),
         IconId::Search => IconPair::new("\u{f422}", "[?]"),
-        IconId::IssueOpened => IconPair::new("\u{f41b}", ">>"),
-        IconId::Milestone => IconPair::new("\u{f43e}", "~~"),
+        IconId::IssueOpened => IconPair::new("\u{f0766}", "[#]"), // nf-md-circle_outline
+        IconId::IssueClosed => IconPair::new("\u{f04d2}", "[+]"), // nf-md-check_circle
+        IconId::Milestone => IconPair::new("\u{f0431}", "[M]"),   // nf-md-flag
 
         // ── UI Chrome ───────────────────────────────────────────────
         IconId::GaugeFilled => IconPair::new("\u{2593}", "#"),
@@ -216,6 +218,7 @@ mod tests {
         IconId::GitMerge,
         IconId::Search,
         IconId::IssueOpened,
+        IconId::IssueClosed,
         IconId::Milestone,
         // UI Chrome
         IconId::GaugeFilled,
@@ -390,6 +393,9 @@ mod tests {
             (Agents, "\u{f064d}"),
             (Cost, "$"),
             (Clock, "\u{f251}"),
+            (IssueOpened, "\u{f0766}"),
+            (IssueClosed, "\u{f04d2}"),
+            (Milestone, "\u{f0431}"),
         ];
         for &(id, expected) in cases {
             assert_eq!(
@@ -410,7 +416,9 @@ mod tests {
             (GaugeFilled, "#"),
             (GaugeEmpty, "-"),
             (Warning, "[!]"),
-            (IssueOpened, ">>"),
+            (IssueOpened, "[#]"),
+            (IssueClosed, "[+]"),
+            (Milestone, "[M]"),
             (Agents, "[U]"),
             (Cost, "$"),
             (Clock, "[T]"),

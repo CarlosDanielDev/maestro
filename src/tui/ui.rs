@@ -296,6 +296,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 draw_confirm_kill_overlay(f, id, app, chunks[1], &theme);
             }
         }
+        TuiMode::ConfirmExit => {
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &theme,
+                spinner_tick,
+            );
+            draw_confirm_exit_overlay(f, app, chunks[1], &theme);
+        }
         TuiMode::HollowRetry => {
             let sessions = app.pool.all_sessions();
             app.panel_view.draw_with_claims(
@@ -718,6 +730,63 @@ fn draw_confirm_kill_overlay(
     let block = theme
         .styled_block("Confirm Kill", false)
         .border_style(Style::default().fg(theme.accent_warning));
+
+    f.render_widget(Paragraph::new(lines).block(block), popup);
+}
+
+fn draw_confirm_exit_overlay(
+    f: &mut Frame,
+    app: &App,
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    use ratatui::widgets::Clear;
+    let popup = help::centered_rect(50, 25, area);
+    f.render_widget(Clear, popup);
+
+    let active = app.pool.active_count();
+    let has_active = active > 0;
+
+    let message = if has_active {
+        format!("  {} session(s) still running. Exit anyway?", active)
+    } else {
+        "  Are you sure you want to exit?".to_string()
+    };
+
+    let message_style = if has_active {
+        Style::default()
+            .fg(theme.accent_warning)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(theme.text_primary)
+            .add_modifier(Modifier::BOLD)
+    };
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(message, message_style)),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  [y]", Style::default().fg(theme.accent_success)),
+            Span::raw("es / "),
+            Span::styled("[Enter]", Style::default().fg(theme.accent_success)),
+            Span::raw("  "),
+            Span::styled("[n]", Style::default().fg(theme.accent_error)),
+            Span::raw("o / "),
+            Span::styled("[Esc]", Style::default().fg(theme.accent_error)),
+        ]),
+    ];
+
+    let border_color = if has_active {
+        theme.accent_warning
+    } else {
+        theme.border_focused
+    };
+
+    let block = theme
+        .styled_block("Confirm Exit", false)
+        .border_style(Style::default().fg(border_color));
 
     f.render_widget(Paragraph::new(lines).block(block), popup);
 }

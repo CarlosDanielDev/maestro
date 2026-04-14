@@ -363,6 +363,27 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::ConfirmExit => (
+            "Confirm Exit",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "y",
+                    action: "Yes",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "n",
+                    action: "No",
+                    priority: 1,
+                },
+                InlineHint {
+                    key: "Esc",
+                    action: "Cancel",
+                    priority: 2,
+                },
+            ],
+        ),
         TuiMode::QueueConfirmation => (
             "Queue Confirmation",
             FKeyVis::Minimal,

@@ -67,6 +67,8 @@ pub struct App {
     pub progress_tracker: ProgressTracker,
     pub notifications: NotificationDispatcher,
     pub tui_mode: TuiMode,
+    /// Stored mode to restore when the ConfirmExit dialog is dismissed.
+    pub confirm_exit_return_mode: Option<TuiMode>,
     pub session_logger: SessionLogger,
     pub pending_pr_checks: Vec<PendingPrCheck>,
     pub(crate) last_ci_poll: Instant,
@@ -153,6 +155,7 @@ impl App {
             progress_tracker: ProgressTracker::new(),
             notifications: NotificationDispatcher::new(false),
             tui_mode: TuiMode::Overview,
+            confirm_exit_return_mode: None,
             session_logger: SessionLogger::new(SessionLogger::default_dir()),
             pending_pr_checks: Vec::new(),
             last_ci_poll: Instant::now(),
