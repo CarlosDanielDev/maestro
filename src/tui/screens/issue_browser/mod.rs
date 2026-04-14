@@ -73,6 +73,12 @@ impl IssuePromptOverlay {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FocusPane {
+    List,
+    Preview,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterMode {
     None,
     Label,
@@ -97,6 +103,10 @@ pub struct IssueBrowserScreen {
     pub(crate) layout: crate::config::LayoutConfig,
     /// Marquee animation state for the currently selected issue title.
     marquee: MarqueeState,
+    /// Which panel currently has focus.
+    pub(crate) focus: FocusPane,
+    /// Vertical scroll offset for the preview panel markdown content.
+    pub(crate) preview_scroll: u16,
 }
 
 impl IssueBrowserScreen {
@@ -116,6 +126,8 @@ impl IssueBrowserScreen {
             prompt_overlay: None,
             layout: crate::config::LayoutConfig::default(),
             marquee: MarqueeState::new(),
+            focus: FocusPane::List,
+            preview_scroll: 0,
         }
     }
 
@@ -130,6 +142,8 @@ impl IssueBrowserScreen {
         self.scroll_offset = 0;
         self.loading = false;
         self.marquee.reset();
+        self.focus = FocusPane::List;
+        self.preview_scroll = 0;
         self.reapply_filters();
     }
 }
@@ -142,11 +156,15 @@ impl KeymapProvider for IssueBrowserScreen {
                 bindings: vec![
                     KeyBinding {
                         key: "j/Down",
-                        description: "Move down",
+                        description: "Move down / Scroll preview",
                     },
                     KeyBinding {
                         key: "k/Up",
-                        description: "Move up",
+                        description: "Move up / Scroll preview",
+                    },
+                    KeyBinding {
+                        key: "Tab",
+                        description: "Switch focus pane",
                     },
                     KeyBinding {
                         key: "Space",
@@ -226,21 +244,45 @@ impl Screen for IssueBrowserScreen {
             }
 
             match code {
-                KeyCode::Esc => return ScreenAction::Pop,
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if !self.filtered_indices.is_empty()
-                        && self.selected < self.filtered_indices.len() - 1
-                    {
-                        self.selected += 1;
+                KeyCode::Esc => {
+                    if self.focus == FocusPane::Preview {
+                        self.focus = FocusPane::List;
+                    } else {
+                        return ScreenAction::Pop;
+                    }
+                }
+                KeyCode::Tab | KeyCode::BackTab => {
+                    self.focus = match self.focus {
+                        FocusPane::List => FocusPane::Preview,
+                        FocusPane::Preview => FocusPane::List,
+                    };
+                }
+                KeyCode::Char('j') | KeyCode::Down => match self.focus {
+                    FocusPane::List => {
+                        if !self.filtered_indices.is_empty()
+                            && self.selected < self.filtered_indices.len() - 1
+                        {
+                            self.selected += 1;
+                            self.preview_scroll = 0;
+                            self.sync_scroll();
+                            self.marquee.reset();
+                        }
+                    }
+                    FocusPane::Preview => {
+                        self.preview_scroll = self.preview_scroll.saturating_add(1);
+                    }
+                },
+                KeyCode::Char('k') | KeyCode::Up => match self.focus {
+                    FocusPane::List => {
+                        self.selected = self.selected.saturating_sub(1);
+                        self.preview_scroll = 0;
                         self.sync_scroll();
                         self.marquee.reset();
                     }
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    self.selected = self.selected.saturating_sub(1);
-                    self.sync_scroll();
-                    self.marquee.reset();
-                }
+                    FocusPane::Preview => {
+                        self.preview_scroll = self.preview_scroll.saturating_sub(1);
+                    }
+                },
                 KeyCode::Char(' ') => {
                     if let Some(&idx) = self.filtered_indices.get(self.selected) {
                         let number = self.issues[idx].number;
@@ -402,8 +444,9 @@ mod tests {
     // ---- screen actions ----
 
     #[test]
-    fn issue_browser_esc_returns_pop() {
+    fn issue_browser_esc_from_list_returns_pop() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
+        assert_eq!(screen.focus, FocusPane::List);
         let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
     }
@@ -1045,5 +1088,111 @@ mod tests {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
         screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
         assert_eq!(screen.desired_input_mode(), Some(InputMode::Insert));
+    }
+
+    // ---- focus pane and preview scroll (issue #289) ----
+
+    #[test]
+    fn focus_pane_default_is_list() {
+        let screen = IssueBrowserScreen::new(make_three_issues());
+        assert_eq!(screen.focus, FocusPane::List);
+    }
+
+    #[test]
+    fn tab_switches_focus_from_list_to_preview() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        assert_eq!(screen.focus, FocusPane::Preview);
+    }
+
+    #[test]
+    fn backtab_switches_focus_from_preview_to_list() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::BackTab), InputMode::Normal);
+        assert_eq!(screen.focus, FocusPane::List);
+    }
+
+    #[test]
+    fn esc_from_preview_focus_returns_to_list_and_returns_none() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        assert_eq!(screen.focus, FocusPane::List);
+    }
+
+    #[test]
+    fn esc_from_list_focus_returns_pop() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Pop);
+    }
+
+    #[test]
+    fn j_in_list_focus_advances_selected() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        assert_eq!(screen.selected, 1);
+    }
+
+    #[test]
+    fn j_in_preview_focus_increments_preview_scroll() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        assert_eq!(screen.preview_scroll, 1);
+        assert_eq!(screen.selected, 0);
+    }
+
+    #[test]
+    fn down_in_preview_focus_increments_preview_scroll() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.preview_scroll, 1);
+    }
+
+    #[test]
+    fn k_in_preview_focus_decrements_preview_scroll() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
+        assert_eq!(screen.preview_scroll, 1);
+    }
+
+    #[test]
+    fn k_in_preview_focus_at_zero_stays_at_zero() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
+        assert_eq!(screen.preview_scroll, 0);
+    }
+
+    #[test]
+    fn navigating_list_resets_preview_scroll() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        assert_eq!(screen.preview_scroll, 2);
+        screen.handle_input(&key_event(KeyCode::BackTab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        assert_eq!(screen.preview_scroll, 0);
+    }
+
+    #[test]
+    fn set_issues_resets_preview_scroll_and_focus() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        assert_eq!(screen.preview_scroll, 2);
+        assert_eq!(screen.focus, FocusPane::Preview);
+        screen.set_issues(make_three_issues());
+        assert_eq!(screen.preview_scroll, 0);
+        assert_eq!(screen.focus, FocusPane::List);
     }
 }
