@@ -1,5 +1,6 @@
 mod ci_monitor;
 mod dropdown;
+pub mod header_brand;
 mod list_editor;
 mod number_stepper;
 mod text_input;
@@ -8,6 +9,8 @@ pub mod unified_pr_toggle;
 
 pub use ci_monitor::CiMonitorWidget;
 pub use dropdown::Dropdown;
+#[allow(unused_imports)] // Re-exported for use by other screens (e.g. about, splash)
+pub use header_brand::HeaderBrand;
 pub use list_editor::ListEditor;
 pub use number_stepper::NumberStepper;
 pub use text_input::TextInput;
