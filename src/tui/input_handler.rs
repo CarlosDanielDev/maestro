@@ -15,6 +15,23 @@ pub(super) enum KeyAction {
 /// Top-level key event dispatcher. Handles overlays, mode-specific input,
 /// global shortcuts, and screen dispatch in priority order.
 pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
+    // Ctrl+C always exits immediately (power-user bypass) — HIGHEST PRIORITY
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.running = false;
+        return KeyAction::Quit;
+    }
+
+    // Ctrl+X also exits immediately
+    if key.code == KeyCode::Char('x') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.running = false;
+        return KeyAction::Quit;
+    }
+
+    // If confirm exit dialog is showing, handle it
+    if app.tui_mode == app::TuiMode::ConfirmExit {
+        return handle_confirm_exit(app, &key);
+    }
+
     if handle_upgrade_keys(app, &key) {
         return KeyAction::Consumed;
     }
@@ -31,8 +48,11 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return KeyAction::Consumed;
     }
 
-    if handle_quit_shortcut(app, &key) {
-        return KeyAction::Quit;
+    // 'q' triggers confirm exit (except in text input modes)
+    if key.code == KeyCode::Char('q') && !is_text_input_mode(app) {
+        app.confirm_exit_return_mode = Some(app.tui_mode);
+        app.tui_mode = app::TuiMode::ConfirmExit;
+        return KeyAction::Consumed;
     }
 
     let event = Event::Key(key);
@@ -158,10 +178,6 @@ fn handle_queue_execution(app: &mut App, key: &KeyEvent) -> KeyAction {
         (KeyCode::Esc, _) => {
             app.tui_mode = app::TuiMode::Overview;
         }
-        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            app.running = false;
-            return KeyAction::Quit;
-        }
         (KeyCode::Char('r'), _) => {
             if let Some(ref mut exec) = app.queue_executor
                 && matches!(exec.phase(), ExecutorPhase::AwaitingDecision { .. })
@@ -201,10 +217,6 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
     match (key.code, key.modifiers) {
         (KeyCode::Enter, _) | (KeyCode::Esc, _) => {
             app.transition_to_dashboard();
-        }
-        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            app.running = false;
-            return KeyAction::Quit;
         }
         (KeyCode::Char('i'), _) => {
             app.completion_summary = None;
@@ -340,11 +352,6 @@ fn handle_continuous_pause(app: &mut App, key: &KeyEvent) -> KeyAction {
             }
             app.tui_mode = app::TuiMode::Overview;
         }
-        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            app.continuous_mode = None;
-            app.running = false;
-            return KeyAction::Quit;
-        }
         _ => {}
     }
     KeyAction::Consumed
@@ -355,9 +362,6 @@ fn handle_session_summary(app: &mut App, key: &KeyEvent) {
         (KeyCode::Esc, _) => {
             app.session_summary_state = None;
             app.tui_mode = app::TuiMode::Overview;
-        }
-        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            app.running = false;
         }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
             if let Some(state) = app.session_summary_state.as_mut() {
@@ -401,10 +405,6 @@ async fn handle_log_viewer(app: &mut App, key: &KeyEvent, id: uuid::Uuid) -> Key
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => {
             app.tui_mode = app::TuiMode::Detail(id);
-        }
-        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            app.running = false;
-            return KeyAction::Quit;
         }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
             app.log_viewer_scroll = app.log_viewer_scroll.saturating_sub(1);
@@ -542,21 +542,37 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
     false
 }
 
-/// Handle Ctrl-X / Ctrl-C quit.
-fn handle_quit_shortcut(app: &mut App, key: &KeyEvent) -> bool {
-    if key.code == KeyCode::Char('x') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        app.running = false;
-        return true;
+/// Returns true if the current TUI mode accepts text input (q should type, not quit).
+fn is_text_input_mode(app: &App) -> bool {
+    matches!(
+        app.tui_mode,
+        app::TuiMode::PromptInput | app::TuiMode::SessionSwitcher | app::TuiMode::Settings
+    )
+}
+
+/// Handle the confirm-exit dialog (y/n/Enter/Esc).
+fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
+    match key.code {
+        KeyCode::Char('y') | KeyCode::Enter => {
+            app.running = false;
+            app.confirm_exit_return_mode = None;
+            KeyAction::Quit
+        }
+        KeyCode::Char('n') | KeyCode::Esc => {
+            if let Some(prev) = app.confirm_exit_return_mode.take() {
+                app.tui_mode = prev;
+            } else {
+                app.tui_mode = app::TuiMode::Overview;
+            }
+            KeyAction::Consumed
+        }
+        _ => KeyAction::Consumed, // swallow all other keys
     }
-    false
 }
 
 /// Handle overview/default mode keys (navigation, session management).
 fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
     match (key.code, key.modifiers) {
-        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            app.running = false;
-        }
         #[cfg(unix)]
         (KeyCode::Char('p'), _) => {
             app.pause_all();
@@ -701,5 +717,223 @@ fn handle_grid_navigation(app: &mut App, key: &KeyEvent) {
     app.panel_view.selected = Some(app.panel_view.grid_state.selected_index(&layout));
     if !matches!(key.code, KeyCode::Char('[') | KeyCode::Char(']')) {
         app.panel_view.scroll_offset = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+    use crate::tui::app::{App, TuiMode};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn key_code(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn ctrl_c_event() -> KeyEvent {
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
+    }
+
+    fn make_app() -> App {
+        let tmp = std::env::temp_dir().join(format!(
+            "maestro-input-handler-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let store = StateStore::new(tmp);
+        App::new(
+            store,
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        )
+    }
+
+    // ── Group 1: TuiMode variant and field defaults ───────────────────
+
+    #[test]
+    fn confirm_exit_tui_mode_variant_exists() {
+        let mode = TuiMode::ConfirmExit;
+        assert!(matches!(mode, TuiMode::ConfirmExit));
+    }
+
+    #[test]
+    fn app_confirm_exit_return_mode_defaults_to_none() {
+        let app = make_app();
+        assert!(app.confirm_exit_return_mode.is_none());
+    }
+
+    // ── Group 2: is_text_input_mode() ─────────────────────────────────
+
+    #[test]
+    fn is_text_input_mode_true_for_prompt_input() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::PromptInput;
+        assert!(is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn is_text_input_mode_true_for_session_switcher() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::SessionSwitcher;
+        assert!(is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn is_text_input_mode_true_for_settings() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Settings;
+        assert!(is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn is_text_input_mode_false_for_overview() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        assert!(!is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn is_text_input_mode_false_for_dependency_graph() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::DependencyGraph;
+        assert!(!is_text_input_mode(&app));
+    }
+
+    // ── Group 3: handle_confirm_exit — y/Enter confirm ────────────────
+
+    #[test]
+    fn y_in_confirm_exit_sets_running_false() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.running = true;
+        handle_confirm_exit(&mut app, &key('y'));
+        assert!(!app.running);
+    }
+
+    #[test]
+    fn enter_in_confirm_exit_sets_running_false() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.running = true;
+        handle_confirm_exit(&mut app, &key_code(KeyCode::Enter));
+        assert!(!app.running);
+    }
+
+    #[test]
+    fn y_in_confirm_exit_clears_return_mode() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.confirm_exit_return_mode = Some(TuiMode::Overview);
+        handle_confirm_exit(&mut app, &key('y'));
+        assert!(app.confirm_exit_return_mode.is_none());
+    }
+
+    // ── Group 4: handle_confirm_exit — n/Esc cancel ───────────────────
+
+    #[test]
+    fn n_in_confirm_exit_restores_previous_mode() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.confirm_exit_return_mode = Some(TuiMode::DependencyGraph);
+        handle_confirm_exit(&mut app, &key('n'));
+        assert_eq!(app.tui_mode, TuiMode::DependencyGraph);
+    }
+
+    #[test]
+    fn esc_in_confirm_exit_restores_previous_mode() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.confirm_exit_return_mode = Some(TuiMode::Overview);
+        handle_confirm_exit(&mut app, &key_code(KeyCode::Esc));
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+    }
+
+    #[test]
+    fn n_in_confirm_exit_does_not_quit() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.confirm_exit_return_mode = Some(TuiMode::Overview);
+        app.running = true;
+        handle_confirm_exit(&mut app, &key('n'));
+        assert!(app.running);
+    }
+
+    #[test]
+    fn cancel_with_no_stored_mode_falls_back_to_overview() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.confirm_exit_return_mode = None;
+        handle_confirm_exit(&mut app, &key('n'));
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+    }
+
+    // ── Group 5: unrelated key swallowing ─────────────────────────────
+
+    #[test]
+    fn unrelated_key_in_confirm_exit_stays() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.confirm_exit_return_mode = Some(TuiMode::Overview);
+        handle_confirm_exit(&mut app, &key('x'));
+        assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
+    }
+
+    #[test]
+    fn unrelated_key_does_not_quit() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.running = true;
+        handle_confirm_exit(&mut app, &key('j'));
+        assert!(app.running);
+    }
+
+    // ── Group 6: q blocked in text input modes ────────────────────────
+
+    #[test]
+    fn q_in_prompt_input_does_not_trigger_confirm() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::PromptInput;
+        if !is_text_input_mode(&app) {
+            handle_confirm_exit(&mut app, &key('q'));
+        }
+        assert_eq!(app.tui_mode, TuiMode::PromptInput);
+        assert!(app.running);
+    }
+
+    // ── Group 7: Ctrl+C bypass (async integration) ────────────────────
+
+    #[tokio::test]
+    async fn ctrl_c_always_quits_immediately() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        handle_key(&mut app, ctrl_c_event()).await;
+        assert!(!app.running);
+        assert!(!matches!(app.tui_mode, TuiMode::ConfirmExit));
+    }
+
+    #[tokio::test]
+    async fn ctrl_c_from_confirm_exit_quits() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.confirm_exit_return_mode = Some(TuiMode::Overview);
+        handle_key(&mut app, ctrl_c_event()).await;
+        assert!(!app.running);
+    }
+
+    #[tokio::test]
+    async fn q_in_overview_enters_confirm_exit() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        handle_key(&mut app, key('q')).await;
+        assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
+        assert_eq!(app.confirm_exit_return_mode, Some(TuiMode::Overview));
+        assert!(app.running);
     }
 }
