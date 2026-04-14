@@ -1,6 +1,6 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use maestro::turboquant::pipeline::{quantize_with_strategy, dot_product_with_strategy};
-use maestro::turboquant::polar::{polar_quantize, polar_dequantize};
+use maestro::turboquant::pipeline::{dot_product_with_strategy, quantize_with_strategy};
+use maestro::turboquant::polar::{polar_dequantize, polar_quantize};
 use maestro::turboquant::types::QuantStrategy;
 
 fn make_vectors(count: usize, dim: usize) -> Vec<Vec<f32>> {

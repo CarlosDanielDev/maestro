@@ -67,7 +67,11 @@ pub fn cmd_turboquant_benchmark(
         let sample_size = 100.min(count);
         for i in 0..sample_size {
             let query = &queries[i % n_queries];
-            let exact: f32 = vectors[i].iter().zip(query.iter()).map(|(a, b)| a * b).sum();
+            let exact: f32 = vectors[i]
+                .iter()
+                .zip(query.iter())
+                .map(|(a, b)| a * b)
+                .sum();
             let estimated = dot_product_with_strategy(query, &compressed[i]);
             let error = (estimated - exact).abs() as f64;
             total_distortion += error;
@@ -97,10 +101,7 @@ pub fn cmd_turboquant_benchmark(
             est_dots.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
             let est_top_k: Vec<usize> = est_dots.iter().take(k).map(|(i, _)| *i).collect();
 
-            let overlap = exact_top_k
-                .iter()
-                .filter(|i| est_top_k.contains(i))
-                .count();
+            let overlap = exact_top_k.iter().filter(|i| est_top_k.contains(i)).count();
             total_recall += overlap as f64 / k as f64;
         }
         let recall_at_10 = total_recall / n_queries as f64;
@@ -150,10 +151,7 @@ fn print_table(results: &[BenchmarkResult]) {
 
     println!("{}", "-".repeat(80));
     if let Some(first) = results.first() {
-        println!(
-            "Vectors: {} × {}d",
-            first.vector_count, first.dimensions
-        );
+        println!("Vectors: {} × {}d", first.vector_count, first.dimensions);
     }
 }
 
@@ -174,8 +172,16 @@ mod tests {
             .collect();
 
         // Just verify the strategies all produce valid results
-        for strategy in [QuantStrategy::TurboQuant, QuantStrategy::PolarQuant, QuantStrategy::Qjl] {
-            let effective_bits = if strategy == QuantStrategy::TurboQuant && bits < 2 { 2 } else { bits };
+        for strategy in [
+            QuantStrategy::TurboQuant,
+            QuantStrategy::PolarQuant,
+            QuantStrategy::Qjl,
+        ] {
+            let effective_bits = if strategy == QuantStrategy::TurboQuant && bits < 2 {
+                2
+            } else {
+                bits
+            };
             let compressed: Vec<_> = vectors
                 .iter()
                 .map(|v| quantize_with_strategy(v, strategy, effective_bits))

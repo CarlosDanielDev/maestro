@@ -4,7 +4,10 @@ use super::types::{QjlBitVector, QuantStrategy, QuantizedVector, TurboQuantized}
 
 /// Full TurboQuant pipeline: PolarQuant at (total_bits - 1) + QJL residual at 1 bit.
 pub fn turbo_quantize(vector: &[f32], total_bits: u8) -> TurboQuantized {
-    assert!(total_bits >= 2, "turbo_quantize needs at least 2 bits (1 for polar + 1 for QJL)");
+    assert!(
+        total_bits >= 2,
+        "turbo_quantize needs at least 2 bits (1 for polar + 1 for QJL)"
+    );
 
     let polar_bits = total_bits - 1;
     let polar = polar_quantize(vector, polar_bits);
@@ -19,7 +22,9 @@ pub fn turbo_quantize(vector: &[f32], total_bits: u8) -> TurboQuantized {
 
     // Use a deterministic seed derived from vector length and bits
     // Seed mixes vector length and bit width to ensure different configs produce different QJL projections
-    let seed = (vector.len() as u64).wrapping_mul(31).wrapping_add(total_bits as u64);
+    let seed = (vector.len() as u64)
+        .wrapping_mul(31)
+        .wrapping_add(total_bits as u64);
     let qjl = qjl_compress(&residual, seed);
 
     TurboQuantized {
@@ -65,7 +70,9 @@ pub fn quantize_with_strategy(vector: &[f32], strategy: QuantStrategy, bits: u8)
             }
         }
         QuantStrategy::Qjl => {
-            let seed = (vector.len() as u64).wrapping_mul(31).wrapping_add(bits as u64);
+            let seed = (vector.len() as u64)
+                .wrapping_mul(31)
+                .wrapping_add(bits as u64);
             let qjl = qjl_compress(vector, seed);
             TurboQuantized {
                 polar: QuantizedVector {
@@ -178,10 +185,8 @@ mod tests {
             .map(|_| (0..dim).map(|_| rng()).collect())
             .collect();
 
-        let compressed: Vec<TurboQuantized> = database
-            .iter()
-            .map(|v| turbo_quantize(v, 4))
-            .collect();
+        let compressed: Vec<TurboQuantized> =
+            database.iter().map(|v| turbo_quantize(v, 4)).collect();
 
         let mut total_recall = 0.0;
         for query in &queries {
@@ -206,20 +211,14 @@ mod tests {
             est_dots.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
             let est_top_k: Vec<usize> = est_dots.iter().take(k).map(|(i, _)| *i).collect();
 
-            let overlap = exact_top_k
-                .iter()
-                .filter(|i| est_top_k.contains(i))
-                .count();
+            let overlap = exact_top_k.iter().filter(|i| est_top_k.contains(i)).count();
             total_recall += overlap as f64 / k as f64;
         }
 
         let mean_recall = total_recall / n_queries as f64;
         // Note: at 4-bit with small vectors, recall may not hit 0.95
         // but should be reasonable (> 0.3)
-        assert!(
-            mean_recall > 0.3,
-            "recall@10 too low: {mean_recall}"
-        );
+        assert!(mean_recall > 0.3, "recall@10 too low: {mean_recall}");
     }
 
     #[test]
@@ -227,8 +226,16 @@ mod tests {
         let v = vec![1.0, 2.0, 3.0, 4.0];
         let q = vec![0.5, 0.5, 0.5, 0.5];
 
-        for strategy in [QuantStrategy::TurboQuant, QuantStrategy::PolarQuant, QuantStrategy::Qjl] {
-            let bits = if strategy == QuantStrategy::TurboQuant { 4 } else { 4 };
+        for strategy in [
+            QuantStrategy::TurboQuant,
+            QuantStrategy::PolarQuant,
+            QuantStrategy::Qjl,
+        ] {
+            let bits = if strategy == QuantStrategy::TurboQuant {
+                4
+            } else {
+                4
+            };
             let c = quantize_with_strategy(&v, strategy, bits);
             let _est = dot_product_with_strategy(&q, &c);
             // Just verify it doesn't panic

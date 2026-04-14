@@ -489,8 +489,7 @@ impl SettingsScreen {
             QuantStrategy::PolarQuant => 1,
             QuantStrategy::Qjl => 2,
         };
-        let apply_options: Vec<String> =
-            vec!["keys".into(), "values".into(), "both".into()];
+        let apply_options: Vec<String> = vec!["keys".into(), "values".into(), "both".into()];
         let apply_idx = match tq.apply_to {
             ApplyTarget::Keys => 0,
             ApplyTarget::Values => 1,

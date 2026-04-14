@@ -72,11 +72,7 @@ pub fn polar_quantize(vector: &[f32], bits: u8) -> QuantizedVector {
         current = radii;
     }
 
-    let scale = if current.is_empty() {
-        0.0
-    } else {
-        current[0]
-    };
+    let scale = if current.is_empty() { 0.0 } else { current[0] };
 
     QuantizedVector {
         scale,
