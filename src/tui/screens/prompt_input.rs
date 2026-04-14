@@ -259,7 +259,7 @@ impl PromptInputScreen {
             .map(|s| {
                 Line::from(crate::tui::issue_refs::highlight_issue_refs(
                     s.as_str(),
-                    theme.accent_info,
+                    theme.accent_identifier,
                     theme.text_primary,
                 ))
             })

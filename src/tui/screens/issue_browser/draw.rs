@@ -505,7 +505,7 @@ impl IssueBrowserScreen {
             let sanitized = sanitize_for_terminal(&overlay.text);
             let spans = crate::tui::issue_refs::highlight_issue_refs(
                 &sanitized,
-                theme.accent_info,
+                theme.accent_identifier,
                 theme.text_primary,
             );
             // Convert borrowed spans to owned for lifetime safety
