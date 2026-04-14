@@ -33,6 +33,7 @@ pub enum TuiMode {
     ReleaseNotes,
     LogViewer(uuid::Uuid),
     ConfirmKill(uuid::Uuid),
+    ConfirmExit,
     SessionSummary,
 }
 
