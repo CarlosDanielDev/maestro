@@ -744,13 +744,11 @@ fn draw_confirm_exit_overlay(
     let popup = help::centered_rect(50, 25, area);
     f.render_widget(Clear, popup);
 
-    let has_active = app.pool.active_count() > 0;
+    let active = app.pool.active_count();
+    let has_active = active > 0;
 
     let message = if has_active {
-        format!(
-            "  {} session(s) still running. Exit anyway?",
-            app.pool.active_count()
-        )
+        format!("  {} session(s) still running. Exit anyway?", active)
     } else {
         "  Are you sure you want to exit?".to_string()
     };
