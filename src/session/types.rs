@@ -1,10 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use uuid::Uuid;
-
-static ASCII_ICONS: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -27,21 +24,27 @@ pub enum SessionStatus {
 
 impl SessionStatus {
     pub fn nerd_symbol(&self) -> &'static str {
+        crate::icons::get_for_mode(self.icon_id(), true)
+    }
+
+    /// Maps each status to its icon registry entry.
+    pub fn icon_id(&self) -> crate::icons::IconId {
+        use crate::icons::IconId;
         match self {
-            Self::Queued => "\u{f251}",       //  hourglass
-            Self::Spawning => "\u{f46a}",     //  sync
-            Self::Running => "\u{f40a}",      //  play
-            Self::Completed => "\u{f42e}",    //  check_circle
-            Self::GatesRunning => "\u{f422}", //  search
-            Self::NeedsReview => "\u{f41b}",  //  issue_opened
-            Self::Errored => "\u{f467}",      //  x_circle
-            Self::Paused => "\u{f04c}",       //  pause
-            Self::Killed => "\u{f2d3}",       //  skull
-            Self::Stalled => "\u{f421}",      //  alert
-            Self::Retrying => "\u{f363}",     //  refresh
-            Self::CiFix => "\u{f7d9}",        //  wrench
-            Self::NeedsPr => "\u{f407}",      //  git_pull_request
-            Self::ConflictFix => "\u{f419}",  //  git_merge
+            Self::Queued => IconId::Hourglass,
+            Self::Spawning => IconId::Sync,
+            Self::Running => IconId::Play,
+            Self::Completed => IconId::CheckCircle,
+            Self::GatesRunning => IconId::Search,
+            Self::NeedsReview => IconId::NeedsReview,
+            Self::Errored => IconId::XCircle,
+            Self::Paused => IconId::Pause,
+            Self::Killed => IconId::Skull,
+            Self::Stalled => IconId::Alert,
+            Self::Retrying => IconId::Refresh,
+            Self::CiFix => IconId::Wrench,
+            Self::NeedsPr => IconId::GitPr,
+            Self::ConflictFix => IconId::GitMerge,
         }
     }
 
@@ -65,22 +68,11 @@ impl SessionStatus {
     }
 
     pub fn symbol(&self) -> &'static str {
-        if Self::use_nerd_font() {
+        if crate::icon_mode::use_nerd_font() {
             self.nerd_symbol()
         } else {
             self.ascii_symbol()
         }
-    }
-
-    /// Set icon mode globally. Called from config init and settings changes.
-    pub fn set_ascii_icons(ascii: bool) {
-        use std::sync::atomic::Ordering;
-        ASCII_ICONS.store(ascii, Ordering::Relaxed);
-    }
-
-    fn use_nerd_font() -> bool {
-        use std::sync::atomic::Ordering;
-        !ASCII_ICONS.load(Ordering::Relaxed)
     }
 
     pub fn label(&self) -> &'static str {

@@ -1,187 +1,18 @@
-//! Icon registry: centralized Nerd Font / ASCII icon definitions.
+//! Icon registry: re-exports from the shared `crate::icons` module.
+//! Mode detection: re-exports from `crate::icon_mode`.
+//!
 //! Config: `tui.ascii_icons = true` in maestro.toml
 //! Env override: `MAESTRO_ASCII_ICONS=1`
 //!
 //! Usage: `icons::get(IconId::ChevronRight)` returns the correct variant
 //! based on the current mode (Nerd Font or ASCII).
 
-use std::sync::atomic::{AtomicBool, Ordering};
+pub use crate::icons::*;
 
-static ASCII_MODE: AtomicBool = AtomicBool::new(false);
-static INITIALIZED: AtomicBool = AtomicBool::new(false);
-
-/// Initialize icon mode from config. Call once at startup.
-pub fn init_from_config(ascii_icons: bool) {
-    ASCII_MODE.store(ascii_icons, Ordering::Relaxed);
-    INITIALIZED.store(true, Ordering::Relaxed);
-}
-
-/// Returns true if Nerd Font icons should be used.
-/// Checks (in order): config flag, MAESTRO_ASCII_ICONS env var.
-pub fn use_nerd_font() -> bool {
-    if INITIALIZED.load(Ordering::Relaxed) {
-        return !ASCII_MODE.load(Ordering::Relaxed);
-    }
-    // Fallback: env var check (for lib crate / before config loads)
-    use_nerd_font_from_env(|k| std::env::var(k).ok())
-}
-
-// Testable version: accepts an env-var reader closure.
-pub(crate) fn use_nerd_font_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
-    get_env("MAESTRO_ASCII_ICONS")
-        .map(|v| v != "1")
-        .unwrap_or(true)
-}
-
-// ── Icon Registry ──────────────────────────────────────────────────────
-
-/// Identifies every icon used in the TUI, grouped by semantic category.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)] // Registry covers all icons; some only used in files not yet migrated
-pub enum IconId {
-    // Navigation
-    ChevronRight,
-    ChevronDown,
-    ArrowRight,
-    ArrowLeft,
-    ArrowUp,
-    ArrowDown,
-    AngleLeft,
-    AngleRight,
-
-    // Status
-    CheckCircle,
-    CheckCircleFill,
-    XCircle,
-    Circle,
-    DotFill,
-    Skip,
-    Hourglass,
-    Warning,
-    Play,
-    Pause,
-    Sync,
-    Skull,
-    Alert,
-    Refresh,
-    Wrench,
-    GitPr,
-    GitMerge,
-    Search,
-    IssueOpened,
-    IssueClosed,
-    Milestone,
-
-    // UI Chrome
-    GaugeFilled,
-    GaugeEmpty,
-    Selector,
-    SeparatorV,
-    SeparatorH,
-    Fisheye,
-
-    // Indicators
-    CheckboxOn,
-    CheckboxOff,
-    Expand,
-    Collapse,
-
-    // Header Metrics
-    Agents,
-    Cost,
-    Clock,
-
-    // Header Brand
-    Repo,
-    User,
-    Branch,
-}
-
-/// A Nerd Font / ASCII icon pair.
-pub struct IconPair {
-    pub nerd: &'static str,
-    pub ascii: &'static str,
-}
-
-impl IconPair {
-    const fn new(nerd: &'static str, ascii: &'static str) -> Self {
-        Self { nerd, ascii }
-    }
-}
-
-/// Maps each IconId to its Nerd Font and ASCII variants.
-/// Compiles to a jump table — zero heap allocation, zero runtime cost.
-const fn icon_pair(id: IconId) -> IconPair {
-    match id {
-        // ── Navigation ──────────────────────────────────────────────
-        IconId::ChevronRight => IconPair::new("\u{f054}", ">"),
-        IconId::ChevronDown => IconPair::new("\u{f078}", "v"),
-        IconId::ArrowRight => IconPair::new("\u{f061}", "->"),
-        IconId::ArrowLeft => IconPair::new("\u{f060}", "<-"),
-        IconId::ArrowUp => IconPair::new("\u{2191}", "^"),
-        IconId::ArrowDown => IconPair::new("\u{2193}", "v"),
-        IconId::AngleLeft => IconPair::new("\u{f104}", "<"),
-        IconId::AngleRight => IconPair::new("\u{f105}", ">"),
-
-        // ── Status ──────────────────────────────────────────────────
-        IconId::CheckCircle => IconPair::new("\u{f42e}", "[+]"),
-        IconId::CheckCircleFill => IconPair::new("\u{f058}", "[*]"),
-        IconId::XCircle => IconPair::new("\u{f467}", "[X]"),
-        IconId::Circle => IconPair::new("\u{f4a3}", "( )"),
-        IconId::DotFill => IconPair::new("\u{f444}", "(*)"),
-        IconId::Skip => IconPair::new("\u{f4a7}", "[-]"),
-        IconId::Hourglass => IconPair::new("\u{f251}", "[~]"),
-        IconId::Warning => IconPair::new("\u{26A0}", "[!]"),
-        IconId::Play => IconPair::new("\u{f40a}", "[>]"),
-        IconId::Pause => IconPair::new("\u{f04c}", "[=]"),
-        IconId::Sync => IconPair::new("\u{f46a}", "[S]"),
-        IconId::Skull => IconPair::new("\u{f2d3}", "[D]"),
-        IconId::Alert => IconPair::new("\u{f421}", "[A]"),
-        IconId::Refresh => IconPair::new("\u{f363}", "[R]"),
-        IconId::Wrench => IconPair::new("\u{f7d9}", "[W]"),
-        IconId::GitPr => IconPair::new("\u{f407}", "[P]"),
-        IconId::GitMerge => IconPair::new("\u{f419}", "[M]"),
-        IconId::Search => IconPair::new("\u{f422}", "[?]"),
-        IconId::IssueOpened => IconPair::new("\u{f0766}", "[#]"), // nf-md-circle_outline
-        IconId::IssueClosed => IconPair::new("\u{f04d2}", "[+]"), // nf-md-check_circle
-        IconId::Milestone => IconPair::new("\u{f0431}", "[M]"),   // nf-md-flag
-
-        // ── UI Chrome ───────────────────────────────────────────────
-        IconId::GaugeFilled => IconPair::new("\u{2593}", "#"),
-        IconId::GaugeEmpty => IconPair::new("\u{2591}", "-"),
-        IconId::Selector => IconPair::new("\u{25b8}", ">"),
-        IconId::SeparatorV => IconPair::new("\u{2502}", "|"),
-        IconId::SeparatorH => IconPair::new("\u{2550}\u{2550}", "=="),
-        IconId::Fisheye => IconPair::new("\u{25C9}", "*"),
-
-        // ── Indicators ──────────────────────────────────────────────
-        IconId::CheckboxOn => IconPair::new("\u{f46c}", "[x]"),
-        IconId::CheckboxOff => IconPair::new("\u{f096}", "[ ]"),
-        IconId::Expand => IconPair::new("\u{f054}", ">"),
-        IconId::Collapse => IconPair::new("\u{f078}", "v"),
-
-        // ── Header Metrics ─────────────────────────────────────────
-        IconId::Agents => IconPair::new("\u{f064d}", "[U]"), // nf-md-account_group
-        IconId::Cost => IconPair::new("$", "$"),
-        IconId::Clock => IconPair::new("\u{f251}", "[T]"), // nf-fa-hourglass (⏳)
-
-        // ── Header Brand ──────────────────────────────────────────
-        IconId::Repo => IconPair::new("\u{f408}", "(g)"), // nf-oct-repo
-        IconId::User => IconPair::new("\u{f007}", "@"),   // nf-fa-user
-        IconId::Branch => IconPair::new("\u{f418}", "(b)"), // nf-oct-git_branch
-    }
-}
-
-/// Returns the correct icon string for the current mode (Nerd Font or ASCII).
-pub fn get(id: IconId) -> &'static str {
-    get_for_mode(id, use_nerd_font())
-}
-
-/// Pure, testable variant of `get()`. Pass the mode explicitly.
-pub(crate) fn get_for_mode(id: IconId, nerd_font: bool) -> &'static str {
-    let pair = icon_pair(id);
-    if nerd_font { pair.nerd } else { pair.ascii }
-}
+#[cfg(test)]
+pub use crate::icon_mode::init_from_config;
+// Re-exported for callers that import mode detection from `tui::icons`.
+pub use crate::icon_mode::use_nerd_font;
 
 #[cfg(test)]
 mod tests {
@@ -220,6 +51,7 @@ mod tests {
         IconId::IssueOpened,
         IconId::IssueClosed,
         IconId::Milestone,
+        IconId::NeedsReview,
         // UI Chrome
         IconId::GaugeFilled,
         IconId::GaugeEmpty,
@@ -242,30 +74,7 @@ mod tests {
         IconId::Branch,
     ];
 
-    // ── Existing tests (mode detection) ─────────────────────────────────
-
-    #[test]
-    fn returns_true_when_env_var_absent() {
-        assert!(use_nerd_font_from_env(|_| None));
-    }
-
-    #[test]
-    fn returns_false_when_ascii_icons_set_to_1() {
-        assert!(!use_nerd_font_from_env(|_| Some("1".to_string())));
-    }
-
-    #[test]
-    fn returns_true_when_ascii_icons_set_to_0() {
-        assert!(use_nerd_font_from_env(|_| Some("0".to_string())));
-    }
-
-    #[test]
-    fn init_from_config_sets_ascii_mode() {
-        init_from_config(true);
-        assert!(!use_nerd_font());
-        // Reset for other tests
-        init_from_config(false);
-    }
+    // ── SessionStatus symbol tests ──────────────────────────────────────
 
     #[test]
     fn nerd_symbol_all_variants_are_nonempty() {
@@ -396,6 +205,7 @@ mod tests {
             (IssueOpened, "\u{f0766}"),
             (IssueClosed, "\u{f04d2}"),
             (Milestone, "\u{f0431}"),
+            (NeedsReview, "\u{f41b}"),
         ];
         for &(id, expected) in cases {
             assert_eq!(
@@ -422,6 +232,7 @@ mod tests {
             (Agents, "[U]"),
             (Cost, "$"),
             (Clock, "[T]"),
+            (NeedsReview, "[!]"),
         ];
         for &(id, expected) in cases {
             assert_eq!(
@@ -476,5 +287,61 @@ mod tests {
     fn icon_pair_returns_both_variants() {
         assert_eq!(get_for_mode(IconId::CheckCircle, true), "\u{f42e}");
         assert_eq!(get_for_mode(IconId::CheckCircle, false), "[+]");
+    }
+
+    // ── #308: SessionStatus delegates to icon registry ──────────────────
+
+    #[test]
+    fn nerd_symbol_delegates_to_icon_registry_for_all_variants() {
+        let cases: &[(SessionStatus, IconId)] = &[
+            (SessionStatus::Queued, IconId::Hourglass),
+            (SessionStatus::Spawning, IconId::Sync),
+            (SessionStatus::Running, IconId::Play),
+            (SessionStatus::Completed, IconId::CheckCircle),
+            (SessionStatus::GatesRunning, IconId::Search),
+            (SessionStatus::NeedsReview, IconId::NeedsReview),
+            (SessionStatus::Errored, IconId::XCircle),
+            (SessionStatus::Paused, IconId::Pause),
+            (SessionStatus::Killed, IconId::Skull),
+            (SessionStatus::Stalled, IconId::Alert),
+            (SessionStatus::Retrying, IconId::Refresh),
+            (SessionStatus::CiFix, IconId::Wrench),
+            (SessionStatus::NeedsPr, IconId::GitPr),
+            (SessionStatus::ConflictFix, IconId::GitMerge),
+        ];
+        for &(ref status, icon_id) in cases {
+            assert_eq!(
+                status.nerd_symbol(),
+                get_for_mode(icon_id, true),
+                "{status:?}.nerd_symbol() must equal registry get_for_mode({icon_id:?}, true)"
+            );
+        }
+    }
+
+    #[test]
+    fn ascii_symbol_queued_remains_q_not_registry_value() {
+        assert_eq!(SessionStatus::Queued.ascii_symbol(), "[Q]");
+        assert_ne!(SessionStatus::Queued.ascii_symbol(), "[~]");
+    }
+
+    #[test]
+    fn ascii_symbol_paused_remains_bracket_dash_not_registry_value() {
+        assert_eq!(SessionStatus::Paused.ascii_symbol(), "[-]");
+        assert_ne!(SessionStatus::Paused.ascii_symbol(), "[=]");
+    }
+
+    #[test]
+    fn symbol_reads_from_shared_icon_mode_not_local_atomic() {
+        use crate::icon_mode;
+        icon_mode::init_from_config(true); // ASCII
+        assert_eq!(
+            SessionStatus::Running.symbol(),
+            SessionStatus::Running.ascii_symbol()
+        );
+        icon_mode::init_from_config(false); // Nerd
+        assert_eq!(
+            SessionStatus::Running.symbol(),
+            SessionStatus::Running.nerd_symbol()
+        );
     }
 }

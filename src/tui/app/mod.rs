@@ -232,8 +232,7 @@ impl App {
                 LogLevel::Warn,
             );
         }
-        crate::session::types::SessionStatus::set_ascii_icons(config.tui.ascii_icons);
-        crate::tui::icons::init_from_config(config.tui.ascii_icons);
+        crate::icon_mode::init_from_config(config.tui.ascii_icons);
         self.show_mascot = config.tui.show_mascot;
         self.config = Some(config);
     }
