@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use crate::github::ci::{CheckConclusion, CheckRunDetail, CheckStatus};
+use crate::tui::icons::{self, IconId};
 use crate::tui::theme::Theme;
 
 /// Default maximum number of visible check rows before truncation.
@@ -47,15 +48,15 @@ impl<'a> CiMonitorWidget<'a> {
 /// Map a check's status+conclusion to a display icon.
 fn status_icon(status: CheckStatus, conclusion: CheckConclusion) -> &'static str {
     match (status, conclusion) {
-        (CheckStatus::Completed, CheckConclusion::Success) => "\u{f42e}",
+        (CheckStatus::Completed, CheckConclusion::Success) => icons::get(IconId::CheckCircle),
         (CheckStatus::Completed, CheckConclusion::Failure)
         | (CheckStatus::Completed, CheckConclusion::TimedOut)
-        | (CheckStatus::Completed, CheckConclusion::StartupFailure) => "\u{f467}",
-        (CheckStatus::Completed, CheckConclusion::Skipped) => "\u{f4a7}",
-        (CheckStatus::Completed, CheckConclusion::Cancelled) => "\u{f4a7}",
-        (CheckStatus::Completed, _) => "\u{f42e}", // Neutral, Stale, ActionRequired, None
-        (CheckStatus::InProgress, _) => "\u{f251}",
-        _ => "\u{f251}", // Queued, Pending, Waiting, Requested, Unknown
+        | (CheckStatus::Completed, CheckConclusion::StartupFailure) => icons::get(IconId::XCircle),
+        (CheckStatus::Completed, CheckConclusion::Skipped) => icons::get(IconId::Skip),
+        (CheckStatus::Completed, CheckConclusion::Cancelled) => icons::get(IconId::Skip),
+        (CheckStatus::Completed, _) => icons::get(IconId::CheckCircle),
+        (CheckStatus::InProgress, _) => icons::get(IconId::Hourglass),
+        _ => icons::get(IconId::Hourglass),
     }
 }
 

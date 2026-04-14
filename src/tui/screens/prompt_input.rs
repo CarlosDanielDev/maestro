@@ -1,5 +1,6 @@
 use super::wrap::{scroll_offset_for_cursor, wrap_lines};
 use super::{PromptSessionConfig, Screen, ScreenAction, draw_keybinds_bar};
+use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::focus::{FocusId, FocusRing};
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -321,6 +322,11 @@ impl PromptInputScreen {
         f.render_widget(image_list, chunks[1]);
 
         // Status message or keybinds bar
+        let history_keys = format!(
+            "{}/{}",
+            icons::get(IconId::ArrowUp),
+            icons::get(IconId::ArrowDown)
+        );
         if let Some(ref msg) = self.status_message {
             let status = Paragraph::new(Line::from(Span::styled(
                 format!(" {} ", msg),
@@ -334,7 +340,7 @@ impl PromptInputScreen {
                 &[
                     ("Enter", "Submit"),
                     ("Ctrl+J", "New line"),
-                    ("\u{2191}/\u{2193}", "History"),
+                    (&history_keys, "History"),
                     ("Ctrl+V", "Paste"),
                     ("Tab", "Switch"),
                     ("Esc", "Cancel"),

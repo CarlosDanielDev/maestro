@@ -1,4 +1,5 @@
 use crate::session::types::Session;
+use crate::tui::icons::{self, IconId};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -98,7 +99,11 @@ impl SessionSwitcher {
         let mut lines = Vec::new();
         for (i, session) in filtered.iter().enumerate() {
             let is_selected = i == self.selected_index.min(filtered.len().saturating_sub(1));
-            let prefix = if is_selected { "> " } else { "  " };
+            let prefix = if is_selected {
+                format!("{} ", icons::get(IconId::Selector))
+            } else {
+                "  ".to_string()
+            };
 
             let status_symbol = session.status.symbol();
             let label = if let Some(num) = session.issue_number {

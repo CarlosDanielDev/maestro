@@ -1,6 +1,7 @@
 use super::{Screen, ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
 use crate::github::types::{GhIssue, GhMilestone};
 use crate::tui::app::TuiMode;
+use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::panels::compact_gauge_bar_counts;
@@ -177,7 +178,11 @@ impl MilestoneScreen {
             }
 
             let is_selected = *idx == self.selected;
-            let cursor = if is_selected { "\u{f054} " } else { "  " }; // nf-fa-chevron_right
+            let cursor = if is_selected {
+                format!("{} ", icons::get(IconId::ChevronRight))
+            } else {
+                "  ".to_string()
+            };
 
             let title_style = if is_selected {
                 Style::default()
@@ -205,8 +210,8 @@ impl MilestoneScreen {
             let gauge_color = theme.compact_gauge_color(pct);
             let bar = format!(
                 "[{}{}] {}/{} issues ({:.0}%)",
-                "\u{2593}".repeat(filled),
-                "\u{2591}".repeat(empty),
+                icons::get(IconId::GaugeFilled).repeat(filled),
+                icons::get(IconId::GaugeEmpty).repeat(empty),
                 entry.closed_issues,
                 entry.total_issues(),
                 pct,
@@ -221,11 +226,15 @@ impl MilestoneScreen {
 
             let status_line = Line::from(vec![
                 Span::styled(
-                    format!("  \u{f42e} {}  ", entry.closed_issues), // nf-oct-check_circle
+                    format!(
+                        "  {} {}  ",
+                        icons::get(IconId::CheckCircle),
+                        entry.closed_issues
+                    ),
                     Style::default().fg(theme.accent_success),
                 ),
                 Span::styled(
-                    format!("\u{f251} {}", entry.open_issues), // nf-fa-hourglass_start
+                    format!("{} {}", icons::get(IconId::Hourglass), entry.open_issues),
                     Style::default().fg(theme.accent_warning),
                 ),
             ]);
@@ -252,9 +261,9 @@ impl MilestoneScreen {
                 .take(5)
                 .map(|i| {
                     let symbol = if i.state == "closed" {
-                        "\u{f42e}"
+                        icons::get(IconId::CheckCircle)
                     } else {
-                        "\u{f251}"
+                        icons::get(IconId::Hourglass)
                     };
                     Line::from(vec![
                         Span::raw(format!("  {} ", symbol)),

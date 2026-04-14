@@ -1,5 +1,6 @@
 use super::AdaptScreen;
 use super::types::AdaptStep;
+use crate::tui::icons::{self, IconId};
 use crate::tui::screens::{draw_keybinds_bar, sanitize_for_terminal};
 use crate::tui::theme::Theme;
 use ratatui::{
@@ -75,7 +76,11 @@ fn draw_configure(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme
             Style::default().fg(theme.text_primary)
         };
 
-        let marker = if is_selected { "\u{f054} " } else { "  " };
+        let marker = if is_selected {
+            format!("{} ", icons::get(IconId::ChevronRight))
+        } else {
+            "  ".to_string()
+        };
         let line = Line::from(vec![
             Span::styled(marker, style),
             Span::styled(format!("{}: ", label), style),
@@ -107,7 +112,10 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
             // Completed
             let info = phase_summary(screen, i);
             lines.push(Line::from(vec![
-                Span::styled("  \u{f42e} ", Style::default().fg(theme.accent_success)),
+                Span::styled(
+                    format!("  {} ", icons::get(IconId::CheckCircle)),
+                    Style::default().fg(theme.accent_success),
+                ),
                 Span::styled(
                     *label,
                     Style::default()
@@ -129,7 +137,7 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         } else {
             // Pending
             (
-                "  \u{f4a3} ".to_string(),
+                format!("  {} ", icons::get(IconId::Circle)),
                 Style::default().fg(theme.text_secondary),
             )
         };

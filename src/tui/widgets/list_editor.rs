@@ -1,3 +1,4 @@
+use crate::tui::icons::{self, IconId};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -125,7 +126,11 @@ impl ListEditor {
 
         for (i, item) in self.items.iter().enumerate() {
             let is_selected = i == self.selected && focused;
-            let prefix = if is_selected { "> " } else { "  " };
+            let prefix = if is_selected {
+                format!("{} ", icons::get(IconId::Selector))
+            } else {
+                "  ".to_string()
+            };
             let style = if is_selected {
                 Style::default()
                     .fg(theme.accent_success)

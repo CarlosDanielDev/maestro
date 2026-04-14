@@ -1,6 +1,7 @@
 use crate::session::types::Session;
 use crate::state::file_claims::FileClaimManager;
 use crate::state::progress::ProgressTracker;
+use crate::tui::icons::{self, IconId};
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
@@ -169,7 +170,7 @@ fn draw_detail_header(
     if session.is_hollow_completion {
         detail_spans.push(Span::raw("  "));
         detail_spans.push(Span::styled(
-            "\u{26A0} HOLLOW COMPLETION",
+            format!("{} HOLLOW COMPLETION", icons::get(IconId::Warning)),
             Style::default()
                 .fg(theme.accent_warning)
                 .add_modifier(Modifier::BOLD),

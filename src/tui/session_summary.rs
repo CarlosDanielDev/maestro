@@ -1,4 +1,5 @@
 use crate::tui::app::types::{CompletionSummaryData, SessionSummaryState};
+use crate::tui::icons::{self, IconId};
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
@@ -51,7 +52,11 @@ pub fn draw_session_summary(
             .unwrap_or(false);
         let is_selected = i == selected_index;
 
-        let expand_marker = if is_expanded { "\u{f078}" } else { "\u{f054}" };
+        let expand_marker = if is_expanded {
+            icons::get(IconId::Collapse)
+        } else {
+            icons::get(IconId::Expand)
+        };
         let select_marker = if is_selected { ">" } else { " " };
 
         lines.push(Line::from(vec![

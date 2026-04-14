@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use crate::config::Config;
 use crate::flags::FlagSource;
 use crate::flags::store::FeatureFlags;
+use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
@@ -876,7 +877,11 @@ impl SettingsScreen {
             } else {
                 Style::default().fg(theme.text_muted)
             };
-            let prefix = if focused { "> " } else { "  " };
+            let prefix = if focused {
+                format!("{} ", icons::get(IconId::Selector))
+            } else {
+                "  ".to_string()
+            };
 
             let line = Line::from(vec![
                 Span::styled(format!("{}{:<22}", prefix, flag.name()), row_style),
