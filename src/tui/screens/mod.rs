@@ -91,7 +91,6 @@ pub enum ScreenAction {
     /// Request a refresh of dashboard suggestion data.
     RefreshSuggestions,
     /// Launch a unified session for multiple issues (single branch, single PR).
-    #[allow(dead_code)] // Reason: unified PR flow — wired in issue browser and prompt screens
     LaunchUnifiedSession(UnifiedSessionConfig),
     /// Launch a sequential queue execution from confirmed queue.
     LaunchQueue(Vec<SessionConfig>),

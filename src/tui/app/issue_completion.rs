@@ -231,6 +231,7 @@ impl App {
                         let now = chrono::Utc::now();
                         let pending = PendingPr {
                             issue_number,
+                            issue_numbers: issue_numbers.clone(),
                             branch: branch.clone(),
                             base_branch: base_branch.clone(),
                             files_touched: files_touched.clone(),
