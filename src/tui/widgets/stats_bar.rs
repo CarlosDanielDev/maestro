@@ -36,7 +36,7 @@ impl<'a> StatsBar<'a> {
         Self { data, theme }
     }
 
-    fn build_line(&self) -> Line {
+    fn build_line(&self) -> Line<'_> {
         let username = self.data.username.as_deref().unwrap_or("unknown");
 
         let mut spans = vec![

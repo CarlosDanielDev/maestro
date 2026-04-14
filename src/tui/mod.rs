@@ -166,8 +166,12 @@ async fn event_loop(
                         let ready_count = ready_result.map(|v| v.len()).unwrap_or(0);
                         let failed_count = failed_result.map(|v| v.len()).unwrap_or(0);
                         let milestones_vec = milestones_result.unwrap_or_default();
-                        let open_issue_count: usize = milestones_vec.iter().map(|m| m.open_issues as usize).sum();
-                        let closed_issue_count: usize = milestones_vec.iter().map(|m| m.closed_issues as usize).sum();
+                        let open_issue_count: usize =
+                            milestones_vec.iter().map(|m| m.open_issues as usize).sum();
+                        let closed_issue_count: usize = milestones_vec
+                            .iter()
+                            .map(|m| m.closed_issues as usize)
+                            .sum();
                         let milestones_data: Vec<_> = milestones_vec
                             .iter()
                             .map(|m| {

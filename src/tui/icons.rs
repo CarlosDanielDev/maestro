@@ -164,9 +164,9 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::Clock => IconPair::new("\u{f251}", "[T]"), // nf-fa-hourglass (⏳)
 
         // ── Header Brand ──────────────────────────────────────────
-        IconId::Repo => IconPair::new("\u{f408}", "(g)"),     // nf-oct-repo
-        IconId::User => IconPair::new("\u{f007}", "@"),       // nf-fa-user
-        IconId::Branch => IconPair::new("\u{f418}", "(b)"),   // nf-oct-git_branch
+        IconId::Repo => IconPair::new("\u{f408}", "(g)"), // nf-oct-repo
+        IconId::User => IconPair::new("\u{f007}", "@"),   // nf-fa-user
+        IconId::Branch => IconPair::new("\u{f418}", "(b)"), // nf-oct-git_branch
     }
 }
 

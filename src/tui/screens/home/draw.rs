@@ -45,9 +45,23 @@ impl HomeScreen {
             username: self.project_info.username.clone(),
             issues_open: self.stats.issues_open,
             issues_closed: self.stats.issues_closed,
-            milestone_title: self.stats.milestone_active.as_ref().map(|m| m.title.clone()),
-            milestone_closed: self.stats.milestone_active.as_ref().map(|m| m.closed).unwrap_or(0),
-            milestone_total: self.stats.milestone_active.as_ref().map(|m| m.total).unwrap_or(0),
+            milestone_title: self
+                .stats
+                .milestone_active
+                .as_ref()
+                .map(|m| m.title.clone()),
+            milestone_closed: self
+                .stats
+                .milestone_active
+                .as_ref()
+                .map(|m| m.closed)
+                .unwrap_or(0),
+            milestone_total: self
+                .stats
+                .milestone_active
+                .as_ref()
+                .map(|m| m.total)
+                .unwrap_or(0),
             sessions_active: self.stats.sessions_active,
             sessions_total: self.stats.sessions_total,
         };
