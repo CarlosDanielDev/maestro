@@ -174,8 +174,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             crate::tui::background_tasks::spawn_version_check(app.data_tx.clone());
         }
         ScreenAction::UpdateConfig(config) => {
-            crate::session::types::SessionStatus::set_ascii_icons(config.tui.ascii_icons);
-            crate::tui::icons::init_from_config(config.tui.ascii_icons);
+            crate::icon_mode::init_from_config(config.tui.ascii_icons);
             app.config = Some(*config);
         }
         ScreenAction::PreviewTheme(theme_config) => {

@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-13 19:00 (UTC)
+> Last updated: 2026-04-14 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -62,7 +62,9 @@ maestro/
 │       └── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
 ├── build.rs                               # Build script: generates man page (maestro.1) and shell completions (bash, zsh, fish) into OUT_DIR at build time using clap_mangen and clap_complete  [Issue #18]
 ├── src/
-│   ├── lib.rs                             # Library facade exposing session::parser and session::types for benchmark crates (no main.rs re-export)
+│   ├── lib.rs                             # Library facade; exposes session::parser and session::types for benchmark crates; pub mod icon_mode and pub mod icons added so shared icon modules are accessible as library crate items  [Issue #307, #308]
+│   ├── icon_mode.rs                       # Shared icon mode detection: AtomicBool global flag, init_from_config() reads tui.ascii_icons from Config and MAESTRO_ASCII_ICONS env var, use_nerd_font() returns current mode; extracted from tui/icons.rs so non-TUI crates can query the mode without pulling in the full TUI tree  [Issue #307]
+│   ├── icons.rs                           # Shared icon registry: IconId enum (38 variants across Navigation, Status, UI Chrome, Indicators categories, plus NeedsReview variant added in #308), IconPair struct (nerd: &'static str, ascii: &'static str), icon_pair() const fn compiles to a zero-allocation jump table, get(IconId) returns the correct variant based on global mode, get_for_mode(id, nerd_font) pure testable variant; extracted from tui/icons.rs  [Issue #308]
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; propagates once_mode from parsed CLI flag into App; forces max_concurrent=1 when --continuous is set; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests; declares mod updater; declares mod flags; propagates startup gh auth check result into App.gh_auth_ok; declares #[cfg(feature = "experimental-sanitizer")] mod sanitizer; constructs FeatureFlags from --enable-flag / --disable-flag CLI args merged with [flags] config  [Issue #15, #29, #49, #34, #36, #35, #52, #83, #85, #118, #141, #142, #143, #158]
 │   ├── cli.rs                             # CLI definition extracted from main.rs; Cli struct and Commands enum (clap derive); --once flag on Run subcommand (exits after all sessions complete, for CI/scripting); --continuous / -C flag on Run subcommand (auto-advance through issues, pause on failure); --enable-flag / --disable-flag repeatable args on Run subcommand for runtime feature flag overrides; generate_completions() and cmd_completions() for shell tab-completion output; cmd_mangen() for roff man page generation; Completions and Mangen subcommands  [Issue #18, #83, #85, #143]
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix; TuiConfig struct with optional theme field; Config gains tui field; FlagsConfig (flattened HashMap<String, bool>) loaded from [flags] table; Config gains flags field  [Issue #29, #40, #41, #43, #38, #143]
@@ -143,7 +145,7 @@ maestro/
 │   │   ├── detail.rs                      # Session detail view  [Phase 3]
 │   │   ├── fullscreen.rs                  # Fullscreen session view with phase progress overlay  [Phase 3]
 │   │   ├── help.rs                        # Help overlay widget with keybinding reference  [Phase 3]
-│   │   ├── icons.rs                       # Centralized icon registry: IconId enum (38 variants across Navigation, Status, UI Chrome, Indicators categories); IconPair struct holding nerd: &'static str and ascii: &'static str; icon_pair() const fn compiles to a jump table with zero heap allocation; get(IconId) public API returns the correct variant based on current global mode; get_for_mode(id, nerd_font) pure testable variant; init_from_config() sets ASCII mode from tui.ascii_icons config; MAESTRO_ASCII_ICONS=1 env var override  [Issue #286]
+│   │   ├── icons.rs                       # Thin re-export shim: re-exports IconId, IconPair, icon_pair(), get(), get_for_mode() from src/icons.rs and init_from_config(), use_nerd_font() from src/icon_mode.rs so existing tui:: import paths remain valid after the registry was extracted  [Issue #307, #308]
 │   │   ├── input_handler.rs               # Top-level key event dispatcher extracted from mod.rs; KeyAction enum (Consumed, Quit); handle_key() dispatches to overlay handlers, mode-specific input, global shortcuts, and screen dispatch in priority order
 │   │   ├── log_viewer.rs                  # Full-screen scrollable log viewer widget
 │   │   ├── markdown.rs                    # markdown-to-ratatui rendering module; convert Markdown content to terminal-friendly widgets; wrap_and_push_text() performs width-aware word wrapping when appending text spans to a line buffer
@@ -343,7 +345,9 @@ maestro/
 | `src/tui/screens/hollow_retry.rs` | `HollowRetryScreen`: minimal retry prompt overlay for stalled sessions awaiting user confirmation |
 | `src/tui/screens/queue_confirmation.rs` | `QueueConfirmationScreen`: confirmation overlay before bulk-queuing selected issues from the issue browser |
 | `src/tui/screens/settings/mod.rs` | `SettingsScreen`: tabbed interactive settings UI; `Flags` tab shows all feature flags with name, state, source (`Default`/`Config`/`Cli`), and description; read-only display with green accent on focused fields (Issues #124, #146) |
-| `src/tui/icons.rs` | Centralized icon registry: `IconId` enum (38 variants), `IconPair` struct, `get(IconId)` public API, `get_for_mode(id, nerd_font)` pure testable variant; zero-allocation const jump table; `init_from_config()` and `MAESTRO_ASCII_ICONS` env var override (Issue #286) |
+| `src/icon_mode.rs` | Shared icon mode detection: `AtomicBool` global, `init_from_config()`, `use_nerd_font()`; reads `tui.ascii_icons` config and `MAESTRO_ASCII_ICONS` env var (Issue #307) |
+| `src/icons.rs` | Shared icon registry: `IconId` enum (38 variants + `NeedsReview`), `IconPair` struct, `icon_pair()` const jump table, `get(IconId)`, `get_for_mode(id, nerd_font)` (Issue #308) |
+| `src/tui/icons.rs` | Thin re-export shim: re-exports all public items from `src/icon_mode.rs` and `src/icons.rs` so existing `tui::icons::` import paths remain valid (Issues #307, #308) |
 | `src/tui/screens/adapt/` | Adapt wizard screen: multi-step TUI wizard for onboarding a project into maestro (Issue #88) |
 | `src/tui/screens/adapt/mod.rs` | `AdaptScreen` struct implementing the `Screen` trait; wizard entry point and step coordination |
 | `src/tui/screens/adapt/types.rs` | `AdaptStep`, `AdaptWizardConfig`, `AdaptResults`, `AdaptError` type definitions |
