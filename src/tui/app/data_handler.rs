@@ -256,11 +256,11 @@ impl App {
                     }
                     combined_prompt.push_str(&self.build_issue_prompt_with_custom(issue, &None));
                 }
-                if let Some(ref cp) = custom_prompt {
-                    if !cp.trim().is_empty() {
-                        combined_prompt
-                            .push_str(&format!("\n\n## Additional Instructions\n\n{}", cp.trim()));
-                    }
+                if let Some(ref cp) = custom_prompt
+                    && !cp.trim().is_empty()
+                {
+                    combined_prompt
+                        .push_str(&format!("\n\n## Additional Instructions\n\n{}", cp.trim()));
                 }
 
                 let primary_issue = issue_numbers.first().copied();
