@@ -1,6 +1,6 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Widget},
@@ -110,9 +110,7 @@ impl<'a> StatsBar<'a> {
             } else {
                 0.0
             };
-            let bar_width = 8usize;
-            let filled = ((pct / 100.0) * bar_width as f64).round() as usize;
-            let empty = bar_width.saturating_sub(filled);
+            let (filled, empty) = crate::tui::panels::compact_gauge_bar_counts(pct, 8);
 
             spans.extend([
                 Span::styled("  │  ", Style::default().fg(self.theme.text_muted)),
@@ -170,14 +168,8 @@ impl<'a> Widget for StatsBar<'a> {
         let inner = block.inner(area);
         block.render(area, buf);
 
-        let line = self.build_line();
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1)])
-            .split(inner);
-
-        if !chunks.is_empty() {
-            Paragraph::new(line).render(chunks[0], buf);
+        if inner.height > 0 {
+            Paragraph::new(self.build_line()).render(inner, buf);
         }
     }
 }
