@@ -1,3 +1,4 @@
+use crate::tui::icons::{self, IconId};
 use crate::tui::theme::Theme;
 use crate::work::assigner::WorkAssigner;
 use crate::work::types::WorkStatus;
@@ -44,18 +45,18 @@ fn build_graph_lines<'a>(assigner: &WorkAssigner, theme: &Theme) -> Vec<Line<'a>
         };
 
         let status_symbol = match item.status {
-            WorkStatus::Pending => "\u{f4a3}",    // nf-oct-circle
-            WorkStatus::Blocked => "\u{f4a7}",    // nf-oct-skip
-            WorkStatus::InProgress => "\u{f444}", // nf-oct-dot_fill
-            WorkStatus::Done => "\u{f42e}",       // nf-oct-check_circle
-            WorkStatus::Failed => "\u{f467}",     // nf-oct-x_circle
+            WorkStatus::Pending => icons::get(IconId::Circle),
+            WorkStatus::Blocked => icons::get(IconId::Skip),
+            WorkStatus::InProgress => icons::get(IconId::DotFill),
+            WorkStatus::Done => icons::get(IconId::CheckCircle),
+            WorkStatus::Failed => icons::get(IconId::XCircle),
         };
 
         let deps_str = if item.blocked_by.is_empty() {
             String::new()
         } else {
             let deps: Vec<String> = item.blocked_by.iter().map(|d| format!("#{}", d)).collect();
-            format!(" \u{f060} [{}]", deps.join(", "))
+            format!(" {} [{}]", icons::get(IconId::ArrowLeft), deps.join(", "))
         };
 
         lines.push(Line::from(vec![

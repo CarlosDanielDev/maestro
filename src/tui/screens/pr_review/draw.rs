@@ -1,5 +1,6 @@
 use super::PrReviewScreen;
 use super::types::PrReviewStep;
+use crate::tui::icons::{self, IconId};
 use crate::tui::markdown::render_markdown;
 use crate::tui::screens::{draw_keybinds_bar, sanitize_for_terminal};
 use crate::tui::spinner::spinner_frame;
@@ -118,7 +119,11 @@ fn draw_pr_list(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Them
         let row_area = Rect::new(inner.x, y, inner.width, 1);
         let is_selected = i == screen.selected;
 
-        let marker = if is_selected { "\u{f054} " } else { "  " };
+        let marker = if is_selected {
+            format!("{} ", icons::get(IconId::ChevronRight))
+        } else {
+            "  ".to_string()
+        };
         let draft_tag = if pr.draft { " [DRAFT]" } else { "" };
         let title = sanitize_for_terminal(&pr.title);
 
@@ -210,7 +215,10 @@ fn draw_pr_detail(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Th
                 sanitize_for_terminal(&pr.head_branch),
                 Style::default().fg(theme.accent_info),
             ),
-            Span::styled(" \u{f061} ", Style::default().fg(theme.text_secondary)),
+            Span::styled(
+                format!(" {} ", icons::get(IconId::ArrowRight)),
+                Style::default().fg(theme.text_secondary),
+            ),
             Span::styled(
                 sanitize_for_terminal(&pr.base_branch),
                 Style::default().fg(theme.text_primary),
@@ -291,9 +299,9 @@ fn draw_submit_review(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme:
     for event in &events {
         let is_selected = *event == screen.form.event;
         let marker = if is_selected {
-            "\u{f444} "
+            format!("{} ", icons::get(IconId::DotFill))
         } else {
-            "\u{f4a3} "
+            format!("{} ", icons::get(IconId::Circle))
         };
         let style = if is_selected {
             Style::default()
@@ -339,7 +347,10 @@ fn draw_done(f: &mut Frame, area: Rect, theme: &Theme) {
     let lines = vec![
         Line::from(""),
         Line::from(vec![Span::styled(
-            "  \u{f42e} Review submitted successfully!",
+            format!(
+                "  {} Review submitted successfully!",
+                icons::get(IconId::CheckCircle)
+            ),
             Style::default()
                 .fg(theme.accent_success)
                 .add_modifier(Modifier::BOLD),

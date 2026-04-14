@@ -1,4 +1,5 @@
 use super::app::App;
+use crate::tui::icons::{self, IconId};
 
 pub(super) fn print_summary(app: &App) {
     let summary = app.build_completion_summary();
@@ -24,7 +25,8 @@ pub(super) fn print_summary(app: &App) {
 
         if session.is_hollow_completion {
             println!(
-                "    \u{26A0} Hollow completion: session completed without performing any work"
+                "    {} Hollow completion: session completed without performing any work",
+                icons::get(IconId::Warning)
             );
         }
         if !session.last_message.is_empty() {

@@ -1,5 +1,6 @@
 use crate::session::types::Session;
 use crate::state::file_claims::FileClaimManager;
+use crate::tui::icons::{self, IconId};
 use crate::tui::markdown::render_markdown;
 use crate::tui::spinner;
 use crate::tui::theme::Theme;
@@ -442,8 +443,8 @@ fn draw_single_panel(
         let (filled, empty) = compact_gauge_bar_counts(ctx_pct, bar_width);
         let bar = format!(
             "ctx: [{}{}] {:.0}%",
-            "\u{2593}".repeat(filled),
-            "\u{2591}".repeat(empty),
+            icons::get(IconId::GaugeFilled).repeat(filled),
+            icons::get(IconId::GaugeEmpty).repeat(empty),
             ctx_pct,
         );
         f.render_widget(
@@ -515,8 +516,8 @@ fn draw_single_panel(
         let (filled, empty) = compact_gauge_bar_counts(ctx_pct, bar_width);
         let bar = format!(
             "ctx: [{}{}] {:.0}%",
-            "\u{2593}".repeat(filled),
-            "\u{2591}".repeat(empty),
+            icons::get(IconId::GaugeFilled).repeat(filled),
+            icons::get(IconId::GaugeEmpty).repeat(empty),
             ctx_pct,
         );
         f.render_widget(
@@ -575,7 +576,10 @@ fn draw_single_panel(
 
         // Current activity (phase-aware animation)
         let activity_text = if session.is_hollow_completion {
-            "> \u{26A0} Session completed without performing any work".to_string()
+            format!(
+                "> {} Session completed without performing any work",
+                icons::get(IconId::Warning)
+            )
         } else {
             let phase = spinner::animation_phase(
                 session.status,

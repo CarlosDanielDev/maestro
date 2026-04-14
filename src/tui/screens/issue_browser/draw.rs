@@ -1,5 +1,6 @@
 use super::{FilterMode, IssueBrowserScreen, IssuePromptOverlay, sanitize_for_terminal};
 use crate::tui::help::centered_rect;
+use crate::tui::icons::{self, IconId};
 use crate::tui::marquee::{MarqueeConfig, needs_scroll, visible_slice};
 use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
 use crate::tui::theme::Theme;
@@ -250,8 +251,16 @@ impl IssueBrowserScreen {
                 let is_selected = display_idx == self.selected;
                 let is_multi = self.selected_set.contains(&issue.number);
 
-                let marker = if is_multi { "\u{f058}" } else { " " };
-                let cursor = if is_selected { "\u{f054}" } else { " " };
+                let marker = if is_multi {
+                    icons::get(IconId::CheckCircleFill)
+                } else {
+                    " "
+                };
+                let cursor = if is_selected {
+                    icons::get(IconId::ChevronRight)
+                } else {
+                    " "
+                };
 
                 let style = if is_selected {
                     Style::default()

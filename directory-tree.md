@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-13 00:00 (UTC)
+> Last updated: 2026-04-13 18:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -143,14 +143,24 @@ maestro/
 │   │   ├── detail.rs                      # Session detail view  [Phase 3]
 │   │   ├── fullscreen.rs                  # Fullscreen session view with phase progress overlay  [Phase 3]
 │   │   ├── help.rs                        # Help overlay widget with keybinding reference  [Phase 3]
-│   │   ├── markdown.rs                     # markdown-to-ratatui rendering module; convert Markdown content to terminal-friendly widgets; wrap_and_push_text() performs width-aware word wrapping when appending text spans to a line buffer
+│   │   ├── icons.rs                       # Centralized icon registry: IconId enum (38 variants across Navigation, Status, UI Chrome, Indicators categories); IconPair struct holding nerd: &'static str and ascii: &'static str; icon_pair() const fn compiles to a jump table with zero heap allocation; get(IconId) public API returns the correct variant based on current global mode; get_for_mode(id, nerd_font) pure testable variant; init_from_config() sets ASCII mode from tui.ascii_icons config; MAESTRO_ASCII_ICONS=1 env var override  [Issue #286]
+│   │   ├── input_handler.rs               # Top-level key event dispatcher extracted from mod.rs; KeyAction enum (Consumed, Quit); handle_key() dispatches to overlay handlers, mode-specific input, global shortcuts, and screen dispatch in priority order
+│   │   ├── log_viewer.rs                  # Full-screen scrollable log viewer widget
+│   │   ├── markdown.rs                    # markdown-to-ratatui rendering module; convert Markdown content to terminal-friendly widgets; wrap_and_push_text() performs width-aware word wrapping when appending text spans to a line buffer
+│   │   ├── marquee.rs                     # Horizontally scrolling marquee text widget
 │   │   ├── panels.rs                      # Split-pane panel view; fork depth indicator in title; overflow warning in context gauge; GatesRunning (Cyan), NeedsReview (LightYellow), and CiFix (LightMagenta) status colors; panel_border_type() returns thick borders for the focused grid panel; ▸ indicator rendered on the selected panel title; border flashes (amber) for 4 render ticks when flash_counter > 0 on state transition  [Issue #12, #40, #41, #202]
 │   │   ├── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners, screen rendering branches; draw_upgrade_banner() renders upgrade notification states (available, downloading, installing, done, failed) as a top-of-screen banner with version info and [y]/[n] confirmation prompts; draw_gh_auth_warning() renders a persistent top-of-screen banner when gh CLI is not authenticated; CompletionSummary render branch and draw_completion_overlay() centred overlay with per-session outcome rows, PR links (underlined), error summaries, per-gate failure lines (✗ gate_name message in warning/error colors), and keybindings bar ([f] Fix when has_needs_review(), [i] [r] [l] [q] [Esc]); ContinuousPause render branch and continuous pause overlay; bottom bar split into info bar (agent count, cost, elapsed) and DOS-style F-key legend bar; draw_fkey_bar() renders amber-badged key names (F1–F10, Alt-X) with responsive width truncation; HelpBarContext struct drives context-aware keybinding dimming in the help bar  [Phase 3, Issue #31-33, #83, #84, #85, #104, #118, #158, #218]
 │   │   ├── navigation/                    # Keyboard navigation and focus management  [Issue #37]
 │   │   │   ├── mod.rs                     # Module exports for navigation subsystem
 │   │   │   ├── focus.rs                   # Focus management: FocusManager, focus ring, widget focus state
-│   │   │   └── keymap.rs                  # Keymap definitions: action-to-key bindings, context-sensitive keymaps; F-key bar actions registered (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit)  [Issue #218]
+│   │   │   ├── keymap.rs                  # Keymap definitions: action-to-key bindings, context-sensitive keymaps; F-key bar actions registered (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit); KeyBindingGroup, InlineHint, FKeyRelevance, ModeKeyMap, global_keybindings() LazyLock  [Issue #218]
+│   │   │   └── mode_hints.rs              # mode_keymap() builds ModeKeyMap for a given TuiMode + optional session status; maps TuiMode variants to mode labels, F-key visibility rules, and context-sensitive inline hints; consumes screen_bindings from KeymapProvider::keybindings()
+│   │   ├── session_summary.rs             # Session summary widget rendered in the completion overlay and detail pane
+│   │   ├── session_switcher.rs            # Session switcher overlay for jumping between active sessions
+│   │   ├── splash.rs                      # Startup splash screen rendered before the TUI loop begins
 │   │   ├── spinner.rs                     # Braille spinner animation helpers: spinner_frame(), format_thinking_elapsed(), spinner activity string builder
+│   │   ├── summary.rs                     # Compact per-session summary row widget used in panel and list views
+│   │   ├── token_dashboard.rs             # Token usage dashboard widget: per-session and aggregate token counts
 │   │   ├── snapshot_tests/                # TUI snapshot tests using insta (33 tests, 7 views)  [Issue #16]
 │   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules
 │   │   │   ├── overview.rs                # 6 snapshot tests for PanelView (empty, single, multiple, selected, context overflow, forked)
@@ -164,25 +174,38 @@ maestro/
 │   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen  [Issue #146, #232]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen  [Issue #31-33, #86]
-│   │       ├── home.rs                    # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; draw_suggestions() renders Suggestions panel with "Loading..." placeholder when loading_suggestions=true; loading_suggestions: bool field; set_suggestions() clears loading flag on delivery; R key emits RefreshSuggestions; Tab-based focus navigation between QuickActions and Suggestions; ProjectInfo gains username field  [Issue #31, #49, #34, #35, #86]
 │   │       ├── hollow_retry.rs            # HollowRetryScreen: minimal retry prompt overlay shown when a session stalls and user confirmation is required
 │   │       ├── issue_browser.rs           # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery; set_issues() calls reapply_filters() so active milestone filters are honoured when new issue data arrives  [Issue #32, #46, #117]
 │   │       ├── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action  [Issue #33]
 │   │       ├── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter/Alt+Enter inserts newline via insert_newline() (not input()), Ctrl+V pastes from clipboard (image or text), Esc cancels; Up/Down arrows navigate prompt history (injected at construction); image attachment list with [a]/[d]; keybinds bar always visible; uses wrap::soft_wrap_lines() for word-wrapped rendering  [Issue #101, #232, #263]
 │   │       ├── queue_confirmation.rs      # QueueConfirmationScreen: confirmation overlay before bulk-queuing selected issues from the issue browser
 │   │       ├── wrap.rs                    # Soft-wrap utilities: soft_wrap_lines() splits a multi-line string into display lines that fit within a given column width using unicode-width for correct grapheme measurement  [Issue #263]
-│   │       ├── settings.rs               # SettingsScreen: interactive Settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent  [Issue #124, #146]
-│   │       ├── adapt/                    # Adapt wizard screen components  [Issue #88]
-│   │       │   ├── mod.rs                # AdaptScreen struct with Screen trait impl; wizard entry point
-│   │       │   ├── types.rs              # AdaptStep, AdaptWizardConfig, AdaptResults, AdaptError
-│   │       │   └── draw.rs              # ratatui rendering for adapt wizard steps and layout
-│   │       └── pr_review/               # PR review screen components
-│   │           ├── mod.rs               # PrReviewScreen struct with Screen trait impl
-│   │           ├── types.rs             # PrReviewStep state machine, ReviewForm types
-│   │           └── draw.rs             # ratatui rendering logic with markdown integration
+│   │       ├── adapt/                     # Adapt wizard screen components  [Issue #88]
+│   │       │   ├── mod.rs                 # AdaptScreen struct with Screen trait impl; wizard entry point
+│   │       │   ├── types.rs               # AdaptStep, AdaptWizardConfig, AdaptResults, AdaptError
+│   │       │   └── draw.rs                # ratatui rendering for adapt wizard steps and layout
+│   │       ├── home/                      # Home screen components
+│   │       │   ├── mod.rs                 # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; loading_suggestions bool field; R key emits RefreshSuggestions; Tab-based focus navigation  [Issue #31, #49, #34, #35, #86]
+│   │       │   ├── draw.rs                # ratatui rendering for home screen layout and panels; draw_suggestions() renders Suggestions panel with "Loading..." placeholder
+│   │       │   └── types.rs               # HomeSection, SuggestionKind, Suggestion, ProjectInfo types (username field)
+│   │       ├── pr_review/                 # PR review screen components
+│   │       │   ├── mod.rs                 # PrReviewScreen struct with Screen trait impl
+│   │       │   ├── types.rs               # PrReviewStep state machine, ReviewForm types
+│   │       │   └── draw.rs                # ratatui rendering logic with markdown integration
+│   │       ├── release_notes/             # Release notes screen components
+│   │       │   ├── mod.rs                 # ReleaseNotesScreen struct with Screen trait impl
+│   │       │   └── draw.rs                # ratatui rendering for release notes display
+│   │       └── settings/                  # Settings screen components  [Issue #124, #146]
+│   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent
+│   │           └── validation.rs          # Settings field validation helpers
 │   │   └── widgets/                       # Reusable TUI widget components  [Issue #124]
 │   │       ├── mod.rs                     # Module re-exports for all widgets
-│   │       └── ci_monitor.rs              # CiMonitorWidget: compact bordered box rendering live CI check-run status for a PR; status icons, check names, elapsed times, and a summary footer
+│   │       ├── ci_monitor.rs              # CiMonitorWidget: compact bordered box rendering live CI check-run status for a PR; status icons, check names, elapsed times, and a summary footer
+│   │       ├── dropdown.rs                # Dropdown selection widget with keyboard navigation
+│   │       ├── list_editor.rs             # Editable list widget for adding and removing string items
+│   │       ├── number_stepper.rs          # Numeric increment/decrement stepper widget
+│   │       ├── text_input.rs              # Single-line text input widget with cursor support
+│   │       └── toggle.rs                 # Boolean toggle widget for settings and forms
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
 │   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue()
 │   │   ├── session_lifecycle.rs           # 11 tests: enqueue/promote/complete lifecycle via handle_event()
@@ -312,14 +335,15 @@ maestro/
 | `src/tui/ui.rs` | `draw_upgrade_banner()`: top-of-screen banner that renders all `UpgradeState` variants; `draw_gh_auth_warning()`: persistent top-of-screen banner shown when gh CLI is not authenticated, blocks gh-dependent actions until resolved; `draw_completion_overlay()`: centred overlay rendering PR links (underlined, full GitHub URL or `#N`), per-session error summaries in error color, and a keybindings bar with `[i]` Browse issues, `[r]` New prompt, `[l]` View logs, `[q]` Quit, `[Esc]` Dashboard; `ContinuousPause` render branch with pause overlay and status bar indicator; `HelpBarContext` struct drives context-aware keybinding dimming in the help bar (Issues #83, #84, #85, #118, #158) |
 | `src/tui/screens/` | Interactive TUI screen components (Issues #31-33) |
 | `src/tui/screens/mod.rs` | `ScreenAction` enum, `SessionConfig`; re-exports all screen types including `PromptInputScreen` |
-| `src/tui/screens/home.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
+| `src/tui/screens/home/mod.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
 | `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters; `set_issues()` (Issues #32, #46) |
 | `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
 | `src/tui/screens/prompt_input.rs` | `PromptInputScreen`: free-text prompt entry; `Enter` submits, `Shift+Enter`/`Alt+Enter` inserts newline via `insert_newline()` (not `input()`), `Ctrl+V` pastes from clipboard (image or text), `Esc` cancels; Up/Down arrows navigate prompt history; image attachment list with `[a]`/`[d]`; custom wrapped rendering via `wrap::soft_wrap_lines()` replaces tui-textarea widget rendering (Issues #101, #232, #263) |
 | `src/tui/screens/wrap.rs` | Soft-wrap utilities: `soft_wrap_lines()` splits a multi-line string into display lines that fit within a given column width using `unicode-width` for correct grapheme measurement (Issue #263) |
 | `src/tui/screens/hollow_retry.rs` | `HollowRetryScreen`: minimal retry prompt overlay for stalled sessions awaiting user confirmation |
 | `src/tui/screens/queue_confirmation.rs` | `QueueConfirmationScreen`: confirmation overlay before bulk-queuing selected issues from the issue browser |
-| `src/tui/screens/settings.rs` | `SettingsScreen`: tabbed interactive settings UI; `Flags` tab shows all feature flags with name, state, source (`Default`/`Config`/`Cli`), and description; read-only display with green accent on focused fields (Issues #124, #146) |
+| `src/tui/screens/settings/mod.rs` | `SettingsScreen`: tabbed interactive settings UI; `Flags` tab shows all feature flags with name, state, source (`Default`/`Config`/`Cli`), and description; read-only display with green accent on focused fields (Issues #124, #146) |
+| `src/tui/icons.rs` | Centralized icon registry: `IconId` enum (38 variants), `IconPair` struct, `get(IconId)` public API, `get_for_mode(id, nerd_font)` pure testable variant; zero-allocation const jump table; `init_from_config()` and `MAESTRO_ASCII_ICONS` env var override (Issue #286) |
 | `src/tui/screens/adapt/` | Adapt wizard screen: multi-step TUI wizard for onboarding a project into maestro (Issue #88) |
 | `src/tui/screens/adapt/mod.rs` | `AdaptScreen` struct implementing the `Screen` trait; wizard entry point and step coordination |
 | `src/tui/screens/adapt/types.rs` | `AdaptStep`, `AdaptWizardConfig`, `AdaptResults`, `AdaptError` type definitions |

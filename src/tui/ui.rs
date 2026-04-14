@@ -8,6 +8,7 @@ use crate::tui::dep_graph;
 use crate::tui::detail;
 use crate::tui::fullscreen;
 use crate::tui::help;
+use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::keymap::{self, KeyBindingGroup, ModeKeyMap, fit_fkeys_to_width};
 use crate::tui::screens::Screen;
 use chrono::Utc;
@@ -461,7 +462,10 @@ fn draw_mascot_block(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(color))
-        .title(Span::styled(" \u{25C9} ", Style::default().fg(color)));
+        .title(Span::styled(
+            format!(" {} ", icons::get(IconId::Fisheye)),
+            Style::default().fg(color),
+        ));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -501,7 +505,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
     };
 
     let sep = Span::styled(
-        " \u{2550}\u{2550} ",
+        format!(" {} ", icons::get(IconId::SeparatorH)),
         Style::default().fg(theme.border_inactive),
     );
 
@@ -525,15 +529,12 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
         ),
         sep.clone(),
         Span::styled(budget_display, Style::default().fg(budget_color)),
-        sep,
+        sep.clone(),
         Span::styled(elapsed_str, Style::default().fg(theme.text_primary)),
     ];
 
     if let Some(ref cont) = app.continuous_mode {
-        spans.push(Span::styled(
-            " \u{2550}\u{2550} ",
-            Style::default().fg(theme.border_inactive),
-        ));
+        spans.push(sep.clone());
         spans.push(Span::styled(
             format!(
                 "CONTINUOUS: {}/{} done",
@@ -554,10 +555,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
     if remaining > 10 && !mode_km.hints.is_empty() {
         let fitted = keymap::fit_hints_to_width(mode_km.hints, remaining.saturating_sub(4));
         if !fitted.is_empty() {
-            spans.push(Span::styled(
-                " \u{2550}\u{2550} ",
-                Style::default().fg(theme.border_inactive),
-            ));
+            spans.push(sep.clone());
             for (i, (key, action)) in fitted.iter().enumerate() {
                 if i > 0 {
                     spans.push(Span::raw("  "));
@@ -776,7 +774,7 @@ fn draw_completion_overlay(
             lines.push(Line::from(vec![
                 Span::raw("      "),
                 Span::styled(
-                    format!("\u{f467} {} ", gf.gate),
+                    format!("{} {} ", icons::get(IconId::XCircle), gf.gate),
                     Style::default().fg(theme.accent_warning),
                 ),
                 Span::styled(&gf.message, Style::default().fg(theme.accent_error)),
@@ -814,7 +812,11 @@ fn draw_completion_overlay(
         ]));
         for (i, suggestion) in summary.suggestions.iter().enumerate() {
             let is_selected = i == summary.selected_suggestion;
-            let prefix = if is_selected { " \u{25b8} " } else { "   " };
+            let prefix = if is_selected {
+                format!(" {} ", icons::get(IconId::Selector))
+            } else {
+                "   ".to_string()
+            };
             let style = if is_selected {
                 Style::default()
                     .fg(theme.accent_warning)
@@ -905,11 +907,11 @@ fn draw_queue_execution_overlay(
     let mut progress_spans = vec![Span::raw("  Queue: ")];
     for item in executor.items() {
         let (symbol, color) = match item.state {
-            QueueItemState::Succeeded => ("\u{f42e}", theme.accent_success),
-            QueueItemState::Running => ("\u{f444}", theme.accent_info),
-            QueueItemState::Failed => ("\u{f467}", theme.accent_error),
-            QueueItemState::Skipped => ("\u{f4a3}", theme.accent_warning),
-            QueueItemState::Pending => ("\u{f4a3}", theme.text_muted),
+            QueueItemState::Succeeded => (icons::get(IconId::CheckCircle), theme.accent_success),
+            QueueItemState::Running => (icons::get(IconId::DotFill), theme.accent_info),
+            QueueItemState::Failed => (icons::get(IconId::XCircle), theme.accent_error),
+            QueueItemState::Skipped => (icons::get(IconId::Circle), theme.accent_warning),
+            QueueItemState::Pending => (icons::get(IconId::Circle), theme.text_muted),
         };
         let label = format!("{} #{}", symbol, item.queued.issue_number);
         progress_spans.push(Span::styled(
