@@ -89,7 +89,10 @@ impl<'a> HeaderBrand<'a> {
                 format!("  {} ", icons::get(IconId::Repo)),
                 Style::default().fg(self.theme.text_secondary),
             ),
-            Span::styled(&self.props.repo, Style::default().fg(self.theme.accent_info)),
+            Span::styled(
+                &self.props.repo,
+                Style::default().fg(self.theme.accent_info),
+            ),
             Span::raw("  |  "),
             Span::styled(
                 format!("{} ", icons::get(IconId::Branch)),
@@ -262,7 +265,10 @@ mod tests {
         let theme = Theme::default();
         let props = make_full_props();
         let out = render_to_string(props, &theme, 120, 12);
-        assert!(out.contains("owner/myrepo"), "repo info must render in ascii mode");
+        assert!(
+            out.contains("owner/myrepo"),
+            "repo info must render in ascii mode"
+        );
         icons::init_from_config(false);
     }
 }
