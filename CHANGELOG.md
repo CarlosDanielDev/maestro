@@ -7,6 +7,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-04-14
+
+### Added
+
+- TurboQuant config schema and feature flag (#242)
+- PolarQuant core — Cartesian-to-polar vector transform (#243)
+- QJL core — 1-bit Johnson-Lindenstrauss residual correction (#244)
+- TurboQuant pipeline — compose PolarQuant + QJL (#245)
+- Settings TUI — TurboQuant configuration tab (#247)
+- Benchmarks and compression report CLI command (#248)
+- [d]ismiss keybinding for Activity Log panel (#306)
+
+### Changed
+
+- Extracted icon mode detection into lib crate for cross-crate sharing (#307)
+- Migrated SessionStatus symbols to centralized icon registry (#308)
+
 ## [0.11.1] - 2026-04-14
 
 ### Added
