@@ -13,7 +13,7 @@ expression: terminal.backend()
 "║Completed 3 of 5 tasks.                                                                                               ║"
 "║                                                                                                                      ║"
 "║• cargo build passed                                                                                                  ║"
-"║•  Tests running                                                                                                      ║"
+"║• Tests running                                                                                                       ║"
 "║                                                                                                                      ║"
 "║                                                                                                                      ║"
 "║                                                                                                                      ║"

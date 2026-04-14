@@ -10,7 +10,7 @@ expression: terminal.backend()
 "║> _ Writing tests                                                                                                     ║"
 "║First paragraph with bold text.                                                                                       ║"
 "║                                                                                                                      ║"
-"║Second paragraph withcode .                                                                                           ║"
+"║Second paragraph with code .                                                                                          ║"
 "║                                                                                                                      ║"
 "║Third paragraph.                                                                                                      ║"
 "║                                                                                                                      ║"

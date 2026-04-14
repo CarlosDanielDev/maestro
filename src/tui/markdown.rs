@@ -58,15 +58,19 @@ struct WrapState {
     line_len: usize,
     base_width: usize,
     max_width: usize,
+    /// Suppress the leading space for the first word when the previous
+    /// span already ends with a space (avoids double-spacing).
+    suppress_next_space: bool,
 }
 
 impl WrapState {
-    fn new(current_width: usize, max_width: usize) -> Self {
+    fn new(current_width: usize, max_width: usize, prev_ends_with_space: bool) -> Self {
         Self {
             buf: String::new(),
             line_len: current_width,
             base_width: current_width,
             max_width,
+            suppress_next_space: prev_ends_with_space,
         }
     }
 
@@ -76,10 +80,11 @@ impl WrapState {
     }
 
     fn append_word(&mut self, word: &str, word_len: usize) {
-        if self.line_len > 0 {
+        if self.line_len > 0 && !self.suppress_next_space {
             self.buf.push(' ');
             self.line_len += 1;
         }
+        self.suppress_next_space = false;
         self.buf.push_str(word);
         self.line_len += word_len;
     }
@@ -87,6 +92,7 @@ impl WrapState {
     fn start_new_line(&mut self) {
         self.line_len = 0;
         self.base_width = 0;
+        self.suppress_next_space = false;
     }
 }
 
@@ -169,7 +175,15 @@ impl<'t> MarkdownRenderer<'t> {
             return;
         }
 
-        let mut state = WrapState::new(self.active_spans_width(), self.width as usize);
+        let prev_ends_with_space = self
+            .active_spans
+            .last()
+            .is_some_and(|s| s.content.ends_with(' '));
+        let mut state = WrapState::new(
+            self.active_spans_width(),
+            self.width as usize,
+            prev_ends_with_space,
+        );
 
         for word in text.split(' ').filter(|w| !w.is_empty()) {
             let word_len = word.chars().count();
@@ -179,6 +193,13 @@ impl<'t> MarkdownRenderer<'t> {
             }
 
             state.append_word(word, word_len);
+        }
+
+        // Preserve trailing space — it separates this text from the next
+        // inline element (e.g., inline code, bold, link).
+        if text.ends_with(' ') && !state.buf.is_empty() && !state.buf.ends_with(' ') {
+            state.buf.push(' ');
+            state.line_len += 1;
         }
 
         if !state.buf.is_empty() {
@@ -850,6 +871,25 @@ mod tests {
         assert!(
             all_text.contains("cargo for"),
             "expected space after inline code, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn text_between_inline_code_preserves_spacing() {
+        let result = render_markdown("use `get` for `ASCII` values", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("get for"),
+            "expected space between inline code and text, got: {:?}",
+            all_text
+        );
+        assert!(
+            all_text.contains("for ASCII"),
+            "expected space between text and next inline code, got: {:?}",
             all_text
         );
     }
