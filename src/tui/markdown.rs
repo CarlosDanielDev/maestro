@@ -173,14 +173,18 @@ impl<'t> MarkdownRenderer<'t> {
             return;
         }
 
+        // Suppress the automatic leading space for the first word when:
+        // - the previous span already ends with a space (avoid double-space), OR
+        // - the text doesn't start with a space (punctuation like "." after `code`)
         let prev_ends_with_space = self
             .active_spans
             .last()
             .is_some_and(|s| s.content.ends_with(' '));
+        let suppress_leading = prev_ends_with_space || !text.starts_with(' ');
         let mut state = WrapState::new(
             self.active_spans_width(),
             self.width as usize,
-            prev_ends_with_space,
+            suppress_leading,
         );
 
         for word in text.split(' ').filter(|w| !w.is_empty()) {
@@ -888,6 +892,25 @@ mod tests {
         assert!(
             all_text.contains("for ASCII"),
             "expected space between text and next inline code, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn punctuation_after_inline_code_has_no_space() {
+        let result = render_markdown("Use `code`.", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("code."),
+            "punctuation should attach directly to inline code, got: {:?}",
+            all_text
+        );
+        assert!(
+            !all_text.contains("code ."),
+            "should not have space before punctuation, got: {:?}",
             all_text
         );
     }
