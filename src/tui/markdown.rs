@@ -28,10 +28,8 @@ pub fn render_markdown(input: &str, theme: &Theme, width: u16) -> Text<'static> 
         renderer.process_event(event);
     }
 
-    // Flush any remaining spans
     renderer.flush_line();
 
-    // Remove trailing blank lines
     while renderer
         .lines
         .last()
@@ -890,6 +888,25 @@ mod tests {
         assert!(
             all_text.contains("for ASCII"),
             "expected space between text and next inline code, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn softbreak_produces_single_space_not_double() {
+        let result = render_markdown("word1\nword2", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("word1 word2"),
+            "softbreak should produce exactly one space, got: {:?}",
+            all_text
+        );
+        assert!(
+            !all_text.contains("word1  word2"),
+            "softbreak should not produce double space, got: {:?}",
             all_text
         );
     }
