@@ -488,8 +488,8 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
     let total = app.pool.total_count();
 
     let budget_display = match &app.budget_enforcer {
-        Some(enforcer) => format!("${:.2}/${:.2}", app.total_cost, enforcer.total_limit()),
-        None => format!("${:.2} spent", app.total_cost),
+        Some(enforcer) => format!("{:.2}/${:.2}", app.total_cost, enforcer.total_limit()),
+        None => format!("{:.2} spent", app.total_cost),
     };
 
     let budget_color = match &app.budget_enforcer {
@@ -520,7 +520,8 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
         sep.clone(),
         Span::styled(
             format!(
-                "{} agent{} ({} active)",
+                "{} {} agent{} ({} active)",
+                icons::get(IconId::Agents),
                 total,
                 if total != 1 { "s" } else { "" },
                 active
@@ -528,9 +529,15 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
             Style::default().fg(theme.accent_info),
         ),
         sep.clone(),
-        Span::styled(budget_display, Style::default().fg(budget_color)),
+        Span::styled(
+            format!("{}{}", icons::get(IconId::Cost), budget_display),
+            Style::default().fg(budget_color),
+        ),
         sep.clone(),
-        Span::styled(elapsed_str, Style::default().fg(theme.text_primary)),
+        Span::styled(
+            format!("{} {}", icons::get(IconId::Clock), elapsed_str),
+            Style::default().fg(theme.text_primary),
+        ),
     ];
 
     if let Some(ref cont) = app.continuous_mode {

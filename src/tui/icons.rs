@@ -84,6 +84,11 @@ pub enum IconId {
     CheckboxOff,
     Expand,
     Collapse,
+
+    // Header Metrics
+    Agents,
+    Cost,
+    Clock,
 }
 
 /// A Nerd Font / ASCII icon pair.
@@ -147,6 +152,11 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::CheckboxOff => IconPair::new("\u{f096}", "[ ]"),
         IconId::Expand => IconPair::new("\u{f054}", ">"),
         IconId::Collapse => IconPair::new("\u{f078}", "v"),
+
+        // ── Header Metrics ─────────────────────────────────────────
+        IconId::Agents => IconPair::new("\u{f415}", "[U]"),
+        IconId::Cost => IconPair::new("\u{f155}", "[$]"),
+        IconId::Clock => IconPair::new("\u{f017}", "[T]"),
     }
 }
 
@@ -209,6 +219,10 @@ mod tests {
         IconId::CheckboxOff,
         IconId::Expand,
         IconId::Collapse,
+        // Header Metrics
+        IconId::Agents,
+        IconId::Cost,
+        IconId::Clock,
     ];
 
     // ── Existing tests (mode detection) ─────────────────────────────────
@@ -355,6 +369,9 @@ mod tests {
             (GaugeEmpty, "\u{2591}"),
             (CheckboxOn, "\u{f46c}"),
             (CheckboxOff, "\u{f096}"),
+            (Agents, "\u{f415}"),
+            (Cost, "\u{f155}"),
+            (Clock, "\u{f017}"),
         ];
         for &(id, expected) in cases {
             assert_eq!(
@@ -376,6 +393,9 @@ mod tests {
             (GaugeEmpty, "-"),
             (Warning, "[!]"),
             (IssueOpened, ">>"),
+            (Agents, "[U]"),
+            (Cost, "[$]"),
+            (Clock, "[T]"),
         ];
         for &(id, expected) in cases {
             assert_eq!(
