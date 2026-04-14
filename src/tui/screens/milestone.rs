@@ -138,8 +138,9 @@ impl MilestoneScreen {
     }
 
     fn draw_milestone_list(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let title = format!("{} Milestones", icons::get(IconId::Milestone));
         let block = theme
-            .styled_block("Milestones", false)
+            .styled_block(&title, false)
             .border_style(Style::default().fg(theme.border_active));
 
         if self.loading {
@@ -197,6 +198,7 @@ impl MilestoneScreen {
 
             let title_line = Line::from(vec![
                 Span::styled(cursor, title_style),
+                Span::styled(format!("{} ", icons::get(IconId::Milestone)), title_style),
                 Span::styled(sanitize_for_terminal(&entry.title), title_style),
             ]);
             let title_area = Rect::new(inner.x, y, inner.width, 1);
@@ -232,7 +234,7 @@ impl MilestoneScreen {
 
             let status_line = Line::from(vec![
                 Span::styled(
-                    format!("  {} ", icons::get(IconId::CheckCircle)),
+                    format!("  {} ", icons::get(IconId::IssueClosed)),
                     Style::default().fg(theme.accent_success),
                 ),
                 Span::styled(
@@ -243,7 +245,7 @@ impl MilestoneScreen {
                 ),
                 Span::raw("    "),
                 Span::styled(
-                    format!("{} ", icons::get(IconId::Hourglass)),
+                    format!("{} ", icons::get(IconId::IssueOpened)),
                     Style::default().fg(theme.accent_warning),
                 ),
                 Span::styled(
@@ -274,9 +276,9 @@ impl MilestoneScreen {
                 .take(5)
                 .map(|i| {
                     let (symbol, symbol_color) = if i.state == "closed" {
-                        (icons::get(IconId::CheckCircle), theme.accent_success)
+                        (icons::get(IconId::IssueClosed), theme.accent_success)
                     } else {
-                        (icons::get(IconId::Hourglass), theme.accent_warning)
+                        (icons::get(IconId::IssueOpened), theme.accent_warning)
                     };
                     Line::from(vec![
                         Span::styled(format!("  {} ", symbol), Style::default().fg(symbol_color)),

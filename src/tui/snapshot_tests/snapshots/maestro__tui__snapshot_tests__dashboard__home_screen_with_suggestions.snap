@@ -20,7 +20,7 @@ expression: terminal.backend()
 "║  [Added] Comprehensive keybinding help overlay with searchable command list (#281)                                   ║"
 "╚══════════════════════════════════════════ Press [n] for full release notes ══════════════════════════════════════════╝"
 "╔════════[ Quick Actions ]═════════╗╔════════════[ Suggestions ]═════════════╗╔══════════[ Recent Activity ]═══════════╗"
-"║  [i]  Browse Issues              ║║   3 issues labeled maestro:ready — pre║║  No recent sessions                    ║"
+"║  [i]  Browse Issues              ║║  󰝦 3 issues labeled maestro:ready — pre║║  No recent sessions                    ║"
 "║  [m]  Browse Milestones          ║║   No sessions running — press [r] to s║║                                        ║"
 "║  [r]  Run Prompt                 ║║                                        ║║                                        ║"
 "║  [a]  Adapt Project              ║║                                        ║║                                        ║"

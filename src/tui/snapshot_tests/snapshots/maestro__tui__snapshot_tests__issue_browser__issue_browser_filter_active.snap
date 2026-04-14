@@ -2,7 +2,7 @@
 source: src/tui/snapshot_tests/issue_browser.rs
 expression: terminal.backend()
 ---
-"╔═══════════════════════════════════════════════[ Issues — Filter: Add ]═══════════════════════════════════════════════╗"
+"╔══════════════════════════════════════════════[ 󰝦 Issues — Filter: Add ]══════════════════════════════════════════════╗"
 "║  #1     Add login flow                                                                                              ║"
 "║   #2     Fix database crash                                                                                          ║"
 "║   #3     Add logout endpoint                                                                                         ║"
