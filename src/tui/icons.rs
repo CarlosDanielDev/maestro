@@ -137,9 +137,9 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::GitPr => IconPair::new("\u{f407}", "[P]"),
         IconId::GitMerge => IconPair::new("\u{f419}", "[M]"),
         IconId::Search => IconPair::new("\u{f422}", "[?]"),
-        IconId::IssueOpened => IconPair::new("\u{f0766}", "[#]"),   // nf-md-circle_outline
-        IconId::IssueClosed => IconPair::new("\u{f04d2}", "[+]"),   // nf-md-check_circle
-        IconId::Milestone => IconPair::new("\u{f0431}", "[M]"),     // nf-md-flag
+        IconId::IssueOpened => IconPair::new("\u{f0766}", "[#]"), // nf-md-circle_outline
+        IconId::IssueClosed => IconPair::new("\u{f04d2}", "[+]"), // nf-md-check_circle
+        IconId::Milestone => IconPair::new("\u{f0431}", "[M]"),   // nf-md-flag
 
         // ── UI Chrome ───────────────────────────────────────────────
         IconId::GaugeFilled => IconPair::new("\u{2593}", "#"),

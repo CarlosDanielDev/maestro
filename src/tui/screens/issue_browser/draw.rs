@@ -188,7 +188,11 @@ impl IssueBrowserScreen {
 
     fn draw_issue_list(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let title = if self.filter_mode != FilterMode::None {
-            format!(" {} Issues — Filter: {} ", icons::get(IconId::IssueOpened), self.filter_text)
+            format!(
+                " {} Issues — Filter: {} ",
+                icons::get(IconId::IssueOpened),
+                self.filter_text
+            )
         } else {
             format!(" {} Issues ", icons::get(IconId::IssueOpened))
         };
