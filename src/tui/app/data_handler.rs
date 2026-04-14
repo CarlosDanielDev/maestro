@@ -94,14 +94,31 @@ impl App {
             }
             TuiDataEvent::SuggestionData(payload) => {
                 let active = self.pool.active_count();
+                let total = self.pool.total_count();
                 let suggestions = crate::tui::screens::home::Suggestion::build_suggestions(
                     payload.ready_issue_count,
                     payload.failed_issue_count,
                     &payload.milestones,
                     active,
                 );
+                let milestone_active = payload.milestones.first().map(|(t, c, tot)| {
+                    crate::tui::screens::home::MilestoneStats {
+                        title: t.clone(),
+                        closed: *c,
+                        total: *tot,
+                    }
+                });
+                let stats = crate::tui::screens::home::ProjectStats {
+                    loaded: true,
+                    issues_open: payload.open_issue_count,
+                    issues_closed: payload.closed_issue_count,
+                    milestone_active,
+                    sessions_active: active,
+                    sessions_total: total,
+                };
                 if let Some(ref mut screen) = self.home_screen {
                     screen.set_suggestions(suggestions);
+                    screen.set_stats(stats);
                 }
             }
             TuiDataEvent::VersionCheckResult(Some(info)) => {

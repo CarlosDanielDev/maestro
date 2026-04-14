@@ -1,5 +1,24 @@
 use crate::tui::app::TuiMode;
 
+/// Project statistics displayed in the compact stats bar.
+#[derive(Debug, Clone, Default)]
+pub struct ProjectStats {
+    pub loaded: bool,
+    pub issues_open: usize,
+    pub issues_closed: usize,
+    pub milestone_active: Option<MilestoneStats>,
+    pub sessions_active: usize,
+    pub sessions_total: usize,
+}
+
+/// Active milestone progress data.
+#[derive(Debug, Clone)]
+pub struct MilestoneStats {
+    pub title: String,
+    pub closed: u32,
+    pub total: u32,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProjectInfo {
     pub repo: String,

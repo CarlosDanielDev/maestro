@@ -224,6 +224,8 @@ fn suggestion_data_event_clears_loading_flag_on_home_screen() {
         ready_issue_count: 0,
         failed_issue_count: 0,
         milestones: vec![],
+        open_issue_count: 0,
+        closed_issue_count: 0,
     }));
     assert!(
         !app.home_screen.as_ref().unwrap().loading_suggestions,

@@ -36,6 +36,7 @@ pub struct HomeScreen {
     pub selected_suggestion: usize,
     pub loading_suggestions: bool,
     pub focus_ring: FocusRing,
+    pub stats: ProjectStats,
     mascot_visible: bool,
     mascot_state: crate::mascot::MascotState,
     mascot_frame: usize,
@@ -62,10 +63,15 @@ impl HomeScreen {
             selected_suggestion: 0,
             loading_suggestions: false,
             focus_ring: FocusRing::new(vec![Self::QUICK_ACTIONS_PANE, Self::SUGGESTIONS_PANE]),
+            stats: ProjectStats::default(),
             mascot_visible: false,
             mascot_state: crate::mascot::MascotState::Idle,
             mascot_frame: 0,
         }
+    }
+
+    pub fn set_stats(&mut self, stats: ProjectStats) {
+        self.stats = stats;
     }
 
     pub fn set_mascot(&mut self, visible: bool, state: crate::mascot::MascotState, frame: usize) {

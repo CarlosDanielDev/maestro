@@ -5,7 +5,7 @@ use crate::tui::app::TuiMode;
 use crate::tui::icons::{self, IconId};
 use crate::tui::screens::ScreenAction;
 use crate::tui::theme::Theme;
-use crate::tui::widgets::header_brand::{HeaderBrand, HeaderBrandProps};
+use crate::tui::widgets::stats_bar::{StatsBar, StatsBarData};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -32,23 +32,41 @@ impl HomeScreen {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(11),               // header brand (logo + repo info)
+                Constraint::Length(3),                // stats bar
                 Constraint::Length(warning_height),   // warnings (0 if none)
                 Constraint::Length(whats_new_height), // what's new (0 if none)
                 Constraint::Min(8),                   // quick actions + recent sessions
             ])
             .split(area);
 
-        let header_props = HeaderBrandProps {
-            show_mascot: self.mascot_visible,
-            show_repo_info: true,
-            mascot_state: self.mascot_state,
-            mascot_frame: self.mascot_frame,
+        let stats_data = StatsBarData {
+            loaded: self.stats.loaded,
             repo: self.project_info.repo.clone(),
             branch: self.project_info.branch.clone(),
             username: self.project_info.username.clone(),
+            issues_open: self.stats.issues_open,
+            issues_closed: self.stats.issues_closed,
+            milestone_title: self
+                .stats
+                .milestone_active
+                .as_ref()
+                .map(|m| m.title.clone()),
+            milestone_closed: self
+                .stats
+                .milestone_active
+                .as_ref()
+                .map(|m| m.closed)
+                .unwrap_or(0),
+            milestone_total: self
+                .stats
+                .milestone_active
+                .as_ref()
+                .map(|m| m.total)
+                .unwrap_or(0),
+            sessions_active: self.stats.sessions_active,
+            sessions_total: self.stats.sessions_total,
         };
-        HeaderBrand::new(header_props, theme).render(chunks[0], f.buffer_mut());
+        StatsBar::new(stats_data, theme).render(chunks[0], f.buffer_mut());
 
         if !self.warnings.is_empty() {
             self.draw_warnings(f, chunks[1], theme);

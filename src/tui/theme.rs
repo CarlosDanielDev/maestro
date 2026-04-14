@@ -762,6 +762,12 @@ impl Theme {
             .border_type(BorderType::Double)
             .border_style(self.border_style(focused))
     }
+
+    pub fn stats_block(&self) -> Block<'static> {
+        Block::default()
+            .borders(Borders::TOP | Borders::BOTTOM)
+            .border_style(Style::default().fg(self.border_inactive))
+    }
 }
 
 // ---------------------------------------------------------------------------
