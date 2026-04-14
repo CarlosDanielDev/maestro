@@ -28,6 +28,7 @@ mod work;
 mod adapt;
 mod mascot;
 mod sanitize;
+mod system;
 mod turboquant;
 
 #[cfg(test)]

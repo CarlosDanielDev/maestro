@@ -23,6 +23,7 @@ pub mod splash;
 mod summary;
 pub mod theme;
 pub mod token_dashboard;
+pub mod turboquant_dashboard;
 pub mod ui;
 pub mod widgets;
 

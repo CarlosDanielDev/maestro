@@ -40,6 +40,42 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 - **Visual status transition effects** — panel borders flash briefly (4 frames) when a session changes state; the activity log records a `STATUS: OLD → NEW` entry for every transition, giving an at-a-glance audit trail without leaving the dashboard
 - **DOS-style F-key status bar** — the bottom bar is split into an info strip (agent count, total cost, elapsed time) and an F-key legend (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit) with amber badge styling and responsive width truncation; badge colors are configurable via `fkey_badge_bg` / `fkey_badge_fg` in `maestro.toml`
 
+### TurboQuant Compression
+
+TurboQuant is an experimental context compression feature that reduces effective token consumption during long sessions. It uses PolarQuant (angle-based vector quantization) combined with QJL (Johnson-Lindenstrauss) residual compression.
+
+**Configuration** (`maestro.toml`):
+```toml
+[turboquant]
+enabled = false        # Master switch
+bit_width = 4          # Quantization bits (2-8, lower = more compression)
+strategy = "turboquant" # "turboquant" | "polarquant" | "qjl"
+apply_to = "both"      # "keys" | "values" | "both"
+auto_on_overflow = false # Auto-enable when context approaches overflow threshold
+
+[flags]
+turboquant = true      # Runtime feature flag (also toggleable via Ctrl+q)
+```
+
+**Runtime toggle**: Press `Ctrl+q` from any screen to enable/disable TurboQuant. The status bar shows a `TQ` badge (green when active, dim when off).
+
+**Strategy comparison**:
+
+| Strategy | Compression | Quality | Best For |
+|----------|-------------|---------|----------|
+| TurboQuant | Highest (3-4x at 4-bit) | Best (PolarQuant + QJL residual) | Default, most workloads |
+| PolarQuant | Medium (2-3x) | Good (angle-only) | When quality matters most |
+| QJL | Fast (2x) | Lower (sign-bit only) | Quick compression, tolerant workloads |
+
+**Dashboards**: View compression metrics in the Token Dashboard (`t`/`F5`) or the dedicated TurboQuant A/B Dashboard (`Shift+Q`).
+
+**Troubleshooting**:
+- If compressed sessions show degraded output quality, increase `bit_width` (e.g., 6 or 8)
+- Switch to `polarquant` strategy for higher fidelity at lower compression ratios
+- Set `auto_on_overflow = true` to only activate compression when approaching context limits
+
+**Benchmarking**: Run `maestro turboquant benchmark --dim 768 --bits 4` to test compression performance on your hardware.
+
 ### Roadmap
 
 | Phase | What | Status |
@@ -50,6 +86,7 @@ Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code
 | **3** | Intelligence — context overflow detection, budget enforcement, stall detection | Done |
 | **4** | Plugin system, mode system, cost dashboard, session resumption | Done |
 | **5** | Multi-provider support — GitHub and Azure DevOps | Done |
+| **6** | TurboQuant — vector quantization for context compression | Done |
 
 ## Requirements
 

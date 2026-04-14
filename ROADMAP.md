@@ -111,6 +111,14 @@ v0.2.0 🔧 In Progress
   ├── #41 CI auto-fix loop ─────────✅ Done
   └── #18 Completion docs
 
+v0.13.0 🧠 TurboQuant Full Integration
+  ├── #246 Context compaction adapter ──┐
+  ├── #252 Runtime toggle via flag ─────┤ Level 0 (parallel)
+  ├── #251 System resource monitor ─────┘
+  ├── #249 Token analytics metrics ─────┐ Level 1 (parallel)
+  ├── #253 A/B benchmark dashboard ─────┘
+  └── #250 Feature guide (docs) ──────── Level 2
+
 v0.3.0 🌐 Planned
   ├── #20 Workspace config ──────────┐
   │   ├── #21 Cross-project orch. ───┤ Sequential

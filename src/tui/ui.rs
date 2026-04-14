@@ -336,6 +336,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 );
             }
         }
+        TuiMode::TurboquantDashboard => {
+            let sessions: Vec<&crate::session::types::Session> =
+                app.pool.all_sessions().into_iter().collect();
+            crate::tui::turboquant_dashboard::draw_turboquant_dashboard(
+                f, &sessions, &app.flags, chunks[1], &theme,
+            );
+        }
     }
 
     // Only render activity log area when visible
@@ -558,6 +565,49 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
             Style::default().fg(theme.text_primary),
         ),
     ];
+
+    // RAM widget
+    {
+        let snap = app.resource_monitor.snapshot();
+        let rss_mb = snap.rss_mb();
+        let ram_color = {
+            let pct = snap.memory_pct();
+            if pct > 80.0 {
+                theme.accent_error
+            } else if pct > 50.0 {
+                theme.accent_warning
+            } else {
+                theme.accent_success
+            }
+        };
+        let ram_text = if let Some(delta) = snap.tq_delta_pct() {
+            format!("RAM: {:.0}MB (↓{:.0}% TQ)", rss_mb, delta)
+        } else {
+            format!("RAM: {:.0}MB", rss_mb)
+        };
+        spans.push(sep.clone());
+        spans.push(Span::styled(ram_text, Style::default().fg(ram_color)));
+    }
+
+    // TQ badge
+    {
+        let tq_enabled = app.flags.is_enabled(crate::flags::Flag::TurboQuant);
+        let tq_color = if tq_enabled {
+            theme.accent_success
+        } else {
+            theme.text_muted
+        };
+        let tq_modifier = if tq_enabled {
+            Modifier::BOLD
+        } else {
+            Modifier::DIM
+        };
+        spans.push(sep.clone());
+        spans.push(Span::styled(
+            "TQ",
+            Style::default().fg(tq_color).add_modifier(tq_modifier),
+        ));
+    }
 
     if let Some(ref cont) = app.continuous_mode {
         spans.push(sep.clone());

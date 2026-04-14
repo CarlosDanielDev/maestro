@@ -72,6 +72,14 @@ impl FeatureFlags {
             .collect()
     }
 
+    /// Toggle a flag at runtime. Returns the new state.
+    pub fn toggle(&mut self, flag: Flag) -> bool {
+        let current = self.is_enabled(flag);
+        let new_state = !current;
+        self.overrides.insert(flag, (new_state, FlagSource::Cli));
+        new_state
+    }
+
     /// All flags with resolved state and source, for TUI display.
     pub fn all_with_source(&self) -> Vec<(Flag, bool, FlagSource)> {
         Flag::all()
@@ -328,6 +336,41 @@ mod tests {
             .unwrap();
         assert!(af.1); // default enabled
         assert_eq!(af.2, FlagSource::Default);
+    }
+
+    // -- toggle --
+
+    #[test]
+    fn feature_flags_toggle_flips_default_off_to_on() {
+        let mut flags = FeatureFlags::default();
+        assert!(!flags.is_enabled(Flag::TurboQuant));
+        let new_state = flags.toggle(Flag::TurboQuant);
+        assert!(new_state);
+        assert!(flags.is_enabled(Flag::TurboQuant));
+    }
+
+    #[test]
+    fn feature_flags_toggle_flips_default_on_to_off() {
+        let mut flags = FeatureFlags::default();
+        assert!(flags.is_enabled(Flag::ContinuousMode));
+        let new_state = flags.toggle(Flag::ContinuousMode);
+        assert!(!new_state);
+        assert!(!flags.is_enabled(Flag::ContinuousMode));
+    }
+
+    #[test]
+    fn feature_flags_toggle_round_trip() {
+        let mut flags = FeatureFlags::default();
+        flags.toggle(Flag::TurboQuant); // off → on
+        flags.toggle(Flag::TurboQuant); // on → off
+        assert!(!flags.is_enabled(Flag::TurboQuant));
+    }
+
+    #[test]
+    fn feature_flags_toggle_sets_source_to_cli() {
+        let mut flags = FeatureFlags::default();
+        flags.toggle(Flag::TurboQuant);
+        assert_eq!(flags.source(Flag::TurboQuant), FlagSource::Cli);
     }
 
     #[test]

@@ -474,6 +474,19 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
 
 /// Handle global shortcuts that apply before screen dispatch (help, F-keys, Ctrl-X).
 fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
+    // Ctrl+q toggles TurboQuant from any screen
+    if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        let new_state = app.flags.toggle(crate::flags::Flag::TurboQuant);
+        let label = if new_state {
+            "[TurboQuant] Enabled"
+        } else {
+            "[TurboQuant] Disabled"
+        };
+        app.activity_log
+            .push_simple("TQ".into(), label.into(), LogLevel::Info);
+        return true;
+    }
+
     // Help overlay toggle
     let is_text_input_mode = matches!(
         app.tui_mode,
@@ -515,7 +528,8 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
                     app::TuiMode::Overview => app::TuiMode::DependencyGraph,
                     app::TuiMode::DependencyGraph => app::TuiMode::CostDashboard,
                     app::TuiMode::CostDashboard => app::TuiMode::TokenDashboard,
-                    app::TuiMode::TokenDashboard => app::TuiMode::Overview,
+                    app::TuiMode::TokenDashboard => app::TuiMode::TurboquantDashboard,
+                    app::TuiMode::TurboquantDashboard => app::TuiMode::Overview,
                     _ => app::TuiMode::Overview,
                 };
                 return true;
@@ -613,12 +627,16 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
                 Some(crate::tui::app::types::SessionSummaryState::default());
             app.tui_mode = app::TuiMode::SessionSummary;
         }
+        (KeyCode::Char('Q'), _) => {
+            app.tui_mode = app::TuiMode::TurboquantDashboard;
+        }
         (KeyCode::Tab, _) => {
             app.tui_mode = match app.tui_mode {
                 app::TuiMode::Overview => app::TuiMode::DependencyGraph,
                 app::TuiMode::DependencyGraph => app::TuiMode::CostDashboard,
                 app::TuiMode::CostDashboard => app::TuiMode::TokenDashboard,
-                app::TuiMode::TokenDashboard => app::TuiMode::Overview,
+                app::TuiMode::TokenDashboard => app::TuiMode::TurboquantDashboard,
+                app::TuiMode::TurboquantDashboard => app::TuiMode::Overview,
                 _ => app::TuiMode::Overview,
             };
         }
