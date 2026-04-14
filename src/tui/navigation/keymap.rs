@@ -141,6 +141,7 @@ pub struct InlineHint {
     pub key: &'static str,
     pub action: &'static str,
     /// Lower = shown first when truncating at narrow widths.
+    #[allow(dead_code)] // Planned: used for priority-based truncation at narrow widths
     pub priority: u8,
 }
 

@@ -28,10 +28,8 @@ pub fn render_markdown(input: &str, theme: &Theme, width: u16) -> Text<'static> 
         renderer.process_event(event);
     }
 
-    // Flush any remaining spans
     renderer.flush_line();
 
-    // Remove trailing blank lines
     while renderer
         .lines
         .last()
@@ -51,6 +49,49 @@ pub fn render_markdown(input: &str, theme: &Theme, width: u16) -> Text<'static> 
 enum ListKind {
     Bullet,
     Ordered(u64),
+}
+
+struct WrapState {
+    buf: String,
+    line_len: usize,
+    base_width: usize,
+    max_width: usize,
+    /// Suppress the leading space for the first word when the previous
+    /// span already ends with a space (avoids double-spacing).
+    suppress_next_space: bool,
+}
+
+impl WrapState {
+    fn new(current_width: usize, max_width: usize, prev_ends_with_space: bool) -> Self {
+        Self {
+            buf: String::new(),
+            line_len: current_width,
+            base_width: current_width,
+            max_width,
+            suppress_next_space: prev_ends_with_space,
+        }
+    }
+
+    fn should_wrap(&self, word_len: usize) -> bool {
+        let sep = if self.line_len > 0 { 1 } else { 0 };
+        self.line_len + sep + word_len > self.max_width && self.line_len > self.base_width
+    }
+
+    fn append_word(&mut self, word: &str, word_len: usize) {
+        if self.line_len > 0 && !self.suppress_next_space {
+            self.buf.push(' ');
+            self.line_len += 1;
+        }
+        self.suppress_next_space = false;
+        self.buf.push_str(word);
+        self.line_len += word_len;
+    }
+
+    fn start_new_line(&mut self) {
+        self.line_len = 0;
+        self.base_width = 0;
+        self.suppress_next_space = false;
+    }
 }
 
 struct MarkdownRenderer<'t> {
@@ -132,41 +173,56 @@ impl<'t> MarkdownRenderer<'t> {
             return;
         }
 
-        let current_width: usize = self
+        // Suppress the automatic leading space for the first word when:
+        // - the previous span already ends with a space (avoid double-space), OR
+        // - the text doesn't start with a space (punctuation like "." after `code`)
+        let prev_ends_with_space = self
             .active_spans
+            .last()
+            .is_some_and(|s| s.content.ends_with(' '));
+        let suppress_leading = prev_ends_with_space || !text.starts_with(' ');
+        let mut state = WrapState::new(
+            self.active_spans_width(),
+            self.width as usize,
+            suppress_leading,
+        );
+
+        for word in text.split(' ').filter(|w| !w.is_empty()) {
+            let word_len = word.chars().count();
+
+            if state.should_wrap(word_len) {
+                self.commit_wrap_buf(&mut state, style);
+            }
+
+            state.append_word(word, word_len);
+        }
+
+        // Preserve trailing space — it separates this text from the next
+        // inline element (e.g., inline code, bold, link).
+        if text.ends_with(' ') && !state.buf.is_empty() && !state.buf.ends_with(' ') {
+            state.buf.push(' ');
+            state.line_len += 1;
+        }
+
+        if !state.buf.is_empty() {
+            self.active_spans.push(Span::styled(state.buf, style));
+        }
+    }
+
+    fn active_spans_width(&self) -> usize {
+        self.active_spans
             .iter()
             .map(|s| s.content.chars().count())
-            .sum();
-        let max_width = self.width as usize;
+            .sum()
+    }
 
-        let mut line_buf = String::new();
-        let mut line_len = current_width;
-
-        for word in text.split(' ') {
-            let word_len = word.chars().count();
-            let sep_len = if line_len > 0 { 1 } else { 0 };
-
-            if line_len + sep_len + word_len > max_width && line_len > current_width {
-                if !line_buf.is_empty() {
-                    self.active_spans
-                        .push(Span::styled(std::mem::take(&mut line_buf), style));
-                }
-                self.flush_line();
-                line_buf.push_str(word);
-                line_len = word_len;
-            } else {
-                if !line_buf.is_empty() {
-                    line_buf.push(' ');
-                    line_len += 1;
-                }
-                line_buf.push_str(word);
-                line_len += word_len;
-            }
+    fn commit_wrap_buf(&mut self, state: &mut WrapState, style: Style) {
+        if !state.buf.is_empty() {
+            self.active_spans
+                .push(Span::styled(std::mem::take(&mut state.buf), style));
         }
-
-        if !line_buf.is_empty() {
-            self.active_spans.push(Span::styled(line_buf, style));
-        }
+        self.flush_line();
+        state.start_new_line();
     }
 
     fn list_indent(&self) -> String {
@@ -248,6 +304,10 @@ impl<'t> MarkdownRenderer<'t> {
             // --- Block-level start tags ---
             Event::Start(Tag::Heading { level, .. }) => {
                 self.flush_line();
+                // Add blank line before heading for visual section separation
+                if !self.lines.is_empty() {
+                    self.push_blank_line();
+                }
                 self.in_heading = true;
                 let prefix = Self::heading_prefix(level);
                 self.active_spans.push(Span::styled(
@@ -786,6 +846,91 @@ mod tests {
         assert!(
             spans.iter().any(|s| s.content.contains("こんにちは")),
             "unicode content should be preserved in spans"
+        );
+    }
+
+    #[test]
+    fn bold_followed_by_regular_text_has_space_between() {
+        let result = render_markdown("**Started** in the session", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("Started in"),
+            "expected space between bold and regular text, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn inline_code_followed_by_text_has_space_between() {
+        let result = render_markdown("Use `cargo` for building", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("cargo for"),
+            "expected space after inline code, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn text_between_inline_code_preserves_spacing() {
+        let result = render_markdown("use `get` for `ASCII` values", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("get for"),
+            "expected space between inline code and text, got: {:?}",
+            all_text
+        );
+        assert!(
+            all_text.contains("for ASCII"),
+            "expected space between text and next inline code, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn punctuation_after_inline_code_has_no_space() {
+        let result = render_markdown("Use `code`.", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("code."),
+            "punctuation should attach directly to inline code, got: {:?}",
+            all_text
+        );
+        assert!(
+            !all_text.contains("code ."),
+            "should not have space before punctuation, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn softbreak_produces_single_space_not_double() {
+        let result = render_markdown("word1\nword2", &theme(), 80);
+        let all_text: String = all_spans(&result)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("word1 word2"),
+            "softbreak should produce exactly one space, got: {:?}",
+            all_text
+        );
+        assert!(
+            !all_text.contains("word1  word2"),
+            "softbreak should not produce double space, got: {:?}",
+            all_text
         );
     }
 

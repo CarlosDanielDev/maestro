@@ -41,4 +41,4 @@ expression: terminal.backend()
 "║                                                                                                                      ║"
 "║                                                                                                                      ║"
 "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝"
-"[Enter] Run  [Space] Select  [/] Filter  [Esc] Back                                                                     "
+"[Tab] Switch pane  [Enter] Run  [Space] Select  [/] Filter  [Esc] Back                                                  "

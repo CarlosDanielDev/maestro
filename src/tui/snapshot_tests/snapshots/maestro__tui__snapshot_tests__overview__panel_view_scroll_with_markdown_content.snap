@@ -8,7 +8,7 @@ expression: terminal.backend()
 "║tok: ---                                                                                                              ║"
 "║0 files                                                                                                               ║"
 "║> _ Writing tests                                                                                                     ║"
-"║First paragraph with boldtext.                                                                                        ║"
+"║First paragraph with bold text.                                                                                       ║"
 "║                                                                                                                      ║"
 "║Second paragraph with code.                                                                                           ║"
 "║                                                                                                                      ║"

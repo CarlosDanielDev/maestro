@@ -1,6 +1,7 @@
-use super::{FilterMode, IssueBrowserScreen, IssuePromptOverlay, sanitize_for_terminal};
+use super::{FilterMode, FocusPane, IssueBrowserScreen, IssuePromptOverlay, sanitize_for_terminal};
 use crate::tui::help::centered_rect;
 use crate::tui::icons::{self, IconId};
+use crate::tui::markdown::render_markdown;
 use crate::tui::marquee::{MarqueeConfig, needs_scroll, visible_slice};
 use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
 use crate::tui::theme::Theme;
@@ -54,6 +55,7 @@ impl IssueBrowserScreen {
             f,
             outer[1],
             &[
+                ("Tab", "Switch pane"),
                 ("Enter", "Run"),
                 ("Space", "Select"),
                 ("/", "Filter"),
@@ -189,9 +191,8 @@ impl IssueBrowserScreen {
             " Issues ".to_string()
         };
 
-        let block = theme
-            .styled_block(&title, false)
-            .border_style(Style::default().fg(theme.accent_info));
+        let is_list_focused = self.focus == FocusPane::List;
+        let block = theme.styled_block(&title, is_list_focused);
 
         if self.loading {
             let para = Paragraph::new("  Loading...")
@@ -297,12 +298,21 @@ impl IssueBrowserScreen {
     }
 
     fn draw_preview(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block("Preview", false);
+        let is_focused = self.focus == FocusPane::Preview;
+        let block = theme.styled_block("Preview", is_focused);
 
         if let Some(&idx) = self.filtered_indices.get(self.selected) {
             let issue = &self.issues[idx];
+            let inner = block.inner(area);
+            f.render_widget(block, area);
+
+            let header_height = 3u16;
+            if inner.height <= header_height {
+                return;
+            }
+
             let labels = issue.labels.join(", ");
-            let lines = vec![
+            let header_lines = vec![
                 Line::from(vec![
                     Span::styled("Title: ", Style::default().fg(theme.text_secondary)),
                     Span::styled(
@@ -317,16 +327,35 @@ impl IssueBrowserScreen {
                     Span::styled("Labels: ", Style::default().fg(theme.text_secondary)),
                     Span::styled(labels, Style::default().fg(theme.accent_warning)),
                 ]),
-                Line::raw(""),
-                Line::from(Span::styled(
-                    sanitize_for_terminal(
-                        &issue.body.lines().take(3).collect::<Vec<_>>().join("\n"),
-                    ),
-                    Style::default().fg(theme.text_muted),
-                )),
+                Line::from(vec![Span::styled(
+                    "─".repeat(inner.width.saturating_sub(2) as usize),
+                    Style::default().fg(theme.border_inactive),
+                )]),
             ];
-            let para = Paragraph::new(lines).block(block);
-            f.render_widget(para, area);
+
+            let header_area = Rect::new(
+                inner.x,
+                inner.y,
+                inner.width,
+                header_height.min(inner.height),
+            );
+            f.render_widget(Paragraph::new(header_lines), header_area);
+
+            let body_height = inner.height.saturating_sub(header_height);
+            if body_height > 0 {
+                let body_area = Rect::new(
+                    inner.x + 1,
+                    inner.y + header_height,
+                    inner.width.saturating_sub(2),
+                    body_height,
+                );
+                let body = sanitize_for_terminal(&issue.body);
+                let rendered = render_markdown(&body, theme, body_area.width);
+                let paragraph = Paragraph::new(rendered)
+                    .scroll((self.preview_scroll, 0))
+                    .wrap(Wrap { trim: false });
+                f.render_widget(paragraph, body_area);
+            }
         } else {
             let para = Paragraph::new("  Select an issue to preview")
                 .style(Style::default().fg(theme.text_secondary))
