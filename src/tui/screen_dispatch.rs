@@ -113,7 +113,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 _ => {}
             }
-            app.tui_mode = mode;
+            app.navigate_to(mode);
         }
         ScreenAction::Pop => {
             match app.tui_mode {
@@ -150,7 +150,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 _ => {}
             }
-            app.tui_mode = app::TuiMode::Dashboard;
+            app.navigate_back_or_dashboard();
         }
         ScreenAction::RefreshSuggestions => {
             let already_loading = app
@@ -194,27 +194,32 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         ScreenAction::LaunchUnifiedSession(config) => {
             app.pending_commands
                 .push(app::TuiCommand::LaunchUnifiedSession(config));
+            app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchSession(config) => {
             app.pending_commands
                 .push(app::TuiCommand::LaunchSession(config));
+            app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchSessions(configs) => {
             app.pending_commands
                 .push(app::TuiCommand::LaunchSessions(configs));
+            app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchPromptSession(config) => {
             app.prompt_input_screen = None;
             app.pending_commands
                 .push(app::TuiCommand::LaunchPromptSession(config));
+            app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchConflictFix(config) => {
             app.spawn_conflict_fix_session(&config);
             app.completion_summary = None;
+            app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::RetryHollow(session_id) => {

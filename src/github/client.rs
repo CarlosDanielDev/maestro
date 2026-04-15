@@ -49,6 +49,12 @@ pub trait GitHubClient: Send + Sync {
         event: crate::github::types::PrReviewEvent,
         body: &str,
     ) -> Result<()>;
+
+    /// List all label names on the current repository.
+    async fn list_labels(&self) -> Result<Vec<String>>;
+
+    /// Create a label on the current repository. Uses --force to be idempotent.
+    async fn create_label(&self, name: &str, color: &str) -> Result<()>;
 }
 
 /// Extract label names from a JSON value containing `{"labels": [{"name": "..."}, ...]}`.
@@ -278,6 +284,12 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     ) -> Result<()> {
         (**self).submit_pr_review(pr_number, event, body).await
     }
+    async fn list_labels(&self) -> Result<Vec<String>> {
+        (**self).list_labels().await
+    }
+    async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+        (**self).create_label(name, color).await
+    }
 }
 
 /// Check if a stderr string indicates a GitHub CLI authentication failure.
@@ -421,8 +433,8 @@ impl GitHubClient for GhCliClient {
             if err_msg.contains("not found") || err_msg.contains("label") {
                 let color = match label {
                     "maestro:ready" => "0E8A16",
-                    "maestro:in-progress" => "FBCA04",
-                    "maestro:done" => "1D76DB",
+                    "maestro:in-progress" => "F9D0C4",
+                    "maestro:done" => "0E8A16",
                     "maestro:failed" => "D93F0B",
                     _ => "EDEDED",
                 };
@@ -606,6 +618,35 @@ impl GitHubClient for GhCliClient {
         self.run_gh(&args).await?;
         Ok(())
     }
+
+    async fn list_labels(&self) -> Result<Vec<String>> {
+        let json_str = self
+            .run_gh(&["label", "list", "--json", "name", "--limit", "200"])
+            .await?;
+        let labels: Vec<serde_json::Value> =
+            serde_json::from_str(&json_str).context("Failed to parse label list JSON")?;
+        Ok(labels
+            .iter()
+            .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+            .collect())
+    }
+
+    async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+        validate_gh_arg(name, "label name")?;
+        validate_gh_arg(color, "label color")?;
+        self.run_gh(&[
+            "label",
+            "create",
+            name,
+            "--color",
+            color,
+            "--description",
+            "Managed by Maestro",
+            "--force",
+        ])
+        .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -637,6 +678,13 @@ pub mod mock {
         create_milestone_counter: u64,
         create_issue_calls: Vec<CreateIssueCallRecord>,
         create_issue_counter: u64,
+
+        // Label management fields
+        labels: Vec<String>,
+        list_labels_calls: u32,
+        list_labels_error: Option<String>,
+        create_label_calls: Vec<(String, String)>,
+        create_label_error: Option<String>,
 
         // PR review fields
         pull_requests: Vec<crate::github::types::GhPullRequest>,
@@ -733,6 +781,26 @@ pub mod mock {
 
         pub fn create_issue_calls(&self) -> Vec<CreateIssueCallRecord> {
             self.inner.lock().unwrap().create_issue_calls.clone()
+        }
+
+        pub fn set_labels(&self, labels: Vec<String>) {
+            self.inner.lock().unwrap().labels = labels;
+        }
+
+        pub fn set_list_labels_error(&self, msg: &str) {
+            self.inner.lock().unwrap().list_labels_error = Some(msg.to_string());
+        }
+
+        pub fn set_create_label_error(&self, msg: &str) {
+            self.inner.lock().unwrap().create_label_error = Some(msg.to_string());
+        }
+
+        pub fn list_labels_call_count(&self) -> u32 {
+            self.inner.lock().unwrap().list_labels_calls
+        }
+
+        pub fn create_label_calls(&self) -> Vec<(String, String)> {
+            self.inner.lock().unwrap().create_label_calls.clone()
         }
 
         pub fn set_pull_requests(&self, prs: Vec<crate::github::types::GhPullRequest>) {
@@ -911,6 +979,29 @@ pub mod mock {
                 event,
                 body: body.to_string(),
             });
+            Ok(())
+        }
+
+        async fn list_labels(&self) -> Result<Vec<String>> {
+            let mut state = self.inner.lock().unwrap();
+            state.list_labels_calls += 1;
+            if let Some(ref err) = state.list_labels_error {
+                anyhow::bail!("{}", err);
+            }
+            Ok(state.labels.clone())
+        }
+
+        async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+            let mut state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.create_label_error {
+                anyhow::bail!("{}", err);
+            }
+            state
+                .create_label_calls
+                .push((name.to_string(), color.to_string()));
+            if !state.labels.contains(&name.to_string()) {
+                state.labels.push(name.to_string());
+            }
             Ok(())
         }
     }

@@ -67,8 +67,8 @@ pub struct App {
     pub progress_tracker: ProgressTracker,
     pub notifications: NotificationDispatcher,
     pub tui_mode: TuiMode,
-    /// Stored mode to restore when the ConfirmExit dialog is dismissed.
-    pub confirm_exit_return_mode: Option<TuiMode>,
+    /// Navigation back-stack for consistent [Esc] behavior.
+    pub nav_stack: NavigationStack,
     pub session_logger: SessionLogger,
     pub pending_pr_checks: Vec<PendingPrCheck>,
     pub(crate) last_ci_poll: Instant,
@@ -157,7 +157,7 @@ impl App {
             progress_tracker: ProgressTracker::new(),
             notifications: NotificationDispatcher::new(false),
             tui_mode: TuiMode::Overview,
-            confirm_exit_return_mode: None,
+            nav_stack: NavigationStack::default(),
             session_logger: SessionLogger::new(SessionLogger::default_dir()),
             pending_pr_checks: Vec::new(),
             last_ci_poll: Instant::now(),
@@ -273,6 +273,36 @@ impl App {
             ),
             LogLevel::Warn,
         );
+    }
+
+    /// Navigate to a new mode, pushing the current mode onto the back-stack.
+    pub fn navigate_to(&mut self, target: TuiMode) {
+        self.nav_stack.push(self.tui_mode);
+        self.tui_mode = target;
+    }
+
+    /// Navigate back. If the stack is empty, trigger ConfirmExit.
+    pub fn navigate_back(&mut self) {
+        if let Some(prev) = self.nav_stack.pop() {
+            self.tui_mode = prev;
+        } else {
+            self.tui_mode = TuiMode::ConfirmExit;
+        }
+    }
+
+    /// Navigate back without triggering ConfirmExit (for cancel flows).
+    /// Falls back to Dashboard if stack is empty.
+    pub fn navigate_back_or_dashboard(&mut self) {
+        if let Some(prev) = self.nav_stack.pop() {
+            self.tui_mode = prev;
+        } else {
+            self.tui_mode = TuiMode::Dashboard;
+        }
+    }
+
+    pub fn navigate_to_root(&mut self) {
+        self.nav_stack.clear();
+        self.tui_mode = TuiMode::Dashboard;
     }
 
     fn sync_state(&mut self) {

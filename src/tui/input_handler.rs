@@ -50,7 +50,7 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
 
     // 'q' triggers confirm exit (except in text input modes)
     if key.code == KeyCode::Char('q') && !is_text_input_mode(app) {
-        app.confirm_exit_return_mode = Some(app.tui_mode);
+        app.nav_stack.push(app.tui_mode);
         app.tui_mode = app::TuiMode::ConfirmExit;
         return KeyAction::Consumed;
     }
@@ -176,7 +176,7 @@ fn handle_queue_execution(app: &mut App, key: &KeyEvent) -> KeyAction {
     use crate::work::executor::{ExecutorPhase, FailureAction};
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => {
-            app.tui_mode = app::TuiMode::Overview;
+            app.navigate_back_or_dashboard();
         }
         (KeyCode::Char('r'), _) => {
             if let Some(ref mut exec) = app.queue_executor
@@ -361,7 +361,7 @@ fn handle_session_summary(app: &mut App, key: &KeyEvent) {
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => {
             app.session_summary_state = None;
-            app.tui_mode = app::TuiMode::Overview;
+            app.navigate_back_or_dashboard();
         }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
             if let Some(state) = app.session_summary_state.as_mut() {
@@ -401,10 +401,10 @@ fn handle_session_summary(app: &mut App, key: &KeyEvent) {
     }
 }
 
-async fn handle_log_viewer(app: &mut App, key: &KeyEvent, id: uuid::Uuid) -> KeyAction {
+async fn handle_log_viewer(app: &mut App, key: &KeyEvent, _id: uuid::Uuid) -> KeyAction {
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => {
-            app.tui_mode = app::TuiMode::Detail(id);
+            app.navigate_back_or_dashboard();
         }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
             app.log_viewer_scroll = app.log_viewer_scroll.saturating_sub(1);
@@ -427,10 +427,10 @@ async fn handle_confirm_kill(app: &mut App, key: &KeyEvent, session_id: uuid::Uu
     match key.code {
         KeyCode::Char('y') | KeyCode::Enter => {
             app.kill_selected_session(session_id).await;
-            app.tui_mode = app::TuiMode::Overview;
+            app.navigate_back_or_dashboard();
         }
         KeyCode::Char('n') | KeyCode::Esc => {
-            app.tui_mode = app::TuiMode::Overview;
+            app.navigate_back_or_dashboard();
         }
         _ => {}
     }
@@ -441,7 +441,7 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
     match key.code {
         KeyCode::Esc => {
             app.session_switcher = None;
-            app.tui_mode = app::TuiMode::Overview;
+            app.navigate_back_or_dashboard();
         }
         KeyCode::Up => {
             if let Some(sw) = &mut app.session_switcher {
@@ -575,11 +575,10 @@ fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
     match key.code {
         KeyCode::Char('y') | KeyCode::Enter => {
             app.running = false;
-            app.confirm_exit_return_mode = None;
             KeyAction::Quit
         }
         KeyCode::Char('n') | KeyCode::Esc => {
-            if let Some(prev) = app.confirm_exit_return_mode.take() {
+            if let Some(prev) = app.nav_stack.pop() {
                 app.tui_mode = prev;
             } else {
                 app.tui_mode = app::TuiMode::Overview;
@@ -644,11 +643,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             };
         }
         (KeyCode::Esc, _) => {
-            if app.home_screen.is_some() && app.pool.total_count() == 0 {
-                app.tui_mode = app::TuiMode::Dashboard;
-            } else {
-                app.tui_mode = app::TuiMode::Overview;
-            }
+            app.navigate_back();
         }
         (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
             let selected = app.panel_view.selected_index();
@@ -777,9 +772,9 @@ mod tests {
     }
 
     #[test]
-    fn app_confirm_exit_return_mode_defaults_to_none() {
+    fn nav_stack_defaults_to_empty() {
         let app = make_app();
-        assert!(app.confirm_exit_return_mode.is_none());
+        assert!(app.nav_stack.is_empty());
     }
 
     // ── Group 2: is_text_input_mode() ─────────────────────────────────
@@ -840,12 +835,13 @@ mod tests {
     }
 
     #[test]
-    fn y_in_confirm_exit_clears_return_mode() {
+    fn y_in_confirm_exit_keeps_stack_intact() {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
-        app.confirm_exit_return_mode = Some(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Overview);
         handle_confirm_exit(&mut app, &key('y'));
-        assert!(app.confirm_exit_return_mode.is_none());
+        // After quitting, running is false — stack state doesn't matter
+        assert!(!app.running);
     }
 
     // ── Group 4: handle_confirm_exit — n/Esc cancel ───────────────────
@@ -853,8 +849,8 @@ mod tests {
     #[test]
     fn n_in_confirm_exit_restores_previous_mode() {
         let mut app = make_app();
+        app.nav_stack.push(TuiMode::DependencyGraph);
         app.tui_mode = TuiMode::ConfirmExit;
-        app.confirm_exit_return_mode = Some(TuiMode::DependencyGraph);
         handle_confirm_exit(&mut app, &key('n'));
         assert_eq!(app.tui_mode, TuiMode::DependencyGraph);
     }
@@ -862,8 +858,8 @@ mod tests {
     #[test]
     fn esc_in_confirm_exit_restores_previous_mode() {
         let mut app = make_app();
+        app.nav_stack.push(TuiMode::Overview);
         app.tui_mode = TuiMode::ConfirmExit;
-        app.confirm_exit_return_mode = Some(TuiMode::Overview);
         handle_confirm_exit(&mut app, &key_code(KeyCode::Esc));
         assert_eq!(app.tui_mode, TuiMode::Overview);
     }
@@ -871,18 +867,17 @@ mod tests {
     #[test]
     fn n_in_confirm_exit_does_not_quit() {
         let mut app = make_app();
+        app.nav_stack.push(TuiMode::Overview);
         app.tui_mode = TuiMode::ConfirmExit;
-        app.confirm_exit_return_mode = Some(TuiMode::Overview);
         app.running = true;
         handle_confirm_exit(&mut app, &key('n'));
         assert!(app.running);
     }
 
     #[test]
-    fn cancel_with_no_stored_mode_falls_back_to_overview() {
+    fn cancel_with_empty_stack_falls_back_to_overview() {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
-        app.confirm_exit_return_mode = None;
         handle_confirm_exit(&mut app, &key('n'));
         assert_eq!(app.tui_mode, TuiMode::Overview);
     }
@@ -893,7 +888,7 @@ mod tests {
     fn unrelated_key_in_confirm_exit_stays() {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
-        app.confirm_exit_return_mode = Some(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Overview);
         handle_confirm_exit(&mut app, &key('x'));
         assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
     }
@@ -935,7 +930,7 @@ mod tests {
     async fn ctrl_c_from_confirm_exit_quits() {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
-        app.confirm_exit_return_mode = Some(TuiMode::Overview);
+        app.nav_stack.push(TuiMode::Overview);
         handle_key(&mut app, ctrl_c_event()).await;
         assert!(!app.running);
     }
@@ -946,7 +941,55 @@ mod tests {
         app.tui_mode = TuiMode::Overview;
         handle_key(&mut app, key('q')).await;
         assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
-        assert_eq!(app.confirm_exit_return_mode, Some(TuiMode::Overview));
+        assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Overview));
         assert!(app.running);
+    }
+
+    // ── Issue #342: Nav-stack integration tests ──────────────────────────
+
+    #[test]
+    fn navigate_to_pushes_current_mode_and_switches() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        app.navigate_to(TuiMode::IssueBrowser);
+        assert_eq!(app.tui_mode, TuiMode::IssueBrowser);
+        assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Overview));
+    }
+
+    #[test]
+    fn navigate_back_pops_to_previous_mode() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        app.navigate_to(TuiMode::IssueBrowser);
+        app.navigate_back();
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert!(app.nav_stack.is_empty());
+    }
+
+    #[test]
+    fn navigate_back_on_empty_stack_triggers_confirm_exit() {
+        let mut app = make_app();
+        assert!(app.nav_stack.is_empty());
+        app.navigate_back();
+        assert_eq!(app.tui_mode, TuiMode::ConfirmExit);
+    }
+
+    #[test]
+    fn navigate_back_or_dashboard_falls_to_dashboard_on_empty_stack() {
+        let mut app = make_app();
+        assert!(app.nav_stack.is_empty());
+        app.navigate_back_or_dashboard();
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+    }
+
+    #[test]
+    fn navigate_to_root_clears_stack_and_sets_dashboard() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        app.navigate_to(TuiMode::IssueBrowser);
+        app.navigate_to(TuiMode::Settings);
+        app.navigate_to_root();
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+        assert!(app.nav_stack.is_empty());
     }
 }

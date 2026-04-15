@@ -7,6 +7,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `NavigationStack` struct in `src/tui/app/types.rs` — push/pop/peek/clear/breadcrumbs operations with a capacity cap of 32 entries (#342)
+- `TuiMode::breadcrumb_label()` — human-readable mode name for each `TuiMode` variant (#342)
+- `navigate_to()`, `navigate_back()`, `navigate_back_or_dashboard()`, `navigate_to_root()` methods on `App` (#342)
+- Breadcrumb trail rendering in the `ui.rs` status bar — shows the full navigation path to the current screen (#342)
+- `list_labels()` and `create_label()` methods on `GitHubClient` trait (#348)
+- `ensure_labels()` on `GhMaterializer` — auto-creates missing labels on the target repo before issue creation (#348)
+- `STANDARD_LABEL_COLORS` constant in `src/adapt/materializer.rs` — canonical hex color map for all maestro labels (#348)
+
+### Changed
+
+- Replaced `confirm_exit_return_mode: Option<TuiMode>` with `nav_stack: NavigationStack` in `App` (#342)
+- All `Esc` handlers in `input_handler.rs` now use `navigate_back_or_dashboard()` instead of manual mode assignment (#342)
+- `ScreenAction::Push` / `ScreenAction::Pop` in `screen_dispatch.rs` delegated to `navigate_to` / `navigate_back` (#342)
+- `transition_to_dashboard()` in `completion_summary.rs` calls `navigate_to_root()` to clear the nav stack (#342)
+
+### Fixed
+
+- `maestro adapt` no longer crashes when labels do not exist on the target repository (#348)
+- `AzDevOpsClient` updated with stub `list_labels()` and `create_label()` implementations to satisfy the `GitHubClient` trait (#348)
+
 ## [0.12.0] - 2026-04-14
 
 ### Added
