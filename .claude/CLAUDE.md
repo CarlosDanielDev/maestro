@@ -343,6 +343,7 @@ Skills are reusable knowledge bases that subagents consult for best practices an
 | `project-patterns` | 1.0.0 | Project-specific patterns and conventions | `subagent-architect`, `subagent-qa` |
 | `api-contract-validation` | 1.0.0 | API contract enforcement | Orchestrator (via `/validate-contracts`) |
 | `security-patterns` | 1.0.0 | OWASP Top 10, security best practices | `subagent-security-analyst` |
+| `provider-resilience` | 1.0.0 | Defensive `gh`/`az` CLI patterns, error handling, idempotency | `subagent-architect`, `subagent-qa` |
 
 ---
 

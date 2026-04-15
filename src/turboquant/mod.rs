@@ -1,3 +1,4 @@
+pub mod adapter;
 pub mod pipeline;
 pub mod polar;
 pub mod qjl;

@@ -110,10 +110,11 @@ preview_ratio = 65
 activity_log_height = 20
 
 [flags]
+# turboquant = false  # Enable TurboQuant context compression (also toggle with Ctrl+q)
 
-# [turboquant]
-# enabled = false
-# bit_width = 4
-# strategy = "turboquant"
-# apply_to = "both"
-# auto_on_overflow = false
+[turboquant]
+enabled = false           # Master switch for TurboQuant compression
+bit_width = 4             # Quantization bits (2-8). Lower = more compression, less quality
+strategy = "turboquant"   # "turboquant" (best), "polarquant" (quality), "qjl" (fast)
+apply_to = "both"         # "keys", "values", or "both"
+auto_on_overflow = false  # Auto-enable when context approaches overflow threshold

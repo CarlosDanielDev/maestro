@@ -424,6 +424,8 @@ mod tests {
             transition_flash_remaining: 0,
             is_thinking: false,
             thinking_started_at: None,
+            tq_original_tokens: None,
+            tq_compressed_tokens: None,
             transition_history: vec![],
         };
         ManagedSession::new(session)

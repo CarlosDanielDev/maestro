@@ -503,6 +503,22 @@ pub fn mode_keymap(
                 priority: 0,
             }],
         ),
+        TuiMode::TurboquantDashboard => (
+            "TurboQuant A/B",
+            FKeyVis::DashboardLike,
+            &[
+                InlineHint {
+                    key: "Esc",
+                    action: "Back",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "Tab",
+                    action: "Cycle Views",
+                    priority: 1,
+                },
+            ],
+        ),
     };
 
     let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);

@@ -300,15 +300,57 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::ConfirmExit => {
-            let sessions = app.pool.all_sessions();
-            app.panel_view.draw_with_claims(
-                f,
-                &sessions,
-                Some(&app.pool.file_claims),
-                chunks[1],
-                &theme,
-                spinner_tick,
-            );
+            // Render the screen the user was on before pressing [q]
+            match app.confirm_exit_return_mode {
+                Some(TuiMode::Dashboard) => {
+                    if let Some(ref mut screen) = app.home_screen {
+                        screen.draw(f, chunks[1], &theme);
+                    }
+                }
+                Some(TuiMode::CostDashboard) => {
+                    let sessions: Vec<&crate::session::types::Session> =
+                        app.pool.all_sessions().into_iter().collect();
+                    let budget_limit = app.budget_enforcer.as_ref().map(|e| e.total_limit());
+                    crate::tui::cost_dashboard::draw_cost_dashboard(
+                        f,
+                        &sessions,
+                        app.total_cost,
+                        budget_limit,
+                        chunks[1],
+                        &theme,
+                    );
+                }
+                Some(TuiMode::TokenDashboard) => {
+                    let sessions: Vec<&crate::session::types::Session> =
+                        app.pool.all_sessions().into_iter().collect();
+                    crate::tui::token_dashboard::draw_token_dashboard(
+                        f,
+                        &sessions,
+                        app.total_cost,
+                        chunks[1],
+                        &theme,
+                    );
+                }
+                Some(TuiMode::TurboquantDashboard) => {
+                    let sessions: Vec<&crate::session::types::Session> =
+                        app.pool.all_sessions().into_iter().collect();
+                    crate::tui::turboquant_dashboard::draw_turboquant_dashboard(
+                        f, &sessions, &app.flags, chunks[1], &theme,
+                    );
+                }
+                _ => {
+                    // Default: show overview panel
+                    let sessions = app.pool.all_sessions();
+                    app.panel_view.draw_with_claims(
+                        f,
+                        &sessions,
+                        Some(&app.pool.file_claims),
+                        chunks[1],
+                        &theme,
+                        spinner_tick,
+                    );
+                }
+            }
             draw_confirm_exit_overlay(f, app, chunks[1], &theme);
         }
         TuiMode::HollowRetry => {
@@ -335,6 +377,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &theme,
                 );
             }
+        }
+        TuiMode::TurboquantDashboard => {
+            let sessions: Vec<&crate::session::types::Session> =
+                app.pool.all_sessions().into_iter().collect();
+            crate::tui::turboquant_dashboard::draw_turboquant_dashboard(
+                f, &sessions, &app.flags, chunks[1], &theme,
+            );
         }
     }
 
@@ -558,6 +607,50 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
             Style::default().fg(theme.text_primary),
         ),
     ];
+
+    // RAM widget
+    {
+        let snap = app.resource_monitor.snapshot();
+        let rss_mb = snap.rss_mb();
+        let ram_color = {
+            let pct = snap.memory_pct();
+            if pct > 80.0 {
+                theme.accent_error
+            } else if pct > 50.0 {
+                theme.accent_warning
+            } else {
+                theme.accent_success
+            }
+        };
+        let ram_text = if let Some(delta) = snap.tq_delta_pct() {
+            format!("RAM: {:.0}MB (↓{:.0}% TQ)", rss_mb, delta)
+        } else {
+            format!("RAM: {:.0}MB", rss_mb)
+        };
+        spans.push(sep.clone());
+        spans.push(Span::styled(ram_text, Style::default().fg(ram_color)));
+    }
+
+    // TQ badge
+    {
+        let tq_enabled = app.flags.is_enabled(crate::flags::Flag::TurboQuant);
+        if tq_enabled {
+            spans.push(sep.clone());
+            spans.push(Span::styled(
+                "TQ:ON",
+                Style::default()
+                    .fg(theme.branding_fg)
+                    .bg(theme.accent_success)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            spans.push(sep.clone());
+            spans.push(Span::styled(
+                "TQ:OFF",
+                Style::default().fg(theme.text_secondary),
+            ));
+        }
+    }
 
     if let Some(ref cont) = app.continuous_mode {
         spans.push(sep.clone());

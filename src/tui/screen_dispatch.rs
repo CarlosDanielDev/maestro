@@ -175,6 +175,8 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         }
         ScreenAction::UpdateConfig(config) => {
             crate::icon_mode::init_from_config(config.tui.ascii_icons);
+            app.flags
+                .set_enabled(crate::flags::Flag::TurboQuant, config.turboquant.enabled);
             app.config = Some(*config);
         }
         ScreenAction::PreviewTheme(theme_config) => {

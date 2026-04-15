@@ -206,6 +206,14 @@ Controller → Service → Repository → Database
 
 ---
 
+## Related Skills
+
+| Skill | When to Consult |
+|-------|-----------------|
+| `provider-resilience` | Any feature that creates GitHub/Azure DevOps resources (issues, PRs, milestones, labels) |
+| `security-patterns` | Authentication, authorization, input validation |
+| `api-contract-validation` | Client-server model alignment |
+
 ## Customization Instructions
 
 1. **Copy this directory** to a new skill (e.g., `backend-express-patterns`)

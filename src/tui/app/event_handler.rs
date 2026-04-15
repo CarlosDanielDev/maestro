@@ -9,6 +9,7 @@ use crate::session::transition::TransitionReason;
 use crate::session::types::{SessionStatus, StreamEvent};
 use crate::state::file_claims::{ClaimResult, FILE_CONFLICT_SENTINEL};
 use crate::tui::activity_log::LogLevel;
+use crate::turboquant::adapter::ContextCompressor;
 
 impl App {
     /// Process a stream event from a session.
@@ -174,6 +175,47 @@ impl App {
                 StreamEvent::Thinking { .. } => {}
                 StreamEvent::TokenUpdate { .. } => {}
                 StreamEvent::Completed { cost_usd } => {
+                    if self.flags.is_enabled(crate::flags::Flag::TurboQuant) {
+                        let (tq_config, overflow_threshold) = match self.config.as_ref() {
+                            Some(c) => (
+                                c.turboquant.clone(),
+                                c.sessions.context_overflow.overflow_threshold_pct as f64,
+                            ),
+                            None => (Default::default(), 80.0),
+                        };
+                        let adapter = crate::turboquant::adapter::TurboQuantAdapter::new(
+                            tq_config.bit_width,
+                            tq_config.strategy,
+                            overflow_threshold,
+                            tq_config.auto_on_overflow,
+                        );
+                        match adapter.compress(&managed.session.prompt, managed.session.context_pct)
+                        {
+                            Some(result) => {
+                                managed.session.tq_original_tokens =
+                                    Some(result.metrics.original_tokens);
+                                managed.session.tq_compressed_tokens =
+                                    Some(result.metrics.compressed_tokens);
+                                self.activity_log.push_simple(
+                                    label.clone(),
+                                    result.metrics.log_entry(),
+                                    LogLevel::Info,
+                                );
+                            }
+                            None if tq_config.auto_on_overflow => {
+                                self.activity_log.push_simple(
+                                    label.clone(),
+                                    format!(
+                                        "[TurboQuant] Skipped — context {:.0}% < {:.0}% threshold",
+                                        managed.session.context_pct, overflow_threshold
+                                    ),
+                                    LogLevel::Info,
+                                );
+                            }
+                            None => {}
+                        }
+                    }
+
                     self.activity_log.push_simple(
                         label.clone(),
                         format!("Completed (${:.2})", cost_usd),

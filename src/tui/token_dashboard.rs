@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 /// Format a token count for display (e.g., "245.0k", "1.2M").
-fn format_tokens(n: u64) -> String {
+pub fn format_tokens(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
     } else if n >= 1_000 {
@@ -51,7 +51,11 @@ fn draw_aggregate_stats(
         aggregate.accumulate(&s.token_usage);
     }
 
-    let lines = vec![
+    // Aggregate TQ compression metrics
+    let (tq_original, tq_compressed, tq_count) =
+        crate::tui::turboquant_dashboard::aggregate_tq_metrics(sessions);
+
+    let mut lines = vec![
         Line::from(vec![
             Span::styled(" Input: ", Style::default().fg(theme.text_secondary)),
             Span::styled(
@@ -117,6 +121,42 @@ fn draw_aggregate_stats(
         ]),
     ];
 
+    // TurboQuant compression row (only when data exists)
+    if tq_count > 0 {
+        let ratio = if tq_compressed > 0 {
+            tq_original as f64 / tq_compressed as f64
+        } else {
+            0.0
+        };
+        let saved = tq_original.saturating_sub(tq_compressed);
+        lines.push(Line::from(vec![
+            Span::styled(
+                " TQ Compression: ",
+                Style::default().fg(theme.text_secondary),
+            ),
+            Span::styled(
+                format_tokens(tq_original),
+                Style::default().fg(theme.accent_info),
+            ),
+            Span::styled(" → ", Style::default().fg(theme.text_muted)),
+            Span::styled(
+                format_tokens(tq_compressed),
+                Style::default()
+                    .fg(theme.accent_success)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(
+                    "  ({:.1}x, {} saved, {} sessions)",
+                    ratio,
+                    format_tokens(saved),
+                    tq_count
+                ),
+                Style::default().fg(theme.accent_warning),
+            ),
+        ]));
+    }
+
     let block = theme
         .styled_block("Aggregate Token Usage", false)
         .border_style(Style::default().fg(theme.accent_info));
@@ -135,8 +175,8 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
 
     let header = Line::from(vec![Span::styled(
         format!(
-            " {:>8}  {:>18}  {:>8}  {:>8}  {:>8}  {:>8}  {:>6}",
-            "ID", "Title", "Input", "Output", "Cache R", "Cache W", "$/kT"
+            " {:>8}  {:>18}  {:>8}  {:>8}  {:>8}  {:>8}  {:>6}  {:>8}",
+            "ID", "Title", "Input", "Output", "Cache R", "Cache W", "$/kT", "TQ Ratio"
         ),
         Style::default()
             .fg(theme.text_secondary)
@@ -191,6 +231,22 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
             Span::styled(
                 format!("  ${:.3}", cost_per_k),
                 Style::default().fg(theme.accent_warning),
+            ),
+            Span::styled(
+                format!(
+                    "  {:>8}",
+                    match (s.tq_original_tokens, s.tq_compressed_tokens) {
+                        (Some(orig), Some(comp)) if comp > 0 => {
+                            format!("{:.1}x", orig as f64 / comp as f64)
+                        }
+                        _ => "—".to_string(),
+                    }
+                ),
+                Style::default().fg(if s.tq_compressed_tokens.is_some() {
+                    theme.accent_success
+                } else {
+                    theme.text_muted
+                }),
             ),
         ]));
     }

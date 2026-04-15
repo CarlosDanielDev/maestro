@@ -267,6 +267,12 @@ pub struct Session {
     /// When the current thinking block started (for elapsed display).
     #[serde(skip)]
     pub thinking_started_at: Option<std::time::Instant>,
+    /// TurboQuant: original token count before compression.
+    #[serde(default)]
+    pub tq_original_tokens: Option<u64>,
+    /// TurboQuant: compressed token count after compression.
+    #[serde(default)]
+    pub tq_compressed_tokens: Option<u64>,
     /// History of state transitions for audit trail.
     #[serde(default)]
     pub transition_history: Vec<super::transition::SessionTransition>,
@@ -341,6 +347,8 @@ impl Session {
             transition_flash_remaining: 0,
             is_thinking: false,
             thinking_started_at: None,
+            tq_original_tokens: None,
+            tq_compressed_tokens: None,
             transition_history: Vec::new(),
         }
     }

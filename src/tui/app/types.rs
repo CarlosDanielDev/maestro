@@ -35,6 +35,7 @@ pub enum TuiMode {
     ConfirmKill(uuid::Uuid),
     ConfirmExit,
     SessionSummary,
+    TurboquantDashboard,
 }
 
 /// Per-session ephemeral UI state (not persisted).

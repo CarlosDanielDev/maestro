@@ -119,6 +119,7 @@ pub struct App {
     pub log_viewer_cache: crate::tui::log_viewer::LogViewerCache,
     pub session_summary_state: Option<crate::tui::app::types::SessionSummaryState>,
     pub show_activity_log: bool,
+    pub resource_monitor: Box<dyn crate::system::monitor::ResourceMonitor>,
 }
 
 impl App {
@@ -210,6 +211,7 @@ impl App {
             log_viewer_cache: crate::tui::log_viewer::LogViewerCache::default(),
             session_summary_state: None,
             show_activity_log: true,
+            resource_monitor: Box::new(crate::system::SysInfoMonitor::new(1000)),
         }
     }
 
@@ -236,6 +238,10 @@ impl App {
         }
         crate::icon_mode::init_from_config(config.tui.ascii_icons);
         self.show_mascot = config.tui.show_mascot;
+        // Sync TurboQuant flag from [turboquant] config section
+        if config.turboquant.enabled {
+            self.flags.set_enabled(crate::flags::Flag::TurboQuant, true);
+        }
         self.config = Some(config);
     }
 
