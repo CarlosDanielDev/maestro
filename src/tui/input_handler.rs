@@ -487,6 +487,12 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
+    // Shift+Q opens TurboQuant A/B dashboard
+    if key.code == KeyCode::Char('Q') && !is_text_input_mode(app) {
+        app.tui_mode = app::TuiMode::TurboquantDashboard;
+        return true;
+    }
+
     // Help overlay toggle
     let is_text_input_mode = matches!(
         app.tui_mode,
@@ -626,9 +632,6 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             app.session_summary_state =
                 Some(crate::tui::app::types::SessionSummaryState::default());
             app.tui_mode = app::TuiMode::SessionSummary;
-        }
-        (KeyCode::Char('Q'), _) => {
-            app.tui_mode = app::TuiMode::TurboquantDashboard;
         }
         (KeyCode::Tab, _) => {
             app.tui_mode = match app.tui_mode {
