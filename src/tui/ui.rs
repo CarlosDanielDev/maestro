@@ -300,15 +300,57 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::ConfirmExit => {
-            let sessions = app.pool.all_sessions();
-            app.panel_view.draw_with_claims(
-                f,
-                &sessions,
-                Some(&app.pool.file_claims),
-                chunks[1],
-                &theme,
-                spinner_tick,
-            );
+            // Render the screen the user was on before pressing [q]
+            match app.confirm_exit_return_mode {
+                Some(TuiMode::Dashboard) => {
+                    if let Some(ref mut screen) = app.home_screen {
+                        screen.draw(f, chunks[1], &theme);
+                    }
+                }
+                Some(TuiMode::CostDashboard) => {
+                    let sessions: Vec<&crate::session::types::Session> =
+                        app.pool.all_sessions().into_iter().collect();
+                    let budget_limit = app.budget_enforcer.as_ref().map(|e| e.total_limit());
+                    crate::tui::cost_dashboard::draw_cost_dashboard(
+                        f,
+                        &sessions,
+                        app.total_cost,
+                        budget_limit,
+                        chunks[1],
+                        &theme,
+                    );
+                }
+                Some(TuiMode::TokenDashboard) => {
+                    let sessions: Vec<&crate::session::types::Session> =
+                        app.pool.all_sessions().into_iter().collect();
+                    crate::tui::token_dashboard::draw_token_dashboard(
+                        f,
+                        &sessions,
+                        app.total_cost,
+                        chunks[1],
+                        &theme,
+                    );
+                }
+                Some(TuiMode::TurboquantDashboard) => {
+                    let sessions: Vec<&crate::session::types::Session> =
+                        app.pool.all_sessions().into_iter().collect();
+                    crate::tui::turboquant_dashboard::draw_turboquant_dashboard(
+                        f, &sessions, &app.flags, chunks[1], &theme,
+                    );
+                }
+                _ => {
+                    // Default: show overview panel
+                    let sessions = app.pool.all_sessions();
+                    app.panel_view.draw_with_claims(
+                        f,
+                        &sessions,
+                        Some(&app.pool.file_claims),
+                        chunks[1],
+                        &theme,
+                        spinner_tick,
+                    );
+                }
+            }
             draw_confirm_exit_overlay(f, app, chunks[1], &theme);
         }
         TuiMode::HollowRetry => {
