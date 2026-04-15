@@ -175,36 +175,44 @@ impl App {
                 StreamEvent::Thinking { .. } => {}
                 StreamEvent::TokenUpdate { .. } => {}
                 StreamEvent::Completed { cost_usd } => {
-                    // Record TurboQuant compression metrics if enabled
                     if self.flags.is_enabled(crate::flags::Flag::TurboQuant) {
-                        let tq_config = self
-                            .config
-                            .as_ref()
-                            .map(|c| c.turboquant.clone())
-                            .unwrap_or_default();
-                        let overflow_threshold = self
-                            .config
-                            .as_ref()
-                            .map(|c| c.sessions.context_overflow.overflow_threshold_pct as f64)
-                            .unwrap_or(80.0);
+                        let (tq_config, overflow_threshold) = match self.config.as_ref() {
+                            Some(c) => (
+                                c.turboquant.clone(),
+                                c.sessions.context_overflow.overflow_threshold_pct as f64,
+                            ),
+                            None => (Default::default(), 80.0),
+                        };
                         let adapter = crate::turboquant::adapter::TurboQuantAdapter::new(
                             tq_config.bit_width,
                             tq_config.strategy,
                             overflow_threshold,
                             tq_config.auto_on_overflow,
                         );
-                        if let Some(result) =
-                            adapter.compress(&managed.session.prompt, managed.session.context_pct)
+                        match adapter.compress(&managed.session.prompt, managed.session.context_pct)
                         {
-                            managed.session.tq_original_tokens =
-                                Some(result.metrics.original_tokens);
-                            managed.session.tq_compressed_tokens =
-                                Some(result.metrics.compressed_tokens);
-                            self.activity_log.push_simple(
-                                label.clone(),
-                                result.metrics.log_entry(),
-                                LogLevel::Info,
-                            );
+                            Some(result) => {
+                                managed.session.tq_original_tokens =
+                                    Some(result.metrics.original_tokens);
+                                managed.session.tq_compressed_tokens =
+                                    Some(result.metrics.compressed_tokens);
+                                self.activity_log.push_simple(
+                                    label.clone(),
+                                    result.metrics.log_entry(),
+                                    LogLevel::Info,
+                                );
+                            }
+                            None if tq_config.auto_on_overflow => {
+                                self.activity_log.push_simple(
+                                    label.clone(),
+                                    format!(
+                                        "[TurboQuant] Skipped — context {:.0}% < {:.0}% threshold",
+                                        managed.session.context_pct, overflow_threshold
+                                    ),
+                                    LogLevel::Info,
+                                );
+                            }
+                            None => {}
                         }
                     }
 
