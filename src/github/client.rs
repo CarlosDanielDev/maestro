@@ -627,7 +627,11 @@ impl GitHubClient for GhCliClient {
             serde_json::from_str(&json_str).context("Failed to parse label list JSON")?;
         Ok(labels
             .iter()
-            .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+            .filter_map(|v| {
+                v.get("name")
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.to_string())
+            })
             .collect())
     }
 

@@ -1,8 +1,6 @@
 use super::App;
 use super::helpers::session_label;
-use super::types::{
-    CompletionSessionLine, CompletionSummaryData, GateFailureInfo, TuiCommand,
-};
+use super::types::{CompletionSessionLine, CompletionSummaryData, GateFailureInfo, TuiCommand};
 use crate::session::types::SessionStatus;
 use crate::util::truncate_with_ellipsis;
 

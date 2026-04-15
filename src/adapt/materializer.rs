@@ -57,11 +57,7 @@ impl<G: GitHubClient> GhMaterializer<G> {
 
     /// Ensure all labels referenced in the plan (and tech-debt catalog) exist on
     /// the target repo. Creates missing labels with standard or default colors.
-    async fn ensure_labels(
-        &self,
-        plan: &AdaptPlan,
-        report: &AdaptReport,
-    ) -> anyhow::Result<()> {
+    async fn ensure_labels(&self, plan: &AdaptPlan, report: &AdaptReport) -> anyhow::Result<()> {
         let mut needed: HashSet<String> = plan
             .milestones
             .iter()
@@ -547,8 +543,7 @@ mod tests {
             .unwrap();
 
         let calls = client.create_label_calls();
-        let call_map: std::collections::HashMap<String, String> =
-            calls.into_iter().collect();
+        let call_map: std::collections::HashMap<String, String> = calls.into_iter().collect();
 
         assert!(
             call_map.contains_key("enhancement"),
@@ -721,7 +716,10 @@ mod tests {
 
         let result = materializer.materialize(&plan, &report, false).await;
 
-        assert!(result.is_err(), "materialize must return Err when list_labels fails");
+        assert!(
+            result.is_err(),
+            "materialize must return Err when list_labels fails"
+        );
         assert!(
             client.create_issue_calls().is_empty(),
             "no issues should be created when ensure_labels fails"
@@ -740,7 +738,10 @@ mod tests {
 
         let result = materializer.materialize(&plan, &report, false).await;
 
-        assert!(result.is_err(), "materialize must return Err when create_label fails");
+        assert!(
+            result.is_err(),
+            "materialize must return Err when create_label fails"
+        );
         assert!(
             client.create_issue_calls().is_empty(),
             "no issues should be created when ensure_labels fails"
