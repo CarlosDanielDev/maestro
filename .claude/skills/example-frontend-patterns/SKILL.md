@@ -198,6 +198,14 @@ Add framework-specific anti-patterns here:
 
 ---
 
+## Related Skills
+
+| Skill | When to Consult |
+|-------|-----------------|
+| `provider-resilience` | Any feature that calls GitHub/Azure DevOps APIs |
+| `security-patterns` | XSS, CSRF, input sanitization |
+| `api-contract-validation` | Frontend models vs backend JSON |
+
 ## Customization Instructions
 
 1. **Copy this directory** to a new skill (e.g., `frontend-react-patterns`)

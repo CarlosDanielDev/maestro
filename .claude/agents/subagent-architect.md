@@ -54,6 +54,7 @@ Use Glob to list available skills:
 
 ## Step 3: Read Relevant Skills
 Read project-patterns skill and any tech-specific skills.
+If the task involves GitHub/Azure DevOps API calls (creating issues, milestones, labels, PRs), also read the `provider-resilience` skill for error handling and idempotency patterns.
 
 ## Step 4: Apply Patterns in Recommendations
 - Include code examples that follow project conventions

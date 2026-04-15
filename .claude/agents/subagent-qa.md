@@ -67,6 +67,7 @@ Find and read existing test files to understand patterns:
 ```
 Use Glob: .claude/skills/*/SKILL.md
 Read project-patterns and testing-related skills.
+If the task involves GitHub/Azure DevOps interactions, also read `provider-resilience` skill for idempotency test patterns.
 ```
 
 ---
