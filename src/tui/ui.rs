@@ -300,7 +300,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::ConfirmExit => {
-            // Render the screen the user was on before pressing [q]
             match app.confirm_exit_return_mode {
                 Some(TuiMode::Dashboard) => {
                     if let Some(ref mut screen) = app.home_screen {
@@ -339,7 +338,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     );
                 }
                 _ => {
-                    // Default: show overview panel
                     let sessions = app.pool.all_sessions();
                     app.panel_view.draw_with_claims(
                         f,
@@ -633,23 +631,19 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
 
     // TQ badge
     {
+        spans.push(sep.clone());
         let tq_enabled = app.flags.is_enabled(crate::flags::Flag::TurboQuant);
-        if tq_enabled {
-            spans.push(sep.clone());
-            spans.push(Span::styled(
+        spans.push(if tq_enabled {
+            Span::styled(
                 "TQ:ON",
                 Style::default()
                     .fg(theme.branding_fg)
                     .bg(theme.accent_success)
                     .add_modifier(Modifier::BOLD),
-            ));
+            )
         } else {
-            spans.push(sep.clone());
-            spans.push(Span::styled(
-                "TQ:OFF",
-                Style::default().fg(theme.text_secondary),
-            ));
-        }
+            Span::styled("TQ:OFF", Style::default().fg(theme.text_secondary))
+        });
     }
 
     if let Some(ref cont) = app.continuous_mode {
