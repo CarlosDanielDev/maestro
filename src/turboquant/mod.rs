@@ -1,4 +1,3 @@
-#[allow(dead_code)] // Reason: adapter wired incrementally as TurboQuant features land
 pub mod adapter;
 pub mod pipeline;
 pub mod polar;

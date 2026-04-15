@@ -26,6 +26,7 @@ impl CompressionMetrics {
 
 /// Result of compressing context.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // vectors and strategy used for future decompression path
 pub struct CompressedContext {
     /// The compressed vectors (one per chunk).
     pub vectors: Vec<TurboQuantized>,
@@ -42,6 +43,7 @@ pub trait ContextCompressor: Send + Sync {
     fn compress(&self, prompt: &str, context_pct: f64) -> Option<CompressedContext>;
 
     /// Check if the compressor is currently active.
+    #[allow(dead_code)]
     fn is_active(&self) -> bool;
 }
 
@@ -76,6 +78,7 @@ impl TurboQuantAdapter {
     }
 
     /// Enable or disable the adapter at runtime.
+    #[allow(dead_code)] // Used by tests and future runtime toggle integration
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
