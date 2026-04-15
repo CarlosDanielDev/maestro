@@ -238,6 +238,10 @@ impl App {
         }
         crate::icon_mode::init_from_config(config.tui.ascii_icons);
         self.show_mascot = config.tui.show_mascot;
+        // Sync TurboQuant flag from [turboquant] config section
+        if config.turboquant.enabled {
+            self.flags.set_enabled(crate::flags::Flag::TurboQuant, true);
+        }
         self.config = Some(config);
     }
 

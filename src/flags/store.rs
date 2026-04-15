@@ -72,6 +72,11 @@ impl FeatureFlags {
             .collect()
     }
 
+    /// Set a flag's runtime state explicitly.
+    pub fn set_enabled(&mut self, flag: Flag, enabled: bool) {
+        self.overrides.insert(flag, (enabled, FlagSource::Config));
+    }
+
     /// Toggle a flag at runtime. Returns the new state.
     pub fn toggle(&mut self, flag: Flag) -> bool {
         let current = self.is_enabled(flag);
