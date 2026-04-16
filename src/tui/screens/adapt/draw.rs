@@ -97,14 +97,21 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let phases = [
-        (AdaptStep::Scanning, "Scanning project"),
-        (AdaptStep::Analyzing, "Analyzing with Claude"),
-        (AdaptStep::Planning, "Generating plan"),
-        (AdaptStep::Materializing, "Creating issues"),
-    ];
+    let mut phases = vec![(AdaptStep::Scanning, "Scanning project")];
+    if !screen.config.scan_only {
+        phases.push((AdaptStep::Analyzing, "Analyzing with Claude"));
+    }
+    if !screen.config.scan_only && !screen.config.no_issues {
+        phases.push((AdaptStep::Planning, "Generating plan"));
+    }
+    if !screen.config.scan_only && !screen.config.no_issues && !screen.config.dry_run {
+        phases.push((AdaptStep::Materializing, "Creating issues"));
+    }
 
-    let current_idx = screen.step.phase_index();
+    let current_idx = phases
+        .iter()
+        .position(|(step, _)| *step == screen.step)
+        .unwrap_or(0);
 
     let mut lines = Vec::new();
     for (i, (_, label)) in phases.iter().enumerate() {
