@@ -476,6 +476,10 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
     // Ctrl+q toggles TurboQuant from any screen
     if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
         let new_state = app.flags.toggle(crate::flags::Flag::TurboQuant);
+        // Keep config in sync so Settings screen opens with correct state
+        if let Some(ref mut config) = app.config {
+            config.turboquant.enabled = new_state;
+        }
         let label = if new_state {
             "[TurboQuant] Enabled"
         } else {
