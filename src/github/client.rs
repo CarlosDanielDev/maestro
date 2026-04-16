@@ -572,43 +572,53 @@ impl GitHubClient for GhCliClient {
         milestone: Option<u64>,
     ) -> Result<u64> {
         validate_gh_arg(title, "issue title")?;
-        // Use the REST API so milestone can be passed as a number.
-        // `gh issue create --milestone` expects a title string, which fails
-        // when the milestone was created via API (we only have the number).
-        let title_field = format!("title={}", title);
-        let body_field = format!("body={}", body);
-        let mut args = vec![
-            "api",
-            "repos/{owner}/{repo}/issues",
-            "--method",
-            "POST",
-            "-f",
-            &title_field,
-            "-f",
-            &body_field,
-        ];
-
-        // -F sends raw JSON values (arrays, numbers) instead of strings
-        let labels_field;
+        // Build a JSON body and pass via stdin. Using the REST API directly
+        // because `gh issue create --milestone` expects a title, not a number.
+        let mut payload = serde_json::json!({
+            "title": title,
+            "body": body,
+        });
         if !labels.is_empty() {
-            let labels_json = labels
-                .iter()
-                .map(|l| format!("\"{}\"", l.replace('\"', "\\\"")))
-                .collect::<Vec<_>>()
-                .join(",");
-            labels_field = format!("labels=[{}]", labels_json);
-            args.push("-F");
-            args.push(&labels_field);
+            payload["labels"] = serde_json::json!(labels);
         }
-
-        let ms_field;
         if let Some(ms) = milestone {
-            ms_field = format!("milestone={}", ms);
-            args.push("-F");
-            args.push(&ms_field);
+            payload["milestone"] = serde_json::json!(ms);
         }
 
-        let json_str = self.run_gh(&args).await?;
+        let json_body = serde_json::to_string(&payload)?;
+        let output = tokio::process::Command::new("gh")
+            .args([
+                "api",
+                "repos/{owner}/{repo}/issues",
+                "--method",
+                "POST",
+                "--input",
+                "-",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .context("Failed to run `gh` CLI")?;
+
+        use tokio::io::AsyncWriteExt;
+        let mut child = output;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(json_body.as_bytes()).await?;
+            // Drop stdin to close it and signal EOF
+        }
+        let output = child.wait_with_output().await?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if is_auth_error(&stderr) {
+                anyhow::bail!("{} {}", GH_AUTH_ERROR_SENTINEL, stderr.trim());
+            }
+            anyhow::bail!("gh command failed: {}", stderr.trim());
+        }
+
+        let json_str = String::from_utf8_lossy(&output.stdout);
         let v: serde_json::Value =
             serde_json::from_str(&json_str).context("Failed to parse issue creation response")?;
         v.get("number")
