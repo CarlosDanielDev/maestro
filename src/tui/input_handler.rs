@@ -465,7 +465,7 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
             });
             if let Some(id) = selected_id {
                 app.session_switcher = None;
-                app.tui_mode = app::TuiMode::Detail(id);
+                app.navigate_to(app::TuiMode::Detail(id));
             }
         }
         _ => {}
@@ -489,7 +489,7 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
 
     // Shift+Q opens TurboQuant A/B dashboard
     if key.code == KeyCode::Char('Q') && !is_text_input_mode(app) {
-        app.tui_mode = app::TuiMode::TurboquantDashboard;
+        app.navigate_to(app::TuiMode::TurboquantDashboard);
         return true;
     }
 
@@ -511,22 +511,22 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
                 app.completion_summary = Some(summary);
                 app.session_summary_state =
                     Some(crate::tui::app::types::SessionSummaryState::default());
-                app.tui_mode = app::TuiMode::SessionSummary;
+                app.navigate_to(app::TuiMode::SessionSummary);
                 return true;
             }
             3 => {
                 let selected = app.panel_view.selected_index();
                 if let Some(id) = app.pool.session_id_at_index(selected) {
-                    app.tui_mode = app::TuiMode::Fullscreen(id);
+                    app.navigate_to(app::TuiMode::Fullscreen(id));
                 }
                 return true;
             }
             4 => {
-                app.tui_mode = app::TuiMode::CostDashboard;
+                app.navigate_to(app::TuiMode::CostDashboard);
                 return true;
             }
             5 => {
-                app.tui_mode = app::TuiMode::TokenDashboard;
+                app.navigate_to(app::TuiMode::TokenDashboard);
                 return true;
             }
             6 => {
@@ -551,7 +551,7 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
                     && let Some(session) = app.pool.get_session(id)
                     && !session.status.is_terminal()
                 {
-                    app.tui_mode = app::TuiMode::ConfirmKill(id);
+                    app.navigate_to(app::TuiMode::ConfirmKill(id));
                 }
                 return true;
             }
@@ -606,7 +606,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
                 && let Some(session) = app.pool.get_session(id)
                 && !session.status.is_terminal()
             {
-                app.tui_mode = app::TuiMode::ConfirmKill(id);
+                app.navigate_to(app::TuiMode::ConfirmKill(id));
             }
         }
         (KeyCode::Char('K'), _) => {
@@ -616,21 +616,21 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('f'), _) => {
             let selected = app.panel_view.selected_index();
             if let Some(id) = app.pool.session_id_at_index(selected) {
-                app.tui_mode = app::TuiMode::Fullscreen(id);
+                app.navigate_to(app::TuiMode::Fullscreen(id));
             }
         }
         (KeyCode::Char('$'), _) => {
-            app.tui_mode = app::TuiMode::CostDashboard;
+            app.navigate_to(app::TuiMode::CostDashboard);
         }
         (KeyCode::Char('t'), _) => {
-            app.tui_mode = app::TuiMode::TokenDashboard;
+            app.navigate_to(app::TuiMode::TokenDashboard);
         }
         (KeyCode::Char('S'), _) => {
             let summary = app.build_completion_summary();
             app.completion_summary = Some(summary);
             app.session_summary_state =
                 Some(crate::tui::app::types::SessionSummaryState::default());
-            app.tui_mode = app::TuiMode::SessionSummary;
+            app.navigate_to(app::TuiMode::SessionSummary);
         }
         (KeyCode::Tab, _) => {
             app.tui_mode = match app.tui_mode {
@@ -653,19 +653,19 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
                 if session.status.is_terminal() {
                     app.toggle_session_summary(id);
                 } else {
-                    app.tui_mode = app::TuiMode::Detail(id);
+                    app.navigate_to(app::TuiMode::Detail(id));
                 }
             }
         }
         (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
             let idx = (c as usize) - ('1' as usize);
             if let Some(id) = app.pool.session_id_at_index(idx) {
-                app.tui_mode = app::TuiMode::Detail(id);
+                app.navigate_to(app::TuiMode::Detail(id));
             }
         }
         (KeyCode::Char('w'), _) => {
             app.session_switcher = Some(crate::tui::session_switcher::SessionSwitcher::default());
-            app.tui_mode = app::TuiMode::SessionSwitcher;
+            app.navigate_to(app::TuiMode::SessionSwitcher);
         }
         (KeyCode::Char('d'), _) => {
             app.show_activity_log = !app.show_activity_log;
@@ -676,13 +676,13 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('l'), _) => match app.tui_mode {
             app::TuiMode::Detail(id) => {
                 app.log_viewer_scroll = 0;
-                app.tui_mode = app::TuiMode::LogViewer(id);
+                app.navigate_to(app::TuiMode::LogViewer(id));
             }
             app::TuiMode::Overview => {
                 let selected = app.panel_view.selected_index();
                 if let Some(id) = app.pool.session_id_at_index(selected) {
                     app.log_viewer_scroll = 0;
-                    app.tui_mode = app::TuiMode::LogViewer(id);
+                    app.navigate_to(app::TuiMode::LogViewer(id));
                 }
             }
             _ => {}
