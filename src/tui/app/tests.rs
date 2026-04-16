@@ -1614,7 +1614,9 @@ mod adapt_chaining {
     #[test]
     fn cancelled_screen_ignores_scan_result() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().cancelled = true;
+        let screen = app.adapt_screen.as_mut().unwrap();
+        screen.cancelled = true;
+        screen.results = crate::tui::screens::adapt::AdaptResults::default();
 
         app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(make_profile()))));
 

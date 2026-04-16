@@ -572,30 +572,48 @@ impl GitHubClient for GhCliClient {
         milestone: Option<u64>,
     ) -> Result<u64> {
         validate_gh_arg(title, "issue title")?;
-        let mut args = vec!["issue", "create", "--title", title, "--body", body];
-        let label_str = labels.join(",");
-        if !label_str.is_empty() {
-            args.push("--label");
-            args.push(&label_str);
+        // Use the REST API so milestone can be passed as a number.
+        // `gh issue create --milestone` expects a title string, which fails
+        // when the milestone was created via API (we only have the number).
+        let title_field = format!("title={}", title);
+        let body_field = format!("body={}", body);
+        let mut args = vec![
+            "api",
+            "repos/{owner}/{repo}/issues",
+            "--method",
+            "POST",
+            "-f",
+            &title_field,
+            "-f",
+            &body_field,
+        ];
+
+        // -F sends raw JSON values (arrays, numbers) instead of strings
+        let labels_field;
+        if !labels.is_empty() {
+            let labels_json = labels
+                .iter()
+                .map(|l| format!("\"{}\"", l.replace('\"', "\\\"")))
+                .collect::<Vec<_>>()
+                .join(",");
+            labels_field = format!("labels=[{}]", labels_json);
+            args.push("-F");
+            args.push(&labels_field);
         }
-        let ms_str;
+
+        let ms_field;
         if let Some(ms) = milestone {
-            ms_str = ms.to_string();
-            args.push("--milestone");
-            args.push(&ms_str);
+            ms_field = format!("milestone={}", ms);
+            args.push("-F");
+            args.push(&ms_field);
         }
-        let output = self.run_gh(&args).await?;
-        // gh issue create returns a URL like https://github.com/owner/repo/issues/123
-        // Extract the issue number from the URL
-        let number = output
-            .trim()
-            .rsplit('/')
-            .next()
-            .and_then(|s| s.parse::<u64>().ok())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Failed to parse issue number from gh output: {}", output)
-            })?;
-        Ok(number)
+
+        let json_str = self.run_gh(&args).await?;
+        let v: serde_json::Value =
+            serde_json::from_str(&json_str).context("Failed to parse issue creation response")?;
+        v.get("number")
+            .and_then(|n| n.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'number' in issue creation response"))
     }
 
     async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
