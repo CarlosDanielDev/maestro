@@ -137,7 +137,7 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         } else {
             // Pending
             (
-                format!("  {} ", icons::get(IconId::Circle)),
+                format!("  {} ", icons::get(IconId::Hourglass)),
                 Style::default().fg(theme.text_secondary),
             )
         };
