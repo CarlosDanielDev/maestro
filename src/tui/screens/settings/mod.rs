@@ -133,7 +133,11 @@ impl SettingsScreen {
     /// Sync the TurboQuant enabled toggle from an external flag change (Ctrl+Q).
     pub fn sync_tq_enabled(&mut self, enabled: bool) {
         self.config.turboquant.enabled = enabled;
-        if let Some(fields) = self.fields_per_tab.get_mut(10)
+        let tq_idx = SettingsTab::ALL
+            .iter()
+            .position(|t| matches!(t, SettingsTab::TurboQuant));
+        if let Some(idx) = tq_idx
+            && let Some(fields) = self.fields_per_tab.get_mut(idx)
             && let Some(field) = fields.first_mut()
             && let WidgetKind::Toggle(ref mut toggle) = field.widget
         {

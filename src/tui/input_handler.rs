@@ -50,8 +50,7 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
 
     // 'q' triggers confirm exit (except in text input modes)
     if key.code == KeyCode::Char('q') && !is_text_input_mode(app) {
-        app.nav_stack.push(app.tui_mode);
-        app.tui_mode = app::TuiMode::ConfirmExit;
+        app.navigate_to(app::TuiMode::ConfirmExit);
         return KeyAction::Consumed;
     }
 
@@ -484,7 +483,6 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         };
         app.activity_log
             .push_simple("TQ".into(), label.into(), LogLevel::Info);
-        // Sync the settings screen toggle if it's open
         if let Some(ref mut screen) = app.settings_screen {
             screen.sync_tq_enabled(new_state);
         }
