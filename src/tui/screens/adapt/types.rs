@@ -21,7 +21,6 @@ impl AdaptStep {
             Self::Scanning | Self::Analyzing | Self::Planning | Self::Materializing
         )
     }
-
 }
 
 /// Configuration form state for the adapt wizard.
