@@ -241,7 +241,7 @@ fn walk_source_tree(root: &Path) -> WalkResult {
             lines,
         })
         .collect();
-    by_extension.sort_by(|a, b| b.files.cmp(&a.files));
+    by_extension.sort_by_key(|b| std::cmp::Reverse(b.files));
 
     WalkResult {
         source_stats: SourceStats {

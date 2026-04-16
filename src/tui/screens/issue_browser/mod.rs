@@ -69,10 +69,8 @@ impl IssuePromptOverlay {
                     self.unified_pr = !self.unified_pr;
                     return OverlayAction::None;
                 }
-                KeyCode::Char(c) => {
-                    if self.text.len() < 2048 {
-                        self.text.push(*c);
-                    }
+                KeyCode::Char(c) if self.text.len() < 2048 => {
+                    self.text.push(*c);
                 }
                 _ => {}
             }

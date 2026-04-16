@@ -610,22 +610,19 @@ impl Screen for PromptInputScreen {
                         self.editing_image_path = true;
                         self.image_path_input.clear();
                     }
-                    KeyCode::Char('d') => {
-                        if !self.image_paths.is_empty() {
-                            self.image_paths.remove(self.selected_image);
-                            if self.selected_image > 0
-                                && self.selected_image >= self.image_paths.len()
-                            {
-                                self.selected_image = self.image_paths.len().saturating_sub(1);
-                            }
+                    KeyCode::Char('d') if !self.image_paths.is_empty() => {
+                        self.image_paths.remove(self.selected_image);
+                        if self.selected_image > 0
+                            && self.selected_image >= self.image_paths.len()
+                        {
+                            self.selected_image = self.image_paths.len().saturating_sub(1);
                         }
                     }
-                    KeyCode::Char('j') | KeyCode::Down => {
+                    KeyCode::Char('j') | KeyCode::Down
                         if !self.image_paths.is_empty()
-                            && self.selected_image < self.image_paths.len() - 1
-                        {
-                            self.selected_image += 1;
-                        }
+                            && self.selected_image < self.image_paths.len() - 1 =>
+                    {
+                        self.selected_image += 1;
                     }
                     KeyCode::Char('k') | KeyCode::Up => {
                         self.selected_image = self.selected_image.saturating_sub(1);

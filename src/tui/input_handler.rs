@@ -104,11 +104,11 @@ fn handle_upgrade_keys(app: &mut App, key: &KeyEvent) -> bool {
                 return true;
             }
         }
-        crate::updater::UpgradeState::Failed(_) => {
-            if key.code == KeyCode::Esc || key.code == KeyCode::Enter {
-                app.upgrade_state = crate::updater::UpgradeState::Hidden;
-                return true;
-            }
+        crate::updater::UpgradeState::Failed(_)
+            if key.code == KeyCode::Esc || key.code == KeyCode::Enter =>
+        {
+            app.upgrade_state = crate::updater::UpgradeState::Hidden;
+            return true;
         }
         _ => {}
     }

@@ -72,13 +72,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         app.pending_commands.push(app::TuiCommand::FetchIssues);
                     }
                 }
-                app::TuiMode::MilestoneView => {
-                    if app.milestone_screen.is_none() {
-                        let mut screen = screens::MilestoneScreen::new(vec![]);
-                        screen.loading = true;
-                        app.milestone_screen = Some(screen);
-                        app.pending_commands.push(app::TuiCommand::FetchMilestones);
-                    }
+                app::TuiMode::MilestoneView if app.milestone_screen.is_none() => {
+                    let mut screen = screens::MilestoneScreen::new(vec![]);
+                    screen.loading = true;
+                    app.milestone_screen = Some(screen);
+                    app.pending_commands.push(app::TuiCommand::FetchMilestones);
                 }
                 app::TuiMode::Settings => {
                     if let Some(ref config) = app.config {

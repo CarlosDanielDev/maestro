@@ -82,10 +82,10 @@ impl PrReviewScreen {
 
     fn handle_pr_list_input(&mut self, code: KeyCode) -> ScreenAction {
         match code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                if !self.prs.is_empty() && self.selected < self.prs.len() - 1 {
-                    self.selected += 1;
-                }
+            KeyCode::Char('j') | KeyCode::Down
+                if !self.prs.is_empty() && self.selected < self.prs.len() - 1 =>
+            {
+                self.selected += 1;
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.selected = self.selected.saturating_sub(1);

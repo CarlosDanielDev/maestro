@@ -155,10 +155,8 @@ impl AdaptScreen {
 
     fn handle_configure_input(&mut self, code: KeyCode) -> ScreenAction {
         match code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                if self.selected_field < FIELD_COUNT - 1 {
-                    self.selected_field += 1;
-                }
+            KeyCode::Char('j') | KeyCode::Down if self.selected_field < FIELD_COUNT - 1 => {
+                self.selected_field += 1;
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.selected_field = self.selected_field.saturating_sub(1);
@@ -301,11 +299,9 @@ impl Screen for AdaptScreen {
         {
             match self.step {
                 AdaptStep::Configure => return self.handle_configure_input(*code),
-                step if step.is_progress() => {
-                    if *code == KeyCode::Esc {
-                        self.cancelled = true;
-                        return ScreenAction::Pop;
-                    }
+                step if step.is_progress() && *code == KeyCode::Esc => {
+                    self.cancelled = true;
+                    return ScreenAction::Pop;
                 }
                 AdaptStep::Complete => match code {
                     KeyCode::Char('j') | KeyCode::Down => {

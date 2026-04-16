@@ -89,11 +89,9 @@ impl IssueBrowserScreen {
                 self.filter_text.pop();
                 self.reapply_filters();
             }
-            KeyCode::Char(c) => {
-                if self.filter_text.len() < 256 {
-                    self.filter_text.push(c);
-                    self.reapply_filters();
-                }
+            KeyCode::Char(c) if self.filter_text.len() < 256 => {
+                self.filter_text.push(c);
+                self.reapply_filters();
             }
             KeyCode::Enter => {
                 self.filter_mode = FilterMode::None;
