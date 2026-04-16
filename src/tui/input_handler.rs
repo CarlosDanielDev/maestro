@@ -484,6 +484,10 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         };
         app.activity_log
             .push_simple("TQ".into(), label.into(), LogLevel::Info);
+        // Sync the settings screen toggle if it's open
+        if let Some(ref mut screen) = app.settings_screen {
+            screen.sync_tq_enabled(new_state);
+        }
         return true;
     }
 
