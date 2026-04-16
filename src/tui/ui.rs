@@ -300,13 +300,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::ConfirmExit => {
-            match app.confirm_exit_return_mode {
-                Some(TuiMode::Dashboard) => {
+            match app.nav_stack.peek() {
+                Some(&TuiMode::Dashboard) => {
                     if let Some(ref mut screen) = app.home_screen {
                         screen.draw(f, chunks[1], &theme);
                     }
                 }
-                Some(TuiMode::CostDashboard) => {
+                Some(&TuiMode::CostDashboard) => {
                     let sessions: Vec<&crate::session::types::Session> =
                         app.pool.all_sessions().into_iter().collect();
                     let budget_limit = app.budget_enforcer.as_ref().map(|e| e.total_limit());
@@ -319,7 +319,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         &theme,
                     );
                 }
-                Some(TuiMode::TokenDashboard) => {
+                Some(&TuiMode::TokenDashboard) => {
                     let sessions: Vec<&crate::session::types::Session> =
                         app.pool.all_sessions().into_iter().collect();
                     crate::tui::token_dashboard::draw_token_dashboard(
@@ -330,7 +330,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         &theme,
                     );
                 }
-                Some(TuiMode::TurboquantDashboard) => {
+                Some(&TuiMode::TurboquantDashboard) => {
                     let sessions: Vec<&crate::session::types::Session> =
                         app.pool.all_sessions().into_iter().collect();
                     crate::tui::turboquant_dashboard::draw_turboquant_dashboard(
@@ -584,27 +584,50 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         sep.clone(),
-        Span::styled(
-            format!(
-                "{} {} agent{} ({} active)",
-                icons::get(IconId::Agents),
-                total,
-                if total != 1 { "s" } else { "" },
-                active
-            ),
-            Style::default().fg(theme.accent_info),
-        ),
-        sep.clone(),
-        Span::styled(
-            format!("{}{}", icons::get(IconId::Cost), budget_display),
-            Style::default().fg(budget_color),
-        ),
-        sep.clone(),
-        Span::styled(
-            format!("{} {}", icons::get(IconId::Clock), elapsed_str),
-            Style::default().fg(theme.text_primary),
-        ),
     ];
+
+    // Breadcrumb trail
+    {
+        let crumb_sep = format!(" {} ", icons::get(IconId::ChevronRight));
+        for mode in app.nav_stack.breadcrumbs() {
+            spans.push(Span::styled(
+                mode.breadcrumb_label(),
+                Style::default().fg(theme.text_muted),
+            ));
+            spans.push(Span::styled(
+                crumb_sep.clone(),
+                Style::default().fg(theme.border_inactive),
+            ));
+        }
+        spans.push(Span::styled(
+            app.tui_mode.breadcrumb_label(),
+            Style::default()
+                .fg(theme.accent_info)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(sep.clone());
+    }
+
+    spans.push(Span::styled(
+        format!(
+            "{} {} agent{} ({} active)",
+            icons::get(IconId::Agents),
+            total,
+            if total != 1 { "s" } else { "" },
+            active
+        ),
+        Style::default().fg(theme.accent_info),
+    ));
+    spans.push(sep.clone());
+    spans.push(Span::styled(
+        format!("{}{}", icons::get(IconId::Cost), budget_display),
+        Style::default().fg(budget_color),
+    ));
+    spans.push(sep.clone());
+    spans.push(Span::styled(
+        format!("{} {}", icons::get(IconId::Clock), elapsed_str),
+        Style::default().fg(theme.text_primary),
+    ));
 
     // RAM widget
     {

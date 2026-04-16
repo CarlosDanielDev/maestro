@@ -1,9 +1,40 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use anyhow::Context;
 use async_trait::async_trait;
 
 use super::types::*;
 use crate::github::client::GitHubClient;
+
+const DEFAULT_LABEL_COLOR: &str = "EDEDED";
+
+const STANDARD_LABEL_COLORS: &[(&str, &str)] = &[
+    ("enhancement", "A2EEEF"),
+    ("bug", "D73A4A"),
+    ("documentation", "0075CA"),
+    ("testing", "BFD4F2"),
+    ("tech-debt", "D4C5F9"),
+    ("chore", "EDEDED"),
+    ("type:feature", "1D76DB"),
+    ("type:bug", "D93F0B"),
+    ("type:docs", "0075CA"),
+    ("type:chore", "EDEDED"),
+    ("priority:P0", "B60205"),
+    ("priority:P1", "D93F0B"),
+    ("priority:P2", "FBCA04"),
+    ("maestro:ready", "0E8A16"),
+    ("maestro:in-progress", "F9D0C4"),
+    ("maestro:done", "0E8A16"),
+    ("maestro:failed", "D93F0B"),
+];
+
+fn color_for_label(name: &str) -> &str {
+    STANDARD_LABEL_COLORS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, c)| *c)
+        .unwrap_or(DEFAULT_LABEL_COLOR)
+}
 
 #[async_trait]
 pub trait PlanMaterializer: Send + Sync {
@@ -23,6 +54,42 @@ impl<G: GitHubClient> GhMaterializer<G> {
     pub fn new(github: G) -> Self {
         Self { github }
     }
+
+    /// Ensure all labels referenced in the plan (and tech-debt catalog) exist on
+    /// the target repo. Creates missing labels with standard or default colors.
+    async fn ensure_labels(&self, plan: &AdaptPlan, report: &AdaptReport) -> anyhow::Result<()> {
+        let mut needed: HashSet<String> = plan
+            .milestones
+            .iter()
+            .flat_map(|m| &m.issues)
+            .flat_map(|i| &i.labels)
+            .cloned()
+            .collect();
+
+        if !report.tech_debt_items.is_empty() {
+            needed.insert("tech-debt".to_string());
+            needed.insert("enhancement".to_string());
+        }
+
+        if needed.is_empty() {
+            return Ok(());
+        }
+
+        let existing = self.github.list_labels().await?;
+        let existing_names: HashSet<&str> = existing.iter().map(|l| l.as_str()).collect();
+
+        for label in &needed {
+            if !existing_names.contains(label.as_str()) {
+                let color = color_for_label(label);
+                self.github
+                    .create_label(label, color)
+                    .await
+                    .with_context(|| format!("Failed to create label '{}'", label))?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -36,6 +103,9 @@ impl<G: GitHubClient> PlanMaterializer for GhMaterializer<G> {
         if dry_run {
             return Ok(build_dry_run_result(plan));
         }
+
+        // Ensure all labels exist before creating issues (#348)
+        self.ensure_labels(plan, report).await?;
 
         let mut milestones_created = Vec::new();
         let mut issues_created = Vec::new();
@@ -438,5 +508,243 @@ mod tests {
         let body = "Some body";
         let result = resolve_blocked_by(body, &[], &HashMap::new());
         assert_eq!(result, "Some body");
+    }
+
+    // ── ensure_labels tests (Issue #348) ─────────────────────────────────
+
+    fn plan_with_labels(labels: Vec<String>) -> AdaptPlan {
+        AdaptPlan {
+            milestones: vec![PlannedMilestone {
+                title: "M0: Foundation".into(),
+                description: "Setup".into(),
+                issues: vec![PlannedIssue {
+                    title: "feat: setup".into(),
+                    body: "Setup the project".into(),
+                    labels,
+                    blocked_by_titles: vec![],
+                }],
+            }],
+            maestro_toml_patch: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_labels_creates_missing_labels_with_correct_colors() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec![]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = plan_with_labels(vec!["enhancement".into(), "bug".into()]);
+        let report = sample_report();
+
+        materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        let calls = client.create_label_calls();
+        let call_map: std::collections::HashMap<String, String> = calls.into_iter().collect();
+
+        assert!(
+            call_map.contains_key("enhancement"),
+            "expected create_label call for 'enhancement'"
+        );
+        assert!(
+            call_map.contains_key("bug"),
+            "expected create_label call for 'bug'"
+        );
+        assert_eq!(call_map["enhancement"], "A2EEEF");
+        assert_eq!(call_map["bug"], "D73A4A");
+    }
+
+    #[tokio::test]
+    async fn ensure_labels_skips_labels_that_already_exist() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec!["enhancement".into(), "bug".into()]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = plan_with_labels(vec!["enhancement".into(), "bug".into()]);
+        let report = sample_report();
+
+        materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        assert!(
+            client.create_label_calls().is_empty(),
+            "no create_label calls expected when labels already exist"
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_labels_skips_when_no_labels_needed() {
+        let client = MockGitHubClient::new();
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = plan_with_labels(vec![]);
+        let report = sample_report();
+
+        materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            client.list_labels_call_count(),
+            0,
+            "list_labels must not be called when no labels are required"
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_labels_includes_tech_debt_labels_when_report_has_debt() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec![]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = plan_with_labels(vec!["type:feature".into()]);
+        let report = sample_report_with_debt();
+
+        materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        let calls = client.create_label_calls();
+        let created_names: Vec<String> = calls.iter().map(|(n, _)| n.clone()).collect();
+
+        assert!(
+            created_names.contains(&"tech-debt".to_string()),
+            "expected 'tech-debt' to be created; got: {:?}",
+            created_names
+        );
+        assert!(
+            created_names.contains(&"enhancement".to_string()),
+            "expected 'enhancement' to be created; got: {:?}",
+            created_names
+        );
+    }
+
+    #[tokio::test]
+    async fn materialize_succeeds_on_fresh_repo_with_empty_labels() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec![]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = sample_plan();
+        let report = sample_report();
+
+        let result = materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        assert_eq!(result.issues_created.len(), 2, "all issues must be created");
+        assert!(
+            !client.create_label_calls().is_empty(),
+            "labels should have been created on a fresh repo"
+        );
+    }
+
+    #[tokio::test]
+    async fn materialize_is_idempotent_when_labels_already_exist() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec!["enhancement".into(), "testing".into()]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = sample_plan();
+        let report = sample_report();
+
+        let result = materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        assert_eq!(result.issues_created.len(), 2);
+        assert!(
+            client.create_label_calls().is_empty(),
+            "no labels should be created when all already exist"
+        );
+    }
+
+    #[test]
+    fn color_for_label_returns_standard_color_for_known_labels() {
+        for (label, expected_color) in STANDARD_LABEL_COLORS {
+            let got = color_for_label(label);
+            assert_eq!(
+                got, *expected_color,
+                "label '{}': expected '{}' got '{}'",
+                label, expected_color, got
+            );
+        }
+    }
+
+    #[test]
+    fn color_for_label_returns_default_color_for_unknown_label() {
+        let got = color_for_label("some-custom-unknown-label");
+        assert_eq!(got, DEFAULT_LABEL_COLOR);
+    }
+
+    #[tokio::test]
+    async fn materialize_dry_run_skips_ensure_labels() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec![]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = sample_plan();
+        let report = sample_report();
+
+        let result = materializer
+            .materialize(&plan, &report, true)
+            .await
+            .unwrap();
+
+        assert!(result.dry_run);
+        assert_eq!(client.list_labels_call_count(), 0);
+        assert!(client.create_label_calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn ensure_labels_propagates_list_labels_error() {
+        let client = MockGitHubClient::new();
+        client.set_list_labels_error("gh: HTTP 403 Forbidden");
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = plan_with_labels(vec!["enhancement".into()]);
+        let report = sample_report();
+
+        let result = materializer.materialize(&plan, &report, false).await;
+
+        assert!(
+            result.is_err(),
+            "materialize must return Err when list_labels fails"
+        );
+        assert!(
+            client.create_issue_calls().is_empty(),
+            "no issues should be created when ensure_labels fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_labels_propagates_create_label_error() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec![]);
+        client.set_create_label_error("gh: HTTP 422 Unprocessable Entity");
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = plan_with_labels(vec!["enhancement".into()]);
+        let report = sample_report();
+
+        let result = materializer.materialize(&plan, &report, false).await;
+
+        assert!(
+            result.is_err(),
+            "materialize must return Err when create_label fails"
+        );
+        assert!(
+            client.create_issue_calls().is_empty(),
+            "no issues should be created when ensure_labels fails"
+        );
     }
 }

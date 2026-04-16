@@ -23,19 +23,26 @@ pub struct AdaptScreen {
     pub spinner_tick: usize,
     pub scroll_offset: u16,
     pub cancelled: bool,
+    /// Whether a cache from a previous incomplete run was loaded.
+    pub loaded_from_cache: bool,
 }
 
 impl AdaptScreen {
     pub fn new() -> Self {
+        let (results, loaded_from_cache) = match AdaptResults::load_cache() {
+            Some(cached) => (cached, true),
+            None => (AdaptResults::default(), false),
+        };
         Self {
             step: AdaptStep::Configure,
             config: AdaptWizardConfig::default(),
             selected_field: 0,
-            results: AdaptResults::default(),
+            results,
             error: None,
             spinner_tick: 0,
             scroll_offset: 0,
             cancelled: false,
+            loaded_from_cache,
         }
     }
 
@@ -75,9 +82,11 @@ impl AdaptScreen {
         profile: ProjectProfile,
     ) -> Option<crate::tui::app::TuiCommand> {
         self.set_scan_result(profile.clone());
+        self.results.save_cache();
         let config = self.build_adapt_config();
         if config.scan_only {
             self.step = AdaptStep::Complete;
+            AdaptResults::clear_cache();
             None
         } else {
             self.step = AdaptStep::Analyzing;
@@ -90,13 +99,14 @@ impl AdaptScreen {
     /// Advance the wizard after a successful analyze phase.
     pub fn complete_analyze(&mut self, report: AdaptReport) -> Option<crate::tui::app::TuiCommand> {
         self.set_analyze_result(report.clone());
+        self.results.save_cache();
         let config = self.build_adapt_config();
         if config.no_issues {
             self.step = AdaptStep::Complete;
+            AdaptResults::clear_cache();
             None
         } else {
             self.step = AdaptStep::Planning;
-            // Profile must exist since scan completed before analyze
             let profile = self.results.profile.clone()?;
             Some(crate::tui::app::TuiCommand::RunAdaptPlan(
                 config, profile, report,
@@ -107,13 +117,14 @@ impl AdaptScreen {
     /// Advance the wizard after a successful plan phase.
     pub fn complete_plan(&mut self, plan: AdaptPlan) -> Option<crate::tui::app::TuiCommand> {
         self.set_plan_result(plan.clone());
+        self.results.save_cache();
         let config = self.build_adapt_config();
         if config.dry_run {
             self.step = AdaptStep::Complete;
+            AdaptResults::clear_cache();
             None
         } else {
             self.step = AdaptStep::Materializing;
-            // Report must exist since analyze completed before plan
             let report = self.results.report.clone()?;
             Some(crate::tui::app::TuiCommand::RunAdaptMaterialize(
                 plan, report,
@@ -125,6 +136,7 @@ impl AdaptScreen {
     pub fn complete_materialize(&mut self, result: MaterializeResult) {
         self.set_materialize_result(result);
         self.step = AdaptStep::Complete;
+        AdaptResults::clear_cache();
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -143,10 +155,8 @@ impl AdaptScreen {
 
     fn handle_configure_input(&mut self, code: KeyCode) -> ScreenAction {
         match code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                if self.selected_field < FIELD_COUNT - 1 {
-                    self.selected_field += 1;
-                }
+            KeyCode::Char('j') | KeyCode::Down if self.selected_field < FIELD_COUNT - 1 => {
+                self.selected_field += 1;
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.selected_field = self.selected_field.saturating_sub(1);
@@ -176,7 +186,15 @@ impl AdaptScreen {
                 self.config.model.push(c);
             }
             KeyCode::Enter => {
+                if self.loaded_from_cache {
+                    self.step = self.results.resume_step();
+                }
                 return ScreenAction::StartAdaptPipeline(self.build_adapt_config());
+            }
+            KeyCode::Delete | KeyCode::Char('x') if self.loaded_from_cache => {
+                self.results = AdaptResults::default();
+                AdaptResults::clear_cache();
+                self.loaded_from_cache = false;
             }
             KeyCode::Esc => return ScreenAction::Pop,
             _ => {}
@@ -188,38 +206,51 @@ impl AdaptScreen {
 impl KeymapProvider for AdaptScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
         match self.step {
-            AdaptStep::Configure => vec![
-                KeyBindingGroup {
-                    title: "Navigation",
-                    bindings: vec![
-                        KeyBinding {
-                            key: "j/Down",
-                            description: "Move down",
+            AdaptStep::Configure => {
+                let mut action_bindings = vec![
+                    KeyBinding {
+                        key: "Space",
+                        description: "Toggle",
+                    },
+                    KeyBinding {
+                        key: "Enter",
+                        description: if self.loaded_from_cache {
+                            "Resume pipeline"
+                        } else {
+                            "Start pipeline"
                         },
-                        KeyBinding {
-                            key: "k/Up",
-                            description: "Move up",
-                        },
-                    ],
-                },
-                KeyBindingGroup {
-                    title: "Actions",
-                    bindings: vec![
-                        KeyBinding {
-                            key: "Space",
-                            description: "Toggle",
-                        },
-                        KeyBinding {
-                            key: "Enter",
-                            description: "Start pipeline",
-                        },
-                        KeyBinding {
-                            key: "Esc",
-                            description: "Back",
-                        },
-                    ],
-                },
-            ],
+                    },
+                ];
+                if self.loaded_from_cache {
+                    action_bindings.push(KeyBinding {
+                        key: "x",
+                        description: "Clear cache (fresh run)",
+                    });
+                }
+                action_bindings.push(KeyBinding {
+                    key: "Esc",
+                    description: "Back",
+                });
+                vec![
+                    KeyBindingGroup {
+                        title: "Navigation",
+                        bindings: vec![
+                            KeyBinding {
+                                key: "j/Down",
+                                description: "Move down",
+                            },
+                            KeyBinding {
+                                key: "k/Up",
+                                description: "Move up",
+                            },
+                        ],
+                    },
+                    KeyBindingGroup {
+                        title: "Actions",
+                        bindings: action_bindings,
+                    },
+                ]
+            }
             step if step.is_progress() => vec![KeyBindingGroup {
                 title: "Actions",
                 bindings: vec![KeyBinding {
@@ -268,11 +299,9 @@ impl Screen for AdaptScreen {
         {
             match self.step {
                 AdaptStep::Configure => return self.handle_configure_input(*code),
-                step if step.is_progress() => {
-                    if *code == KeyCode::Esc {
-                        self.cancelled = true;
-                        return ScreenAction::Pop;
-                    }
+                step if step.is_progress() && *code == KeyCode::Esc => {
+                    self.cancelled = true;
+                    return ScreenAction::Pop;
                 }
                 AdaptStep::Complete => match code {
                     KeyCode::Char('j') | KeyCode::Down => {
@@ -575,5 +604,43 @@ mod tests {
         let config = screen.build_adapt_config();
         assert!(config.dry_run);
         assert_eq!(config.path, std::path::PathBuf::from("/tmp/test"));
+    }
+
+    // ── resume_step tests ──────────────────────────────────────────────
+
+    #[test]
+    fn resume_step_scanning_when_no_cache() {
+        let results = AdaptResults::default();
+        assert_eq!(results.resume_step(), AdaptStep::Scanning);
+    }
+
+    #[test]
+    fn resume_step_analyzing_when_profile_cached() {
+        let results = AdaptResults {
+            profile: Some(make_mock_profile()),
+            ..Default::default()
+        };
+        assert_eq!(results.resume_step(), AdaptStep::Analyzing);
+    }
+
+    #[test]
+    fn resume_step_planning_when_report_cached() {
+        let results = AdaptResults {
+            profile: Some(make_mock_profile()),
+            report: Some(make_mock_report()),
+            ..Default::default()
+        };
+        assert_eq!(results.resume_step(), AdaptStep::Planning);
+    }
+
+    #[test]
+    fn resume_step_materializing_when_plan_cached() {
+        let results = AdaptResults {
+            profile: Some(make_mock_profile()),
+            report: Some(make_mock_report()),
+            plan: Some(make_mock_plan()),
+            ..Default::default()
+        };
+        assert_eq!(results.resume_step(), AdaptStep::Materializing);
     }
 }

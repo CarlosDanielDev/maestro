@@ -1,8 +1,6 @@
 use super::App;
 use super::helpers::session_label;
-use super::types::{
-    CompletionSessionLine, CompletionSummaryData, GateFailureInfo, TuiCommand, TuiMode,
-};
+use super::types::{CompletionSessionLine, CompletionSummaryData, GateFailureInfo, TuiCommand};
 use crate::session::types::SessionStatus;
 use crate::util::truncate_with_ellipsis;
 
@@ -149,6 +147,6 @@ impl App {
             screen.start_loading_suggestions();
         }
         self.pending_commands.push(TuiCommand::FetchSuggestionData);
-        self.tui_mode = TuiMode::Dashboard;
+        self.navigate_to_root();
     }
 }

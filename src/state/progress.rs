@@ -57,16 +57,14 @@ impl SessionProgress {
 
         // Infer phase from tool name
         match tool_name {
-            "Read" | "Grep" | "Glob" | "Bash" => {
-                // Only upgrade to Analyzing if we haven't started implementing
-                if self.phase == SessionPhase::Analyzing {
-                    // Stay in Analyzing
-                }
+            "Read" | "Grep" | "Glob" | "Bash" if self.phase == SessionPhase::Analyzing => {
+                // Stay in Analyzing
             }
-            "Write" | "Edit" => {
-                if self.phase != SessionPhase::Testing && self.phase != SessionPhase::CreatingPR {
-                    self.phase = SessionPhase::Implementing;
-                }
+            "Write" | "Edit"
+                if self.phase != SessionPhase::Testing
+                    && self.phase != SessionPhase::CreatingPR =>
+            {
+                self.phase = SessionPhase::Implementing;
             }
             _ => {}
         }

@@ -49,6 +49,12 @@ pub trait GitHubClient: Send + Sync {
         event: crate::github::types::PrReviewEvent,
         body: &str,
     ) -> Result<()>;
+
+    /// List all label names on the current repository.
+    async fn list_labels(&self) -> Result<Vec<String>>;
+
+    /// Create a label on the current repository. Uses --force to be idempotent.
+    async fn create_label(&self, name: &str, color: &str) -> Result<()>;
 }
 
 /// Extract label names from a JSON value containing `{"labels": [{"name": "..."}, ...]}`.
@@ -278,6 +284,12 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     ) -> Result<()> {
         (**self).submit_pr_review(pr_number, event, body).await
     }
+    async fn list_labels(&self) -> Result<Vec<String>> {
+        (**self).list_labels().await
+    }
+    async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+        (**self).create_label(name, color).await
+    }
 }
 
 /// Check if a stderr string indicates a GitHub CLI authentication failure.
@@ -314,11 +326,36 @@ impl GhCliClient {
     }
 
     async fn run_gh(&self, args: &[&str]) -> Result<String> {
-        let output = tokio::process::Command::new("gh")
+        self.run_gh_with_stdin(args, None).await
+    }
+
+    async fn run_gh_with_stdin(&self, args: &[&str], stdin_data: Option<&[u8]>) -> Result<String> {
+        let stdin_cfg = if stdin_data.is_some() {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        };
+
+        let mut child = tokio::process::Command::new("gh")
             .args(args)
-            .output()
-            .await
+            .stdin(stdin_cfg)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
             .context("Failed to run `gh` CLI. Is it installed?")?;
+
+        if let Some(data) = stdin_data
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            use tokio::io::AsyncWriteExt;
+            stdin.write_all(data).await?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .await
+            .context("Failed to wait for `gh` CLI")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -421,24 +458,12 @@ impl GitHubClient for GhCliClient {
             if err_msg.contains("not found") || err_msg.contains("label") {
                 let color = match label {
                     "maestro:ready" => "0E8A16",
-                    "maestro:in-progress" => "FBCA04",
-                    "maestro:done" => "1D76DB",
+                    "maestro:in-progress" => "F9D0C4",
+                    "maestro:done" => "0E8A16",
                     "maestro:failed" => "D93F0B",
                     _ => "EDEDED",
                 };
-                // Create the label (ignore errors if it already exists)
-                let _ = self
-                    .run_gh(&[
-                        "label",
-                        "create",
-                        label,
-                        "--color",
-                        color,
-                        "--description",
-                        "Managed by Maestro",
-                        "--force",
-                    ])
-                    .await;
+                let _ = self.create_label(label, color).await;
                 // Retry adding the label
                 self.run_gh(&["issue", "edit", &num_str, "--add-label", label])
                     .await?;
@@ -509,7 +534,7 @@ impl GitHubClient for GhCliClient {
 
     async fn create_milestone(&self, title: &str, description: &str) -> Result<u64> {
         validate_gh_arg(title, "milestone title")?;
-        let json_str = self
+        let result = self
             .run_gh(&[
                 "api",
                 "repos/{owner}/{repo}/milestones",
@@ -520,12 +545,36 @@ impl GitHubClient for GhCliClient {
                 "-f",
                 &format!("description={}", description),
             ])
-            .await?;
-        let v: serde_json::Value =
-            serde_json::from_str(&json_str).context("Failed to parse milestone response")?;
-        v.get("number")
-            .and_then(|n| n.as_u64())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'number' in milestone response"))
+            .await;
+
+        match result {
+            Ok(json_str) => {
+                let v: serde_json::Value = serde_json::from_str(&json_str)
+                    .context("Failed to parse milestone response")?;
+                v.get("number")
+                    .and_then(|n| n.as_u64())
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'number' in milestone response"))
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // 422 = duplicate milestone — find-or-reuse the existing one
+                if msg.contains("422") || msg.contains("Validation Failed") {
+                    let milestones = self.list_milestones("open").await?;
+                    milestones
+                        .iter()
+                        .find(|m| m.title == title)
+                        .map(|m| m.number)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Milestone '{}' caused 422 but not found in open milestones",
+                                title
+                            )
+                        })
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     async fn create_issue(
@@ -536,30 +585,39 @@ impl GitHubClient for GhCliClient {
         milestone: Option<u64>,
     ) -> Result<u64> {
         validate_gh_arg(title, "issue title")?;
-        let mut args = vec!["issue", "create", "--title", title, "--body", body];
-        let label_str = labels.join(",");
-        if !label_str.is_empty() {
-            args.push("--label");
-            args.push(&label_str);
+        // Use REST API via stdin because `gh issue create --milestone`
+        // expects a title string, but we only have the milestone number.
+        let mut payload = serde_json::json!({
+            "title": title,
+            "body": body,
+        });
+        if !labels.is_empty() {
+            payload["labels"] = serde_json::json!(labels);
         }
-        let ms_str;
         if let Some(ms) = milestone {
-            ms_str = ms.to_string();
-            args.push("--milestone");
-            args.push(&ms_str);
+            payload["milestone"] = serde_json::json!(ms);
         }
-        let output = self.run_gh(&args).await?;
-        // gh issue create returns a URL like https://github.com/owner/repo/issues/123
-        // Extract the issue number from the URL
-        let number = output
-            .trim()
-            .rsplit('/')
-            .next()
-            .and_then(|s| s.parse::<u64>().ok())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Failed to parse issue number from gh output: {}", output)
-            })?;
-        Ok(number)
+
+        let json_body = serde_json::to_string(&payload)?;
+        let json_str = self
+            .run_gh_with_stdin(
+                &[
+                    "api",
+                    "repos/{owner}/{repo}/issues",
+                    "--method",
+                    "POST",
+                    "--input",
+                    "-",
+                ],
+                Some(json_body.as_bytes()),
+            )
+            .await?;
+
+        let v: serde_json::Value =
+            serde_json::from_str(&json_str).context("Failed to parse issue creation response")?;
+        v.get("number")
+            .and_then(|n| n.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'number' in issue creation response"))
     }
 
     async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
@@ -606,6 +664,39 @@ impl GitHubClient for GhCliClient {
         self.run_gh(&args).await?;
         Ok(())
     }
+
+    async fn list_labels(&self) -> Result<Vec<String>> {
+        let json_str = self
+            .run_gh(&["label", "list", "--json", "name", "--limit", "200"])
+            .await?;
+        let labels: Vec<serde_json::Value> =
+            serde_json::from_str(&json_str).context("Failed to parse label list JSON")?;
+        Ok(labels
+            .iter()
+            .filter_map(|v| {
+                v.get("name")
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.to_string())
+            })
+            .collect())
+    }
+
+    async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+        validate_gh_arg(name, "label name")?;
+        validate_gh_arg(color, "label color")?;
+        self.run_gh(&[
+            "label",
+            "create",
+            name,
+            "--color",
+            color,
+            "--description",
+            "Managed by Maestro",
+            "--force",
+        ])
+        .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -637,6 +728,13 @@ pub mod mock {
         create_milestone_counter: u64,
         create_issue_calls: Vec<CreateIssueCallRecord>,
         create_issue_counter: u64,
+
+        // Label management fields
+        labels: Vec<String>,
+        list_labels_calls: u32,
+        list_labels_error: Option<String>,
+        create_label_calls: Vec<(String, String)>,
+        create_label_error: Option<String>,
 
         // PR review fields
         pull_requests: Vec<crate::github::types::GhPullRequest>,
@@ -733,6 +831,26 @@ pub mod mock {
 
         pub fn create_issue_calls(&self) -> Vec<CreateIssueCallRecord> {
             self.inner.lock().unwrap().create_issue_calls.clone()
+        }
+
+        pub fn set_labels(&self, labels: Vec<String>) {
+            self.inner.lock().unwrap().labels = labels;
+        }
+
+        pub fn set_list_labels_error(&self, msg: &str) {
+            self.inner.lock().unwrap().list_labels_error = Some(msg.to_string());
+        }
+
+        pub fn set_create_label_error(&self, msg: &str) {
+            self.inner.lock().unwrap().create_label_error = Some(msg.to_string());
+        }
+
+        pub fn list_labels_call_count(&self) -> u32 {
+            self.inner.lock().unwrap().list_labels_calls
+        }
+
+        pub fn create_label_calls(&self) -> Vec<(String, String)> {
+            self.inner.lock().unwrap().create_label_calls.clone()
         }
 
         pub fn set_pull_requests(&self, prs: Vec<crate::github::types::GhPullRequest>) {
@@ -911,6 +1029,29 @@ pub mod mock {
                 event,
                 body: body.to_string(),
             });
+            Ok(())
+        }
+
+        async fn list_labels(&self) -> Result<Vec<String>> {
+            let mut state = self.inner.lock().unwrap();
+            state.list_labels_calls += 1;
+            if let Some(ref err) = state.list_labels_error {
+                anyhow::bail!("{}", err);
+            }
+            Ok(state.labels.clone())
+        }
+
+        async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+            let mut state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.create_label_error {
+                anyhow::bail!("{}", err);
+            }
+            state
+                .create_label_calls
+                .push((name.to_string(), color.to_string()));
+            if !state.labels.contains(&name.to_string()) {
+                state.labels.push(name.to_string());
+            }
             Ok(())
         }
     }

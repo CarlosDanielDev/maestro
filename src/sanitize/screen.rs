@@ -114,11 +114,9 @@ impl Screen for SanitizeScreen {
         {
             match code {
                 KeyCode::Char('q') | KeyCode::Esc => return ScreenAction::Pop,
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if !self.filtered_indices.is_empty() {
-                        self.selected_index =
-                            (self.selected_index + 1).min(self.filtered_indices.len() - 1);
-                    }
+                KeyCode::Char('j') | KeyCode::Down if !self.filtered_indices.is_empty() => {
+                    self.selected_index =
+                        (self.selected_index + 1).min(self.filtered_indices.len() - 1);
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     self.selected_index = self.selected_index.saturating_sub(1);

@@ -231,41 +231,37 @@ impl Screen for QueueConfirmationScreen {
         }) = event
         {
             match code {
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if !self.entries.is_empty() && self.selected < self.entries.len() - 1 {
-                        self.selected += 1;
-                        self.sync_scroll(10);
-                    }
+                KeyCode::Char('j') | KeyCode::Down
+                    if !self.entries.is_empty() && self.selected < self.entries.len() - 1 =>
+                {
+                    self.selected += 1;
+                    self.sync_scroll(10);
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     self.selected = self.selected.saturating_sub(1);
                     self.sync_scroll(10);
                 }
-                KeyCode::Char('d') | KeyCode::Delete => {
-                    if !self.entries.is_empty() {
-                        self.entries.remove(self.selected);
-                        if self.selected >= self.entries.len() && self.selected > 0 {
-                            self.selected -= 1;
-                        }
-                        self.revalidate_conflicts();
-                        if self.entries.is_empty() {
-                            return ScreenAction::Pop;
-                        }
+                KeyCode::Char('d') | KeyCode::Delete if !self.entries.is_empty() => {
+                    self.entries.remove(self.selected);
+                    if self.selected >= self.entries.len() && self.selected > 0 {
+                        self.selected -= 1;
+                    }
+                    self.revalidate_conflicts();
+                    if self.entries.is_empty() {
+                        return ScreenAction::Pop;
                     }
                 }
-                KeyCode::Enter => {
-                    if !self.entries.is_empty() {
-                        let configs: Vec<SessionConfig> = self
-                            .entries
-                            .iter()
-                            .map(|e| SessionConfig {
-                                issue_number: Some(e.issue_number),
-                                title: e.title.clone(),
-                                custom_prompt: None,
-                            })
-                            .collect();
-                        return ScreenAction::LaunchQueue(configs);
-                    }
+                KeyCode::Enter if !self.entries.is_empty() => {
+                    let configs: Vec<SessionConfig> = self
+                        .entries
+                        .iter()
+                        .map(|e| SessionConfig {
+                            issue_number: Some(e.issue_number),
+                            title: e.title.clone(),
+                            custom_prompt: None,
+                        })
+                        .collect();
+                    return ScreenAction::LaunchQueue(configs);
                 }
                 KeyCode::Esc => return ScreenAction::Pop,
                 _ => {}

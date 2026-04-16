@@ -347,11 +347,11 @@ impl Screen for MilestoneScreen {
         {
             match code {
                 KeyCode::Esc => return ScreenAction::Pop,
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if !self.milestones.is_empty() && self.selected < self.milestones.len() - 1 {
-                        self.selected += 1;
-                        self.sync_scroll();
-                    }
+                KeyCode::Char('j') | KeyCode::Down
+                    if !self.milestones.is_empty() && self.selected < self.milestones.len() - 1 =>
+                {
+                    self.selected += 1;
+                    self.sync_scroll();
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     self.selected = self.selected.saturating_sub(1);

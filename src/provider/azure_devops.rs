@@ -381,6 +381,14 @@ impl GitHubClient for AzDevOpsClient {
     ) -> Result<()> {
         anyhow::bail!("submit_pr_review is not supported for Azure DevOps")
     }
+
+    async fn list_labels(&self) -> Result<Vec<String>> {
+        anyhow::bail!("list_labels is not supported for Azure DevOps")
+    }
+
+    async fn create_label(&self, _name: &str, _color: &str) -> Result<()> {
+        anyhow::bail!("create_label is not supported for Azure DevOps")
+    }
 }
 
 #[cfg(test)]

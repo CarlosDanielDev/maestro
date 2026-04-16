@@ -21,16 +21,6 @@ impl AdaptStep {
             Self::Scanning | Self::Analyzing | Self::Planning | Self::Materializing
         )
     }
-
-    pub fn phase_index(&self) -> usize {
-        match self {
-            Self::Scanning => 0,
-            Self::Analyzing => 1,
-            Self::Planning => 2,
-            Self::Materializing => 3,
-            _ => 0,
-        }
-    }
 }
 
 /// Configuration form state for the adapt wizard.
@@ -72,12 +62,56 @@ impl AdaptWizardConfig {
 }
 
 /// Accumulated results from pipeline phases.
-#[derive(Debug, Clone, Default)]
+/// Serializable so completed phases can be cached and resumed on failure.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AdaptResults {
     pub profile: Option<ProjectProfile>,
     pub report: Option<AdaptReport>,
     pub plan: Option<AdaptPlan>,
     pub materialize: Option<MaterializeResult>,
+}
+
+impl AdaptResults {
+    /// Cache file path for adapt pipeline resumption.
+    fn cache_path() -> std::path::PathBuf {
+        std::path::PathBuf::from(".maestro").join("adapt-cache.json")
+    }
+
+    /// Save current results to cache file. Silently ignores errors.
+    pub fn save_cache(&self) {
+        let path = Self::cache_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+
+    /// Load cached results if available.
+    pub fn load_cache() -> Option<Self> {
+        let path = Self::cache_path();
+        let data = std::fs::read_to_string(&path).ok()?;
+        serde_json::from_str(&data).ok()
+    }
+
+    /// Delete the cache file (called after successful completion).
+    pub fn clear_cache() {
+        let _ = std::fs::remove_file(Self::cache_path());
+    }
+
+    /// Determine which phase to resume from based on cached results.
+    pub fn resume_step(&self) -> AdaptStep {
+        if self.plan.is_some() {
+            AdaptStep::Materializing
+        } else if self.report.is_some() {
+            AdaptStep::Planning
+        } else if self.profile.is_some() {
+            AdaptStep::Analyzing
+        } else {
+            AdaptStep::Scanning
+        }
+    }
 }
 
 /// Error from a failed adapt phase.
@@ -107,14 +141,6 @@ mod tests {
         assert!(AdaptStep::Materializing.is_progress());
         assert!(!AdaptStep::Complete.is_progress());
         assert!(!AdaptStep::Failed.is_progress());
-    }
-
-    #[test]
-    fn adapt_step_phase_index() {
-        assert_eq!(AdaptStep::Scanning.phase_index(), 0);
-        assert_eq!(AdaptStep::Analyzing.phase_index(), 1);
-        assert_eq!(AdaptStep::Planning.phase_index(), 2);
-        assert_eq!(AdaptStep::Materializing.phase_index(), 3);
     }
 
     #[test]
@@ -156,4 +182,6 @@ mod tests {
         assert!(results.plan.is_none());
         assert!(results.materialize.is_none());
     }
+
+    // resume_step tests are in mod.rs tests (they need make_mock_profile helper)
 }

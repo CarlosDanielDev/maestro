@@ -38,6 +38,97 @@ pub enum TuiMode {
     TurboquantDashboard,
 }
 
+impl TuiMode {
+    /// Human-readable label for breadcrumb rendering.
+    pub fn breadcrumb_label(&self) -> &'static str {
+        match self {
+            Self::Overview => "Overview",
+            Self::Detail(_) => "Detail",
+            Self::DependencyGraph => "Dependencies",
+            Self::Fullscreen(_) => "Fullscreen",
+            Self::CostDashboard => "Cost",
+            Self::Dashboard => "Dashboard",
+            Self::IssueBrowser => "Issues",
+            Self::MilestoneView => "Milestones",
+            Self::PromptInput => "Prompt",
+            Self::CompletionSummary => "Summary",
+            Self::ContinuousPause => "Paused",
+            Self::QueueConfirmation => "Queue",
+            Self::QueueExecution => "Executing",
+            Self::HollowRetry => "Retry",
+            Self::TokenDashboard => "Tokens",
+            Self::Sanitize => "Sanitize",
+            Self::Settings => "Settings",
+            Self::SessionSwitcher => "Switcher",
+            Self::AdaptWizard => "Adapt",
+            Self::PrReview => "PR Review",
+            Self::ReleaseNotes => "Release Notes",
+            Self::LogViewer(_) => "Logs",
+            Self::ConfirmKill(_) => "Confirm Kill",
+            Self::ConfirmExit => "Confirm Exit",
+            Self::SessionSummary => "Sessions",
+            Self::TurboquantDashboard => "TQ Dashboard",
+        }
+    }
+}
+
+/// Navigation stack for consistent back-navigation with a max depth cap.
+#[derive(Debug, Clone)]
+pub struct NavigationStack {
+    stack: Vec<TuiMode>,
+    pub max_depth: usize,
+}
+
+impl NavigationStack {
+    pub const DEFAULT_MAX_DEPTH: usize = 20;
+
+    pub fn new(max_depth: usize) -> Self {
+        Self {
+            stack: Vec::with_capacity(max_depth),
+            max_depth,
+        }
+    }
+
+    pub fn push(&mut self, mode: TuiMode) {
+        if self.stack.len() >= self.max_depth {
+            self.stack.remove(0);
+        }
+        self.stack.push(mode);
+    }
+
+    pub fn pop(&mut self) -> Option<TuiMode> {
+        self.stack.pop()
+    }
+
+    pub fn peek(&self) -> Option<&TuiMode> {
+        self.stack.last()
+    }
+
+    #[allow(dead_code)] // Reason: used in tests
+    pub fn is_empty(&self) -> bool {
+        self.stack.is_empty()
+    }
+
+    #[allow(dead_code)] // Reason: used in tests
+    pub fn depth(&self) -> usize {
+        self.stack.len()
+    }
+
+    pub fn clear(&mut self) {
+        self.stack.clear();
+    }
+
+    pub fn breadcrumbs(&self) -> &[TuiMode] {
+        &self.stack
+    }
+}
+
+impl Default for NavigationStack {
+    fn default() -> Self {
+        Self::new(Self::DEFAULT_MAX_DEPTH)
+    }
+}
+
 /// Per-session ephemeral UI state (not persisted).
 #[derive(Debug, Clone, Default)]
 pub struct SessionUiState {
@@ -185,4 +276,132 @@ pub(crate) struct PendingIssueCompletion {
     pub worktree_branch: Option<String>,
     pub worktree_path: Option<std::path::PathBuf>,
     pub is_ci_fix: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── NavigationStack ────────────────────────────────────────────────
+
+    #[test]
+    fn push_and_pop_returns_last() {
+        let id = uuid::Uuid::new_v4();
+        let mut stack = NavigationStack::default();
+        stack.push(TuiMode::Overview);
+        stack.push(TuiMode::Detail(id));
+        assert_eq!(stack.pop(), Some(TuiMode::Detail(id)));
+    }
+
+    #[test]
+    fn pop_empty_returns_none() {
+        let mut stack = NavigationStack::default();
+        assert_eq!(stack.pop(), None);
+    }
+
+    #[test]
+    fn max_depth_drops_oldest_when_exceeded() {
+        let mut stack = NavigationStack::default();
+        stack.push(TuiMode::Dashboard);
+        for _ in 0..20 {
+            stack.push(TuiMode::Overview);
+        }
+        assert_eq!(stack.depth(), 20);
+        assert!(stack.breadcrumbs().iter().all(|m| *m == TuiMode::Overview));
+    }
+
+    #[test]
+    fn clear_empties_stack() {
+        let mut stack = NavigationStack::default();
+        stack.push(TuiMode::Overview);
+        stack.push(TuiMode::IssueBrowser);
+        stack.push(TuiMode::Settings);
+        stack.clear();
+        assert!(stack.is_empty());
+        assert_eq!(stack.depth(), 0);
+    }
+
+    #[test]
+    fn breadcrumbs_returns_ordered_slice_oldest_first() {
+        let id = uuid::Uuid::new_v4();
+        let mut stack = NavigationStack::default();
+        stack.push(TuiMode::Overview);
+        stack.push(TuiMode::Detail(id));
+        stack.push(TuiMode::Settings);
+        let crumbs = stack.breadcrumbs();
+        assert_eq!(crumbs[0], TuiMode::Overview);
+        assert_eq!(crumbs[1], TuiMode::Detail(id));
+        assert_eq!(crumbs[2], TuiMode::Settings);
+    }
+
+    #[test]
+    fn depth_tracks_size_after_push_and_pop() {
+        let mut stack = NavigationStack::default();
+        stack.push(TuiMode::Overview);
+        stack.push(TuiMode::Dashboard);
+        stack.push(TuiMode::Settings);
+        assert_eq!(stack.depth(), 3);
+        let _ = stack.pop();
+        assert_eq!(stack.depth(), 2);
+    }
+
+    #[test]
+    fn default_has_20_max_depth() {
+        let stack = NavigationStack::default();
+        assert_eq!(stack.max_depth, 20);
+    }
+
+    #[test]
+    fn peek_returns_last_without_removing() {
+        let id = uuid::Uuid::new_v4();
+        let mut stack = NavigationStack::default();
+        stack.push(TuiMode::Overview);
+        stack.push(TuiMode::Detail(id));
+        assert_eq!(stack.peek(), Some(&TuiMode::Detail(id)));
+        assert_eq!(stack.peek(), Some(&TuiMode::Detail(id)));
+        assert_eq!(stack.depth(), 2);
+    }
+
+    // ── TuiMode::breadcrumb_label ───────────────────────────────────────
+
+    #[test]
+    fn all_variants_return_non_empty_breadcrumb_label() {
+        let id = uuid::Uuid::new_v4();
+        let variants: &[TuiMode] = &[
+            TuiMode::Overview,
+            TuiMode::Dashboard,
+            TuiMode::IssueBrowser,
+            TuiMode::MilestoneView,
+            TuiMode::DependencyGraph,
+            TuiMode::CostDashboard,
+            TuiMode::TokenDashboard,
+            TuiMode::TurboquantDashboard,
+            TuiMode::Settings,
+            TuiMode::PromptInput,
+            TuiMode::SessionSwitcher,
+            TuiMode::AdaptWizard,
+            TuiMode::PrReview,
+            TuiMode::ReleaseNotes,
+            TuiMode::CompletionSummary,
+            TuiMode::ContinuousPause,
+            TuiMode::QueueConfirmation,
+            TuiMode::QueueExecution,
+            TuiMode::HollowRetry,
+            TuiMode::Sanitize,
+            TuiMode::SessionSummary,
+            TuiMode::ConfirmExit,
+            TuiMode::Detail(id),
+            TuiMode::Fullscreen(id),
+            TuiMode::LogViewer(id),
+            TuiMode::ConfirmKill(id),
+        ];
+        for mode in variants {
+            let label = mode.breadcrumb_label();
+            assert!(
+                !label.is_empty(),
+                "breadcrumb_label() returned empty string for {:?}",
+                mode
+            );
+        }
+    }
 }
