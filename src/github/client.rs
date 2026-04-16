@@ -521,7 +521,7 @@ impl GitHubClient for GhCliClient {
 
     async fn create_milestone(&self, title: &str, description: &str) -> Result<u64> {
         validate_gh_arg(title, "milestone title")?;
-        let json_str = self
+        let result = self
             .run_gh(&[
                 "api",
                 "repos/{owner}/{repo}/milestones",
@@ -532,12 +532,36 @@ impl GitHubClient for GhCliClient {
                 "-f",
                 &format!("description={}", description),
             ])
-            .await?;
-        let v: serde_json::Value =
-            serde_json::from_str(&json_str).context("Failed to parse milestone response")?;
-        v.get("number")
-            .and_then(|n| n.as_u64())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'number' in milestone response"))
+            .await;
+
+        match result {
+            Ok(json_str) => {
+                let v: serde_json::Value = serde_json::from_str(&json_str)
+                    .context("Failed to parse milestone response")?;
+                v.get("number")
+                    .and_then(|n| n.as_u64())
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'number' in milestone response"))
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // 422 = duplicate milestone — find-or-reuse the existing one
+                if msg.contains("422") || msg.contains("Validation Failed") {
+                    let milestones = self.list_milestones("open").await?;
+                    milestones
+                        .iter()
+                        .find(|m| m.title == title)
+                        .map(|m| m.number)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Milestone '{}' caused 422 but not found in open milestones",
+                                title
+                            )
+                        })
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     async fn create_issue(
