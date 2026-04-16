@@ -326,11 +326,36 @@ impl GhCliClient {
     }
 
     async fn run_gh(&self, args: &[&str]) -> Result<String> {
-        let output = tokio::process::Command::new("gh")
+        self.run_gh_with_stdin(args, None).await
+    }
+
+    async fn run_gh_with_stdin(&self, args: &[&str], stdin_data: Option<&[u8]>) -> Result<String> {
+        let stdin_cfg = if stdin_data.is_some() {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        };
+
+        let mut child = tokio::process::Command::new("gh")
             .args(args)
-            .output()
-            .await
+            .stdin(stdin_cfg)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
             .context("Failed to run `gh` CLI. Is it installed?")?;
+
+        if let Some(data) = stdin_data
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            use tokio::io::AsyncWriteExt;
+            stdin.write_all(data).await?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .await
+            .context("Failed to wait for `gh` CLI")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -438,19 +463,7 @@ impl GitHubClient for GhCliClient {
                     "maestro:failed" => "D93F0B",
                     _ => "EDEDED",
                 };
-                // Create the label (ignore errors if it already exists)
-                let _ = self
-                    .run_gh(&[
-                        "label",
-                        "create",
-                        label,
-                        "--color",
-                        color,
-                        "--description",
-                        "Managed by Maestro",
-                        "--force",
-                    ])
-                    .await;
+                let _ = self.create_label(label, color).await;
                 // Retry adding the label
                 self.run_gh(&["issue", "edit", &num_str, "--add-label", label])
                     .await?;
@@ -572,8 +585,8 @@ impl GitHubClient for GhCliClient {
         milestone: Option<u64>,
     ) -> Result<u64> {
         validate_gh_arg(title, "issue title")?;
-        // Build a JSON body and pass via stdin. Using the REST API directly
-        // because `gh issue create --milestone` expects a title, not a number.
+        // Use REST API via stdin because `gh issue create --milestone`
+        // expects a title string, but we only have the milestone number.
         let mut payload = serde_json::json!({
             "title": title,
             "body": body,
@@ -586,39 +599,20 @@ impl GitHubClient for GhCliClient {
         }
 
         let json_body = serde_json::to_string(&payload)?;
-        let output = tokio::process::Command::new("gh")
-            .args([
-                "api",
-                "repos/{owner}/{repo}/issues",
-                "--method",
-                "POST",
-                "--input",
-                "-",
-            ])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .context("Failed to run `gh` CLI")?;
+        let json_str = self
+            .run_gh_with_stdin(
+                &[
+                    "api",
+                    "repos/{owner}/{repo}/issues",
+                    "--method",
+                    "POST",
+                    "--input",
+                    "-",
+                ],
+                Some(json_body.as_bytes()),
+            )
+            .await?;
 
-        use tokio::io::AsyncWriteExt;
-        let mut child = output;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(json_body.as_bytes()).await?;
-            // Drop stdin to close it and signal EOF
-        }
-        let output = child.wait_with_output().await?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if is_auth_error(&stderr) {
-                anyhow::bail!("{} {}", GH_AUTH_ERROR_SENTINEL, stderr.trim());
-            }
-            anyhow::bail!("gh command failed: {}", stderr.trim());
-        }
-
-        let json_str = String::from_utf8_lossy(&output.stdout);
         let v: serde_json::Value =
             serde_json::from_str(&json_str).context("Failed to parse issue creation response")?;
         v.get("number")

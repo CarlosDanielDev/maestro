@@ -24,12 +24,12 @@ pub struct AdaptScreen {
     pub scroll_offset: u16,
     pub cancelled: bool,
     /// Whether a cache from a previous incomplete run was loaded.
-    pub has_cache: bool,
+    pub loaded_from_cache: bool,
 }
 
 impl AdaptScreen {
     pub fn new() -> Self {
-        let (results, has_cache) = match AdaptResults::load_cache() {
+        let (results, loaded_from_cache) = match AdaptResults::load_cache() {
             Some(cached) => (cached, true),
             None => (AdaptResults::default(), false),
         };
@@ -42,7 +42,7 @@ impl AdaptScreen {
             spinner_tick: 0,
             scroll_offset: 0,
             cancelled: false,
-            has_cache,
+            loaded_from_cache,
         }
     }
 
@@ -186,15 +186,15 @@ impl AdaptScreen {
                 self.config.model.push(c);
             }
             KeyCode::Enter => {
-                if self.has_cache {
+                if self.loaded_from_cache {
                     self.step = self.results.resume_step();
                 }
                 return ScreenAction::StartAdaptPipeline(self.build_adapt_config());
             }
-            KeyCode::Delete | KeyCode::Char('x') if self.has_cache => {
+            KeyCode::Delete | KeyCode::Char('x') if self.loaded_from_cache => {
                 self.results = AdaptResults::default();
                 AdaptResults::clear_cache();
-                self.has_cache = false;
+                self.loaded_from_cache = false;
             }
             KeyCode::Esc => return ScreenAction::Pop,
             _ => {}
@@ -214,14 +214,14 @@ impl KeymapProvider for AdaptScreen {
                     },
                     KeyBinding {
                         key: "Enter",
-                        description: if self.has_cache {
+                        description: if self.loaded_from_cache {
                             "Resume pipeline"
                         } else {
                             "Start pipeline"
                         },
                     },
                 ];
-                if self.has_cache {
+                if self.loaded_from_cache {
                     action_bindings.push(KeyBinding {
                         key: "x",
                         description: "Clear cache (fresh run)",
