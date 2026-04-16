@@ -22,15 +22,6 @@ impl AdaptStep {
         )
     }
 
-    pub fn phase_index(&self) -> usize {
-        match self {
-            Self::Scanning => 0,
-            Self::Analyzing => 1,
-            Self::Planning => 2,
-            Self::Materializing => 3,
-            _ => 0,
-        }
-    }
 }
 
 /// Configuration form state for the adapt wizard.
@@ -151,14 +142,6 @@ mod tests {
         assert!(AdaptStep::Materializing.is_progress());
         assert!(!AdaptStep::Complete.is_progress());
         assert!(!AdaptStep::Failed.is_progress());
-    }
-
-    #[test]
-    fn adapt_step_phase_index() {
-        assert_eq!(AdaptStep::Scanning.phase_index(), 0);
-        assert_eq!(AdaptStep::Analyzing.phase_index(), 1);
-        assert_eq!(AdaptStep::Planning.phase_index(), 2);
-        assert_eq!(AdaptStep::Materializing.phase_index(), 3);
     }
 
     #[test]
