@@ -57,9 +57,7 @@ impl SessionProgress {
 
         // Infer phase from tool name
         match tool_name {
-            "Read" | "Grep" | "Glob" | "Bash"
-                if self.phase == SessionPhase::Analyzing =>
-            {
+            "Read" | "Grep" | "Glob" | "Bash" if self.phase == SessionPhase::Analyzing => {
                 // Stay in Analyzing
             }
             "Write" | "Edit"

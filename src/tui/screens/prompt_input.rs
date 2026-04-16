@@ -612,8 +612,7 @@ impl Screen for PromptInputScreen {
                     }
                     KeyCode::Char('d') if !self.image_paths.is_empty() => {
                         self.image_paths.remove(self.selected_image);
-                        if self.selected_image > 0
-                            && self.selected_image >= self.image_paths.len()
+                        if self.selected_image > 0 && self.selected_image >= self.image_paths.len()
                         {
                             self.selected_image = self.image_paths.len().saturating_sub(1);
                         }
