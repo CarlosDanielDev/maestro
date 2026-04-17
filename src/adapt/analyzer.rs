@@ -99,6 +99,7 @@ mod tests {
             },
             directory_tree: "src/\n  main.rs".into(),
             has_maestro_config: false,
+            has_workflow_docs: false,
         }
     }
 
