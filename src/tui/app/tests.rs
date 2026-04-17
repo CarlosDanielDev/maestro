@@ -1408,6 +1408,7 @@ mod adapt_chaining {
             dependencies: DependencySummary::default(),
             directory_tree: String::new(),
             has_maestro_config: false,
+            has_workflow_docs: false,
         }
     }
 
@@ -1423,6 +1424,7 @@ mod adapt_chaining {
         AdaptPlan {
             milestones: vec![],
             maestro_toml_patch: None,
+            workflow_guide: None,
         }
     }
 

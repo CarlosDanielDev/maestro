@@ -45,6 +45,7 @@ fn sample_profile() -> ProjectProfile {
         },
         directory_tree: "src/\n  main.rs".into(),
         has_maestro_config: false,
+        has_workflow_docs: false,
     }
 }
 
@@ -99,6 +100,7 @@ fn sample_plan() -> AdaptPlan {
             },
         ],
         maestro_toml_patch: Some("[project]\nrepo = \"owner/repo\"".into()),
+        workflow_guide: None,
     }
 }
 
@@ -138,6 +140,7 @@ async fn pipeline_empty_analysis_produces_valid_plan() {
     let planner = MockAdaptPlanner::with_plan(AdaptPlan {
         milestones: vec![],
         maestro_toml_patch: None,
+        workflow_guide: None,
     });
     let plan = planner.plan(&profile, &report).await.unwrap();
     assert!(plan.milestones.is_empty());

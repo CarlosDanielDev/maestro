@@ -315,6 +315,7 @@ mod tests {
                 ],
             }],
             maestro_toml_patch: None,
+            workflow_guide: None,
         }
     }
 
@@ -525,6 +526,7 @@ mod tests {
                 }],
             }],
             maestro_toml_patch: None,
+            workflow_guide: None,
         }
     }
 

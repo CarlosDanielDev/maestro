@@ -94,6 +94,7 @@ mod tests {
                 ],
             }],
             maestro_toml_patch: Some("[project]\nrepo = \"owner/repo\"".into()),
+            workflow_guide: None,
         }
     }
 
@@ -138,6 +139,7 @@ mod tests {
             },
             directory_tree: String::new(),
             has_maestro_config: false,
+            has_workflow_docs: false,
         };
 
         let report = AdaptReport {
@@ -168,6 +170,7 @@ mod tests {
         let plan = AdaptPlan {
             milestones: vec![],
             maestro_toml_patch: None,
+            workflow_guide: None,
         };
         let json = serde_json::to_string(&plan).unwrap();
         let rt: AdaptPlan = serde_json::from_str(&json).unwrap();
@@ -196,6 +199,7 @@ mod tests {
                 },
             ],
             maestro_toml_patch: None,
+            workflow_guide: None,
         };
         let json = serde_json::to_string(&plan).unwrap();
         let rt: AdaptPlan = serde_json::from_str(&json).unwrap();
@@ -240,6 +244,7 @@ mod tests {
             dependencies: DependencySummary::default(),
             directory_tree: String::new(),
             has_maestro_config: false,
+            has_workflow_docs: false,
         };
         let report = AdaptReport {
             summary: "test".into(),

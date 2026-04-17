@@ -16,6 +16,9 @@ pub struct ProjectProfile {
     pub dependencies: DependencySummary,
     pub directory_tree: String,
     pub has_maestro_config: bool,
+    /// Whether existing workflow documentation (WORKFLOW.md, CONTRIBUTING.md) was detected.
+    #[serde(default)]
+    pub has_workflow_docs: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,6 +125,9 @@ pub enum TechDebtSeverity {
 pub struct AdaptPlan {
     pub milestones: Vec<PlannedMilestone>,
     pub maestro_toml_patch: Option<String>,
+    /// Generated workflow guide content (markdown). `None` if existing docs were detected.
+    #[serde(default)]
+    pub workflow_guide: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,6 +277,7 @@ mod tests {
             },
             directory_tree: "src/\n  main.rs".into(),
             has_maestro_config: false,
+            has_workflow_docs: false,
         };
 
         let json = serde_json::to_string(&profile).unwrap();
@@ -325,6 +332,7 @@ mod tests {
                 }],
             }],
             maestro_toml_patch: Some("[project]\nrepo = \"owner/repo\"".into()),
+            workflow_guide: None,
         };
 
         let json = serde_json::to_string(&plan).unwrap();

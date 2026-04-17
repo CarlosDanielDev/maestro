@@ -78,6 +78,9 @@ fn scan_project(root: &Path) -> anyhow::Result<ProjectProfile> {
     let directory_tree = build_directory_tree(root, 3);
     let has_maestro_config =
         root.join("maestro.toml").exists() || root.join(".claude/CLAUDE.md").exists();
+    let has_workflow_docs = root.join("docs/WORKFLOW.md").exists()
+        || root.join("CONTRIBUTING.md").exists()
+        || root.join(".github/CONTRIBUTING.md").exists();
 
     Ok(ProjectProfile {
         name,
@@ -93,6 +96,7 @@ fn scan_project(root: &Path) -> anyhow::Result<ProjectProfile> {
         dependencies,
         directory_tree,
         has_maestro_config,
+        has_workflow_docs,
     })
 }
 
@@ -782,6 +786,34 @@ tempfile = "3"
         assert_eq!(profile.language, ProjectLanguage::Rust);
         assert_eq!(profile.source_stats.total_files, 1);
         assert!(profile.manifests.contains(&PathBuf::from("Cargo.toml")));
+        assert!(!profile.has_workflow_docs);
+    }
+
+    #[tokio::test]
+    async fn scanner_detects_contributing_md() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(dir.path().join("CONTRIBUTING.md"), "# Contributing\n").unwrap();
+
+        let scanner = LocalProjectScanner::new();
+        let profile = scanner.scan(dir.path()).await.unwrap();
+        assert!(profile.has_workflow_docs);
+    }
+
+    #[tokio::test]
+    async fn scanner_detects_docs_workflow_md() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+        std::fs::write(dir.path().join("docs/WORKFLOW.md"), "# Workflow\n").unwrap();
+
+        let scanner = LocalProjectScanner::new();
+        let profile = scanner.scan(dir.path()).await.unwrap();
+        assert!(profile.has_workflow_docs);
     }
 
     #[test]
