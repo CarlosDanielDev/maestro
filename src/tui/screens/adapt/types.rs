@@ -1,5 +1,7 @@
 use crate::adapt::AdaptConfig;
-use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
+use crate::adapt::types::{
+    AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile, ScaffoldResult,
+};
 use std::path::PathBuf;
 
 /// Wizard step state machine for the adapt pipeline.
@@ -10,6 +12,7 @@ pub enum AdaptStep {
     Analyzing,
     Consolidating,
     Planning,
+    Scaffolding,
     Materializing,
     Complete,
     Failed,
@@ -23,6 +26,7 @@ impl AdaptStep {
                 | Self::Analyzing
                 | Self::Consolidating
                 | Self::Planning
+                | Self::Scaffolding
                 | Self::Materializing
         )
     }
@@ -75,6 +79,8 @@ pub struct AdaptResults {
     #[serde(default)]
     pub prd_content: Option<String>,
     pub plan: Option<AdaptPlan>,
+    #[serde(default)]
+    pub scaffold: Option<ScaffoldResult>,
     pub materialize: Option<MaterializeResult>,
 }
 
@@ -109,8 +115,10 @@ impl AdaptResults {
 
     /// Determine which phase to resume from based on cached results.
     pub fn resume_step(&self) -> AdaptStep {
-        if self.plan.is_some() {
+        if self.scaffold.is_some() {
             AdaptStep::Materializing
+        } else if self.plan.is_some() {
+            AdaptStep::Scaffolding
         } else if self.prd_content.is_some() {
             AdaptStep::Planning
         } else if self.report.is_some() {
@@ -148,6 +156,7 @@ mod tests {
         assert!(AdaptStep::Analyzing.is_progress());
         assert!(AdaptStep::Consolidating.is_progress());
         assert!(AdaptStep::Planning.is_progress());
+        assert!(AdaptStep::Scaffolding.is_progress());
         assert!(AdaptStep::Materializing.is_progress());
         assert!(!AdaptStep::Complete.is_progress());
         assert!(!AdaptStep::Failed.is_progress());
@@ -216,6 +225,20 @@ mod tests {
         let result: Result<AdaptResults, _> = serde_json::from_str(raw);
         assert!(result.is_ok());
         assert!(result.unwrap().prd_content.is_none());
+    }
+
+    #[test]
+    fn adapt_results_scaffold_defaults_to_none() {
+        let results = AdaptResults::default();
+        assert!(results.scaffold.is_none());
+    }
+
+    #[test]
+    fn adapt_results_json_without_scaffold_field_deserializes_as_none() {
+        let raw = r#"{"profile":null,"report":null,"plan":null,"materialize":null}"#;
+        let result: Result<AdaptResults, _> = serde_json::from_str(raw);
+        assert!(result.is_ok());
+        assert!(result.unwrap().scaffold.is_none());
     }
 
     // resume_step tests are in mod.rs tests (they need make_mock_profile helper)

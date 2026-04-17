@@ -166,6 +166,31 @@ pub struct CreatedIssue {
     pub milestone_number: Option<u64>,
 }
 
+/// Status of a single scaffolded file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScaffoldFileStatus {
+    Created,
+    Skipped,
+    Failed,
+}
+
+/// A single file generated (or skipped) by the scaffold phase.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScaffoldedFile {
+    pub path: String,
+    pub status: ScaffoldFileStatus,
+    pub reason: Option<String>,
+}
+
+/// Result of the scaffold phase.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScaffoldResult {
+    pub files: Vec<ScaffoldedFile>,
+    pub created_count: usize,
+    pub skipped_count: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

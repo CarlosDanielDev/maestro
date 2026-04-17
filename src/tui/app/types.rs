@@ -1,5 +1,7 @@
 use crate::adapt::AdaptConfig;
-use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
+use crate::adapt::types::{
+    AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile, ScaffoldResult,
+};
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::provider::github::types::{GhIssue, GhMilestone};
 use crate::session::types::SessionStatus;
@@ -158,6 +160,7 @@ pub enum TuiCommand {
     RunAdaptAnalyze(AdaptConfig, ProjectProfile),
     RunAdaptConsolidate(AdaptConfig, ProjectProfile, AdaptReport),
     RunAdaptPlan(AdaptConfig, ProjectProfile, AdaptReport, Option<String>),
+    RunAdaptScaffold(AdaptConfig, ProjectProfile, AdaptReport, AdaptPlan),
     RunAdaptMaterialize(AdaptPlan, AdaptReport),
     FetchOpenPrs,
     SubmitPrReview {
@@ -179,6 +182,7 @@ pub enum TuiDataEvent {
     AdaptAnalyzeResult(anyhow::Result<AdaptReport>),
     AdaptConsolidateResult(anyhow::Result<String>),
     AdaptPlanResult(anyhow::Result<AdaptPlan>),
+    AdaptScaffoldResult(anyhow::Result<ScaffoldResult>),
     AdaptMaterializeResult(anyhow::Result<MaterializeResult>),
     UnifiedIssues(anyhow::Result<Vec<GhIssue>>, Option<String>),
     PullRequests(anyhow::Result<Vec<crate::provider::github::types::GhPullRequest>>),

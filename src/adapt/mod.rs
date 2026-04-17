@@ -3,6 +3,7 @@ pub mod materializer;
 pub mod planner;
 pub mod prd;
 mod prompts;
+pub mod scaffolder;
 pub mod scanner;
 pub mod types;
 
@@ -154,7 +155,7 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
 
     // Phase 3: Plan
     eprintln!("Phase 3: Planning milestones and issues...");
-    let planner = ClaudePlanner::new(model);
+    let planner = ClaudePlanner::new(model.clone());
     let plan = planner
         .plan(&profile, &report, prd_content.as_deref())
         .await?;
@@ -172,6 +173,22 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         println!("{}", json);
         return Ok(());
     }
+
+    // Phase 3.5: Scaffold
+    eprintln!("Phase 3.5: Scaffolding .claude/ directory...");
+    use scaffolder::{ClaudeScaffolder, ProjectScaffolder};
+    let scaffolder = ClaudeScaffolder::new(model);
+    match scaffolder.scaffold(&profile, &report, &plan).await {
+        Ok(result) => {
+            eprintln!(
+                "  {} files created, {} skipped",
+                result.created_count, result.skipped_count
+            );
+        }
+        Err(e) => {
+            eprintln!("  Scaffold failed: {}. Continuing without scaffolding.", e);
+        }
+    };
 
     // Phase 4: Materialize
     eprintln!("Phase 4: Creating GitHub artifacts...");

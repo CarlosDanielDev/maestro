@@ -221,6 +221,26 @@ impl App {
                     }
                 }
             }
+            TuiDataEvent::AdaptScaffoldResult(result) => {
+                if let Some(ref mut screen) = self.adapt_screen {
+                    if screen.is_cancelled() {
+                        return;
+                    }
+                    match result {
+                        Ok(scaffold_result) => {
+                            if let Some(cmd) = screen.complete_scaffold(scaffold_result) {
+                                self.pending_commands.push(cmd);
+                            }
+                        }
+                        Err(e) => {
+                            screen.set_error(
+                                crate::tui::screens::adapt::AdaptStep::Scaffolding,
+                                format!("{}", e),
+                            );
+                        }
+                    }
+                }
+            }
             TuiDataEvent::PullRequests(Ok(prs)) => {
                 if let Some(ref mut screen) = self.pr_review_screen {
                     screen.set_prs(prs);

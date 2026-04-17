@@ -171,6 +171,88 @@ Return ONLY the JSON object, no markdown fences, no commentary."#,
     )
 }
 
+pub fn build_scaffold_prompt(profile_json: &str, report_json: &str, plan_json: &str) -> String {
+    format!(
+        r#"You are generating a .claude/ directory scaffold for a software project to onboard it to the maestro AI-orchestrated workflow.
+
+## Project Profile
+
+{profile_json}
+
+## Analysis Report
+
+{report_json}
+
+## Adaptation Plan
+
+{plan_json}
+
+## Instructions
+
+Generate a JSON object containing all files to create in the `.claude/` directory. Each file has a relative path (from `.claude/`) and full content.
+
+The scaffold MUST include:
+
+### 1. CLAUDE.md (orchestrator configuration)
+- Tailored to the detected tech stack
+- Include: build commands, test commands, project structure, key files
+- Include: TDD workflow, subagent delegation rules
+- Stack-specific commands (e.g., `cargo test` for Rust, `npm test` for TypeScript, `pytest` for Python)
+
+### 2. Commands (.claude/commands/)
+- `implement.md` — fetch issue and implement with full workflow
+- `pushup.md` — commit, push, create PR, close issue
+- `release.md` — semantic version release workflow
+- `simplify.md` — refactoring and simplification workflow
+
+### 3. Subagents (.claude/agents/)
+- `subagent-architect.md` — architecture design and planning (consultive only)
+- `subagent-qa.md` — QA engineering, test design (consultive only)
+- `subagent-docs-analyst.md` — documentation management (CAN write .md files)
+- `subagent-security-analyst.md` — security review, OWASP (consultive only)
+
+### 4. Skills (.claude/skills/)
+- `project-patterns/SKILL.md` — project-specific patterns based on detected stack
+
+## Stack-Specific Customization
+
+Customize ALL content based on the detected language and stack:
+- **Rust**: cargo build/test/clippy/fmt, mod.rs structure, async_trait patterns
+- **TypeScript**: npm/yarn/pnpm, jest/vitest, ESLint, tsconfig
+- **Python**: pytest, mypy, ruff/black, pyproject.toml, venv
+- **Go**: go test, go vet, go fmt, go mod
+- **Java**: gradle/maven, JUnit, checkstyle
+- **Ruby**: rspec, rubocop, bundler
+
+## Output Schema
+
+```json
+{{{{
+  "files": [
+    {{{{
+      "path": "CLAUDE.md",
+      "content": "(full CLAUDE.md content here)"
+    }}}},
+    {{{{
+      "path": "commands/implement.md",
+      "content": "(full implement.md content here)"
+    }}}},
+    {{{{
+      "path": "agents/subagent-architect.md",
+      "content": "(full subagent-architect.md content here)"
+    }}}},
+    {{{{
+      "path": "skills/project-patterns/SKILL.md",
+      "content": "(full SKILL.md content here)"
+    }}}}
+  ]
+}}}}
+```
+
+Return ONLY the JSON object, no markdown fences, no commentary."#,
+    )
+}
+
 /// Run `claude --print` with the given prompt and return stdout.
 pub async fn run_claude_print(
     model: &str,
@@ -388,6 +470,27 @@ That's all."#;
         let prompt =
             build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
         assert!(!prompt.contains("Product Requirements Document"));
+    }
+
+    #[test]
+    fn build_scaffold_prompt_contains_profile_report_and_plan() {
+        let prompt = build_scaffold_prompt(
+            r#"{"name":"test"}"#,
+            r#"{"summary":"good"}"#,
+            r#"{"milestones":[]}"#,
+        );
+        assert!(prompt.contains(r#"{"name":"test"}"#));
+        assert!(prompt.contains(r#"{"summary":"good"}"#));
+        assert!(prompt.contains(r#"{"milestones":[]}"#));
+    }
+
+    #[test]
+    fn build_scaffold_prompt_contains_required_sections() {
+        let prompt = build_scaffold_prompt(r#"{}"#, r#"{}"#, r#"{}"#);
+        assert!(prompt.contains("CLAUDE.md"));
+        assert!(prompt.contains("commands/"));
+        assert!(prompt.contains("agents/"));
+        assert!(prompt.contains("skills/"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-15 00:00 (UTC)
+> Last updated: 2026-04-17 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -79,14 +79,15 @@ maestro/
 │   ├── flags/                             # Feature flag registry and runtime store  [Issue #141, #146]
 │   │   ├── mod.rs                         # Flag enum (6 variants); FlagSource enum (Default, Config, Cli); serde serialization; default_enabled(), description(), name(), all() helpers
 │   │   └── store.rs                       # FeatureFlags store; source tracking per flag; HashMap-based resolution: CLI override > config file > compile-time defaults; source(), all_with_source() methods
-│   ├── adapt/                             # Adapt pipeline: onboard existing projects to maestro workflow  [Issue #87-95]
-│   │   ├── mod.rs                         # Module exports; cmd_adapt() CLI entry point; adapt pipeline orchestration
-│   │   ├── types.rs                       # AdaptPlan, AdaptReport, TechDebtItem, AdaptConfig type definitions
+│   ├── adapt/                             # Adapt pipeline: onboard existing projects to maestro workflow  [Issue #87-95, #371]
+│   │   ├── mod.rs                         # Module exports; cmd_adapt() CLI entry point; adapt pipeline orchestration including scaffold phase  [Issue #371]
+│   │   ├── types.rs                       # AdaptPlan, AdaptReport, TechDebtItem, AdaptConfig, ScaffoldFileStatus, ScaffoldedFile, ScaffoldResult type definitions  [Issue #371]
 │   │   ├── scanner.rs                     # Project scanner Phase 1: detect language, framework, existing issues, CI config
 │   │   ├── analyzer.rs                    # Claude-backed analyzer Phase 2: builds structured adapt plan from scan results
 │   │   ├── planner.rs                     # Adaptation planner Phase 3: maps analyzer output to actionable plan steps
 │   │   ├── materializer.rs               # Plan materializer Phase 4: creates GitHub issues and milestones; GhMaterializer struct; ensure_labels() auto-creates missing labels before issue creation; STANDARD_LABEL_COLORS constant defines canonical hex colors for all maestro labels  [Issue #93, #348]
-│   │   └── prompts.rs                     # Claude prompt builders for analyzer and planner phases
+│   │   ├── scaffolder.rs                  # Scaffold phase: ProjectScaffolder trait, ClaudeScaffolder impl, write_scaffold_files(); generates project files from adapt plan  [Issue #371]
+│   │   └── prompts.rs                     # Claude prompt builders for analyzer, planner, and scaffold phases  [Issue #371]
 │   ├── updater/                           # Self-upgrade subsystem  [Issue #118]
 │   │   ├── mod.rs                         # UpgradeState state machine (Idle, Checking, UpdateAvailable, Downloading, Installing, Done, Failed); ReleaseInfo type (tag_name, download_url, body)
 │   │   ├── checker.rs                     # UpdateChecker trait; GitHubReleaseChecker (hits GitHub Releases API); version parsing via semver comparison; asset names use Rust target triples (e.g. aarch64-apple-darwin); checksum file resolves to sha256sums.txt; check_for_update() async entry point  [Issue #118, #233]
@@ -144,16 +145,16 @@ maestro/
 │   │   ├── store.rs                       # JSON state persistence
 │   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods; pending_prs: Vec<PendingPr> field on MaestroState — persisted to JSON state for PR retry recovery  [Issue #12, #159]
 │   ├── tui/
-│   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress; spawns async version check on startup via check_for_update() — result delivered as VersionCheckResult data event; key handlers for upgrade flow (confirm/decline banner); CompletionSummary key-intercept branch: [f] collects NeedsReview sessions and calls spawn_gate_fix_session() for each then transitions to Overview, [i] opens issue browser, [r] opens prompt input, [l] switches to Overview (activity log view), [Enter]/[Esc] returns to dashboard via transition_to_dashboard(), [q] quits; ContinuousPause key-intercept overlay: [s] skip, [r] retry, [q] quit continuous loop; RefreshSuggestions branch sets loading_suggestions=true and queues FetchSuggestionData; exit path checks once_mode — exits immediately when true, otherwise shows CompletionSummary overlay; "All Issues" navigation always creates a fresh IssueBrowserScreen to prevent stale milestone filters leaking across navigation contexts; PromptInputScreen always created with injected history so Up/Down arrow recall works correctly; F-key bar actions wired (F1–F10, Alt-X); per-tick flash_counter decrement dispatched to session pool; pub mod theme; pub mod widgets  [Phase 3, Issue #31-33, #46-48, #35, #38, #83, #84, #85, #86, #104, #117, #118, #124, #202, #218, #232]
+│   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress; spawns async version check on startup via check_for_update() — result delivered as VersionCheckResult data event; key handlers for upgrade flow (confirm/decline banner); CompletionSummary key-intercept branch: [f] collects NeedsReview sessions and calls spawn_gate_fix_session() for each then transitions to Overview, [i] opens issue browser, [r] opens prompt input, [l] switches to Overview (activity log view), [Enter]/[Esc] returns to dashboard via transition_to_dashboard(), [q] quits; ContinuousPause key-intercept overlay: [s] skip, [r] retry, [q] quit continuous loop; RefreshSuggestions branch sets loading_suggestions=true and queues FetchSuggestionData; exit path checks once_mode — exits immediately when true, otherwise shows CompletionSummary overlay; "All Issues" navigation always creates a fresh IssueBrowserScreen to prevent stale milestone filters leaking across navigation contexts; PromptInputScreen always created with injected history so Up/Down arrow recall works correctly; F-key bar actions wired (F1–F10, Alt-X); per-tick flash_counter decrement dispatched to session pool; pub mod theme; pub mod widgets; RunAdaptScaffold command dispatch  [Phase 3, Issue #31-33, #46-48, #35, #38, #83, #84, #85, #86, #104, #117, #118, #124, #202, #218, #232, #371]
 │   │   ├── app/                           # App state module (split across multiple files)
 │   │   │   ├── mod.rs                     # App struct; nav_stack: NavigationStack field (replaces confirm_exit_return_mode); navigate_to(), navigate_back(), navigate_back_or_dashboard(), navigate_to_root() navigation methods; gh_auth_ok: bool; theme: Theme; pending_prs: Vec<PendingPr>; process_pending_pr_retries(); trigger_manual_pr_retry()  [Issue #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52, #83, #84, #85, #86, #102, #104, #118, #123, #158, #159, #342]
-│   │   │   ├── types.rs                   # TuiMode enum (+ CompletionSummary, ContinuousPause variants) with breadcrumb_label() method; NavigationStack struct (push/pop/peek/clear/breadcrumbs, cap 32); TuiCommand enum; TuiDataEvent enum; SuggestionDataPayload; CompletionSummaryData; CompletionSessionLine; GateFailureInfo  [Issue #342]
+│   │   │   ├── types.rs                   # TuiMode enum (+ CompletionSummary, ContinuousPause variants) with breadcrumb_label() method; NavigationStack struct (push/pop/peek/clear/breadcrumbs, cap 32); TuiCommand enum (+ RunAdaptScaffold); TuiDataEvent enum (+ AdaptScaffoldResult); SuggestionDataPayload; CompletionSummaryData; CompletionSessionLine; GateFailureInfo  [Issue #342, #371]
 │   │   │   ├── budget.rs                  # Budget enforcement helpers within App
 │   │   │   ├── ci_polling.rs              # poll_ci_status() CI auto-fix loop using CiCheck trait; decide_ci_action(); spawn_ci_fix_session()  [Issue #41, #123]
 │   │   │   ├── completion_pipeline.rs     # check_completions() config-driven gate evaluation with per-gate logging  [Issue #40, #104]
 │   │   │   ├── completion_summary.rs      # build_completion_summary(); transition_to_dashboard() calls navigate_to_root() to clear nav stack  [Issue #342]
 │   │   │   ├── context_overflow.rs        # Context overflow detection and fork triggering
-│   │   │   ├── data_handler.rs            # handle_data_event(); data_tx/data_rx channel; SuggestionData, VersionCheckResult, UpgradeResult handlers
+│   │   │   ├── data_handler.rs            # handle_data_event(); data_tx/data_rx channel; SuggestionData, VersionCheckResult, UpgradeResult, AdaptScaffoldResult handlers  [Issue #371]
 │   │   │   ├── event_handler.rs           # Top-level event dispatch and tick handling
 │   │   │   ├── helpers.rs                 # Shared App helper utilities
 │   │   │   ├── issue_completion.rs        # on_issue_session_completed(); skips PR creation for CI-fix sessions
@@ -199,7 +200,7 @@ maestro/
 │   │   │   ├── milestone.rs               # 4 snapshot tests for MilestoneScreen (with milestones, empty, loading, detail pane); snapshots updated to reflect color hierarchy and selection visibility changes  [Issue #299]
 │   │   │   ├── cost_dashboard.rs          # 5 snapshot tests for CostDashboard (no budget, under threshold, over 90%, empty, sorted)
 │   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files)
-│   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen; ScreenAction::Push delegates to navigate_to(), ScreenAction::Pop delegates to navigate_back()  [Issue #146, #232, #342]
+│   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen; ScreenAction::Push delegates to navigate_to(), ScreenAction::Pop delegates to navigate_back(); Scaffolding case in StartAdaptPipeline dispatch  [Issue #146, #232, #342, #371]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen  [Issue #31-33, #86]
 │   │       ├── hollow_retry.rs            # HollowRetryScreen: minimal retry prompt overlay shown when a session stalls and user confirmation is required
@@ -208,10 +209,10 @@ maestro/
 │   │       ├── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter/Alt+Enter inserts newline via insert_newline() (not input()), Ctrl+V pastes from clipboard (image or text), Esc cancels; Up/Down arrows navigate prompt history (injected at construction); image attachment list with [a]/[d]; keybinds bar always visible; uses wrap::soft_wrap_lines() for word-wrapped rendering  [Issue #101, #232, #263]
 │   │       ├── queue_confirmation.rs      # QueueConfirmationScreen: confirmation overlay before bulk-queuing selected issues from the issue browser
 │   │       ├── wrap.rs                    # Soft-wrap utilities: soft_wrap_lines() splits a multi-line string into display lines that fit within a given column width using unicode-width for correct grapheme measurement  [Issue #263]
-│   │       ├── adapt/                     # Adapt wizard screen components  [Issue #88]
-│   │       │   ├── mod.rs                 # AdaptScreen struct with Screen trait impl; wizard entry point
-│   │       │   ├── types.rs               # AdaptStep, AdaptWizardConfig, AdaptResults, AdaptError
-│   │       │   └── draw.rs                # ratatui rendering for adapt wizard steps and layout
+│   │       ├── adapt/                     # Adapt wizard screen components  [Issue #88, #371]
+│   │       │   ├── mod.rs                 # AdaptScreen struct with Screen trait impl; wizard entry point; complete_scaffold(), set_scaffold_result()  [Issue #371]
+│   │       │   ├── types.rs               # AdaptStep (+ Scaffolding variant), AdaptWizardConfig, AdaptResults (+ scaffold field), AdaptError  [Issue #371]
+│   │       │   └── draw.rs                # ratatui rendering for adapt wizard steps and layout; scaffold phase rendering  [Issue #371]
 │   │       ├── home/                      # Home screen components
 │   │       │   ├── mod.rs                 # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; loading_suggestions bool field; R key emits RefreshSuggestions; Tab-based focus navigation  [Issue #31, #49, #34, #35, #86]
 │   │       │   ├── draw.rs                # ratatui rendering for home screen layout and panels; draw_suggestions() renders Suggestions panel with "Loading..." placeholder
@@ -307,14 +308,15 @@ maestro/
 | `src/git.rs` | GitOps trait and CLI-backed commit+push (Phase 3) |
 | `src/models.rs` | Label-based model routing (Phase 3) |
 | `src/prompts.rs` | Structured issue prompt builder with task-type detection; ProjectLanguage detection; guardrail resolution (Phase 3, Issue #43) |
-| `src/adapt/` | Adapt pipeline: onboard existing projects to maestro workflow (Issues #87-95) |
-| `src/adapt/mod.rs` | Module exports; `cmd_adapt()` CLI entry point; adapt pipeline orchestration |
-| `src/adapt/types.rs` | `AdaptPlan`, `AdaptReport`, `TechDebtItem`, `AdaptConfig` type definitions |
+| `src/adapt/` | Adapt pipeline: onboard existing projects to maestro workflow (Issues #87-95, #371) |
+| `src/adapt/mod.rs` | Module exports; `cmd_adapt()` CLI entry point; adapt pipeline orchestration including scaffold phase; `pub mod scaffolder` (Issue #371) |
+| `src/adapt/types.rs` | `AdaptPlan`, `AdaptReport`, `TechDebtItem`, `AdaptConfig`, `ScaffoldFileStatus`, `ScaffoldedFile`, `ScaffoldResult` type definitions (Issue #371) |
 | `src/adapt/scanner.rs` | Project scanner Phase 1: detect language, framework, existing issues, CI config |
 | `src/adapt/analyzer.rs` | Claude-backed analyzer Phase 2: structured adapt plan from scan results |
 | `src/adapt/planner.rs` | Adaptation planner Phase 3: maps analyzer output to actionable plan steps |
 | `src/adapt/materializer.rs` | Plan materializer Phase 4 — `GhMaterializer`: creates GitHub issues and milestones; `ensure_labels()` auto-creates missing labels before issue creation; `STANDARD_LABEL_COLORS` constant defines canonical hex colors for all maestro labels (Issues #93, #348) |
-| `src/adapt/prompts.rs` | Claude prompt builders for the analyzer and planner phases |
+| `src/adapt/scaffolder.rs` | Scaffold phase — `ProjectScaffolder` trait, `ClaudeScaffolder` impl, `write_scaffold_files()`; generates project config files from the adapt plan (Issue #371) |
+| `src/adapt/prompts.rs` | Claude prompt builders for the analyzer, planner, and scaffold phases; `build_scaffold_prompt()` added (Issue #371) |
 | `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated, Command (Phase 3, Issue #40) |
 | `src/updater/` | Self-upgrade subsystem: version check, binary installation, and restart (Issue #118) |
 | `src/updater/mod.rs` | `UpgradeState` state machine (`Idle` → `Checking` → `UpdateAvailable` → `Downloading` → `Installing` → `Done` / `Failed`); `ReleaseInfo` type |
@@ -353,9 +355,9 @@ maestro/
 | `src/state/file_claims.rs` | Per-session file claim registry |
 | `src/state/progress.rs` | Session phase tracking (Phase 3) |
 | `src/tui/` | Terminal UI (ratatui) |
-| `src/tui/mod.rs` | Event loop; `handle_screen_action()`; command processing; `launch_session_from_config()`; `FetchSuggestionData` async handler for GitHub ready/failed counts and milestone progress; spawns async version check on startup via `check_for_update()` — result delivered as `VersionCheckResult` data event; key handlers for upgrade confirmation banner (`[y]` confirm / `[n]` decline); `CompletionSummary` key-intercept branch with `[i]` issue browser, `[r]` new prompt, `[l]` activity log view, `[Enter]`/`[Esc]` dashboard; `ContinuousPause` key-intercept overlay: `[s]` skip, `[r]` retry, `[q]` quit continuous loop; exit path respects `once_mode`; `PromptInputScreen` always constructed with injected history for correct Up/Down recall; `pub mod theme` (Issues #31-33, #35, #38, #46-48, #83, #84, #85, #118, #232) |
+| `src/tui/mod.rs` | Event loop; `handle_screen_action()`; command processing; `launch_session_from_config()`; `FetchSuggestionData` async handler for GitHub ready/failed counts and milestone progress; spawns async version check on startup via `check_for_update()` — result delivered as `VersionCheckResult` data event; key handlers for upgrade confirmation banner (`[y]` confirm / `[n]` decline); `CompletionSummary` key-intercept branch with `[i]` issue browser, `[r]` new prompt, `[l]` activity log view, `[Enter]`/`[Esc]` dashboard; `ContinuousPause` key-intercept overlay: `[s]` skip, `[r]` retry, `[q]` quit continuous loop; exit path respects `once_mode`; `PromptInputScreen` always constructed with injected history for correct Up/Down recall; `pub mod theme`; `RunAdaptScaffold` command dispatch (Issues #31-33, #35, #38, #46-48, #83, #84, #85, #118, #232, #371) |
 | `src/tui/app/` | App state module split into focused sub-files; `App` struct with `nav_stack: NavigationStack` field (replaces `confirm_exit_return_mode`); `navigate_to()`, `navigate_back()`, `navigate_back_or_dashboard()`, `navigate_to_root()` navigation methods; `theme: Theme`; `gh_auth_ok: bool`; `upgrade_state: UpgradeState`; `pending_prs: Vec<PendingPr>` (Issues #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52, #83, #84, #85, #118, #158, #342) |
-| `src/tui/app/types.rs` | `TuiMode` enum with `breadcrumb_label()` for human-readable mode names; `NavigationStack` struct — push/pop/peek/clear/breadcrumbs with a cap of 32 entries; `TuiCommand`, `TuiDataEvent`, `SuggestionDataPayload`, `CompletionSummaryData`, `CompletionSessionLine`, `GateFailureInfo` (Issue #342) |
+| `src/tui/app/types.rs` | `TuiMode` enum with `breadcrumb_label()` for human-readable mode names; `NavigationStack` struct — push/pop/peek/clear/breadcrumbs with a cap of 32 entries; `TuiCommand` (+ `RunAdaptScaffold`), `TuiDataEvent` (+ `AdaptScaffoldResult`), `SuggestionDataPayload`, `CompletionSummaryData`, `CompletionSessionLine`, `GateFailureInfo` (Issues #342, #371) |
 | `src/tui/app/completion_summary.rs` | `build_completion_summary()`; `transition_to_dashboard()` now calls `navigate_to_root()` to fully clear the nav stack on dashboard return (Issue #342) |
 | `src/tui/theme.rs` | `Theme` (resolved ratatui `Color` fields); `ThemeConfig` (`preset` + `overrides`); `ThemePreset` (`Dark`, `Light`); `ThemeOverrides` (per-field optional overrides); `SerializableColor` (named string / `#rrggbb` hex / 256-color index); `ColorCapability`; all 14 TUI rendering files consume theme fields instead of hardcoded `Color::` constants (Issue #38) |
 | `src/tui/activity_log.rs` | Scrollable log widget |
@@ -384,15 +386,15 @@ maestro/
 | `src/icon_mode.rs` | Shared icon mode detection: `AtomicBool` global, `init_from_config()`, `use_nerd_font()`; reads `tui.ascii_icons` config and `MAESTRO_ASCII_ICONS` env var (Issue #307) |
 | `src/icons.rs` | Shared icon registry: `IconId` enum (38 variants + `NeedsReview`), `IconPair` struct, `icon_pair()` const jump table, `get(IconId)`, `get_for_mode(id, nerd_font)` (Issue #308) |
 | `src/tui/icons.rs` | Thin re-export shim: re-exports all public items from `src/icon_mode.rs` and `src/icons.rs` so existing `tui::icons::` import paths remain valid (Issues #307, #308) |
-| `src/tui/screens/adapt/` | Adapt wizard screen: multi-step TUI wizard for onboarding a project into maestro (Issue #88) |
-| `src/tui/screens/adapt/mod.rs` | `AdaptScreen` struct implementing the `Screen` trait; wizard entry point and step coordination |
-| `src/tui/screens/adapt/types.rs` | `AdaptStep`, `AdaptWizardConfig`, `AdaptResults`, `AdaptError` type definitions |
-| `src/tui/screens/adapt/draw.rs` | ratatui rendering functions for adapt wizard steps and layout |
+| `src/tui/screens/adapt/` | Adapt wizard screen: multi-step TUI wizard for onboarding a project into maestro (Issues #88, #371) |
+| `src/tui/screens/adapt/mod.rs` | `AdaptScreen` struct implementing the `Screen` trait; wizard entry point and step coordination; `complete_scaffold()`, `set_scaffold_result()` methods (Issue #371) |
+| `src/tui/screens/adapt/types.rs` | `AdaptStep` (+ `Scaffolding` variant), `AdaptWizardConfig`, `AdaptResults` (+ `scaffold` field), `AdaptError` type definitions (Issue #371) |
+| `src/tui/screens/adapt/draw.rs` | ratatui rendering functions for adapt wizard steps and layout; scaffold phase rendering (Issue #371) |
 | `src/tui/screens/pr_review/` | PR review screen: multi-step TUI screen for reviewing and submitting pull request feedback |
 | `src/tui/screens/pr_review/mod.rs` | `PrReviewScreen` struct implementing the `Screen` trait |
 | `src/tui/screens/pr_review/types.rs` | `PrReviewStep` state machine, `ReviewForm` and related type definitions |
 | `src/tui/screens/pr_review/draw.rs` | ratatui rendering logic with markdown integration |
-| `src/tui/screen_dispatch.rs` | `ScreenDispatch`: routes key events and render calls to the active screen; constructor accepts `FeatureFlags` to supply the settings screen; always injects prompt history when constructing `PromptInputScreen`; `ScreenAction::Push` delegates to `navigate_to()`, `ScreenAction::Pop` delegates to `navigate_back()` (Issues #146, #232, #342) |
+| `src/tui/screen_dispatch.rs` | `ScreenDispatch`: routes key events and render calls to the active screen; constructor accepts `FeatureFlags` to supply the settings screen; always injects prompt history when constructing `PromptInputScreen`; `ScreenAction::Push` delegates to `navigate_to()`, `ScreenAction::Pop` delegates to `navigate_back()`; `Scaffolding` case wired in `StartAdaptPipeline` dispatch (Issues #146, #232, #342, #371) |
 | `src/tui/spinner.rs` | Braille spinner helpers: `spinner_frame()`, `format_thinking_elapsed()`, full spinner activity string builder |
 | `src/tui/snapshot_tests/` | TUI snapshot test suite; 33 tests across 7 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issue #16) |
 | `src/tui/snapshot_tests/overview.rs` | 6 snapshot tests for `PanelView`: empty, single running, multiple, selected, context overflow, forked |

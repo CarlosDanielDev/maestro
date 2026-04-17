@@ -3,7 +3,9 @@ pub mod types;
 
 pub use types::*;
 
-use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
+use crate::adapt::types::{
+    AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile, ScaffoldResult,
+};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -153,12 +155,32 @@ impl AdaptScreen {
             AdaptResults::clear_cache();
             None
         } else {
-            self.step = AdaptStep::Materializing;
+            self.step = AdaptStep::Scaffolding;
+            let profile = self.results.profile.clone()?;
             let report = self.results.report.clone()?;
-            Some(crate::tui::app::TuiCommand::RunAdaptMaterialize(
-                plan, report,
+            Some(crate::tui::app::TuiCommand::RunAdaptScaffold(
+                config, profile, report, plan,
             ))
         }
+    }
+
+    pub fn set_scaffold_result(&mut self, result: ScaffoldResult) {
+        self.results.scaffold = Some(result);
+    }
+
+    /// Advance the wizard after a successful scaffold phase.
+    pub fn complete_scaffold(
+        &mut self,
+        result: ScaffoldResult,
+    ) -> Option<crate::tui::app::TuiCommand> {
+        self.set_scaffold_result(result);
+        self.results.save_cache();
+        self.step = AdaptStep::Materializing;
+        let plan = self.results.plan.clone()?;
+        let report = self.results.report.clone()?;
+        Some(crate::tui::app::TuiCommand::RunAdaptMaterialize(
+            plan, report,
+        ))
     }
 
     /// Advance the wizard after a successful materialize phase.
@@ -741,13 +763,99 @@ mod tests {
     }
 
     #[test]
-    fn resume_step_materializing_when_plan_cached() {
+    fn resume_step_scaffolding_when_plan_cached() {
         let results = AdaptResults {
             profile: Some(make_mock_profile()),
             report: Some(make_mock_report()),
             plan: Some(make_mock_plan()),
             ..Default::default()
         };
+        assert_eq!(results.resume_step(), AdaptStep::Scaffolding);
+    }
+
+    #[test]
+    fn resume_step_materializing_when_scaffold_cached() {
+        use crate::adapt::types::{ScaffoldFileStatus, ScaffoldResult, ScaffoldedFile};
+        let results = AdaptResults {
+            profile: Some(make_mock_profile()),
+            report: Some(make_mock_report()),
+            plan: Some(make_mock_plan()),
+            scaffold: Some(ScaffoldResult {
+                files: vec![ScaffoldedFile {
+                    path: "CLAUDE.md".into(),
+                    status: ScaffoldFileStatus::Created,
+                    reason: None,
+                }],
+                created_count: 1,
+                skipped_count: 0,
+            }),
+            ..Default::default()
+        };
         assert_eq!(results.resume_step(), AdaptStep::Materializing);
+    }
+
+    // ── Scaffold setters and transitions ──────────────────────────────
+
+    #[test]
+    fn set_scaffold_result_stores_result() {
+        use crate::adapt::types::ScaffoldResult;
+        let mut screen = AdaptScreen::new();
+        let sr = ScaffoldResult {
+            files: vec![],
+            created_count: 0,
+            skipped_count: 0,
+        };
+        screen.set_scaffold_result(sr);
+        assert!(screen.results.scaffold.is_some());
+    }
+
+    #[test]
+    fn complete_plan_transitions_to_scaffolding() {
+        let mut screen = AdaptScreen::new();
+        screen.results.profile = Some(make_mock_profile());
+        screen.results.report = Some(make_mock_report());
+        let cmd = screen.complete_plan(make_mock_plan());
+        assert_eq!(screen.step, AdaptStep::Scaffolding);
+        assert!(matches!(
+            cmd,
+            Some(crate::tui::app::TuiCommand::RunAdaptScaffold(_, _, _, _))
+        ));
+    }
+
+    #[test]
+    fn complete_scaffold_transitions_to_materializing() {
+        use crate::adapt::types::ScaffoldResult;
+        let mut screen = AdaptScreen::new();
+        screen.step = AdaptStep::Scaffolding;
+        screen.results.profile = Some(make_mock_profile());
+        screen.results.report = Some(make_mock_report());
+        screen.results.plan = Some(make_mock_plan());
+        let sr = ScaffoldResult {
+            files: vec![],
+            created_count: 0,
+            skipped_count: 0,
+        };
+        let cmd = screen.complete_scaffold(sr);
+        assert_eq!(screen.step, AdaptStep::Materializing);
+        assert!(matches!(
+            cmd,
+            Some(crate::tui::app::TuiCommand::RunAdaptMaterialize(_, _))
+        ));
+    }
+
+    #[test]
+    fn complete_scaffold_stores_result() {
+        use crate::adapt::types::ScaffoldResult;
+        let mut screen = AdaptScreen::new();
+        screen.step = AdaptStep::Scaffolding;
+        screen.results.report = Some(make_mock_report());
+        screen.results.plan = Some(make_mock_plan());
+        let sr = ScaffoldResult {
+            files: vec![],
+            created_count: 0,
+            skipped_count: 0,
+        };
+        screen.complete_scaffold(sr);
+        assert!(screen.results.scaffold.is_some());
     }
 }

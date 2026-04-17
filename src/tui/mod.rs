@@ -363,6 +363,16 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::AdaptPlanResult(result));
                     });
                 }
+                app::TuiCommand::RunAdaptScaffold(config, profile, report, plan) => {
+                    let tx = app.data_tx.clone();
+                    let model = config.model.unwrap_or_else(|| "sonnet".to_string());
+                    tokio::spawn(async move {
+                        use crate::adapt::scaffolder::{ClaudeScaffolder, ProjectScaffolder};
+                        let scaffolder = ClaudeScaffolder::new(model);
+                        let result = scaffolder.scaffold(&profile, &report, &plan).await;
+                        let _ = tx.send(app::TuiDataEvent::AdaptScaffoldResult(result));
+                    });
+                }
                 app::TuiCommand::RunAdaptMaterialize(plan, report) => {
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {

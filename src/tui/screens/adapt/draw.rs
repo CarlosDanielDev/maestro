@@ -106,6 +106,7 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         phases.push((AdaptStep::Planning, "Generating plan"));
     }
     if !screen.config.scan_only && !screen.config.no_issues && !screen.config.dry_run {
+        phases.push((AdaptStep::Scaffolding, "Scaffolding .claude/"));
         phases.push((AdaptStep::Materializing, "Creating issues"));
     }
 
@@ -236,6 +237,20 @@ fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         ]));
     }
 
+    if let Some(ref scaffold) = screen.results.scaffold {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Scaffolded: ", Style::default().fg(theme.text_secondary)),
+            Span::styled(
+                format!(
+                    "{} created, {} skipped",
+                    scaffold.created_count, scaffold.skipped_count
+                ),
+                Style::default().fg(theme.text_primary),
+            ),
+        ]));
+    }
+
     if let Some(ref mat) = screen.results.materialize {
         lines.push(Line::from(""));
         let label = if mat.dry_run { "Dry run" } else { "Created" };
@@ -333,6 +348,16 @@ fn phase_summary(screen: &AdaptScreen, step: AdaptStep) -> String {
             if let Some(ref p) = screen.results.plan {
                 let issues: usize = p.milestones.iter().map(|m| m.issues.len()).sum();
                 format!(" — {} milestones, {} issues", p.milestones.len(), issues)
+            } else {
+                String::new()
+            }
+        }
+        AdaptStep::Scaffolding => {
+            if let Some(ref s) = screen.results.scaffold {
+                format!(
+                    " — {} created, {} skipped",
+                    s.created_count, s.skipped_count
+                )
             } else {
                 String::new()
             }
