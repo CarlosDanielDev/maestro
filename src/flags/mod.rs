@@ -1,3 +1,15 @@
+//! Feature flag definitions and runtime store.
+//!
+//! Flags are **user-facing boolean toggles** that gate experimental or optional
+//! features (e.g. `CiAutoFix`, `ReviewCouncil`, `TurboQuant`). They are resolved
+//! once at startup from three layers (compiled defaults → `maestro.toml` → CLI
+//! arguments) and live in memory for the duration of the process.
+//!
+//! This is intentionally separate from [`crate::state`], which handles **persistent
+//! session data** (JSON state file, progress, file claims, prompt history) that is
+//! written to disk and survives across runs. Flags are ephemeral configuration;
+//! state is durable runtime data.
+
 pub mod store;
 
 use serde::{Deserialize, Serialize};
