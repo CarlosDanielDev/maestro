@@ -1,4 +1,4 @@
-#![allow(dead_code)] // Reason: multi-provider support (Azure DevOps) — planned feature
+#[allow(dead_code)] // Reason: multi-provider support — planned feature
 pub mod azure_devops;
 pub mod github;
 pub mod types;
@@ -12,6 +12,7 @@ use types::ProviderKind;
 use self::github::client::GhCliClient;
 
 /// Create the appropriate provider client from config.
+#[allow(dead_code)] // to be wired when provider selection is exposed via CLI/config
 pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn GitHubClient>> {
     match config.kind {
         ProviderKind::Github => Ok(Box::new(GhCliClient::new())),
@@ -29,6 +30,7 @@ pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn GitHubClient>>
 }
 
 /// Detect provider from a git remote URL string.
+#[allow(dead_code)] // to be wired when provider auto-detection is exposed
 pub fn detect_provider_from_remote(url: &str) -> ProviderKind {
     if url.contains("dev.azure.com") || url.contains("visualstudio.com") {
         ProviderKind::AzureDevops

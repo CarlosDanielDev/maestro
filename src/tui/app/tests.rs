@@ -299,7 +299,7 @@ fn build_completion_summary_sets_pr_link_when_pending_check_matches() {
     );
     session.status = crate::session::types::SessionStatus::Completed;
     app.pool.enqueue(session);
-    app.ci_poller.pending_pr_checks.push(PendingPrCheck {
+    app.ci_poller.add_check(PendingPrCheck {
         pr_number: 42,
         issue_number: 10,
         branch: "feat/issue-10".into(),
@@ -328,7 +328,7 @@ fn build_completion_summary_pr_link_empty_when_no_matching_check() {
         Some(99),
     );
     app.pool.enqueue(session);
-    app.ci_poller.pending_pr_checks.push(PendingPrCheck {
+    app.ci_poller.add_check(PendingPrCheck {
         pr_number: 5,
         issue_number: 5,
         branch: "feat/issue-5".into(),
@@ -357,7 +357,7 @@ fn build_completion_summary_pr_link_empty_when_no_issue_number() {
         None,
     );
     app.pool.enqueue(session);
-    app.ci_poller.pending_pr_checks.push(PendingPrCheck {
+    app.ci_poller.add_check(PendingPrCheck {
         pr_number: 1,
         issue_number: 1,
         branch: "feat/issue-1".into(),
@@ -1083,7 +1083,7 @@ fn poll_ci_status_skips_fix_when_ci_auto_fix_flag_disabled() {
         vec!["ci_auto_fix".to_string()],
     );
     let mut app = make_app_with_flags(flags);
-    app.ci_poller.pending_pr_checks.push(PendingPrCheck {
+    app.ci_poller.add_check(PendingPrCheck {
         pr_number: 99,
         issue_number: 42,
         branch: "feat/test".to_string(),

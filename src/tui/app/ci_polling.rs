@@ -27,26 +27,26 @@ impl Default for CiPoller {
 
 impl CiPoller {
     /// Returns true if a poll should happen (interval elapsed and checks pending).
-    #[allow(dead_code)] // used in tests; poll_ci_status inlines this check currently
     pub fn should_poll(&self, interval: Duration) -> bool {
         self.last_ci_poll.elapsed() >= interval && !self.pending_pr_checks.is_empty()
     }
 
     /// Record that a poll just happened.
-    #[allow(dead_code)] // used in tests; poll_ci_status sets last_ci_poll directly currently
     pub fn mark_polled(&mut self) {
         self.last_ci_poll = Instant::now();
     }
 
     /// Add a new pending PR check.
-    #[allow(dead_code)] // used in tests; callers currently push directly
     pub fn add_check(&mut self, check: PendingPrCheck) {
         self.pending_pr_checks.push(check);
     }
 
     /// Remove completed checks by index (must be sorted ascending).
-    #[allow(dead_code)] // used in tests; callers currently inline the logic
     pub fn remove_completed(&mut self, indices: &[usize]) {
+        debug_assert!(
+            indices.windows(2).all(|w| w[0] <= w[1]),
+            "remove_completed requires sorted ascending indices"
+        );
         for &i in indices {
             let pr_number = self.pending_pr_checks[i].pr_number;
             self.ci_check_details.remove(&pr_number);
@@ -128,18 +128,16 @@ impl App {
             .map(|c| Duration::from_secs(c.gates.ci_poll_interval_secs))
             .unwrap_or(Duration::from_secs(30));
 
+        if !self.ci_poller.should_poll(ci_poll_interval) {
+            return;
+        }
+        self.ci_poller.mark_polled();
+
         let ci_max_wait = self
             .config
             .as_ref()
             .map(|c| Duration::from_secs(c.gates.ci_max_wait_secs))
             .unwrap_or(Duration::from_secs(1800));
-
-        if self.ci_poller.last_ci_poll.elapsed() < ci_poll_interval
-            || self.ci_poller.pending_pr_checks.is_empty()
-        {
-            return;
-        }
-        self.ci_poller.last_ci_poll = Instant::now();
 
         let auto_fix_enabled = self.flags.is_enabled(crate::flags::Flag::CiAutoFix);
         let max_retries = self
@@ -360,14 +358,8 @@ impl App {
             self.ci_poller.ci_check_details.insert(pr_number, details);
         }
 
-        // Remove completed checks in reverse order to preserve indices
+        // Remove completed checks
         completed_indices.sort_unstable();
-        for &i in &completed_indices {
-            let pr_number = self.ci_poller.pending_pr_checks[i].pr_number;
-            self.ci_poller.ci_check_details.remove(&pr_number);
-        }
-        for i in completed_indices.into_iter().rev() {
-            self.ci_poller.pending_pr_checks.remove(i);
-        }
+        self.ci_poller.remove_completed(&completed_indices);
     }
 }

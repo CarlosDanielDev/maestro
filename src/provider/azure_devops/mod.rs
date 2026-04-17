@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Reason: Azure DevOps provider — planned multi-provider feature
 use super::types::Issue;
 use crate::provider::github::client::GitHubClient;
 use crate::provider::github::types::GhMilestone;

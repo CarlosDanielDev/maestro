@@ -98,7 +98,6 @@ pub struct App {
     pub pending_prs: Vec<crate::provider::github::types::PendingPr>,
     pub flags: crate::flags::store::FeatureFlags,
     pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
-    // ci_check_details moved into ci_poller
     pub queue_executor: Option<crate::work::executor::QueueExecutor>,
     pub queue_launch_configs: Option<Vec<crate::tui::screens::SessionConfig>>,
     pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
@@ -186,7 +185,6 @@ impl App {
             pending_prs: Vec::new(),
             flags: crate::flags::store::FeatureFlags::default(),
             queue_confirmation_screen: None,
-            // ci_check_details is in ci_poller
             queue_executor: None,
             queue_launch_configs: None,
             hollow_retry_screen: None,
