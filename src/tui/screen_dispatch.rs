@@ -302,6 +302,17 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                                 .push(app::TuiCommand::RunAdaptPlan(config, profile, report, prd));
                         }
                     }
+                    AdaptStep::Scaffolding => {
+                        if let (Some(profile), Some(report), Some(plan)) = (
+                            screen.results.profile.clone(),
+                            screen.results.report.clone(),
+                            screen.results.plan.clone(),
+                        ) {
+                            app.pending_commands.push(app::TuiCommand::RunAdaptScaffold(
+                                config, profile, report, plan,
+                            ));
+                        }
+                    }
                     AdaptStep::Materializing => {
                         if let (Some(plan), Some(report)) =
                             (screen.results.plan.clone(), screen.results.report.clone())

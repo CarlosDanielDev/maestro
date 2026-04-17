@@ -1547,12 +1547,12 @@ mod adapt_chaining {
         app.handle_data_event(TuiDataEvent::AdaptPlanResult(Ok(make_plan())));
 
         let screen = app.adapt_screen.as_ref().unwrap();
-        assert_eq!(screen.step, AdaptStep::Materializing);
+        assert_eq!(screen.step, AdaptStep::Scaffolding);
         assert!(screen.results.plan.is_some());
         assert_eq!(app.pending_commands.len(), 1);
         assert!(matches!(
             app.pending_commands[0],
-            TuiCommand::RunAdaptMaterialize(_, _)
+            TuiCommand::RunAdaptScaffold(_, _, _, _)
         ));
     }
 
@@ -1662,6 +1662,20 @@ mod adapt_chaining {
         let cmd = app.pending_commands.pop().unwrap();
         assert!(matches!(cmd, TuiCommand::RunAdaptPlan(_, _, _, _)));
         app.handle_data_event(TuiDataEvent::AdaptPlanResult(Ok(make_plan())));
+        assert_eq!(
+            app.adapt_screen.as_ref().unwrap().step,
+            AdaptStep::Scaffolding
+        );
+
+        // Phase 3.5: Scaffold
+        let cmd = app.pending_commands.pop().unwrap();
+        assert!(matches!(cmd, TuiCommand::RunAdaptScaffold(_, _, _, _)));
+        use crate::adapt::types::ScaffoldResult;
+        app.handle_data_event(TuiDataEvent::AdaptScaffoldResult(Ok(ScaffoldResult {
+            files: vec![],
+            created_count: 0,
+            skipped_count: 0,
+        })));
         assert_eq!(
             app.adapt_screen.as_ref().unwrap().step,
             AdaptStep::Materializing
