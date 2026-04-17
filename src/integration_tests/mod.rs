@@ -4,6 +4,8 @@
 //! All external dependencies are replaced with in-process mocks.
 
 #[cfg(test)]
+mod adapt_pipeline;
+#[cfg(test)]
 mod completion_pipeline;
 #[cfg(test)]
 mod concurrent_sessions;
@@ -15,8 +17,6 @@ mod stream_parsing;
 mod upgrade;
 #[cfg(test)]
 mod worktree_lifecycle;
-#[cfg(test)]
-mod adapt_pipeline;
 
 /// Shared test helpers used across integration test modules.
 #[cfg(test)]
