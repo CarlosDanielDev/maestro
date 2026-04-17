@@ -1,7 +1,16 @@
-#![allow(dead_code)] // Reason: built-in mode resolution — to be wired via CLI mode flag
+//! Session mode resolution for maestro.
+//!
+//! Modes control how a Claude session behaves: which tools are available,
+//! what system prompt is injected, and what permission level is enforced.
+//! Each issue can select a mode via the `maestro:mode:<name>` label convention.
+//!
+//! Resolution priority: config-defined modes (`[modes.<name>]` in `maestro.toml`)
+//! take precedence over the built-in defaults (`orchestrator`, `vibe`, `review`).
+
 use crate::config::{Config, ModeConfig};
 
 /// Built-in mode definitions. These are available even without config.
+#[allow(dead_code)] // wired via resolve_mode — not directly called outside this module yet
 pub fn builtin_modes() -> Vec<(&'static str, ModeConfig)> {
     vec![
         (
@@ -35,6 +44,7 @@ pub fn builtin_modes() -> Vec<(&'static str, ModeConfig)> {
 
 /// Resolve a mode name to its configuration.
 /// Priority: config-defined modes > built-in modes.
+#[allow(dead_code)] // to be wired via CLI --mode flag
 pub fn resolve_mode(name: &str, config: Option<&Config>) -> Option<ModeConfig> {
     // Check config-defined modes first
     if let Some(cfg) = config
