@@ -286,9 +286,10 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                             screen.results.profile.clone(),
                             screen.results.report.clone(),
                         ) {
-                            app.pending_commands.push(
-                                app::TuiCommand::RunAdaptConsolidate(config, profile, report),
-                            );
+                            app.pending_commands
+                                .push(app::TuiCommand::RunAdaptConsolidate(
+                                    config, profile, report,
+                                ));
                         }
                     }
                     AdaptStep::Planning => {

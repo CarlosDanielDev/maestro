@@ -1654,7 +1654,7 @@ mod adapt_chaining {
         let cmd = app.pending_commands.pop().unwrap();
         assert!(matches!(cmd, TuiCommand::RunAdaptConsolidate(_, _, _)));
         app.handle_data_event(TuiDataEvent::AdaptConsolidateResult(Ok(
-            "# PRD: Test".to_string(),
+            "# PRD: Test".to_string()
         )));
         assert_eq!(app.adapt_screen.as_ref().unwrap().step, AdaptStep::Planning);
 

@@ -105,17 +105,8 @@ async fn main() -> anyhow::Result<()> {
             })
             .await
         }
-        Some(Commands::Prd {
-            path,
-            model,
-            force,
-        }) => {
-            adapt::cmd_prd(adapt::PrdConfig {
-                path,
-                model,
-                force,
-            })
-            .await
+        Some(Commands::Prd { path, model, force }) => {
+            adapt::cmd_prd(adapt::PrdConfig { path, model, force }).await
         }
         Some(Commands::Sanitize {
             path,

@@ -37,9 +37,9 @@ pub struct PrdConfig {
 }
 
 pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
+    use analyzer::{ClaudeAnalyzer, ProjectAnalyzer};
     use prd::{ClaudePrdGenerator, PrdGenerator};
     use scanner::{LocalProjectScanner, ProjectScanner};
-    use analyzer::{ClaudeAnalyzer, ProjectAnalyzer};
 
     let output_path = config.path.join("docs/PRD.md");
     if output_path.exists() && !config.force {
@@ -155,7 +155,9 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     // Phase 3: Plan
     eprintln!("Phase 3: Planning milestones and issues...");
     let planner = ClaudePlanner::new(model);
-    let plan = planner.plan(&profile, &report, prd_content.as_deref()).await?;
+    let plan = planner
+        .plan(&profile, &report, prd_content.as_deref())
+        .await?;
     eprintln!(
         "  {} milestones, {} issues",
         plan.milestones.len(),

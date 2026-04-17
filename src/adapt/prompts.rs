@@ -117,10 +117,7 @@ pub fn build_planning_prompt(
         None => String::new(),
     };
     let prd_section = match prd_content {
-        Some(prd) => format!(
-            "\n## Product Requirements Document\n\n{}\n",
-            prd
-        ),
+        Some(prd) => format!("\n## Product Requirements Document\n\n{}\n", prd),
         None => String::new(),
     };
     format!(
@@ -272,7 +269,8 @@ mod tests {
 
     #[test]
     fn build_planning_prompt_contains_both_inputs() {
-        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
+        let prompt =
+            build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
         assert!(prompt.contains(r#"{"name":"test"}"#));
         assert!(prompt.contains(r#"{"summary":"good"}"#));
         assert!(prompt.contains("milestones"));
@@ -292,7 +290,8 @@ mod tests {
 
     #[test]
     fn build_planning_prompt_omits_naming_section_when_none() {
-        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
+        let prompt =
+            build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
         assert!(!prompt.contains("Milestone naming"));
     }
 
@@ -386,7 +385,8 @@ That's all."#;
 
     #[test]
     fn build_planning_prompt_omits_prd_when_none() {
-        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
+        let prompt =
+            build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
         assert!(!prompt.contains("Product Requirements Document"));
     }
 
