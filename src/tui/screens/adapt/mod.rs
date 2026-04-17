@@ -654,6 +654,71 @@ mod tests {
         assert_eq!(results.resume_step(), AdaptStep::Analyzing);
     }
 
+    // ── complete_analyze → Consolidating ────────────────────────────
+
+    #[test]
+    fn complete_analyze_transitions_to_consolidating() {
+        let mut screen = AdaptScreen::new();
+        screen.results.profile = Some(make_mock_profile());
+        let cmd = screen.complete_analyze(make_mock_report());
+        assert_eq!(screen.step, AdaptStep::Consolidating);
+        assert!(matches!(
+            cmd,
+            Some(crate::tui::app::TuiCommand::RunAdaptConsolidate(_, _, _))
+        ));
+    }
+
+    #[test]
+    fn complete_analyze_with_no_issues_skips_consolidating() {
+        let mut screen = AdaptScreen::new();
+        screen.config.no_issues = true;
+        screen.results.profile = Some(make_mock_profile());
+        let cmd = screen.complete_analyze(make_mock_report());
+        assert_eq!(screen.step, AdaptStep::Complete);
+        assert!(cmd.is_none());
+    }
+
+    // ── complete_consolidate ─────────────────────────────────────────
+
+    #[test]
+    fn complete_consolidate_transitions_to_planning() {
+        let mut screen = AdaptScreen::new();
+        screen.step = AdaptStep::Consolidating;
+        screen.results.profile = Some(make_mock_profile());
+        screen.results.report = Some(make_mock_report());
+        let cmd = screen.complete_consolidate("# PRD".into());
+        assert_eq!(screen.step, AdaptStep::Planning);
+        assert!(matches!(
+            cmd,
+            Some(crate::tui::app::TuiCommand::RunAdaptPlan(_, _, _, _))
+        ));
+    }
+
+    #[test]
+    fn complete_consolidate_stores_prd_content() {
+        let mut screen = AdaptScreen::new();
+        screen.step = AdaptStep::Consolidating;
+        screen.results.profile = Some(make_mock_profile());
+        screen.results.report = Some(make_mock_report());
+        screen.complete_consolidate("# Generated PRD".into());
+        assert_eq!(
+            screen.results.prd_content.as_deref(),
+            Some("# Generated PRD")
+        );
+    }
+
+    #[test]
+    fn complete_consolidate_without_profile_returns_none() {
+        let mut screen = AdaptScreen::new();
+        screen.step = AdaptStep::Consolidating;
+        screen.results.profile = None;
+        screen.results.report = Some(make_mock_report());
+        let cmd = screen.complete_consolidate("# PRD".into());
+        assert!(cmd.is_none());
+    }
+
+    // ── resume_step with Consolidating ────────────────────────────────
+
     #[test]
     fn resume_step_consolidating_when_report_cached() {
         let results = AdaptResults {

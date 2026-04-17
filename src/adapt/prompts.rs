@@ -373,6 +373,18 @@ That's all."#;
     }
 
     #[test]
+    fn build_planning_prompt_prd_and_naming_hint_coexist() {
+        let prompt = build_planning_prompt(
+            r#"{"name":"test"}"#,
+            r#"{"summary":"good"}"#,
+            Some("Use semver format: vX.Y.Z"),
+            Some("## PRD content here"),
+        );
+        assert!(prompt.contains("Use semver format: vX.Y.Z"));
+        assert!(prompt.contains("## PRD content here"));
+    }
+
+    #[test]
     fn build_planning_prompt_omits_prd_when_none() {
         let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
         assert!(!prompt.contains("Product Requirements Document"));

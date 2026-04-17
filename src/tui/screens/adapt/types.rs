@@ -193,5 +193,30 @@ mod tests {
         assert!(results.materialize.is_none());
     }
 
+    #[test]
+    fn adapt_results_prd_content_defaults_to_none() {
+        let results = AdaptResults::default();
+        assert!(results.prd_content.is_none());
+    }
+
+    #[test]
+    fn adapt_results_prd_content_survives_json_round_trip() {
+        let results = AdaptResults {
+            prd_content: Some("# PRD".into()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&results).unwrap();
+        let rt: AdaptResults = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.prd_content, Some("# PRD".into()));
+    }
+
+    #[test]
+    fn adapt_results_json_without_prd_field_deserializes_as_none() {
+        let raw = r#"{"profile":null,"report":null,"plan":null,"materialize":null}"#;
+        let result: Result<AdaptResults, _> = serde_json::from_str(raw);
+        assert!(result.is_ok());
+        assert!(result.unwrap().prd_content.is_none());
+    }
+
     // resume_step tests are in mod.rs tests (they need make_mock_profile helper)
 }
