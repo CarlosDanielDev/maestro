@@ -67,7 +67,7 @@ impl App {
                             format!("PR #{} created (retry {})", pr_num, attempt),
                             LogLevel::Info,
                         );
-                        self.pending_pr_checks.push(PendingPrCheck {
+                        self.ci_poller.pending_pr_checks.push(PendingPrCheck {
                             pr_number: pr_num,
                             issue_number,
                             branch: branch.clone(),

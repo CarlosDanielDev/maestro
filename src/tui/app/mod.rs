@@ -25,7 +25,6 @@ use crate::mascot::animator::SystemClock;
 use crate::models::ModelRouter;
 use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::plugins::runner::PluginRunner;
-use crate::provider::github::ci::PendingPrCheck;
 use crate::provider::github::client::GitHubClient;
 use crate::session::context_monitor::{ContextMonitor, ProductionContextMonitor};
 use crate::session::fork::ForkPolicy;
@@ -43,6 +42,7 @@ use crate::tui::panels::PanelView;
 use crate::tui::theme::Theme;
 use crate::work::assigner::WorkAssigner;
 use chrono::Utc;
+pub use ci_polling::CiPoller;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -70,8 +70,7 @@ pub struct App {
     /// Navigation back-stack for consistent [Esc] behavior.
     pub nav_stack: NavigationStack,
     pub session_logger: SessionLogger,
-    pub pending_pr_checks: Vec<PendingPrCheck>,
-    pub(crate) last_ci_poll: Instant,
+    pub ci_poller: CiPoller,
     pub(crate) last_work_tick: Instant,
     pub plugin_runner: Option<PluginRunner>,
     pub help_state: Option<crate::tui::help::HelpOverlayState>,
@@ -99,8 +98,7 @@ pub struct App {
     pub pending_prs: Vec<crate::provider::github::types::PendingPr>,
     pub flags: crate::flags::store::FeatureFlags,
     pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
-    pub ci_check_details:
-        std::collections::HashMap<u64, Vec<crate::provider::github::ci::CheckRunDetail>>,
+    // ci_check_details moved into ci_poller
     pub queue_executor: Option<crate::work::executor::QueueExecutor>,
     pub queue_launch_configs: Option<Vec<crate::tui::screens::SessionConfig>>,
     pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
@@ -160,8 +158,7 @@ impl App {
             tui_mode: TuiMode::Overview,
             nav_stack: NavigationStack::default(),
             session_logger: SessionLogger::new(SessionLogger::default_dir()),
-            pending_pr_checks: Vec::new(),
-            last_ci_poll: Instant::now(),
+            ci_poller: CiPoller::default(),
             last_work_tick: Instant::now(),
             plugin_runner: None,
             help_state: None,
@@ -189,7 +186,7 @@ impl App {
             pending_prs: Vec::new(),
             flags: crate::flags::store::FeatureFlags::default(),
             queue_confirmation_screen: None,
-            ci_check_details: std::collections::HashMap::new(),
+            // ci_check_details is in ci_poller
             queue_executor: None,
             queue_launch_configs: None,
             hollow_retry_screen: None,

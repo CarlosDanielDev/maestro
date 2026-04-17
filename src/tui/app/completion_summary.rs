@@ -13,6 +13,7 @@ impl App {
         let mut total_cost = 0.0;
 
         let pr_map: HashMap<u64, u64> = self
+            .ci_poller
             .pending_pr_checks
             .iter()
             .map(|p| (p.issue_number, p.pr_number))
