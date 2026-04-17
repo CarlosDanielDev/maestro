@@ -1,3 +1,10 @@
+//! PolarQuant — recursive polar decomposition quantizer.
+//!
+//! Encodes a vector's direction by recursively splitting it into polar angle
+//! pairs, quantizing each angle into a fixed number of bits. The result is a
+//! compact code that preserves angular similarity (cosine distance) at the
+//! cost of magnitude information, which is stored separately as a scalar norm.
+
 use super::types::QuantizedVector;
 use std::f32::consts::PI;
 

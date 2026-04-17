@@ -1,3 +1,23 @@
+//! TurboQuant — vector quantization for context compression.
+//!
+//! Combines **PolarQuant** (recursive polar decomposition) with a
+//! **QJL** (Quantized Johnson-Lindenstrauss) residual sketch to compress
+//! high-dimensional embedding vectors into compact bit representations
+//! while preserving dot-product similarity.
+//!
+//! The pipeline is gated by the `TurboQuant` feature flag and invoked
+//! during session context overflow to compress token embeddings before
+//! re-injection.
+//!
+//! ## Pipeline stages
+//!
+//! 1. **PolarQuant** (`polar.rs`) — encodes the direction via recursive
+//!    polar angle quantization at `total_bits - 1` bits.
+//! 2. **QJL** (`qjl.rs`) — sketches the residual using a seeded random
+//!    projection at 1 bit per dimension.
+//! 3. **Combine** (`pipeline.rs`) — merges both representations and
+//!    provides dot-product estimation for similarity search.
+
 pub mod adapter;
 pub mod pipeline;
 pub mod polar;

@@ -1,3 +1,10 @@
+//! Quantized Johnson-Lindenstrauss (QJL) projection.
+//!
+//! Compresses a residual vector into a 1-bit-per-dimension sketch using a
+//! seeded random Gaussian projection matrix. The seed makes the projection
+//! deterministic and reproducible, so the same seed can reconstruct the
+//! projection at dot-product estimation time.
+
 use super::types::QjlBitVector;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
