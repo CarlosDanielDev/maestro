@@ -51,7 +51,15 @@ Return ONLY the JSON object, no markdown fences, no commentary."#,
     )
 }
 
-pub fn build_planning_prompt(profile_json: &str, report_json: &str) -> String {
+pub fn build_planning_prompt(
+    profile_json: &str,
+    report_json: &str,
+    milestone_naming_hint: Option<&str>,
+) -> String {
+    let naming_section = match milestone_naming_hint {
+        Some(hint) => format!("\n6. **Milestone naming**: {}\n", hint),
+        None => String::new(),
+    };
     format!(
         r#"You are creating a project adaptation plan to onboard a project to the maestro workflow.
 
@@ -97,7 +105,7 @@ Create a structured plan with milestones and DOR-compliant issues. Return a JSON
 3. **Labels**: Use `enhancement`, `testing`, `documentation`, `tech-debt` as appropriate
 4. **maestro_toml_patch**: Suggest initial configuration based on the project analysis
 5. Prefix titles with `feat:`, `test:`, `chore:`, `fix:`, or `docs:` as appropriate
-
+{naming_section}
 Return ONLY the JSON object, no markdown fences, no commentary."#,
     )
 }
@@ -200,11 +208,27 @@ mod tests {
 
     #[test]
     fn build_planning_prompt_contains_both_inputs() {
-        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#);
+        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None);
         assert!(prompt.contains(r#"{"name":"test"}"#));
         assert!(prompt.contains(r#"{"summary":"good"}"#));
         assert!(prompt.contains("milestones"));
         assert!(prompt.contains("maestro_toml_patch"));
+    }
+
+    #[test]
+    fn build_planning_prompt_includes_naming_hint_when_provided() {
+        let prompt = build_planning_prompt(
+            r#"{"name":"test"}"#,
+            r#"{"summary":"good"}"#,
+            Some("Use semver format: vX.Y.Z"),
+        );
+        assert!(prompt.contains("Use semver format: vX.Y.Z"));
+    }
+
+    #[test]
+    fn build_planning_prompt_omits_naming_section_when_none() {
+        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None);
+        assert!(!prompt.contains("Milestone naming"));
     }
 
     #[test]

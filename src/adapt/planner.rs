@@ -31,7 +31,7 @@ impl AdaptPlanner for ClaudePlanner {
     ) -> anyhow::Result<AdaptPlan> {
         let profile_json = serde_json::to_string_pretty(profile)?;
         let report_json = serde_json::to_string_pretty(report)?;
-        let prompt = build_planning_prompt(&profile_json, &report_json);
+        let prompt = build_planning_prompt(&profile_json, &report_json, None);
         let raw = run_claude_print(&self.model, &prompt, &profile.root).await?;
         parse_json_response(&raw)
     }

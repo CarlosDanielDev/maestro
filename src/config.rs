@@ -35,12 +35,39 @@ pub struct Config {
     pub flags: FlagsConfig,
     #[serde(default)]
     pub turboquant: TurboQuantConfig,
+    #[serde(default)]
+    pub adapt: AdaptSettings,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct FlagsConfig {
     #[serde(flatten)]
     pub entries: HashMap<String, bool>,
+}
+
+/// Milestone naming convention for the adapt pipeline.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MilestoneNaming {
+    /// Infer naming from existing milestones (e.g. semver `vX.X.X`).
+    Standard,
+    /// Let Claude decide scope and naming (default: `MN: Description`).
+    #[default]
+    Ai,
+    /// User-provided template pattern.
+    Custom,
+}
+
+/// Configuration for the `maestro adapt` command.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdaptSettings {
+    /// How milestones should be named in the generated plan.
+    #[serde(default)]
+    pub milestone_naming: MilestoneNaming,
+    /// Custom template for milestone names (only used when `milestone_naming = "custom"`).
+    /// Supports `{n}` (index) and `{title}` (description) placeholders.
+    #[serde(default)]
+    pub milestone_template: Option<String>,
 }
 
 pub use crate::turboquant::types::{ApplyTarget, QuantStrategy};
@@ -1447,5 +1474,80 @@ text_primary = "cyan"
         assert!(cfg.turboquant.enabled);
         assert_eq!(cfg.turboquant.bit_width, 3);
         assert_eq!(cfg.turboquant.strategy, QuantStrategy::PolarQuant);
+    }
+
+    // -- AdaptSettings --
+
+    #[test]
+    fn adapt_settings_default_is_ai_naming() {
+        let settings = AdaptSettings::default();
+        assert_eq!(settings.milestone_naming, MilestoneNaming::Ai);
+        assert!(settings.milestone_template.is_none());
+    }
+
+    #[test]
+    fn adapt_settings_parses_standard_naming() {
+        let toml_str = r#"
+[project]
+repo = "owner/repo"
+[sessions]
+max_concurrent = 1
+default_model = "opus"
+default_mode = "orchestrator"
+[budget]
+max_cost_per_session = 1.0
+max_cost_total = 10.0
+[github]
+[notifications]
+[adapt]
+milestone_naming = "standard"
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.adapt.milestone_naming, MilestoneNaming::Standard);
+    }
+
+    #[test]
+    fn adapt_settings_parses_custom_naming_with_template() {
+        let toml_str = r#"
+[project]
+repo = "owner/repo"
+[sessions]
+max_concurrent = 1
+default_model = "opus"
+default_mode = "orchestrator"
+[budget]
+max_cost_per_session = 1.0
+max_cost_total = 10.0
+[github]
+[notifications]
+[adapt]
+milestone_naming = "custom"
+milestone_template = "v{n}.0.0 — {title}"
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.adapt.milestone_naming, MilestoneNaming::Custom);
+        assert_eq!(
+            cfg.adapt.milestone_template.as_deref(),
+            Some("v{n}.0.0 — {title}")
+        );
+    }
+
+    #[test]
+    fn adapt_settings_defaults_when_section_missing() {
+        let toml_str = r#"
+[project]
+repo = "owner/repo"
+[sessions]
+max_concurrent = 1
+default_model = "opus"
+default_mode = "orchestrator"
+[budget]
+max_cost_per_session = 1.0
+max_cost_total = 10.0
+[github]
+[notifications]
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.adapt.milestone_naming, MilestoneNaming::Ai);
     }
 }
