@@ -1,7 +1,124 @@
 use super::App;
-use crate::provider::github::ci::{CiCheck, CiChecker, CiStatus};
+use crate::provider::github::ci::{CiCheck, CiChecker, CiStatus, PendingPrCheck};
 use crate::tui::activity_log::LogLevel;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
+
+/// CI polling state, grouped for testability.
+///
+/// Tracks pending PR checks, last poll time, and per-PR check run details.
+/// Owned by `App` and accessed via `app.ci_poller`.
+#[derive(Debug)]
+pub struct CiPoller {
+    pub pending_pr_checks: Vec<PendingPrCheck>,
+    pub last_ci_poll: Instant,
+    pub ci_check_details: HashMap<u64, Vec<crate::provider::github::ci::CheckRunDetail>>,
+}
+
+impl Default for CiPoller {
+    fn default() -> Self {
+        Self {
+            pending_pr_checks: Vec::new(),
+            last_ci_poll: Instant::now(),
+            ci_check_details: HashMap::new(),
+        }
+    }
+}
+
+impl CiPoller {
+    /// Returns true if a poll should happen (interval elapsed and checks pending).
+    #[allow(dead_code)] // used in tests; poll_ci_status inlines this check currently
+    pub fn should_poll(&self, interval: Duration) -> bool {
+        self.last_ci_poll.elapsed() >= interval && !self.pending_pr_checks.is_empty()
+    }
+
+    /// Record that a poll just happened.
+    #[allow(dead_code)] // used in tests; poll_ci_status sets last_ci_poll directly currently
+    pub fn mark_polled(&mut self) {
+        self.last_ci_poll = Instant::now();
+    }
+
+    /// Add a new pending PR check.
+    #[allow(dead_code)] // used in tests; callers currently push directly
+    pub fn add_check(&mut self, check: PendingPrCheck) {
+        self.pending_pr_checks.push(check);
+    }
+
+    /// Remove completed checks by index (must be sorted ascending).
+    #[allow(dead_code)] // used in tests; callers currently inline the logic
+    pub fn remove_completed(&mut self, indices: &[usize]) {
+        for &i in indices {
+            let pr_number = self.pending_pr_checks[i].pr_number;
+            self.ci_check_details.remove(&pr_number);
+        }
+        for &i in indices.iter().rev() {
+            self.pending_pr_checks.remove(i);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_check(pr: u64) -> PendingPrCheck {
+        PendingPrCheck {
+            pr_number: pr,
+            issue_number: pr,
+            branch: format!("feat/issue-{}", pr),
+            created_at: Instant::now(),
+            check_count: 0,
+            fix_attempt: 0,
+            awaiting_fix_ci: false,
+        }
+    }
+
+    #[test]
+    fn should_poll_returns_false_when_no_checks() {
+        let poller = CiPoller::default();
+        assert!(!poller.should_poll(Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn should_poll_returns_false_when_interval_not_elapsed() {
+        let mut poller = CiPoller::default();
+        poller.add_check(make_check(1));
+        poller.mark_polled();
+        assert!(!poller.should_poll(Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn should_poll_returns_true_when_interval_elapsed_and_checks_pending() {
+        let mut poller = CiPoller::default();
+        poller.add_check(make_check(1));
+        poller.last_ci_poll = Instant::now() - Duration::from_secs(60);
+        assert!(poller.should_poll(Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn add_check_appends_to_pending() {
+        let mut poller = CiPoller::default();
+        poller.add_check(make_check(42));
+        assert_eq!(poller.pending_pr_checks.len(), 1);
+        assert_eq!(poller.pending_pr_checks[0].pr_number, 42);
+    }
+
+    #[test]
+    fn remove_completed_cleans_up_checks_and_details() {
+        let mut poller = CiPoller::default();
+        poller.add_check(make_check(1));
+        poller.add_check(make_check(2));
+        poller.add_check(make_check(3));
+        poller.ci_check_details.insert(1, vec![]);
+        poller.ci_check_details.insert(2, vec![]);
+
+        poller.remove_completed(&[0, 2]); // remove PR #1 and #3
+        assert_eq!(poller.pending_pr_checks.len(), 1);
+        assert_eq!(poller.pending_pr_checks[0].pr_number, 2);
+        assert!(!poller.ci_check_details.contains_key(&1));
+        assert!(poller.ci_check_details.contains_key(&2));
+    }
+}
 
 impl App {
     pub(super) fn poll_ci_status(&mut self) {
@@ -17,10 +134,12 @@ impl App {
             .map(|c| Duration::from_secs(c.gates.ci_max_wait_secs))
             .unwrap_or(Duration::from_secs(1800));
 
-        if self.last_ci_poll.elapsed() < ci_poll_interval || self.pending_pr_checks.is_empty() {
+        if self.ci_poller.last_ci_poll.elapsed() < ci_poll_interval
+            || self.ci_poller.pending_pr_checks.is_empty()
+        {
             return;
         }
-        self.last_ci_poll = Instant::now();
+        self.ci_poller.last_ci_poll = Instant::now();
 
         let auto_fix_enabled = self.flags.is_enabled(crate::flags::Flag::CiAutoFix);
         let max_retries = self
@@ -36,7 +155,7 @@ impl App {
         let mut detail_updates: Vec<(u64, Vec<crate::provider::github::ci::CheckRunDetail>)> =
             Vec::new();
 
-        for (i, check) in self.pending_pr_checks.iter_mut().enumerate() {
+        for (i, check) in self.ci_poller.pending_pr_checks.iter_mut().enumerate() {
             check.check_count += 1;
 
             // Timeout check
@@ -238,17 +357,17 @@ impl App {
 
         // Update CI check details for TUI display
         for (pr_number, details) in detail_updates {
-            self.ci_check_details.insert(pr_number, details);
+            self.ci_poller.ci_check_details.insert(pr_number, details);
         }
 
         // Remove completed checks in reverse order to preserve indices
         completed_indices.sort_unstable();
         for &i in &completed_indices {
-            let pr_number = self.pending_pr_checks[i].pr_number;
-            self.ci_check_details.remove(&pr_number);
+            let pr_number = self.ci_poller.pending_pr_checks[i].pr_number;
+            self.ci_poller.ci_check_details.remove(&pr_number);
         }
         for i in completed_indices.into_iter().rev() {
-            self.pending_pr_checks.remove(i);
+            self.ci_poller.pending_pr_checks.remove(i);
         }
     }
 }

@@ -207,7 +207,7 @@ impl App {
                         );
                         // Track PR for CI polling
                         if let Some(ref branch_name) = worktree_branch {
-                            self.pending_pr_checks.push(PendingPrCheck {
+                            self.ci_poller.pending_pr_checks.push(PendingPrCheck {
                                 pr_number: pr_num,
                                 issue_number,
                                 branch: branch_name.clone(),

@@ -388,9 +388,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Only render activity log area when visible
     if app.show_activity_log {
         // Conditionally split activity area for CI monitor
-        let has_ci_checks = app.gh_auth_ok && !app.ci_check_details.is_empty();
+        let has_ci_checks = app.gh_auth_ok && !app.ci_poller.ci_check_details.is_empty();
         if has_ci_checks {
-            let ci_pr_count = app.ci_check_details.len() as u16;
+            let ci_pr_count = app.ci_poller.ci_check_details.len() as u16;
             let ci_height = (ci_pr_count * 6).min(chunks[2].height / 2).max(4);
             let activity_chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -399,22 +399,24 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
             // Render CI monitor(s)
             let ci_area = activity_chunks[0];
-            if app.ci_check_details.len() == 1 {
-                let (&pr_number, details) = app.ci_check_details.iter().next().unwrap();
+            if app.ci_poller.ci_check_details.len() == 1 {
+                let (&pr_number, details) = app.ci_poller.ci_check_details.iter().next().unwrap();
                 let widget = crate::tui::widgets::CiMonitorWidget::new(details, &app.theme)
                     .pr_number(pr_number);
                 ratatui::widgets::Widget::render(widget, ci_area, f.buffer_mut());
             } else {
                 let constraints: Vec<Constraint> = app
+                    .ci_poller
                     .ci_check_details
                     .keys()
-                    .map(|_| Constraint::Ratio(1, app.ci_check_details.len() as u32))
+                    .map(|_| Constraint::Ratio(1, app.ci_poller.ci_check_details.len() as u32))
                     .collect();
                 let pr_chunks = Layout::default()
                     .direction(Direction::Horizontal)
                     .constraints(constraints)
                     .split(ci_area);
-                for (i, (&pr_number, details)) in app.ci_check_details.iter().enumerate() {
+                for (i, (&pr_number, details)) in app.ci_poller.ci_check_details.iter().enumerate()
+                {
                     let widget = crate::tui::widgets::CiMonitorWidget::new(details, &app.theme)
                         .pr_number(pr_number)
                         .max_visible_rows(3);

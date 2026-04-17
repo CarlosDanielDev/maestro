@@ -299,7 +299,7 @@ fn build_completion_summary_sets_pr_link_when_pending_check_matches() {
     );
     session.status = crate::session::types::SessionStatus::Completed;
     app.pool.enqueue(session);
-    app.pending_pr_checks.push(PendingPrCheck {
+    app.ci_poller.pending_pr_checks.push(PendingPrCheck {
         pr_number: 42,
         issue_number: 10,
         branch: "feat/issue-10".into(),
@@ -328,7 +328,7 @@ fn build_completion_summary_pr_link_empty_when_no_matching_check() {
         Some(99),
     );
     app.pool.enqueue(session);
-    app.pending_pr_checks.push(PendingPrCheck {
+    app.ci_poller.pending_pr_checks.push(PendingPrCheck {
         pr_number: 5,
         issue_number: 5,
         branch: "feat/issue-5".into(),
@@ -357,7 +357,7 @@ fn build_completion_summary_pr_link_empty_when_no_issue_number() {
         None,
     );
     app.pool.enqueue(session);
-    app.pending_pr_checks.push(PendingPrCheck {
+    app.ci_poller.pending_pr_checks.push(PendingPrCheck {
         pr_number: 1,
         issue_number: 1,
         branch: "feat/issue-1".into(),
@@ -1076,13 +1076,14 @@ fn check_context_overflow_skips_fork_when_auto_fork_flag_disabled() {
 
 #[test]
 fn poll_ci_status_skips_fix_when_ci_auto_fix_flag_disabled() {
+    use crate::provider::github::ci::PendingPrCheck;
     let flags = crate::flags::store::FeatureFlags::new(
         std::collections::HashMap::new(),
         vec![],
         vec!["ci_auto_fix".to_string()],
     );
     let mut app = make_app_with_flags(flags);
-    app.pending_pr_checks.push(PendingPrCheck {
+    app.ci_poller.pending_pr_checks.push(PendingPrCheck {
         pr_number: 99,
         issue_number: 42,
         branch: "feat/test".to_string(),
@@ -1093,7 +1094,7 @@ fn poll_ci_status_skips_fix_when_ci_auto_fix_flag_disabled() {
             .checked_sub(Duration::from_secs(120))
             .unwrap_or_else(Instant::now),
     });
-    app.last_ci_poll = Instant::now()
+    app.ci_poller.last_ci_poll = Instant::now()
         .checked_sub(Duration::from_secs(120))
         .unwrap_or_else(Instant::now);
     // poll_ci_status with Flag::CiAutoFix disabled — no fix sessions spawned.
@@ -1111,7 +1112,7 @@ fn poll_ci_status_skips_fix_when_ci_auto_fix_flag_disabled() {
 #[test]
 fn app_ci_check_details_field_defaults_to_empty() {
     let app = make_app();
-    assert!(app.ci_check_details.is_empty());
+    assert!(app.ci_poller.ci_check_details.is_empty());
 }
 
 #[test]
@@ -1124,9 +1125,9 @@ fn ci_check_details_can_be_populated_and_read() {
         started_at: None,
         elapsed_secs: Some(42),
     };
-    app.ci_check_details.insert(99, vec![detail]);
-    assert_eq!(app.ci_check_details.len(), 1);
-    assert_eq!(app.ci_check_details[&99][0].name, "build");
+    app.ci_poller.ci_check_details.insert(99, vec![detail]);
+    assert_eq!(app.ci_poller.ci_check_details.len(), 1);
+    assert_eq!(app.ci_poller.ci_check_details[&99][0].name, "build");
 }
 
 #[test]
@@ -1139,9 +1140,9 @@ fn ci_check_details_keyed_by_pr_number() {
         started_at: None,
         elapsed_secs: None,
     };
-    app.ci_check_details.insert(55, vec![detail]);
-    assert!(app.ci_check_details.contains_key(&55));
-    assert!(!app.ci_check_details.contains_key(&10));
+    app.ci_poller.ci_check_details.insert(55, vec![detail]);
+    assert!(app.ci_poller.ci_check_details.contains_key(&55));
+    assert!(!app.ci_poller.ci_check_details.contains_key(&10));
 }
 
 // --- Issue #67: QueueConfirmation screen state ---
