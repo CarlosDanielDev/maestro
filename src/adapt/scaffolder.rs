@@ -424,11 +424,7 @@ mod tests {
 
         let result = write_scaffold_files(&claude_dir, &entries).unwrap();
         assert_eq!(result.files[0].status, ScaffoldFileStatus::Failed);
-        assert!(result.files[0]
-            .reason
-            .as_ref()
-            .unwrap()
-            .contains("escapes"));
+        assert!(result.files[0].reason.as_ref().unwrap().contains("escapes"));
         assert!(!dir.path().join("etc/evil").exists());
     }
 
