@@ -24,9 +24,9 @@ impl App {
     ) {
         let is_unified = issue_numbers.len() >= 2;
         // Update work assigner
-        if let Some(ref mut assigner) = self.work_assigner {
+        if let Some(ref mut service) = self.work_assignment_service {
             if success {
-                let unblocked = assigner.mark_done(issue_number);
+                let unblocked = service.inner_mut().mark_done(issue_number);
                 if !unblocked.is_empty() {
                     let nums: Vec<String> = unblocked
                         .iter()
@@ -39,7 +39,7 @@ impl App {
                     );
                 }
             } else {
-                let cascaded = assigner.mark_failed_cascade(issue_number);
+                let cascaded = service.inner_mut().mark_failed_cascade(issue_number);
                 if !cascaded.is_empty() {
                     let nums: Vec<String> = cascaded.iter().map(|n| format!("#{}", n)).collect();
                     self.activity_log.push_simple(

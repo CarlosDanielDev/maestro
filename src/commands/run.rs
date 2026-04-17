@@ -4,6 +4,7 @@ use crate::provider::github::client::{GhCliClient, GitHubClient};
 use crate::session::types::Session;
 use crate::session::worktree::GitWorktreeManager;
 use crate::state::store::StateStore;
+use crate::tui::app::work_assigner::WorkAssignmentService;
 use crate::work::assigner::WorkAssigner;
 use crate::work::types::WorkItem;
 
@@ -112,7 +113,7 @@ pub async fn cmd_run(
         let items: Vec<WorkItem> = issues.into_iter().map(WorkItem::from_issue).collect();
         let assigner = WorkAssigner::new(items);
 
-        app.work_assigner = Some(assigner);
+        app.work_assignment_service = Some(WorkAssignmentService::new(assigner));
         app.github_client = Some(Box::new(client));
 
         if continuous && app.flags.is_enabled(crate::flags::Flag::ContinuousMode) {
@@ -164,7 +165,7 @@ pub async fn cmd_run(
         let items: Vec<WorkItem> = issues.into_iter().map(WorkItem::from_issue).collect();
         let assigner = WorkAssigner::new(items);
 
-        app.work_assigner = Some(assigner);
+        app.work_assignment_service = Some(WorkAssignmentService::new(assigner));
         app.github_client = Some(Box::new(client));
     }
 
