@@ -1484,7 +1484,7 @@ mod adapt_chaining {
     }
 
     #[test]
-    fn analyze_ok_chains_to_plan() {
+    fn analyze_ok_chains_to_consolidate() {
         let mut app = app_with_adapt_screen();
         app.adapt_screen.as_mut().unwrap().step = AdaptStep::Analyzing;
         app.adapt_screen
@@ -1495,12 +1495,12 @@ mod adapt_chaining {
         app.handle_data_event(TuiDataEvent::AdaptAnalyzeResult(Ok(make_report())));
 
         let screen = app.adapt_screen.as_ref().unwrap();
-        assert_eq!(screen.step, AdaptStep::Planning);
+        assert_eq!(screen.step, AdaptStep::Consolidating);
         assert!(screen.results.report.is_some());
         assert_eq!(app.pending_commands.len(), 1);
         assert!(matches!(
             app.pending_commands[0],
-            TuiCommand::RunAdaptPlan(_, _, _)
+            TuiCommand::RunAdaptConsolidate(_, _, _)
         ));
     }
 
@@ -1645,11 +1645,22 @@ mod adapt_chaining {
         let cmd = app.pending_commands.pop().unwrap();
         assert!(matches!(cmd, TuiCommand::RunAdaptAnalyze(_, _)));
         app.handle_data_event(TuiDataEvent::AdaptAnalyzeResult(Ok(make_report())));
+        assert_eq!(
+            app.adapt_screen.as_ref().unwrap().step,
+            AdaptStep::Consolidating
+        );
+
+        // Phase 2.5: Consolidate (PRD)
+        let cmd = app.pending_commands.pop().unwrap();
+        assert!(matches!(cmd, TuiCommand::RunAdaptConsolidate(_, _, _)));
+        app.handle_data_event(TuiDataEvent::AdaptConsolidateResult(Ok(
+            "# PRD: Test".to_string()
+        )));
         assert_eq!(app.adapt_screen.as_ref().unwrap().step, AdaptStep::Planning);
 
         // Phase 3: Plan
         let cmd = app.pending_commands.pop().unwrap();
-        assert!(matches!(cmd, TuiCommand::RunAdaptPlan(_, _, _)));
+        assert!(matches!(cmd, TuiCommand::RunAdaptPlan(_, _, _, _)));
         app.handle_data_event(TuiDataEvent::AdaptPlanResult(Ok(make_plan())));
         assert_eq!(
             app.adapt_screen.as_ref().unwrap().step,

@@ -156,7 +156,8 @@ pub enum TuiCommand {
     LaunchUnifiedSession(UnifiedSessionConfig),
     RunAdaptScan(AdaptConfig),
     RunAdaptAnalyze(AdaptConfig, ProjectProfile),
-    RunAdaptPlan(AdaptConfig, ProjectProfile, AdaptReport),
+    RunAdaptConsolidate(AdaptConfig, ProjectProfile, AdaptReport),
+    RunAdaptPlan(AdaptConfig, ProjectProfile, AdaptReport, Option<String>),
     RunAdaptMaterialize(AdaptPlan, AdaptReport),
     FetchOpenPrs,
     SubmitPrReview {
@@ -176,6 +177,7 @@ pub enum TuiDataEvent {
     UpgradeResult(Result<String, String>),
     AdaptScanResult(anyhow::Result<Box<ProjectProfile>>),
     AdaptAnalyzeResult(anyhow::Result<AdaptReport>),
+    AdaptConsolidateResult(anyhow::Result<String>),
     AdaptPlanResult(anyhow::Result<AdaptPlan>),
     AdaptMaterializeResult(anyhow::Result<MaterializeResult>),
     UnifiedIssues(anyhow::Result<Vec<GhIssue>>, Option<String>),

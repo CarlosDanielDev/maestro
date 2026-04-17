@@ -328,13 +328,38 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::AdaptAnalyzeResult(result));
                     });
                 }
-                app::TuiCommand::RunAdaptPlan(config, profile, report) => {
+                app::TuiCommand::RunAdaptConsolidate(config, profile, report) => {
+                    let tx = app.data_tx.clone();
+                    let model = config.model.unwrap_or_else(|| "sonnet".to_string());
+                    tokio::spawn(async move {
+                        use crate::adapt::prd::{ClaudePrdGenerator, PrdGenerator};
+                        let generator = ClaudePrdGenerator::new(model);
+                        let result = generator.generate(&profile, &report).await;
+                        if let Ok(ref content) = result {
+                            let prd_path = profile.root.join("docs/PRD.md");
+                            if !prd_path.exists() {
+                                if let Some(parent) = prd_path.parent()
+                                    && let Err(e) = std::fs::create_dir_all(parent)
+                                {
+                                    tracing::warn!("Failed to create docs/: {}", e);
+                                }
+                                if let Err(e) = std::fs::write(&prd_path, content) {
+                                    tracing::warn!("Failed to write PRD: {}", e);
+                                }
+                            }
+                        }
+                        let _ = tx.send(app::TuiDataEvent::AdaptConsolidateResult(result));
+                    });
+                }
+                app::TuiCommand::RunAdaptPlan(config, profile, report, prd_content) => {
                     let tx = app.data_tx.clone();
                     let model = config.model.unwrap_or_else(|| "sonnet".to_string());
                     tokio::spawn(async move {
                         use crate::adapt::planner::{AdaptPlanner, ClaudePlanner};
                         let planner = ClaudePlanner::new(model);
-                        let result = planner.plan(&profile, &report).await;
+                        let result = planner
+                            .plan(&profile, &report, prd_content.as_deref())
+                            .await;
                         let _ = tx.send(app::TuiDataEvent::AdaptPlanResult(result));
                     });
                 }

@@ -154,6 +154,20 @@ pub enum Commands {
         #[arg(short, long)]
         model: Option<String>,
     },
+    /// Generate a Product Requirements Document from project analysis
+    Prd {
+        /// Path to the project (defaults to current directory)
+        #[arg(short, long, default_value = ".")]
+        path: std::path::PathBuf,
+
+        /// AI model to use for analysis and generation
+        #[arg(short, long)]
+        model: Option<String>,
+
+        /// Overwrite existing PRD without confirmation
+        #[arg(long)]
+        force: bool,
+    },
     /// Analyze codebase for dead code and code smells
     Sanitize {
         /// Path to scan (defaults to current directory)
@@ -613,6 +627,56 @@ mod tests {
             assert!(disable_flags.is_empty());
         } else {
             panic!("Expected Commands::Run");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Prd subcommand parsing
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn prd_subcommand_parses_with_no_flags() {
+        let cli = Cli::try_parse_from(["maestro", "prd"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Prd { .. })));
+    }
+
+    #[test]
+    fn prd_path_defaults_to_current_dir() {
+        let cli = Cli::try_parse_from(["maestro", "prd"]).unwrap();
+        if let Some(Commands::Prd { path, .. }) = cli.command {
+            assert_eq!(path, PathBuf::from("."));
+        } else {
+            panic!("Expected Commands::Prd");
+        }
+    }
+
+    #[test]
+    fn prd_force_defaults_to_false() {
+        let cli = Cli::try_parse_from(["maestro", "prd"]).unwrap();
+        if let Some(Commands::Prd { force, .. }) = cli.command {
+            assert!(!force);
+        } else {
+            panic!("Expected Commands::Prd");
+        }
+    }
+
+    #[test]
+    fn prd_force_is_set_when_provided() {
+        let cli = Cli::try_parse_from(["maestro", "prd", "--force"]).unwrap();
+        if let Some(Commands::Prd { force, .. }) = cli.command {
+            assert!(force);
+        } else {
+            panic!("Expected Commands::Prd");
+        }
+    }
+
+    #[test]
+    fn prd_model_accepts_value() {
+        let cli = Cli::try_parse_from(["maestro", "prd", "--model", "opus"]).unwrap();
+        if let Some(Commands::Prd { model, .. }) = cli.command {
+            assert_eq!(model.as_deref(), Some("opus"));
+        } else {
+            panic!("Expected Commands::Prd");
         }
     }
 

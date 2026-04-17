@@ -1,6 +1,7 @@
 pub mod analyzer;
 pub mod materializer;
 pub mod planner;
+pub mod prd;
 mod prompts;
 pub mod scanner;
 pub mod types;
@@ -25,6 +26,51 @@ impl Default for AdaptConfig {
             model: None,
         }
     }
+}
+
+/// Configuration for the `maestro prd` standalone command.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrdConfig {
+    pub path: std::path::PathBuf,
+    pub model: Option<String>,
+    pub force: bool,
+}
+
+pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
+    use analyzer::{ClaudeAnalyzer, ProjectAnalyzer};
+    use prd::{ClaudePrdGenerator, PrdGenerator};
+    use scanner::{LocalProjectScanner, ProjectScanner};
+
+    let output_path = config.path.join("docs/PRD.md");
+    if output_path.exists() && !config.force {
+        eprintln!(
+            "PRD already exists at {}. Use --force to overwrite.",
+            output_path.display()
+        );
+        return Ok(());
+    }
+
+    let model = config.model.as_deref().unwrap_or("sonnet").to_string();
+
+    eprintln!("Scanning project...");
+    let scanner = LocalProjectScanner::new();
+    let profile = scanner.scan(&config.path).await?;
+
+    eprintln!("Analyzing project...");
+    let analyzer = ClaudeAnalyzer::new(model.clone());
+    let report = analyzer.analyze(&profile).await?;
+
+    eprintln!("Generating PRD...");
+    let generator = ClaudePrdGenerator::new(model);
+    let prd_content = generator.generate(&profile, &report).await?;
+
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&output_path, &prd_content)?;
+    eprintln!("PRD written to {}", output_path.display());
+
+    Ok(())
 }
 
 pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
@@ -78,10 +124,40 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // Phase 2.5: Consolidate (PRD generation)
+    eprintln!("Phase 2.5: Generating PRD...");
+    use prd::PrdGenerator;
+    let prd_generator = prd::ClaudePrdGenerator::new(model.clone());
+    let prd_content = match prd_generator.generate(&profile, &report).await {
+        Ok(content) => {
+            let prd_path = config.path.join("docs/PRD.md");
+            if !prd_path.exists() {
+                if let Some(parent) = prd_path.parent()
+                    && let Err(e) = std::fs::create_dir_all(parent)
+                {
+                    eprintln!("  Failed to create docs/: {}", e);
+                }
+                match std::fs::write(&prd_path, &content) {
+                    Ok(()) => eprintln!("  PRD saved to {}", prd_path.display()),
+                    Err(e) => eprintln!("  Failed to write PRD: {}", e),
+                }
+            } else {
+                eprintln!("  PRD already exists, skipping write");
+            }
+            Some(content)
+        }
+        Err(e) => {
+            eprintln!("  PRD generation failed: {}. Continuing without PRD.", e);
+            None
+        }
+    };
+
     // Phase 3: Plan
     eprintln!("Phase 3: Planning milestones and issues...");
     let planner = ClaudePlanner::new(model);
-    let plan = planner.plan(&profile, &report).await?;
+    let plan = planner
+        .plan(&profile, &report, prd_content.as_deref())
+        .await?;
     eprintln!(
         "  {} milestones, {} issues",
         plan.milestones.len(),

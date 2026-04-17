@@ -102,6 +102,7 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         phases.push((AdaptStep::Analyzing, "Analyzing with Claude"));
     }
     if !screen.config.scan_only && !screen.config.no_issues {
+        phases.push((AdaptStep::Consolidating, "Generating PRD"));
         phases.push((AdaptStep::Planning, "Generating plan"));
     }
     if !screen.config.scan_only && !screen.config.no_issues && !screen.config.dry_run {
@@ -117,7 +118,7 @@ fn draw_progress(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
     for (i, (_, label)) in phases.iter().enumerate() {
         let (marker, style) = if i < current_idx {
             // Completed
-            let info = phase_summary(screen, i);
+            let info = phase_summary(screen, phases[i].0);
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("  {} ", icons::get(IconId::CheckCircle)),
@@ -301,16 +302,16 @@ fn bool_text(v: bool) -> String {
     }
 }
 
-fn phase_summary(screen: &AdaptScreen, phase_idx: usize) -> String {
-    match phase_idx {
-        0 => {
+fn phase_summary(screen: &AdaptScreen, step: AdaptStep) -> String {
+    match step {
+        AdaptStep::Scanning => {
             if let Some(ref p) = screen.results.profile {
                 format!(" — {:?}, {} files", p.language, p.source_stats.total_files)
             } else {
                 String::new()
             }
         }
-        1 => {
+        AdaptStep::Analyzing => {
             if let Some(ref r) = screen.results.report {
                 format!(
                     " — {} modules, {} debt items",
@@ -321,7 +322,14 @@ fn phase_summary(screen: &AdaptScreen, phase_idx: usize) -> String {
                 String::new()
             }
         }
-        2 => {
+        AdaptStep::Consolidating => {
+            if screen.results.prd_content.is_some() {
+                " — PRD generated".to_string()
+            } else {
+                String::new()
+            }
+        }
+        AdaptStep::Planning => {
             if let Some(ref p) = screen.results.plan {
                 let issues: usize = p.milestones.iter().map(|m| m.issues.len()).sum();
                 format!(" — {} milestones, {} issues", p.milestones.len(), issues)
@@ -329,7 +337,7 @@ fn phase_summary(screen: &AdaptScreen, phase_idx: usize) -> String {
                 String::new()
             }
         }
-        3 => {
+        AdaptStep::Materializing => {
             if let Some(ref m) = screen.results.materialize {
                 format!(
                     " — {} milestones, {} issues created",
