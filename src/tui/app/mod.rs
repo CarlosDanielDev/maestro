@@ -13,7 +13,7 @@ mod review;
 mod session_lifecycle;
 mod session_spawners;
 pub mod types;
-mod work_assigner;
+pub mod work_assigner;
 
 pub use types::*;
 
@@ -40,7 +40,7 @@ use crate::state::types::MaestroState;
 use crate::tui::activity_log::{ActivityLog, LogLevel};
 use crate::tui::panels::PanelView;
 use crate::tui::theme::Theme;
-use crate::work::assigner::WorkAssigner;
+use crate::tui::app::work_assigner::WorkAssignmentService;
 use chrono::Utc;
 pub use ci_polling::CiPoller;
 use std::time::Instant;
@@ -56,7 +56,7 @@ pub struct App {
     pub total_cost: f64,
     pub start_time: chrono::DateTime<chrono::Utc>,
     pub event_rx: mpsc::UnboundedReceiver<SessionEvent>,
-    pub work_assigner: Option<WorkAssigner>,
+    pub work_assignment_service: Option<WorkAssignmentService>,
     pub github_client: Option<Box<dyn GitHubClient>>,
     pub config: Option<Config>,
     pub(crate) pending_issue_completions: Vec<PendingIssueCompletion>,
@@ -144,7 +144,7 @@ impl App {
             total_cost: 0.0,
             start_time: Utc::now(),
             event_rx,
-            work_assigner: None,
+            work_assignment_service: None,
             github_client: None,
             config: None,
             pending_issue_completions: Vec::new(),

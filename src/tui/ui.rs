@@ -115,7 +115,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::DependencyGraph => {
-            dep_graph::draw_dep_graph(f, app.work_assigner.as_ref(), chunks[1], &app.theme);
+            dep_graph::draw_dep_graph(
+                f,
+                app.work_assignment_service.as_ref().map(|s| s.inner()),
+                chunks[1],
+                &app.theme,
+            );
         }
         TuiMode::Fullscreen(id) => {
             if let Some(session) = app.pool.get_session(id) {

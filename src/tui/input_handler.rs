@@ -340,8 +340,8 @@ fn handle_continuous_pause(app: &mut App, key: &KeyEvent) -> KeyAction {
             if let Some(ref mut cont) = app.continuous_mode
                 && let Some(issue_number) = cont.on_retry()
             {
-                if let Some(ref mut assigner) = app.work_assigner {
-                    assigner.mark_pending_undo_cascade(issue_number);
+                if let Some(ref mut service) = app.work_assignment_service {
+                    service.inner_mut().mark_pending_undo_cascade(issue_number);
                 }
                 app.activity_log.push_simple(
                     "CONTINUOUS".into(),

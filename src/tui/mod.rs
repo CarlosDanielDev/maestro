@@ -372,9 +372,9 @@ async fn event_loop(
             )
         {
             let all_terminal = app
-                .work_assigner
+                .work_assignment_service
                 .as_ref()
-                .map(|a| a.all_terminal())
+                .map(|s| s.inner().all_terminal())
                 .unwrap_or(true);
             if all_terminal {
                 if let Some(ref cont) = app.continuous_mode {
