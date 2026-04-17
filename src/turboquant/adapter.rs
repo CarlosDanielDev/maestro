@@ -1,3 +1,8 @@
+//! TurboQuant adapter for session context compression.
+//!
+//! Bridges the raw quantization pipeline with the session layer by converting
+//! text chunks into pseudo-embeddings, compressing them, and tracking metrics.
+
 use super::pipeline::turbo_quantize;
 use super::types::{QuantStrategy, TurboQuantized};
 

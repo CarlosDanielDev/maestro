@@ -1,3 +1,8 @@
+//! TurboQuant pipeline entry point.
+//!
+//! Orchestrates the two-stage quantization (PolarQuant + QJL) and provides
+//! strategy-aware wrappers for quantization and dot-product estimation.
+
 use super::polar::{polar_dequantize, polar_quantize};
 use super::qjl::{qjl_compress, qjl_estimate_dot};
 use super::types::{QjlBitVector, QuantStrategy, QuantizedVector, TurboQuantized};
