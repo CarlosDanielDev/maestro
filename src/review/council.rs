@@ -225,6 +225,66 @@ mod tests {
     }
 
     #[test]
+    fn convene_multiple_required_all_rejecting() {
+        let reviewers = vec![
+            ReviewerConfig {
+                name: "strict-a".into(),
+                command: "false".into(),
+                required: true,
+            },
+            ReviewerConfig {
+                name: "strict-b".into(),
+                command: "false".into(),
+                required: true,
+            },
+        ];
+        let result = ReviewCouncil::convene(1, "main", &reviewers).unwrap();
+        match &result.status {
+            ReviewStatus::Rejected { reasons } => {
+                assert_eq!(reasons.len(), 2);
+            }
+            other => panic!("expected Rejected, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn convene_required_passes_optional_fails_is_partial() {
+        let reviewers = vec![
+            ReviewerConfig {
+                name: "required-pass".into(),
+                command: "true".into(),
+                required: true,
+            },
+            ReviewerConfig {
+                name: "optional-fail".into(),
+                command: "false".into(),
+                required: false,
+            },
+        ];
+        let result = ReviewCouncil::convene(1, "main", &reviewers).unwrap();
+        match &result.status {
+            ReviewStatus::Partial { approved, rejected } => {
+                assert_eq!(approved.len(), 1);
+                assert_eq!(rejected.len(), 1);
+            }
+            other => panic!("expected Partial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn convene_invalid_command_counts_as_rejection() {
+        let reviewers = vec![ReviewerConfig {
+            name: "broken".into(),
+            command: "nonexistent_command_that_does_not_exist_xyz".into(),
+            required: true,
+        }];
+        let result = ReviewCouncil::convene(1, "main", &reviewers).unwrap();
+        assert!(matches!(result.status, ReviewStatus::Rejected { .. }));
+        assert!(!result.results.is_empty());
+        assert!(!result.results[0].success);
+    }
+
+    #[test]
     fn format_comment_contains_status() {
         let result = CouncilResult {
             status: ReviewStatus::Approved {
@@ -240,5 +300,35 @@ mod tests {
         assert!(comment.contains("APPROVED"));
         assert!(comment.contains("test"));
         assert!(comment.contains("all good"));
+    }
+
+    #[test]
+    fn format_comment_rejected_contains_rejected_label() {
+        let result = CouncilResult {
+            status: ReviewStatus::Rejected {
+                reasons: vec!["strict".into()],
+            },
+            results: vec![ReviewResult {
+                success: false,
+                output: "issues found".into(),
+                reviewer_name: Some("strict".into()),
+            }],
+        };
+        let comment = ReviewCouncil::format_comment(&result);
+        assert!(comment.contains("REJECTED"));
+        assert!(comment.contains("strict"));
+    }
+
+    #[test]
+    fn format_comment_partial_contains_partial_label() {
+        let result = CouncilResult {
+            status: ReviewStatus::Partial {
+                approved: vec!["a".into()],
+                rejected: vec!["b".into()],
+            },
+            results: vec![],
+        };
+        let comment = ReviewCouncil::format_comment(&result);
+        assert!(comment.contains("PARTIAL"));
     }
 }
