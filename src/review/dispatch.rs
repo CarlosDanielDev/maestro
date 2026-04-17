@@ -199,4 +199,33 @@ mod tests {
         });
         assert!(dispatcher.dispatch(1, "../../etc").is_err());
     }
+
+    #[test]
+    fn run_review_command_without_name_sets_none() {
+        let result = ReviewDispatcher::run_review_command("true", 1, "main", None).unwrap();
+        assert!(result.success);
+        assert!(result.reviewer_name.is_none());
+    }
+
+    #[test]
+    fn dispatch_captures_stdout_output() {
+        let dispatcher = ReviewDispatcher::new(ReviewConfig {
+            enabled: true,
+            command: "echo review-output-marker".into(),
+        });
+        let result = dispatcher.dispatch(1, "main").unwrap();
+        assert!(result.success);
+        assert!(result.output.contains("review-output-marker"));
+    }
+
+    #[test]
+    fn dispatch_disabled_skips_command_entirely() {
+        let dispatcher = ReviewDispatcher::new(ReviewConfig {
+            enabled: false,
+            command: "nonexistent_command_xyz".into(),
+        });
+        let result = dispatcher.dispatch(1, "main").unwrap();
+        assert!(result.success);
+        assert_eq!(result.output, "Review disabled");
+    }
 }
