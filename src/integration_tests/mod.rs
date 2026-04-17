@@ -15,6 +15,8 @@ mod stream_parsing;
 mod upgrade;
 #[cfg(test)]
 mod worktree_lifecycle;
+#[cfg(test)]
+mod adapt_pipeline;
 
 /// Shared test helpers used across integration test modules.
 #[cfg(test)]
