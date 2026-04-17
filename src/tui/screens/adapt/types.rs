@@ -8,6 +8,7 @@ pub enum AdaptStep {
     Configure,
     Scanning,
     Analyzing,
+    Consolidating,
     Planning,
     Materializing,
     Complete,
@@ -18,7 +19,11 @@ impl AdaptStep {
     pub fn is_progress(&self) -> bool {
         matches!(
             self,
-            Self::Scanning | Self::Analyzing | Self::Planning | Self::Materializing
+            Self::Scanning
+                | Self::Analyzing
+                | Self::Consolidating
+                | Self::Planning
+                | Self::Materializing
         )
     }
 }
@@ -67,6 +72,8 @@ impl AdaptWizardConfig {
 pub struct AdaptResults {
     pub profile: Option<ProjectProfile>,
     pub report: Option<AdaptReport>,
+    #[serde(default)]
+    pub prd_content: Option<String>,
     pub plan: Option<AdaptPlan>,
     pub materialize: Option<MaterializeResult>,
 }
@@ -104,8 +111,10 @@ impl AdaptResults {
     pub fn resume_step(&self) -> AdaptStep {
         if self.plan.is_some() {
             AdaptStep::Materializing
-        } else if self.report.is_some() {
+        } else if self.prd_content.is_some() {
             AdaptStep::Planning
+        } else if self.report.is_some() {
+            AdaptStep::Consolidating
         } else if self.profile.is_some() {
             AdaptStep::Analyzing
         } else {
@@ -137,6 +146,7 @@ mod tests {
         assert!(!AdaptStep::Configure.is_progress());
         assert!(AdaptStep::Scanning.is_progress());
         assert!(AdaptStep::Analyzing.is_progress());
+        assert!(AdaptStep::Consolidating.is_progress());
         assert!(AdaptStep::Planning.is_progress());
         assert!(AdaptStep::Materializing.is_progress());
         assert!(!AdaptStep::Complete.is_progress());

@@ -106,10 +106,39 @@ impl AdaptScreen {
             AdaptResults::clear_cache();
             None
         } else {
+            self.step = AdaptStep::Consolidating;
+            let profile = self.results.profile.clone()?;
+            Some(crate::tui::app::TuiCommand::RunAdaptConsolidate(
+                config, profile, report,
+            ))
+        }
+    }
+
+    pub fn set_prd_result(&mut self, content: String) {
+        self.results.prd_content = Some(content);
+    }
+
+    /// Advance the wizard after a successful consolidate (PRD) phase.
+    pub fn complete_consolidate(
+        &mut self,
+        prd_content: String,
+    ) -> Option<crate::tui::app::TuiCommand> {
+        self.set_prd_result(prd_content.clone());
+        self.results.save_cache();
+        let config = self.build_adapt_config();
+        if config.no_issues {
+            self.step = AdaptStep::Complete;
+            AdaptResults::clear_cache();
+            None
+        } else {
             self.step = AdaptStep::Planning;
             let profile = self.results.profile.clone()?;
+            let report = self.results.report.clone()?;
             Some(crate::tui::app::TuiCommand::RunAdaptPlan(
-                config, profile, report,
+                config,
+                profile,
+                report,
+                Some(prd_content),
             ))
         }
     }
@@ -626,10 +655,21 @@ mod tests {
     }
 
     #[test]
-    fn resume_step_planning_when_report_cached() {
+    fn resume_step_consolidating_when_report_cached() {
         let results = AdaptResults {
             profile: Some(make_mock_profile()),
             report: Some(make_mock_report()),
+            ..Default::default()
+        };
+        assert_eq!(results.resume_step(), AdaptStep::Consolidating);
+    }
+
+    #[test]
+    fn resume_step_planning_when_prd_cached() {
+        let results = AdaptResults {
+            profile: Some(make_mock_profile()),
+            report: Some(make_mock_report()),
+            prd_content: Some("# PRD".into()),
             ..Default::default()
         };
         assert_eq!(results.resume_step(), AdaptStep::Planning);

@@ -51,13 +51,76 @@ Return ONLY the JSON object, no markdown fences, no commentary."#,
     )
 }
 
+pub fn build_prd_prompt(profile_json: &str, report_json: &str) -> String {
+    format!(
+        r#"You are generating a Product Requirements Document (PRD) for a software project.
+
+## Project Profile
+
+{profile_json}
+
+## Analysis Report
+
+{report_json}
+
+## Instructions
+
+Generate a comprehensive PRD in markdown format. The document must contain ALL of the following sections:
+
+# PRD: {{project name}}
+
+## 1. Project Identity
+- Name, description, primary language, tech stack summary
+
+## 2. Architecture Overview
+- Module map with responsibilities and boundaries
+- How modules relate to each other
+
+## 3. Component Inventory
+For each key component:
+- Purpose
+- Complexity (low/medium/high)
+- Dependencies on other components
+
+## 4. Data Flow
+- How data moves through the system
+- Key entry points and exit points
+
+## 5. Tech Stack
+- Languages and versions
+- Frameworks and libraries
+- Build tools
+- CI/CD pipeline
+- Test frameworks
+
+## 6. Current State
+- Test coverage status
+- Tech debt summary (reference the analysis report)
+- Security posture
+
+## 7. Non-Goals
+- What this project intentionally does NOT do
+- Explicit boundaries and out-of-scope items
+
+Return ONLY the markdown document, no code fences wrapping the entire output."#,
+    )
+}
+
 pub fn build_planning_prompt(
     profile_json: &str,
     report_json: &str,
     milestone_naming_hint: Option<&str>,
+    prd_content: Option<&str>,
 ) -> String {
     let naming_section = match milestone_naming_hint {
         Some(hint) => format!("\n6. **Milestone naming**: {}\n", hint),
+        None => String::new(),
+    };
+    let prd_section = match prd_content {
+        Some(prd) => format!(
+            "\n## Product Requirements Document\n\n{}\n",
+            prd
+        ),
         None => String::new(),
     };
     format!(
@@ -70,6 +133,7 @@ pub fn build_planning_prompt(
 ## Analysis Report
 
 {report_json}
+{prd_section}
 
 ## Instructions
 
@@ -208,7 +272,7 @@ mod tests {
 
     #[test]
     fn build_planning_prompt_contains_both_inputs() {
-        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None);
+        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
         assert!(prompt.contains(r#"{"name":"test"}"#));
         assert!(prompt.contains(r#"{"summary":"good"}"#));
         assert!(prompt.contains("milestones"));
@@ -221,13 +285,14 @@ mod tests {
             r#"{"name":"test"}"#,
             r#"{"summary":"good"}"#,
             Some("Use semver format: vX.Y.Z"),
+            None,
         );
         assert!(prompt.contains("Use semver format: vX.Y.Z"));
     }
 
     #[test]
     fn build_planning_prompt_omits_naming_section_when_none() {
-        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None);
+        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
         assert!(!prompt.contains("Milestone naming"));
     }
 
@@ -274,6 +339,43 @@ That's all."#;
         let raw = "This is not JSON at all";
         let result: anyhow::Result<AdaptReport> = parse_json_response(raw);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_prd_prompt_contains_profile_and_report() {
+        let prompt = build_prd_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#);
+        assert!(prompt.contains(r#"{"name":"test"}"#));
+        assert!(prompt.contains(r#"{"summary":"good"}"#));
+    }
+
+    #[test]
+    fn build_prd_prompt_contains_all_section_headings() {
+        let prompt = build_prd_prompt(r#"{}"#, r#"{}"#);
+        assert!(prompt.contains("Project Identity"));
+        assert!(prompt.contains("Architecture Overview"));
+        assert!(prompt.contains("Component Inventory"));
+        assert!(prompt.contains("Data Flow"));
+        assert!(prompt.contains("Tech Stack"));
+        assert!(prompt.contains("Current State"));
+        assert!(prompt.contains("Non-Goals"));
+    }
+
+    #[test]
+    fn build_planning_prompt_includes_prd_when_provided() {
+        let prompt = build_planning_prompt(
+            r#"{"name":"test"}"#,
+            r#"{"summary":"good"}"#,
+            None,
+            Some("# PRD: Test Project\n\nSome PRD content here"),
+        );
+        assert!(prompt.contains("Product Requirements Document"));
+        assert!(prompt.contains("# PRD: Test Project"));
+    }
+
+    #[test]
+    fn build_planning_prompt_omits_prd_when_none() {
+        let prompt = build_planning_prompt(r#"{"name":"test"}"#, r#"{"summary":"good"}"#, None, None);
+        assert!(!prompt.contains("Product Requirements Document"));
     }
 
     #[test]

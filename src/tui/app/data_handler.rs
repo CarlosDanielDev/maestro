@@ -181,6 +181,26 @@ impl App {
                     }
                 }
             }
+            TuiDataEvent::AdaptConsolidateResult(result) => {
+                if let Some(ref mut screen) = self.adapt_screen {
+                    if screen.is_cancelled() {
+                        return;
+                    }
+                    match result {
+                        Ok(prd_content) => {
+                            if let Some(cmd) = screen.complete_consolidate(prd_content) {
+                                self.pending_commands.push(cmd);
+                            }
+                        }
+                        Err(e) => {
+                            screen.set_error(
+                                crate::tui::screens::adapt::AdaptStep::Consolidating,
+                                format!("{}", e),
+                            );
+                        }
+                    }
+                }
+            }
             TuiDataEvent::AdaptPlanResult(result) => {
                 if let Some(ref mut screen) = self.adapt_screen {
                     if screen.is_cancelled() {

@@ -281,13 +281,24 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                                 .push(app::TuiCommand::RunAdaptAnalyze(config, profile));
                         }
                     }
+                    AdaptStep::Consolidating => {
+                        if let (Some(profile), Some(report)) = (
+                            screen.results.profile.clone(),
+                            screen.results.report.clone(),
+                        ) {
+                            app.pending_commands.push(
+                                app::TuiCommand::RunAdaptConsolidate(config, profile, report),
+                            );
+                        }
+                    }
                     AdaptStep::Planning => {
                         if let (Some(profile), Some(report)) = (
                             screen.results.profile.clone(),
                             screen.results.report.clone(),
                         ) {
+                            let prd = screen.results.prd_content.clone();
                             app.pending_commands
-                                .push(app::TuiCommand::RunAdaptPlan(config, profile, report));
+                                .push(app::TuiCommand::RunAdaptPlan(config, profile, report, prd));
                         }
                     }
                     AdaptStep::Materializing => {

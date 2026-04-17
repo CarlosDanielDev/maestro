@@ -328,13 +328,35 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::AdaptAnalyzeResult(result));
                     });
                 }
-                app::TuiCommand::RunAdaptPlan(config, profile, report) => {
+                app::TuiCommand::RunAdaptConsolidate(config, profile, report) => {
+                    let tx = app.data_tx.clone();
+                    let model = config.model.unwrap_or_else(|| "sonnet".to_string());
+                    tokio::spawn(async move {
+                        use crate::adapt::prd::{ClaudePrdGenerator, PrdGenerator};
+                        let generator = ClaudePrdGenerator::new(model);
+                        let result = generator.generate(&profile, &report).await;
+                        // Write PRD to docs/PRD.md if successful and file doesn't exist
+                        if let Ok(ref content) = result {
+                            let prd_path = profile.root.join("docs/PRD.md");
+                            if !prd_path.exists() {
+                                if let Some(parent) = prd_path.parent() {
+                                    let _ = std::fs::create_dir_all(parent);
+                                }
+                                let _ = std::fs::write(&prd_path, content);
+                            }
+                        }
+                        let _ = tx.send(app::TuiDataEvent::AdaptConsolidateResult(result));
+                    });
+                }
+                app::TuiCommand::RunAdaptPlan(config, profile, report, prd_content) => {
                     let tx = app.data_tx.clone();
                     let model = config.model.unwrap_or_else(|| "sonnet".to_string());
                     tokio::spawn(async move {
                         use crate::adapt::planner::{AdaptPlanner, ClaudePlanner};
                         let planner = ClaudePlanner::new(model);
-                        let result = planner.plan(&profile, &report).await;
+                        let result = planner
+                            .plan(&profile, &report, prd_content.as_deref())
+                            .await;
                         let _ = tx.send(app::TuiDataEvent::AdaptPlanResult(result));
                     });
                 }
