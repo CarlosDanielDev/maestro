@@ -1,7 +1,7 @@
 use crate::adapt::AdaptConfig;
 use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
-use crate::provider::github::types::{GhIssue, GhMilestone};
 use crate::plugins::hooks::{HookContext, HookPoint};
+use crate::provider::github::types::{GhIssue, GhMilestone};
 use crate::session::types::SessionStatus;
 use crate::tui::screens::{PromptSessionConfig, SessionConfig, UnifiedSessionConfig};
 

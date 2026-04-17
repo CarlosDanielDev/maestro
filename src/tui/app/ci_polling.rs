@@ -33,7 +33,8 @@ impl App {
         let mut completed_indices = Vec::new();
         // Collect fix requests to process after the loop (avoids borrow conflict)
         let mut fix_requests: Vec<crate::provider::github::ci::CiFixRequest> = Vec::new();
-        let mut detail_updates: Vec<(u64, Vec<crate::provider::github::ci::CheckRunDetail>)> = Vec::new();
+        let mut detail_updates: Vec<(u64, Vec<crate::provider::github::ci::CheckRunDetail>)> =
+            Vec::new();
 
         for (i, check) in self.pending_pr_checks.iter_mut().enumerate() {
             check.check_count += 1;
@@ -131,7 +132,9 @@ impl App {
                     }
                 }
                 Ok(CiStatus::Failed { summary }) => {
-                    use crate::provider::github::ci::{CiFixRequest, CiPollAction, decide_ci_action};
+                    use crate::provider::github::ci::{
+                        CiFixRequest, CiPollAction, decide_ci_action,
+                    };
                     if let Ok(details) = checker.check_pr_details(check.pr_number) {
                         detail_updates.push((check.pr_number, details));
                     }

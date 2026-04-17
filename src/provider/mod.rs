@@ -3,8 +3,8 @@ pub mod azure_devops;
 pub mod github;
 pub mod types;
 
-use crate::config::ProviderConfig;
 use self::github::client::GitHubClient;
+use crate::config::ProviderConfig;
 use anyhow::Result;
 use types::ProviderKind;
 

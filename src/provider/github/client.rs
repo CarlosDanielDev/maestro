@@ -146,7 +146,9 @@ pub fn parse_milestones_json(json_str: &str) -> Result<Vec<GhMilestone>> {
 }
 
 /// Parse JSON output from `gh pr list --json ...`.
-pub fn parse_prs_json(json_str: &str) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
+pub fn parse_prs_json(
+    json_str: &str,
+) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
     let raw: Vec<serde_json::Value> =
         serde_json::from_str(json_str).context("Failed to parse GitHub PRs JSON")?;
     let mut prs = Vec::new();
@@ -993,7 +995,9 @@ pub mod mock {
             Ok(state.create_issue_counter)
         }
 
-        async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
+        async fn list_open_prs(
+            &self,
+        ) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
             let state = self.inner.lock().unwrap();
             if let Some(ref err) = state.list_open_prs_error {
                 anyhow::bail!("{}", err);
@@ -1001,7 +1005,10 @@ pub mod mock {
             Ok(state.pull_requests.clone())
         }
 
-        async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
+        async fn get_pr(
+            &self,
+            number: u64,
+        ) -> Result<crate::provider::github::types::GhPullRequest> {
             let state = self.inner.lock().unwrap();
             if let Some(err_msg) = state.get_pr_errors.get(&number) {
                 anyhow::bail!("{}", err_msg);

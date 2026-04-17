@@ -1,6 +1,6 @@
 use super::App;
-use crate::provider::github::labels::LabelManager;
 use crate::prompts::PromptBuilder;
+use crate::provider::github::labels::LabelManager;
 use crate::session::types::Session;
 use crate::tui::activity_log::LogLevel;
 

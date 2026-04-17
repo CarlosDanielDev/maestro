@@ -1,8 +1,8 @@
+use crate::integration_tests::helpers::*;
 use crate::provider::github::client::GitHubClient;
 use crate::provider::github::client::mock::MockGitHubClient;
 use crate::provider::github::labels::LabelManager;
 use crate::provider::github::pr::{PrCreator, build_pr_body};
-use crate::integration_tests::helpers::*;
 use crate::session::manager::ManagedSession;
 use crate::session::types::StreamEvent;
 

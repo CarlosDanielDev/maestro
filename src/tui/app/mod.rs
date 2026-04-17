@@ -20,13 +20,13 @@ pub use types::*;
 use crate::budget::BudgetEnforcer;
 use crate::config::Config;
 use crate::continuous::ContinuousModeState;
-use crate::provider::github::ci::PendingPrCheck;
-use crate::provider::github::client::GitHubClient;
 use crate::mascot::MascotAnimator;
 use crate::mascot::animator::SystemClock;
 use crate::models::ModelRouter;
 use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::plugins::runner::PluginRunner;
+use crate::provider::github::ci::PendingPrCheck;
+use crate::provider::github::client::GitHubClient;
 use crate::session::context_monitor::{ContextMonitor, ProductionContextMonitor};
 use crate::session::fork::ForkPolicy;
 use crate::session::health::{HealthCheck, HealthMonitor};
@@ -99,7 +99,8 @@ pub struct App {
     pub pending_prs: Vec<crate::provider::github::types::PendingPr>,
     pub flags: crate::flags::store::FeatureFlags,
     pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
-    pub ci_check_details: std::collections::HashMap<u64, Vec<crate::provider::github::ci::CheckRunDetail>>,
+    pub ci_check_details:
+        std::collections::HashMap<u64, Vec<crate::provider::github::ci::CheckRunDetail>>,
     pub queue_executor: Option<crate::work::executor::QueueExecutor>,
     pub queue_launch_configs: Option<Vec<crate::tui::screens::SessionConfig>>,
     pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
