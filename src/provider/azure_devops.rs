@@ -1,7 +1,7 @@
 #![allow(dead_code)] // Reason: Azure DevOps provider — planned multi-provider feature
 use super::types::Issue;
-use crate::github::client::GitHubClient;
-use crate::github::types::GhMilestone;
+use crate::provider::github::client::GitHubClient;
+use crate::provider::github::types::GhMilestone;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
@@ -365,18 +365,18 @@ impl GitHubClient for AzDevOpsClient {
         anyhow::bail!("create_issue is not supported for Azure DevOps")
     }
 
-    async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
+    async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
         anyhow::bail!("list_open_prs is not supported for Azure DevOps")
     }
 
-    async fn get_pr(&self, _number: u64) -> Result<crate::github::types::GhPullRequest> {
+    async fn get_pr(&self, _number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
         anyhow::bail!("get_pr is not supported for Azure DevOps")
     }
 
     async fn submit_pr_review(
         &self,
         _pr_number: u64,
-        _event: crate::github::types::PrReviewEvent,
+        _event: crate::provider::github::types::PrReviewEvent,
         _body: &str,
     ) -> Result<()> {
         anyhow::bail!("submit_pr_review is not supported for Azure DevOps")

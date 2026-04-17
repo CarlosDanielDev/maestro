@@ -1,9 +1,9 @@
 use super::App;
 use super::types::TuiMode;
-use crate::github::ci::PendingPrCheck;
-use crate::github::labels::LabelManager;
-use crate::github::pr::{PrCreator, PrRetryPolicy};
-use crate::github::types::{PendingPr, PendingPrStatus};
+use crate::provider::github::ci::PendingPrCheck;
+use crate::provider::github::labels::LabelManager;
+use crate::provider::github::pr::{PrCreator, PrRetryPolicy};
+use crate::provider::github::types::{PendingPr, PendingPrStatus};
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
@@ -170,7 +170,7 @@ impl App {
                 let pr_creator = PrCreator::new(client.as_ref(), base_branch.clone());
 
                 let pr_result = if is_unified {
-                    let unified_issues: Vec<&crate::github::types::GhIssue> = issue_numbers
+                    let unified_issues: Vec<&crate::provider::github::types::GhIssue> = issue_numbers
                         .iter()
                         .filter_map(|n| self.state.issue_cache.get(n))
                         .collect();
@@ -179,7 +179,7 @@ impl App {
                             .create_for_issue(issue, branch, &file_refs, cost_usd)
                             .await
                     } else {
-                        let body = crate::github::pr::build_unified_pr_body(
+                        let body = crate::provider::github::pr::build_unified_pr_body(
                             &unified_issues,
                             &file_refs,
                             cost_usd,

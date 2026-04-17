@@ -28,7 +28,7 @@ impl App {
         attempt: u32,
         failure_log: &str,
     ) {
-        use crate::github::ci::build_ci_fix_prompt;
+        use crate::provider::github::ci::build_ci_fix_prompt;
         use crate::session::types::CiFixContext;
 
         let (model, mode) = self.default_model_and_mode();
@@ -89,7 +89,7 @@ impl App {
 
     /// Spawn a Claude session to resolve merge conflicts for a PR.
     pub fn spawn_conflict_fix_session(&mut self, config: &crate::tui::screens::ConflictFixConfig) {
-        use crate::github::merge::build_conflict_fix_prompt;
+        use crate::provider::github::merge::build_conflict_fix_prompt;
         use crate::session::types::ConflictFixContext;
 
         let (model, mode) = self.default_model_and_mode();

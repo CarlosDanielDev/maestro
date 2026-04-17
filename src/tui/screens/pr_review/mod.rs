@@ -3,7 +3,7 @@ pub mod types;
 
 pub use types::*;
 
-use crate::github::types::GhPullRequest;
+use crate::provider::github::types::GhPullRequest;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -284,7 +284,7 @@ impl Screen for PrReviewScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::github::types::PrReviewEvent;
+    use crate::provider::github::types::PrReviewEvent;
     use crate::tui::screens::test_helpers::key_event;
     use crossterm::event::KeyCode;
 

@@ -21,7 +21,7 @@ mod worktree_lifecycle;
 mod helpers {
     use tokio::sync::mpsc;
 
-    use crate::github::types::GhIssue;
+    use crate::provider::github::types::GhIssue;
     use crate::session::pool::SessionPool;
     use crate::session::types::Session;
     use crate::session::worktree::MockWorktreeManager;

@@ -36,17 +36,17 @@ pub trait GitHubClient: Send + Sync {
     ) -> Result<u64>;
 
     /// List open pull requests for the current repository.
-    async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>>;
+    async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>>;
 
     /// Get a single pull request by number.
     #[allow(dead_code)] // Reason: PR detail view — currently PR data comes from list
-    async fn get_pr(&self, number: u64) -> Result<crate::github::types::GhPullRequest>;
+    async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest>;
 
     /// Submit a review on a pull request.
     async fn submit_pr_review(
         &self,
         pr_number: u64,
-        event: crate::github::types::PrReviewEvent,
+        event: crate::provider::github::types::PrReviewEvent,
         body: &str,
     ) -> Result<()>;
 
@@ -146,7 +146,7 @@ pub fn parse_milestones_json(json_str: &str) -> Result<Vec<GhMilestone>> {
 }
 
 /// Parse JSON output from `gh pr list --json ...`.
-pub fn parse_prs_json(json_str: &str) -> Result<Vec<crate::github::types::GhPullRequest>> {
+pub fn parse_prs_json(json_str: &str) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
     let raw: Vec<serde_json::Value> =
         serde_json::from_str(json_str).context("Failed to parse GitHub PRs JSON")?;
     let mut prs = Vec::new();
@@ -166,7 +166,7 @@ pub fn parse_prs_json(json_str: &str) -> Result<Vec<crate::github::types::GhPull
             })
             .unwrap_or_default();
 
-        prs.push(crate::github::types::GhPullRequest {
+        prs.push(crate::provider::github::types::GhPullRequest {
             number: v
                 .get("number")
                 .and_then(|n| n.as_u64())
@@ -270,16 +270,16 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     ) -> Result<u64> {
         (**self).create_issue(title, body, labels, milestone).await
     }
-    async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
+    async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
         (**self).list_open_prs().await
     }
-    async fn get_pr(&self, number: u64) -> Result<crate::github::types::GhPullRequest> {
+    async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
         (**self).get_pr(number).await
     }
     async fn submit_pr_review(
         &self,
         pr_number: u64,
-        event: crate::github::types::PrReviewEvent,
+        event: crate::provider::github::types::PrReviewEvent,
         body: &str,
     ) -> Result<()> {
         (**self).submit_pr_review(pr_number, event, body).await
@@ -620,7 +620,7 @@ impl GitHubClient for GhCliClient {
             .ok_or_else(|| anyhow::anyhow!("Missing 'number' in issue creation response"))
     }
 
-    async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
+    async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
         let json_str = self
             .run_gh(&[
                 "pr",
@@ -636,7 +636,7 @@ impl GitHubClient for GhCliClient {
         parse_prs_json(&json_str)
     }
 
-    async fn get_pr(&self, number: u64) -> Result<crate::github::types::GhPullRequest> {
+    async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
         let num_str = number.to_string();
         let json_str = self
             .run_gh(&["pr", "view", &num_str, "--json", PR_JSON_FIELDS])
@@ -650,7 +650,7 @@ impl GitHubClient for GhCliClient {
     async fn submit_pr_review(
         &self,
         pr_number: u64,
-        event: crate::github::types::PrReviewEvent,
+        event: crate::provider::github::types::PrReviewEvent,
         body: &str,
     ) -> Result<()> {
         let num_str = pr_number.to_string();
@@ -737,7 +737,7 @@ pub mod mock {
         create_label_error: Option<String>,
 
         // PR review fields
-        pull_requests: Vec<crate::github::types::GhPullRequest>,
+        pull_requests: Vec<crate::provider::github::types::GhPullRequest>,
         list_open_prs_error: Option<String>,
         get_pr_errors: std::collections::HashMap<u64, String>,
         submit_pr_review_error: Option<String>,
@@ -747,7 +747,7 @@ pub mod mock {
     #[derive(Debug, Clone)]
     pub struct SubmitPrReviewCallRecord {
         pub pr_number: u64,
-        pub event: crate::github::types::PrReviewEvent,
+        pub event: crate::provider::github::types::PrReviewEvent,
         pub body: String,
     }
 
@@ -853,7 +853,7 @@ pub mod mock {
             self.inner.lock().unwrap().create_label_calls.clone()
         }
 
-        pub fn set_pull_requests(&self, prs: Vec<crate::github::types::GhPullRequest>) {
+        pub fn set_pull_requests(&self, prs: Vec<crate::provider::github::types::GhPullRequest>) {
             self.inner.lock().unwrap().pull_requests = prs;
         }
 
@@ -993,7 +993,7 @@ pub mod mock {
             Ok(state.create_issue_counter)
         }
 
-        async fn list_open_prs(&self) -> Result<Vec<crate::github::types::GhPullRequest>> {
+        async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
             let state = self.inner.lock().unwrap();
             if let Some(ref err) = state.list_open_prs_error {
                 anyhow::bail!("{}", err);
@@ -1001,7 +1001,7 @@ pub mod mock {
             Ok(state.pull_requests.clone())
         }
 
-        async fn get_pr(&self, number: u64) -> Result<crate::github::types::GhPullRequest> {
+        async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
             let state = self.inner.lock().unwrap();
             if let Some(err_msg) = state.get_pr_errors.get(&number) {
                 anyhow::bail!("{}", err_msg);
@@ -1017,7 +1017,7 @@ pub mod mock {
         async fn submit_pr_review(
             &self,
             pr_number: u64,
-            event: crate::github::types::PrReviewEvent,
+            event: crate::provider::github::types::PrReviewEvent,
             body: &str,
         ) -> Result<()> {
             let mut state = self.inner.lock().unwrap();
@@ -1455,8 +1455,8 @@ mod tests {
 
     // -- PR review mock tests --
 
-    fn make_pr(number: u64) -> crate::github::types::GhPullRequest {
-        crate::github::types::GhPullRequest {
+    fn make_pr(number: u64) -> crate::provider::github::types::GhPullRequest {
+        crate::provider::github::types::GhPullRequest {
             number,
             title: format!("PR #{}", number),
             body: String::new(),
@@ -1532,7 +1532,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_submit_pr_review_records_approve_call() {
-        use crate::github::types::PrReviewEvent;
+        use crate::provider::github::types::PrReviewEvent;
         let client = MockGitHubClient::new();
         client
             .submit_pr_review(7, PrReviewEvent::Approve, "LGTM")
@@ -1547,7 +1547,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_submit_pr_review_records_request_changes_call() {
-        use crate::github::types::PrReviewEvent;
+        use crate::provider::github::types::PrReviewEvent;
         let client = MockGitHubClient::new();
         client
             .submit_pr_review(3, PrReviewEvent::RequestChanges, "needs work")
@@ -1559,7 +1559,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_submit_pr_review_records_comment_call() {
-        use crate::github::types::PrReviewEvent;
+        use crate::provider::github::types::PrReviewEvent;
         let client = MockGitHubClient::new();
         client
             .submit_pr_review(1, PrReviewEvent::Comment, "nice")
@@ -1571,7 +1571,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_submit_pr_review_propagates_configured_error() {
-        use crate::github::types::PrReviewEvent;
+        use crate::provider::github::types::PrReviewEvent;
         let client = MockGitHubClient::new();
         client.set_submit_pr_review_error("forbidden");
         let result = client.submit_pr_review(1, PrReviewEvent::Approve, "").await;

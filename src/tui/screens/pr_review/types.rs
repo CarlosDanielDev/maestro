@@ -1,4 +1,4 @@
-use crate::github::types::PrReviewEvent;
+use crate::provider::github::types::PrReviewEvent;
 
 /// State machine for the PR review screen.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

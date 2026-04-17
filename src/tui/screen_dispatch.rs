@@ -1,6 +1,6 @@
 use super::app;
 use super::screens::{self, Screen, ScreenAction};
-use crate::github::types::GhIssue;
+use crate::provider::github::types::GhIssue;
 use crate::session::transition::TransitionReason;
 use crossterm::event::Event;
 
@@ -316,7 +316,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 .iter()
                 .filter_map(|c| {
                     c.issue_number.map(|n| {
-                        WorkItem::from_issue(crate::github::types::GhIssue {
+                        WorkItem::from_issue(crate::provider::github::types::GhIssue {
                             number: n,
                             title: c.title.clone(),
                             body: String::new(),

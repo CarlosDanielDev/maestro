@@ -282,9 +282,9 @@ fn draw_submit_review(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme:
     f.render_widget(block, area);
 
     let events = [
-        crate::github::types::PrReviewEvent::Comment,
-        crate::github::types::PrReviewEvent::Approve,
-        crate::github::types::PrReviewEvent::RequestChanges,
+        crate::provider::github::types::PrReviewEvent::Comment,
+        crate::provider::github::types::PrReviewEvent::Approve,
+        crate::provider::github::types::PrReviewEvent::RequestChanges,
     ];
 
     let mut lines = vec![

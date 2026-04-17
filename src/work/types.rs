@@ -1,4 +1,4 @@
-use crate::github::types::{GhIssue, Priority, SessionMode};
+use crate::provider::github::types::{GhIssue, Priority, SessionMode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 

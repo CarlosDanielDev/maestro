@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::github::types::GhIssue;
+use crate::provider::github::types::GhIssue;
 use crate::session::image::image_section_for_prompt;
 use std::path::{Path, PathBuf};
 

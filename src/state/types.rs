@@ -1,4 +1,4 @@
-use crate::github::types::{GhIssue, PendingPr};
+use crate::provider::github::types::{GhIssue, PendingPr};
 use crate::session::types::Session;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn maestro_state_pending_prs_round_trips_via_serde() {
-        use crate::github::types::{PendingPr, PendingPrStatus};
+        use crate::provider::github::types::{PendingPr, PendingPrStatus};
 
         let mut state = MaestroState::default();
         state.pending_prs.push(PendingPr {

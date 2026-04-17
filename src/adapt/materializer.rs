@@ -4,7 +4,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 
 use super::types::*;
-use crate::github::client::GitHubClient;
+use crate::provider::github::client::GitHubClient;
 
 const DEFAULT_LABEL_COLOR: &str = "EDEDED";
 
@@ -292,7 +292,7 @@ pub fn build_tech_debt_catalog_body(items: &[TechDebtItem]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::github::client::mock::MockGitHubClient;
+    use crate::provider::github::client::mock::MockGitHubClient;
 
     fn sample_plan() -> AdaptPlan {
         AdaptPlan {

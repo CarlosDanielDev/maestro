@@ -1,7 +1,7 @@
 use super::App;
-use crate::github::ci::PendingPrCheck;
-use crate::github::pr::{PrCreator, PrRetryPolicy};
-use crate::github::types::PendingPrStatus;
+use crate::provider::github::ci::PendingPrCheck;
+use crate::provider::github::pr::{PrCreator, PrRetryPolicy};
+use crate::provider::github::types::PendingPrStatus;
 use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;

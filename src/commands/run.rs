@@ -1,6 +1,6 @@
 use crate::commands::setup::{setup_app_from_config, startup_cleanup};
 use crate::config::Config;
-use crate::github::client::{GhCliClient, GitHubClient};
+use crate::provider::github::client::{GhCliClient, GitHubClient};
 use crate::session::types::Session;
 use crate::session::worktree::GitWorktreeManager;
 use crate::state::store::StateStore;

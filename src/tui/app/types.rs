@@ -1,6 +1,6 @@
 use crate::adapt::AdaptConfig;
 use crate::adapt::types::{AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile};
-use crate::github::types::{GhIssue, GhMilestone};
+use crate::provider::github::types::{GhIssue, GhMilestone};
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::types::SessionStatus;
 use crate::tui::screens::{PromptSessionConfig, SessionConfig, UnifiedSessionConfig};
@@ -161,7 +161,7 @@ pub enum TuiCommand {
     FetchOpenPrs,
     SubmitPrReview {
         pr_number: u64,
-        event: crate::github::types::PrReviewEvent,
+        event: crate::provider::github::types::PrReviewEvent,
         body: String,
     },
 }
@@ -179,7 +179,7 @@ pub enum TuiDataEvent {
     AdaptPlanResult(anyhow::Result<AdaptPlan>),
     AdaptMaterializeResult(anyhow::Result<MaterializeResult>),
     UnifiedIssues(anyhow::Result<Vec<GhIssue>>, Option<String>),
-    PullRequests(anyhow::Result<Vec<crate::github::types::GhPullRequest>>),
+    PullRequests(anyhow::Result<Vec<crate::provider::github::types::GhPullRequest>>),
     PrReviewSubmitted(anyhow::Result<()>),
 }
 

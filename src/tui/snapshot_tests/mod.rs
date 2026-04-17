@@ -56,8 +56,8 @@ pub fn make_activity(offset_secs: i64, message: &str) -> ActivityEntry {
     }
 }
 
-pub fn make_gh_issue(number: u64, title: &str) -> crate::github::types::GhIssue {
-    crate::github::types::GhIssue {
+pub fn make_gh_issue(number: u64, title: &str) -> crate::provider::github::types::GhIssue {
+    crate::provider::github::types::GhIssue {
         number,
         title: title.to_string(),
         body: String::new(),
