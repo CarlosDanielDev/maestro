@@ -47,6 +47,10 @@ impl MockAdaptPlanner {
     pub fn with_plan(plan: AdaptPlan) -> Self {
         Self { result: Some(plan) }
     }
+
+    pub fn without_plan() -> Self {
+        Self { result: None }
+    }
 }
 
 #[cfg(test)]
@@ -157,5 +161,91 @@ mod tests {
         let json = serde_json::to_string(&plan).unwrap();
         let rt: AdaptPlan = serde_json::from_str(&json).unwrap();
         assert_eq!(rt.milestones[0].issues[1].blocked_by_titles.len(), 1);
+    }
+
+    #[test]
+    fn empty_plan_serializes_to_empty_milestones() {
+        let plan = AdaptPlan {
+            milestones: vec![],
+            maestro_toml_patch: None,
+        };
+        let json = serde_json::to_string(&plan).unwrap();
+        let rt: AdaptPlan = serde_json::from_str(&json).unwrap();
+        assert!(rt.milestones.is_empty());
+        assert!(rt.maestro_toml_patch.is_none());
+    }
+
+    #[test]
+    fn plan_with_multiple_milestones_preserves_order() {
+        let plan = AdaptPlan {
+            milestones: vec![
+                PlannedMilestone {
+                    title: "M0: Foundation".into(),
+                    description: "First".into(),
+                    issues: vec![],
+                },
+                PlannedMilestone {
+                    title: "M1: Core".into(),
+                    description: "Second".into(),
+                    issues: vec![PlannedIssue {
+                        title: "feat: core".into(),
+                        body: "Core feature".into(),
+                        labels: vec![],
+                        blocked_by_titles: vec!["M0 issue".into()],
+                    }],
+                },
+            ],
+            maestro_toml_patch: None,
+        };
+        let json = serde_json::to_string(&plan).unwrap();
+        let rt: AdaptPlan = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.milestones.len(), 2);
+        assert_eq!(rt.milestones[0].title, "M0: Foundation");
+        assert_eq!(rt.milestones[1].title, "M1: Core");
+        assert_eq!(rt.milestones[1].issues[0].blocked_by_titles.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn mock_planner_without_plan_returns_error() {
+        let planner = MockAdaptPlanner::without_plan();
+        let profile = ProjectProfile {
+            name: "test".into(),
+            root: PathBuf::from("/tmp"),
+            language: ProjectLanguage::Rust,
+            manifests: vec![],
+            config_files: vec![],
+            entry_points: vec![],
+            source_stats: SourceStats {
+                total_files: 0,
+                total_lines: 0,
+                by_extension: vec![],
+            },
+            test_infra: TestInfraInfo {
+                has_tests: false,
+                framework: None,
+                test_directories: vec![],
+                test_file_count: 0,
+            },
+            ci: CiInfo {
+                provider: None,
+                config_files: vec![],
+            },
+            git: GitInfo {
+                is_git_repo: false,
+                default_branch: None,
+                remote_url: None,
+                commit_count: 0,
+                recent_contributors: vec![],
+            },
+            dependencies: DependencySummary::default(),
+            directory_tree: String::new(),
+            has_maestro_config: false,
+        };
+        let report = AdaptReport {
+            summary: "test".into(),
+            modules: vec![],
+            tech_debt_items: vec![],
+        };
+        assert!(planner.plan(&profile, &report).await.is_err());
     }
 }

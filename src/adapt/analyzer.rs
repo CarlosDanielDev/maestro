@@ -40,6 +40,10 @@ impl MockProjectAnalyzer {
             result: Some(report),
         }
     }
+
+    pub fn without_report() -> Self {
+        Self { result: None }
+    }
 }
 
 #[cfg(test)]
@@ -118,5 +122,43 @@ mod tests {
         let analyzer = MockProjectAnalyzer::with_report(report);
         let result = analyzer.analyze(&sample_profile()).await.unwrap();
         assert_eq!(result.summary, "Test project");
+    }
+
+    #[tokio::test]
+    async fn mock_analyzer_returns_report_with_modules_and_debt() {
+        let report = AdaptReport {
+            summary: "Complex project".into(),
+            modules: vec![
+                ModuleDescription {
+                    path: "src/auth.rs".into(),
+                    purpose: "Authentication".into(),
+                    complexity: "high".into(),
+                },
+                ModuleDescription {
+                    path: "src/db.rs".into(),
+                    purpose: "Database layer".into(),
+                    complexity: "medium".into(),
+                },
+            ],
+            tech_debt_items: vec![TechDebtItem {
+                title: "Missing auth tests".into(),
+                description: "No tests for auth module".into(),
+                location: "src/auth.rs".into(),
+                suggested_fix: "Add unit tests".into(),
+                category: TechDebtCategory::MissingTests,
+                severity: TechDebtSeverity::High,
+            }],
+        };
+        let analyzer = MockProjectAnalyzer::with_report(report);
+        let result = analyzer.analyze(&sample_profile()).await.unwrap();
+        assert_eq!(result.modules.len(), 2);
+        assert_eq!(result.tech_debt_items.len(), 1);
+        assert_eq!(result.tech_debt_items[0].severity, TechDebtSeverity::High);
+    }
+
+    #[tokio::test]
+    async fn mock_analyzer_without_report_returns_error() {
+        let analyzer = MockProjectAnalyzer::without_report();
+        assert!(analyzer.analyze(&sample_profile()).await.is_err());
     }
 }
