@@ -7,6 +7,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-04-17
+
+### Added
+
+- Fork-handoff compression — `compress_handoff()` on `TurboQuantAdapter` produces a `CompressedHandoff` struct; integrated into `ForkPolicy` to keep continuation prompts within a configurable token budget (#343)
+- System-prompt compaction — `compact_system_prompt()` on `TurboQuantAdapter`; integrated into `SessionPool::try_promote` to trim oversized system prompts before session launch (#344)
+- State compression — `compact_session_history()` on `TurboQuantAdapter` returns a `StateCompactionReport`; `MaestroState::compact()` and `StateStore::save_compacted()` persist trimmed state (#345)
+- Knowledge compression in `maestro adapt` — new `src/adapt/knowledge.rs` module (Phase 2.6); produces a token-budgeted `KnowledgeBase` and writes `.maestro/knowledge.md`; auto-loaded by `SessionPool::try_promote` as a system-prompt component (#347)
+- `TextRanker` trait and impl in `src/turboquant/adapter.rs` — shared text scoring primitive used by all compression paths
+- `TokenBudget` helper in `src/turboquant/budget.rs` — greedy ranked-segment selection under a token limit; `BudgetSelection` struct (indices, tokens_used, truncated_first)
+- Three new `TurboQuantConfig` fields: `fork_handoff_budget`, `system_prompt_budget`, `knowledge_budget` (token-limit knobs for each compression feature)
+- Shared `Arc<TurboQuantAdapter>` on `App` — single adapter instance reused across all compression features
+
+### Security
+
+- `.maestro/knowledge.md` write path enforces a 1 MiB size cap, rejects symlinks, and uses a TOCTOU-safe load sequence
+- Session-prompt injection is envelope-wrapped to prevent prompt-injection via project content
+- Handoff splitter enforces a 2000-segment cap to bound memory use in degenerate inputs
+
 ## [0.13.1] - 2026-04-17
 
 ### Added

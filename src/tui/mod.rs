@@ -73,6 +73,7 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
     app.state.sessions = app.pool.all_sessions().into_iter().cloned().collect();
     app.state.update_total_cost();
     app.state.last_updated = Some(chrono::Utc::now());
+    let _ = app.state.compact(app.turboquant_adapter.as_deref());
     if let Err(e) = app.store.save(&app.state) {
         eprintln!("Warning: failed to save state: {}", e);
     }

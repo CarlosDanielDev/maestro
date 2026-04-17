@@ -52,6 +52,9 @@ bit_width = 4          # Quantization bits (2-8, lower = more compression)
 strategy = "turboquant" # "turboquant" | "polarquant" | "qjl"
 apply_to = "both"      # "keys" | "values" | "both"
 auto_on_overflow = false # Auto-enable when context approaches overflow threshold
+fork_handoff_budget = 2048   # Max tokens in a compressed fork-handoff prompt (0 = no limit)
+system_prompt_budget = 4096  # Max tokens in the compacted system prompt sent on session promote (0 = no limit)
+knowledge_budget = 1024      # Max tokens in the .maestro/knowledge.md snippet injected per session (0 = no limit)
 
 [flags]
 turboquant = true      # Runtime feature flag (also toggleable via Ctrl+q)

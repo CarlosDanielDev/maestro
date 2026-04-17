@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-17 00:00 (UTC)
+> Last updated: 2026-04-17 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -87,7 +87,8 @@ maestro/
 │   │   ├── planner.rs                     # Adaptation planner Phase 3: maps analyzer output to actionable plan steps
 │   │   ├── materializer.rs               # Plan materializer Phase 4: creates GitHub issues and milestones; GhMaterializer struct; ensure_labels() auto-creates missing labels before issue creation; STANDARD_LABEL_COLORS constant defines canonical hex colors for all maestro labels  [Issue #93, #348]
 │   │   ├── scaffolder.rs                  # Scaffold phase: ProjectScaffolder trait, ClaudeScaffolder impl, write_scaffold_files(); generates project files from adapt plan  [Issue #371]
-│   │   └── prompts.rs                     # Claude prompt builders for analyzer, planner, and scaffold phases  [Issue #371]
+│   │   ├── prompts.rs                     # Claude prompt builders for analyzer, planner, and scaffold phases  [Issue #371]
+│   │   └── knowledge.rs                   # Knowledge-base compression (Phase 2.6): consumes AdaptReport + ProjectProfile; produces KnowledgeBase (six token-budgeted sections); write_knowledge_file() writes .maestro/knowledge.md; auto-loaded by SessionPool::try_promote as a system-prompt component; 1 MiB size cap, symlink rejection, TOCTOU-safe load, envelope-wrapped injection  [Issue #347]
 │   ├── updater/                           # Self-upgrade subsystem  [Issue #118]
 │   │   ├── mod.rs                         # UpgradeState state machine (Idle, Checking, UpdateAvailable, Downloading, Installing, Done, Failed); ReleaseInfo type (tag_name, download_url, body)
 │   │   ├── checker.rs                     # UpdateChecker trait; GitHubReleaseChecker (hits GitHub Releases API); version parsing via semver comparison; asset names use Rust target triples (e.g. aarch64-apple-darwin); checksum file resolves to sha256sums.txt; check_for_update() async entry point  [Issue #118, #233]
@@ -243,6 +244,14 @@ maestro/
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
 │   │   ├── worktree_lifecycle.rs          # 8 tests: worktree create/cleanup and health monitoring
 │   │   └── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
+│   ├── turboquant/                         # TurboQuant — vector quantization for context compression  [Issue #242-253, #343-345, #347]
+│   │   ├── mod.rs                         # Module facade; combines PolarQuant + QJL into a unified API
+│   │   ├── types.rs                       # QuantStrategy enum (TurboQuant, PolarQuant, QJL); TurboQuantConfig (+ fork_handoff_budget, system_prompt_budget, knowledge_budget); QuantResult; CompressionMetrics
+│   │   ├── polar.rs                       # PolarQuant — recursive polar decomposition quantizer; preserves angular similarity (cosine distance)
+│   │   ├── qjl.rs                         # Quantized Johnson-Lindenstrauss (QJL) — 1-bit residual projection; seeded deterministic sketch
+│   │   ├── pipeline.rs                    # Two-stage quantization pipeline (PolarQuant + QJL); strategy-aware wrappers for quantization and dot-product estimation
+│   │   ├── adapter.rs                     # TurboQuantAdapter: bridges quantization pipeline to session layer; TextRanker trait + impl; compress_handoff() (CompressedHandoff, Issue #343); compact_system_prompt() (Issue #344); compact_session_history() + StateCompactionReport (Issue #345); shared Arc<TurboQuantAdapter> on App
+│   │   └── budget.rs                      # TokenBudget helper: ranked-segment selection staying under a token limit; BudgetSelection struct (indices, tokens_used, truncated_first); used by fork-handoff, system-prompt, and knowledge compression  [Issue #343-345, #347]
 │   └── work/                              # Work queue and scheduling  [Phase 2]
 │       ├── mod.rs                         # Module exports; pub mod queue
 │       ├── types.rs                       # WorkItem, WorkStatus; from_issue, is_ready
@@ -266,7 +275,7 @@ maestro/
 │           ├── api-contract-validation/
 │           ├── project-patterns/
 │           └── security-patterns/
-├── .gitignore                             # Includes .maestro/worktrees/
+├── .gitignore                             # Includes .maestro/worktrees/ and runtime artifacts; .maestro/knowledge.md (written by maestro adapt, auto-loaded as system-prompt component by SessionPool::try_promote) is also excluded
 ├── Cargo.lock                             # Dependency lock file
 ├── Cargo.toml                             # Rust package manifest; tempfile and insta dev-dependencies; optimized release profile; [features] section with experimental-sanitizer = []; flate2 and tar dependencies added for tar.gz archive extraction in self-updater  [Issue #142, #233]
 ├── CHANGELOG.md                           # Release history following Keep a Changelog format
@@ -317,6 +326,7 @@ maestro/
 | `src/adapt/materializer.rs` | Plan materializer Phase 4 — `GhMaterializer`: creates GitHub issues and milestones; `ensure_labels()` auto-creates missing labels before issue creation; `STANDARD_LABEL_COLORS` constant defines canonical hex colors for all maestro labels (Issues #93, #348) |
 | `src/adapt/scaffolder.rs` | Scaffold phase — `ProjectScaffolder` trait, `ClaudeScaffolder` impl, `write_scaffold_files()`; generates project config files from the adapt plan (Issue #371) |
 | `src/adapt/prompts.rs` | Claude prompt builders for the analyzer, planner, and scaffold phases; `build_scaffold_prompt()` added (Issue #371) |
+| `src/adapt/knowledge.rs` | Knowledge-base compression (Phase 2.6 of `cmd_adapt`); `KnowledgeBase` struct (six `KnowledgeSection` fields); `write_knowledge_file()` writes `.maestro/knowledge.md`; auto-loaded by `SessionPool::try_promote` as a system-prompt component; 1 MiB size cap, symlink rejection, TOCTOU-safe load, envelope-wrapped injection (Issue #347) |
 | `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated, Command (Phase 3, Issue #40) |
 | `src/updater/` | Self-upgrade subsystem: version check, binary installation, and restart (Issue #118) |
 | `src/updater/mod.rs` | `UpgradeState` state machine (`Idle` → `Checking` → `UpdateAvailable` → `Downloading` → `Installing` → `Done` / `Failed`); `ReleaseInfo` type |
@@ -413,6 +423,13 @@ maestro/
 | `src/integration_tests/concurrent_sessions.rs` | 6 tests covering `max_concurrent` enforcement |
 | `src/integration_tests/worktree_lifecycle.rs` | 8 tests covering worktree create/cleanup and health monitoring |
 | `src/integration_tests/upgrade.rs` | End-to-end upgrade flow tests: version check, banner state transitions, installer backup/swap, `RestartCommand` construction (Issue #118) |
+| `src/turboquant/` | Vector quantization for context compression (Issues #242-253, #343-345, #347) |
+| `src/turboquant/types.rs` | `QuantStrategy` enum; `TurboQuantConfig` with three v0.14.0 budget fields (`fork_handoff_budget`, `system_prompt_budget`, `knowledge_budget`); `QuantResult`; `CompressionMetrics` |
+| `src/turboquant/polar.rs` | PolarQuant — recursive polar decomposition; preserves cosine distance |
+| `src/turboquant/qjl.rs` | QJL — seeded 1-bit Johnson-Lindenstrauss residual projection |
+| `src/turboquant/pipeline.rs` | Two-stage quantization pipeline (PolarQuant + QJL); strategy-aware wrappers |
+| `src/turboquant/adapter.rs` | `TurboQuantAdapter`: text-to-embedding bridge; `TextRanker` trait + impl; `compress_handoff()` → `CompressedHandoff` (Issue #343); `compact_system_prompt()` (Issue #344); `compact_session_history()` → `StateCompactionReport` (Issue #345); shared `Arc<TurboQuantAdapter>` on `App` |
+| `src/turboquant/budget.rs` | `TokenBudget` helper: greedy ranked-segment selection under a token limit; `BudgetSelection` struct; used by fork-handoff, system-prompt, and knowledge compression (Issues #343-345, #347) |
 | `src/work/` | Work queue and dependency scheduling (Phase 2) |
 | `src/work/assigner.rs` | Priority-ordered work assignment; `mark_pending()` and `mark_pending_undo_cascade()` for continuous mode retry/skip (Issue #85) |
 | `src/work/conflicts.rs` | Conflict detection for concurrent work items |
@@ -422,5 +439,5 @@ maestro/
 | `CHANGELOG.md` | Release history |
 | `ROADMAP.md` | Project milestones and implementation order |
 | `directory-tree.md` | This file |
-| `maestro.toml` | Runtime configuration |
+| `maestro.toml` | Runtime configuration; `[turboquant]` section gains `fork_handoff_budget`, `system_prompt_budget`, and `knowledge_budget` fields (token limits for v0.14.0 compression features) |
 | `maestro-state.json` | Persisted session state |

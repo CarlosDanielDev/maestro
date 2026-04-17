@@ -1,4 +1,5 @@
 pub mod analyzer;
+pub mod knowledge;
 pub mod materializer;
 pub mod planner;
 pub mod prd;
@@ -153,6 +154,32 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         }
     };
 
+    // Phase 2.6: Compress project knowledge into .maestro/knowledge.md so every
+    // future session receives a dense, budget-bounded project brief.
+    eprintln!("Phase 2.6: Compressing project knowledge...");
+    let project_cfg = crate::config::Config::find_and_load_in(&config.path).ok();
+    let knowledge_budget = project_cfg
+        .as_ref()
+        .map(|c| c.turboquant.knowledge_budget)
+        .unwrap_or(4096);
+    let tq_adapter = project_cfg.as_ref().and_then(build_adapter_from_config);
+    let knowledge_base =
+        knowledge::compress_knowledge(&profile, &report, tq_adapter.as_ref(), knowledge_budget);
+    let knowledge_path = config.path.join(".maestro/knowledge.md");
+    if let Some(parent) = knowledge_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("  Failed to create .maestro/: {}", e);
+    }
+    match std::fs::write(&knowledge_path, knowledge::to_markdown(&knowledge_base)) {
+        Ok(()) => eprintln!(
+            "  Knowledge base saved to {} ({} sections)",
+            knowledge_path.display(),
+            6
+        ),
+        Err(e) => eprintln!("  Failed to write knowledge.md: {}", e),
+    }
+
     // Phase 3: Plan
     eprintln!("Phase 3: Planning milestones and issues...");
     let planner = ClaudePlanner::new(model.clone());
@@ -206,4 +233,18 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn build_adapter_from_config(
+    cfg: &crate::config::Config,
+) -> Option<crate::turboquant::adapter::TurboQuantAdapter> {
+    if !cfg.turboquant.enabled {
+        return None;
+    }
+    Some(crate::turboquant::adapter::TurboQuantAdapter::new(
+        cfg.turboquant.bit_width,
+        cfg.turboquant.strategy,
+        cfg.sessions.context_overflow.overflow_threshold_pct as f64,
+        cfg.turboquant.auto_on_overflow,
+    ))
 }

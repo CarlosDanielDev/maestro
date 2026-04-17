@@ -98,6 +98,94 @@ mod tests {
     }
 
     #[test]
+    fn compact_none_then_save_is_lossless() {
+        let (_dir, store) = make_store();
+        let mut state = MaestroState::default();
+        let mut s = crate::session::types::Session::new(
+            "p".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        for _ in 0..5 {
+            s.activity_log.push(crate::session::types::ActivityEntry {
+                timestamp: chrono::Utc::now(),
+                message: "Tool: Bash".into(),
+            });
+        }
+        state.sessions.push(s);
+        let reports = state.compact(None);
+        store.save(&state).unwrap();
+        assert!(reports.is_empty());
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.sessions[0].activity_log.len(), 5);
+    }
+
+    #[test]
+    fn compact_with_adapter_then_save_persists_collapsed_log() {
+        use crate::turboquant::adapter::TurboQuantAdapter;
+        use crate::turboquant::types::QuantStrategy;
+
+        let (_dir, store) = make_store();
+        let mut state = MaestroState::default();
+        let mut s = crate::session::types::Session::new(
+            "p".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        s.status = crate::session::types::SessionStatus::Running;
+        for _ in 0..12 {
+            s.activity_log.push(crate::session::types::ActivityEntry {
+                timestamp: chrono::Utc::now(),
+                message: "Tool: Bash".into(),
+            });
+        }
+        state.sessions.push(s);
+
+        let adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false);
+        let reports = state.compact(Some(&adapter));
+        store.save(&state).unwrap();
+        assert_eq!(reports.len(), 1);
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.sessions[0].activity_log.len(), 1);
+        assert!(loaded.sessions[0].activity_log[0].message.contains("x12"));
+    }
+
+    #[test]
+    fn load_legacy_state_without_tq_fields_succeeds() {
+        // Old state file: session JSON lacks tq_original_tokens and tq_compressed_tokens.
+        let (_dir, store) = make_store();
+        let legacy_json = r#"{
+            "sessions": [{
+                "id": "00000000-0000-0000-0000-000000000001",
+                "status": "queued",
+                "prompt": "p",
+                "issue_number": null,
+                "model": "opus",
+                "mode": "orchestrator",
+                "started_at": null,
+                "finished_at": null,
+                "cost_usd": 0.0,
+                "context_pct": 0.0,
+                "current_activity": "",
+                "last_message": "",
+                "activity_log": [],
+                "files_touched": [],
+                "pid": null
+            }],
+            "total_cost_usd": 0.0,
+            "file_claims": {},
+            "last_updated": null
+        }"#;
+        std::fs::write(&store.path, legacy_json).unwrap();
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.sessions.len(), 1);
+        assert!(loaded.sessions[0].tq_original_tokens.is_none());
+        assert!(loaded.sessions[0].tq_compressed_tokens.is_none());
+    }
+
+    #[test]
     fn concurrent_saves_do_not_corrupt() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("concurrent-state.json");

@@ -62,18 +62,26 @@ impl App {
         );
 
         match fork_result {
-            ForkResult::Forked { child, .. } => {
+            ForkResult::Forked {
+                child,
+                handoff_metrics,
+                ..
+            } => {
                 let child_id = child.id;
                 let label = session_label(&parent_session);
 
                 self.activity_log.push_simple(
-                    label,
+                    label.clone(),
                     format!(
                         "Context overflow at {:.0}% — forking to new session",
                         overflow.context_pct * 100.0
                     ),
                     LogLevel::Warn,
                 );
+                if let Some(metrics) = handoff_metrics {
+                    self.activity_log
+                        .push_simple(label, metrics.log_entry(), LogLevel::Info);
+                }
 
                 if let Some(managed) = self.pool.get_active_mut(session_id) {
                     managed.session.child_session_ids.push(child_id);
