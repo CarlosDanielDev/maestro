@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::github::types::GhIssue;
+use crate::provider::github::types::GhIssue;
 
 /// Routes issues to specific models based on label-matching rules.
 pub struct ModelRouter {

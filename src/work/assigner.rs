@@ -262,7 +262,7 @@ impl WorkAssigner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::github::types::{GhIssue, Priority};
+    use crate::provider::github::types::{GhIssue, Priority};
 
     fn make_item(number: u64, priority: Priority, blocked_by: &[u64]) -> WorkItem {
         let mut labels: Vec<String> = blocked_by

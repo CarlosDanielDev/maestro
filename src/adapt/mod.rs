@@ -99,7 +99,7 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
 
     // Phase 4: Materialize
     eprintln!("Phase 4: Creating GitHub artifacts...");
-    let github = crate::github::client::GhCliClient::new();
+    let github = crate::provider::github::client::GhCliClient::new();
     let materializer = GhMaterializer::new(github);
     let result = materializer.materialize(&plan, &report, false).await?;
 

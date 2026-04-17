@@ -288,7 +288,7 @@ fn completion_session_line_holds_error_summary_value() {
 
 #[test]
 fn build_completion_summary_sets_pr_link_when_pending_check_matches() {
-    use crate::github::ci::PendingPrCheck;
+    use crate::provider::github::ci::PendingPrCheck;
 
     let mut app = make_app();
     let mut session = crate::session::types::Session::new(
@@ -318,7 +318,7 @@ fn build_completion_summary_sets_pr_link_when_pending_check_matches() {
 
 #[test]
 fn build_completion_summary_pr_link_empty_when_no_matching_check() {
-    use crate::github::ci::PendingPrCheck;
+    use crate::provider::github::ci::PendingPrCheck;
 
     let mut app = make_app();
     let session = crate::session::types::Session::new(
@@ -347,7 +347,7 @@ fn build_completion_summary_pr_link_empty_when_no_matching_check() {
 
 #[test]
 fn build_completion_summary_pr_link_empty_when_no_issue_number() {
-    use crate::github::ci::PendingPrCheck;
+    use crate::provider::github::ci::PendingPrCheck;
 
     let mut app = make_app();
     let session = crate::session::types::Session::new(
@@ -1117,10 +1117,10 @@ fn app_ci_check_details_field_defaults_to_empty() {
 #[test]
 fn ci_check_details_can_be_populated_and_read() {
     let mut app = make_app();
-    let detail = crate::github::ci::CheckRunDetail {
+    let detail = crate::provider::github::ci::CheckRunDetail {
         name: "build".into(),
-        status: crate::github::ci::CheckStatus::Completed,
-        conclusion: crate::github::ci::CheckConclusion::Success,
+        status: crate::provider::github::ci::CheckStatus::Completed,
+        conclusion: crate::provider::github::ci::CheckConclusion::Success,
         started_at: None,
         elapsed_secs: Some(42),
     };
@@ -1132,10 +1132,10 @@ fn ci_check_details_can_be_populated_and_read() {
 #[test]
 fn ci_check_details_keyed_by_pr_number() {
     let mut app = make_app();
-    let detail = crate::github::ci::CheckRunDetail {
+    let detail = crate::provider::github::ci::CheckRunDetail {
         name: "test".into(),
-        status: crate::github::ci::CheckStatus::InProgress,
-        conclusion: crate::github::ci::CheckConclusion::None,
+        status: crate::provider::github::ci::CheckStatus::InProgress,
+        conclusion: crate::provider::github::ci::CheckConclusion::None,
         started_at: None,
         elapsed_secs: None,
     };

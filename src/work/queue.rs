@@ -156,7 +156,7 @@ fn transitive_dependents(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::github::types::GhIssue;
+    use crate::provider::github::types::GhIssue;
     use crate::work::types::WorkItem;
 
     fn make_item(number: u64, blocked_by: &[u64]) -> WorkItem {

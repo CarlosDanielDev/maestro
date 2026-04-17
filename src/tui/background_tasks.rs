@@ -1,6 +1,6 @@
 use super::app;
 use super::screens;
-use crate::github::client::{GhCliClient, GitHubClient};
+use crate::provider::github::client::{GhCliClient, GitHubClient};
 
 pub(super) fn spawn_issue_fetch(
     tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>,

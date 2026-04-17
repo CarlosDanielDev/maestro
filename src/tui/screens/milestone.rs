@@ -1,5 +1,5 @@
 use super::{Screen, ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
-use crate::github::types::{GhIssue, GhMilestone};
+use crate::provider::github::types::{GhIssue, GhMilestone};
 use crate::tui::app::TuiMode;
 use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::InputMode;

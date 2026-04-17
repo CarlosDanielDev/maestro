@@ -1,6 +1,6 @@
 mod draw;
 use super::{Screen, ScreenAction, SessionConfig, sanitize_for_terminal};
-use crate::github::types::GhIssue;
+use crate::provider::github::types::GhIssue;
 use crate::tui::marquee::MarqueeState;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};

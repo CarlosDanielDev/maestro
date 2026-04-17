@@ -183,7 +183,7 @@ impl QueueExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::github::types::GhIssue;
+    use crate::provider::github::types::GhIssue;
     use crate::work::dependencies::DependencyGraph;
     use crate::work::types::WorkItem;
 

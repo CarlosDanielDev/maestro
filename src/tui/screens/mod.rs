@@ -112,7 +112,7 @@ pub enum ScreenAction {
     /// Submit a PR review.
     SubmitPrReview {
         pr_number: u64,
-        event: crate::github::types::PrReviewEvent,
+        event: crate::provider::github::types::PrReviewEvent,
         body: String,
     },
     /// Quit the application.

@@ -149,7 +149,7 @@ impl OrphanBranch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::github::client::mock::MockGitHubClient;
+    use crate::provider::github::client::mock::MockGitHubClient;
 
     fn make_issue(number: u64) -> GhIssue {
         GhIssue {

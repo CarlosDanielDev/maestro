@@ -1,14 +1,15 @@
 #![allow(dead_code)] // Reason: multi-provider support (Azure DevOps) — planned feature
 pub mod azure_devops;
+pub mod github;
 pub mod types;
 
+use self::github::client::GitHubClient;
 use crate::config::ProviderConfig;
-use crate::github::client::GitHubClient;
 use anyhow::Result;
 use types::ProviderKind;
 
 // Re-export GitHub client for use by the factory.
-use crate::github::client::GhCliClient;
+use self::github::client::GhCliClient;
 
 /// Create the appropriate provider client from config.
 pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn GitHubClient>> {

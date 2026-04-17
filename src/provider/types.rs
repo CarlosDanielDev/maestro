@@ -13,11 +13,11 @@ pub enum ProviderKind {
 // Re-export GitHub types under provider-agnostic names.
 // These are used by consumers that import from provider::types.
 #[allow(unused_imports)]
-pub use crate::github::types::GhIssue as Issue;
+pub use crate::provider::github::types::GhIssue as Issue;
 #[allow(unused_imports)]
-pub use crate::github::types::GhMilestone as Milestone;
+pub use crate::provider::github::types::GhMilestone as Milestone;
 #[allow(unused_imports)]
-pub use crate::github::types::{MaestroLabel, Priority, SessionMode};
+pub use crate::provider::github::types::{MaestroLabel, Priority, SessionMode};
 
 #[cfg(test)]
 mod tests {

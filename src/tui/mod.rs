@@ -30,7 +30,7 @@ pub mod widgets;
 #[cfg(test)]
 mod snapshot_tests;
 
-use crate::github::client::{GhCliClient, GitHubClient};
+use crate::provider::github::client::{GhCliClient, GitHubClient};
 use crate::tui::activity_log::LogLevel;
 use app::App;
 use background_tasks::{spawn_issue_fetch, spawn_version_check};
@@ -342,7 +342,7 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {
                         use crate::adapt::materializer::{GhMaterializer, PlanMaterializer};
-                        let github = crate::github::client::GhCliClient::new();
+                        let github = crate::provider::github::client::GhCliClient::new();
                         let materializer = GhMaterializer::new(github);
                         let result = materializer.materialize(&plan, &report, false).await;
                         let _ = tx.send(app::TuiDataEvent::AdaptMaterializeResult(result));
@@ -521,7 +521,7 @@ mod handle_screen_action_tests {
         assert!(app.pending_commands.is_empty());
     }
 
-    use crate::github::types::GhIssue;
+    use crate::provider::github::types::GhIssue;
     use crate::tui::screens::milestone::MilestoneEntry;
 
     fn make_issue(number: u64, milestone: Option<u64>) -> GhIssue {

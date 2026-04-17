@@ -1,6 +1,6 @@
 use crate::commands::setup::{DEFAULT_MAX_CONCURRENT, setup_app_from_config, startup_cleanup};
 use crate::config::Config;
-use crate::github::client::GhCliClient;
+use crate::provider::github::client::GhCliClient;
 use crate::session::worktree::GitWorktreeManager;
 use crate::state::store::StateStore;
 use crate::tui::app::App;

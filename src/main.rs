@@ -8,7 +8,6 @@ mod doctor;
 mod flags;
 mod gates;
 mod git;
-mod github;
 mod icon_mode;
 mod icons;
 mod models;

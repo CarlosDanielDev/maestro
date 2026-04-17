@@ -24,7 +24,7 @@ impl App {
     /// Build a prompt from issue + optional custom instructions.
     fn build_issue_prompt_with_custom(
         &self,
-        gh_issue: &crate::github::types::GhIssue,
+        gh_issue: &crate::provider::github::types::GhIssue,
         custom_prompt: &Option<String>,
     ) -> String {
         let base = self
