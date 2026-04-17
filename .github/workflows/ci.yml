@@ -18,6 +18,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --verbose
+      # Snapshot enforcement: fails if any insta snapshot has an unreviewed diff.
+      # Run `cargo insta review` locally to approve snapshot changes before pushing.
+      - name: Check snapshots
+        env:
+          INSTA_UPDATE: "no"
+        run: cargo test --verbose 2>&1 | (! grep -q "pending snapshots")
 
   clippy:
     name: Clippy
