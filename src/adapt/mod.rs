@@ -41,24 +41,6 @@ pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
     use scanner::{LocalProjectScanner, ProjectScanner};
     use analyzer::{ClaudeAnalyzer, ProjectAnalyzer};
 
-    let model = config.model.as_deref().unwrap_or("sonnet").to_string();
-
-    // Phase 1: Scan
-    eprintln!("Scanning project...");
-    let scanner = LocalProjectScanner::new();
-    let profile = scanner.scan(&config.path).await?;
-
-    // Phase 2: Analyze
-    eprintln!("Analyzing project...");
-    let analyzer = ClaudeAnalyzer::new(model.clone());
-    let report = analyzer.analyze(&profile).await?;
-
-    // Phase 3: Generate PRD
-    eprintln!("Generating PRD...");
-    let generator = ClaudePrdGenerator::new(model);
-    let prd_content = generator.generate(&profile, &report).await?;
-
-    // Check for existing PRD
     let output_path = config.path.join("docs/PRD.md");
     if output_path.exists() && !config.force {
         eprintln!(
@@ -68,7 +50,20 @@ pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Write PRD
+    let model = config.model.as_deref().unwrap_or("sonnet").to_string();
+
+    eprintln!("Scanning project...");
+    let scanner = LocalProjectScanner::new();
+    let profile = scanner.scan(&config.path).await?;
+
+    eprintln!("Analyzing project...");
+    let analyzer = ClaudeAnalyzer::new(model.clone());
+    let report = analyzer.analyze(&profile).await?;
+
+    eprintln!("Generating PRD...");
+    let generator = ClaudePrdGenerator::new(model);
+    let prd_content = generator.generate(&profile, &report).await?;
+
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -137,11 +132,15 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         Ok(content) => {
             let prd_path = config.path.join("docs/PRD.md");
             if !prd_path.exists() {
-                if let Some(parent) = prd_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
+                if let Some(parent) = prd_path.parent()
+                    && let Err(e) = std::fs::create_dir_all(parent)
+                {
+                    eprintln!("  Failed to create docs/: {}", e);
                 }
-                let _ = std::fs::write(&prd_path, &content);
-                eprintln!("  PRD saved to {}", prd_path.display());
+                match std::fs::write(&prd_path, &content) {
+                    Ok(()) => eprintln!("  PRD saved to {}", prd_path.display()),
+                    Err(e) => eprintln!("  Failed to write PRD: {}", e),
+                }
             } else {
                 eprintln!("  PRD already exists, skipping write");
             }

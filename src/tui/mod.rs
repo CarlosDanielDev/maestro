@@ -335,14 +335,17 @@ async fn event_loop(
                         use crate::adapt::prd::{ClaudePrdGenerator, PrdGenerator};
                         let generator = ClaudePrdGenerator::new(model);
                         let result = generator.generate(&profile, &report).await;
-                        // Write PRD to docs/PRD.md if successful and file doesn't exist
                         if let Ok(ref content) = result {
                             let prd_path = profile.root.join("docs/PRD.md");
                             if !prd_path.exists() {
-                                if let Some(parent) = prd_path.parent() {
-                                    let _ = std::fs::create_dir_all(parent);
+                                if let Some(parent) = prd_path.parent()
+                                    && let Err(e) = std::fs::create_dir_all(parent)
+                                {
+                                    tracing::warn!("Failed to create docs/: {}", e);
                                 }
-                                let _ = std::fs::write(&prd_path, content);
+                                if let Err(e) = std::fs::write(&prd_path, content) {
+                                    tracing::warn!("Failed to write PRD: {}", e);
+                                }
                             }
                         }
                         let _ = tx.send(app::TuiDataEvent::AdaptConsolidateResult(result));
