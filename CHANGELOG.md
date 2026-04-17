@@ -7,6 +7,39 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-04-17
+
+### Added
+
+- Configurable milestone naming convention in adapt settings (#368)
+- PRD generator — standalone command + adapt integration (#370)
+- Adapt AI scaffolding phase — generate .claude/ commands, skills, and subagents for target project (#371)
+
+### Changed
+
+- Add runtime state files to `.gitignore` (#352)
+- Remove or scaffold src/modes stub module (#354)
+- Consolidate GitHub integration under src/provider/github/ (#355)
+- Consolidate Azure DevOps module into src/provider/azure_devops/ (#356)
+- Consolidate src/flags/ store into src/state/ or document the boundary (#357)
+- Split src/util.rs into focused sub-modules (#362)
+- Extract CI polling service from src/tui/app/ (#363)
+- Extract session spawning service from src/tui/app/ (#364)
+- Extract work assignment service from src/tui/app/ (#365)
+- Tech debt catalog (#366)
+
+### Testing
+
+- Add unit tests for src/adapt/ pipeline modules (#358)
+- Add unit tests for src/review/ council and dispatch (#359)
+- Enforce snapshot test review in CI via cargo-insta (#360)
+
+### Documentation
+
+- Document build.rs purpose and rerun-if-changed directives (#353)
+- Add module-level documentation to src/turboquant/ (#361)
+- "The Maestro Way" workflow guide — adapt output for onboarded projects (#369)
+
 ## [0.13.0] - 2026-04-16
 
 ### Added
