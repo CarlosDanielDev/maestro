@@ -61,6 +61,22 @@ impl MaestroState {
     pub fn fork_depth(&self, session_id: uuid::Uuid) -> usize {
         self.fork_chain(session_id).len() - 1
     }
+
+    /// Apply TurboQuant-driven compaction to every session's activity log.
+    /// When `adapter` is None or disabled, returns an empty report list and
+    /// does not mutate sessions.
+    pub fn compact(
+        &mut self,
+        adapter: Option<&crate::turboquant::adapter::TurboQuantAdapter>,
+    ) -> Vec<crate::turboquant::adapter::StateCompactionReport> {
+        let Some(tq) = adapter else {
+            return Vec::new();
+        };
+        self.sessions
+            .iter_mut()
+            .map(|s| tq.compact_session_history(s))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -206,5 +222,96 @@ mod tests {
         let chain = state.fork_chain(a);
         // Should not infinite loop — chain should be finite
         assert!(chain.len() <= 3);
+    }
+
+    // --- Issue #345: compact() on MaestroState ---
+
+    use crate::session::types::{ActivityEntry, SessionStatus};
+    use crate::turboquant::adapter::TurboQuantAdapter;
+    use crate::turboquant::types::QuantStrategy;
+    use chrono::Utc;
+
+    fn adapter() -> TurboQuantAdapter {
+        TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false)
+    }
+
+    #[test]
+    fn compact_returns_empty_when_adapter_is_none() {
+        let mut state = MaestroState::default();
+        let mut s = crate::session::types::Session::new(
+            "p".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        for _ in 0..5 {
+            s.activity_log.push(ActivityEntry {
+                timestamp: Utc::now(),
+                message: "Tool: Bash".into(),
+            });
+        }
+        state.sessions.push(s);
+        let reports = state.compact(None);
+        assert!(reports.is_empty());
+        assert_eq!(state.sessions[0].activity_log.len(), 5);
+    }
+
+    #[test]
+    fn compact_runs_per_session_when_adapter_enabled() {
+        let mut state = MaestroState::default();
+        let mut s1 = crate::session::types::Session::new(
+            "a".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        s1.status = SessionStatus::Running;
+        for _ in 0..8 {
+            s1.activity_log.push(ActivityEntry {
+                timestamp: Utc::now(),
+                message: "Tool: Bash".into(),
+            });
+        }
+        let mut s2 = crate::session::types::Session::new(
+            "b".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        s2.status = SessionStatus::Running;
+        state.sessions.push(s1);
+        state.sessions.push(s2);
+
+        let a = adapter();
+        let reports = state.compact(Some(&a));
+        assert_eq!(reports.len(), 2);
+        assert_eq!(state.sessions[0].activity_log.len(), 1);
+        assert_eq!(state.sessions[1].activity_log.len(), 0);
+    }
+
+    #[test]
+    fn compact_then_serde_round_trip_preserves_compacted_log() {
+        let mut state = MaestroState::default();
+        let mut s = crate::session::types::Session::new(
+            "a".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        s.status = SessionStatus::Running;
+        for _ in 0..10 {
+            s.activity_log.push(ActivityEntry {
+                timestamp: Utc::now(),
+                message: "Tool: Bash".into(),
+            });
+        }
+        state.sessions.push(s);
+
+        let a = adapter();
+        state.compact(Some(&a));
+        let json = serde_json::to_string(&state).unwrap();
+        let rt: MaestroState = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.sessions[0].activity_log.len(), 1);
+        assert!(rt.sessions[0].activity_log[0].message.contains("x10"));
     }
 }

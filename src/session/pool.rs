@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -7,6 +8,7 @@ use super::manager::{ManagedSession, SessionEvent};
 use super::types::{Session, SessionStatus};
 use super::worktree::WorktreeManager;
 use crate::state::file_claims::FileClaimManager;
+use crate::turboquant::adapter::{ContextCompressor, TurboQuantAdapter};
 
 pub struct SessionPool {
     max_concurrent: usize,
@@ -22,6 +24,12 @@ pub struct SessionPool {
     allowed_tools: Vec<String>,
     /// Guardrail prompt appended to every session's system prompt.
     guardrail_prompt: Option<String>,
+    /// TurboQuant adapter used to compact the system-prompt appendix.
+    turboquant_adapter: Option<Arc<TurboQuantAdapter>>,
+    /// Token budget for system-prompt compaction.
+    system_prompt_budget: usize,
+    /// Cached knowledge-base appendix loaded once at configure time.
+    knowledge_appendix: Option<String>,
 }
 
 impl SessionPool {
@@ -41,7 +49,23 @@ impl SessionPool {
             permission_mode: "bypassPermissions".to_string(),
             allowed_tools: Vec::new(),
             guardrail_prompt: None,
+            turboquant_adapter: None,
+            system_prompt_budget: 0,
+            knowledge_appendix: None,
         }
+    }
+
+    /// Inject a shared TurboQuant adapter for system-prompt compaction.
+    /// Token budget of 0 disables truncation (dedup still runs).
+    pub fn set_turboquant_adapter(&mut self, adapter: Arc<TurboQuantAdapter>, budget: usize) {
+        self.turboquant_adapter = Some(adapter);
+        self.system_prompt_budget = budget;
+    }
+
+    /// Cache the knowledge-base appendix (loaded once from `.maestro/knowledge.md`)
+    /// so promotions don't hit disk per session.
+    pub fn set_knowledge_appendix(&mut self, appendix: Option<String>) {
+        self.knowledge_appendix = appendix;
     }
 
     /// Get the max concurrent session limit.
@@ -115,15 +139,27 @@ impl SessionPool {
                 }
             }
 
-            // Build system prompt with file claims and guardrails
-            let mut system_prompt = self.file_claims.build_system_prompt(session.id);
-            if let Some(ref guardrail) = self.guardrail_prompt {
-                let combined = match system_prompt {
-                    Some(existing) => Some(format!("{}\n\n{}", existing, guardrail)),
-                    None => Some(guardrail.clone()),
-                };
-                system_prompt = combined;
+            // Build system prompt appendix from file claims + guardrails + knowledge base.
+            let mut components: Vec<String> = Vec::new();
+            if let Some(fc) = self.file_claims.build_system_prompt(session.id) {
+                components.push(fc);
             }
+            if let Some(ref guardrail) = self.guardrail_prompt {
+                components.push(guardrail.clone());
+            }
+            if let Some(ref knowledge) = self.knowledge_appendix {
+                components.push(knowledge.clone());
+            }
+            let system_prompt = if components.is_empty() {
+                None
+            } else if let Some(ref tq) = self.turboquant_adapter
+                && tq.is_active()
+            {
+                let refs: Vec<&str> = components.iter().map(|s| s.as_str()).collect();
+                Some(tq.compact_system_prompt(&refs, self.system_prompt_budget))
+            } else {
+                Some(components.join("\n\n"))
+            };
 
             // Session remains Queued until ManagedSession::spawn() transitions it
             let mut managed =
@@ -732,6 +768,62 @@ mod tests {
         pool.tick_flash_counters();
         assert_eq!(pool.get_session(id1).unwrap().transition_flash_remaining, 3);
         assert_eq!(pool.get_session(id2).unwrap().transition_flash_remaining, 1);
+    }
+
+    // --- Issue #344: TurboQuant system-prompt compaction integration ---
+
+    #[test]
+    fn pool_promote_without_adapter_joins_components_plainly() {
+        let mut pool = make_pool(1);
+        pool.set_guardrail_prompt("GUARDRAIL: safety rules".into());
+        pool.enqueue(make_session("do work"));
+        pool.try_promote();
+        let managed = &pool.active[0];
+        let appendix = managed
+            .system_prompt_appendix
+            .as_ref()
+            .expect("appendix should be set when guardrail configured");
+        assert!(appendix.contains("GUARDRAIL: safety rules"));
+    }
+
+    #[test]
+    fn pool_promote_with_adapter_compacts_appendix() {
+        use crate::turboquant::adapter::TurboQuantAdapter;
+        use crate::turboquant::types::QuantStrategy;
+
+        let mut pool = make_pool(1);
+        pool.set_guardrail_prompt(
+            "GUARDRAIL: never modify auth. GUARDRAIL: never modify auth.".into(),
+        );
+        let adapter = Arc::new(TurboQuantAdapter::new(
+            4,
+            QuantStrategy::TurboQuant,
+            80.0,
+            false,
+        ));
+        pool.set_turboquant_adapter(adapter, 1024);
+        pool.enqueue(make_session("work"));
+        pool.try_promote();
+        let managed = &pool.active[0];
+        let appendix = managed.system_prompt_appendix.as_ref().unwrap();
+        assert!(appendix.contains("GUARDRAIL"));
+    }
+
+    #[test]
+    fn pool_promote_with_disabled_adapter_falls_back_to_join() {
+        use crate::turboquant::adapter::TurboQuantAdapter;
+        use crate::turboquant::types::QuantStrategy;
+
+        let mut pool = make_pool(1);
+        pool.set_guardrail_prompt("GUARDRAIL: X".into());
+        let mut a = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false);
+        a.set_enabled(false);
+        pool.set_turboquant_adapter(Arc::new(a), 1024);
+        pool.enqueue(make_session("work"));
+        pool.try_promote();
+        let managed = &pool.active[0];
+        let appendix = managed.system_prompt_appendix.as_ref().unwrap();
+        assert!(appendix.contains("GUARDRAIL: X"));
     }
 
     #[test]

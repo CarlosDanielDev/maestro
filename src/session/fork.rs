@@ -1,5 +1,7 @@
 use super::types::{Session, SessionStatus};
 use crate::state::progress::SessionProgress;
+use crate::turboquant::adapter::{CompressionMetrics, ContextCompressor, TurboQuantAdapter};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ForkReason {
@@ -12,6 +14,8 @@ pub enum ForkResult {
         child: Box<Session>,
         #[allow(dead_code)] // Reason: fork continuation — to be used in session resume flow
         continuation_prompt: String,
+        /// TurboQuant compression metrics, present when the handoff was compressed.
+        handoff_metrics: Option<CompressionMetrics>,
     },
     Denied {
         reason: String,
@@ -31,11 +35,27 @@ pub trait SessionForker: Send {
 
 pub struct ForkPolicy {
     pub max_fork_depth: u8,
+    /// Adapter + token budget for compressing the handoff prompt.
+    /// `None` disables compression; a zero budget inside `Some` also disables it.
+    turboquant: Option<(Arc<TurboQuantAdapter>, usize)>,
 }
 
 impl ForkPolicy {
     pub fn new(max_fork_depth: u8) -> Self {
-        Self { max_fork_depth }
+        Self {
+            max_fork_depth,
+            turboquant: None,
+        }
+    }
+
+    /// Inject a TurboQuant adapter for handoff compression.
+    pub fn with_turboquant(
+        mut self,
+        adapter: Arc<TurboQuantAdapter>,
+        handoff_budget: usize,
+    ) -> Self {
+        self.turboquant = Some((adapter, handoff_budget));
+        self
     }
 }
 
@@ -66,7 +86,19 @@ impl SessionForker for ForkPolicy {
             };
         }
 
-        let continuation = build_continuation_prompt(parent, progress, &fork_reason);
+        let raw_continuation = build_continuation_prompt(parent, progress, &fork_reason);
+
+        let (continuation, handoff_metrics) = match &self.turboquant {
+            Some((tq, budget)) if *budget > 0 && tq.is_active() => {
+                let compressed = tq.compress_handoff(&raw_continuation, &parent.prompt, *budget);
+                if compressed.text.is_empty() {
+                    (raw_continuation, None)
+                } else {
+                    (compressed.text, Some(compressed.metrics))
+                }
+            }
+            _ => (raw_continuation, None),
+        };
 
         let mut child = Session::new(
             format!(
@@ -84,6 +116,7 @@ impl SessionForker for ForkPolicy {
         ForkResult::Forked {
             child: Box::new(child),
             continuation_prompt: continuation,
+            handoff_metrics,
         }
     }
 }
@@ -367,5 +400,114 @@ mod tests {
             ForkReason::ContextOverflow { context_pct: 0.75 },
         );
         assert!(matches!(result, ForkResult::Denied { .. }));
+    }
+
+    // --- Issue #343: TurboQuant handoff compression integration ---
+
+    use crate::turboquant::types::QuantStrategy;
+
+    fn tq_adapter() -> Arc<TurboQuantAdapter> {
+        Arc::new(TurboQuantAdapter::new(
+            4,
+            QuantStrategy::TurboQuant,
+            80.0,
+            false,
+        ))
+    }
+
+    fn make_session_with_long_history(status: SessionStatus, fork_depth: u8) -> Session {
+        let mut s = make_session(status, fork_depth);
+        for i in 0..50 {
+            s.files_touched.push(format!("src/mod{}.rs", i));
+        }
+        s
+    }
+
+    #[test]
+    fn prepare_fork_without_adapter_returns_raw_continuation() {
+        let policy = ForkPolicy::new(5);
+        let parent = make_session_with_long_history(SessionStatus::Running, 0);
+        let result = policy.prepare_fork(
+            &parent,
+            None,
+            ForkReason::ContextOverflow { context_pct: 0.75 },
+        );
+        match result {
+            ForkResult::Forked {
+                continuation_prompt,
+                handoff_metrics,
+                ..
+            } => {
+                assert!(handoff_metrics.is_none());
+                // The raw continuation includes all file paths.
+                for i in 0..50 {
+                    assert!(continuation_prompt.contains(&format!("src/mod{}.rs", i)));
+                }
+            }
+            ForkResult::Denied { reason } => panic!("Fork denied: {}", reason),
+        }
+    }
+
+    #[test]
+    fn prepare_fork_with_adapter_shrinks_handoff_and_emits_metrics() {
+        let policy = ForkPolicy::new(5).with_turboquant(tq_adapter(), 128);
+        let parent = make_session_with_long_history(SessionStatus::Running, 0);
+        let result = policy.prepare_fork(
+            &parent,
+            None,
+            ForkReason::ContextOverflow { context_pct: 0.75 },
+        );
+        match result {
+            ForkResult::Forked {
+                continuation_prompt,
+                handoff_metrics,
+                ..
+            } => {
+                let metrics = handoff_metrics.expect("adapter should emit metrics");
+                assert!(metrics.compression_ratio >= 1.0);
+                assert!(continuation_prompt.len() / 4 <= 150);
+            }
+            ForkResult::Denied { reason } => panic!("Fork denied: {}", reason),
+        }
+    }
+
+    #[test]
+    fn prepare_fork_with_disabled_adapter_falls_back_to_raw() {
+        let mut adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false);
+        adapter.set_enabled(false);
+        let policy = ForkPolicy::new(5).with_turboquant(Arc::new(adapter), 128);
+        let parent = make_session_with_long_history(SessionStatus::Running, 0);
+        let result = policy.prepare_fork(
+            &parent,
+            None,
+            ForkReason::ContextOverflow { context_pct: 0.75 },
+        );
+        match result {
+            ForkResult::Forked {
+                handoff_metrics, ..
+            } => {
+                assert!(handoff_metrics.is_none());
+            }
+            ForkResult::Denied { reason } => panic!("Fork denied: {}", reason),
+        }
+    }
+
+    #[test]
+    fn prepare_fork_with_zero_budget_does_not_compress() {
+        let policy = ForkPolicy::new(5).with_turboquant(tq_adapter(), 0);
+        let parent = make_session_with_long_history(SessionStatus::Running, 0);
+        let result = policy.prepare_fork(
+            &parent,
+            None,
+            ForkReason::ContextOverflow { context_pct: 0.75 },
+        );
+        match result {
+            ForkResult::Forked {
+                handoff_metrics, ..
+            } => {
+                assert!(handoff_metrics.is_none());
+            }
+            ForkResult::Denied { reason } => panic!("Fork denied: {}", reason),
+        }
     }
 }

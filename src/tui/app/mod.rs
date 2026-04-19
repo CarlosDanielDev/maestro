@@ -52,6 +52,7 @@ pub struct App {
     pub panel_view: PanelView,
     pub state: MaestroState,
     pub store: StateStore,
+    pub turboquant_adapter: Option<std::sync::Arc<crate::turboquant::adapter::TurboQuantAdapter>>,
     pub running: bool,
     pub total_cost: f64,
     pub start_time: chrono::DateTime<chrono::Utc>,
@@ -140,6 +141,7 @@ impl App {
             panel_view: PanelView::new(),
             state,
             store,
+            turboquant_adapter: None,
             running: true,
             total_cost: 0.0,
             start_time: Utc::now(),
@@ -212,9 +214,39 @@ impl App {
     }
 
     pub fn configure(&mut self, config: Config) {
-        self.fork_policy = Some(ForkPolicy::new(
-            config.sessions.context_overflow.max_fork_depth,
-        ));
+        // Shared adapter so fork and pool observe the same enabled state.
+        let tq_adapter = if config.turboquant.enabled {
+            Some(std::sync::Arc::new(
+                crate::turboquant::adapter::TurboQuantAdapter::new(
+                    config.turboquant.bit_width,
+                    config.turboquant.strategy,
+                    config.sessions.context_overflow.overflow_threshold_pct as f64,
+                    config.turboquant.auto_on_overflow,
+                ),
+            ))
+        } else {
+            None
+        };
+
+        let mut fp = ForkPolicy::new(config.sessions.context_overflow.max_fork_depth);
+        if let Some(ref adapter) = tq_adapter {
+            fp = fp.with_turboquant(
+                std::sync::Arc::clone(adapter),
+                config.turboquant.fork_handoff_budget,
+            );
+        }
+        self.fork_policy = Some(fp);
+
+        if let Some(ref adapter) = tq_adapter {
+            self.pool.set_turboquant_adapter(
+                std::sync::Arc::clone(adapter),
+                config.turboquant.system_prompt_budget,
+            );
+        }
+        self.pool
+            .set_knowledge_appendix(crate::adapt::knowledge::load_appendix());
+        self.turboquant_adapter = tq_adapter;
+
         let guardrail = crate::prompts::resolve_guardrail(
             config.sessions.guardrail_prompt.as_deref(),
             &std::path::PathBuf::from("."),

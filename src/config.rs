@@ -3,7 +3,7 @@ use crate::tui::theme::ThemeConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
@@ -90,10 +90,31 @@ pub struct TurboQuantConfig {
     /// Automatically enable on context overflow events.
     #[serde(default)]
     pub auto_on_overflow: bool,
+    /// Token budget for fork-handoff compression.
+    #[serde(default = "default_fork_handoff_budget")]
+    pub fork_handoff_budget: usize,
+    /// Token budget for system-prompt compaction.
+    #[serde(default = "default_system_prompt_budget")]
+    pub system_prompt_budget: usize,
+    /// Token budget for knowledge-base compression.
+    #[serde(default = "default_knowledge_budget")]
+    pub knowledge_budget: usize,
 }
 
 fn default_turbo_bit_width() -> u8 {
     4
+}
+
+fn default_fork_handoff_budget() -> usize {
+    4096
+}
+
+fn default_system_prompt_budget() -> usize {
+    2048
+}
+
+fn default_knowledge_budget() -> usize {
+    4096
 }
 
 impl Default for TurboQuantConfig {
@@ -104,6 +125,9 @@ impl Default for TurboQuantConfig {
             strategy: QuantStrategy::default(),
             apply_to: ApplyTarget::default(),
             auto_on_overflow: false,
+            fork_handoff_budget: default_fork_handoff_budget(),
+            system_prompt_budget: default_system_prompt_budget(),
+            knowledge_budget: default_knowledge_budget(),
         }
     }
 }
@@ -710,16 +734,30 @@ impl Config {
     }
 
     pub fn find_and_load() -> Result<Self> {
-        let candidates = [
-            PathBuf::from("maestro.toml"),
-            PathBuf::from(".maestro/config.toml"),
-        ];
-        for path in &candidates {
-            if path.exists() {
-                return Self::load(path);
+        Self::find_and_load_in(Path::new("."))
+    }
+
+    /// Find `maestro.toml` or `.maestro/config.toml` under `base` and load it.
+    pub fn find_and_load_in(base: &Path) -> Result<Self> {
+        for candidate in ["maestro.toml", ".maestro/config.toml"] {
+            let path = base.join(candidate);
+            match Self::load(&path) {
+                Ok(cfg) => return Ok(cfg),
+                Err(e) => {
+                    // Only keep searching if this particular file doesn't exist.
+                    if let Some(io_err) = e.downcast_ref::<std::io::Error>()
+                        && io_err.kind() == std::io::ErrorKind::NotFound
+                    {
+                        continue;
+                    }
+                    return Err(e);
+                }
             }
         }
-        anyhow::bail!("No maestro.toml found. Run `maestro init` to create one.")
+        anyhow::bail!(
+            "No maestro.toml found under {}. Run `maestro init` to create one.",
+            base.display()
+        )
     }
 }
 
@@ -1401,6 +1439,35 @@ text_primary = "cyan"
         assert_eq!(cfg.strategy, QuantStrategy::TurboQuant);
         assert_eq!(cfg.apply_to, ApplyTarget::Both);
         assert!(!cfg.auto_on_overflow);
+        assert_eq!(cfg.fork_handoff_budget, 4096);
+        assert_eq!(cfg.system_prompt_budget, 2048);
+        assert_eq!(cfg.knowledge_budget, 4096);
+    }
+
+    #[test]
+    fn turboquant_config_fork_handoff_budget_defaults_when_absent() {
+        let toml_str = r#"
+            enabled = true
+            bit_width = 4
+        "#;
+        let cfg: TurboQuantConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.fork_handoff_budget, 4096);
+        assert_eq!(cfg.system_prompt_budget, 2048);
+        assert_eq!(cfg.knowledge_budget, 4096);
+    }
+
+    #[test]
+    fn turboquant_config_new_budgets_deserialize_from_toml() {
+        let toml_str = r#"
+            enabled = true
+            fork_handoff_budget = 8192
+            system_prompt_budget = 1024
+            knowledge_budget = 16384
+        "#;
+        let cfg: TurboQuantConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.fork_handoff_budget, 8192);
+        assert_eq!(cfg.system_prompt_budget, 1024);
+        assert_eq!(cfg.knowledge_budget, 16384);
     }
 
     #[test]
@@ -1428,6 +1495,9 @@ text_primary = "cyan"
             strategy: QuantStrategy::PolarQuant,
             apply_to: ApplyTarget::Keys,
             auto_on_overflow: true,
+            fork_handoff_budget: 8192,
+            system_prompt_budget: 1024,
+            knowledge_budget: 2048,
         };
         let serialized = toml::to_string(&cfg).unwrap();
         let deserialized: TurboQuantConfig = toml::from_str(&serialized).unwrap();

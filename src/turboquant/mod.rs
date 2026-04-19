@@ -19,6 +19,7 @@
 //!    provides dot-product estimation for similarity search.
 
 pub mod adapter;
+pub mod budget;
 pub mod pipeline;
 pub mod polar;
 pub mod qjl;
