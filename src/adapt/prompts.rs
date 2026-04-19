@@ -140,7 +140,7 @@ Create a structured plan with milestones and DOR-compliant issues. Return a JSON
 {{
   "milestones": [
     {{
-      "title": "M0: Foundation",
+      "title": "<short milestone title>",
       "description": "Description of the milestone goals",
       "issues": [
         {{

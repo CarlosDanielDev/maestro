@@ -1,6 +1,7 @@
 pub mod analyzer;
 pub mod knowledge;
 pub mod materializer;
+pub mod milestone_pattern;
 pub mod planner;
 pub mod prd;
 mod prompts;
@@ -180,11 +181,27 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         Err(e) => eprintln!("  Failed to write knowledge.md: {}", e),
     }
 
+    // Phase 2.7: Detect the repo's existing milestone-naming pattern so the
+    // planner's output matches conventions already in use. Falls back to the
+    // configured `MilestoneNaming` when the repo has no detectable pattern.
+    let milestone_hint = detect_milestone_hint(&profile.root, project_cfg.as_ref()).await;
+    if let Some(ref hint) = milestone_hint {
+        let preview: String = hint.chars().take(120).collect();
+        eprintln!("Phase 2.7: Milestone pattern → {}…", preview);
+    } else {
+        eprintln!("Phase 2.7: No milestone pattern detected (will defer to planner).");
+    }
+
     // Phase 3: Plan
     eprintln!("Phase 3: Planning milestones and issues...");
     let planner = ClaudePlanner::new(model.clone());
     let plan = planner
-        .plan(&profile, &report, prd_content.as_deref())
+        .plan(
+            &profile,
+            &report,
+            prd_content.as_deref(),
+            milestone_hint.as_deref(),
+        )
         .await?;
     eprintln!(
         "  {} milestones, {} issues",
@@ -233,6 +250,50 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Build the milestone-naming hint for the Claude planner.
+///
+/// Precedence:
+/// 1. `MilestoneNaming::Custom` with a template → use it verbatim (user opt-in).
+/// 2. `MilestoneNaming::Standard` or `Ai` → try to detect an existing pattern
+///    from the repo's milestones. Return `Some(hint)` if detected, `None` if
+///    the repo has no milestones or no dominant pattern (let Claude decide).
+///
+/// Failures talking to GitHub are non-fatal — returns `None` and adapt proceeds
+/// with the planner's default behavior.
+pub async fn detect_milestone_hint(
+    _project_root: &std::path::Path,
+    project_cfg: Option<&crate::config::Config>,
+) -> Option<String> {
+    use crate::config::MilestoneNaming;
+
+    if let Some(cfg) = project_cfg
+        && cfg.adapt.milestone_naming == MilestoneNaming::Custom
+        && let Some(template) = cfg.adapt.milestone_template.as_deref()
+    {
+        return Some(format!(
+            "Use this exact milestone title template (user-provided): `{}`. \
+             `{{n}}` is the zero-based milestone index; `{{title}}` is a short description.",
+            template
+        ));
+    }
+
+    let github = crate::provider::github::client::GhCliClient::new();
+    let mut titles: Vec<String> = Vec::new();
+    for state in ["open", "closed"] {
+        match crate::provider::github::client::GitHubClient::list_milestones(&github, state).await {
+            Ok(ms) => titles.extend(ms.into_iter().map(|m| m.title)),
+            Err(e) => {
+                tracing::warn!("Failed to list {state} milestones for pattern detection: {e}");
+            }
+        }
+    }
+    if titles.is_empty() {
+        return None;
+    }
+    let refs: Vec<&str> = titles.iter().map(|s| s.as_str()).collect();
+    milestone_pattern::build_planner_hint(&refs)
 }
 
 fn build_adapter_from_config(
