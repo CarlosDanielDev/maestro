@@ -10,6 +10,7 @@ pub trait AdaptPlanner: Send + Sync {
         profile: &ProjectProfile,
         report: &AdaptReport,
         prd_content: Option<&str>,
+        milestone_naming_hint: Option<&str>,
     ) -> anyhow::Result<AdaptPlan>;
 }
 
@@ -30,10 +31,16 @@ impl AdaptPlanner for ClaudePlanner {
         profile: &ProjectProfile,
         report: &AdaptReport,
         prd_content: Option<&str>,
+        milestone_naming_hint: Option<&str>,
     ) -> anyhow::Result<AdaptPlan> {
         let profile_json = serde_json::to_string_pretty(profile)?;
         let report_json = serde_json::to_string_pretty(report)?;
-        let prompt = build_planning_prompt(&profile_json, &report_json, None, prd_content);
+        let prompt = build_planning_prompt(
+            &profile_json,
+            &report_json,
+            milestone_naming_hint,
+            prd_content,
+        );
         let raw = run_claude_print(&self.model, &prompt, &profile.root).await?;
         parse_json_response(&raw)
     }
@@ -63,6 +70,7 @@ impl AdaptPlanner for MockAdaptPlanner {
         _profile: &ProjectProfile,
         _report: &AdaptReport,
         _prd_content: Option<&str>,
+        _milestone_naming_hint: Option<&str>,
     ) -> anyhow::Result<AdaptPlan> {
         self.result
             .clone()
@@ -151,7 +159,7 @@ mod tests {
             tech_debt_items: vec![],
         };
 
-        let result = planner.plan(&profile, &report, None).await.unwrap();
+        let result = planner.plan(&profile, &report, None, None).await.unwrap();
         assert_eq!(result.milestones.len(), 1);
         assert_eq!(result.milestones[0].issues.len(), 2);
         assert_eq!(
@@ -254,6 +262,6 @@ mod tests {
             modules: vec![],
             tech_debt_items: vec![],
         };
-        assert!(planner.plan(&profile, &report, None).await.is_err());
+        assert!(planner.plan(&profile, &report, None, None).await.is_err());
     }
 }

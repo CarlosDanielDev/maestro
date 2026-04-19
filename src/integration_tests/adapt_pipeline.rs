@@ -117,7 +117,7 @@ async fn pipeline_analyze_then_plan_with_mocks() {
 
     // Phase 3: Plan
     let planner = MockAdaptPlanner::with_plan(sample_plan());
-    let plan = planner.plan(&profile, &report, None).await.unwrap();
+    let plan = planner.plan(&profile, &report, None, None).await.unwrap();
     assert_eq!(plan.milestones.len(), 2);
     assert_eq!(plan.milestones[0].issues.len(), 1);
     assert_eq!(plan.milestones[1].issues[0].blocked_by_titles.len(), 1);
@@ -142,7 +142,7 @@ async fn pipeline_empty_analysis_produces_valid_plan() {
         maestro_toml_patch: None,
         workflow_guide: None,
     });
-    let plan = planner.plan(&profile, &report, None).await.unwrap();
+    let plan = planner.plan(&profile, &report, None, None).await.unwrap();
     assert!(plan.milestones.is_empty());
     assert!(plan.maestro_toml_patch.is_none());
 }
@@ -162,6 +162,6 @@ async fn pipeline_planner_failure_propagates() {
     let profile = sample_profile();
     let report = sample_report();
     let planner = MockAdaptPlanner::without_plan();
-    let err = planner.plan(&profile, &report, None).await;
+    let err = planner.plan(&profile, &report, None, None).await;
     assert!(err.is_err());
 }

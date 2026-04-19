@@ -357,9 +357,21 @@ async fn event_loop(
                     let model = config.model.unwrap_or_else(|| "sonnet".to_string());
                     tokio::spawn(async move {
                         use crate::adapt::planner::{AdaptPlanner, ClaudePlanner};
+                        let project_cfg =
+                            crate::config::Config::find_and_load_in(&config.path).ok();
+                        let milestone_hint = crate::adapt::detect_milestone_hint(
+                            &profile.root,
+                            project_cfg.as_ref(),
+                        )
+                        .await;
                         let planner = ClaudePlanner::new(model);
                         let result = planner
-                            .plan(&profile, &report, prd_content.as_deref())
+                            .plan(
+                                &profile,
+                                &report,
+                                prd_content.as_deref(),
+                                milestone_hint.as_deref(),
+                            )
                             .await;
                         let _ = tx.send(app::TuiDataEvent::AdaptPlanResult(result));
                     });
