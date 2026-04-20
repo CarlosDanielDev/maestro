@@ -69,10 +69,15 @@ jobs:
     # Advisory scan against the RustSec database. Ignores the same transitive
     # unmaintained advisories as deny.toml — we can't upgrade without upstream
     # ratatui / syntect / reqwest moving first.
+    #
+    # Cargo.lock is .gitignored (binary-crate convention in this repo), so we
+    # generate it on the runner before the audit-check action runs.
     name: Cargo Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo generate-lockfile
       - uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
