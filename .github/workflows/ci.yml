@@ -52,3 +52,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/check-file-size.sh
+
+  deny:
+    # Supply-chain gate: advisories, wildcards, licenses, registries.
+    # Ignore list for transitive-only unmaintained advisories is documented
+    # in deny.toml with RUSTSEC links. See docs/RUST-GUARDRAILS.md section 9.
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
+  audit:
+    # Advisory scan against the RustSec database. Ignores the same transitive
+    # unmaintained advisories as deny.toml — we can't upgrade without upstream
+    # ratatui / syntect / reqwest moving first.
+    #
+    # Cargo.lock is .gitignored (binary-crate convention in this repo), so we
+    # generate it on the runner before the audit-check action runs.
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo generate-lockfile
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ignore: RUSTSEC-2025-0141,RUSTSEC-2024-0436,RUSTSEC-2024-0320
