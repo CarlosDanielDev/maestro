@@ -55,12 +55,10 @@ jobs:
 
   deny:
     # Supply-chain gate: advisories, wildcards, licenses, registries.
-    # Non-blocking initially (continue-on-error) so the first run surfaces any
-    # legacy violations without breaking main. Flip to blocking once clean.
-    # See docs/RUST-GUARDRAILS.md section 9.
+    # Ignore list for transitive-only unmaintained advisories is documented
+    # in deny.toml with RUSTSEC links. See docs/RUST-GUARDRAILS.md section 9.
     name: Cargo Deny
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -68,12 +66,14 @@ jobs:
           command: check advisories bans licenses sources
 
   audit:
-    # Advisory scan against the RustSec database. Non-blocking; informational.
+    # Advisory scan against the RustSec database. Ignores the same transitive
+    # unmaintained advisories as deny.toml — we can't upgrade without upstream
+    # ratatui / syntect / reqwest moving first.
     name: Cargo Audit
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          ignore: RUSTSEC-2025-0141,RUSTSEC-2024-0436,RUSTSEC-2024-0320

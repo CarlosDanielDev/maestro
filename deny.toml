@@ -3,7 +3,8 @@
 #
 # Philosophy: pragmatic senior-dev baseline — block real supply-chain hazards
 # (known-vulnerable, wildcard versions, copyleft, non-crates.io sources)
-# without blocking on every transitive-dup noise.
+# without blocking on every transitive-dup noise or unmaintained transitive dep
+# we can't upgrade without moving upstream (ratatui, syntect, reqwest).
 
 [graph]
 all-features = false
@@ -14,7 +15,21 @@ feature-depth = 1
 
 [advisories]
 version = 2
-ignore = []
+ignore = [
+    # Transitive via `syntect` — bincode 1.x is considered complete by the
+    # bincode maintainers and has no known vulnerability. Upstream syntect
+    # hasn't moved to bincode 2.x / alternatives yet.
+    # RUSTSEC-2025-0141: https://rustsec.org/advisories/RUSTSEC-2025-0141
+    "RUSTSEC-2025-0141",
+    # Transitive via `ratatui` and `tui-textarea` — paste is archived but has
+    # no known vulnerability. ratatui tracking replacement (pastey) upstream.
+    # RUSTSEC-2024-0436: https://rustsec.org/advisories/RUSTSEC-2024-0436
+    "RUSTSEC-2024-0436",
+    # Transitive via `syntect` — yaml-rust maintainer unreachable but no
+    # known vulnerability. syntect hasn't migrated to yaml-rust2 yet.
+    # RUSTSEC-2024-0320: https://rustsec.org/advisories/RUSTSEC-2024-0320
+    "RUSTSEC-2024-0320",
+]
 
 [licenses]
 version = 2
@@ -24,13 +39,14 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "BSL-1.0",
     "ISC",
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
-    "OpenSSL",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 exceptions = []

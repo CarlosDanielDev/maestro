@@ -318,8 +318,8 @@ Current CI (`.github/workflows/ci.yml`):
 
 Added by this guardrails bundle:
 
-5. **deny** — `cargo deny check advisories bans licenses sources` (non-blocking first pass).
-6. **audit** — `cargo audit` (advisory).
+5. **deny** — `cargo deny check advisories bans licenses sources`. Ignore list for transitive-only unmaintained advisories (bincode via syntect, paste via ratatui/tui-textarea, yaml-rust via syntect) is documented in `deny.toml` with RUSTSEC links.
+6. **audit** — `cargo audit` (RustSec advisory scan, same ignore list as deny).
 
 Runtime enforcement via `maestro.toml [sessions.completion_gates]` (fmt/clippy/test required) — orthogonal to CI; fires post-session.
 
