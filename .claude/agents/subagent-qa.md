@@ -70,6 +70,15 @@ Read project-patterns and testing-related skills.
 If the task involves GitHub/Azure DevOps interactions, also read `provider-resilience` skill for idempotency test patterns.
 ```
 
+**For Rust work specifically:** read `docs/RUST-GUARDRAILS.md` §7 (Testing discipline) and the sidecar `.claude/skills/project-patterns/rust-guardrails.md`. Your test blueprint MUST follow the maestro testing conventions:
+- Unit tests inline via `#[cfg(test)] mod tests` at the bottom of the same file.
+- Integration tests under `src/integration_tests/` (NOT `tests/`) — this gives access to crate-private modules.
+- `#[tokio::test]` for async.
+- Trait + hand-written fake for mocking — do NOT propose `mockall`. Template: `SessionForker` in `src/session/fork.rs:26-34`.
+- Prefer real fakes (in-memory impl that really stores) over assertion-only mocks.
+- Insta snapshots for rendered output (TUI, formatted text). CI enforces `INSTA_UPDATE=no`.
+- Any `#[ignore]` must carry a comment linking an issue and a reason.
+
 ---
 
 # QA Engineer - Core Framework

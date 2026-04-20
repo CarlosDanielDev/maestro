@@ -2,6 +2,7 @@
 name = "maestro"
 version = "0.13.1"
 edition = "2024"
+rust-version = "1.89"
 description = "Multi-session Claude Code orchestrator with Matrix-style TUI"
 license = "MIT"
 
@@ -63,8 +64,19 @@ harness = false
 name = "turboquant"
 harness = false
 
+[lints.rust]
+# `deny` (not `forbid`) so that narrowly scoped FFI blocks can be allow-listed
+# at call sites with a `// SAFETY:` comment. See docs/RUST-GUARDRAILS.md §8.
+unsafe_code = "deny"
+
 [lints.clippy]
 expect_used = "warn"
+dbg_macro = "deny"
+# Lints deliberately NOT enabled globally (documented in docs/RUST-GUARDRAILS.md §2, §11):
+#   unwrap_used, panic, todo: too many existing matches; opt-in per-module via
+#     `#![deny(clippy::unwrap_used)]` in new modules until the legacy is cleaned up.
+#   print_stdout, print_stderr: CLI commands legitimately print to stdout/stderr.
+#     Library code avoids them by convention; see guardrails §11.
 
 [profile.release]
 lto = "fat"

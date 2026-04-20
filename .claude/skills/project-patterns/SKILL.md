@@ -76,3 +76,17 @@ Sessions follow: `QUEUED → SPAWNING → RUNNING → COMPLETED/ERRORED/PAUSED/K
 - Mutable borrow conflicts in App (extract data before calling &mut self methods)
 - Direct stdout writes (TUI owns the terminal)
 - `unwrap()` or `expect()` on external input
+
+## Rust Guardrails
+
+**Canonical policy:** `docs/RUST-GUARDRAILS.md` — the single source of truth for Rust coding policy in maestro. Consult this doc before proposing new modules, introducing new dependencies, or reviewing PRs that touch error handling, async, unsafe, serialization, or observability.
+
+Quick-reference: the 8 principles (safe-by-default, errors-are-values, async hygiene, ownership-over-aliasing, tests-as-specification, supply-chain caution, readability-is-a-feature, observability).
+
+**Detailed sidecar:** `rust-guardrails.md` in this skill directory — distilled rules with pattern exemplars (file paths and line numbers) from the maestro codebase. Read when you need a shorter answer than the full doc.
+
+**Enforced by:**
+- `Cargo.toml [lints]` — `unsafe_code = "deny"`, `expect_used = "warn"`, `dbg_macro = "deny"`.
+- `rustfmt.toml`, `clippy.toml`, `deny.toml`, `rust-toolchain.toml` at repo root.
+- CI jobs: `test`, `clippy`, `fmt`, `file-size`, `deny` (non-blocking), `audit` (non-blocking).
+- Completion gates in `maestro.toml [sessions.completion_gates]`.

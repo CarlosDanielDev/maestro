@@ -56,10 +56,22 @@ Use Glob to list available skills:
 Read project-patterns skill and any tech-specific skills.
 If the task involves GitHub/Azure DevOps API calls (creating issues, milestones, labels, PRs), also read the `provider-resilience` skill for error handling and idempotency patterns.
 
+**For Rust work specifically:** read `docs/RUST-GUARDRAILS.md` (single source of truth) and the sidecar `.claude/skills/project-patterns/rust-guardrails.md`. The blueprint you produce MUST cite specific guardrail sections when proposing:
+- Error handling (§2) — anyhow boundaries vs typed enums at seams
+- Async / channel design (§3) — shutdown paths, bounded channels
+- Concurrency primitives (§4) — Arc/Mutex justification
+- Subprocess or I/O (§5) — tokio::process patterns
+- serde types from external data (§6) — contract schema requirement
+- Testing strategy (§7) — trait-based fakes, insta snapshots, integration test location
+- New unsafe (§8) — ADR + SAFETY comment + `#[allow(unsafe_code)]`
+- Dependency addition (§9) — license allow list, MSRV
+- Observability (§11) — `tracing` over `println!`/`dbg!`
+
 ## Step 4: Apply Patterns in Recommendations
 - Include code examples that follow project conventions
-- Reference specific pattern files you consulted
+- Reference specific pattern files you consulted (path + line numbers)
 - Flag anti-patterns you observe in the codebase
+- For Rust: cite the guardrails section(s) that informed each design decision
 
 **Note:** If no skills exist, analyze the codebase to identify existing patterns and recommend best practices for the detected stack.
 

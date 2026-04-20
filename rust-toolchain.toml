@@ -1,0 +1,10 @@
+# Rust toolchain pin.
+# Philosophy: MSRV is declared in Cargo.toml (`rust-version = "1.85"`).
+# This file pins the local/CI channel to `stable`, so contributors get the
+# current stable toolchain via rustup without having to install an exact patch.
+# Bumping the channel (e.g. to `beta` or a specific version) is an ADR-level change.
+
+[toolchain]
+channel = "stable"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
