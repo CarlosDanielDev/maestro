@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use crate::tui::icons::{self, IconId};
+use crate::tui::marquee::{MarqueeConfig, MarqueeState, spans_char_count, visible_spans};
 use crate::tui::theme::Theme;
 
 /// Data for the compact stats bar widget.
@@ -34,6 +35,46 @@ pub struct StatsBar<'a> {
 impl<'a> StatsBar<'a> {
     pub fn new(data: StatsBarData, theme: &'a Theme) -> Self {
         Self { data, theme }
+    }
+
+    /// Build the styled spans and render into `area`, animating with `marquee`
+    /// when the content overflows the available width.
+    ///
+    /// Preserves the existing non-animated behavior when the line fits.
+    pub fn render_with_marquee(self, area: Rect, buf: &mut Buffer, marquee: &mut MarqueeState) {
+        if area.height < 1 || area.width < 2 {
+            return;
+        }
+
+        let block = crate::tui::theme::Theme::stats_block(self.theme);
+        let inner = block.inner(area);
+        block.render(area, buf);
+
+        if inner.height == 0 {
+            return;
+        }
+
+        let spans = self.build_spans();
+        let total_width = spans_char_count(&spans);
+        let viewport_width = inner.width as usize;
+
+        if total_width <= viewport_width {
+            // Fits — render exactly like before and pin the marquee to the start.
+            marquee.reset();
+            Paragraph::new(Line::from(spans)).render(inner, buf);
+            return;
+        }
+
+        // Overflow path: advance marquee and render the visible window.
+        let overflow = total_width.saturating_sub(viewport_width);
+        marquee.advance(overflow, &MarqueeConfig::default());
+        let windowed = visible_spans(&spans, marquee.offset, viewport_width);
+        Paragraph::new(Line::from(windowed)).render(inner, buf);
+    }
+
+    fn build_spans(&self) -> Vec<Span<'_>> {
+        let line = self.build_line();
+        line.spans
     }
 
     fn build_line(&self) -> Line<'_> {
@@ -255,5 +296,98 @@ mod tests {
     #[test]
     fn renders_without_panic_at_minimum_size() {
         let _ = render_to_string(make_loaded_data(), 1, 1);
+    }
+
+    // --- Issue #410: marquee scroll when stats bar overflows ---
+
+    fn render_with_marquee_to_string(
+        data: StatsBarData,
+        width: u16,
+        height: u16,
+        marquee: &mut MarqueeState,
+        frames: u32,
+    ) -> String {
+        let theme = Theme::default();
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut last = String::new();
+        for _ in 0..frames {
+            terminal
+                .draw(|f| {
+                    StatsBar::new(data.clone(), &theme).render_with_marquee(
+                        f.area(),
+                        f.buffer_mut(),
+                        marquee,
+                    );
+                })
+                .unwrap();
+            last = format!("{:?}", terminal.backend());
+        }
+        last
+    }
+
+    fn long_data() -> StatsBarData {
+        StatsBarData {
+            loaded: true,
+            repo: "CarlosDanielDev/maestro".to_string(),
+            branch: "feat/rust-development-guardrails".to_string(),
+            username: Some("carlosdanieldev".to_string()),
+            issues_open: 42,
+            issues_closed: 137,
+            milestone_title: Some("v0.14.0 TurboQuant".to_string()),
+            milestone_closed: 4,
+            milestone_total: 9,
+            sessions_active: 3,
+            sessions_total: 12,
+        }
+    }
+
+    #[test]
+    fn marquee_stays_at_pause_start_when_content_fits_wide_viewport() {
+        let mut state = MarqueeState::new();
+        let _ = render_with_marquee_to_string(make_loaded_data(), 200, 3, &mut state, 50);
+        assert_eq!(
+            state.phase,
+            crate::tui::marquee::MarqueePhase::PauseStart,
+            "wide viewport must never leave PauseStart"
+        );
+        assert_eq!(state.offset, 0);
+    }
+
+    #[test]
+    fn marquee_advances_when_content_overflows_narrow_viewport() {
+        let mut state = MarqueeState::new();
+        // Very narrow viewport guarantees overflow. Advance past pause_start ticks.
+        let cfg = MarqueeConfig::default();
+        let frames = cfg.pause_start_ticks as u32 + 20;
+        let _ = render_with_marquee_to_string(long_data(), 40, 3, &mut state, frames);
+        assert_ne!(
+            state.offset, 0,
+            "marquee must have advanced off zero after pause_start + scroll frames"
+        );
+    }
+
+    #[test]
+    fn marquee_resets_when_long_data_fits_after_shrink() {
+        let mut state = MarqueeState::new();
+        // Advance past pause_start into scrolling so offset > 0
+        let cfg = MarqueeConfig::default();
+        let frames = cfg.pause_start_ticks as u32 + 20;
+        let _ = render_with_marquee_to_string(long_data(), 40, 3, &mut state, frames);
+        assert_ne!(state.offset, 0);
+
+        // Now render with a wide viewport so the stats line fits again — the
+        // renderer must reset the marquee back to PauseStart.
+        let _ = render_with_marquee_to_string(long_data(), 300, 3, &mut state, 1);
+        assert_eq!(state.offset, 0);
+        assert_eq!(state.phase, crate::tui::marquee::MarqueePhase::PauseStart);
+    }
+
+    #[test]
+    fn render_with_marquee_does_not_panic_at_minimum_widths() {
+        let mut state = MarqueeState::new();
+        for width in [1u16, 10, 40, 80, 120] {
+            let _ = render_with_marquee_to_string(long_data(), width, 3, &mut state, 5);
+        }
     }
 }

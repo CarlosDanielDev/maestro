@@ -11,11 +11,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Widget},
+    widgets::Paragraph,
 };
 
 impl HomeScreen {
-    pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+    pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let warning_height = if self.warnings.is_empty() {
             0
         } else {
@@ -66,7 +66,12 @@ impl HomeScreen {
             sessions_active: self.stats.sessions_active,
             sessions_total: self.stats.sessions_total,
         };
-        StatsBar::new(stats_data, theme).render(chunks[0], f.buffer_mut());
+        self.sync_stats_bar_marquee(&stats_data);
+        StatsBar::new(stats_data, theme).render_with_marquee(
+            chunks[0],
+            f.buffer_mut(),
+            &mut self.stats_bar_marquee,
+        );
 
         if !self.warnings.is_empty() {
             self.draw_warnings(f, chunks[1], theme);

@@ -130,6 +130,75 @@ pub fn needs_scroll(text_len: usize, viewport_width: usize) -> bool {
     text_len > viewport_width
 }
 
+/// Total character count across a slice of styled spans.
+pub fn spans_char_count(spans: &[ratatui::text::Span<'_>]) -> usize {
+    spans.iter().map(|s| s.content.chars().count()).sum()
+}
+
+/// Return styled spans representing a horizontal window over `spans` starting
+/// at character-position `offset` and spanning `viewport_width` characters.
+///
+/// Preserves the style of each span during scrolling. The output is always
+/// exactly `viewport_width` characters wide (right-padded with unstyled
+/// spaces if needed).
+///
+/// Mirrors `visible_slice` for plain strings.
+pub fn visible_spans(
+    spans: &[ratatui::text::Span<'_>],
+    offset: usize,
+    viewport_width: usize,
+) -> Vec<ratatui::text::Span<'static>> {
+    use ratatui::text::Span;
+
+    if viewport_width == 0 {
+        return Vec::new();
+    }
+
+    // Flatten into (char, Style) pairs so we can window across span boundaries.
+    let pairs: Vec<(char, ratatui::style::Style)> = spans
+        .iter()
+        .flat_map(|s| {
+            let style = s.style;
+            s.content.chars().map(move |c| (c, style))
+        })
+        .collect();
+
+    if offset >= pairs.len() {
+        return vec![Span::raw(" ".repeat(viewport_width))];
+    }
+
+    let end = (offset + viewport_width).min(pairs.len());
+    let window = &pairs[offset..end];
+
+    let mut result: Vec<Span<'static>> = Vec::new();
+    let mut current_text = String::new();
+    let mut current_style = window[0].1;
+    for &(c, style) in window {
+        if style == current_style {
+            current_text.push(c);
+        } else {
+            if !current_text.is_empty() {
+                result.push(Span::styled(
+                    std::mem::take(&mut current_text),
+                    current_style,
+                ));
+            }
+            current_style = style;
+            current_text.push(c);
+        }
+    }
+    if !current_text.is_empty() {
+        result.push(Span::styled(current_text, current_style));
+    }
+
+    let pad_len = viewport_width.saturating_sub(end - offset);
+    if pad_len > 0 {
+        result.push(Span::raw(" ".repeat(pad_len)));
+    }
+
+    result
+}
+
 // ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
@@ -531,6 +600,119 @@ mod tests {
     }
 
     // --- Suite 9: edge cases ---
+
+    // --- Suite 10: visible_spans (styled-span aware) ---
+
+    use ratatui::style::{Color, Style};
+    use ratatui::text::Span;
+
+    fn style_red() -> Style {
+        Style::default().fg(Color::Red)
+    }
+
+    fn style_green() -> Style {
+        Style::default().fg(Color::Green)
+    }
+
+    #[test]
+    fn spans_char_count_sums_across_spans() {
+        let spans = vec![
+            Span::styled("Hello", style_red()),
+            Span::raw(", "),
+            Span::styled("world", style_green()),
+        ];
+        assert_eq!(spans_char_count(&spans), 12);
+    }
+
+    #[test]
+    fn visible_spans_at_offset_zero_returns_full_window() {
+        let spans = vec![
+            Span::styled("ABC", style_red()),
+            Span::styled("DEF", style_green()),
+        ];
+        let out = visible_spans(&spans, 0, 6);
+        let flat: String = out.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(flat, "ABCDEF");
+        // Two distinct styled groups preserved
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].style, style_red());
+        assert_eq!(out[1].style, style_green());
+    }
+
+    #[test]
+    fn visible_spans_mid_scroll_preserves_second_span_style() {
+        let spans = vec![
+            Span::styled("ABC", style_red()),
+            Span::styled("DEFG", style_green()),
+        ];
+        // offset=2 → "C" (red) + "DEF" (green), viewport=4
+        let out = visible_spans(&spans, 2, 4);
+        let flat: String = out.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(flat, "CDEF");
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].content.as_ref(), "C");
+        assert_eq!(out[0].style, style_red());
+        assert_eq!(out[1].content.as_ref(), "DEF");
+        assert_eq!(out[1].style, style_green());
+    }
+
+    #[test]
+    fn visible_spans_offset_equals_overflow_shows_end() {
+        let spans = vec![Span::styled("ABCDEFGHIJ", style_red())];
+        // text_len=10, viewport=4 → overflow=6, at offset=6 shows "GHIJ"
+        let out = visible_spans(&spans, 6, 4);
+        let flat: String = out.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(flat, "GHIJ");
+    }
+
+    #[test]
+    fn visible_spans_offset_beyond_content_returns_padded_spaces() {
+        let spans = vec![Span::styled("Hi", style_red())];
+        let out = visible_spans(&spans, 10, 5);
+        let flat: String = out.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(flat.chars().count(), 5);
+        assert!(flat.chars().all(|c| c == ' '));
+    }
+
+    #[test]
+    fn visible_spans_viewport_larger_than_content_pads_with_spaces() {
+        let spans = vec![Span::styled("Hi", style_red())];
+        let out = visible_spans(&spans, 0, 6);
+        let flat: String = out.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(flat, "Hi    ");
+        assert_eq!(flat.chars().count(), 6);
+    }
+
+    #[test]
+    fn visible_spans_zero_viewport_returns_empty() {
+        let spans = vec![Span::styled("ABC", style_red())];
+        let out = visible_spans(&spans, 0, 0);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn visible_spans_unicode_content_does_not_panic() {
+        let spans = vec![
+            Span::styled("Fix 🐛", style_red()),
+            Span::styled(" crash", style_green()),
+        ];
+        let out = visible_spans(&spans, 0, 8);
+        let flat: String = out.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(flat.chars().count(), 8);
+    }
+
+    #[test]
+    fn visible_spans_consecutive_same_style_coalesce_into_one_span() {
+        let spans = vec![
+            Span::styled("AB", style_red()),
+            Span::styled("CD", style_red()),
+            Span::styled("EF", style_green()),
+        ];
+        let out = visible_spans(&spans, 0, 6);
+        assert_eq!(out.len(), 2, "adjacent same-style groups should merge");
+        assert_eq!(out[0].content.as_ref(), "ABCD");
+        assert_eq!(out[1].content.as_ref(), "EF");
+    }
 
     #[test]
     fn advance_with_overflow_one_scrolls_to_one_then_loops() {

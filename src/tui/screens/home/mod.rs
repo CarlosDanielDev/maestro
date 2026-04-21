@@ -6,6 +6,7 @@ pub use types::*;
 #[allow(dead_code)]
 use super::{Screen, ScreenAction};
 use crate::tui::app::TuiMode;
+use crate::tui::marquee::MarqueeState;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::focus::{FocusId, FocusRing};
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -40,6 +41,19 @@ pub struct HomeScreen {
     mascot_visible: bool,
     mascot_state: crate::mascot::MascotState,
     mascot_frame: usize,
+    /// Marquee animation state for the stats bar when it overflows.
+    pub(super) stats_bar_marquee: MarqueeState,
+    /// Snapshot of the stats-bar identity fields last rendered. Used to reset
+    /// the marquee when the repo/branch/milestone changes underneath it.
+    pub(super) stats_bar_identity: Option<StatsBarIdentity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct StatsBarIdentity {
+    pub repo: String,
+    pub branch: String,
+    pub username: Option<String>,
+    pub milestone_title: Option<String>,
 }
 
 impl HomeScreen {
@@ -67,6 +81,8 @@ impl HomeScreen {
             mascot_visible: false,
             mascot_state: crate::mascot::MascotState::Idle,
             mascot_frame: 0,
+            stats_bar_marquee: MarqueeState::new(),
+            stats_bar_identity: None,
         }
     }
 
@@ -228,6 +244,25 @@ impl Screen for HomeScreen {
 
     fn desired_input_mode(&self) -> Option<InputMode> {
         Some(InputMode::Normal)
+    }
+}
+
+impl HomeScreen {
+    /// Reset the stats-bar marquee if the identity fields changed since last render.
+    pub(super) fn sync_stats_bar_marquee(
+        &mut self,
+        data: &crate::tui::widgets::stats_bar::StatsBarData,
+    ) {
+        let identity = StatsBarIdentity {
+            repo: data.repo.clone(),
+            branch: data.branch.clone(),
+            username: data.username.clone(),
+            milestone_title: data.milestone_title.clone(),
+        };
+        if self.stats_bar_identity.as_ref() != Some(&identity) {
+            self.stats_bar_marquee.reset();
+            self.stats_bar_identity = Some(identity);
+        }
     }
 }
 
