@@ -7,16 +7,30 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-04-21
+
 ### Added
 
+- Fork-handoff compression — `compress_handoff()` on `TurboQuantAdapter` produces a `CompressedHandoff` struct; integrated into `ForkPolicy` to keep continuation prompts within a configurable token budget (#343)
+- System-prompt compaction — `compact_system_prompt()` on `TurboQuantAdapter`; integrated into `SessionPool::try_promote` to trim oversized system prompts before session launch (#344)
+- State compression — `compact_session_history()` on `TurboQuantAdapter` returns a `StateCompactionReport`; `MaestroState::compact()` and `StateStore::save_compacted()` persist trimmed state (#345)
+- Knowledge compression in `maestro adapt` — new `src/adapt/knowledge.rs` module (Phase 2.6); produces a token-budgeted `KnowledgeBase` and writes `.maestro/knowledge.md`; auto-loaded by `SessionPool::try_promote` as a system-prompt component (#347)
 - TurboQuant savings projections dashboard — `src/tui/turboquant_dashboard.rs`; shows "Estimated Savings (projection)" when no fork-handoff compression data exists, "Actual Savings" once real handoff metrics are present; per-session `ACTUAL` / `proj.` kind markers; aggregate token and USD totals (#346)
 - `SavingsProjection`, `SavingsKind`, `SessionSavings` public types and `project_savings()`, `session_savings()`, `implied_rate_per_token()` free functions in `src/turboquant/adapter.rs` (#346)
 - `tq_handoff_original_tokens` and `tq_handoff_compressed_tokens` fields on `Session` (with `#[serde(default)]` for backward compat) — populated by `context_overflow.rs` after fork-handoff compression so the dashboard can surface real savings (#346)
 - 3 new snapshot tests for `TurboQuantDashboard` (projections-only, mixed actual+projections, empty sessions) in `src/tui/snapshot_tests/turboquant_dashboard.rs` (#346)
+- `TextRanker` trait and impl in `src/turboquant/adapter.rs` — shared text scoring primitive used by all compression paths
+- `TokenBudget` helper in `src/turboquant/budget.rs` — greedy ranked-segment selection under a token limit; `BudgetSelection` struct (indices, tokens_used, truncated_first)
+- Three new `TurboQuantConfig` fields: `fork_handoff_budget`, `system_prompt_budget`, `knowledge_budget` (token-limit knobs for each compression feature)
+- Shared `Arc<TurboQuantAdapter>` on `App` — single adapter instance reused across all compression features
+- Session intent classification (`work` vs `consultation`) used to drive retry decisions (#273)
+- Skip hollow retry for consultation/Q&A prompts — no retry loop for questions (#274)
 - `[sessions.hollow_retry]` config section with three policies: `always`, `intent-aware` (default), and `never`; replaces the flat `sessions.hollow_max_retries` field (#275)
 - `HollowRetryPolicy` enum and `HollowRetryConfig` struct in `src/config.rs`; `merge_legacy_hollow()` pure function for backward-compatible TOML parsing (#275)
 - Per-intent retry limits: `work_max_retries` (default 2) and `consultation_max_retries` (default 0) under `[sessions.hollow_retry]` (#275)
 - Settings UI hollow-retry section in the Sessions tab: `[policy]` dropdown, `[work_max_retries]` stepper, `[consultation_max_retries]` stepper (#275)
+- Interactive follow-up after `maestro adapt` — selectable next actions menu (#391)
+- PRD source selection in adapt — local file, GitHub issue, or Azure DevOps work item (#390)
 
 ### Changed
 
@@ -29,18 +43,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 > **Backward compatibility**: existing `sessions.hollow_max_retries = N` in `maestro.toml` still parses and maps to `work_max_retries = N` with policy `intent-aware`.
 
-## [0.14.0] - 2026-04-17
+### Fixed
 
-### Added
-
-- Fork-handoff compression — `compress_handoff()` on `TurboQuantAdapter` produces a `CompressedHandoff` struct; integrated into `ForkPolicy` to keep continuation prompts within a configurable token budget (#343)
-- System-prompt compaction — `compact_system_prompt()` on `TurboQuantAdapter`; integrated into `SessionPool::try_promote` to trim oversized system prompts before session launch (#344)
-- State compression — `compact_session_history()` on `TurboQuantAdapter` returns a `StateCompactionReport`; `MaestroState::compact()` and `StateStore::save_compacted()` persist trimmed state (#345)
-- Knowledge compression in `maestro adapt` — new `src/adapt/knowledge.rs` module (Phase 2.6); produces a token-budgeted `KnowledgeBase` and writes `.maestro/knowledge.md`; auto-loaded by `SessionPool::try_promote` as a system-prompt component (#347)
-- `TextRanker` trait and impl in `src/turboquant/adapter.rs` — shared text scoring primitive used by all compression paths
-- `TokenBudget` helper in `src/turboquant/budget.rs` — greedy ranked-segment selection under a token limit; `BudgetSelection` struct (indices, tokens_used, truncated_first)
-- Three new `TurboQuantConfig` fields: `fork_handoff_budget`, `system_prompt_budget`, `knowledge_budget` (token-limit knobs for each compression feature)
-- Shared `Arc<TurboQuantAdapter>` on `App` — single adapter instance reused across all compression features
+- Marquee-scroll the stats bar when the repo/branch line overflows the viewport width (#410)
 
 ### Security
 
