@@ -1,4 +1,5 @@
 pub mod adapt;
+pub mod adapt_follow_up;
 pub mod hollow_retry;
 pub mod home;
 #[allow(dead_code)]
@@ -11,6 +12,7 @@ pub mod release_notes;
 pub mod settings;
 pub mod wrap;
 
+pub use adapt_follow_up::AdaptFollowUpScreen;
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
 pub use issue_browser::IssueBrowserScreen;

@@ -519,6 +519,22 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::AdaptFollowUp => (
+            "Next iteration paths",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "Enter",
+                    action: "Execute",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "Esc",
+                    action: "Dismiss",
+                    priority: 1,
+                },
+            ],
+        ),
     };
 
     let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);

@@ -38,6 +38,9 @@ pub enum TuiMode {
     ConfirmExit,
     SessionSummary,
     TurboquantDashboard,
+    /// Overlay shown after an adapt-flavored session completes, presenting the
+    /// parsed next-iteration paths for one-key selection.
+    AdaptFollowUp,
 }
 
 impl TuiMode {
@@ -70,6 +73,7 @@ impl TuiMode {
             Self::ConfirmExit => "Confirm Exit",
             Self::SessionSummary => "Sessions",
             Self::TurboquantDashboard => "TQ Dashboard",
+            Self::AdaptFollowUp => "Next Steps",
         }
     }
 }

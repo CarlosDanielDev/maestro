@@ -7,6 +7,7 @@ pub mod prd;
 mod prompts;
 pub mod scaffolder;
 pub mod scanner;
+pub mod suggestions;
 pub mod types;
 
 /// Configuration for the `maestro adapt` command.

@@ -388,6 +388,20 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 f, &sessions, &app.flags, chunks[1], &theme,
             );
         }
+        TuiMode::AdaptFollowUp => {
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &theme,
+                spinner_tick,
+            );
+            if let Some(ref mut screen) = app.adapt_follow_up_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
     }
 
     // Only render activity log area when visible
@@ -503,6 +517,10 @@ fn active_screen(app: &App) -> Option<&dyn Screen> {
         TuiMode::Settings => app.settings_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::PrReview => app.pr_review_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::HollowRetry => app.hollow_retry_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::AdaptFollowUp => app
+            .adapt_follow_up_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
         TuiMode::AdaptWizard => app.adapt_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::ReleaseNotes => app.release_notes_screen.as_ref().map(|s| s as &dyn Screen),
         _ => None,
