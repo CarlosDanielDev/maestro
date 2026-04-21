@@ -276,6 +276,9 @@ pub struct Session {
     /// History of state transitions for audit trail.
     #[serde(default)]
     pub transition_history: Vec<super::transition::SessionTransition>,
+    /// Classified intent of the prompt (Work vs. Consultation). Derived at spawn time.
+    #[serde(default)]
+    pub intent: super::intent::SessionIntent,
 }
 
 /// Lightweight gate result stored on a session for post-completion display.
@@ -314,6 +317,7 @@ pub struct ActivityEntry {
 
 impl Session {
     pub fn new(prompt: String, model: String, mode: String, issue_number: Option<u64>) -> Self {
+        let intent = super::intent::classify_intent(&prompt);
         Self {
             id: Uuid::new_v4(),
             status: SessionStatus::Queued,
@@ -350,6 +354,7 @@ impl Session {
             tq_original_tokens: None,
             tq_compressed_tokens: None,
             transition_history: Vec::new(),
+            intent,
         }
     }
 
@@ -1194,6 +1199,58 @@ mod tests {
             "expected SPAWNING in message, got: {}",
             last.message
         );
+    }
+
+    // --- Issue #273: SessionIntent wiring on Session ---
+
+    #[test]
+    fn session_new_classifies_work_prompt_as_work() {
+        let s = Session::new(
+            "fix bug in login".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        assert_eq!(s.intent, crate::session::intent::SessionIntent::Work);
+    }
+
+    #[test]
+    fn session_new_classifies_consultation_prompt_as_consultation() {
+        let s = Session::new(
+            "how are you?".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        assert_eq!(
+            s.intent,
+            crate::session::intent::SessionIntent::Consultation
+        );
+    }
+
+    #[test]
+    fn session_intent_round_trips_via_serde() {
+        let s = Session::new(
+            "explain the auth flow".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            rt.intent,
+            crate::session::intent::SessionIntent::Consultation
+        );
+    }
+
+    #[test]
+    fn session_intent_defaults_to_work_when_absent_in_json() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json.replace(r#","intent":"work""#, "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert_eq!(rt.intent, crate::session::intent::SessionIntent::Work);
     }
 
     #[test]
