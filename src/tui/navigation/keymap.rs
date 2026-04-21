@@ -128,12 +128,47 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
     &GLOBALS
 }
 
+/// Action dispatched when an F-key is pressed. Paired with a label in
+/// `FKeyRelevance` so the F-bar and the handler cannot drift — a label
+/// like "Deps" and an action like `OpenDependencyGraph` live in the
+/// same declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FKeyAction {
+    ToggleHelp,
+    OpenSummary,
+    OpenFullscreenSelected,
+    OpenCostDashboard,
+    OpenTokenDashboard,
+    OpenDependencyGraph,
+    PauseAll,
+    KillSelected,
+    Exit,
+}
+
 #[derive(Debug, Clone)]
 pub struct FKeyRelevance {
     pub key: &'static str,
     pub label: &'static str,
     pub visible: bool,
     pub active: bool,
+    pub action: FKeyAction,
+}
+
+impl FKeyRelevance {
+    pub const fn new(key: &'static str, label: &'static str, action: FKeyAction) -> Self {
+        Self {
+            key,
+            label,
+            visible: true,
+            active: true,
+            action,
+        }
+    }
+
+    pub const fn with_active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
 }
 
 #[derive(Debug, Clone)]

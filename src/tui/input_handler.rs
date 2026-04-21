@@ -509,63 +509,68 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
-    // F-key aliases
+    // F-key dispatch — looks up the current mode's F-key table (built by
+    // `mode_keymap` and cached on `app.cached_mode_km` by the renderer
+    // each frame) and executes the paired action. Label and dispatch
+    // come from the SAME `FKeyRelevance` entry, so they cannot drift.
     if let KeyCode::F(n) = key.code {
-        match n {
-            2 => {
-                let summary = app.build_completion_summary();
-                app.completion_summary = Some(summary);
-                app.session_summary_state =
-                    Some(crate::tui::app::types::SessionSummaryState::default());
-                app.navigate_to(app::TuiMode::SessionSummary);
-                return true;
-            }
-            3 => {
-                let selected = app.panel_view.selected_index();
-                if let Some(id) = app.pool.session_id_at_index(selected) {
-                    app.navigate_to(app::TuiMode::Fullscreen(id));
-                }
-                return true;
-            }
-            4 => {
-                app.navigate_to(app::TuiMode::CostDashboard);
-                return true;
-            }
-            5 => {
-                app.navigate_to(app::TuiMode::TokenDashboard);
-                return true;
-            }
-            6 => {
-                app.tui_mode = match app.tui_mode {
-                    app::TuiMode::Overview => app::TuiMode::DependencyGraph,
-                    app::TuiMode::DependencyGraph => app::TuiMode::CostDashboard,
-                    app::TuiMode::CostDashboard => app::TuiMode::TokenDashboard,
-                    app::TuiMode::TokenDashboard => app::TuiMode::TurboquantDashboard,
-                    app::TuiMode::TurboquantDashboard => app::TuiMode::Overview,
-                    _ => app::TuiMode::Overview,
-                };
-                return true;
-            }
-            #[cfg(unix)]
-            9 => {
-                app.pause_all();
-                return true;
-            }
-            10 => {
-                let selected = app.panel_view.selected_index();
-                if let Some(id) = app.pool.session_id_at_index(selected)
-                    && let Some(session) = app.pool.get_session(id)
-                    && !session.status.is_terminal()
-                {
-                    app.navigate_to(app::TuiMode::ConfirmKill(id));
-                }
-                return true;
-            }
-            _ => {}
+        let key_label = format!("F{}", n);
+        let action = app
+            .cached_mode_km
+            .as_ref()
+            .and_then(|km| km.fkeys.iter().find(|r| r.key == key_label))
+            .filter(|r| r.active)
+            .map(|r| r.action);
+        if let Some(action) = action {
+            dispatch_fkey_action(app, action);
+            return true;
+        }
+        // Key exists in the table but inactive (or the key isn't bound
+        // in this mode). Either way, consume to prevent fall-through to
+        // the screen dispatch path treating the F-key as a text input.
+        if app
+            .cached_mode_km
+            .as_ref()
+            .is_some_and(|km| km.fkeys.iter().any(|r| r.key == key_label))
+        {
+            return true;
         }
     }
 
     false
+}
+
+fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::FKeyAction) {
+    use crate::tui::navigation::keymap::FKeyAction;
+    match action {
+        FKeyAction::ToggleHelp => {
+            app.help_state = Some(crate::tui::help::HelpOverlayState::new());
+        }
+        FKeyAction::OpenSummary => app.open_session_summary(),
+        FKeyAction::OpenFullscreenSelected => {
+            let selected = app.panel_view.selected_index();
+            if let Some(id) = app.pool.session_id_at_index(selected) {
+                app.navigate_to(app::TuiMode::Fullscreen(id));
+            }
+        }
+        FKeyAction::OpenCostDashboard => app.navigate_to(app::TuiMode::CostDashboard),
+        FKeyAction::OpenTokenDashboard => app.navigate_to(app::TuiMode::TokenDashboard),
+        FKeyAction::OpenDependencyGraph => app.navigate_to(app::TuiMode::DependencyGraph),
+        FKeyAction::PauseAll => {
+            #[cfg(unix)]
+            app.pause_all();
+        }
+        FKeyAction::KillSelected => {
+            let selected = app.panel_view.selected_index();
+            if let Some(id) = app.pool.session_id_at_index(selected)
+                && let Some(session) = app.pool.get_session(id)
+                && !session.status.is_terminal()
+            {
+                app.navigate_to(app::TuiMode::ConfirmKill(id));
+            }
+        }
+        FKeyAction::Exit => app.running = false,
+    }
 }
 
 /// Returns true if the current TUI mode accepts text input (q should type, not quit).
@@ -578,12 +583,15 @@ fn is_text_input_mode(app: &App) -> bool {
 
 /// Handle the confirm-exit dialog (y/n/Enter/Esc).
 fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
+    // Enter is deliberately NOT an affirmative here. The dialog is often
+    // opened by a menu-Enter (e.g. Quick Action "Quit"), and reflex-pressing
+    // Enter again would silently destroy the session. Require explicit `y`.
     match key.code {
-        KeyCode::Char('y') | KeyCode::Enter => {
+        KeyCode::Char('y') | KeyCode::Char('Y') => {
             app.running = false;
             KeyAction::Quit
         }
-        KeyCode::Char('n') | KeyCode::Esc => {
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Enter => {
             if let Some(prev) = app.nav_stack.pop() {
                 app.tui_mode = prev;
             } else {
@@ -591,7 +599,7 @@ fn handle_confirm_exit(app: &mut App, key: &KeyEvent) -> KeyAction {
             }
             KeyAction::Consumed
         }
-        _ => KeyAction::Consumed, // swallow all other keys
+        _ => KeyAction::Consumed, // unrelated keys: stay in the dialog
     }
 }
 
@@ -631,13 +639,7 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('t'), _) => {
             app.navigate_to(app::TuiMode::TokenDashboard);
         }
-        (KeyCode::Char('S'), _) => {
-            let summary = app.build_completion_summary();
-            app.completion_summary = Some(summary);
-            app.session_summary_state =
-                Some(crate::tui::app::types::SessionSummaryState::default());
-            app.navigate_to(app::TuiMode::SessionSummary);
-        }
+        (KeyCode::Char('S'), _) => app.open_session_summary(),
         (KeyCode::Tab, _) => {
             app.tui_mode = match app.tui_mode {
                 app::TuiMode::Overview => app::TuiMode::DependencyGraph,
@@ -820,7 +822,7 @@ mod tests {
         assert!(!is_text_input_mode(&app));
     }
 
-    // ── Group 3: handle_confirm_exit — y/Enter confirm ────────────────
+    // ── Group 3: handle_confirm_exit — only `y` confirms ──────────────
 
     #[test]
     fn y_in_confirm_exit_sets_running_false() {
@@ -832,12 +834,31 @@ mod tests {
     }
 
     #[test]
-    fn enter_in_confirm_exit_sets_running_false() {
+    fn uppercase_y_in_confirm_exit_sets_running_false() {
         let mut app = make_app();
         app.tui_mode = TuiMode::ConfirmExit;
         app.running = true;
-        handle_confirm_exit(&mut app, &key_code(KeyCode::Enter));
+        handle_confirm_exit(&mut app, &key('Y'));
         assert!(!app.running);
+    }
+
+    /// Regression guard: the dialog is often opened by a menu-Enter
+    /// (Quick Action "Quit"). If Enter were an affirmative here, a
+    /// reflexive second Enter would silently exit the app before the
+    /// user could see the dialog. Enter must cancel instead.
+    #[test]
+    fn enter_in_confirm_exit_cancels_instead_of_confirming() {
+        let mut app = make_app();
+        app.nav_stack.push(TuiMode::Dashboard);
+        app.tui_mode = TuiMode::ConfirmExit;
+        app.running = true;
+        handle_confirm_exit(&mut app, &key_code(KeyCode::Enter));
+        assert!(app.running, "Enter must NOT quit");
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Dashboard,
+            "Enter must restore the previous mode"
+        );
     }
 
     #[test]
@@ -846,7 +867,6 @@ mod tests {
         app.tui_mode = TuiMode::ConfirmExit;
         app.nav_stack.push(TuiMode::Overview);
         handle_confirm_exit(&mut app, &key('y'));
-        // After quitting, running is false — stack state doesn't matter
         assert!(!app.running);
     }
 
@@ -997,5 +1017,99 @@ mod tests {
         app.navigate_to_root();
         assert_eq!(app.tui_mode, TuiMode::Dashboard);
         assert!(app.nav_stack.is_empty());
+    }
+
+    // F-key label/dispatch contract: every F-key advertised in the bottom
+    // bar must dispatch to its label's target. Previously the label lived
+    // in `mode_hints.rs` and the dispatch lived in `handle_global_shortcuts`
+    // — two independent tables that drifted (F6 "Deps" label but dispatched
+    // to Overview from Dashboard mode). After the unification, both live on
+    // `FKeyRelevance`, so these tests are sanity checks that the action
+    // enum maps to the expected `TuiMode`.
+
+    fn fkey_action_target_mode(
+        action: crate::tui::navigation::keymap::FKeyAction,
+    ) -> Option<TuiMode> {
+        use crate::tui::navigation::keymap::FKeyAction;
+        match action {
+            FKeyAction::OpenCostDashboard => Some(TuiMode::CostDashboard),
+            FKeyAction::OpenTokenDashboard => Some(TuiMode::TokenDashboard),
+            FKeyAction::OpenDependencyGraph => Some(TuiMode::DependencyGraph),
+            FKeyAction::OpenSummary => Some(TuiMode::SessionSummary),
+            _ => None,
+        }
+    }
+
+    // navigate_to must be idempotent and cycle-collapsing. Pressing F5
+    // repeatedly while already on TokenDashboard used to grow the
+    // breadcrumb trail by one entry per keystroke; navigating A → B → A
+    // used to produce [A, B] on the stack instead of just [A].
+
+    #[test]
+    fn navigate_to_same_mode_is_a_noop() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::TokenDashboard;
+        app.navigate_to(TuiMode::TokenDashboard);
+        app.navigate_to(TuiMode::TokenDashboard);
+        app.navigate_to(TuiMode::TokenDashboard);
+        assert_eq!(app.tui_mode, TuiMode::TokenDashboard);
+        assert_eq!(app.nav_stack.depth(), 0);
+    }
+
+    #[test]
+    fn navigate_to_truncates_to_existing_ancestor_instead_of_pushing() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Dashboard;
+        app.navigate_to(TuiMode::TokenDashboard);
+        app.navigate_to(TuiMode::Dashboard);
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+        // Stack should be empty — we returned to the root, not pushed
+        // TokenDashboard onto it.
+        assert_eq!(app.nav_stack.depth(), 0);
+    }
+
+    #[test]
+    fn navigate_to_through_several_modes_does_not_grow_on_same_press() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Dashboard;
+        app.navigate_to(TuiMode::DependencyGraph);
+        app.navigate_to(TuiMode::DependencyGraph); // idempotent
+        app.navigate_to(TuiMode::TokenDashboard);
+        app.navigate_to(TuiMode::TokenDashboard); // idempotent
+        app.navigate_to(TuiMode::TokenDashboard); // idempotent
+        assert_eq!(app.tui_mode, TuiMode::TokenDashboard);
+        assert_eq!(
+            app.nav_stack.breadcrumbs(),
+            &[TuiMode::Dashboard, TuiMode::DependencyGraph]
+        );
+    }
+
+    #[test]
+    fn fkey_dashboard_mode_advertises_f4_f5_f6_and_each_dispatches() {
+        use crate::tui::navigation::keymap::mode_keymap;
+        let km = mode_keymap(TuiMode::Dashboard, None, &[]);
+        let mut checked = 0;
+        for fkey in &km.fkeys {
+            let Some(expected) = fkey_action_target_mode(fkey.action) else {
+                continue;
+            };
+            let mut app = make_app();
+            app.tui_mode = TuiMode::Dashboard;
+            dispatch_fkey_action(&mut app, fkey.action);
+            assert_eq!(
+                app.tui_mode, expected,
+                "F-bar entry `{}` labeled `{}` advertised in TuiMode::Dashboard \
+                 but dispatching its action did not land in {:?} (landed in {:?}). \
+                 See `build_fkeys` in mode_hints.rs and `dispatch_fkey_action` in \
+                 input_handler.rs.",
+                fkey.key, fkey.label, expected, app.tui_mode
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 3,
+            "expected F4/F5/F6 to be verified, got {}",
+            checked
+        );
     }
 }

@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-17 12:00 (UTC)
+> Last updated: 2026-04-21 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -67,7 +67,7 @@ maestro/
 │   ├── icons.rs                           # Shared icon registry: IconId enum (38 variants across Navigation, Status, UI Chrome, Indicators categories, plus NeedsReview variant added in #308), IconPair struct (nerd: &'static str, ascii: &'static str), icon_pair() const fn compiles to a zero-allocation jump table, get(IconId) returns the correct variant based on global mode, get_for_mode(id, nerd_font) pure testable variant; extracted from tui/icons.rs  [Issue #308]
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; propagates once_mode from parsed CLI flag into App; forces max_concurrent=1 when --continuous is set; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests; declares mod updater; declares mod flags; propagates startup gh auth check result into App.gh_auth_ok; declares #[cfg(feature = "experimental-sanitizer")] mod sanitizer; constructs FeatureFlags from --enable-flag / --disable-flag CLI args merged with [flags] config  [Issue #15, #29, #49, #34, #36, #35, #52, #83, #85, #118, #141, #142, #143, #158]
 │   ├── cli.rs                             # CLI definition extracted from main.rs; Cli struct and Commands enum (clap derive); --once flag on Run subcommand (exits after all sessions complete, for CI/scripting); --continuous / -C flag on Run subcommand (auto-advance through issues, pause on failure); --enable-flag / --disable-flag repeatable args on Run subcommand for runtime feature flag overrides; generate_completions() and cmd_completions() for shell tab-completion output; cmd_mangen() for roff man page generation; Completions and Mangen subcommands  [Issue #18, #83, #85, #143]
-│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix; TuiConfig struct with optional theme field; Config gains tui field; FlagsConfig (flattened HashMap<String, bool>) loaded from [flags] table; Config gains flags field  [Issue #29, #40, #41, #43, #38, #143]
+│   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix; TuiConfig struct with optional theme field; Config gains tui field; FlagsConfig (flattened HashMap<String, bool>) loaded from [flags] table; Config gains flags field; HollowRetryPolicy enum (Always/IntentAware/Never), HollowRetryConfig struct (policy, work_max_retries, consultation_max_retries), merge_legacy_hollow() for backward-compat TOML parsing, SessionsConfigRaw shadow struct for custom Deserialize  [Issue #29, #40, #41, #43, #38, #143, #275]
 │   ├── continuous.rs                      # ContinuousModeState and ContinuousFailure structs; state machine for --continuous / -C flag: auto-advances to next ready issue, pauses loop on failure waiting for user decision (skip / retry / quit)  [Issue #85]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
 │   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); validate_preflight() (public, fails fast on required check failures); build_claude_cli_result() (pub(crate), pure/testable); check_claude_cli() elevated to Required severity; build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34, #52]
@@ -133,7 +133,7 @@ maestro/
 │   │   ├── types.rs                       # Session state machine; fork fields (parent_session_id, child_session_ids, fork_depth); ContextUpdate StreamEvent; GatesRunning and NeedsReview status variants; CiFix variant; CiFixContext struct (pr_number, issue_number, branch, attempt); ci_fix_context field on Session; StreamEvent::Thinking { text } variant; command_preview: Option<String> field on StreamEvent::ToolUse; GateResultEntry struct (gate, passed, message); gate_results: Vec<GateResultEntry> field on Session; NeedsPr variant — non-terminal status indicating PR creation failed and is queued for retry; flash_counter: u8 field on Session — decremented each render tick to drive border-flash effect on state transition  [Phase 3, Issue #40, #41, #102, #104, #159, #202]
 │   │   ├── worktree.rs                    # Git worktree isolation: WorktreeManager trait, GitWorktreeManager, MockWorktreeManager  [Phase 1]
 │   │   ├── health.rs                      # HealthMonitor: stall detection, HealthCheck trait  [Phase 3]
-│   │   ├── retry.rs                       # RetryPolicy: configurable max retries and cooldown  [Phase 3]
+│   │   ├── retry.rs                       # RetryPolicy: configurable max retries and cooldown; hollow field owns HollowRetryConfig (replaces flat hollow_max_retries); effective_max() dispatches by policy + session intent; 18 unit tests  [Phase 3, Issue #275]
 │   │   ├── cleanup.rs                     # CleanupManager: orphaned worktree detection and removal  [Phase 3]
 │   │   ├── image.rs                       # Image attachment helpers: VALID_IMAGE_EXTENSIONS constant, path validation, base64 encoding for multimodal session prompts
 │   │   ├── logger.rs                      # SessionLogger: logs ContextUpdate events; logs Thinking events with "THINKING:" prefix; per-session timestamped file logging  [Phase 3, Issue #102]
@@ -226,7 +226,7 @@ maestro/
 │   │       │   ├── mod.rs                 # ReleaseNotesScreen struct with Screen trait impl
 │   │       │   └── draw.rs                # ratatui rendering for release notes display
 │   │       └── settings/                  # Settings screen components  [Issue #124, #146]
-│   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent
+│   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent; Sessions tab gains hollow-retry widgets: [policy] dropdown (always/intent-aware/never), [work_max_retries] stepper, [consultation_max_retries] stepper  [Issue #275]
 │   │           └── validation.rs          # Settings field validation helpers
 │   │   └── widgets/                       # Reusable TUI widget components  [Issue #124]
 │   │       ├── mod.rs                     # Module re-exports for all widgets
@@ -285,7 +285,7 @@ maestro/
 ├── SECURITY.md                            # Security policy: supported versions, vulnerability reporting, and disclosure process
 ├── directory-tree.md                      # This file — SINGLE SOURCE OF TRUTH for structure
 ├── maestro-state.json                     # Runtime state persistence file
-└── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section; guardrail_prompt option (commented); [sessions.completion_gates] with fmt, clippy, test defaults  [Issue #12, #40, #43]
+└── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section; guardrail_prompt option (commented); [sessions.completion_gates] with fmt, clippy, test defaults; [sessions.hollow_retry] section (policy, work_max_retries, consultation_max_retries)  [Issue #12, #40, #43, #275]
 ```
 
 ## Quick Reference
@@ -354,7 +354,7 @@ maestro/
 | `src/review/dispatch.rs` | Single reviewer execution and config |
 | `src/session/` | Claude CLI process and session lifecycle management |
 | `src/session/health.rs` | Stall detection and HealthCheck trait (Phase 3) |
-| `src/session/retry.rs` | Configurable retry policy (Phase 3) |
+| `src/session/retry.rs` | Configurable retry policy; `hollow: HollowRetryConfig` field; `effective_max()` dispatches by policy + session intent (Phase 3, Issue #275) |
 | `src/session/pool.rs` | Concurrent session pool with queue and auto-promote; guardrail_prompt merged into system prompt; `find_by_issue_mut()` (Issue #40, #43) |
 | `src/session/worktree.rs` | Git worktree isolation per session |
 | `src/session/cleanup.rs` | Orphaned worktree detection and removal (Phase 3) |
