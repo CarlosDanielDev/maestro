@@ -228,11 +228,10 @@ mod tests {
 
     use crate::session::types::{ActivityEntry, SessionStatus};
     use crate::turboquant::adapter::TurboQuantAdapter;
-    use crate::turboquant::types::QuantStrategy;
     use chrono::Utc;
 
     fn adapter() -> TurboQuantAdapter {
-        TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false)
+        TurboQuantAdapter::new(4)
     }
 
     #[test]

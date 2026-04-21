@@ -199,6 +199,38 @@ pub fn fit_hints_to_width(hints: &[InlineHint], width: u16) -> Vec<(&str, &str)>
     result
 }
 
+/// Render a slice of `InlineHint`s as styled `Span`s for display in an
+/// overlay or status bar footer. `key_color` styles the `[k]` bracket;
+/// `action_color` styles the trailing label text.
+///
+/// This is the single source of truth for hint-bar rendering. Prefer
+/// this over hand-rolling a `Span::styled("[k]", …)` sequence so that
+/// hint text stays in lockstep with `mode_hints.rs`.
+pub fn hint_bar_spans(
+    hints: &[InlineHint],
+    key_color: ratatui::style::Color,
+    action_color: ratatui::style::Color,
+) -> Vec<ratatui::text::Span<'static>> {
+    use ratatui::style::Style;
+    use ratatui::text::Span;
+
+    let mut spans: Vec<Span<'static>> = Vec::with_capacity(hints.len() * 3);
+    for (i, hint) in hints.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(
+            format!("[{}]", hint.key),
+            Style::default().fg(key_color),
+        ));
+        spans.push(Span::styled(
+            format!(" {}", hint.action),
+            Style::default().fg(action_color),
+        ));
+    }
+    spans
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

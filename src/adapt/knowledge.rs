@@ -381,11 +381,10 @@ mod tests {
         TestInfraInfo,
     };
     use crate::turboquant::adapter::TurboQuantAdapter;
-    use crate::turboquant::types::QuantStrategy;
     use std::path::PathBuf;
 
     fn adapter() -> TurboQuantAdapter {
-        TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false)
+        TurboQuantAdapter::new(4)
     }
 
     fn make_profile() -> ProjectProfile {

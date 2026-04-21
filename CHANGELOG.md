@@ -7,6 +7,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- TurboQuant savings projections dashboard — `src/tui/turboquant_dashboard.rs`; shows "Estimated Savings (projection)" when no fork-handoff compression data exists, "Actual Savings" once real handoff metrics are present; per-session `ACTUAL` / `proj.` kind markers; aggregate token and USD totals (#346)
+- `SavingsProjection`, `SavingsKind`, `SessionSavings` public types and `project_savings()`, `session_savings()`, `implied_rate_per_token()` free functions in `src/turboquant/adapter.rs` (#346)
+- `tq_handoff_original_tokens` and `tq_handoff_compressed_tokens` fields on `Session` (with `#[serde(default)]` for backward compat) — populated by `context_overflow.rs` after fork-handoff compression so the dashboard can surface real savings (#346)
+- 3 new snapshot tests for `TurboQuantDashboard` (projections-only, mixed actual+projections, empty sessions) in `src/tui/snapshot_tests/turboquant_dashboard.rs` (#346)
+
+### Changed
+
+- Replaced the A/B benchmark dashboard (#253) with the honest savings-projection dashboard; removed `partition_sessions`, `compute_panel_stats`, and `aggregate_tq_metrics` from `turboquant_dashboard.rs` (#346)
+- Removed synthetic prompt-compression block from `event_handler.rs` (formerly in the `Completed` arm); honest projection replaces fabricated compression metrics (#346)
+- Removed `TQ Ratio` column from `src/tui/token_dashboard.rs`; TurboQuant ownership moved to the dedicated savings dashboard (#346)
+
 ## [0.14.0] - 2026-04-17
 
 ### Added

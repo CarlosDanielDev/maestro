@@ -124,7 +124,6 @@ mod tests {
     #[test]
     fn compact_with_adapter_then_save_persists_collapsed_log() {
         use crate::turboquant::adapter::TurboQuantAdapter;
-        use crate::turboquant::types::QuantStrategy;
 
         let (_dir, store) = make_store();
         let mut state = MaestroState::default();
@@ -143,7 +142,7 @@ mod tests {
         }
         state.sessions.push(s);
 
-        let adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false);
+        let adapter = TurboQuantAdapter::new(4);
         let reports = state.compact(Some(&adapter));
         store.save(&state).unwrap();
         assert_eq!(reports.len(), 1);
@@ -153,8 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn load_legacy_state_without_tq_fields_succeeds() {
-        // Old state file: session JSON lacks tq_original_tokens and tq_compressed_tokens.
+    fn load_legacy_state_without_handoff_fields_succeeds() {
         let (_dir, store) = make_store();
         let legacy_json = r#"{
             "sessions": [{
@@ -181,8 +179,8 @@ mod tests {
         std::fs::write(&store.path, legacy_json).unwrap();
         let loaded = store.load().unwrap();
         assert_eq!(loaded.sessions.len(), 1);
-        assert!(loaded.sessions[0].tq_original_tokens.is_none());
-        assert!(loaded.sessions[0].tq_compressed_tokens.is_none());
+        assert!(loaded.sessions[0].tq_handoff_original_tokens.is_none());
+        assert!(loaded.sessions[0].tq_handoff_compressed_tokens.is_none());
     }
 
     #[test]

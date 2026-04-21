@@ -342,8 +342,5 @@ fn build_adapter_from_config(
     }
     Some(crate::turboquant::adapter::TurboQuantAdapter::new(
         cfg.turboquant.bit_width,
-        cfg.turboquant.strategy,
-        cfg.sessions.context_overflow.overflow_threshold_pct as f64,
-        cfg.turboquant.auto_on_overflow,
     ))
 }

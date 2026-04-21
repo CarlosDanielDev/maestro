@@ -111,7 +111,7 @@ pub fn mode_keymap(
                 },
                 InlineHint {
                     key: "s",
-                    action: "Settings",
+                    action: "Sessions",
                     priority: 3,
                 },
                 InlineHint {
@@ -273,14 +273,19 @@ pub fn mode_keymap(
                     priority: 1,
                 },
                 InlineHint {
+                    key: "l",
+                    action: "Logs",
+                    priority: 2,
+                },
+                InlineHint {
                     key: "d",
                     action: "Dashboard",
-                    priority: 2,
+                    priority: 3,
                 },
                 InlineHint {
                     key: "q",
                     action: "Quit",
-                    priority: 3,
+                    priority: 4,
                 },
             ],
         ),
@@ -447,8 +452,8 @@ pub fn mode_keymap(
                     priority: 0,
                 },
                 InlineHint {
-                    key: "Esc",
-                    action: "Back",
+                    key: "s",
+                    action: "Skip",
                     priority: 1,
                 },
             ],

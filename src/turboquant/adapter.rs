@@ -3,9 +3,50 @@
 //! Bridges the raw quantization pipeline with the session layer by converting
 //! text chunks into pseudo-embeddings, compressing them, and tracking metrics.
 
-use super::pipeline::turbo_quantize;
-use super::types::{QuantStrategy, TurboQuantized};
 use crate::util::truncate_at_char_boundary;
+
+/// Honest projection of theoretical TurboQuant savings for a session, derived
+/// from its actual `TokenUsage` rather than from running TQ on the raw prompt.
+///
+/// All fields are derived; the struct is plain data. Constructed via
+/// `TurboQuantAdapter::project_savings`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SavingsProjection {
+    pub input_tokens: u64,
+    pub projected_compressed: u64,
+    pub projected_saved_tokens: u64,
+    pub projected_saved_usd: f64,
+    pub compression_ratio: f64,
+    pub rate_per_token_usd: f64,
+}
+
+/// Discriminator for per-session savings: real data from fork-handoff
+/// compression (`Actual`) vs. theoretical projection from token counts
+/// (`Projection`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SavingsKind {
+    Projection,
+    Actual,
+}
+
+impl SavingsKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Actual => "ACTUAL",
+            Self::Projection => "proj.",
+        }
+    }
+}
+
+/// Per-session rollup shown on the TurboQuant dashboard. Either derived
+/// from a real handoff compression or projected from `TokenUsage`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SessionSavings {
+    pub kind: SavingsKind,
+    pub saved_tokens: u64,
+    pub saved_usd: f64,
+    pub ratio: f64,
+}
 
 /// Metrics emitted after a compression operation.
 #[derive(Debug, Clone)]
@@ -21,36 +62,13 @@ pub struct CompressionMetrics {
 impl CompressionMetrics {
     /// Format as a human-readable activity log entry.
     pub fn log_entry(&self) -> String {
-        let orig = format_token_count(self.original_tokens);
-        let comp = format_token_count(self.compressed_tokens);
+        let orig = crate::util::formatting::format_tokens(self.original_tokens);
+        let comp = crate::util::formatting::format_tokens(self.compressed_tokens);
         format!(
             "[TurboQuant] Compressed context: {} → {} tokens ({:.1}x)",
             orig, comp, self.compression_ratio
         )
     }
-}
-
-/// Result of compressing context.
-#[derive(Debug, Clone)]
-#[allow(dead_code)] // vectors and strategy used for future decompression path
-pub struct CompressedContext {
-    /// The compressed vectors (one per chunk).
-    pub vectors: Vec<TurboQuantized>,
-    /// Compression metrics.
-    pub metrics: CompressionMetrics,
-    /// Strategy used.
-    pub strategy: QuantStrategy,
-}
-
-/// Trait for context compression. Mockable for testing.
-pub trait ContextCompressor: Send + Sync {
-    /// Compress a prompt string into a compact representation.
-    /// Returns None if compression is not beneficial (below threshold).
-    fn compress(&self, prompt: &str, context_pct: f64) -> Option<CompressedContext>;
-
-    /// Check if the compressor is currently active.
-    #[allow(dead_code)]
-    fn is_active(&self) -> bool;
 }
 
 /// Rank text segments by semantic similarity to a query.
@@ -78,36 +96,30 @@ pub trait TextRanker: Send + Sync {
 pub struct TurboQuantAdapter {
     /// Bit width for quantization.
     bit_width: u8,
-    /// Quantization strategy.
-    strategy: QuantStrategy,
-    /// Overflow threshold percentage (0-100) at which compression activates.
-    overflow_threshold_pct: f64,
-    /// Whether auto_on_overflow is enabled.
-    auto_on_overflow: bool,
     /// Whether the adapter is enabled.
     enabled: bool,
 }
 
 impl TurboQuantAdapter {
-    pub fn new(
-        bit_width: u8,
-        strategy: QuantStrategy,
-        overflow_threshold_pct: f64,
-        auto_on_overflow: bool,
-    ) -> Self {
+    pub fn new(bit_width: u8) -> Self {
         Self {
             bit_width,
-            strategy,
-            overflow_threshold_pct,
-            auto_on_overflow,
             enabled: true,
         }
     }
 
-    /// Enable or disable the adapter at runtime.
-    #[allow(dead_code)] // Used by tests and future runtime toggle integration
+    /// Enable or disable the adapter. Test-only seam for exercising the
+    /// disabled path through `compact_session_history`, `compress_handoff`,
+    /// and `compact_system_prompt`; production flips `config.turboquant.enabled`
+    /// at the config layer instead.
+    #[cfg(test)]
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
+    }
+
+    /// Whether the adapter is currently enabled.
+    pub fn is_active(&self) -> bool {
+        self.enabled
     }
 
     /// Average-pool all chunk vectors for a text into a single normalized vector.
@@ -159,51 +171,6 @@ impl TurboQuantAdapter {
     /// Estimate token count from character count (rough: ~4 chars per token).
     pub(crate) fn estimate_tokens(text: &str) -> u64 {
         (text.len() as u64).div_ceil(4)
-    }
-}
-
-impl ContextCompressor for TurboQuantAdapter {
-    fn compress(&self, prompt: &str, context_pct: f64) -> Option<CompressedContext> {
-        if !self.enabled {
-            return None;
-        }
-
-        // Only activate if auto_on_overflow is set and threshold is approached
-        if self.auto_on_overflow && context_pct < self.overflow_threshold_pct {
-            return None;
-        }
-
-        let original_tokens = Self::estimate_tokens(prompt);
-        if original_tokens == 0 {
-            return None;
-        }
-
-        let vectors = self.text_to_vectors(prompt);
-        let compressed: Vec<TurboQuantized> = vectors
-            .iter()
-            .map(|v| turbo_quantize(v, self.bit_width.max(2)))
-            .collect();
-
-        // Estimate compressed size: each TurboQuantized is much smaller than raw text
-        let compressed_tokens =
-            (original_tokens as f64 / self.bit_width.max(1) as f64).ceil() as u64;
-        let compressed_tokens = compressed_tokens.max(1);
-
-        let compression_ratio = original_tokens as f64 / compressed_tokens as f64;
-
-        Some(CompressedContext {
-            vectors: compressed,
-            metrics: CompressionMetrics {
-                original_tokens,
-                compressed_tokens,
-                compression_ratio,
-            },
-            strategy: self.strategy,
-        })
-    }
-
-    fn is_active(&self) -> bool {
-        self.enabled
     }
 }
 
@@ -274,19 +241,6 @@ impl TextRanker for TurboQuantAdapter {
 fn cosine(a: &[f32], b: &[f32]) -> f32 {
     // Both inputs are already unit-normalized by pool_to_single_vec.
     a.iter().zip(b).map(|(x, y)| x * y).sum()
-}
-
-/// No-op compressor for when TurboQuant is disabled.
-pub struct NoOpCompressor;
-
-impl ContextCompressor for NoOpCompressor {
-    fn compress(&self, _prompt: &str, _context_pct: f64) -> Option<CompressedContext> {
-        None
-    }
-
-    fn is_active(&self) -> bool {
-        false
-    }
 }
 
 /// Output of fork-handoff compression.
@@ -568,14 +522,84 @@ fn trim_to_key_events(log: &mut Vec<crate::session::types::ActivityEntry>) -> us
     before - log.len()
 }
 
-fn format_token_count(n: u64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}k", n as f64 / 1_000.0)
-    } else {
-        format!("{}", n)
+impl TurboQuantAdapter {
+    /// Compute theoretical compression savings for a session's accumulated
+    /// input tokens. Pure — no I/O. Given a non-zero `rate_per_token_usd`,
+    /// also estimates dollar savings.
+    ///
+    /// Safe on adversarial inputs: `bit_width` of 0 is clamped to 1 (ratio
+    /// degenerates to 1.0, no panic), `u64::MAX` inputs saturate.
+    pub fn project_savings(
+        &self,
+        token_usage: &crate::session::types::TokenUsage,
+        rate_per_token_usd: f64,
+    ) -> SavingsProjection {
+        let input = token_usage.input_tokens;
+        let divisor = (self.bit_width.max(1)) as u64;
+        let projected_compressed = input.div_ceil(divisor);
+        let projected_saved_tokens = input.saturating_sub(projected_compressed);
+        let ratio = if projected_compressed == 0 {
+            1.0
+        } else {
+            input as f64 / projected_compressed as f64
+        };
+        let projected_saved_usd = projected_saved_tokens as f64 * rate_per_token_usd;
+        SavingsProjection {
+            input_tokens: input,
+            projected_compressed,
+            projected_saved_tokens,
+            projected_saved_usd,
+            compression_ratio: ratio,
+            rate_per_token_usd,
+        }
     }
+}
+
+/// Per-session savings rollup: returns `Actual` when the session has real
+/// fork-handoff compression data persisted, `Projection` otherwise, or
+/// `None` when there's nothing measurable (no input tokens and no handoff).
+pub fn session_savings(
+    session: &crate::session::types::Session,
+    adapter: &TurboQuantAdapter,
+) -> Option<SessionSavings> {
+    let rate = implied_rate_per_token(session);
+    if let (Some(orig), Some(comp)) = (
+        session.tq_handoff_original_tokens,
+        session.tq_handoff_compressed_tokens,
+    ) {
+        let saved_tokens = orig.saturating_sub(comp);
+        let ratio = if comp == 0 {
+            1.0
+        } else {
+            orig as f64 / comp as f64
+        };
+        return Some(SessionSavings {
+            kind: SavingsKind::Actual,
+            saved_tokens,
+            saved_usd: saved_tokens as f64 * rate,
+            ratio,
+        });
+    }
+    if session.token_usage.input_tokens == 0 {
+        return None;
+    }
+    let proj = adapter.project_savings(&session.token_usage, rate);
+    Some(SessionSavings {
+        kind: SavingsKind::Projection,
+        saved_tokens: proj.projected_saved_tokens,
+        saved_usd: proj.projected_saved_usd,
+        ratio: proj.compression_ratio,
+    })
+}
+
+/// Derive an implicit $/token rate from a session's observed cost and total
+/// token consumption. Returns 0.0 when cost is non-positive or tokens are
+/// zero (via `TokenUsage::cost_per_kilo_token`, which already guards both).
+pub fn implied_rate_per_token(session: &crate::session::types::Session) -> f64 {
+    if session.cost_usd <= 0.0 {
+        return 0.0;
+    }
+    session.token_usage.cost_per_kilo_token(session.cost_usd) / 1000.0
 }
 
 #[cfg(test)]
@@ -598,95 +622,11 @@ mod tests {
         assert!(entry.contains("3.8x") || entry.contains("3.7x"));
     }
 
-    // -- TurboQuantAdapter --
-
-    #[test]
-    fn adapter_compresses_when_enabled_and_above_threshold() {
-        let adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, true);
-        let prompt = "x".repeat(1000);
-        let result = adapter.compress(&prompt, 85.0);
-        assert!(result.is_some());
-        let ctx = result.unwrap();
-        assert!(ctx.metrics.original_tokens > 0);
-        assert!(ctx.metrics.compressed_tokens > 0);
-        assert!(ctx.metrics.compression_ratio > 1.0);
-    }
-
-    #[test]
-    fn adapter_skips_when_below_threshold() {
-        let adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, true);
-        let prompt = "x".repeat(1000);
-        let result = adapter.compress(&prompt, 50.0);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn adapter_skips_when_disabled() {
-        let mut adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, true);
-        adapter.set_enabled(false);
-        let prompt = "x".repeat(1000);
-        let result = adapter.compress(&prompt, 95.0);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn adapter_skips_empty_prompt() {
-        let adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, true);
-        let result = adapter.compress("", 90.0);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn adapter_is_active_reflects_enabled_state() {
-        let mut adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, true);
-        assert!(adapter.is_active());
-        adapter.set_enabled(false);
-        assert!(!adapter.is_active());
-    }
-
-    #[test]
-    fn adapter_compresses_without_auto_overflow_at_any_pct() {
-        let adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false);
-        let prompt = "hello world ".repeat(100);
-        // auto_on_overflow is false, so it should compress regardless of context_pct
-        let result = adapter.compress(&prompt, 10.0);
-        assert!(result.is_some());
-    }
-
-    #[test]
-    fn adapter_metrics_have_correct_strategy() {
-        let adapter = TurboQuantAdapter::new(4, QuantStrategy::PolarQuant, 80.0, false);
-        let prompt = "x".repeat(500);
-        let ctx = adapter.compress(&prompt, 90.0).unwrap();
-        assert_eq!(ctx.strategy, QuantStrategy::PolarQuant);
-    }
-
-    // -- NoOpCompressor --
-
-    #[test]
-    fn noop_compressor_returns_none() {
-        let compressor = NoOpCompressor;
-        assert!(compressor.compress("anything", 99.0).is_none());
-        assert!(!compressor.is_active());
-    }
-
-    // -- format_token_count --
-
-    #[test]
-    fn format_token_count_small() {
-        assert_eq!(format_token_count(500), "500");
-    }
-
-    #[test]
-    fn format_token_count_thousands() {
-        assert_eq!(format_token_count(45000), "45.0k");
-    }
-
     // -- text_to_vectors --
 
     #[test]
     fn text_to_vectors_produces_normalized_vectors() {
-        let adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false);
+        let adapter = TurboQuantAdapter::new(4);
         let vectors =
             adapter.text_to_vectors("Hello, world! This is a test of the TurboQuant adapter.");
         assert!(!vectors.is_empty());
@@ -704,7 +644,7 @@ mod tests {
     // -- TextRanker --
 
     fn ranker() -> TurboQuantAdapter {
-        TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false)
+        TurboQuantAdapter::new(4)
     }
 
     #[test]
@@ -1129,6 +1069,165 @@ mod tests {
         let out = a.compact_system_prompt(&[&big], 100);
         assert!(!out.is_empty());
         assert!(out.len() / 4 <= 110);
+    }
+
+    // -- project_savings + session_savings + implied_rate_per_token (#346) --
+
+    use crate::session::types::TokenUsage;
+
+    fn projection_adapter(bit_width: u8) -> TurboQuantAdapter {
+        TurboQuantAdapter::new(bit_width)
+    }
+
+    fn usage_with_input(input: u64) -> TokenUsage {
+        TokenUsage {
+            input_tokens: input,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn project_savings_zero_input_tokens() {
+        let a = projection_adapter(4);
+        let p = a.project_savings(&usage_with_input(0), 0.000_001);
+        assert_eq!(p.input_tokens, 0);
+        assert_eq!(p.projected_compressed, 0);
+        assert_eq!(p.projected_saved_tokens, 0);
+        assert!((p.projected_saved_usd - 0.0).abs() < f64::EPSILON);
+        assert!((p.compression_ratio - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn project_savings_zero_rate() {
+        let a = projection_adapter(4);
+        let p = a.project_savings(&usage_with_input(1000), 0.0);
+        assert!(p.projected_saved_tokens > 0);
+        assert!((p.projected_saved_usd - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn project_savings_typical_bit_width_4() {
+        let a = projection_adapter(4);
+        let p = a.project_savings(&usage_with_input(1000), 0.0);
+        assert_eq!(p.projected_compressed, 250);
+        assert_eq!(p.projected_saved_tokens, 750);
+        assert!((p.compression_ratio - 4.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn project_savings_bit_width_8() {
+        let a = projection_adapter(8);
+        let p = a.project_savings(&usage_with_input(800), 0.0);
+        assert_eq!(p.projected_compressed, 100);
+        assert!((p.compression_ratio - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn project_savings_bit_width_zero_guards() {
+        let a = projection_adapter(0);
+        let p = a.project_savings(&usage_with_input(500), 0.0);
+        // ratio degenerates to 1.0; no panic; compressed == input
+        assert!((p.compression_ratio - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn project_savings_saturating_on_overflow() {
+        let a = projection_adapter(4);
+        let p = a.project_savings(&usage_with_input(u64::MAX), 0.0);
+        // Does not panic and remains a sane projection (compressed <= input).
+        assert_eq!(p.input_tokens, u64::MAX);
+        assert!(p.projected_compressed <= p.input_tokens);
+        assert!(p.projected_saved_tokens <= p.input_tokens);
+    }
+
+    #[test]
+    fn project_savings_rate_math() {
+        let a = projection_adapter(4);
+        let p = a.project_savings(&usage_with_input(1000), 0.000_002);
+        let expected = 750.0 * 0.000_002;
+        assert!((p.projected_saved_usd - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn project_savings_small_inputs_div_ceil() {
+        let a = projection_adapter(4);
+        let p = a.project_savings(&usage_with_input(1), 0.0);
+        assert_eq!(p.projected_compressed, 1);
+        assert_eq!(p.projected_saved_tokens, 0);
+    }
+
+    fn session_with_handoff(
+        input_tokens: u64,
+        original: u64,
+        compressed: u64,
+        cost_usd: f64,
+    ) -> Session {
+        let mut s = Session::new("p".into(), "m".into(), "orchestrator".into(), None);
+        s.token_usage = usage_with_input(input_tokens);
+        s.tq_handoff_original_tokens = Some(original);
+        s.tq_handoff_compressed_tokens = Some(compressed);
+        s.cost_usd = cost_usd;
+        s
+    }
+
+    fn session_no_handoff(input_tokens: u64, cost_usd: f64) -> Session {
+        let mut s = Session::new("p".into(), "m".into(), "orchestrator".into(), None);
+        s.token_usage = usage_with_input(input_tokens);
+        s.cost_usd = cost_usd;
+        s
+    }
+
+    #[test]
+    fn session_savings_actual_when_handoff_set() {
+        let a = projection_adapter(4);
+        let s = session_with_handoff(500, 1000, 250, 0.002);
+        let r = session_savings(&s, &a).unwrap();
+        assert_eq!(r.kind, SavingsKind::Actual);
+        assert_eq!(r.saved_tokens, 750);
+        assert!(r.saved_usd > 0.0);
+    }
+
+    #[test]
+    fn session_savings_projection_when_handoff_absent() {
+        let a = projection_adapter(4);
+        let s = session_no_handoff(1000, 0.002);
+        let r = session_savings(&s, &a).unwrap();
+        assert_eq!(r.kind, SavingsKind::Projection);
+    }
+
+    #[test]
+    fn session_savings_none_when_empty() {
+        let a = projection_adapter(4);
+        let s = session_no_handoff(0, 0.0);
+        assert!(session_savings(&s, &a).is_none());
+    }
+
+    #[test]
+    fn session_savings_actual_uses_real_ratio() {
+        let a = projection_adapter(4);
+        let s = session_with_handoff(0, 2000, 400, 0.0);
+        let r = session_savings(&s, &a).unwrap();
+        assert_eq!(r.kind, SavingsKind::Actual);
+        assert!((r.ratio - 5.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn implied_rate_per_token_zero_tokens_returns_zero() {
+        let mut s = session_no_handoff(0, 0.05);
+        s.token_usage = TokenUsage::default();
+        assert!((implied_rate_per_token(&s) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn implied_rate_per_token_zero_cost_returns_zero() {
+        let s = session_no_handoff(1000, 0.0);
+        assert!((implied_rate_per_token(&s) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn implied_rate_per_token_normal_case() {
+        let s = session_no_handoff(1000, 0.002);
+        assert!((implied_rate_per_token(&s) - 0.000_002).abs() < 1e-12);
     }
 
     #[test]

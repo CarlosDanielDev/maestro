@@ -5,6 +5,7 @@ mod fullscreen;
 mod issue_browser;
 mod milestone;
 mod overview;
+mod turboquant_dashboard;
 
 use chrono::{TimeZone, Utc};
 use ratatui::{Terminal, backend::TestBackend};
