@@ -436,6 +436,7 @@ mod tests {
             tq_original_tokens: None,
             tq_compressed_tokens: None,
             transition_history: vec![],
+            intent: crate::session::intent::SessionIntent::default(),
         };
         ManagedSession::new(session)
     }

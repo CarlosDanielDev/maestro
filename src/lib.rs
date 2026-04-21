@@ -15,6 +15,7 @@ pub mod util {
 
 #[path = "session"]
 pub mod session {
+    pub mod intent;
     pub mod parser;
     pub mod transition;
     pub mod types;

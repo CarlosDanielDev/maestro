@@ -3,6 +3,7 @@ pub mod context_monitor;
 pub mod fork;
 pub mod health;
 pub mod image;
+pub mod intent;
 pub mod logger;
 pub mod manager;
 pub mod parser;
