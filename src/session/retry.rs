@@ -1,5 +1,6 @@
 use chrono::Utc;
 
+use super::intent::SessionIntent;
 use super::types::{Session, SessionStatus};
 
 /// Retry policy configuration.
@@ -35,8 +36,23 @@ impl RetryPolicy {
         }
     }
 
+    /// Returns true when a hollow-completed session is actually a consultation
+    /// prompt (e.g. "how are you?") that produced a text response. The session
+    /// "did its job" — retrying it would just spawn a duplicate answer.
+    pub fn is_consultation_satisfied(session: &Session) -> bool {
+        session.is_hollow_completion
+            && session.intent == SessionIntent::Consultation
+            && !session.last_message.trim().is_empty()
+    }
+
     /// Check if a session is eligible for retry based on its status and retry count.
     pub fn should_retry(&self, session: &Session) -> bool {
+        // Intent check: a consultation prompt that got a text response is
+        // considered done, even if its mechanical signals look hollow.
+        if Self::is_consultation_satisfied(session) {
+            return false;
+        }
+
         let max = self.effective_max(session);
 
         if session.retry_count >= max {
@@ -337,6 +353,100 @@ mod tests {
         let retry = policy.prepare_retry(&original, None, None);
         assert!(retry.prompt.contains("hollow completion"));
         assert!(retry.prompt.contains("re-read the task"));
+    }
+
+    // --- Issue #274: Skip hollow retry for consultation/Q&A prompts ---
+
+    fn make_hollow_consultation(response: &str) -> Session {
+        let mut s = Session::new(
+            "how are you?".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        s.status = SessionStatus::Completed;
+        s.is_hollow_completion = true;
+        s.last_message = response.to_string();
+        s
+    }
+
+    fn make_hollow_work() -> Session {
+        let mut s = Session::new(
+            "fix the bug in login".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+        );
+        s.status = SessionStatus::Completed;
+        s.is_hollow_completion = true;
+        s
+    }
+
+    #[test]
+    fn should_retry_false_for_hollow_consultation_with_response() {
+        let policy = RetryPolicy::new(2, 0, 2);
+        let session = make_hollow_consultation("I'm doing well, thanks!");
+        assert!(
+            !policy.should_retry(&session),
+            "consultation prompt with a response should not retry"
+        );
+    }
+
+    #[test]
+    fn should_retry_true_for_hollow_work_session() {
+        let policy = RetryPolicy::new(2, 0, 2);
+        let session = make_hollow_work();
+        assert!(
+            policy.should_retry(&session),
+            "work session that went hollow must still retry"
+        );
+    }
+
+    #[test]
+    fn should_retry_true_for_hollow_consultation_with_empty_response() {
+        // If the consultation produced no response, something went wrong —
+        // we still want to retry it.
+        let policy = RetryPolicy::new(2, 0, 2);
+        let session = make_hollow_consultation("");
+        assert!(
+            policy.should_retry(&session),
+            "empty consultation response should still be retried"
+        );
+    }
+
+    #[test]
+    fn should_retry_true_for_hollow_consultation_whitespace_only_response() {
+        let policy = RetryPolicy::new(2, 0, 2);
+        let session = make_hollow_consultation("   \n\t  ");
+        assert!(
+            policy.should_retry(&session),
+            "whitespace-only response counts as empty"
+        );
+    }
+
+    #[test]
+    fn is_consultation_satisfied_true_when_all_conditions_met() {
+        let session = make_hollow_consultation("some answer");
+        assert!(RetryPolicy::is_consultation_satisfied(&session));
+    }
+
+    #[test]
+    fn is_consultation_satisfied_false_for_work_intent() {
+        let session = make_hollow_work();
+        assert!(!RetryPolicy::is_consultation_satisfied(&session));
+    }
+
+    #[test]
+    fn is_consultation_satisfied_false_when_not_hollow() {
+        let mut session = make_hollow_consultation("answer");
+        session.is_hollow_completion = false;
+        assert!(!RetryPolicy::is_consultation_satisfied(&session));
+    }
+
+    #[test]
+    fn is_consultation_satisfied_false_with_empty_response() {
+        let session = make_hollow_consultation("");
+        assert!(!RetryPolicy::is_consultation_satisfied(&session));
     }
 
     #[test]
