@@ -34,8 +34,19 @@ mod turboquant;
 mod integration_tests;
 
 use clap::Parser;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, PrdSourceArg};
 use commands::*;
+
+impl From<PrdSourceArg> for adapt::prd_source::PrdSource {
+    fn from(arg: PrdSourceArg) -> Self {
+        match arg {
+            PrdSourceArg::Local => Self::Local,
+            PrdSourceArg::Github => Self::Github,
+            PrdSourceArg::Azure => Self::Azure,
+            PrdSourceArg::Both => Self::Both,
+        }
+    }
+}
 
 /// Cross-platform log writer that falls back to `io::sink()` if the log file
 /// cannot be opened (avoids the `/dev/null` panic on non-Unix platforms).
@@ -95,6 +106,7 @@ async fn main() -> anyhow::Result<()> {
             no_issues,
             scan_only,
             model,
+            source,
         }) => {
             adapt::cmd_adapt(adapt::AdaptConfig {
                 path,
@@ -102,11 +114,23 @@ async fn main() -> anyhow::Result<()> {
                 no_issues,
                 scan_only,
                 model,
+                prd_source: source.into(),
             })
             .await
         }
-        Some(Commands::Prd { path, model, force }) => {
-            adapt::cmd_prd(adapt::PrdConfig { path, model, force }).await
+        Some(Commands::Prd {
+            path,
+            model,
+            force,
+            source,
+        }) => {
+            adapt::cmd_prd(adapt::PrdConfig {
+                path,
+                model,
+                force,
+                source: source.into(),
+            })
+            .await
         }
         Some(Commands::Sanitize {
             path,

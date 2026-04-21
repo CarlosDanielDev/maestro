@@ -4,6 +4,8 @@ pub mod materializer;
 pub mod milestone_pattern;
 pub mod planner;
 pub mod prd;
+pub mod prd_fetcher;
+pub mod prd_source;
 mod prompts;
 pub mod scaffolder;
 pub mod scanner;
@@ -18,6 +20,7 @@ pub struct AdaptConfig {
     pub no_issues: bool,
     pub scan_only: bool,
     pub model: Option<String>,
+    pub prd_source: prd_source::PrdSource,
 }
 
 impl Default for AdaptConfig {
@@ -28,6 +31,7 @@ impl Default for AdaptConfig {
             no_issues: false,
             scan_only: false,
             model: None,
+            prd_source: prd_source::PrdSource::default(),
         }
     }
 }
@@ -38,6 +42,7 @@ pub struct PrdConfig {
     pub path: std::path::PathBuf,
     pub model: Option<String>,
     pub force: bool,
+    pub source: prd_source::PrdSource,
 }
 
 pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
@@ -46,7 +51,10 @@ pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
     use scanner::{LocalProjectScanner, ProjectScanner};
 
     let output_path = config.path.join("docs/PRD.md");
-    if output_path.exists() && !config.force {
+
+    // When the source is Local, preserve legacy --force behavior so we don't
+    // accidentally overwrite a hand-edited file without a flag.
+    if config.source == prd_source::PrdSource::Local && output_path.exists() && !config.force {
         eprintln!(
             "PRD already exists at {}. Use --force to overwrite.",
             output_path.display()
@@ -64,15 +72,44 @@ pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
     let analyzer = ClaudeAnalyzer::new(model.clone());
     let report = analyzer.analyze(&profile).await?;
 
+    // Try to fetch an existing PRD from the selected source. If found, we
+    // ENRICH it; otherwise generate fresh.
+    let existing = prd_fetcher::fetch_existing(config.source, &config.path).unwrap_or(None);
+    if let Some(ref fetched) = existing {
+        eprintln!(
+            "Existing PRD found ({}) — enriching instead of regenerating.",
+            fetched.origin.describe()
+        );
+    } else {
+        eprintln!("No existing PRD found — generating from scratch.");
+    }
+
     eprintln!("Generating PRD...");
     let generator = ClaudePrdGenerator::new(model);
-    let prd_content = generator.generate(&profile, &report).await?;
+    let prd_content = if let Some(fetched) = existing.as_ref() {
+        generator
+            .enrich(&profile, &report, &fetched.content)
+            .await?
+    } else {
+        generator.generate(&profile, &report).await?
+    };
 
-    if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)?;
+    // Write back to the local file when the source includes it.
+    if config.source.uses_local() {
+        if let Some(parent) = output_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&output_path, &prd_content)?;
+        eprintln!("PRD written to {}", output_path.display());
+    } else {
+        // For remote-only sources, surface the result so the user can
+        // copy it back manually until full write-back is implemented.
+        eprintln!(
+            "PRD content ({} chars) — paste into the selected destination:",
+            prd_content.len()
+        );
+        println!("{}", prd_content);
     }
-    std::fs::write(&output_path, &prd_content)?;
-    eprintln!("PRD written to {}", output_path.display());
 
     Ok(())
 }

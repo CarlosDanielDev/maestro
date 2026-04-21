@@ -1,4 +1,5 @@
 use crate::adapt::AdaptConfig;
+use crate::adapt::prd_source::PrdSource;
 use crate::adapt::types::{
     AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile, ScaffoldResult,
 };
@@ -40,6 +41,7 @@ pub struct AdaptWizardConfig {
     pub scan_only: bool,
     pub no_issues: bool,
     pub model: String,
+    pub prd_source: PrdSource,
 }
 
 impl Default for AdaptWizardConfig {
@@ -50,6 +52,7 @@ impl Default for AdaptWizardConfig {
             scan_only: false,
             no_issues: false,
             model: "sonnet".to_string(),
+            prd_source: PrdSource::default(),
         }
     }
 }
@@ -66,7 +69,26 @@ impl AdaptWizardConfig {
             } else {
                 Some(self.model.clone())
             },
+            prd_source: self.prd_source,
         }
+    }
+
+    /// Cycle the PRD source to the next value (for j/Space key handling).
+    #[allow(
+        dead_code,
+        reason = "Public API reserved for wizard PRD Source field keybindings."
+    )]
+    pub fn cycle_prd_source(&mut self) {
+        self.prd_source = self.prd_source.next();
+    }
+
+    /// Cycle the PRD source to the previous value (for k key handling).
+    #[allow(
+        dead_code,
+        reason = "Public API reserved for wizard PRD Source field keybindings."
+    )]
+    pub fn cycle_prd_source_back(&mut self) {
+        self.prd_source = self.prd_source.previous();
     }
 }
 
