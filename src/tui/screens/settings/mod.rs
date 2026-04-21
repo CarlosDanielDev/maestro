@@ -101,6 +101,16 @@ pub struct SettingsScreen {
     validation_results: HashMap<FieldKey, ValidationFeedback>,
 }
 
+/// Find a widget in a tab's field slice by its label. Returns the first
+/// match. Used by `sync_widgets_to_config` so reordering widgets in
+/// `build_*_fields` cannot silently drop a sync.
+fn widget_by_label<'a>(fields: &'a [SettingsField], label: &str) -> Option<&'a WidgetKind> {
+    fields
+        .iter()
+        .find(|f| f.widget.label() == label)
+        .map(|f| &f.widget)
+}
+
 impl SettingsScreen {
     pub fn new(config: Config, flags: FeatureFlags) -> Self {
         let fields_per_tab = Self::build_fields(&config);
@@ -267,6 +277,28 @@ impl SettingsScreen {
                 NumberStepper::new("retry_cooldown_secs", s.retry_cooldown_secs as i64, 0, 600)
                     .with_step(10),
             )),
+            // Hollow retry policy (#275) — dropdown + per-intent steppers.
+            Self::field(WidgetKind::Dropdown(Dropdown::new(
+                "hollow_retry.policy",
+                vec!["always".into(), "intent-aware".into(), "never".into()],
+                match s.hollow_retry.policy {
+                    crate::config::HollowRetryPolicy::Always => 0,
+                    crate::config::HollowRetryPolicy::IntentAware => 1,
+                    crate::config::HollowRetryPolicy::Never => 2,
+                },
+            ))),
+            Self::field(WidgetKind::NumberStepper(NumberStepper::new(
+                "hollow_retry.work_max_retries",
+                s.hollow_retry.work_max_retries as i64,
+                0,
+                10,
+            ))),
+            Self::field(WidgetKind::NumberStepper(NumberStepper::new(
+                "hollow_retry.consultation_max_retries",
+                s.hollow_retry.consultation_max_retries as i64,
+                0,
+                10,
+            ))),
             // Context Overflow sub-section
             Self::field(WidgetKind::NumberStepper(
                 NumberStepper::new(
@@ -612,46 +644,72 @@ impl SettingsScreen {
             }
         }
 
-        // Sessions (tab 1)
+        // Sessions (tab 1) — looked up by label so widget reordering
+        // cannot silently drop a sync. New widgets only need to appear in
+        // `build_sessions_fields`; no index bookkeeping here.
         if let Some(fields) = self.fields_per_tab.get(1) {
             let s = &mut self.config.sessions;
-            if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
+            if let Some(WidgetKind::NumberStepper(w)) = widget_by_label(fields, "max_concurrent") {
                 s.max_concurrent = w.value as usize;
             }
-            if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
+            if let Some(WidgetKind::NumberStepper(w)) =
+                widget_by_label(fields, "stall_timeout_secs")
+            {
                 s.stall_timeout_secs = w.value as u64;
             }
-            if let Some(WidgetKind::TextInput(w)) = fields.get(2).map(|f| &f.widget) {
+            if let Some(WidgetKind::TextInput(w)) = widget_by_label(fields, "default_model") {
                 s.default_model = w.value.clone();
             }
-            if let Some(WidgetKind::TextInput(w)) = fields.get(3).map(|f| &f.widget) {
+            if let Some(WidgetKind::TextInput(w)) = widget_by_label(fields, "default_mode") {
                 s.default_mode = w.value.clone();
             }
-            if let Some(WidgetKind::Dropdown(w)) = fields.get(4).map(|f| &f.widget) {
+            if let Some(WidgetKind::Dropdown(w)) = widget_by_label(fields, "permission_mode") {
                 s.permission_mode = w.selected_value().to_string();
             }
-            if let Some(WidgetKind::NumberStepper(w)) = fields.get(5).map(|f| &f.widget) {
+            if let Some(WidgetKind::NumberStepper(w)) = widget_by_label(fields, "max_retries") {
                 s.max_retries = w.value as u32;
             }
-            if let Some(WidgetKind::NumberStepper(w)) = fields.get(6).map(|f| &f.widget) {
+            if let Some(WidgetKind::NumberStepper(w)) =
+                widget_by_label(fields, "retry_cooldown_secs")
+            {
                 s.retry_cooldown_secs = w.value as u64;
             }
-            if let Some(WidgetKind::NumberStepper(w)) = fields.get(7).map(|f| &f.widget) {
+            if let Some(WidgetKind::Dropdown(w)) = widget_by_label(fields, "hollow_retry.policy") {
+                s.hollow_retry.policy = match w.selected {
+                    0 => crate::config::HollowRetryPolicy::Always,
+                    1 => crate::config::HollowRetryPolicy::IntentAware,
+                    _ => crate::config::HollowRetryPolicy::Never,
+                };
+            }
+            if let Some(WidgetKind::NumberStepper(w)) =
+                widget_by_label(fields, "hollow_retry.work_max_retries")
+            {
+                s.hollow_retry.work_max_retries = w.value as u32;
+            }
+            if let Some(WidgetKind::NumberStepper(w)) =
+                widget_by_label(fields, "hollow_retry.consultation_max_retries")
+            {
+                s.hollow_retry.consultation_max_retries = w.value as u32;
+            }
+            if let Some(WidgetKind::NumberStepper(w)) =
+                widget_by_label(fields, "overflow_threshold_pct")
+            {
                 s.context_overflow.overflow_threshold_pct = w.value as u8;
             }
-            if let Some(WidgetKind::Toggle(w)) = fields.get(8).map(|f| &f.widget) {
+            if let Some(WidgetKind::Toggle(w)) = widget_by_label(fields, "auto_fork") {
                 s.context_overflow.auto_fork = w.value;
             }
-            if let Some(WidgetKind::NumberStepper(w)) = fields.get(9).map(|f| &f.widget) {
+            if let Some(WidgetKind::NumberStepper(w)) = widget_by_label(fields, "commit_prompt_pct")
+            {
                 s.context_overflow.commit_prompt_pct = w.value as u8;
             }
-            if let Some(WidgetKind::NumberStepper(w)) = fields.get(10).map(|f| &f.widget) {
+            if let Some(WidgetKind::NumberStepper(w)) = widget_by_label(fields, "max_fork_depth") {
                 s.context_overflow.max_fork_depth = w.value as u8;
             }
-            if let Some(WidgetKind::Toggle(w)) = fields.get(11).map(|f| &f.widget) {
+            if let Some(WidgetKind::Toggle(w)) = widget_by_label(fields, "conflict_enabled") {
                 s.conflict.enabled = w.value;
             }
-            if let Some(WidgetKind::Dropdown(w)) = fields.get(12).map(|f| &f.widget) {
+            if let Some(WidgetKind::Dropdown(w)) = widget_by_label(fields, "conflict_policy") {
                 s.conflict.policy = match w.selected {
                     0 => crate::config::ConflictPolicy::Warn,
                     1 => crate::config::ConflictPolicy::Pause,
@@ -1933,5 +1991,90 @@ alert_threshold_pct = 80
         let fb = screen.feedback_for(5, 3);
         assert!(fb.is_some());
         assert!(fb.unwrap().is_error());
+    }
+
+    // --- Issue #275: hollow retry policy widgets in Sessions tab ---
+
+    #[test]
+    fn sessions_tab_contains_hollow_retry_widgets() {
+        let screen = SettingsScreen::new(make_config(), make_flags());
+        let fields = &screen.fields_per_tab[1];
+        // Fields 7, 8, 9 are the three new widgets (after max_concurrent,
+        // stall_timeout_secs, default_model, default_mode, permission_mode,
+        // max_retries, retry_cooldown_secs).
+        match &fields[7].widget {
+            WidgetKind::Dropdown(d) => assert_eq!(d.label, "hollow_retry.policy"),
+            _ => panic!("expected Dropdown at field 7 (hollow_retry.policy)"),
+        }
+        match &fields[8].widget {
+            WidgetKind::NumberStepper(s) => {
+                assert_eq!(s.label, "hollow_retry.work_max_retries")
+            }
+            _ => panic!("expected NumberStepper at field 8 (work_max_retries)"),
+        }
+        match &fields[9].widget {
+            WidgetKind::NumberStepper(s) => {
+                assert_eq!(s.label, "hollow_retry.consultation_max_retries")
+            }
+            _ => panic!("expected NumberStepper at field 9 (consultation_max_retries)"),
+        }
+    }
+
+    #[test]
+    fn sessions_tab_hollow_retry_policy_defaults_to_intent_aware() {
+        let screen = SettingsScreen::new(make_config(), make_flags());
+        let fields = &screen.fields_per_tab[1];
+        let WidgetKind::Dropdown(d) = &fields[7].widget else {
+            panic!("field 7 must be Dropdown");
+        };
+        // Options order: [always, intent-aware, never] → default index 1.
+        assert_eq!(d.selected, 1);
+        assert_eq!(d.selected_value(), "intent-aware");
+    }
+
+    #[test]
+    fn sessions_tab_hollow_retry_sync_writes_policy_to_config() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        // Directly mutate the dropdown to "never" (index 2).
+        if let Some(WidgetKind::Dropdown(d)) = screen
+            .fields_per_tab
+            .get_mut(1)
+            .and_then(|fs| fs.get_mut(7))
+            .map(|f| &mut f.widget)
+        {
+            d.selected = 2;
+        }
+        screen.sync_widgets_to_config();
+        assert_eq!(
+            screen.config.sessions.hollow_retry.policy,
+            crate::config::HollowRetryPolicy::Never
+        );
+    }
+
+    #[test]
+    fn sessions_tab_hollow_retry_sync_writes_steppers_to_config() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        if let Some(WidgetKind::NumberStepper(s)) = screen
+            .fields_per_tab
+            .get_mut(1)
+            .and_then(|fs| fs.get_mut(8))
+            .map(|f| &mut f.widget)
+        {
+            s.value = 5;
+        }
+        if let Some(WidgetKind::NumberStepper(s)) = screen
+            .fields_per_tab
+            .get_mut(1)
+            .and_then(|fs| fs.get_mut(9))
+            .map(|f| &mut f.widget)
+        {
+            s.value = 3;
+        }
+        screen.sync_widgets_to_config();
+        assert_eq!(screen.config.sessions.hollow_retry.work_max_retries, 5);
+        assert_eq!(
+            screen.config.sessions.hollow_retry.consultation_max_retries,
+            3
+        );
     }
 }

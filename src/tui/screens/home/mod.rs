@@ -14,18 +14,53 @@ use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{Frame, layout::Rect};
 
-const QUICK_ACTIONS: &[(&str, char)] = &[
-    ("Browse Issues", 'i'),
-    ("Browse Milestones", 'm'),
-    ("Run Prompt", 'r'),
-    ("Adapt Project", 'a'),
-    ("Review PRs", 'p'),
-    ("Status", 's'),
-    ("Cost Report", 'c'),
-    ("Token Report", 't'),
-    ("Settings", 'S'),
-    ("Update Maestro", 'u'),
-    ("Quit", 'q'),
+/// Dispatch tag for a Quick Action, paired with label + key in
+/// `QUICK_ACTIONS` so the three fields cannot drift. Quit routes to
+/// `ConfirmExit` to match the global `q` handler — see the regression
+/// test `enter_in_confirm_exit_cancels_instead_of_confirming`.
+#[derive(Clone, Copy)]
+enum QuickActionDispatch {
+    Push(TuiMode),
+    CheckForUpdate,
+}
+
+impl From<QuickActionDispatch> for ScreenAction {
+    fn from(dispatch: QuickActionDispatch) -> Self {
+        match dispatch {
+            QuickActionDispatch::Push(mode) => ScreenAction::Push(mode),
+            QuickActionDispatch::CheckForUpdate => ScreenAction::CheckForUpdate,
+        }
+    }
+}
+
+const fn find_action_index_by_key(target: char) -> usize {
+    let mut i = 0;
+    while i < QUICK_ACTIONS.len() {
+        if QUICK_ACTIONS[i].1 == target {
+            return i;
+        }
+        i += 1;
+    }
+    panic!("QUICK_ACTIONS missing expected key");
+}
+
+const QUICK_ACTIONS: &[(&str, char, QuickActionDispatch)] = &[
+    ("Browse Issues", 'i', QuickActionDispatch::Push(TuiMode::IssueBrowser)),
+    ("Browse Milestones", 'm', QuickActionDispatch::Push(TuiMode::MilestoneView)),
+    ("Run Prompt", 'r', QuickActionDispatch::Push(TuiMode::PromptInput)),
+    ("Adapt Project", 'a', QuickActionDispatch::Push(TuiMode::AdaptWizard)),
+    ("Review PRs", 'p', QuickActionDispatch::Push(TuiMode::PrReview)),
+    ("Status", 's', QuickActionDispatch::Push(TuiMode::Overview)),
+    ("Cost Report", 'c', QuickActionDispatch::Push(TuiMode::CostDashboard)),
+    ("Token Report", 't', QuickActionDispatch::Push(TuiMode::TokenDashboard)),
+    (
+        "TurboQuant Savings",
+        'Q',
+        QuickActionDispatch::Push(TuiMode::TurboquantDashboard),
+    ),
+    ("Settings", 'S', QuickActionDispatch::Push(TuiMode::Settings)),
+    ("Update Maestro", 'u', QuickActionDispatch::CheckForUpdate),
+    ("Quit", 'q', QuickActionDispatch::Push(TuiMode::ConfirmExit)),
 ];
 
 pub struct HomeScreen {
@@ -59,7 +94,10 @@ pub(super) struct StatsBarIdentity {
 impl HomeScreen {
     pub const NUM_ACTIONS: usize = QUICK_ACTIONS.len();
     #[allow(dead_code)] // Reason: quit action index for keyboard shortcut
-    pub const QUIT_ACTION_INDEX: usize = 10;
+    /// Index of the `Quit` entry in `QUICK_ACTIONS`. Derived from the
+    /// table at compile time so this cannot drift when the menu is
+    /// reordered.
+    pub const QUIT_ACTION_INDEX: usize = find_action_index_by_key('q');
     pub const QUICK_ACTIONS_PANE: FocusId = FocusId("home:quick_actions");
     pub const SUGGESTIONS_PANE: FocusId = FocusId("home:suggestions");
 
@@ -182,20 +220,17 @@ impl Screen for HomeScreen {
                 return ScreenAction::None;
             }
 
+            // Menu-letter shortcuts come from QUICK_ACTIONS so Enter and
+            // letter-press share one source of truth.
+            if let KeyCode::Char(c) = code
+                && let Some((_, _, action)) = QUICK_ACTIONS.iter().find(|(_, k, _)| k == c)
+            {
+                return (*action).into();
+            }
             match code {
-                KeyCode::Char('i') => return ScreenAction::Push(TuiMode::IssueBrowser),
-                KeyCode::Char('m') => return ScreenAction::Push(TuiMode::MilestoneView),
-                KeyCode::Char('r') => return ScreenAction::Push(TuiMode::PromptInput),
-                KeyCode::Char('a') => return ScreenAction::Push(TuiMode::AdaptWizard),
+                // Hidden keyboard shortcuts (not shown in Quick Actions).
                 KeyCode::Char('n') => return ScreenAction::Push(TuiMode::ReleaseNotes),
-                KeyCode::Char('p') => return ScreenAction::Push(TuiMode::PrReview),
                 KeyCode::Char('R') => return ScreenAction::RefreshSuggestions,
-                KeyCode::Char('s') => return ScreenAction::Push(TuiMode::Overview),
-                KeyCode::Char('c') => return ScreenAction::Push(TuiMode::CostDashboard),
-                KeyCode::Char('t') => return ScreenAction::Push(TuiMode::TokenDashboard),
-                KeyCode::Char('S') => return ScreenAction::Push(TuiMode::Settings),
-                KeyCode::Char('u') => return ScreenAction::CheckForUpdate,
-                KeyCode::Char('q') => return ScreenAction::Quit,
                 KeyCode::Tab => {
                     self.focus_ring.next();
                 }
@@ -369,10 +404,14 @@ mod tests {
     }
 
     #[test]
-    fn home_key_q_returns_quit() {
+    fn home_key_q_routes_through_confirm_exit() {
+        // The letter `q` on the HomeScreen is intercepted globally before
+        // reaching this handler in production, but when dispatched through
+        // the screen (Enter path or tests) it must route to ConfirmExit,
+        // not the direct-quit action — both paths must be equivalent.
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Char('q')), InputMode::Normal);
-        assert_eq!(action, ScreenAction::Quit);
+        assert_eq!(action, ScreenAction::Push(TuiMode::ConfirmExit));
     }
 
     #[test]
@@ -391,13 +430,54 @@ mod tests {
     }
 
     #[test]
-    fn home_enter_on_quit_action_returns_quit() {
+    fn home_enter_on_quit_action_routes_through_confirm_exit() {
+        // Enter on the Quit row must go through the confirm-exit dialog
+        // so menu-Enter matches the letter-`q` flow (which is intercepted
+        // globally in `input_handler::handle_key` and navigates to
+        // ConfirmExit). Direct `ScreenAction::Quit` would bypass the
+        // dialog and exit immediately — user-hostile.
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         for _ in 0..HomeScreen::QUIT_ACTION_INDEX {
             screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
         }
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        assert_eq!(action, ScreenAction::Quit);
+        assert_eq!(action, ScreenAction::Push(TuiMode::ConfirmExit));
+    }
+
+    /// Every Quick Action's Enter-press AND letter-press must dispatch
+    /// to exactly the action declared in `QUICK_ACTIONS`. Guards against
+    /// two classes of drift:
+    /// - index-based `execute_selected_action` shifting silently when a
+    ///   row is inserted (the original bug);
+    /// - a bulk reassignment where every row gets the same target (the
+    ///   previous cross-path-only form of this test would have passed).
+    #[test]
+    fn home_enter_matches_letter_key_for_every_quick_action() {
+        for (idx, &(label, key, action)) in QUICK_ACTIONS.iter().enumerate() {
+            let expected: ScreenAction = action.into();
+
+            let mut by_enter = HomeScreen::new(make_project_info(), vec![], vec![]);
+            for _ in 0..idx {
+                by_enter.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+            }
+            let enter_action =
+                by_enter.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+
+            let mut by_letter = HomeScreen::new(make_project_info(), vec![], vec![]);
+            let letter_action =
+                by_letter.handle_input(&key_event(KeyCode::Char(key)), InputMode::Normal);
+
+            assert_eq!(
+                enter_action, expected,
+                "Quick Action [{}] {}: Enter must dispatch the action declared in QUICK_ACTIONS",
+                key, label
+            );
+            assert_eq!(
+                letter_action, expected,
+                "Quick Action [{}] {}: letter-key must dispatch the action declared in QUICK_ACTIONS",
+                key, label
+            );
+        }
     }
 
     #[test]
@@ -767,11 +847,11 @@ mod tests {
     }
 
     #[test]
-    fn home_char_q_returns_quit_when_focused_on_suggestions() {
+    fn home_char_q_routes_through_confirm_exit_when_focused_on_suggestions() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         focus_suggestions(&mut screen);
         let action = screen.handle_input(&key_event(KeyCode::Char('q')), InputMode::Normal);
-        assert_eq!(action, ScreenAction::Quit);
+        assert_eq!(action, ScreenAction::Push(TuiMode::ConfirmExit));
     }
 
     // -- Edge cases --

@@ -910,12 +910,12 @@ fn draw_confirm_exit_overlay(
         Line::from(""),
         Line::from(vec![
             Span::styled("  [y]", Style::default().fg(theme.accent_success)),
-            Span::raw("es / "),
-            Span::styled("[Enter]", Style::default().fg(theme.accent_success)),
-            Span::raw("  "),
+            Span::raw("es  "),
             Span::styled("[n]", Style::default().fg(theme.accent_error)),
             Span::raw("o / "),
             Span::styled("[Esc]", Style::default().fg(theme.accent_error)),
+            Span::raw(" / "),
+            Span::styled("[Enter]", Style::default().fg(theme.accent_error)),
         ]),
     ];
 

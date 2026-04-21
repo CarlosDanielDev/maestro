@@ -7,6 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `[sessions.hollow_retry]` config section with three policies: `always`, `intent-aware` (default), and `never`; replaces the flat `sessions.hollow_max_retries` field (#275)
+- `HollowRetryPolicy` enum and `HollowRetryConfig` struct in `src/config.rs`; `merge_legacy_hollow()` pure function for backward-compatible TOML parsing (#275)
+- Per-intent retry limits: `work_max_retries` (default 2) and `consultation_max_retries` (default 0) under `[sessions.hollow_retry]` (#275)
+- Settings UI hollow-retry section in the Sessions tab: `[policy]` dropdown, `[work_max_retries]` stepper, `[consultation_max_retries]` stepper (#275)
+
+### Changed
+
+- Hollow retry dispatch is now intent-aware by default: work sessions retry up to 2 times, consultation sessions never retry (#275)
+- `RetryPolicy` in `src/session/retry.rs` owns a `hollow: HollowRetryConfig` field (was flat `hollow_max_retries: u32`); `effective_max()` dispatches by policy and session intent (#275)
+- `HollowRetryScreen` in `src/tui/app/completion_pipeline.rs` receives the per-intent `effective_max` rather than the raw work limit (#275)
+
+> **Backward compatibility**: existing `sessions.hollow_max_retries = N` in `maestro.toml` still parses and maps to `work_max_retries = N` with policy `always`.
+
 ## [0.14.0] - 2026-04-17
 
 ### Added
