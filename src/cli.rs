@@ -9,6 +9,20 @@ pub enum SanitizeOutputFormat {
     Markdown,
 }
 
+/// CLI-local PRD source (converted to adapt::prd_source::PrdSource in main).
+///
+/// Kept in this file because `build.rs` includes `src/cli.rs` directly with
+/// `#[path]` and must not pull in the rest of the crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+#[clap(rename_all = "snake_case")]
+pub enum PrdSourceArg {
+    #[default]
+    Local,
+    Github,
+    Azure,
+    Both,
+}
+
 /// Severity filter for sanitize reports (CLI-local, converted to sanitize::Severity in main).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SanitizeSeverityFilter {
@@ -153,6 +167,10 @@ pub enum Commands {
         /// AI model to use for analysis and planning
         #[arg(short, long)]
         model: Option<String>,
+
+        /// Where the PRD lives: local file, GitHub issue, Azure DevOps, or both
+        #[arg(long, value_enum, default_value_t = PrdSourceArg::Local)]
+        source: PrdSourceArg,
     },
     /// Generate a Product Requirements Document from project analysis
     Prd {
@@ -167,6 +185,10 @@ pub enum Commands {
         /// Overwrite existing PRD without confirmation
         #[arg(long)]
         force: bool,
+
+        /// Where the PRD lives: local file, GitHub issue, Azure DevOps, or both
+        #[arg(long, value_enum, default_value_t = PrdSourceArg::Local)]
+        source: PrdSourceArg,
     },
     /// Analyze codebase for dead code and code smells
     Sanitize {
@@ -975,6 +997,64 @@ mod tests {
         }
     }
 
+    // --- Issue #390: --source flag ---
+
+    #[test]
+    fn prd_source_defaults_to_local() {
+        let cli = Cli::try_parse_from(["maestro", "prd"]).unwrap();
+        if let Some(Commands::Prd { source, .. }) = cli.command {
+            assert_eq!(source, PrdSourceArg::Local);
+        } else {
+            panic!("Expected Commands::Prd");
+        }
+    }
+
+    #[test]
+    fn prd_source_accepts_github() {
+        let cli = Cli::try_parse_from(["maestro", "prd", "--source", "github"]).unwrap();
+        if let Some(Commands::Prd { source, .. }) = cli.command {
+            assert_eq!(source, PrdSourceArg::Github);
+        } else {
+            panic!("Expected Commands::Prd");
+        }
+    }
+
+    #[test]
+    fn prd_source_accepts_azure() {
+        let cli = Cli::try_parse_from(["maestro", "prd", "--source", "azure"]).unwrap();
+        if let Some(Commands::Prd { source, .. }) = cli.command {
+            assert_eq!(source, PrdSourceArg::Azure);
+        } else {
+            panic!("Expected Commands::Prd");
+        }
+    }
+
+    #[test]
+    fn prd_source_accepts_both() {
+        let cli = Cli::try_parse_from(["maestro", "prd", "--source", "both"]).unwrap();
+        if let Some(Commands::Prd { source, .. }) = cli.command {
+            assert_eq!(source, PrdSourceArg::Both);
+        } else {
+            panic!("Expected Commands::Prd");
+        }
+    }
+
+    #[test]
+    fn adapt_source_flag_works_too() {
+        let cli = Cli::try_parse_from(["maestro", "adapt", "--source", "github"]).unwrap();
+        if let Some(Commands::Adapt { source, .. }) = cli.command {
+            assert_eq!(source, PrdSourceArg::Github);
+        } else {
+            panic!("Expected Commands::Adapt");
+        }
+    }
+
+    #[test]
+    fn prd_source_invalid_value_is_rejected() {
+        let result = Cli::try_parse_from(["maestro", "prd", "--source", "trello"]);
+        assert!(result.is_err(), "unknown source should be rejected by clap");
+    }
+
     #[test]
     fn adapt_all_flags_coexist() {
         let cli = Cli::try_parse_from([
@@ -995,6 +1075,7 @@ mod tests {
             no_issues,
             scan_only,
             model,
+            ..
         }) = cli.command
         {
             assert_eq!(path, PathBuf::from("/project"));

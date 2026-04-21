@@ -9,6 +9,18 @@ pub trait PrdGenerator: Send + Sync {
         profile: &ProjectProfile,
         report: &AdaptReport,
     ) -> anyhow::Result<String>;
+
+    /// Enrich an existing PRD with the latest analysis instead of
+    /// regenerating from scratch. Default implementation delegates to
+    /// `generate`, which is a safe fallback for mock implementations.
+    async fn enrich(
+        &self,
+        profile: &ProjectProfile,
+        report: &AdaptReport,
+        _existing: &str,
+    ) -> anyhow::Result<String> {
+        self.generate(profile, report).await
+    }
 }
 
 pub struct ClaudePrdGenerator {
@@ -31,6 +43,18 @@ impl PrdGenerator for ClaudePrdGenerator {
         let profile_json = serde_json::to_string_pretty(profile)?;
         let report_json = serde_json::to_string_pretty(report)?;
         let prompt = super::prompts::build_prd_prompt(&profile_json, &report_json);
+        super::prompts::run_claude_print(&self.model, &prompt, &profile.root).await
+    }
+
+    async fn enrich(
+        &self,
+        profile: &ProjectProfile,
+        report: &AdaptReport,
+        existing: &str,
+    ) -> anyhow::Result<String> {
+        let profile_json = serde_json::to_string_pretty(profile)?;
+        let report_json = serde_json::to_string_pretty(report)?;
+        let prompt = super::prompts::build_prd_enrich_prompt(&profile_json, &report_json, existing);
         super::prompts::run_claude_print(&self.model, &prompt, &profile.root).await
     }
 }

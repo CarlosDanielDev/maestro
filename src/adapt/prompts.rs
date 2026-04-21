@@ -106,6 +106,55 @@ Return ONLY the markdown document, no code fences wrapping the entire output."#,
     )
 }
 
+/// Build a prompt that asks Claude to ENRICH an existing PRD with the latest
+/// analysis instead of regenerating from scratch. Used when PRD source
+/// resolution finds an upstream document (local file, GitHub issue, or
+/// Azure wiki page).
+pub fn build_prd_enrich_prompt(
+    profile_json: &str,
+    report_json: &str,
+    existing_prd: &str,
+) -> String {
+    format!(
+        r#"You are updating a Product Requirements Document (PRD) for a software project.
+
+## Existing PRD
+
+{existing_prd}
+
+## Project Profile (latest analysis)
+
+{profile_json}
+
+## Analysis Report (latest analysis)
+
+{report_json}
+
+## Instructions
+
+Enrich the existing PRD with information from the latest analysis. Preserve
+the voice, structure, and section headings that already exist. You MAY:
+
+- Fill in missing sections (if the existing PRD omits any of the canonical
+  sections: Project Identity, Architecture, Components, Data Flow, Tech
+  Stack, Current State, Non-Goals).
+- Correct facts that conflict with the latest analysis (new files, new
+  frameworks, updated test coverage, resolved tech-debt items).
+- Add bullets to existing sections when the analysis introduces new facts.
+- Remove statements that the latest analysis has clearly invalidated.
+
+You MUST NOT:
+
+- Rewrite the entire document from scratch.
+- Discard prose that the user appears to have hand-authored (non-generic
+  paragraphs, rationale, trade-off notes, roadmap language).
+- Change section headings that already exist, except to fix clear typos.
+
+Return ONLY the updated markdown document, no code fences wrapping the
+entire output, no commentary, no diff markers."#,
+    )
+}
+
 pub fn build_planning_prompt(
     profile_json: &str,
     report_json: &str,
