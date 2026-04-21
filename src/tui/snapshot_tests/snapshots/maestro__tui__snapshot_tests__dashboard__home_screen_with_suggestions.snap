@@ -1,16 +1,15 @@
 ---
 source: src/tui/snapshot_tests/dashboard.rs
-assertion_line: 62
 expression: terminal.backend()
 ---
 "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────"
 "  owner/repo   main   @carlos  │  Loading...                                                                         "
 "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────"
-"╔══════════════════════════════════════════════[ What's New in v0.13.1 ]═══════════════════════════════════════════════╗"
-"║  [Added] Configurable milestone naming convention in adapt settings (#368)                                           ║"
-"║  [Added] PRD generator — standalone command + adapt integration (#370)                                               ║"
-"║  [Added] Adapt AI scaffolding phase — generate .claude/ commands, skills, and subagents for target project (#371)    ║"
-"║  [Changed] Add runtime state files to `.gitignore` (#352)                                                            ║"
+"╔══════════════════════════════════════════════[ What's New in v0.14.0 ]═══════════════════════════════════════════════╗"
+"║  [Added] Fork-handoff compression — `compress_handoff()` on `TurboQuantAdapter` produces a `CompressedHandoff` str...║"
+"║  [Added] System-prompt compaction — `compact_system_prompt()` on `TurboQuantAdapter`; integrated into `SessionPool...║"
+"║  [Added] State compression — `compact_session_history()` on `TurboQuantAdapter` returns a `StateCompactionReport`;...║"
+"║  [Added] Knowledge compression in `maestro adapt` — new `src/adapt/knowledge.rs` module (Phase 2.6); produces a to...║"
 "╚══════════════════════════════════════════ Press [n] for full release notes ══════════════════════════════════════════╝"
 "╔════════[ Quick Actions ]═════════╗╔════════════[ Suggestions ]═════════════╗╔══════════[ Recent Activity ]═══════════╗"
 "║  [i]  Browse Issues              ║║  󰝦 3 issues labeled maestro:ready — pre║║  No recent sessions                    ║"
