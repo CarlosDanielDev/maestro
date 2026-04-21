@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/dashboard.rs
+assertion_line: 46
 expression: terminal.backend()
 ---
 "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────"
@@ -23,10 +24,10 @@ expression: terminal.backend()
 "║  [s]  Status                     ║║                                        ║║                                        ║"
 "║  [c]  Cost Report                ║║                                        ║║                                        ║"
 "║  [t]  Token Report               ║║                                        ║║                                        ║"
+"║  [Q]  TurboQuant Savings         ║║                                        ║║                                        ║"
 "║  [S]  Settings                   ║║                                        ║║                                        ║"
 "║  [u]  Update Maestro             ║║                                        ║║                                        ║"
 "║  [q]  Quit                       ║║                                        ║║                                        ║"
-"║                                  ║║                                        ║║                                        ║"
 "║                                  ║║                                        ║║                                        ║"
 "║                                  ║║                                        ║║                                        ║"
 "║                                  ║║                                        ║║                                        ║"

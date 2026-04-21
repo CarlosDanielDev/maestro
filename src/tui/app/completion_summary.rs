@@ -89,6 +89,17 @@ impl App {
         }
     }
 
+    /// Populate the session-summary overlay state and navigate to it.
+    /// Used by both the F2 F-key handler and the `S`-key overview
+    /// shortcut — keep the two entry points in sync by funnelling
+    /// through this helper.
+    pub fn open_session_summary(&mut self) {
+        let summary = self.build_completion_summary();
+        self.completion_summary = Some(summary);
+        self.session_summary_state = Some(crate::tui::app::types::SessionSummaryState::default());
+        self.navigate_to(crate::tui::app::TuiMode::SessionSummary);
+    }
+
     /// Transition from CompletionSummary to Dashboard mode.
     pub fn transition_to_dashboard(&mut self) {
         let all = self.pool.all_sessions();

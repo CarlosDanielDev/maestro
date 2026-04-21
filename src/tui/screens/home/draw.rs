@@ -1,7 +1,6 @@
 use super::types::{Suggestion, SuggestionKind};
 use super::{HomeScreen, QUICK_ACTIONS};
 use crate::changelog::{self, ChangeCategory, ChangeItem};
-use crate::tui::app::TuiMode;
 use crate::tui::icons::{self, IconId};
 use crate::tui::screens::ScreenAction;
 use crate::tui::theme::Theme;
@@ -111,20 +110,10 @@ impl HomeScreen {
     }
 
     pub(super) fn execute_selected_action(&self) -> ScreenAction {
-        match self.selected_action {
-            0 => ScreenAction::Push(TuiMode::IssueBrowser),
-            1 => ScreenAction::Push(TuiMode::MilestoneView),
-            2 => ScreenAction::Push(TuiMode::PromptInput),
-            3 => ScreenAction::Push(TuiMode::AdaptWizard),
-            4 => ScreenAction::Push(TuiMode::PrReview),
-            5 => ScreenAction::Push(TuiMode::Overview),
-            6 => ScreenAction::Push(TuiMode::CostDashboard),
-            7 => ScreenAction::Push(TuiMode::TokenDashboard),
-            8 => ScreenAction::Push(TuiMode::Settings),
-            9 => ScreenAction::CheckForUpdate,
-            10 => ScreenAction::Quit,
-            _ => ScreenAction::None,
-        }
+        super::QUICK_ACTIONS
+            .get(self.selected_action)
+            .map(|(_, _, action)| (*action).into())
+            .unwrap_or(ScreenAction::None)
     }
 
     fn draw_warnings(&self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -205,7 +194,7 @@ impl HomeScreen {
             .add_modifier(Modifier::BOLD);
 
         let mut lines = Vec::new();
-        for (idx, (label, key)) in QUICK_ACTIONS.iter().enumerate() {
+        for (idx, (label, key, _)) in QUICK_ACTIONS.iter().enumerate() {
             let is_selected = is_focused && idx == self.selected_action;
             let style = if is_selected {
                 selected_style

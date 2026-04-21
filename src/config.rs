@@ -204,48 +204,160 @@ pub struct ProjectConfig {
     pub base_branch: String,
 }
 
+/// Policy variant for retrying hollow-completion sessions (#275).
+///
+/// The label is serialized as kebab-case in TOML
+/// (e.g. `policy = "intent-aware"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum HollowRetryPolicy {
+    /// Always retry hollow completions up to `work_max_retries`
+    /// (consultation intent is ignored — one knob governs everything).
+    Always,
+    /// Route by `SessionIntent`: work sessions use `work_max_retries`,
+    /// consultation sessions use `consultation_max_retries`. Default.
+    #[default]
+    IntentAware,
+    /// Never retry a hollow completion, regardless of intent.
+    Never,
+}
+
+/// Hollow-completion retry configuration. See `[sessions.hollow_retry]`
+/// in `maestro.toml`. Default: `IntentAware` with `work = 2`, `consultation = 0`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HollowRetryConfig {
+    #[serde(default)]
+    pub policy: HollowRetryPolicy,
+    #[serde(default = "default_work_max_retries")]
+    pub work_max_retries: u32,
+    #[serde(default = "default_consultation_max_retries")]
+    pub consultation_max_retries: u32,
+}
+
+impl Default for HollowRetryConfig {
+    fn default() -> Self {
+        Self {
+            policy: HollowRetryPolicy::default(),
+            work_max_retries: default_work_max_retries(),
+            consultation_max_retries: default_consultation_max_retries(),
+        }
+    }
+}
+
+/// Merge a legacy flat `sessions.hollow_max_retries = N` value into the
+/// new `[sessions.hollow_retry]` section. When both are present, the new
+/// section wins and a one-shot deprecation warning is logged.
+fn merge_legacy_hollow(
+    new_section: Option<HollowRetryConfig>,
+    legacy_flat: Option<u32>,
+) -> HollowRetryConfig {
+    match (new_section, legacy_flat) {
+        (Some(new), Some(_)) => {
+            tracing::warn!(
+                "both `sessions.hollow_max_retries` (legacy) and `[sessions.hollow_retry]` \
+                 are set in maestro.toml; the new section takes precedence. \
+                 Remove `hollow_max_retries` to silence this warning."
+            );
+            new
+        }
+        (Some(new), None) => new,
+        (None, Some(n)) => HollowRetryConfig {
+            policy: HollowRetryPolicy::IntentAware,
+            work_max_retries: n,
+            consultation_max_retries: 0,
+        },
+        (None, None) => HollowRetryConfig::default(),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "SessionsConfigRaw")]
 pub struct SessionsConfig {
-    #[serde(default = "default_max_concurrent")]
     pub max_concurrent: usize,
-    #[serde(default = "default_stall_timeout")]
     pub stall_timeout_secs: u64,
-    #[serde(default = "default_model")]
     pub default_model: String,
-    #[serde(default = "default_mode")]
     pub default_mode: String,
     /// Permission mode for Claude CLI sessions.
     /// Options: "default", "acceptEdits", "bypassPermissions", "dontAsk", "plan", "auto"
-    #[serde(default = "default_permission_mode")]
     pub permission_mode: String,
     /// Allowed tools whitelist (comma-separated). Empty = all tools allowed.
-    #[serde(default)]
     pub allowed_tools: Vec<String>,
     /// Maximum number of retries for failed/stalled sessions.
-    #[serde(default = "default_max_retries")]
     pub max_retries: u32,
     /// Cooldown in seconds between retries.
-    #[serde(default = "default_retry_cooldown")]
     pub retry_cooldown_secs: u64,
-    /// Maximum number of automatic retries for hollow completions (default: 1).
-    #[serde(default = "default_hollow_max_retries")]
-    pub hollow_max_retries: u32,
+    /// Hollow-completion retry policy (#275).
+    pub hollow_retry: HollowRetryConfig,
     /// Maximum number of prompt history entries to retain. Default: 100.
-    #[serde(default = "default_max_prompt_history")]
     pub max_prompt_history: usize,
     /// Context overflow detection and auto-fork configuration.
-    #[serde(default)]
     pub context_overflow: ContextOverflowConfig,
     /// Conflict detection policy configuration.
-    #[serde(default)]
     pub conflict: ConflictConfig,
     /// Custom guardrail prompt injected into every session's system prompt.
     /// If unset, a default is auto-detected based on project language.
-    #[serde(default)]
     pub guardrail_prompt: Option<String>,
     /// Completion gates that run after session finishes, before PR creation.
-    #[serde(default)]
     pub completion_gates: CompletionGatesConfig,
+}
+
+/// Shadow struct used only for deserialization. Mirrors `SessionsConfig`
+/// but accepts both the legacy flat `hollow_max_retries` field and the new
+/// `hollow_retry` section. The custom `Deserialize` impl for
+/// `SessionsConfig` reconciles them via `merge_legacy_hollow`.
+#[derive(Deserialize)]
+struct SessionsConfigRaw {
+    #[serde(default = "default_max_concurrent")]
+    max_concurrent: usize,
+    #[serde(default = "default_stall_timeout")]
+    stall_timeout_secs: u64,
+    #[serde(default = "default_model")]
+    default_model: String,
+    #[serde(default = "default_mode")]
+    default_mode: String,
+    #[serde(default = "default_permission_mode")]
+    permission_mode: String,
+    #[serde(default)]
+    allowed_tools: Vec<String>,
+    #[serde(default = "default_max_retries")]
+    max_retries: u32,
+    #[serde(default = "default_retry_cooldown")]
+    retry_cooldown_secs: u64,
+    #[serde(default)]
+    hollow_max_retries: Option<u32>,
+    #[serde(default)]
+    hollow_retry: Option<HollowRetryConfig>,
+    #[serde(default = "default_max_prompt_history")]
+    max_prompt_history: usize,
+    #[serde(default)]
+    context_overflow: ContextOverflowConfig,
+    #[serde(default)]
+    conflict: ConflictConfig,
+    #[serde(default)]
+    guardrail_prompt: Option<String>,
+    #[serde(default)]
+    completion_gates: CompletionGatesConfig,
+}
+
+impl From<SessionsConfigRaw> for SessionsConfig {
+    fn from(raw: SessionsConfigRaw) -> Self {
+        Self {
+            max_concurrent: raw.max_concurrent,
+            stall_timeout_secs: raw.stall_timeout_secs,
+            default_model: raw.default_model,
+            default_mode: raw.default_mode,
+            permission_mode: raw.permission_mode,
+            allowed_tools: raw.allowed_tools,
+            max_retries: raw.max_retries,
+            retry_cooldown_secs: raw.retry_cooldown_secs,
+            hollow_retry: merge_legacy_hollow(raw.hollow_retry, raw.hollow_max_retries),
+            max_prompt_history: raw.max_prompt_history,
+            context_overflow: raw.context_overflow,
+            conflict: raw.conflict,
+            guardrail_prompt: raw.guardrail_prompt,
+            completion_gates: raw.completion_gates,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -676,8 +788,11 @@ fn default_max_retries() -> u32 {
 fn default_retry_cooldown() -> u64 {
     60
 }
-fn default_hollow_max_retries() -> u32 {
-    1
+fn default_work_max_retries() -> u32 {
+    2
+}
+fn default_consultation_max_retries() -> u32 {
+    0
 }
 pub(crate) fn default_max_prompt_history() -> usize {
     100
@@ -1085,19 +1200,164 @@ review_council = false
         assert_eq!(cfg.flags.entries.get("review_council"), Some(&false));
     }
 
-    // --- Issue #171: hollow_max_retries config ---
+    // --- Issue #275: configurable hollow retry policy ---
+    // Group A: merge_legacy_hollow pure function.
 
     #[test]
-    fn hollow_max_retries_defaults_to_one() {
-        let cfg: SessionsConfig = toml::from_str("").expect("parse failed");
-        assert_eq!(cfg.hollow_max_retries, 1);
+    fn merge_both_none_returns_default() {
+        let result = merge_legacy_hollow(None, None);
+        assert_eq!(result, HollowRetryConfig::default());
     }
 
     #[test]
-    fn hollow_max_retries_deserializes_from_toml() {
-        let toml_str = r#"hollow_max_retries = 3"#;
+    fn merge_legacy_only_maps_to_work_max_retries() {
+        let result = merge_legacy_hollow(None, Some(3));
+        assert_eq!(result.policy, HollowRetryPolicy::IntentAware);
+        assert_eq!(result.work_max_retries, 3);
+        assert_eq!(result.consultation_max_retries, 0);
+    }
+
+    #[test]
+    fn merge_new_section_only_passes_through() {
+        let cfg = HollowRetryConfig {
+            policy: HollowRetryPolicy::Always,
+            work_max_retries: 7,
+            consultation_max_retries: 1,
+        };
+        let result = merge_legacy_hollow(Some(cfg.clone()), None);
+        assert_eq!(result, cfg);
+    }
+
+    #[test]
+    fn merge_both_new_wins() {
+        let cfg = HollowRetryConfig {
+            policy: HollowRetryPolicy::Always,
+            work_max_retries: 7,
+            consultation_max_retries: 1,
+        };
+        let result = merge_legacy_hollow(Some(cfg.clone()), Some(99));
+        assert_eq!(result, cfg);
+        assert_ne!(result.work_max_retries, 99);
+    }
+
+    #[test]
+    fn merge_legacy_zero_is_respected() {
+        let result = merge_legacy_hollow(None, Some(0));
+        assert_eq!(result.work_max_retries, 0);
+        assert_eq!(result.consultation_max_retries, 0);
+    }
+
+    // Group B: HollowRetryPolicy enum.
+
+    #[test]
+    fn hollow_retry_policy_defaults_to_intent_aware() {
+        assert_eq!(HollowRetryPolicy::default(), HollowRetryPolicy::IntentAware);
+    }
+
+    #[test]
+    fn hollow_retry_policy_serializes_as_kebab_case() {
+        assert_eq!(
+            serde_json::to_string(&HollowRetryPolicy::IntentAware).unwrap(),
+            r#""intent-aware""#
+        );
+        assert_eq!(
+            serde_json::to_string(&HollowRetryPolicy::Always).unwrap(),
+            r#""always""#
+        );
+        assert_eq!(
+            serde_json::to_string(&HollowRetryPolicy::Never).unwrap(),
+            r#""never""#
+        );
+    }
+
+    #[test]
+    fn hollow_retry_policy_deserializes_from_kebab_case() {
+        let p: HollowRetryPolicy = serde_json::from_str(r#""intent-aware""#).unwrap();
+        assert_eq!(p, HollowRetryPolicy::IntentAware);
+        let p: HollowRetryPolicy = serde_json::from_str(r#""never""#).unwrap();
+        assert_eq!(p, HollowRetryPolicy::Never);
+        let p: HollowRetryPolicy = serde_json::from_str(r#""always""#).unwrap();
+        assert_eq!(p, HollowRetryPolicy::Always);
+    }
+
+    // Group C: HollowRetryConfig defaults + serde.
+
+    #[test]
+    fn hollow_retry_config_default_is_intent_aware_with_expected_limits() {
+        let cfg = HollowRetryConfig::default();
+        assert_eq!(cfg.policy, HollowRetryPolicy::IntentAware);
+        assert_eq!(cfg.work_max_retries, 2);
+        assert_eq!(cfg.consultation_max_retries, 0);
+    }
+
+    #[test]
+    fn hollow_retry_config_round_trips_via_serde() {
+        let cfg = HollowRetryConfig {
+            policy: HollowRetryPolicy::Never,
+            work_max_retries: 5,
+            consultation_max_retries: 1,
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let rt: HollowRetryConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt, cfg);
+    }
+
+    // Group D: SessionsConfig TOML parsing.
+
+    #[test]
+    fn sessions_config_parses_new_hollow_retry_section() {
+        let toml_str = r#"
+[hollow_retry]
+policy = "never"
+work_max_retries = 4
+consultation_max_retries = 1
+"#;
         let cfg: SessionsConfig = toml::from_str(toml_str).expect("parse failed");
-        assert_eq!(cfg.hollow_max_retries, 3);
+        assert_eq!(cfg.hollow_retry.policy, HollowRetryPolicy::Never);
+        assert_eq!(cfg.hollow_retry.work_max_retries, 4);
+        assert_eq!(cfg.hollow_retry.consultation_max_retries, 1);
+    }
+
+    #[test]
+    fn sessions_config_parses_legacy_hollow_max_retries() {
+        let toml_str = "hollow_max_retries = 3";
+        let cfg: SessionsConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.hollow_retry.work_max_retries, 3);
+        assert_eq!(cfg.hollow_retry.policy, HollowRetryPolicy::IntentAware);
+        assert_eq!(cfg.hollow_retry.consultation_max_retries, 0);
+    }
+
+    #[test]
+    fn sessions_config_new_section_wins_over_legacy() {
+        let toml_str = r#"
+hollow_max_retries = 99
+[hollow_retry]
+work_max_retries = 5
+"#;
+        let cfg: SessionsConfig = toml::from_str(toml_str).expect("parse failed");
+        assert_eq!(cfg.hollow_retry.work_max_retries, 5);
+    }
+
+    #[test]
+    fn sessions_config_empty_sessions_uses_default_hollow_retry() {
+        let cfg: SessionsConfig = toml::from_str("").expect("parse failed");
+        assert_eq!(cfg.hollow_retry, HollowRetryConfig::default());
+    }
+
+    #[test]
+    fn sessions_config_round_trips() {
+        let original: SessionsConfig = toml::from_str(
+            r#"
+[hollow_retry]
+policy = "never"
+work_max_retries = 4
+consultation_max_retries = 2
+"#,
+        )
+        .expect("parse failed");
+        let serialized = toml::to_string_pretty(&original).expect("serialize failed");
+        let rt: SessionsConfig = toml::from_str(&serialized).expect("reparse failed");
+        assert_eq!(rt.hollow_retry, original.hollow_retry);
     }
 
     #[test]
@@ -1114,7 +1374,7 @@ review_council = false
     }
 
     #[test]
-    fn full_config_hollow_max_retries_defaults_when_absent() {
+    fn full_config_hollow_retry_defaults_when_absent() {
         use std::io::Write;
         let mut f = tempfile::NamedTempFile::new().unwrap();
         write!(
@@ -1133,7 +1393,7 @@ alert_threshold_pct = 80
         )
         .unwrap();
         let cfg = Config::load(f.path()).expect("load failed");
-        assert_eq!(cfg.sessions.hollow_max_retries, 1);
+        assert_eq!(cfg.sessions.hollow_retry, HollowRetryConfig::default());
     }
 
     // --- Issue #121: LayoutConfig tests ---

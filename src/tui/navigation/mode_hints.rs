@@ -1,7 +1,9 @@
 use crate::session::types::SessionStatus;
 use crate::tui::app::TuiMode;
 
-use super::keymap::{FKeyRelevance, InlineHint, KeyBindingGroup, ModeKeyMap, global_keybindings};
+use super::keymap::{
+    FKeyAction, FKeyRelevance, InlineHint, KeyBindingGroup, ModeKeyMap, global_keybindings,
+};
 
 /// Build the `ModeKeyMap` for a given `TuiMode`.
 ///
@@ -118,6 +120,11 @@ pub fn mode_keymap(
                     key: "a",
                     action: "Adapt",
                     priority: 4,
+                },
+                InlineHint {
+                    key: "Q",
+                    action: "TurboQuant",
+                    priority: 5,
                 },
             ],
         ),
@@ -570,108 +577,31 @@ fn build_fkeys(
     is_running: bool,
     is_terminal: bool,
 ) -> Vec<FKeyRelevance> {
+    // Each FKey entry declares key + label + action together. Adding a
+    // new F-key means one `FKeyRelevance::new(...)` here — the dispatch
+    // path in `input_handler::dispatch_fkey_action` reads `action` from
+    // the same struct, so the bar label and handler cannot drift.
+    use FKeyAction::*;
+    let help = FKeyRelevance::new("F1", "Help", ToggleHelp);
+    let costs = FKeyRelevance::new("F4", "Costs", OpenCostDashboard);
+    let tokens = FKeyRelevance::new("F5", "Tokens", OpenTokenDashboard);
+    let deps = FKeyRelevance::new("F6", "Deps", OpenDependencyGraph);
+    let exit = FKeyRelevance::new("^X", "Exit", Exit);
+
     match vis {
         FKeyVis::SessionAware => vec![
-            FKeyRelevance {
-                key: "F1",
-                label: "Help",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F2",
-                label: "Summary",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F3",
-                label: "Full",
-                visible: true,
-                active: has_session,
-            },
-            FKeyRelevance {
-                key: "F4",
-                label: "Costs",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F5",
-                label: "Tokens",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F6",
-                label: "Deps",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F9",
-                label: "Pause",
-                visible: true,
-                active: is_running,
-            },
-            FKeyRelevance {
-                key: "F10",
-                label: "Kill",
-                visible: true,
-                active: has_session && !is_terminal,
-            },
-            FKeyRelevance {
-                key: "^X",
-                label: "Exit",
-                visible: true,
-                active: true,
-            },
+            help.clone(),
+            FKeyRelevance::new("F2", "Summary", OpenSummary),
+            FKeyRelevance::new("F3", "Full", OpenFullscreenSelected).with_active(has_session),
+            costs.clone(),
+            tokens.clone(),
+            deps.clone(),
+            FKeyRelevance::new("F9", "Pause", PauseAll).with_active(is_running),
+            FKeyRelevance::new("F10", "Kill", KillSelected)
+                .with_active(has_session && !is_terminal),
+            exit.clone(),
         ],
-        FKeyVis::DashboardLike => vec![
-            FKeyRelevance {
-                key: "F1",
-                label: "Help",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F4",
-                label: "Costs",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F5",
-                label: "Tokens",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "F6",
-                label: "Deps",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "^X",
-                label: "Exit",
-                visible: true,
-                active: true,
-            },
-        ],
-        FKeyVis::Minimal => vec![
-            FKeyRelevance {
-                key: "F1",
-                label: "Help",
-                visible: true,
-                active: true,
-            },
-            FKeyRelevance {
-                key: "^X",
-                label: "Exit",
-                visible: true,
-                active: true,
-            },
-        ],
+        FKeyVis::DashboardLike => vec![help, costs, tokens, deps, exit],
+        FKeyVis::Minimal => vec![help, exit],
     }
 }

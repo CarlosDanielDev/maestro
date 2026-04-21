@@ -124,6 +124,14 @@ impl NavigationStack {
         self.stack.clear();
     }
 
+    /// Truncate the stack so that only the first `len` entries remain.
+    /// Used by `navigate_to` to collapse A → B → A cycles: when the
+    /// user navigates back to an ancestor, everything after that
+    /// ancestor is discarded instead of piling onto the stack.
+    pub fn truncate_to(&mut self, len: usize) {
+        self.stack.truncate(len);
+    }
+
     pub fn breadcrumbs(&self) -> &[TuiMode] {
         &self.stack
     }

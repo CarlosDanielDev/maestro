@@ -345,7 +345,7 @@ impl App {
             let label = session_label(hollow_session);
             let max = retry_policy
                 .as_ref()
-                .map(|p| p.hollow_max_retries)
+                .map(|p| p.effective_max(hollow_session))
                 .unwrap_or(0);
             self.hollow_retry_screen = Some(crate::tui::screens::HollowRetryScreen::new(
                 hollow_session.id,

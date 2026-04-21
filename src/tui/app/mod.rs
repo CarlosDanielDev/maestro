@@ -301,8 +301,34 @@ impl App {
     }
 
     /// Navigate to a new mode, pushing the current mode onto the back-stack.
+    /// Navigate to `target`, maintaining a back-stack invariant that
+    /// disallows duplicates at the top and collapses cycles.
+    ///
+    /// Rules:
+    /// - Same-mode nav is a no-op (repeatedly pressing F5 while on
+    ///   TokenDashboard must not grow the breadcrumb trail).
+    /// - If `target` already appears in the stack, truncate to that
+    ///   position instead of pushing (A → B → A collapses to just [A]
+    ///   rather than [A, B, A], so `Esc` takes the user back one real
+    ///   step, not one keypress).
     pub fn navigate_to(&mut self, target: TuiMode) {
-        self.nav_stack.push(self.tui_mode);
+        if self.tui_mode == target {
+            return;
+        }
+        // Post-fix the stack cannot contain duplicates (same-mode pushes
+        // are blocked above, and cycles are collapsed on entry), so the
+        // first match IS the only match. `position` communicates that
+        // invariant more directly than `rposition`.
+        if let Some(idx) = self
+            .nav_stack
+            .breadcrumbs()
+            .iter()
+            .position(|m| *m == target)
+        {
+            self.nav_stack.truncate_to(idx);
+        } else {
+            self.nav_stack.push(self.tui_mode);
+        }
         self.tui_mode = target;
     }
 
