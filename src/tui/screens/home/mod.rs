@@ -45,20 +45,52 @@ const fn find_action_index_by_key(target: char) -> usize {
 }
 
 const QUICK_ACTIONS: &[(&str, char, QuickActionDispatch)] = &[
-    ("Browse Issues", 'i', QuickActionDispatch::Push(TuiMode::IssueBrowser)),
-    ("Browse Milestones", 'm', QuickActionDispatch::Push(TuiMode::MilestoneView)),
-    ("Run Prompt", 'r', QuickActionDispatch::Push(TuiMode::PromptInput)),
-    ("Adapt Project", 'a', QuickActionDispatch::Push(TuiMode::AdaptWizard)),
-    ("Review PRs", 'p', QuickActionDispatch::Push(TuiMode::PrReview)),
+    (
+        "Browse Issues",
+        'i',
+        QuickActionDispatch::Push(TuiMode::IssueBrowser),
+    ),
+    (
+        "Browse Milestones",
+        'm',
+        QuickActionDispatch::Push(TuiMode::MilestoneView),
+    ),
+    (
+        "Run Prompt",
+        'r',
+        QuickActionDispatch::Push(TuiMode::PromptInput),
+    ),
+    (
+        "Adapt Project",
+        'a',
+        QuickActionDispatch::Push(TuiMode::AdaptWizard),
+    ),
+    (
+        "Review PRs",
+        'p',
+        QuickActionDispatch::Push(TuiMode::PrReview),
+    ),
     ("Status", 's', QuickActionDispatch::Push(TuiMode::Overview)),
-    ("Cost Report", 'c', QuickActionDispatch::Push(TuiMode::CostDashboard)),
-    ("Token Report", 't', QuickActionDispatch::Push(TuiMode::TokenDashboard)),
+    (
+        "Cost Report",
+        'c',
+        QuickActionDispatch::Push(TuiMode::CostDashboard),
+    ),
+    (
+        "Token Report",
+        't',
+        QuickActionDispatch::Push(TuiMode::TokenDashboard),
+    ),
     (
         "TurboQuant Savings",
         'Q',
         QuickActionDispatch::Push(TuiMode::TurboquantDashboard),
     ),
-    ("Settings", 'S', QuickActionDispatch::Push(TuiMode::Settings)),
+    (
+        "Settings",
+        'S',
+        QuickActionDispatch::Push(TuiMode::Settings),
+    ),
     ("Update Maestro", 'u', QuickActionDispatch::CheckForUpdate),
     ("Quit", 'q', QuickActionDispatch::Push(TuiMode::ConfirmExit)),
 ];
@@ -460,8 +492,7 @@ mod tests {
             for _ in 0..idx {
                 by_enter.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
             }
-            let enter_action =
-                by_enter.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+            let enter_action = by_enter.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
 
             let mut by_letter = HomeScreen::new(make_project_info(), vec![], vec![]);
             let letter_action =

@@ -1106,6 +1106,10 @@ mod tests {
             );
             checked += 1;
         }
-        assert!(checked >= 3, "expected F4/F5/F6 to be verified, got {}", checked);
+        assert!(
+            checked >= 3,
+            "expected F4/F5/F6 to be verified, got {}",
+            checked
+        );
     }
 }
