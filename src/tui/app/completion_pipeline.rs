@@ -226,6 +226,41 @@ impl App {
             Vec::new()
         };
 
+        // Intent-aware skip: consultation prompts that answered successfully are
+        // "done" even if they look hollow. Log once and don't show hollow retry UI.
+        let consultation_skip_ids: Vec<uuid::Uuid> = self
+            .pool
+            .all_sessions()
+            .iter()
+            .filter(|s| {
+                s.status == SessionStatus::Completed && RetryPolicy::is_consultation_satisfied(s)
+            })
+            .map(|s| s.id)
+            .collect();
+
+        for id in &consultation_skip_ids {
+            if let Some(managed) = self.pool.get_active_mut(*id) {
+                let skip_marker = "CONSULTATION_RETRY_SKIPPED";
+                let already_logged = managed
+                    .session
+                    .activity_log
+                    .iter()
+                    .any(|e| e.message.contains(skip_marker));
+                if !already_logged {
+                    let label = session_label(&managed.session);
+                    managed.session.log_activity(format!(
+                        "{}: consultation prompt answered successfully",
+                        skip_marker
+                    ));
+                    self.activity_log.push_simple(
+                        label,
+                        "Skipping retry: consultation prompt answered successfully".to_string(),
+                        LogLevel::Info,
+                    );
+                }
+            }
+        }
+
         let mut retry_sessions = Vec::new();
         for id in &retryable_ids {
             if let Some(policy) = &retry_policy
@@ -273,12 +308,14 @@ impl App {
             self.add_session(session).await?;
         }
 
-        // Show hollow retry prompt for sessions that exceeded auto-retry limits
+        // Show hollow retry prompt for sessions that exceeded auto-retry limits.
+        // Consultation-satisfied sessions are excluded — they're already "done".
         if self.hollow_retry_screen.is_none()
             && let Some(hollow_session) = self.pool.all_sessions().iter().find(|s| {
                 s.status == SessionStatus::Completed
                     && s.is_hollow_completion
                     && !retryable_ids.contains(&s.id)
+                    && !RetryPolicy::is_consultation_satisfied(s)
             })
         {
             // This session wasn't retried (exceeded limits) — prompt user
