@@ -14,6 +14,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
         app::TuiMode::QueueConfirmation => app.queue_confirmation_screen.as_mut()?,
         app::TuiMode::HollowRetry => app.hollow_retry_screen.as_mut()?,
+        app::TuiMode::AdaptFollowUp => app.adapt_follow_up_screen.as_mut()?,
         app::TuiMode::Sanitize => app.sanitize_screen.as_mut()?,
         app::TuiMode::Settings => app.settings_screen.as_mut()?,
         app::TuiMode::AdaptWizard => app.adapt_screen.as_mut()?,
@@ -130,6 +131,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app::TuiMode::HollowRetry => {
                     app.hollow_retry_screen = None;
                 }
+                app::TuiMode::AdaptFollowUp => {
+                    app.adapt_follow_up_screen = None;
+                }
                 app::TuiMode::Sanitize => {
                     app.sanitize_screen = None;
                 }
@@ -209,6 +213,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         }
         ScreenAction::LaunchPromptSession(config) => {
             app.prompt_input_screen = None;
+            app.adapt_follow_up_screen = None;
             app.pending_commands
                 .push(app::TuiCommand::LaunchPromptSession(config));
             app.nav_stack.clear();

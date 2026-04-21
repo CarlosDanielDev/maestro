@@ -308,6 +308,24 @@ impl App {
             self.add_session(session).await?;
         }
 
+        // Show adapt follow-up overlay when a just-completed session's final
+        // message contains parsed next-iteration paths.
+        if self.adapt_follow_up_screen.is_none()
+            && let Some(candidate) = self.pool.all_sessions().iter().find(|s| {
+                matches!(s.status, SessionStatus::Completed | SessionStatus::Retrying)
+                    && !s.last_message.trim().is_empty()
+                    && crate::adapt::suggestions::parse_suggestions(&s.last_message).len() >= 2
+            })
+        {
+            let suggestions = crate::adapt::suggestions::parse_suggestions(&candidate.last_message);
+            let label = session_label(candidate);
+            self.adapt_follow_up_screen = Some(crate::tui::screens::AdaptFollowUpScreen::new(
+                label,
+                suggestions,
+            ));
+            self.tui_mode = TuiMode::AdaptFollowUp;
+        }
+
         // Show hollow retry prompt for sessions that exceeded auto-retry limits.
         // Consultation-satisfied sessions are excluded — they're already "done".
         if self.hollow_retry_screen.is_none()
