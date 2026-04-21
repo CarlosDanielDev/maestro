@@ -41,6 +41,8 @@ Execute ALL steps in order.
 
 If any check fails, STOP and report the issue.
 
+> **Note:** These pre-bump tests confirm `main` is green. The post-bump tests in Step 4b are the ones that catch changelog-driven snapshot drift.
+
 ### Step 3: Gather Changelog Content
 
 1. Get the current version from `Cargo.toml`: `grep '^version' Cargo.toml`
@@ -78,10 +80,27 @@ If any check fails, STOP and report the issue.
 2. **CHANGELOG.md**: Insert the new version section between `## [Unreleased]` and the previous version
 3. If `## [Unreleased]` has content, move it into the new version section and leave `## [Unreleased]` empty
 
+### Step 4b: Post-Bump Test Gate (MANDATORY — catches snapshot drift)
+
+**Why this step exists:** the dashboard's "What's New" widget reads the top changelog entry at runtime, so bumping the version rewrites that output. Four `src/tui/snapshot_tests/dashboard/home_screen_*.snap` insta snapshots will fail every single release unless they are regenerated. Skipping this step guarantees CI failure on the release PR.
+
+1. Run `cargo test --bin maestro` — record the output.
+2. **If all tests pass**: proceed to Step 5.
+3. **If tests fail AND every failure is under `tui::snapshot_tests::dashboard::home_screen_*`**:
+   a. Run `cargo insta test --accept -- tui::snapshot_tests::dashboard` (use the absolute path `~/.cargo/bin/cargo-insta` if `cargo insta` isn't on PATH).
+   b. Stage the updated snapshots: `git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__dashboard__home_screen_*.snap`
+   c. Re-run `cargo test --bin maestro` and confirm it now passes.
+   d. These snapshot updates will be included in the **same** commit as the version bump in Step 5.
+4. **If any other tests fail** (anything outside `dashboard::home_screen_*`): STOP — do NOT auto-accept. Report the failures to the user. These are real regressions and must be investigated.
+
+> **Do NOT blanket-accept snapshots.** Only the four `home_screen_*` dashboard snapshots are expected to drift from a version bump. Any other snapshot failure is a real regression hiding behind an automated accept.
+
 ### Step 5: Commit the Version Bump
 
 ```bash
 git add Cargo.toml CHANGELOG.md
+# Also include any dashboard snapshot updates from Step 4b:
+git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__dashboard__home_screen_*.snap 2>/dev/null || true
 git commit -m "chore: release v<version>
 
 <one-line summary of what's in this release>
@@ -102,6 +121,24 @@ Push both:
 ```bash
 git push origin main --tags
 ```
+
+**If direct push to `main` is rejected by branch-protection rules** (e.g. `GH013: Repository rule violations` / required status checks): the tag push will still have succeeded because `git push origin main --tags` pushes each ref independently. Verify this first:
+
+```bash
+git ls-remote origin refs/tags/v<version>
+```
+
+If the tag is on origin, the `release.yml` workflow has already been triggered — do NOT delete or re-push the tag. Instead, land the release commit via PR:
+
+```bash
+git checkout -b release/v<version>
+git push -u origin release/v<version>
+gh pr create --base main --head release/v<version> \
+  --title "chore: release v<version>" \
+  --body "Release PR for v<version>. Tag already pushed; binaries are being built by release.yml. Merging this makes main reflect the release commit."
+```
+
+Report both the PR URL and the running `release.yml` workflow URL to the user, and ask them to merge the PR once checks are green.
 
 ### Step 7: Wait for Release Workflow (if configured)
 
@@ -159,3 +196,6 @@ Changelog:
 - NEVER release if there are uncommitted changes
 - Always show the user the changelog before committing
 - Ask for confirmation before pushing the tag
+- ALWAYS run the Step 4b post-bump test gate — this is how we catch the four `dashboard::home_screen_*` insta snapshot failures that happen every release because the "What's New" widget reads CHANGELOG.md at runtime
+- NEVER blanket `cargo insta accept` — only accept the specific `home_screen_*` dashboard snapshots; any other snapshot drift is a real regression
+- If branch-protection blocks `git push origin main`, do NOT delete or re-push the tag; fall back to a `release/v<version>` PR (see Step 6 fallback)
