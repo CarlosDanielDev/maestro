@@ -248,20 +248,30 @@ impl Screen for HomeScreen {
 }
 
 impl HomeScreen {
-    /// Reset the stats-bar marquee if the identity fields changed since last render.
+    /// Reset the stats-bar marquee when the repo/branch/user/milestone identity
+    /// changes, so freshly-loaded content starts from the beginning instead of
+    /// mid-scroll. Compares borrowed fields first and only clones on change.
     pub(super) fn sync_stats_bar_marquee(
         &mut self,
         data: &crate::tui::widgets::stats_bar::StatsBarData,
     ) {
-        let identity = StatsBarIdentity {
-            repo: data.repo.clone(),
-            branch: data.branch.clone(),
-            username: data.username.clone(),
-            milestone_title: data.milestone_title.clone(),
+        let changed = match &self.stats_bar_identity {
+            Some(prev) => {
+                prev.repo != data.repo
+                    || prev.branch != data.branch
+                    || prev.username != data.username
+                    || prev.milestone_title != data.milestone_title
+            }
+            None => true,
         };
-        if self.stats_bar_identity.as_ref() != Some(&identity) {
+        if changed {
             self.stats_bar_marquee.reset();
-            self.stats_bar_identity = Some(identity);
+            self.stats_bar_identity = Some(StatsBarIdentity {
+                repo: data.repo.clone(),
+                branch: data.branch.clone(),
+                username: data.username.clone(),
+                milestone_title: data.milestone_title.clone(),
+            });
         }
     }
 }

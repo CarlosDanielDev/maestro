@@ -36,10 +36,11 @@ pub fn fetch_existing(
 
 fn fetch_local(project_root: &Path) -> anyhow::Result<Option<FetchedPrd>> {
     let path = project_root.join("docs/PRD.md");
-    if !path.exists() {
-        return Ok(None);
-    }
-    let content = std::fs::read_to_string(&path)?;
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
     if content.trim().is_empty() {
         return Ok(None);
     }
@@ -49,15 +50,10 @@ fn fetch_local(project_root: &Path) -> anyhow::Result<Option<FetchedPrd>> {
     }))
 }
 
-/// Try to find an existing PRD among GitHub issues in the current repo.
-///
-/// Priority order:
-/// 1. Pinned issue (via `gh api repos/.../pinned_issues`)
-/// 2. Issue labeled `prd`
-///
-/// The `gh` CLI already handles repo detection via `git remote`.
+/// Try to find an existing PRD among GitHub issues in the current repo by
+/// looking for an open issue labeled `prd`. Delegates repo detection to the
+/// `gh` CLI (via `git remote`).
 fn fetch_github(_project_root: &Path) -> anyhow::Result<Option<FetchedPrd>> {
-    // 1) Labeled issue
     let labeled = std::process::Command::new("gh")
         .args([
             "issue",

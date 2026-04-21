@@ -157,8 +157,8 @@ pub fn classify_intent(prompt: &str) -> SessionIntent {
         return SessionIntent::Work;
     }
 
-    // 1) Modal / hypothetical questions — highest precedence so "how would you fix this?"
-    //    wins over the "fix" work-verb signal.
+    // Modal questions take precedence so "how would you fix this?" is not
+    // classified by the "fix" work-verb rule below.
     if MODAL_QUESTION_MARKERS
         .iter()
         .any(|m| normalized.contains(m))
@@ -166,7 +166,6 @@ pub fn classify_intent(prompt: &str) -> SessionIntent {
         return SessionIntent::Consultation;
     }
 
-    // 2) Explanatory / enumeration verbs at start or after a polite prefix.
     let after_polite = strip_polite_prefix(&normalized);
     if CONSULTATION_VERBS
         .iter()
@@ -175,13 +174,10 @@ pub fn classify_intent(prompt: &str) -> SessionIntent {
         return SessionIntent::Consultation;
     }
 
-    // 3) Polite imperative + work verb → Work. "can you fix this?" is a work
-    //    request despite ending in '?'.
     if after_polite != normalized && starts_with_work_verb(after_polite) {
         return SessionIntent::Work;
     }
 
-    // 4) Hard work signals — issue references, file paths, shell commands.
     if contains_issue_reference(&normalized)
         || contains_file_path(&normalized)
         || contains_shell_command(&normalized)
@@ -189,22 +185,18 @@ pub fn classify_intent(prompt: &str) -> SessionIntent {
         return SessionIntent::Work;
     }
 
-    // 5) Starts with a work verb → Work.
     if starts_with_work_verb(&normalized) {
         return SessionIntent::Work;
     }
 
-    // 6) Starts with a question word → Consultation.
     if starts_with_question_word(&normalized) {
         return SessionIntent::Consultation;
     }
 
-    // 7) Ends with '?' without any work signal → Consultation.
     if normalized.ends_with('?') {
         return SessionIntent::Consultation;
     }
 
-    // Conservative default: treat as work so we preserve legacy retry behavior.
     SessionIntent::Work
 }
 
@@ -217,18 +209,20 @@ fn strip_polite_prefix(normalized: &str) -> &str {
     normalized
 }
 
+fn starts_with_token(s: &str, token: &str) -> bool {
+    match s.strip_prefix(token) {
+        Some("") => true,
+        Some(rest) => rest.starts_with(' '),
+        None => false,
+    }
+}
+
 fn starts_with_work_verb(s: &str) -> bool {
-    WORK_VERBS.iter().any(|v| {
-        // Match either "verb " (followed by space) or "verb" as the whole string
-        // (edge case: single-word prompt like "fix").
-        s.starts_with(&format!("{} ", v)) || s == *v
-    })
+    WORK_VERBS.iter().any(|v| starts_with_token(s, v))
 }
 
 fn starts_with_question_word(s: &str) -> bool {
-    QUESTION_WORDS
-        .iter()
-        .any(|q| s.starts_with(&format!("{} ", q)))
+    QUESTION_WORDS.iter().any(|q| starts_with_token(s, q))
 }
 
 fn contains_issue_reference(s: &str) -> bool {

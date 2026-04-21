@@ -72,24 +72,6 @@ impl AdaptWizardConfig {
             prd_source: self.prd_source,
         }
     }
-
-    /// Cycle the PRD source to the next value (for j/Space key handling).
-    #[allow(
-        dead_code,
-        reason = "Public API reserved for wizard PRD Source field keybindings."
-    )]
-    pub fn cycle_prd_source(&mut self) {
-        self.prd_source = self.prd_source.next();
-    }
-
-    /// Cycle the PRD source to the previous value (for k key handling).
-    #[allow(
-        dead_code,
-        reason = "Public API reserved for wizard PRD Source field keybindings."
-    )]
-    pub fn cycle_prd_source_back(&mut self) {
-        self.prd_source = self.prd_source.previous();
-    }
 }
 
 /// Accumulated results from pipeline phases.

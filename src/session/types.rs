@@ -279,6 +279,15 @@ pub struct Session {
     /// Classified intent of the prompt (Work vs. Consultation). Derived at spawn time.
     #[serde(default)]
     pub intent: super::intent::SessionIntent,
+    /// Set once after the "consultation satisfied — retry skipped" log line
+    /// has been emitted, so the completion pipeline doesn't re-log each tick.
+    #[serde(skip)]
+    pub consultation_skip_logged: bool,
+    /// Set once the adapt follow-up overlay has been shown or checked for this
+    /// session, so the completion pipeline doesn't re-parse `last_message`
+    /// and re-surface the overlay after the user dismisses it.
+    #[serde(skip)]
+    pub adapt_follow_up_considered: bool,
 }
 
 /// Lightweight gate result stored on a session for post-completion display.
@@ -355,6 +364,8 @@ impl Session {
             tq_compressed_tokens: None,
             transition_history: Vec::new(),
             intent,
+            consultation_skip_logged: false,
+            adapt_follow_up_considered: false,
         }
     }
 
