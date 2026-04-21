@@ -338,8 +338,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 Some(&TuiMode::TurboquantDashboard) => {
                     let sessions: Vec<&crate::session::types::Session> =
                         app.pool.all_sessions().into_iter().collect();
+                    let bit_width = app
+                        .config
+                        .as_ref()
+                        .map(|c| c.turboquant.bit_width)
+                        .unwrap_or(4);
                     crate::tui::turboquant_dashboard::draw_turboquant_dashboard(
-                        f, &sessions, &app.flags, chunks[1], &theme,
+                        f, &sessions, &app.flags, bit_width, chunks[1], &theme,
                     );
                 }
                 _ => {
@@ -384,8 +389,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         TuiMode::TurboquantDashboard => {
             let sessions: Vec<&crate::session::types::Session> =
                 app.pool.all_sessions().into_iter().collect();
+            let bit_width = app
+                .config
+                .as_ref()
+                .map(|c| c.turboquant.bit_width)
+                .unwrap_or(4);
             crate::tui::turboquant_dashboard::draw_turboquant_dashboard(
-                f, &sessions, &app.flags, chunks[1], &theme,
+                f, &sessions, &app.flags, bit_width, chunks[1], &theme,
             );
         }
         TuiMode::AdaptFollowUp => {
@@ -1076,25 +1086,24 @@ fn draw_completion_overlay(
 
     lines.push(Line::from(""));
 
+    // Hint bar: single source of truth is `mode_hints.rs`. The conditional
+    // `[f] Fix` is prepended here because it only applies when the summary
+    // actually has suggestions — static hint tables can't encode that.
+    let km = keymap::mode_keymap(TuiMode::CompletionSummary, None, &[]);
     let mut keybind_spans = vec![Span::raw("  ")];
-
     if summary.has_needs_review() || summary.has_conflict_suggestions() {
         keybind_spans.push(Span::styled("[f]", Style::default().fg(theme.keybind_key)));
-        keybind_spans.push(Span::raw(" Fix  "));
+        keybind_spans.push(Span::styled(
+            " Fix",
+            Style::default().fg(theme.text_primary),
+        ));
+        keybind_spans.push(Span::raw("  "));
     }
-
-    keybind_spans.extend([
-        Span::styled("[i]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Browse  "),
-        Span::styled("[r]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" New  "),
-        Span::styled("[l]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Logs  "),
-        Span::styled("[q]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Quit  "),
-        Span::styled("[Esc]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Dashboard"),
-    ]);
+    keybind_spans.extend(keymap::hint_bar_spans(
+        km.hints,
+        theme.keybind_key,
+        theme.text_primary,
+    ));
 
     lines.push(Line::from(keybind_spans));
 
@@ -1169,24 +1178,29 @@ fn draw_queue_execution_overlay(
 
     lines.push(Line::from(""));
 
-    // Keybind bar
+    // Keybind bar. Conditional r/s/a are kept hand-rolled; unconditional
+    // Esc/Back comes from mode_hints.rs so the overlay label cannot drift
+    // from the handler or from the top status bar hint.
     let mut keybind_spans = vec![Span::raw("  ")];
     if matches!(executor.phase(), ExecutorPhase::AwaitingDecision { .. }) {
         keybind_spans.extend([
             Span::styled("[r]", Style::default().fg(theme.keybind_key)),
-            Span::raw(" Retry  "),
+            Span::styled(" Retry", Style::default().fg(theme.text_primary)),
+            Span::raw("  "),
             Span::styled("[s]", Style::default().fg(theme.keybind_key)),
-            Span::raw(" Skip  "),
+            Span::styled(" Skip", Style::default().fg(theme.text_primary)),
+            Span::raw("  "),
             Span::styled("[a]", Style::default().fg(theme.keybind_key)),
-            Span::raw(" Abort  "),
+            Span::styled(" Abort", Style::default().fg(theme.text_primary)),
+            Span::raw("  "),
         ]);
     }
-    keybind_spans.extend([
-        Span::styled("[Esc]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" View logs  "),
-        Span::styled("[q]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Quit"),
-    ]);
+    let km = keymap::mode_keymap(TuiMode::QueueExecution, None, &[]);
+    keybind_spans.extend(keymap::hint_bar_spans(
+        km.hints,
+        theme.keybind_key,
+        theme.text_primary,
+    ));
     lines.push(Line::from(keybind_spans));
 
     let title = format!(
@@ -1258,15 +1272,14 @@ fn draw_continuous_pause_overlay(
     ]));
 
     lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled("[s]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Skip  "),
-        Span::styled("[r]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Retry  "),
-        Span::styled("[q]", Style::default().fg(theme.keybind_key)),
-        Span::raw(" Stop"),
-    ]));
+    let km = keymap::mode_keymap(TuiMode::ContinuousPause, None, &[]);
+    let mut keybind_spans = vec![Span::raw("  ")];
+    keybind_spans.extend(keymap::hint_bar_spans(
+        km.hints,
+        theme.keybind_key,
+        theme.text_primary,
+    ));
+    lines.push(Line::from(keybind_spans));
 
     let block = theme
         .styled_block("Session Failed — Continuous Mode", false)

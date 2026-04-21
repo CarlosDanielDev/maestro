@@ -1,6 +1,6 @@
 use super::types::{Session, SessionStatus};
 use crate::state::progress::SessionProgress;
-use crate::turboquant::adapter::{CompressionMetrics, ContextCompressor, TurboQuantAdapter};
+use crate::turboquant::adapter::{CompressionMetrics, TurboQuantAdapter};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -404,15 +404,8 @@ mod tests {
 
     // --- Issue #343: TurboQuant handoff compression integration ---
 
-    use crate::turboquant::types::QuantStrategy;
-
     fn tq_adapter() -> Arc<TurboQuantAdapter> {
-        Arc::new(TurboQuantAdapter::new(
-            4,
-            QuantStrategy::TurboQuant,
-            80.0,
-            false,
-        ))
+        Arc::new(TurboQuantAdapter::new(4))
     }
 
     fn make_session_with_long_history(status: SessionStatus, fork_depth: u8) -> Session {
@@ -473,7 +466,7 @@ mod tests {
 
     #[test]
     fn prepare_fork_with_disabled_adapter_falls_back_to_raw() {
-        let mut adapter = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false);
+        let mut adapter = TurboQuantAdapter::new(4);
         adapter.set_enabled(false);
         let policy = ForkPolicy::new(5).with_turboquant(Arc::new(adapter), 128);
         let parent = make_session_with_long_history(SessionStatus::Running, 0);

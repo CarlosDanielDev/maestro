@@ -1,5 +1,6 @@
 use crate::session::types::{Session, TokenUsage};
 use crate::tui::theme::Theme;
+use crate::util::formatting::format_tokens;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -7,17 +8,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-
-/// Format a token count for display (e.g., "245.0k", "1.2M").
-pub fn format_tokens(n: u64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}k", n as f64 / 1_000.0)
-    } else {
-        format!("{}", n)
-    }
-}
 
 /// Draw the token dashboard view showing token consumption analytics.
 pub fn draw_token_dashboard(
@@ -51,11 +41,7 @@ fn draw_aggregate_stats(
         aggregate.accumulate(&s.token_usage);
     }
 
-    // Aggregate TQ compression metrics
-    let (tq_original, tq_compressed, tq_count) =
-        crate::tui::turboquant_dashboard::aggregate_tq_metrics(sessions);
-
-    let mut lines = vec![
+    let lines = vec![
         Line::from(vec![
             Span::styled(" Input: ", Style::default().fg(theme.text_secondary)),
             Span::styled(
@@ -121,42 +107,6 @@ fn draw_aggregate_stats(
         ]),
     ];
 
-    // TurboQuant compression row (only when data exists)
-    if tq_count > 0 {
-        let ratio = if tq_compressed > 0 {
-            tq_original as f64 / tq_compressed as f64
-        } else {
-            0.0
-        };
-        let saved = tq_original.saturating_sub(tq_compressed);
-        lines.push(Line::from(vec![
-            Span::styled(
-                " TQ Compression: ",
-                Style::default().fg(theme.text_secondary),
-            ),
-            Span::styled(
-                format_tokens(tq_original),
-                Style::default().fg(theme.accent_info),
-            ),
-            Span::styled(" → ", Style::default().fg(theme.text_muted)),
-            Span::styled(
-                format_tokens(tq_compressed),
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!(
-                    "  ({:.1}x, {} saved, {} sessions)",
-                    ratio,
-                    format_tokens(saved),
-                    tq_count
-                ),
-                Style::default().fg(theme.accent_warning),
-            ),
-        ]));
-    }
-
     let block = theme
         .styled_block("Aggregate Token Usage", false)
         .border_style(Style::default().fg(theme.accent_info));
@@ -175,8 +125,8 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
 
     let header = Line::from(vec![Span::styled(
         format!(
-            " {:>8}  {:>18}  {:>8}  {:>8}  {:>8}  {:>8}  {:>6}  {:>8}",
-            "ID", "Title", "Input", "Output", "Cache R", "Cache W", "$/kT", "TQ Ratio"
+            " {:>8}  {:>18}  {:>8}  {:>8}  {:>8}  {:>8}  {:>6}",
+            "ID", "Title", "Input", "Output", "Cache R", "Cache W", "$/kT"
         ),
         Style::default()
             .fg(theme.text_secondary)
@@ -232,22 +182,6 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
                 format!("  ${:.3}", cost_per_k),
                 Style::default().fg(theme.accent_warning),
             ),
-            Span::styled(
-                format!(
-                    "  {:>8}",
-                    match (s.tq_original_tokens, s.tq_compressed_tokens) {
-                        (Some(orig), Some(comp)) if comp > 0 => {
-                            format!("{:.1}x", orig as f64 / comp as f64)
-                        }
-                        _ => "—".to_string(),
-                    }
-                ),
-                Style::default().fg(if s.tq_compressed_tokens.is_some() {
-                    theme.accent_success
-                } else {
-                    theme.text_muted
-                }),
-            ),
         ]));
     }
 
@@ -255,27 +189,4 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn format_tokens_small_numbers() {
-        assert_eq!(format_tokens(0), "0");
-        assert_eq!(format_tokens(999), "999");
-    }
-
-    #[test]
-    fn format_tokens_thousands() {
-        assert_eq!(format_tokens(1000), "1.0k");
-        assert_eq!(format_tokens(45000), "45.0k");
-    }
-
-    #[test]
-    fn format_tokens_millions() {
-        assert_eq!(format_tokens(1_000_000), "1.0M");
-        assert_eq!(format_tokens(2_500_000), "2.5M");
-    }
 }

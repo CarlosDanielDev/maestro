@@ -78,13 +78,18 @@ impl App {
                     ),
                     LogLevel::Warn,
                 );
-                if let Some(metrics) = handoff_metrics {
+                if let Some(metrics) = &handoff_metrics {
                     self.activity_log
                         .push_simple(label, metrics.log_entry(), LogLevel::Info);
                 }
 
                 if let Some(managed) = self.pool.get_active_mut(session_id) {
                     managed.session.child_session_ids.push(child_id);
+                    if let Some(metrics) = &handoff_metrics {
+                        managed.session.tq_handoff_original_tokens = Some(metrics.original_tokens);
+                        managed.session.tq_handoff_compressed_tokens =
+                            Some(metrics.compressed_tokens);
+                    }
                 }
                 self.state.record_fork(session_id, child_id);
                 self.pool.enqueue(*child);

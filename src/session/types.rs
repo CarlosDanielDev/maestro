@@ -267,12 +267,15 @@ pub struct Session {
     /// When the current thinking block started (for elapsed display).
     #[serde(skip)]
     pub thinking_started_at: Option<std::time::Instant>,
-    /// TurboQuant: original token count before compression.
+    /// TurboQuant: original token count of a fork-handoff compression (real savings).
+    /// Populated when this session was the parent of a fork that used TurboQuant
+    /// to compress the handed-off context (#343). `None` means no real savings
+    /// data — the dashboard falls back to a projection.
     #[serde(default)]
-    pub tq_original_tokens: Option<u64>,
-    /// TurboQuant: compressed token count after compression.
+    pub tq_handoff_original_tokens: Option<u64>,
+    /// TurboQuant: compressed token count of a fork-handoff compression.
     #[serde(default)]
-    pub tq_compressed_tokens: Option<u64>,
+    pub tq_handoff_compressed_tokens: Option<u64>,
     /// History of state transitions for audit trail.
     #[serde(default)]
     pub transition_history: Vec<super::transition::SessionTransition>,
@@ -360,8 +363,8 @@ impl Session {
             transition_flash_remaining: 0,
             is_thinking: false,
             thinking_started_at: None,
-            tq_original_tokens: None,
-            tq_compressed_tokens: None,
+            tq_handoff_original_tokens: None,
+            tq_handoff_compressed_tokens: None,
             transition_history: Vec::new(),
             intent,
             consultation_skip_logged: false,
@@ -1253,6 +1256,38 @@ mod tests {
             rt.intent,
             crate::session::intent::SessionIntent::Consultation
         );
+    }
+
+    // --- Issue #346: tq_handoff_* serde backward compat ---
+
+    #[test]
+    fn session_tq_handoff_fields_default_to_none() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        assert!(s.tq_handoff_original_tokens.is_none());
+        assert!(s.tq_handoff_compressed_tokens.is_none());
+    }
+
+    #[test]
+    fn session_tq_handoff_fields_round_trip_via_serde() {
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        s.tq_handoff_original_tokens = Some(10_000);
+        s.tq_handoff_compressed_tokens = Some(2_500);
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.tq_handoff_original_tokens, Some(10_000));
+        assert_eq!(rt.tq_handoff_compressed_tokens, Some(2_500));
+    }
+
+    #[test]
+    fn session_tq_handoff_fields_deserialize_when_absent_in_json() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json
+            .replace(r#","tq_handoff_original_tokens":null"#, "")
+            .replace(r#","tq_handoff_compressed_tokens":null"#, "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert!(rt.tq_handoff_original_tokens.is_none());
+        assert!(rt.tq_handoff_compressed_tokens.is_none());
     }
 
     #[test]

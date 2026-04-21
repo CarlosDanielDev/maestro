@@ -212,7 +212,7 @@ pub struct ConflictSuggestion {
 }
 
 /// Summary data shown in the post-completion overlay.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CompletionSummaryData {
     pub session_count: usize,
     pub total_cost_usd: f64,

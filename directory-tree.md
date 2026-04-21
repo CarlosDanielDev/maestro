@@ -190,8 +190,9 @@ maestro/
 │   │   ├── splash.rs                      # Startup splash screen rendered before the TUI loop begins
 │   │   ├── spinner.rs                     # Braille spinner animation helpers: spinner_frame(), format_thinking_elapsed(), spinner activity string builder
 │   │   ├── summary.rs                     # Compact per-session summary row widget used in panel and list views
-│   │   ├── token_dashboard.rs             # Token usage dashboard widget: per-session and aggregate token counts
-│   │   ├── snapshot_tests/                # TUI snapshot tests using insta (33 tests, 7 views)  [Issue #16]
+│   │   ├── token_dashboard.rs             # Token usage dashboard widget: per-session and aggregate token counts; TQ Ratio column removed (#346)
+│   │   ├── turboquant_dashboard.rs        # TurboQuant savings dashboard: classify_savings(), aggregate_savings(), AggregateSavings; renders "Estimated Savings (projection)" header when no real handoff data exists, "Actual Savings" when at least one session has fork-handoff compression metrics; ACTUAL / proj. kind markers per row  [Issue #346]
+│   │   ├── snapshot_tests/                # TUI snapshot tests using insta (36 tests, 8 views)  [Issue #16]
 │   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules
 │   │   │   ├── overview.rs                # 6 snapshot tests for PanelView (empty, single, multiple, selected, context overflow, forked)
 │   │   │   ├── detail.rs                  # 6 snapshot tests for DetailView (basic, progress, activity log, no files, retries, markdown)
@@ -200,6 +201,7 @@ maestro/
 │   │   │   ├── issue_browser.rs           # 7 snapshot tests for IssueBrowserScreen (with issues, empty, loading, multi-select, filter, prompt overlays)
 │   │   │   ├── milestone.rs               # 4 snapshot tests for MilestoneScreen (with milestones, empty, loading, detail pane); snapshots updated to reflect color hierarchy and selection visibility changes  [Issue #299]
 │   │   │   ├── cost_dashboard.rs          # 5 snapshot tests for CostDashboard (no budget, under threshold, over 90%, empty, sorted)
+│   │   │   ├── turboquant_dashboard.rs    # 3 snapshot tests for TurboQuantDashboard (projections-only, mixed actual+projections, empty sessions)  [Issue #346]
 │   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files)
 │   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen; ScreenAction::Push delegates to navigate_to(), ScreenAction::Pop delegates to navigate_back(); Scaffolding case in StartAdaptPipeline dispatch  [Issue #146, #232, #342, #371]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
@@ -250,7 +252,7 @@ maestro/
 │   │   ├── polar.rs                       # PolarQuant — recursive polar decomposition quantizer; preserves angular similarity (cosine distance)
 │   │   ├── qjl.rs                         # Quantized Johnson-Lindenstrauss (QJL) — 1-bit residual projection; seeded deterministic sketch
 │   │   ├── pipeline.rs                    # Two-stage quantization pipeline (PolarQuant + QJL); strategy-aware wrappers for quantization and dot-product estimation
-│   │   ├── adapter.rs                     # TurboQuantAdapter: bridges quantization pipeline to session layer; TextRanker trait + impl; compress_handoff() (CompressedHandoff, Issue #343); compact_system_prompt() (Issue #344); compact_session_history() + StateCompactionReport (Issue #345); shared Arc<TurboQuantAdapter> on App
+│   │   ├── adapter.rs                     # TurboQuantAdapter: bridges quantization pipeline to session layer; TextRanker trait + impl; compress_handoff() (CompressedHandoff, Issue #343); compact_system_prompt() (Issue #344); compact_session_history() + StateCompactionReport (Issue #345); shared Arc<TurboQuantAdapter> on App; project_savings(), session_savings(), implied_rate_per_token() and public types SavingsProjection, SavingsKind, SessionSavings  [Issue #346]
 │   │   └── budget.rs                      # TokenBudget helper: ranked-segment selection staying under a token limit; BudgetSelection struct (indices, tokens_used, truncated_first); used by fork-handoff, system-prompt, and knowledge compression  [Issue #343-345, #347]
 │   └── work/                              # Work queue and scheduling  [Phase 2]
 │       ├── mod.rs                         # Module exports; pub mod queue
@@ -372,6 +374,7 @@ maestro/
 | `src/tui/theme.rs` | `Theme` (resolved ratatui `Color` fields); `ThemeConfig` (`preset` + `overrides`); `ThemePreset` (`Dark`, `Light`); `ThemeOverrides` (per-field optional overrides); `SerializableColor` (named string / `#rrggbb` hex / 256-color index); `ColorCapability`; all 14 TUI rendering files consume theme fields instead of hardcoded `Color::` constants (Issue #38) |
 | `src/tui/activity_log.rs` | Scrollable log widget |
 | `src/tui/cost_dashboard.rs` | Per-session and aggregate cost display (Phase 3) |
+| `src/tui/turboquant_dashboard.rs` | TurboQuant savings dashboard; `draw_turboquant_dashboard()`; `classify_savings()` → `(Vec<SessionSavings>, bool)`; `aggregate_savings()` → `AggregateSavings`; renders "Estimated Savings (projection)" (italic, rounded border) when no fork-handoff data, "Actual Savings" (bold, plain border) when real handoff metrics exist; per-session rows show `ACTUAL` or `proj.` kind markers (Issue #346) |
 | `src/tui/dep_graph.rs` | ASCII dependency graph visualization (Phase 3) |
 | `src/tui/detail.rs` | Session detail view (Phase 3) |
 | `src/tui/fullscreen.rs` | Fullscreen session view with phase progress overlay (Phase 3) |
@@ -406,7 +409,7 @@ maestro/
 | `src/tui/screens/pr_review/draw.rs` | ratatui rendering logic with markdown integration |
 | `src/tui/screen_dispatch.rs` | `ScreenDispatch`: routes key events and render calls to the active screen; constructor accepts `FeatureFlags` to supply the settings screen; always injects prompt history when constructing `PromptInputScreen`; `ScreenAction::Push` delegates to `navigate_to()`, `ScreenAction::Pop` delegates to `navigate_back()`; `Scaffolding` case wired in `StartAdaptPipeline` dispatch (Issues #146, #232, #342, #371) |
 | `src/tui/spinner.rs` | Braille spinner helpers: `spinner_frame()`, `format_thinking_elapsed()`, full spinner activity string builder |
-| `src/tui/snapshot_tests/` | TUI snapshot test suite; 33 tests across 7 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issue #16) |
+| `src/tui/snapshot_tests/` | TUI snapshot test suite; 36 tests across 8 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issue #16) |
 | `src/tui/snapshot_tests/overview.rs` | 6 snapshot tests for `PanelView`: empty, single running, multiple, selected, context overflow, forked |
 | `src/tui/snapshot_tests/detail.rs` | 6 snapshot tests for `DetailView`: basic, progress, activity log, no files touched, files + retries, markdown content |
 | `src/tui/snapshot_tests/fullscreen.rs` | 4 snapshot tests for `FullscreenView`: markdown last message, plain text, empty placeholder, auto-scroll to bottom |
@@ -414,6 +417,7 @@ maestro/
 | `src/tui/snapshot_tests/issue_browser.rs` | 7 snapshot tests for `IssueBrowserScreen`: with issues, empty, loading, multi-select, filter active, prompt overlay empty, prompt overlay with text |
 | `src/tui/snapshot_tests/milestone.rs` | 4 snapshot tests for `MilestoneScreen`: with milestones, empty, loading, issues in detail pane |
 | `src/tui/snapshot_tests/cost_dashboard.rs` | 5 snapshot tests for `CostDashboard`: no budget, under threshold, over 90%, empty sessions, sorted by cost |
+| `src/tui/snapshot_tests/turboquant_dashboard.rs` | 3 snapshot tests for `TurboQuantDashboard`: projections-only, mixed actual+projections, empty sessions (Issue #346) |
 | `src/tui/snapshot_tests/snapshots/` | Committed `.snap` files — insta ground-truth for TUI rendering regressions |
 | `src/integration_tests/` | End-to-end integration test suite; MockGitHubClient and MockWorktreeManager; no external process dependencies (Issue #15) |
 | `src/integration_tests/mod.rs` | Module declarations and shared helpers: `make_pool()`, `make_pool_with_worktree()`, `make_session()`, `make_session_with_issue()`, `make_gh_issue()` |
@@ -428,7 +432,7 @@ maestro/
 | `src/turboquant/polar.rs` | PolarQuant — recursive polar decomposition; preserves cosine distance |
 | `src/turboquant/qjl.rs` | QJL — seeded 1-bit Johnson-Lindenstrauss residual projection |
 | `src/turboquant/pipeline.rs` | Two-stage quantization pipeline (PolarQuant + QJL); strategy-aware wrappers |
-| `src/turboquant/adapter.rs` | `TurboQuantAdapter`: text-to-embedding bridge; `TextRanker` trait + impl; `compress_handoff()` → `CompressedHandoff` (Issue #343); `compact_system_prompt()` (Issue #344); `compact_session_history()` → `StateCompactionReport` (Issue #345); shared `Arc<TurboQuantAdapter>` on `App` |
+| `src/turboquant/adapter.rs` | `TurboQuantAdapter`: text-to-embedding bridge; `TextRanker` trait + impl; `compress_handoff()` → `CompressedHandoff` (Issue #343); `compact_system_prompt()` (Issue #344); `compact_session_history()` → `StateCompactionReport` (Issue #345); shared `Arc<TurboQuantAdapter>` on `App`; `project_savings()`, `session_savings()`, `implied_rate_per_token()` and public types `SavingsProjection`, `SavingsKind`, `SessionSavings` (Issue #346) |
 | `src/turboquant/budget.rs` | `TokenBudget` helper: greedy ranked-segment selection under a token limit; `BudgetSelection` struct; used by fork-handoff, system-prompt, and knowledge compression (Issues #343-345, #347) |
 | `src/work/` | Work queue and dependency scheduling (Phase 2) |
 | `src/work/assigner.rs` | Priority-ordered work assignment; `mark_pending()` and `mark_pending_undo_cascade()` for continuous mode retry/skip (Issue #85) |

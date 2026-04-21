@@ -70,7 +70,7 @@ turboquant = true      # Runtime feature flag (also toggleable via Ctrl+q)
 | PolarQuant | Medium (2-3x) | Good (angle-only) | When quality matters most |
 | QJL | Fast (2x) | Lower (sign-bit only) | Quick compression, tolerant workloads |
 
-**Dashboards**: View compression metrics in the Token Dashboard (`t`/`F5`) or the dedicated TurboQuant A/B Dashboard (`Shift+Q`).
+**Dashboards**: View token usage in the Token Dashboard (`t`/`F5`) or estimated and actual savings in the dedicated TurboQuant Savings Dashboard (`Shift+Q`).
 
 **Troubleshooting**:
 - If compressed sessions show degraded output quality, increase `bit_width` (e.g., 6 or 8)

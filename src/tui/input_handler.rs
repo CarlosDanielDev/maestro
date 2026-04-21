@@ -232,6 +232,13 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
             ));
             app.tui_mode = app::TuiMode::PromptInput;
         }
+        (KeyCode::Char('d'), _) => {
+            app.transition_to_dashboard();
+        }
+        (KeyCode::Char('q'), _) => {
+            app.completion_summary_dismissed = true;
+            app.navigate_to(app::TuiMode::ConfirmExit);
+        }
         (KeyCode::Char('l'), _) => {
             if let Some(ref summary) = app.completion_summary {
                 if let Some(first) = summary.sessions.first() {
@@ -1019,13 +1026,50 @@ mod tests {
         assert!(app.nav_stack.is_empty());
     }
 
-    // F-key label/dispatch contract: every F-key advertised in the bottom
-    // bar must dispatch to its label's target. Previously the label lived
-    // in `mode_hints.rs` and the dispatch lived in `handle_global_shortcuts`
-    // — two independent tables that drifted (F6 "Deps" label but dispatched
-    // to Overview from Dashboard mode). After the unification, both live on
-    // `FKeyRelevance`, so these tests are sanity checks that the action
-    // enum maps to the expected `TuiMode`.
+    // ── Hint / handler drift guards ────────────────────────────────────
+    //
+    // The header advertises per-mode hints (src/tui/navigation/mode_hints.rs),
+    // the F-bar advertises F-keys (FKeyRelevance), and actual handlers live
+    // here + in per-screen handle_input methods. These used to be
+    // independent declarations with no compiler link, so they drifted:
+    // `[d] Dashboard` hint did nothing; F6 "Deps" fell through to Overview.
+    //
+    // These tests pin the contract. Adding a new navigation-style hint or
+    // F-key without a matching handler must fail CI.
+
+    fn completion_summary_app() -> App {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(Default::default());
+        app
+    }
+
+    // TODO(hint-action-enum): replace this string table with a `HintAction`
+    // enum carrying a `target_mode()` method on `InlineHint`. Then the
+    // action label + target navigation live in one declaration, and this
+    // helper disappears. See `src/tui/navigation/keymap.rs` for the home.
+    fn expected_mode_for_action(action: &str) -> Option<TuiMode> {
+        match action {
+            "Browse" | "Issues" => Some(TuiMode::IssueBrowser),
+            "New Prompt" | "Prompt" => Some(TuiMode::PromptInput),
+            "Dashboard" => Some(TuiMode::Dashboard),
+            "Quit" => Some(TuiMode::ConfirmExit),
+            "Milestones" => Some(TuiMode::MilestoneView),
+            "Settings" => Some(TuiMode::Settings),
+            "Sessions" => Some(TuiMode::Overview),
+            "Adapt" => Some(TuiMode::AdaptWizard),
+            _ => None,
+        }
+    }
+
+    fn hint_key_to_keycode(k: &str) -> Option<KeyCode> {
+        match k {
+            "Enter" => Some(KeyCode::Enter),
+            "Esc" => Some(KeyCode::Esc),
+            _ if k.chars().count() == 1 => Some(KeyCode::Char(k.chars().next().unwrap())),
+            _ => None,
+        }
+    }
 
     fn fkey_action_target_mode(
         action: crate::tui::navigation::keymap::FKeyAction,
@@ -1038,6 +1082,41 @@ mod tests {
             FKeyAction::OpenSummary => Some(TuiMode::SessionSummary),
             _ => None,
         }
+    }
+
+    #[test]
+    fn completion_summary_hints_dispatch_to_advertised_mode() {
+        use crate::tui::navigation::keymap::mode_keymap;
+
+        let km = mode_keymap(TuiMode::CompletionSummary, None, &[]);
+        let mut checked = 0;
+
+        for hint in km.hints {
+            let Some(expected) = expected_mode_for_action(hint.action) else {
+                continue;
+            };
+            let Some(code) = hint_key_to_keycode(hint.key) else {
+                continue;
+            };
+            let mut app = completion_summary_app();
+            handle_completion_summary(&mut app, &key_code(code));
+            assert_eq!(
+                app.tui_mode, expected,
+                "Hint `[{}] {}` advertised in TuiMode::CompletionSummary but \
+                 handler did not navigate to {:?} (landed in {:?}). See \
+                 `handle_completion_summary` and `mode_hints.rs` for the \
+                 conflicting declarations.",
+                hint.key, hint.action, expected, app.tui_mode
+            );
+            checked += 1;
+        }
+
+        assert!(
+            checked > 0,
+            "No CompletionSummary hints were verified — either the hint \
+             table changed action labels or expected_mode_for_action is \
+             missing entries."
+        );
     }
 
     // navigate_to must be idempotent and cycle-collapsing. Pressing F5
@@ -1063,8 +1142,6 @@ mod tests {
         app.navigate_to(TuiMode::TokenDashboard);
         app.navigate_to(TuiMode::Dashboard);
         assert_eq!(app.tui_mode, TuiMode::Dashboard);
-        // Stack should be empty — we returned to the root, not pushed
-        // TokenDashboard onto it.
         assert_eq!(app.nav_stack.depth(), 0);
     }
 
@@ -1073,10 +1150,10 @@ mod tests {
         let mut app = make_app();
         app.tui_mode = TuiMode::Dashboard;
         app.navigate_to(TuiMode::DependencyGraph);
-        app.navigate_to(TuiMode::DependencyGraph); // idempotent
+        app.navigate_to(TuiMode::DependencyGraph);
         app.navigate_to(TuiMode::TokenDashboard);
-        app.navigate_to(TuiMode::TokenDashboard); // idempotent
-        app.navigate_to(TuiMode::TokenDashboard); // idempotent
+        app.navigate_to(TuiMode::TokenDashboard);
+        app.navigate_to(TuiMode::TokenDashboard);
         assert_eq!(app.tui_mode, TuiMode::TokenDashboard);
         assert_eq!(
             app.nav_stack.breadcrumbs(),

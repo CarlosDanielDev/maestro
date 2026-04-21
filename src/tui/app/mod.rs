@@ -219,12 +219,7 @@ impl App {
         // Shared adapter so fork and pool observe the same enabled state.
         let tq_adapter = if config.turboquant.enabled {
             Some(std::sync::Arc::new(
-                crate::turboquant::adapter::TurboQuantAdapter::new(
-                    config.turboquant.bit_width,
-                    config.turboquant.strategy,
-                    config.sessions.context_overflow.overflow_threshold_pct as f64,
-                    config.turboquant.auto_on_overflow,
-                ),
+                crate::turboquant::adapter::TurboQuantAdapter::new(config.turboquant.bit_width),
             ))
         } else {
             None

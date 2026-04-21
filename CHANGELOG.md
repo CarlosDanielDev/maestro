@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- TurboQuant savings projections dashboard — `src/tui/turboquant_dashboard.rs`; shows "Estimated Savings (projection)" when no fork-handoff compression data exists, "Actual Savings" once real handoff metrics are present; per-session `ACTUAL` / `proj.` kind markers; aggregate token and USD totals (#346)
+- `SavingsProjection`, `SavingsKind`, `SessionSavings` public types and `project_savings()`, `session_savings()`, `implied_rate_per_token()` free functions in `src/turboquant/adapter.rs` (#346)
+- `tq_handoff_original_tokens` and `tq_handoff_compressed_tokens` fields on `Session` (with `#[serde(default)]` for backward compat) — populated by `context_overflow.rs` after fork-handoff compression so the dashboard can surface real savings (#346)
+- 3 new snapshot tests for `TurboQuantDashboard` (projections-only, mixed actual+projections, empty sessions) in `src/tui/snapshot_tests/turboquant_dashboard.rs` (#346)
 - `[sessions.hollow_retry]` config section with three policies: `always`, `intent-aware` (default), and `never`; replaces the flat `sessions.hollow_max_retries` field (#275)
 - `HollowRetryPolicy` enum and `HollowRetryConfig` struct in `src/config.rs`; `merge_legacy_hollow()` pure function for backward-compatible TOML parsing (#275)
 - Per-intent retry limits: `work_max_retries` (default 2) and `consultation_max_retries` (default 0) under `[sessions.hollow_retry]` (#275)
@@ -16,11 +20,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Replaced the A/B benchmark dashboard (#253) with the honest savings-projection dashboard; removed `partition_sessions`, `compute_panel_stats`, and `aggregate_tq_metrics` from `turboquant_dashboard.rs` (#346)
+- Removed synthetic prompt-compression block from `event_handler.rs` (formerly in the `Completed` arm); honest projection replaces fabricated compression metrics (#346)
+- Removed `TQ Ratio` column from `src/tui/token_dashboard.rs`; TurboQuant ownership moved to the dedicated savings dashboard (#346)
 - Hollow retry dispatch is now intent-aware by default: work sessions retry up to 2 times, consultation sessions never retry (#275)
 - `RetryPolicy` in `src/session/retry.rs` owns a `hollow: HollowRetryConfig` field (was flat `hollow_max_retries: u32`); `effective_max()` dispatches by policy and session intent (#275)
 - `HollowRetryScreen` in `src/tui/app/completion_pipeline.rs` receives the per-intent `effective_max` rather than the raw work limit (#275)
 
-> **Backward compatibility**: existing `sessions.hollow_max_retries = N` in `maestro.toml` still parses and maps to `work_max_retries = N` with policy `always`.
+> **Backward compatibility**: existing `sessions.hollow_max_retries = N` in `maestro.toml` still parses and maps to `work_max_retries = N` with policy `intent-aware`.
 
 ## [0.14.0] - 2026-04-17
 

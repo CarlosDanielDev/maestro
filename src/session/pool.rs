@@ -8,7 +8,7 @@ use super::manager::{ManagedSession, SessionEvent};
 use super::types::{Session, SessionStatus};
 use super::worktree::WorktreeManager;
 use crate::state::file_claims::FileClaimManager;
-use crate::turboquant::adapter::{ContextCompressor, TurboQuantAdapter};
+use crate::turboquant::adapter::TurboQuantAdapter;
 
 pub struct SessionPool {
     max_concurrent: usize,
@@ -789,18 +789,12 @@ mod tests {
     #[test]
     fn pool_promote_with_adapter_compacts_appendix() {
         use crate::turboquant::adapter::TurboQuantAdapter;
-        use crate::turboquant::types::QuantStrategy;
 
         let mut pool = make_pool(1);
         pool.set_guardrail_prompt(
             "GUARDRAIL: never modify auth. GUARDRAIL: never modify auth.".into(),
         );
-        let adapter = Arc::new(TurboQuantAdapter::new(
-            4,
-            QuantStrategy::TurboQuant,
-            80.0,
-            false,
-        ));
+        let adapter = Arc::new(TurboQuantAdapter::new(4));
         pool.set_turboquant_adapter(adapter, 1024);
         pool.enqueue(make_session("work"));
         pool.try_promote();
@@ -812,11 +806,10 @@ mod tests {
     #[test]
     fn pool_promote_with_disabled_adapter_falls_back_to_join() {
         use crate::turboquant::adapter::TurboQuantAdapter;
-        use crate::turboquant::types::QuantStrategy;
 
         let mut pool = make_pool(1);
         pool.set_guardrail_prompt("GUARDRAIL: X".into());
-        let mut a = TurboQuantAdapter::new(4, QuantStrategy::TurboQuant, 80.0, false);
+        let mut a = TurboQuantAdapter::new(4);
         a.set_enabled(false);
         pool.set_turboquant_adapter(Arc::new(a), 1024);
         pool.enqueue(make_session("work"));
