@@ -226,8 +226,6 @@ impl App {
             Vec::new()
         };
 
-        // Intent-aware skip: consultation prompts that answered successfully are
-        // "done" even if they look hollow. Log once and don't show hollow retry UI.
         let consultation_skip_ids: Vec<uuid::Uuid> = self
             .pool
             .all_sessions()
@@ -239,25 +237,19 @@ impl App {
             .collect();
 
         for id in &consultation_skip_ids {
-            if let Some(managed) = self.pool.get_active_mut(*id) {
-                let skip_marker = "CONSULTATION_RETRY_SKIPPED";
-                let already_logged = managed
+            if let Some(managed) = self.pool.get_active_mut(*id)
+                && !managed.session.consultation_skip_logged
+            {
+                let label = session_label(&managed.session);
+                managed
                     .session
-                    .activity_log
-                    .iter()
-                    .any(|e| e.message.contains(skip_marker));
-                if !already_logged {
-                    let label = session_label(&managed.session);
-                    managed.session.log_activity(format!(
-                        "{}: consultation prompt answered successfully",
-                        skip_marker
-                    ));
-                    self.activity_log.push_simple(
-                        label,
-                        "Skipping retry: consultation prompt answered successfully".to_string(),
-                        LogLevel::Info,
-                    );
-                }
+                    .log_activity("consultation prompt answered successfully".to_string());
+                managed.session.consultation_skip_logged = true;
+                self.activity_log.push_simple(
+                    label,
+                    "Skipping retry: consultation prompt answered successfully".to_string(),
+                    LogLevel::Info,
+                );
             }
         }
 
@@ -308,22 +300,35 @@ impl App {
             self.add_session(session).await?;
         }
 
-        // Show adapt follow-up overlay when a just-completed session's final
-        // message contains parsed next-iteration paths.
-        if self.adapt_follow_up_screen.is_none()
-            && let Some(candidate) = self.pool.all_sessions().iter().find(|s| {
-                matches!(s.status, SessionStatus::Completed | SessionStatus::Retrying)
-                    && !s.last_message.trim().is_empty()
-                    && crate::adapt::suggestions::parse_suggestions(&s.last_message).len() >= 2
-            })
-        {
-            let suggestions = crate::adapt::suggestions::parse_suggestions(&candidate.last_message);
-            let label = session_label(candidate);
-            self.adapt_follow_up_screen = Some(crate::tui::screens::AdaptFollowUpScreen::new(
-                label,
-                suggestions,
-            ));
-            self.tui_mode = TuiMode::AdaptFollowUp;
+        if self.adapt_follow_up_screen.is_none() {
+            // Pick the first just-completed session we haven't yet evaluated;
+            // mark the candidate "considered" so the overlay sticks when
+            // dismissed and `parse_suggestions` doesn't run twice per tick.
+            let candidate_id = self
+                .pool
+                .all_sessions()
+                .iter()
+                .find(|s| {
+                    matches!(s.status, SessionStatus::Completed | SessionStatus::Retrying)
+                        && !s.adapt_follow_up_considered
+                        && !s.last_message.trim().is_empty()
+                })
+                .map(|s| s.id);
+
+            if let Some(id) = candidate_id
+                && let Some(managed) = self.pool.get_active_mut(id)
+            {
+                managed.session.adapt_follow_up_considered = true;
+                let suggestions =
+                    crate::adapt::suggestions::parse_suggestions(&managed.session.last_message);
+                if suggestions.len() >= 2 {
+                    let label = session_label(&managed.session);
+                    self.adapt_follow_up_screen = Some(
+                        crate::tui::screens::AdaptFollowUpScreen::new(label, suggestions),
+                    );
+                    self.tui_mode = TuiMode::AdaptFollowUp;
+                }
+            }
         }
 
         // Show hollow retry prompt for sessions that exceeded auto-retry limits.

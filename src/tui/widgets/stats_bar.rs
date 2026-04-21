@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::tui::icons::{self, IconId};
-use crate::tui::marquee::{MarqueeConfig, MarqueeState, spans_char_count, visible_spans};
+use crate::tui::marquee::{MarqueeConfig, MarqueeState, visible_spans};
 use crate::tui::theme::Theme;
 
 /// Data for the compact stats bar widget.
@@ -54,27 +54,20 @@ impl<'a> StatsBar<'a> {
             return;
         }
 
-        let spans = self.build_spans();
-        let total_width = spans_char_count(&spans);
+        let line = self.build_line();
+        let total_width = line.width();
         let viewport_width = inner.width as usize;
 
         if total_width <= viewport_width {
-            // Fits — render exactly like before and pin the marquee to the start.
             marquee.reset();
-            Paragraph::new(Line::from(spans)).render(inner, buf);
+            Paragraph::new(line).render(inner, buf);
             return;
         }
 
-        // Overflow path: advance marquee and render the visible window.
         let overflow = total_width.saturating_sub(viewport_width);
         marquee.advance(overflow, &MarqueeConfig::default());
-        let windowed = visible_spans(&spans, marquee.offset, viewport_width);
+        let windowed = visible_spans(&line.spans, marquee.offset, viewport_width);
         Paragraph::new(Line::from(windowed)).render(inner, buf);
-    }
-
-    fn build_spans(&self) -> Vec<Span<'_>> {
-        let line = self.build_line();
-        line.spans
     }
 
     fn build_line(&self) -> Line<'_> {

@@ -47,8 +47,6 @@ impl RetryPolicy {
 
     /// Check if a session is eligible for retry based on its status and retry count.
     pub fn should_retry(&self, session: &Session) -> bool {
-        // Intent check: a consultation prompt that got a text response is
-        // considered done, even if its mechanical signals look hollow.
         if Self::is_consultation_satisfied(session) {
             return false;
         }

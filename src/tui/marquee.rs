@@ -130,11 +130,6 @@ pub fn needs_scroll(text_len: usize, viewport_width: usize) -> bool {
     text_len > viewport_width
 }
 
-/// Total character count across a slice of styled spans.
-pub fn spans_char_count(spans: &[ratatui::text::Span<'_>]) -> usize {
-    spans.iter().map(|s| s.content.chars().count()).sum()
-}
-
 /// Return styled spans representing a horizontal window over `spans` starting
 /// at character-position `offset` and spanning `viewport_width` characters.
 ///
@@ -612,16 +607,6 @@ mod tests {
 
     fn style_green() -> Style {
         Style::default().fg(Color::Green)
-    }
-
-    #[test]
-    fn spans_char_count_sums_across_spans() {
-        let spans = vec![
-            Span::styled("Hello", style_red()),
-            Span::raw(", "),
-            Span::styled("world", style_green()),
-        ];
-        assert_eq!(spans_char_count(&spans), 12);
     }
 
     #[test]
