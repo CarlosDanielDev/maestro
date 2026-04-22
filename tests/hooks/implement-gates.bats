@@ -47,3 +47,11 @@ teardown() {
   [[ "$output" == *"gh CLI not installed"* ]]
   [[ "$output" == *"brew install gh"* ]]
 }
+
+@test "exits 1 when gh is not authenticated" {
+  export FAKE_GH_AUTH_STATUS=unauthed
+  run bash "$HOOK" 123
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"gh not authenticated"* ]]
+  [[ "$output" == *"gh auth login"* ]]
+}

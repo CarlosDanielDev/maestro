@@ -22,3 +22,9 @@ if ! command -v gh >/dev/null 2>&1; then
   echo "implement-gates: gh CLI not installed. Install: brew install gh" >&2
   exit 1
 fi
+
+# Gate 3: gh must be authenticated.
+if ! gh auth status >/dev/null 2>&1; then
+  echo "implement-gates: gh not authenticated. Run: gh auth login" >&2
+  exit 1
+fi
