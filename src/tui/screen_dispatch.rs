@@ -189,9 +189,6 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app.preview_theme = None;
             }
         }
-        ScreenAction::Quit => {
-            app.running = false;
-        }
         ScreenAction::LaunchUnifiedSession(config) => {
             app.pending_commands
                 .push(app::TuiCommand::LaunchUnifiedSession(config));

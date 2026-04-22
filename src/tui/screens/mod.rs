@@ -117,8 +117,6 @@ pub enum ScreenAction {
         event: crate::provider::github::types::PrReviewEvent,
         body: String,
     },
-    /// Quit the application.
-    Quit,
 }
 
 /// Configuration for launching a conflict-fix session.

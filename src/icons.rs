@@ -125,8 +125,8 @@ const fn icon_pair(id: IconId) -> IconPair {
         IconId::Fisheye => IconPair::new("\u{25C9}", "*"),
 
         // ── Indicators ──────────────────────────────────────────────
-        IconId::CheckboxOn => IconPair::new("\u{f46c}", "[x]"),
-        IconId::CheckboxOff => IconPair::new("\u{f096}", "[ ]"),
+        IconId::CheckboxOn => IconPair::new("\u{2713}", "[x]"),
+        IconId::CheckboxOff => IconPair::new("\u{25cb}", "[ ]"),
         IconId::Expand => IconPair::new("\u{f054}", ">"),
         IconId::Collapse => IconPair::new("\u{f078}", "v"),
 

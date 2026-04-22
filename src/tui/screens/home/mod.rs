@@ -473,11 +473,10 @@ mod tests {
 
     #[test]
     fn home_enter_on_quit_action_routes_through_confirm_exit() {
-        // Enter on the Quit row must go through the confirm-exit dialog
-        // so menu-Enter matches the letter-`q` flow (which is intercepted
-        // globally in `input_handler::handle_key` and navigates to
-        // ConfirmExit). Direct `ScreenAction::Quit` would bypass the
-        // dialog and exit immediately — user-hostile.
+        // Enter on the Quit row must push the ConfirmExit screen so
+        // menu-Enter matches the letter-`q` flow (which is intercepted
+        // globally in `input_handler::handle_key`) rather than exiting
+        // immediately — user-hostile otherwise.
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         for _ in 0..HomeScreen::QUIT_ACTION_INDEX {
             screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
@@ -763,7 +762,7 @@ mod tests {
     fn home_handle_input_navigation_keys_ignored_in_insert_mode() {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Char('q')), InputMode::Insert);
-        assert_ne!(action, ScreenAction::Quit);
+        assert_ne!(action, ScreenAction::Push(TuiMode::ConfirmExit));
     }
 
     // -- Suggestion list navigation --
