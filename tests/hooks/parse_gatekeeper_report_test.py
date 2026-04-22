@@ -102,5 +102,15 @@ Some prose.
         report = self.parser.extract_report(text)
         self.assertEqual(report["status"], "PASS")  # first fence wins
 
+    def test_rejects_missing_report_version(self):
+        text = """
+```json gatekeeper
+{"status": "PASS", "task_type": "implementation"}
+```
+"""
+        with self.assertRaises(self.parser.ParseError) as ctx:
+            self.parser.extract_report(text)
+        self.assertIn("missing required field: report_version", str(ctx.exception))
+
 if __name__ == "__main__":
     unittest.main()
