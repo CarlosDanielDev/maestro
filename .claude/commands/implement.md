@@ -195,3 +195,80 @@ Handle each choice:
 - Exit cleanly. Tell the user to `git checkout <branch>` manually to inspect.
 
 If the user is already on the matching branch, skip the prompt and use Continue semantics.
+
+### Step 6: Orchestrator-mode subagent sequence
+
+Vibe mode skips 6a and 6c. All gates use `bash` (not `sh`) — `${PIPESTATUS[0]}` requires it.
+
+#### 6a. `subagent-architect` → blueprint
+
+Orchestrator mode only. Invoke `subagent-architect` with the issue JSON and the architecture blueprint request. If Step 5 chose Continue, prepend the resumption context prompt.
+
+#### 6b. `/validate-contracts` (if architect blueprint touches API endpoints)
+
+Skip if no endpoints.
+
+#### 6c. `subagent-qa` → test blueprint
+
+Orchestrator mode only. Invoke `subagent-qa` with the architect's blueprint. If Step 5 chose Continue, prepend the resumption context prompt.
+
+#### 6d. Write tests from QA blueprint
+
+You (the orchestrator) write tests. No subagent.
+
+#### 6e. RED checkpoint (GATE)
+
+Skipped if `TASK_TYPE` is `docs` or `refactor`.
+
+```bash
+if [ "$TASK_TYPE" != "docs" ] && [ "$TASK_TYPE" != "refactor" ]; then
+  cargo test --quiet 2>&1 | tee "$GATE_LOG_DIR/red.log"
+  red_exit=${PIPESTATUS[0]}
+  if [ $red_exit -eq 0 ]; then
+    echo "RED GATE FAILED — cargo test passed, but implementation has not started." >&2
+    echo "Write a failing test for the new behavior before implementing." >&2
+    exit 3
+  fi
+fi
+```
+
+Exit code `3` reserved for RED failure.
+
+#### 6f. Implement
+
+You (the orchestrator) write the minimum code to make the failing test pass.
+
+#### 6g. GREEN checkpoint (GATE)
+
+Skipped only if `TASK_TYPE` is `docs`.
+
+```bash
+if [ "$TASK_TYPE" != "docs" ]; then
+  cargo test --quiet 2>&1 | tee "$GATE_LOG_DIR/green.log"
+  green_exit=${PIPESTATUS[0]}
+  if [ $green_exit -ne 0 ]; then
+    echo "GREEN GATE FAILED — tests still failing after implementation." >&2
+    echo "See $GATE_LOG_DIR/green.log" >&2
+    exit 4
+  fi
+fi
+```
+
+Exit code `4` reserved for GREEN failure.
+
+#### 6h. Refactor (if needed)
+
+Refactor while tests stay green. Re-run the GREEN checkpoint after:
+
+```bash
+cargo test --quiet 2>&1 | tee "$GATE_LOG_DIR/green-refactor.log"
+[ ${PIPESTATUS[0]} -eq 0 ] || { echo "Refactor broke tests"; exit 4; }
+```
+
+#### 6i. `subagent-security-analyst` → review
+
+Both modes. Invoke security analyst against the newly-written code.
+
+#### 6j. `subagent-docs-analyst` → docs + directory-tree.md
+
+Both modes. Mandatory at task end.
