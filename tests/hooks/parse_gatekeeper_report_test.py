@@ -112,5 +112,15 @@ Some prose.
             self.parser.extract_report(text)
         self.assertIn("missing required field: report_version", str(ctx.exception))
 
+    def test_rejects_future_report_version(self):
+        text = """
+```json gatekeeper
+{"report_version": 2, "status": "PASS"}
+```
+"""
+        with self.assertRaises(self.parser.ParseError) as ctx:
+            self.parser.extract_report(text)
+        self.assertIn("unsupported report_version: 2", str(ctx.exception))
+
 if __name__ == "__main__":
     unittest.main()
