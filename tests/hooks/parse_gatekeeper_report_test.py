@@ -42,5 +42,32 @@ Prose below the fence.
         self.assertEqual(report["task_type"], "implementation")
         self.assertTrue(report["dor"]["passed"])
 
+    def test_parses_valid_fail_report_with_blockers(self):
+        text = """
+```json gatekeeper
+{
+  "report_version": 1,
+  "status": "FAIL",
+  "task_type": "implementation",
+  "dor": {"passed": true, "missing_sections": [], "weak_sections": []},
+  "blockers": {
+    "passed": false,
+    "open": [
+      {"number": 42, "title": "upstream scaffolding", "state": "OPEN"},
+      {"number": 43, "title": "prerequisite api", "state": "OPEN"}
+    ]
+  },
+  "contracts": {"passed": true, "missing": []},
+  "remediation": {"comment_body": "", "labels_to_add": []},
+  "reasons": ["Blocker #42 is OPEN", "Blocker #43 is OPEN"]
+}
+```
+"""
+        report = self.parser.extract_report(text)
+        self.assertEqual(report["status"], "FAIL")
+        self.assertFalse(report["blockers"]["passed"])
+        self.assertEqual(len(report["blockers"]["open"]), 2)
+        self.assertEqual(report["blockers"]["open"][0]["number"], 42)
+
 if __name__ == "__main__":
     unittest.main()
