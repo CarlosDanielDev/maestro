@@ -79,3 +79,44 @@ The hook has cached the issue JSON at `$GATE_LOG_DIR/issue.json`. Read it direct
 ```bash
 cat "$GATE_LOG_DIR/issue.json"
 ```
+
+### Step 4: Gatekeeper (GATE — MANDATORY)
+
+Invoke `subagent-gatekeeper` via the `Agent` tool. Pass the issue JSON (from `$GATE_LOG_DIR/issue.json`), selected mode, and repo name.
+
+The subagent's response will contain a fenced `json gatekeeper` code block. Pipe its full response through the parser:
+
+```bash
+echo "$SUBAGENT_RESPONSE" | python3 .claude/hooks/parse_gatekeeper_report.py > "$GATE_LOG_DIR/gatekeeper.json"
+```
+
+Then branch on the parsed report:
+
+```bash
+status=$(jq -r .status "$GATE_LOG_DIR/gatekeeper.json")
+task_type=$(jq -r .task_type "$GATE_LOG_DIR/gatekeeper.json")
+
+if [ "$status" = "FAIL" ]; then
+  dor_passed=$(jq -r .dor.passed "$GATE_LOG_DIR/gatekeeper.json")
+  if [ "$dor_passed" = "false" ]; then
+    # Auto-remediation for DOR failures.
+    comment_body=$(jq -r .remediation.comment_body "$GATE_LOG_DIR/gatekeeper.json")
+    gh issue comment "$ISSUE_NUMBER" --body "$comment_body"
+    for label in $(jq -r '.remediation.labels_to_add[]' "$GATE_LOG_DIR/gatekeeper.json"); do
+      gh issue edit "$ISSUE_NUMBER" --add-label "$label"
+    done
+  fi
+  # Print reasons for the operator.
+  echo "Gatekeeper FAIL:" >&2
+  jq -r '.reasons[]' "$GATE_LOG_DIR/gatekeeper.json" | while read -r r; do
+    echo "  - $r" >&2
+  done
+  exit 5
+fi
+
+# PASS — continue with the classified task_type.
+echo "Gatekeeper PASS (task_type: $task_type)"
+export TASK_TYPE="$task_type"
+```
+
+Exit code `5` is reserved for gatekeeper failure.
