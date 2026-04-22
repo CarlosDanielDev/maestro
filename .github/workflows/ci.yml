@@ -112,5 +112,3 @@ jobs:
         run: cargo llvm-cov --workspace --lcov --output-path coverage.lcov
       - name: Check coverage tiers
         run: bash scripts/check-coverage-tiers.sh coverage.lcov
-        env:
-          COVERAGE_DEBUG: "1"

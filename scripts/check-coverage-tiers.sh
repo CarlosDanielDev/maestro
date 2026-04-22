@@ -90,10 +90,30 @@ tier_path_file="$TMPDIR_WORK/tier_paths.txt"
 
 for i in $(seq 0 $((n_tiers - 1))); do
   name="${tier_names[$i]}"
+  # Use command substitution + here-string rather than process substitution;
+  # avoids subtle `set -e` interactions that were dropping the output on CI.
+  paths_output=$(yq eval ".tiers.${name}.paths[]" "$MANIFEST" 2>&1 || echo "")
   while IFS= read -r pattern; do
+    [[ -z "$pattern" ]] && continue
+    # Skip yq error output if any leaked through.
+    [[ "$pattern" == Error* ]] && continue
     echo "$i $pattern" >> "$tier_path_file"
-  done < <(yq eval ".tiers.${name}.paths[] // \"\"" "$MANIFEST" 2>/dev/null || true)
+  done <<< "$paths_output"
 done
+
+# ---------------------------------------------------------------------------
+# Normalize a file path from lcov SF entry to repo-relative form.
+# cargo-llvm-cov emits absolute paths (e.g. /home/runner/work/maestro/maestro/src/tui/app.rs);
+# our glob manifest uses repo-relative forms (src/tui/**). Strip a known
+# repo-root prefix so globs match.
+# ---------------------------------------------------------------------------
+REPO_ROOT_PREFIX="${REPO_ROOT_PREFIX:-$(pwd)/}"
+normalize_path() {
+  local file="$1"
+  # Strip a literal repo-root prefix if present.
+  file="${file#$REPO_ROOT_PREFIX}"
+  echo "$file"
+}
 
 # ---------------------------------------------------------------------------
 # Match a file path to a tier index (first match wins).
@@ -101,7 +121,8 @@ done
 # if nothing matched.
 # ---------------------------------------------------------------------------
 match_tier() {
-  local file="$1"
+  local file
+  file=$(normalize_path "$1")
   while read -r idx pattern; do
     case "$file" in
       $pattern)
@@ -162,21 +183,6 @@ while IFS= read -r line; do
       ;;
   esac
 done < "$LCOV_FILE"
-
-# ---------------------------------------------------------------------------
-# DEBUG: print tier_path_file + first few lcov file matches (remove after fix)
-# ---------------------------------------------------------------------------
-if [[ "${COVERAGE_DEBUG:-}" = "1" ]]; then
-  echo "DEBUG tier_path_file content:"
-  cat "$tier_path_file"
-  echo "DEBUG first 10 SF entries and their tier:"
-  grep -m 10 '^SF:' "$LCOV_FILE" | while IFS= read -r line; do
-    f="${line#SF:}"
-    idx=$(match_tier "$f")
-    name="${tier_names[$idx]}"
-    echo "  $f → tier[$idx] = $name"
-  done
-fi
 
 # ---------------------------------------------------------------------------
 # Compute coverage per tier, check floors, report

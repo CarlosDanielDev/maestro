@@ -30,3 +30,15 @@ setup() {
   # main.rs is excluded, should not appear.
   [[ "$output" != *"main.rs"* ]]
 }
+
+@test "absolute lcov paths are normalized via REPO_ROOT_PREFIX env" {
+  # cargo-llvm-cov on CI emits absolute paths like
+  # /home/runner/work/maestro/maestro/src/tui/app.rs. The script's
+  # normalize_path strips a configurable prefix so globs like src/tui/**
+  # can match.
+  REPO_ROOT_PREFIX="/home/runner/work/maestro/maestro/" run bash "$SCRIPT" "$FIXTURES/lcov-absolute-paths.info"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"core: 95.0%"* ]]
+  [[ "$output" == *"tui: 40.0%"* ]]
+  [[ "$output" != *"main.rs"* ]]
+}
