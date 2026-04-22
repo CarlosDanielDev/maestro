@@ -1,0 +1,3 @@
+{
+  "external-org/external-repo#123": {"state": "CLOSED", "title": "feat: stabilize external crate"}
+}

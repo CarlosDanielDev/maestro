@@ -1,0 +1,9 @@
+{
+  "title": "feat: integrate external library",
+  "body": "## Overview\n\nUse the external crate once it's stable.\n\n## Expected Behavior\n\nmaestro depends on external-org/external-repo#123.\n\n## Acceptance Criteria\n\n- [ ] Dep added to Cargo.toml\n- [ ] Wire calls in session/manager.rs\n\n## Files to Modify\n\n- Cargo.toml\n- src/session/manager.rs\n\n## Test Hints\n\nMock the external crate's trait.\n\n## Blocked By\n\n- external-org/external-repo#123\n\n## Definition of Done\n\n- [ ] Tests pass",
+  "labels": [{"name": "type:feature"}],
+  "state": "OPEN",
+  "milestone": null,
+  "assignees": [],
+  "comments": []
+}
