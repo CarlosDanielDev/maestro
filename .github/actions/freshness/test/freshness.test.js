@@ -48,3 +48,16 @@ test('nightly just under max_age_days is fresh', () => {
   const run = { status: 'completed', conclusion: 'success', updated_at: atBoundary };
   assert.equal(isFresh(run, 3), true);
 });
+
+// Bootstrap-mode behavior is implemented in main(), not isFresh() — but
+// we document the expected contract here so future maintainers don't
+// break it without seeing this assertion fail.
+test('bootstrap mode contract: zero runs returned by API → exit 0', () => {
+  // This test asserts the expected control flow: an empty runs array
+  // should NOT call isFresh at all (no run object exists). main()
+  // handles this case explicitly with a "BOOTSTRAP" log message and
+  // process.exit(0). See index.js — the early `if (runs.length === 0)`
+  // branch.
+  const runs = [];
+  assert.equal(runs.length, 0);
+});

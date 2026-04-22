@@ -48,8 +48,14 @@ async function main() {
 
   const runs = await fetchWorkflowRuns({ owner, repo, workflowFile, token });
   if (runs.length === 0) {
-    console.log('No scheduled nightly runs found on main.');
-    process.exit(1);
+    // Bootstrap mode: the nightly workflow hasn't run on main yet
+    // (e.g., the PR introducing both nightly.yml AND freshness.yml is
+    // still in flight). Exit 0 so the freshness check stays green
+    // while there's literally nothing to check. Once any scheduled
+    // nightly has completed on main, strict freshness applies.
+    console.log(`No scheduled ${workflowFile} runs found on main yet.`);
+    console.log('Freshness check: BOOTSTRAP (no nightly history; passing trivially until first scheduled run lands).');
+    process.exit(0);
   }
 
   const mostRecent = runs[0];
