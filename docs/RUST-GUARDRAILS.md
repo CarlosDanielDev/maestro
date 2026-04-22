@@ -25,7 +25,7 @@ Grounding sources:
 4. **Ownership over aliasing.** Minimize `Arc<Mutex<...>>`. Prefer channels + owned state machines (maestro's session pool pattern). If `Arc` is used, it must be justified in a comment.
 5. **Tests as specification.** Unit tests inline (`#[cfg(test)] mod tests`); integration tests under `src/integration_tests/`. Real fakes preferred over mocks. Insta for user-visible output. `#[tokio::test]` for async. No `#[ignore]` without a linked issue.
 6. **Supply-chain caution.** MSRV pinned via `rust-toolchain.toml`. `cargo deny` in CI. No wildcard versions. Licenses on an allow list.
-7. **Readability is a feature.** rustfmt non-negotiable. clippy `-D warnings` non-negotiable. File ≤ 500 LOC target (hard cap enforced by `scripts/check-file-size.sh`). Function ≤ 80 LOC soft cap.
+7. **Readability is a feature.** rustfmt non-negotiable. clippy `-D warnings` non-negotiable. File ≤ 400 LOC hard cap (enforced by `scripts/check-file-size.sh`; soft target 300 LOC). Function ≤ 80 LOC soft cap.
 8. **Observability.** `tracing` over `println!` / `eprintln!` / `dbg!` in committed code. Structured fields with context. Error paths log at `warn` or `error` with enough detail to diagnose without a debugger.
 
 ---
@@ -54,7 +54,7 @@ src/
 
 **Visibility.** `pub mod` is explicit. No `pub use super::*`. Re-exports name their targets. New modules start private (`mod foo`) and are promoted to `pub mod foo` only when another module needs them.
 
-**File size.** Soft target 500 LOC; hard cap enforced by `scripts/check-file-size.sh` (CI job `file-size`). Files approaching the cap (`config.rs` at ~1,623 LOC, `cli.rs` at ~1,009 LOC) must be split before adding new responsibilities.
+**File size.** Hard cap 400 LOC; soft target 300 LOC. Enforced by `scripts/check-file-size.sh` (CI job `file-size`). Files approaching the cap (`config.rs`, `cli.rs`, the TUI screens) are on `scripts/allowlist-large-files.txt` with deadlines — extensions require a PR with justification; reviewers push back on habitual extensions.
 
 **Function size.** Soft cap 80 LOC. A function over 80 LOC is a review signal, not a violation. Break out helpers named after what they compute (not `do_stuff`).
 
@@ -423,7 +423,24 @@ During Wave 1 implementation, `scripts/check-file-size.sh` was found to have a p
 - core: 87.6% (floor: 90.0%) — below by 2.4 pp
 - tui: 67.4% (floor: 70.0%) — below by 2.6 pp
 
-Both tiers are within striking distance of their floors; activation is near-term test-writing, not a multi-week project. Suggested sequence: add tests for the largest uncovered modules in each tier, rerun `coverage` to see the delta, repeat until ≥ floor, then open a follow-up PR that removes `continue-on-error` for that tier.
+Both tiers are within striking distance of their floors; activation is near-term test-writing, not a multi-week project. Suggested sequence: add tests for the largest uncovered modules in each tier, rerun `coverage` to see the delta, repeat until ≥ floor, then open a follow-up PR that adds `--enforce` to the coverage script invocation for that tier.
+
+---
+
+## CI Quality Gates (Wave 2.2 — File Size 500 → 400)
+
+**Status:** active (landed 2026-04-22 via chunk-3/file-size-400).
+
+**Hard cap:** 400 LOC per `.rs` file under `src/`. Enforced by `scripts/check-file-size.sh`. Soft target is 300 LOC — anything approaching 400 is a review signal to split before adding responsibilities.
+
+**Allowlist growth:** the cap flip added 16 files that were previously in the 400-500 band. Combined with Wave 1's 43 entries, the allowlist has 59 entries after Wave 2.2. Every entry has a deadline, owner, and plan field. Deadline tranches:
+
+- **1 month** (2026-05-22): 4 outlier files (>1500 LOC).
+- **2 months** (2026-06-22): 34 core modules (20 from Wave 1 + 14 from Wave 2.2 — note 1 of the 16 new entries is a test file).
+- **3 months** (2026-07-22): 23 TUI files (18 from Wave 1 + 5 from Wave 2.2).
+- **4 months** (2026-08-22): 3 test files (2 from Wave 1 + 1 new).
+
+**Extension policy:** unchanged from Wave 1. PR with paragraph justifying the new deadline; reviewer rejects habitual extensions in favor of re-planning the split.
 
 **Activation policy:** the `check-coverage-tiers.sh` script runs in **report mode by default** — it prints tier percentages and any VIOLATION lines but exits 0 so the CI check stays green while baseline is below floor. To activate enforcement, add `--enforce` to the script invocation in the `coverage` job (`.github/workflows/ci.yml`). Once baseline reaches a floor for a tier, a dedicated PR adds `--enforce` for that tier's first blocking run. (Per-tier activation can be modeled by running the checker twice with different manifests pointing at a subset of tiers — simplest evolution when we get there.)
 
@@ -440,3 +457,4 @@ Both tiers are within striking distance of their floors; activation is near-term
 | 2026-04-20 | Initial guardrails document | feat/rust-development-guardrails |
 | 2026-04-22 | Appended CI Quality Gates (Wave 1) | chunk-1/ci-wave-1 |
 | 2026-04-22 | Appended CI Quality Gates (Wave 2.1 — Coverage) | chunk-2/coverage-infrastructure |
+| 2026-04-22 | File-size hard cap tightened 500 → 400 (Wave 2.2) | chunk-3/file-size-400 |

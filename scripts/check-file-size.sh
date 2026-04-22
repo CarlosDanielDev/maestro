@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-MAX_LINES=500
+MAX_LINES=400
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ALLOWLIST="$SCRIPT_DIR/allowlist-large-files.txt"

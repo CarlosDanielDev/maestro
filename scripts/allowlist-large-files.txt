@@ -63,3 +63,29 @@ src/tui/screens/pr_review/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket:
 
 # --- Test files (4-month deadline — lower priority, but tracked) ---
 src/integration_tests/stream_parsing.rs # deadline: 2026-08-22, owner: @carlos, ticket: #TBD, plan: break by scenario (happy path / error recovery / edge cases) into separate test files
+
+# --- 400-500 LOC band (added in Wave 2.2 when MAX_LINES flipped 500 → 400) ---
+# These files didn't violate the 500 LOC cap but do violate the tightened
+# 400 LOC cap. Triaged using the same Phase 1b heuristic.
+
+# Test files (lower priority, 4 months):
+src/mascot/tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #TBD, plan: break mascot tests by sub-feature; low priority
+
+# TUI (3 months):
+src/tui/activity_log.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split log-state from draw
+src/tui/app/completion_pipeline.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split pipeline stages into submodules
+src/tui/app/types.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split action types from event types from state types
+src/tui/screens/settings/validation.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split per-field validation rules into separate modules
+src/tui/turboquant_dashboard.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split dashboard-state from per-widget draw
+
+# Core modules (2 months):
+src/adapt/scaffolder.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split template expansion from directory materialization
+src/notifications/slack.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split webhook-client from message-building
+src/provider/azure_devops/mod.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split by resource type (work-items, PRs, pipelines)
+src/provider/github/pr.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split PR-fetching from PR-mutation verbs
+src/sanitize/screen.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split screen-rendering from match-reporting
+src/sanitize/types.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split pattern types from match result types
+src/state/file_claims.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split claim-state from lock-file handling
+src/updater/checker.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split version-check from download/install
+src/work/executor.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split execution loop from retry/backoff
+src/main.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: extract dispatch logic into src/cli/dispatch.rs (keep main.rs minimal — crate entry only)
