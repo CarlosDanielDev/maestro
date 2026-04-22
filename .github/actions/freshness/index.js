@@ -17,6 +17,13 @@ async function fetchWorkflowRuns({ owner, repo, workflowFile, token }) {
       'X-GitHub-Api-Version': '2022-11-28',
     },
   });
+  // 404 = the workflow file itself doesn't exist on main yet
+  // (bootstrap state — the PR introducing nightly.yml is still in
+  // flight). Treat as "no runs" so the freshness check enters
+  // bootstrap mode rather than throwing.
+  if (res.status === 404) {
+    return [];
+  }
   if (!res.ok) {
     throw new Error(`GitHub API error ${res.status}: ${await res.text()}`);
   }
@@ -48,11 +55,12 @@ async function main() {
 
   const runs = await fetchWorkflowRuns({ owner, repo, workflowFile, token });
   if (runs.length === 0) {
-    // Bootstrap mode: the nightly workflow hasn't run on main yet
-    // (e.g., the PR introducing both nightly.yml AND freshness.yml is
-    // still in flight). Exit 0 so the freshness check stays green
-    // while there's literally nothing to check. Once any scheduled
-    // nightly has completed on main, strict freshness applies.
+    // Bootstrap mode: either the workflow file doesn't exist on main
+    // yet (404 from fetchWorkflowRuns), or it exists but has never
+    // been triggered by a scheduled run. Either way, there's nothing
+    // to enforce freshness against — exit 0 so the check stays
+    // green. Once any scheduled nightly completes on main, strict
+    // freshness applies.
     console.log(`No scheduled ${workflowFile} runs found on main yet.`);
     console.log('Freshness check: BOOTSTRAP (no nightly history; passing trivially until first scheduled run lands).');
     process.exit(0);
