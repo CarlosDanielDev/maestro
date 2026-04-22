@@ -33,6 +33,18 @@ if ! command -v yq >/dev/null 2>&1; then
   exit 2
 fi
 
+# Sanity-check yq flavor. Mike Farah's Go-based yq supports `eval` as a
+# subcommand and returns a known version banner. Python's yq (ubuntu apt)
+# treats everything after the binary name as files, which breaks the
+# script in confusing ways. Detect and fail early with a clear message.
+if ! yq --version 2>&1 | grep -qi "mikefarah\|https://github.com/mikefarah/yq"; then
+  echo "error: detected Python-based yq (jq wrapper). check-coverage-tiers.sh" >&2
+  echo "       requires Mike Farah's Go-based yq. Install via:" >&2
+  echo "         brew install yq                                           # macOS" >&2
+  echo "         sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && sudo chmod +x /usr/local/bin/yq   # Linux" >&2
+  exit 2
+fi
+
 # ---------------------------------------------------------------------------
 # Read tier metadata from manifest into parallel indexed arrays (bash 3.2 safe)
 # ---------------------------------------------------------------------------
@@ -53,6 +65,15 @@ while IFS= read -r name; do
 done < <(yq eval '.tiers | keys | .[]' "$MANIFEST")
 
 n_tiers=${#tier_names[@]}
+
+# Guard: if the manifest produced zero tiers, fail loudly instead of
+# letting the downstream array accesses crash with "unbound variable"
+# under set -u.
+if (( n_tiers == 0 )); then
+  echo "error: no tiers found in manifest $MANIFEST" >&2
+  echo "       manifest must define tiers.<name> entries with paths/floor/aspiration" >&2
+  exit 2
+fi
 
 # ---------------------------------------------------------------------------
 # Build a flat "tier_index:glob" list for all non-trivial path lookups.
