@@ -164,6 +164,21 @@ while IFS= read -r line; do
 done < "$LCOV_FILE"
 
 # ---------------------------------------------------------------------------
+# DEBUG: print tier_path_file + first few lcov file matches (remove after fix)
+# ---------------------------------------------------------------------------
+if [[ "${COVERAGE_DEBUG:-}" = "1" ]]; then
+  echo "DEBUG tier_path_file content:"
+  cat "$tier_path_file"
+  echo "DEBUG first 10 SF entries and their tier:"
+  grep -m 10 '^SF:' "$LCOV_FILE" | while IFS= read -r line; do
+    f="${line#SF:}"
+    idx=$(match_tier "$f")
+    name="${tier_names[$idx]}"
+    echo "  $f → tier[$idx] = $name"
+  done
+fi
+
+# ---------------------------------------------------------------------------
 # Compute coverage per tier, check floors, report
 # ---------------------------------------------------------------------------
 violations=0
