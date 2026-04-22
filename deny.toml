@@ -52,14 +52,41 @@ confidence-threshold = 0.8
 exceptions = []
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards = "deny"
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
 allow = []
 deny = []
-skip = []
+skip = [
+    # ratatui pins lru 0.12 which uses hashbrown 0.15; syntect/toml use 0.16.
+    # Upstream ratatui tracking: https://github.com/ratatui-org/ratatui/issues
+    { name = "hashbrown", version = "0.15", reason = "ratatui/lru pin v0.15; syntect/toml use v0.16 — upstream tracking: ratatui" },
+    # crossterm (via ratatui/tui-textarea) pins rustix 0.38; newer deps use 1.x.
+    # Upstream crossterm tracking: https://github.com/crossterm-rs/crossterm/issues
+    { name = "rustix", version = "0.38", reason = "crossterm pins v0.38; newer deps (tempfile/x11rb) use v1.x — upstream tracking: crossterm" },
+    # ratatui/unicode-truncate pin v0.1; maestro/ratatui/tui-textarea use v0.2.
+    # Upstream ratatui tracking: https://github.com/ratatui-org/ratatui/issues
+    { name = "unicode-width", version = "0.1", reason = "ratatui/unicode-truncate pin v0.1; newer uses v0.2 — upstream tracking: ratatui" },
+    # linux-raw-sys: crossterm (0.38 rustix) uses 0.4.15; newer rustix 1.x uses 0.12.1.
+    { name = "linux-raw-sys", version = "0.4", reason = "crossterm (0.38 rustix) uses v0.4; newer rustix uses v0.12 — no upgrade path" },
+    # redox_syscall: parking_lot 0.12 uses 0.5; filetime/libredox use 0.7.4.
+    { name = "redox_syscall", version = "0.5", reason = "parking_lot 0.12 pins v0.5; newer libredox uses v0.7 — no upgrade path" },
+    # getrandom: rand (0.8) uses 0.2.17; uuid uses 0.4.2.
+    { name = "getrandom", version = "0.2", reason = "rand 0.8 pins v0.2.17; newer uuid uses v0.4 — no upgrade path" },
+    # windows-core (sysinfo via 0.57); iana-time-zone/chrono use 0.62.2.
+    { name = "windows-core", version = "0.57", reason = "sysinfo pins v0.57; iana-time-zone/chrono use v0.62 — no upgrade path" },
+    # windows-implement: windows v0.57 (sysinfo) uses 0.57.0; iana-time-zone uses v0.60.2.
+    { name = "windows-implement", version = "0.57", reason = "windows v0.57 (sysinfo) uses v0.57.0; iana-time-zone uses v0.60 — no upgrade path" },
+    # windows-interface: windows v0.57 (sysinfo) uses 0.57.0; iana-time-zone uses v0.59.3.
+    { name = "windows-interface", version = "0.57", reason = "windows v0.57 (sysinfo) uses v0.57.0; iana-time-zone uses v0.59 — no upgrade path" },
+    # windows-result: windows v0.57 (sysinfo) uses 0.1.2; iana-time-zone uses 0.4.1.
+    { name = "windows-result", version = "0.1", reason = "windows v0.57 (sysinfo) uses v0.1.2; iana-time-zone uses v0.4 — no upgrade path" },
+    # windows-sys: ring uses 0.52.0; rustix 0.38/newer uses 0.59.0; clap/tokio use 0.61.2.
+    { name = "windows-sys", version = "0.52", reason = "ring pins v0.52.0; rustix/clap use newer versions — no single upgrade path" },
+    { name = "windows-sys", version = "0.59", reason = "rustix v0.38 pins v0.59.0; clap/tokio use v0.61.2 — no single upgrade path" },
+]
 skip-tree = []
 
 [sources]
