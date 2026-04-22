@@ -205,7 +205,7 @@ fn rank_and_select_body(
     }
     let tb = TokenBudget::new(budget as u64);
     let sel = tb.select(&ranked, |i| estimate_tokens(segments[i]));
-    let mut kept = sel.indices.clone();
+    let mut kept = sel.indices;
     kept.sort_unstable();
     let joined: String = kept
         .iter()

@@ -140,11 +140,13 @@ impl WorktreeManager for MockWorktreeManager {
         if *self.fail_create.lock().unwrap() {
             anyhow::bail!("mock: create error");
         }
-        let mut created = self.created.lock().unwrap();
-        if created.contains(&slug.to_string()) {
-            anyhow::bail!("mock: worktree already exists for {}", slug);
+        {
+            let mut created = self.created.lock().unwrap();
+            if created.contains(&slug.to_string()) {
+                anyhow::bail!("mock: worktree already exists for {}", slug);
+            }
+            created.push(slug.to_string());
         }
-        created.push(slug.to_string());
         Ok(PathBuf::from(format!("/tmp/mock-worktrees/{}", slug)))
     }
 
@@ -152,6 +154,7 @@ impl WorktreeManager for MockWorktreeManager {
         let mut created = self.created.lock().unwrap();
         if let Some(pos) = created.iter().position(|s| s == slug) {
             created.remove(pos);
+            drop(created);
             Ok(())
         } else {
             anyhow::bail!("mock: no worktree for {}", slug)

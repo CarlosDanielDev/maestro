@@ -19,7 +19,7 @@ pub struct BudgetSelection {
 }
 
 impl TokenBudget {
-    pub fn new(limit: u64) -> Self {
+    pub const fn new(limit: u64) -> Self {
         Self { limit }
     }
 

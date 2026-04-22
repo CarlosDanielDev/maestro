@@ -169,9 +169,7 @@ pub fn visible_spans(
     let mut current_text = String::new();
     let mut current_style = window[0].1;
     for &(c, style) in window {
-        if style == current_style {
-            current_text.push(c);
-        } else {
+        if style != current_style {
             if !current_text.is_empty() {
                 result.push(Span::styled(
                     std::mem::take(&mut current_text),
@@ -179,8 +177,8 @@ pub fn visible_spans(
                 ));
             }
             current_style = style;
-            current_text.push(c);
         }
+        current_text.push(c);
     }
     if !current_text.is_empty() {
         result.push(Span::styled(current_text, current_style));

@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 pub fn draw_pr_review_screen(
-    screen: &mut PrReviewScreen,
+    screen: &PrReviewScreen,
     f: &mut Frame,
     area: Rect,
     theme: &Theme,

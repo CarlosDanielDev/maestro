@@ -582,26 +582,29 @@ fn build_fkeys(
     // path in `input_handler::dispatch_fkey_action` reads `action` from
     // the same struct, so the bar label and handler cannot drift.
     use FKeyAction::*;
-    let help = FKeyRelevance::new("F1", "Help", ToggleHelp);
-    let costs = FKeyRelevance::new("F4", "Costs", OpenCostDashboard);
-    let tokens = FKeyRelevance::new("F5", "Tokens", OpenTokenDashboard);
-    let deps = FKeyRelevance::new("F6", "Deps", OpenDependencyGraph);
-    let exit = FKeyRelevance::new("^X", "Exit", Exit);
-
     match vis {
         FKeyVis::SessionAware => vec![
-            help.clone(),
+            FKeyRelevance::new("F1", "Help", ToggleHelp),
             FKeyRelevance::new("F2", "Summary", OpenSummary),
             FKeyRelevance::new("F3", "Full", OpenFullscreenSelected).with_active(has_session),
-            costs.clone(),
-            tokens.clone(),
-            deps.clone(),
+            FKeyRelevance::new("F4", "Costs", OpenCostDashboard),
+            FKeyRelevance::new("F5", "Tokens", OpenTokenDashboard),
+            FKeyRelevance::new("F6", "Deps", OpenDependencyGraph),
             FKeyRelevance::new("F9", "Pause", PauseAll).with_active(is_running),
             FKeyRelevance::new("F10", "Kill", KillSelected)
                 .with_active(has_session && !is_terminal),
-            exit.clone(),
+            FKeyRelevance::new("^X", "Exit", Exit),
         ],
-        FKeyVis::DashboardLike => vec![help, costs, tokens, deps, exit],
-        FKeyVis::Minimal => vec![help, exit],
+        FKeyVis::DashboardLike => vec![
+            FKeyRelevance::new("F1", "Help", ToggleHelp),
+            FKeyRelevance::new("F4", "Costs", OpenCostDashboard),
+            FKeyRelevance::new("F5", "Tokens", OpenTokenDashboard),
+            FKeyRelevance::new("F6", "Deps", OpenDependencyGraph),
+            FKeyRelevance::new("^X", "Exit", Exit),
+        ],
+        FKeyVis::Minimal => vec![
+            FKeyRelevance::new("F1", "Help", ToggleHelp),
+            FKeyRelevance::new("^X", "Exit", Exit),
+        ],
     }
 }

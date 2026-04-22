@@ -101,7 +101,7 @@ pub struct TurboQuantAdapter {
 }
 
 impl TurboQuantAdapter {
-    pub fn new(bit_width: u8) -> Self {
+    pub const fn new(bit_width: u8) -> Self {
         Self {
             bit_width,
             enabled: true,
@@ -118,7 +118,7 @@ impl TurboQuantAdapter {
     }
 
     /// Whether the adapter is currently enabled.
-    pub fn is_active(&self) -> bool {
+    pub const fn is_active(&self) -> bool {
         self.enabled
     }
 
@@ -169,7 +169,7 @@ impl TurboQuantAdapter {
     }
 
     /// Estimate token count from character count (rough: ~4 chars per token).
-    pub(crate) fn estimate_tokens(text: &str) -> u64 {
+    pub(crate) const fn estimate_tokens(text: &str) -> u64 {
         (text.len() as u64).div_ceil(4)
     }
 }
