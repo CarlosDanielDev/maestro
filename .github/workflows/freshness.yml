@@ -1,0 +1,22 @@
+name: Nightly Freshness
+
+# Runs on every PR to main. Verifies the most recent scheduled nightly
+# workflow on main succeeded within the last 3 days. Status check
+# named `nightly-freshness` is required by branch protection (once
+# Wave 3 warmup completes).
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  freshness:
+    name: nightly-freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/freshness
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          max_age_days: '3'
+          workflow_file: 'nightly.yml'

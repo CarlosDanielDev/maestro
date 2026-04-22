@@ -1,0 +1,17 @@
+name: 'Nightly Freshness Check'
+description: 'Verifies the most recent nightly run on main succeeded within the allowed window.'
+inputs:
+  github_token:
+    description: 'GitHub token for repo API access'
+    required: true
+  max_age_days:
+    description: 'Maximum age (days) for the most recent successful nightly'
+    required: false
+    default: '3'
+  workflow_file:
+    description: 'Name of the nightly workflow file (e.g. nightly.yml)'
+    required: false
+    default: 'nightly.yml'
+runs:
+  using: 'node20'
+  main: 'index.js'
