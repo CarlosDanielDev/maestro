@@ -162,7 +162,7 @@ impl SlackClient {
     }
 
     /// Send a test message to verify the webhook is configured correctly.
-    pub async fn send_test(&mut self) -> Result<bool, SlackError> {
+    pub async fn send_test(&self) -> Result<bool, SlackError> {
         let payload = serde_json::json!({
             "blocks": [
                 {

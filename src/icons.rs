@@ -148,7 +148,7 @@ pub fn get(id: IconId) -> &'static str {
 }
 
 /// Pure, testable variant of `get()`. Pass the mode explicitly.
-pub fn get_for_mode(id: IconId, nerd_font: bool) -> &'static str {
+pub const fn get_for_mode(id: IconId, nerd_font: bool) -> &'static str {
     let pair = icon_pair(id);
     if nerd_font { pair.nerd } else { pair.ascii }
 }

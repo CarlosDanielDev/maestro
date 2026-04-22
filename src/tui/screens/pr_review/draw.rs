@@ -13,12 +13,7 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-pub fn draw_pr_review_screen(
-    screen: &mut PrReviewScreen,
-    f: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-) {
+pub fn draw_pr_review_screen(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Theme) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(3), Constraint::Length(1)])

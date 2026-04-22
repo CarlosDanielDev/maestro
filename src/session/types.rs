@@ -23,12 +23,12 @@ pub enum SessionStatus {
 }
 
 impl SessionStatus {
-    pub fn nerd_symbol(&self) -> &'static str {
+    pub const fn nerd_symbol(&self) -> &'static str {
         crate::icons::get_for_mode(self.icon_id(), true)
     }
 
     /// Maps each status to its icon registry entry.
-    pub fn icon_id(&self) -> crate::icons::IconId {
+    pub const fn icon_id(&self) -> crate::icons::IconId {
         use crate::icons::IconId;
         match self {
             Self::Queued => IconId::Hourglass,
@@ -48,7 +48,7 @@ impl SessionStatus {
         }
     }
 
-    pub fn ascii_symbol(&self) -> &'static str {
+    pub const fn ascii_symbol(&self) -> &'static str {
         match self {
             Self::Queued => "[Q]",
             Self::Spawning => "[~]",
@@ -75,7 +75,7 @@ impl SessionStatus {
         }
     }
 
-    pub fn label(&self) -> &'static str {
+    pub const fn label(&self) -> &'static str {
         match self {
             Self::Queued => "QUEUED",
             Self::Spawning => "SPAWNING",
@@ -95,7 +95,7 @@ impl SessionStatus {
     }
 
     /// Returns the set of valid target states from this state.
-    pub fn valid_transitions(&self) -> &'static [SessionStatus] {
+    pub const fn valid_transitions(&self) -> &'static [SessionStatus] {
         use SessionStatus::*;
         match self {
             Queued => &[Spawning, Killed, CiFix, ConflictFix],
@@ -129,7 +129,7 @@ impl SessionStatus {
         self.valid_transitions().contains(&target)
     }
 
-    pub fn is_terminal(&self) -> bool {
+    pub const fn is_terminal(&self) -> bool {
         self.valid_transitions().is_empty()
     }
 }
@@ -159,7 +159,7 @@ pub struct TokenUsage {
 }
 
 impl TokenUsage {
-    pub fn total_tokens(&self) -> u64 {
+    pub const fn total_tokens(&self) -> u64 {
         self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_creation_tokens
     }
 
@@ -191,7 +191,7 @@ impl TokenUsage {
     }
 
     /// Add another TokenUsage into this one (for aggregation across sessions).
-    pub fn accumulate(&mut self, other: &TokenUsage) {
+    pub const fn accumulate(&mut self, other: &TokenUsage) {
         self.input_tokens += other.input_tokens;
         self.output_tokens += other.output_tokens;
         self.cache_read_tokens += other.cache_read_tokens;

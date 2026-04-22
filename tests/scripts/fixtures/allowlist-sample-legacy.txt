@@ -1,0 +1,4 @@
+# Old-format allowlist — bare paths with freeform comments.
+src/big_legacy.rs
+# This is a plain path with a comment below it.
+src/another_legacy.rs

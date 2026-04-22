@@ -9,14 +9,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ALLOWLIST="$SCRIPT_DIR/allowlist-large-files.txt"
 
-# Load allowlist (strip comments and blank lines)
+# Load allowlist — preserve both stripped paths and raw lines.
 allowed=()
+allowed_raw=()
 if [[ -f "$ALLOWLIST" ]]; then
   while IFS= read -r line; do
-    line="${line%%#*}"        # strip comments
-    line="${line// /}"        # strip spaces
-    [[ -z "$line" ]] && continue
-    allowed+=("$line")
+    raw="$line"
+    stripped="${line%%#*}"
+    stripped="${stripped// /}"
+    [[ -z "$stripped" ]] && continue
+    allowed+=("$stripped")
+    allowed_raw+=("$raw")
   done < "$ALLOWLIST"
 fi
 
@@ -31,6 +34,8 @@ is_allowed() {
 violations=0
 
 while IFS= read -r entry; do
+  # Trim leading whitespace from wc output
+  entry=$(echo "$entry" | sed 's/^[[:space:]]*//')
   lines="${entry%% *}"
   file="${entry##* }"
   rel="${file#$ROOT_DIR/}"
@@ -44,6 +49,16 @@ while IFS= read -r entry; do
     violations=$((violations + 1))
   fi
 done < <(find "$ROOT_DIR/src" -name '*.rs' -exec wc -l {} + | grep -v ' total$')
+
+# Deadline enforcement — iterate raw entries to find `deadline: YYYY-MM-DD`.
+today=$(date +%Y-%m-%d)
+for entry in "${allowed_raw[@]+"${allowed_raw[@]}"}"; do
+  deadline=$(echo "$entry" | grep -oE 'deadline: [0-9-]+' | sed 's/deadline: //' || true)
+  if [[ -n "$deadline" && "$deadline" < "$today" ]]; then
+    echo "DEADLINE PAST: $entry"
+    violations=$((violations + 1))
+  fi
+done
 
 if (( violations > 0 )); then
   echo ""

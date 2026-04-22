@@ -100,6 +100,7 @@ impl MilestoneScreen {
     }
 
     #[allow(dead_code)]
+    #[allow(clippy::needless_pass_by_ref_mut)] // Reason: &mut reserved for future tick-driven state mutations
     pub fn tick(&mut self) {}
 
     pub fn selected_milestone(&self) -> Option<&MilestoneEntry> {

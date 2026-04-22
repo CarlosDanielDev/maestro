@@ -2,7 +2,7 @@ use super::types::{StreamEvent, TokenUsage};
 use serde_json::Value;
 
 /// Find a valid char boundary at or after `max_bytes` for safe string slicing.
-fn char_boundary(s: &str, max_bytes: usize) -> usize {
+const fn char_boundary(s: &str, max_bytes: usize) -> usize {
     if max_bytes >= s.len() {
         return s.len();
     }

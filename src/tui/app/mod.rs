@@ -133,7 +133,7 @@ impl App {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (data_tx, data_rx) = mpsc::unbounded_channel();
         let state = store.load().unwrap_or_default();
-        let mut pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx.clone());
+        let mut pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx);
         pool.set_permission_mode(permission_mode);
         pool.set_allowed_tools(allowed_tools);
         Self {

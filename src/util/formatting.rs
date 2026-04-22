@@ -12,7 +12,7 @@ pub fn format_tokens(n: u64) -> String {
 }
 
 /// Find the largest byte offset <= max_bytes that is a valid char boundary.
-pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
+pub const fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
     if s.len() <= max_bytes {
         return s.len();
     }

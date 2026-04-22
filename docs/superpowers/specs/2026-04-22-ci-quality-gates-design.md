@@ -168,11 +168,10 @@ same PR. No "land config, fix later" — that means a broken main.
 
 ### Gate 1.2 — Curated clippy nursery subset
 
-Seven lints chosen for high signal on this codebase:
+Six lints chosen for high signal on this codebase:
 
 ```rust
 #![warn(
-    clippy::missing_const_for_fn,
     clippy::needless_pass_by_ref_mut,
     clippy::redundant_clone,
     clippy::significant_drop_tightening,
@@ -182,13 +181,18 @@ Seven lints chosen for high signal on this codebase:
 )]
 ```
 
+(Originally 7 — `clippy::missing_const_for_fn` was evaluated during
+Wave 1 implementation and produced 213 violations, well past the
+50-violation escalation threshold. Dropped per the Rust-guardrails
+policy of avoiding aspirational lints that add friction without ROI.
+15 genuinely-correct `const fn` promotions made during the evaluation
+were kept as independent quality improvements.)
+
 Added to both `src/lib.rs` and `src/main.rs` (crate roots). `-D warnings`
 promotes to errors in CI.
 
 **Rationale per lint:**
 
-- `missing_const_for_fn`: free performance wins; catches under-specified
-  APIs.
 - `needless_pass_by_ref_mut`: API hygiene.
 - `redundant_clone`: correctness-adjacent; unnecessary clones usually
   indicate confusion about ownership.
@@ -201,9 +205,12 @@ promotes to errors in CI.
 - `branches_sharing_code`: good refactoring signal, low false-positive
   rate.
 
-**Explicitly not included** (evaluated, rejected): `missing_docs_in_private_items`
-(noisy), `use_self` (style), `option_if_let_else` (variable signal),
-`suboptimal_flops` (codebase has almost no floats).
+**Explicitly not included** (evaluated, rejected):
+- `clippy::missing_const_for_fn` — 213 violations on first enable; dropped during Wave 1 implementation. 15 correct `const fn` promotions were kept as independent quality wins.
+- `clippy::missing_docs_in_private_items` — noisy for a binary crate.
+- `use_self` — style opinion, not bug catcher.
+- `option_if_let_else` — variable signal.
+- `suboptimal_flops` — codebase has almost no floating-point math.
 
 Expected: 10-30 violations on first enable. Fix in the same PR.
 

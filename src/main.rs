@@ -1,3 +1,10 @@
+#![warn(clippy::needless_pass_by_ref_mut)]
+#![warn(clippy::redundant_clone)]
+#![warn(clippy::significant_drop_tightening)]
+#![warn(clippy::fallible_impl_from)]
+#![warn(clippy::path_buf_push_overwrite)]
+#![warn(clippy::branches_sharing_code)]
+
 mod budget;
 mod changelog;
 mod cli;

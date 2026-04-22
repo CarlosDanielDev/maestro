@@ -105,6 +105,7 @@ impl HomeScreen {
     }
 
     #[allow(dead_code)] // Reason: tick for animation/refresh — to be wired into event loop
+    #[allow(clippy::needless_pass_by_ref_mut)] // Reason: &mut reserved for future animation state mutations
     pub fn tick(&mut self) {
         // No-op for now; could refresh recent sessions
     }

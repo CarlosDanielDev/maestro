@@ -362,8 +362,52 @@ Don't re-derive patterns — read these and follow their shape:
 
 ---
 
+## CI Quality Gates (Wave 1)
+
+**Status:** active after PR for Chunk 1 of `docs/superpowers/plans/2026-04-22-ci-quality-gates-plan.md` lands.
+
+**Cognitive complexity:** `clippy.toml` sets `cognitive-complexity-threshold = 20` (tightened from 25). Functions exceeding this fail clippy under `-D warnings`. Escape hatch is a targeted `#[allow(clippy::cognitive_complexity)]` with a `// Reason: <short>` comment immediately above the function. Crate-level `#![allow]` is deliberately avoided — every exception is local and reviewable.
+
+**cargo-deny strict mode:** `deny.toml` has `multiple-versions = "deny"` (tightened from `"warn"`). The `skip` list documents every unresolvable transitive duplicate (ratatui/syntect/reqwest et al.) with `reason` + upstream tracking where relevant. Goal is an empty `skip` list; reality is pruning it as upstream releases land.
+
+**Curated clippy nursery lints** (enabled via `#![warn(...)]` in `src/lib.rs` and `src/main.rs`):
+
+- `clippy::needless_pass_by_ref_mut` — API hygiene.
+- `clippy::redundant_clone` — ownership clarity.
+- `clippy::significant_drop_tightening` — matches async policy (no long-held locks across await points).
+- `clippy::fallible_impl_from` — matches §2 error policy (panics-as-bugs). Highest-signal lint in the subset.
+- `clippy::path_buf_push_overwrite` — catches `PathBuf::push("/abs")` footgun.
+- `clippy::branches_sharing_code` — refactoring signal.
+
+**Evaluated and rejected** (deliberate exclusions):
+
+- `clippy::missing_const_for_fn` — produced 213 violations on first enable during Wave 1 implementation. Dropped per this document's philosophy of avoiding aspirational lints that add friction without ROI. 15 genuinely-correct `const fn` promotions found during evaluation were kept.
+- `clippy::missing_docs_in_private_items` — noisy for a binary crate.
+- `clippy::use_self` — style opinion, not a bug catcher.
+- `clippy::option_if_let_else` — variable signal.
+- `clippy::suboptimal_flops` — codebase has almost no floating-point math.
+
+**File-size allowlist format.**
+
+`scripts/allowlist-large-files.txt` uses the deadlined format:
+
+```
+<path> # deadline: YYYY-MM-DD, owner: @handle, ticket: #N, plan: <brief>
+```
+
+CI fails when any deadline is in the past. Extensions require a PR bumping the deadline + a paragraph explaining why the refactor wasn't done. Repeated extensions on the same file are a signal to pick a different split strategy, not to extend again. Removing the gate is an ADR-level change.
+
+During Wave 1 implementation, `scripts/check-file-size.sh` was found to have a pre-existing silent-pass bug: its `wc -l` output parsing left `lines` as an empty string, which made the `(( lines > MAX_LINES ))` comparison evaluate to `0 > 500 → false` for every file. The 500 LOC cap had been cosmetic since its introduction. Fixed in the same PR; 23 previously-invisible violations surfaced and were pre-added to the allowlist with the same 14-day placeholder deadline.
+
+**Pre-flight hook.**
+
+`.claude/hooks/preflight.sh` runs fast per-PR gates locally (fmt + clippy + file-size) so `/implement` catches regressions before a branch is created.
+
+---
+
 ## Amendment history
 
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-04-20 | Initial guardrails document | feat/rust-development-guardrails |
+| 2026-04-22 | Appended CI Quality Gates (Wave 1) | chunk-1/ci-wave-1 |
