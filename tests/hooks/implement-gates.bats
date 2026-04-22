@@ -77,3 +77,28 @@ teardown() {
   [ "$status" -eq 6 ]
   [[ "$output" == *"Working tree has uncommitted changes"* ]]
 }
+
+@test "exits 2 when baseline cargo test fails" {
+  export FAKE_CARGO_TEST_EXIT=1
+  export FAKE_CARGO_TEST_OUT="test result: FAILED. 3 passed; 2 failed; 0 ignored"
+  run bash "$HOOK" 123
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"BASELINE NOT GREEN"* ]]
+}
+
+@test "continues past baseline when cargo test is green" {
+  export FAKE_CARGO_TEST_EXIT=0
+  run bash "$HOOK" 123
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gate log dir"* ]]
+}
+
+@test "dirty tree with (S)tash stashes and continues past baseline" {
+  echo "dirty" > new-file.txt
+  git add new-file.txt
+  export FAKE_CARGO_TEST_EXIT=0
+  run bash -c "echo 'S' | bash '$HOOK' 123"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"stashed as 'auto-stash before /implement #123'"* ]]
+  [ -n "$(git stash list | grep 'auto-stash before /implement #123')" ]
+}

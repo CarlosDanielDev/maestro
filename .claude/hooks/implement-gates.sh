@@ -69,3 +69,11 @@ if [ -n "$(git status --porcelain)" ]; then
       ;;
   esac
 fi
+
+# Gate 7: baseline cargo test must be green.
+if ! cargo test --quiet > "$GATE_LOG_DIR/baseline.log" 2>&1; then
+  echo "implement-gates: BASELINE NOT GREEN — existing tests are failing before /implement ran." >&2
+  echo "implement-gates: The RED gate would pass for the wrong reason. Fix baseline first." >&2
+  echo "implement-gates: See $GATE_LOG_DIR/baseline.log" >&2
+  exit 2
+fi
