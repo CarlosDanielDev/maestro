@@ -272,3 +272,57 @@ Both modes. Invoke security analyst against the newly-written code.
 #### 6j. `subagent-docs-analyst` → docs + directory-tree.md
 
 Both modes. Mandatory at task end.
+
+### Step 7: Handoff
+
+Print a summary:
+
+```
+Implementation complete for Issue #$ISSUE_NUMBER: $TITLE
+
+Gates passed:
+  - Pre-check hook (ok)
+  - Gatekeeper (task_type: $TASK_TYPE)
+  - RED checkpoint (verified failing → passing)
+  - GREEN checkpoint (all tests pass)
+
+Logs: $GATE_LOG_DIR
+
+Next: run /pushup to commit, push, create PR, and close the issue.
+```
+
+---
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Generic failure (gh missing, not authed, not in repo, closed issue, training mode rejected) |
+| 2 | Baseline cargo test failing |
+| 3 | RED gate failed |
+| 4 | GREEN gate failed |
+| 5 | Gatekeeper FAIL (DOR, blockers, contracts) |
+| 6 | Dirty tree, user declined stash |
+| 7+ | Preflight failure (reserved for CI-gates spec) |
+
+---
+
+## Error Handling
+
+- If `gh` CLI not installed → hook exits 1 with install hint.
+- If `gh` not authenticated → hook exits 1 with `gh auth login` hint.
+- If issue closed → hook exits 1. Re-open first or pick a different issue.
+- If dirty tree → prompt (S)tash/(A)bort.
+- If baseline fails → exit 2. Fix baseline first.
+- If gatekeeper FAILs with DOR missing → comment posted, `needs-info` label applied, exit 5.
+- If blockers open → exit 5. Wait for blockers to close.
+- If RED/GREEN fails → exit 3/4. Actionable error with log path.
+
+---
+
+## Do Not
+
+- Run `/implement` for the same issue concurrently in two sessions.
+- Bypass the hook by invoking subagents directly.
+- Skip the RED gate for `implementation` task types — write the failing test first.
