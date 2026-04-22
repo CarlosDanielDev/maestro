@@ -1,0 +1,9 @@
+{
+  "title": "bug: stream-json parser crashes on empty chunk",
+  "body": "## Overview\n\nThe stream-json parser panics when the Claude CLI emits an empty chunk mid-stream.\n\n## Current Behavior\n\nPanics with `index out of bounds` at parser.rs:184.\n\n## Expected Behavior\n\nEmpty chunks are silently skipped; the parser continues on the next frame.\n\n## Steps to Reproduce\n\n1. Run a long Claude session that emits a zero-byte stdout line.\n2. Observe the panic in maestro's TUI.\n\n## Acceptance Criteria\n\n- [ ] Parser no longer panics on empty chunks\n- [ ] An integration test reproduces the original panic on the pre-fix code\n- [ ] Metrics track skipped-empty-chunk count\n\n## Blocked By\n\n- None\n\n## Definition of Done\n\n- [ ] Tests pass\n- [ ] Regression test added",
+  "labels": [{"name": "type:bug"}, {"name": "area:parser"}],
+  "assignees": [],
+  "milestone": null,
+  "state": "OPEN",
+  "comments": []
+}

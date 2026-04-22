@@ -1,0 +1,9 @@
+{
+  "title": "feat: integrate new items API",
+  "body": "## Overview\n\nConsume the new `POST /api/items` endpoint.\n\n## Expected Behavior\n\nmaestro posts items when state changes.\n\n## Acceptance Criteria\n\n- [ ] POST /api/items called on state transitions\n- [ ] Response parsed into ItemResponse struct\n\n## Files to Modify\n\n- src/api/client.rs\n\n## Test Hints\n\nUse wiremock for the HTTP layer.\n\n## Blocked By\n\n- None\n\n## Definition of Done\n\n- [ ] Tests pass",
+  "labels": [{"name": "type:feature"}],
+  "state": "OPEN",
+  "milestone": null,
+  "assignees": [],
+  "comments": []
+}

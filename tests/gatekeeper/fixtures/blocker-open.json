@@ -1,0 +1,9 @@
+{
+  "title": "feat: wire retry policy into session manager",
+  "body": "## Overview\n\nConsume the retry policy defined upstream.\n\n## Expected Behavior\n\nSessions apply retry policy from maestro.toml.\n\n## Acceptance Criteria\n\n- [ ] Sessions honor retry limit\n- [ ] Sessions honor backoff config\n\n## Files to Modify\n\n- src/session/manager.rs\n\n## Test Hints\n\nReuse the fake CLI trait from #42.\n\n## Blocked By\n\n- #42\n\n## Definition of Done\n\n- [ ] Tests pass",
+  "labels": [{"name": "type:feature"}],
+  "state": "OPEN",
+  "milestone": null,
+  "assignees": [],
+  "comments": []
+}

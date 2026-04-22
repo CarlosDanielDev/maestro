@@ -1,0 +1,6 @@
+{
+  "report_version": 1,
+  "status": "PASS",
+  "task_type": "implementation",
+  "blockers": {"passed": true, "open": []}
+}

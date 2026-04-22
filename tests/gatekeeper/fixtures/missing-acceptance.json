@@ -1,0 +1,9 @@
+{
+  "title": "feat: add theming support",
+  "body": "## Overview\n\nAllow users to customize the TUI color scheme.\n\n## Expected Behavior\n\nTheme loads from maestro.toml; defaults to dark.\n\n## Files to Modify\n\n- src/tui/theme.rs (new)\n- src/config.rs\n\n## Test Hints\n\nUnit-test theme parsing. Snapshot-test rendering.\n\n## Blocked By\n\n- None\n\n## Definition of Done\n\n- [ ] Tests pass",
+  "labels": [{"name": "type:feature"}],
+  "assignees": [],
+  "milestone": null,
+  "state": "OPEN",
+  "comments": []
+}

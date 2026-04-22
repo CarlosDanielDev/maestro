@@ -1,0 +1,9 @@
+{
+  "title": "feat: add keyboard shortcut for quit",
+  "body": "## Overview\n\nAdd Q keybind to quit maestro.\n\n## Expected Behavior\n\nQ exits the TUI.\n\n## Acceptance Criteria\n\nPressing Q should quit the app cleanly with no resource leaks. Should also work from any screen.\n\n## Files to Modify\n\n- src/tui/app.rs\n\n## Test Hints\n\nIntegration test on the event loop.\n\n## Blocked By\n\n- None\n\n## Definition of Done\n\n- [ ] Tests pass",
+  "labels": [{"name": "type:feature"}],
+  "state": "OPEN",
+  "milestone": null,
+  "assignees": [],
+  "comments": []
+}

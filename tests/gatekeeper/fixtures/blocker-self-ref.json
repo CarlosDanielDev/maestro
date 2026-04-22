@@ -1,0 +1,10 @@
+{
+  "number": 100,
+  "title": "feat: stuck in a loop",
+  "body": "## Overview\n\n## Expected Behavior\n\nRun.\n\n## Acceptance Criteria\n\n- [ ] Run.\n\n## Files to Modify\n\n- src/lib.rs\n\n## Test Hints\n\nNone.\n\n## Blocked By\n\n- #100\n\n## Definition of Done\n\n- [ ] Tests pass",
+  "labels": [{"name": "type:feature"}],
+  "state": "OPEN",
+  "milestone": null,
+  "assignees": [],
+  "comments": []
+}

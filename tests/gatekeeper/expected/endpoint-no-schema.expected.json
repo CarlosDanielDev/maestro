@@ -1,0 +1,6 @@
+{
+  "report_version": 1,
+  "status": "FAIL",
+  "task_type": "implementation",
+  "contracts": {"passed": false, "missing": ["POST /api/items"]}
+}
