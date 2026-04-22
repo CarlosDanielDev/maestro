@@ -1,0 +1,58 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mutation:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked
+      # --baseline=skip is mandatory when sharding.
+      # The baseline-green assumption is enforced by the regular `test`
+      # job in ci.yml (per-PR, blocking); mutation only runs nightly
+      # after main's test suite is known-green.
+      - name: Run mutation tests (shard ${{ matrix.shard }}/4)
+        run: cargo mutants --shard ${{ matrix.shard }}/4 --no-shuffle --baseline=skip
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          path: mutants.out/
+
+  miri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: miri, rust-src
+      - uses: Swatinem/rust-cache@v2
+      # Tests that spawn subprocesses or hit FFI need
+      # #[cfg_attr(miri, ignore)] annotations — add them as miri
+      # surfaces failures during warmup.
+      - name: Run miri on parser + integration tests
+        run: cargo miri test --package maestro --test '*' 2>&1 | tee miri.log
+      - name: Upload miri log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: miri-log
+          path: miri.log

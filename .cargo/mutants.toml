@@ -1,0 +1,18 @@
+# cargo-mutants configuration for maestro.
+# See: https://mutants.rs/
+#
+# Mutation testing is slow; exclude non-core modules to keep nightly
+# job duration tractable. Scope aligns with the coverage core tier.
+
+exclude_globs = [
+  "src/tui/**",
+  "src/main.rs",
+  "src/lib.rs",
+  "src/integration_tests/**",
+  "**/tests.rs",
+  "**/*_test.rs",
+]
+
+# Generous timeout — some tests are slow on CI runners.
+timeout_multiplier = 5.0
+minimum_test_timeout = 60

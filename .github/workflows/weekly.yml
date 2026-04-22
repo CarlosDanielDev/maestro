@@ -1,0 +1,58 @@
+name: Weekly
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  tsan:
+    # Informational. Posts results to a pinned issue; does NOT block main.
+    # Known false positives on tokio internals — maintained suppressions
+    # list is NOT pursued; weekly report catches real regressions without
+    # the maintenance cost.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      # gh issue create/comment below require this — default token only
+      # has contents:read.
+      contents: read
+      issues: write
+    env:
+      RUSTFLAGS: "-Zsanitizer=thread"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: rust-src
+      - name: Run async tests under ThreadSanitizer
+        run: |
+          cargo +nightly test \
+            --target x86_64-unknown-linux-gnu \
+            -Z build-std \
+            -- --test-threads=1 2>&1 | tee tsan.log
+        continue-on-error: true
+      - name: Post summary to pinned issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Use env-var indirection for tsan output — keeps the
+          # raw untrusted log bytes out of the shell-expansion path
+          # (github.blog workflow-injection hardening).
+          issue_number=$(gh issue list --label "tsan-weekly" --limit 1 --json number --jq '.[0].number' 2>/dev/null || true)
+          if [[ -z "$issue_number" ]]; then
+            issue_number=$(gh issue create \
+              --title "Weekly ThreadSanitizer Report" \
+              --label "tsan-weekly" \
+              --body "Auto-updated by .github/workflows/weekly.yml. See the latest comment for the most recent tsan run." \
+              --json number --jq '.number')
+          fi
+          TSAN_SUMMARY=$(tail -n 40 tsan.log | head -c 10000)
+          RUN_STAMP=$(date -u +%Y-%m-%d-%H:%M-UTC)
+          printf 'Run %s:\n\n```\n%s\n```\n' "$RUN_STAMP" "$TSAN_SUMMARY" > /tmp/tsan-comment.md
+          gh issue comment "$issue_number" --body-file /tmp/tsan-comment.md

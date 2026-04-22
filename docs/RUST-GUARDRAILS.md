@@ -476,6 +476,36 @@ CI fails on new violations not in the debt file, or on debt entries whose deadli
 
 **Script v1 limitations (documented):** brace-group imports (`use crate::mod::{A, B};`) are silently skipped; `pub use` re-exports are treated like plain `use`. Addressable with a future Rust-parser upgrade; acceptable for v1 per the spec's "simple enough not to need a full parser" rationale.
 
+---
+
+## CI Quality Gates (Wave 3 — Nightly Heavyweight)
+
+**Status:** infrastructure landed 2026-04-22 via chunk-5/wave-3-nightly. Branch protection activation deferred until after warmup (2 weeks mutation, 1 week miri).
+
+**Scheduled workflows:**
+
+- **`.github/workflows/nightly.yml`** — runs daily at 03:00 UTC.
+  - `mutation` (4 shards, `--baseline=skip`): cargo-mutants on the core tier (same exclude_globs as the coverage core tier). Target ≥ 80% mutation score after warmup.
+  - `miri`: `cargo miri test --package maestro --test '*'` on the integration test surface. Pass/fail threshold. Tests that spawn subprocesses or hit FFI need `#[cfg_attr(miri, ignore)]` annotations — added incrementally as miri surfaces failures during warmup.
+
+- **`.github/workflows/weekly.yml`** — runs Sundays 03:00 UTC.
+  - `tsan`: ThreadSanitizer (`RUSTFLAGS="-Zsanitizer=thread"`) on async tests. **Informational only** — posts results to a pinned GitHub issue (`tsan-weekly` label). Does NOT block main. Rationale for informational: tsan has known false positives on tokio internals; maintaining a suppressions list isn't worth the cost for the signal weekly reports already provide.
+
+**Branch protection (activation pending):**
+
+- `nightly-freshness` status check required. Provided by the freshness bot at `.github/actions/freshness/` (Node 20 GitHub Action, stdlib only — no npm deps). Fails when the most recent scheduled nightly on main succeeded > 3 days ago (or failed, or didn't run). Workflow: `.github/workflows/freshness.yml` runs on every PR to main.
+
+**Warmup:** nightly workflow lands and reports for 2 weeks before branch protection activates for mutation; 1 week for miri. During warmup, iterate on timeouts / exclude-globs / `#[cfg_attr(miri, ignore)]` annotations.
+
+**Activation procedure:** once warmup is clean, edit the branch protection rule (Settings → Branches → main) to add the following required status checks:
+- `Nightly / mutation (shard 0)` through `Nightly / mutation (shard 3)`
+- `Nightly / miri`
+- `nightly-freshness`
+
+**Rollback:** if nightly regressions produce merge-blocking friction, remove those checks from the required-status list. Nightly still runs (catches regressions); doesn't block. Investigate, then re-activate.
+
+**Smoke check:** `docs/ci-smoke-check.md` documents 10 scenarios for manual verification before tagging any release that modifies CI infrastructure.
+
 **Activation policy:** the `check-coverage-tiers.sh` script runs in **report mode by default** — it prints tier percentages and any VIOLATION lines but exits 0 so the CI check stays green while baseline is below floor. To activate enforcement, add `--enforce` to the script invocation in the `coverage` job (`.github/workflows/ci.yml`). Once baseline reaches a floor for a tier, a dedicated PR adds `--enforce` for that tier's first blocking run. (Per-tier activation can be modeled by running the checker twice with different manifests pointing at a subset of tiers — simplest evolution when we get there.)
 
 **Ratchet:** deferred until after floor activation. Enabling ratchet during baseline phase would block every PR that doesn't add tests, including refactors and documentation changes.
@@ -493,3 +523,4 @@ CI fails on new violations not in the debt file, or on debt entries whose deadli
 | 2026-04-22 | Appended CI Quality Gates (Wave 2.1 — Coverage) | chunk-2/coverage-infrastructure |
 | 2026-04-22 | File-size hard cap tightened 500 → 400 (Wave 2.2) | chunk-3/file-size-400 |
 | 2026-04-22 | Appended CI Quality Gates (Wave 2.3 — Layer Violations) | chunk-4/layer-violations |
+| 2026-04-22 | Appended CI Quality Gates (Wave 3 — Nightly Heavyweight) | chunk-5/wave-3-nightly |
