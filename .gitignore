@@ -20,3 +20,10 @@ maestro-prompt-history.json
 .vscode/
 *.iml
 settings.local.json
+
+# Python (harness hook tests)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
