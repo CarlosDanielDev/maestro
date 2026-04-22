@@ -1,28 +1,65 @@
-# Temporary allowlist for files exceeding the 500-line limit.
-# Remove entries as files are refactored (v0.9.0 milestone).
-src/tui/screens/issue_browser/mod.rs
-# issue_browser/mod.rs: ~260 lines code + 665 tests
-src/tui/screens/home/mod.rs
-# home/mod.rs: 205 lines code + 640 tests
-src/tui/mod.rs
-# event loop is tightly coupled — 872 lines with ~210 of tests
-src/tui/theme.rs
-src/config.rs
-src/github/client.rs
-src/tui/ui.rs
-src/tui/screens/prompt_input.rs
-src/tui/markdown.rs
-src/github/ci.rs
-src/doctor.rs
-src/work/assigner.rs
-src/session/types.rs
-src/integration_tests/stream_parsing.rs
-src/tui/widgets/ci_monitor.rs
-src/tui/screens/milestone.rs
-src/session/pool.rs
-src/github/types.rs
-src/cli.rs
-src/prompts.rs
-src/tui/screens/queue_confirmation.rs
-src/tui/input_handler.rs
-src/tui/navigation/mode_hints.rs
+# Allowlist for files exceeding scripts/check-file-size.sh cap.
+# Format: <path> # deadline: YYYY-MM-DD, owner: @handle, ticket: #N, plan: <brief>
+# Entries without a deadline field are tolerated but discouraged.
+# CI fails when any deadline is in the past.
+#
+# Phase 1b triage (follow-up PR within 14 days of Wave 1 merge) will replace
+# placeholder deadlines with real ones, real split plans, and reassign owners
+# if appropriate.
+#
+# Scope expanded during Task 1.1 — a pre-existing silent-pass bug in
+# check-file-size.sh (fixed in the same PR) surfaced 23 previously-invisible
+# violations that had been slipping past CI. All 23 are pre-added here with
+# the same placeholder deadline.
+
+# --- Originally allowlisted (from pre-existing list, stale src/github/* removed) ---
+src/tui/screens/issue_browser/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/screens/home/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/theme.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/config.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/ui.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/screens/prompt_input.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/markdown.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/doctor.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/work/assigner.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/session/types.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/integration_tests/stream_parsing.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/widgets/ci_monitor.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/screens/milestone.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/session/pool.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/cli.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/prompts.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/screens/queue_confirmation.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/input_handler.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/navigation/mode_hints.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+
+# --- Stale src/github/* entries from pre-existing list, REMOVED during this migration:
+#     src/github/client.rs → replaced by src/provider/github/client.rs below
+#     src/github/ci.rs     → replaced by src/provider/github/ci.rs below
+#     src/github/types.rs  → replaced by src/provider/github/types.rs below
+
+# --- Newly surfaced by check-file-size.sh bug fix (Task 1.1) ---
+src/adapt/materializer.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/adapt/prompts.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/adapt/scanner.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/adapt/knowledge.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/app/tests.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/marquee.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/navigation/keymap.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/screens/settings/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/screens/adapt/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/screens/issue_browser/draw.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/screens/pr_review/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/tui/panels.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/sanitize/scanner.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/provider/github/types.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/provider/github/ci.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/provider/github/client.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/turboquant/adapter.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/session/transition.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/session/fork.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/session/intent.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/session/manager.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/session/parser.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+src/session/retry.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
