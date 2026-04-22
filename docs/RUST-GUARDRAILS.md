@@ -419,7 +419,11 @@ During Wave 1 implementation, `scripts/check-file-size.sh` was found to have a p
 | tui | `src/tui/**` | 70.0% | — |
 | excluded | `main.rs`, `lib.rs`, `integration_tests/**`, `*_test.rs`, `tests.rs` | — | — |
 
-**Baseline measurement:** the CI job's first run on the introducing PR produces the measured baseline. Updated here in a follow-up commit once the numbers are known. Expected range based on codebase inspection: core ≈ 65-80%, tui ≈ 30-50%.
+**Baseline measurement (2026-04-22, PR #431):**
+- core: 87.6% (floor: 90.0%) — below by 2.4 pp
+- tui: 67.4% (floor: 70.0%) — below by 2.6 pp
+
+Both tiers are within striking distance of their floors; activation is near-term test-writing, not a multi-week project. Suggested sequence: add tests for the largest uncovered modules in each tier, rerun `coverage` to see the delta, repeat until ≥ floor, then open a follow-up PR that removes `continue-on-error` for that tier.
 
 **Activation policy:** `continue-on-error: true` is active for the `coverage` job until baseline reaches floor. At that point, a dedicated PR removes `continue-on-error` per-tier (tiers activate independently — core may be blocking while tui is still reporting-only).
 
