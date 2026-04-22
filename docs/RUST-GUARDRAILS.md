@@ -405,9 +405,38 @@ During Wave 1 implementation, `scripts/check-file-size.sh` was found to have a p
 
 ---
 
+## CI Quality Gates (Wave 2.1 — Coverage)
+
+**Status:** reporting-only during baseline phase. Per-tier floors activate when baseline reaches the respective floor.
+
+**Tool:** `cargo-llvm-cov`. Tier manifest: `scripts/coverage-tiers.yml`. Enforcement: `scripts/check-coverage-tiers.sh`. CI job: `coverage` (runs per-PR, `continue-on-error: true` during baseline).
+
+**Tier floors:**
+
+| Tier | Paths | Floor | Aspiration |
+|------|-------|-------|------------|
+| core | `session/**`, `state/**`, `adapt/**`, `turboquant/**`, `gates/**`, `provider/**`, `config.rs`, `cli.rs` | 90.0% | 96.0% |
+| tui | `src/tui/**` | 70.0% | — |
+| excluded | `main.rs`, `lib.rs`, `integration_tests/**`, `*_test.rs`, `tests.rs` | — | — |
+
+**Baseline measurement (2026-04-22, PR #431):**
+- core: 87.6% (floor: 90.0%) — below by 2.4 pp
+- tui: 67.4% (floor: 70.0%) — below by 2.6 pp
+
+Both tiers are within striking distance of their floors; activation is near-term test-writing, not a multi-week project. Suggested sequence: add tests for the largest uncovered modules in each tier, rerun `coverage` to see the delta, repeat until ≥ floor, then open a follow-up PR that removes `continue-on-error` for that tier.
+
+**Activation policy:** the `check-coverage-tiers.sh` script runs in **report mode by default** — it prints tier percentages and any VIOLATION lines but exits 0 so the CI check stays green while baseline is below floor. To activate enforcement, add `--enforce` to the script invocation in the `coverage` job (`.github/workflows/ci.yml`). Once baseline reaches a floor for a tier, a dedicated PR adds `--enforce` for that tier's first blocking run. (Per-tier activation can be modeled by running the checker twice with different manifests pointing at a subset of tiers — simplest evolution when we get there.)
+
+**Ratchet:** deferred until after floor activation. Enabling ratchet during baseline phase would block every PR that doesn't add tests, including refactors and documentation changes.
+
+**Local measurement prerequisite:** `cargo-llvm-cov` requires the `llvm-tools-preview` component, installed via `rustup component add llvm-tools-preview`. Machines without `rustup` (brew-installed Rust, Nix-installed Rust) can't run coverage locally; use CI artifacts instead.
+
+---
+
 ## Amendment history
 
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-04-20 | Initial guardrails document | feat/rust-development-guardrails |
 | 2026-04-22 | Appended CI Quality Gates (Wave 1) | chunk-1/ci-wave-1 |
+| 2026-04-22 | Appended CI Quality Gates (Wave 2.1 — Coverage) | chunk-2/coverage-infrastructure |

@@ -1,0 +1,13 @@
+TN:
+SF:src/session/manager.rs
+LF:100
+LH:95
+end_of_record
+SF:src/tui/app.rs
+LF:200
+LH:100
+end_of_record
+SF:src/main.rs
+LF:50
+LH:0
+end_of_record

@@ -82,3 +82,34 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           ignore: RUSTSEC-2025-0141,RUSTSEC-2024-0436,RUSTSEC-2024-0320,RUSTSEC-2026-0097,RUSTSEC-2026-0098,RUSTSEC-2026-0099,RUSTSEC-2026-0104
+
+  coverage:
+    # Wave 2.1 — report mode during baseline phase.
+    # The script exits 0 by default (report mode) — it prints tier
+    # percentages and VIOLATION lines for visibility but keeps the CI
+    # check green. Activation is adding `--enforce` to the final script
+    # invocation below, which flips the script to strict-exit mode.
+    # Activate once baseline reaches the floor for a tier; each tier
+    # activation is a dedicated PR.
+    name: Coverage Tiers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install yq (Mike Farah Go-based, not Python apt package)
+        # Ubuntu's apt `yq` is the Python jq-wrapper, which has a different
+        # CLI from the Go-based Mike Farah yq used by check-coverage-tiers.sh.
+        # Install the Go binary directly.
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+      - name: Generate lcov
+        run: cargo llvm-cov --workspace --lcov --output-path coverage.lcov
+      - name: Check coverage tiers
+        run: bash scripts/check-coverage-tiers.sh coverage.lcov
