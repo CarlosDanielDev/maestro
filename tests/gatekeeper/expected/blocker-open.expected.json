@@ -1,0 +1,8 @@
+{
+  "report_version": 1,
+  "status": "FAIL",
+  "task_type": "implementation",
+  "dor": {"passed": true, "missing_sections": [], "weak_sections": []},
+  "blockers": {"passed": false, "open": [{"number": 42, "state": "OPEN"}]},
+  "contracts": {"passed": true, "missing": []}
+}
