@@ -89,4 +89,50 @@ impl WidgetKind {
             _ => false,
         }
     }
+
+    /// Short `(key, label)` hint describing how to edit the focused widget.
+    pub fn edit_hint(&self) -> (&'static str, &'static str) {
+        match self {
+            Self::Toggle(_) => ("Space", "Toggle"),
+            Self::Dropdown(_) => ("←/→", "Change"),
+            Self::NumberStepper(_) => ("←/→", "Adjust"),
+            Self::TextInput(_) => ("Enter", "Edit"),
+            Self::ListEditor(_) => ("Enter", "Edit list"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn edit_hint_toggle() {
+        let w = WidgetKind::Toggle(Toggle::new("x", false));
+        assert_eq!(w.edit_hint(), ("Space", "Toggle"));
+    }
+
+    #[test]
+    fn edit_hint_dropdown() {
+        let w = WidgetKind::Dropdown(Dropdown::new("x", vec!["a".into()], 0));
+        assert_eq!(w.edit_hint(), ("←/→", "Change"));
+    }
+
+    #[test]
+    fn edit_hint_number_stepper() {
+        let w = WidgetKind::NumberStepper(NumberStepper::new("x", 1, 0, 10));
+        assert_eq!(w.edit_hint(), ("←/→", "Adjust"));
+    }
+
+    #[test]
+    fn edit_hint_text_input() {
+        let w = WidgetKind::TextInput(TextInput::new("x", ""));
+        assert_eq!(w.edit_hint(), ("Enter", "Edit"));
+    }
+
+    #[test]
+    fn edit_hint_list_editor() {
+        let w = WidgetKind::ListEditor(ListEditor::new("x", vec![]));
+        assert_eq!(w.edit_hint(), ("Enter", "Edit list"));
+    }
 }

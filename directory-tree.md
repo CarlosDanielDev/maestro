@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-21 00:00 (UTC)
+> Last updated: 2026-04-22 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -228,10 +228,10 @@ maestro/
 │   │       │   ├── mod.rs                 # ReleaseNotesScreen struct with Screen trait impl
 │   │       │   └── draw.rs                # ratatui rendering for release notes display
 │   │       └── settings/                  # Settings screen components  [Issue #124, #146]
-│   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent; Sessions tab gains hollow-retry widgets: [policy] dropdown (always/intent-aware/never), [work_max_retries] stepper, [consultation_max_retries] stepper  [Issue #275]
+│   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent; Sessions tab gains hollow-retry widgets: [policy] dropdown (always/intent-aware/never), [work_max_retries] stepper, [consultation_max_retries] stepper; footer built from focused widget's edit_hint() so edit keys (Space/Enter/←→) are always advertised; KeymapProvider::keybindings() gains a third "Edit" group for consistent ? help overlay  [Issue #275, #432]
 │   │           └── validation.rs          # Settings field validation helpers
 │   │   └── widgets/                       # Reusable TUI widget components  [Issue #124]
-│   │       ├── mod.rs                     # Module re-exports for all widgets
+│   │       ├── mod.rs                     # Module re-exports for all widgets; WidgetKind::edit_hint() returns a contextual (key, label) tuple per variant used by SettingsScreen to build the footer  [Issue #432]
 │   │       ├── ci_monitor.rs              # CiMonitorWidget: compact bordered box rendering live CI check-run status for a PR; status icons, check names, elapsed times, and a summary footer
 │   │       ├── dropdown.rs                # Dropdown selection widget with keyboard navigation
 │   │       ├── list_editor.rs             # Editable list widget for adding and removing string items
@@ -395,7 +395,7 @@ maestro/
 | `src/tui/screens/wrap.rs` | Soft-wrap utilities: `soft_wrap_lines()` splits a multi-line string into display lines that fit within a given column width using `unicode-width` for correct grapheme measurement (Issue #263) |
 | `src/tui/screens/hollow_retry.rs` | `HollowRetryScreen`: minimal retry prompt overlay for stalled sessions awaiting user confirmation |
 | `src/tui/screens/queue_confirmation.rs` | `QueueConfirmationScreen`: confirmation overlay before bulk-queuing selected issues from the issue browser |
-| `src/tui/screens/settings/mod.rs` | `SettingsScreen`: tabbed interactive settings UI; `Flags` tab shows all feature flags with name, state, source (`Default`/`Config`/`Cli`), and description; read-only display with green accent on focused fields (Issues #124, #146) |
+| `src/tui/screens/settings/mod.rs` | `SettingsScreen`: tabbed interactive settings UI; `Flags` tab shows all feature flags with name, state, source (`Default`/`Config`/`Cli`), and description; footer built from focused widget's `edit_hint()` so edit keys (`Space`/`Enter`/`←→`) are always advertised; `KeymapProvider::keybindings()` gains a third `"Edit"` group for the `?` help overlay (Issues #124, #146, #432) |
 | `src/icon_mode.rs` | Shared icon mode detection: `AtomicBool` global, `init_from_config()`, `use_nerd_font()`; reads `tui.ascii_icons` config and `MAESTRO_ASCII_ICONS` env var (Issue #307) |
 | `src/icons.rs` | Shared icon registry: `IconId` enum (38 variants + `NeedsReview`), `IconPair` struct, `icon_pair()` const jump table, `get(IconId)`, `get_for_mode(id, nerd_font)` (Issue #308) |
 | `src/tui/icons.rs` | Thin re-export shim: re-exports all public items from `src/icon_mode.rs` and `src/icons.rs` so existing `tui::icons::` import paths remain valid (Issues #307, #308) |

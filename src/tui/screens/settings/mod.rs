@@ -1229,17 +1229,19 @@ impl Screen for SettingsScreen {
                 theme,
             );
         } else {
-            draw_keybinds_bar(
-                f,
-                chunks[3],
-                &[
-                    ("Tab", "Tab"),
-                    ("↑/↓", "Field"),
-                    ("Esc", "Back"),
-                    ("Ctrl+s", "Save"),
-                ],
-                theme,
-            );
+            let edit_hint = self
+                .current_fields()
+                .get(self.field_index)
+                .map(|field| field.widget.edit_hint());
+            let mut entries: Vec<(&str, &str)> = Vec::with_capacity(5);
+            entries.push(("Tab", "Tab"));
+            entries.push(("↑/↓", "Field"));
+            if let Some((key, label)) = edit_hint {
+                entries.push((key, label));
+            }
+            entries.push(("Ctrl+s", "Save"));
+            entries.push(("Esc", "Back"));
+            draw_keybinds_bar(f, chunks[3], &entries, theme);
         }
     }
 
@@ -1273,6 +1275,23 @@ impl KeymapProvider for SettingsScreen {
                 ],
             },
             KeyBindingGroup {
+                title: "Edit",
+                bindings: vec![
+                    KeyBinding {
+                        key: "Space/Enter",
+                        description: "Toggle or begin editing focused field",
+                    },
+                    KeyBinding {
+                        key: "←/→ or h/l",
+                        description: "Adjust dropdown / number",
+                    },
+                    KeyBinding {
+                        key: "Enter",
+                        description: "Edit text / list field",
+                    },
+                ],
+            },
+            KeyBindingGroup {
                 title: "Actions",
                 bindings: vec![
                     KeyBinding {
@@ -1295,6 +1314,7 @@ mod tests {
     use crate::flags::store::FeatureFlags as TestFeatureFlags;
     use crate::tui::screens::test_helpers::key_event;
     use crossterm::event::{KeyEventKind, KeyEventState};
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn make_flags() -> TestFeatureFlags {
         TestFeatureFlags::default()
@@ -1767,11 +1787,13 @@ alert_threshold_pct = 80
     fn integration_keybindings_grouped_logically() {
         let screen = SettingsScreen::new(make_config(), make_flags());
         let groups = screen.keybindings();
-        assert_eq!(groups.len(), 2);
+        assert_eq!(groups.len(), 3);
         assert_eq!(groups[0].title, "Navigation");
-        assert_eq!(groups[1].title, "Actions");
+        assert_eq!(groups[1].title, "Edit");
+        assert_eq!(groups[2].title, "Actions");
         assert!(groups[0].bindings.len() >= 3);
         assert!(groups[1].bindings.len() >= 2);
+        assert!(groups[2].bindings.len() >= 2);
     }
 
     // --- Issue #146: Feature flags display tests ---
@@ -2076,5 +2098,140 @@ alert_threshold_pct = 80
             screen.config.sessions.hollow_retry.consultation_max_retries,
             3
         );
+    }
+
+    fn render_settings_to_string(screen: &mut SettingsScreen, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = Theme::dark();
+        terminal
+            .draw(|f| {
+                screen.draw(f, f.area(), &theme);
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Return the keybinds bar row — the second-to-last line of the rendered
+    /// output. The final line is the outer block's bottom border.
+    fn keybinds_row(s: &str) -> String {
+        let lines: Vec<&str> = s.lines().collect();
+        lines
+            .get(lines.len().saturating_sub(2))
+            .copied()
+            .unwrap_or("")
+            .to_string()
+    }
+
+    #[test]
+    fn keybind_bar_project_text_input_shows_enter_edit() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        let output = render_settings_to_string(&mut screen, 80, 10);
+        let row = keybinds_row(&output);
+        assert!(
+            row.contains("Enter"),
+            "expected 'Enter' in keybinds row: {row}"
+        );
+        assert!(
+            row.contains("Edit"),
+            "expected 'Edit' in keybinds row: {row}"
+        );
+    }
+
+    #[test]
+    fn keybind_bar_turboquant_toggle_shows_space_toggle() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        for _ in 0..10 {
+            screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        }
+        assert_eq!(screen.active_tab(), SettingsTab::TurboQuant);
+        assert_eq!(screen.field_index, 0);
+        let output = render_settings_to_string(&mut screen, 80, 10);
+        let row = keybinds_row(&output);
+        assert!(
+            row.contains("Space"),
+            "expected 'Space' in keybinds row: {row}"
+        );
+        assert!(
+            row.contains("Toggle"),
+            "expected 'Toggle' in keybinds row: {row}"
+        );
+    }
+
+    #[test]
+    fn keybind_bar_turboquant_dropdown_shows_arrows_change() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        for _ in 0..10 {
+            screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        }
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.field_index, 2);
+        let output = render_settings_to_string(&mut screen, 80, 10);
+        let row = keybinds_row(&output);
+        assert!(row.contains("←/→"), "expected '←/→' in keybinds row: {row}");
+        assert!(
+            row.contains("Change"),
+            "expected 'Change' in keybinds row: {row}"
+        );
+    }
+
+    #[test]
+    fn keybind_bar_flags_tab_has_no_widget_hints() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        for _ in 0..9 {
+            screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        }
+        assert_eq!(screen.active_tab(), SettingsTab::Flags);
+        let output = render_settings_to_string(&mut screen, 80, 10);
+        let row = keybinds_row(&output);
+        assert!(
+            !row.contains("Space"),
+            "Flags bar must not contain 'Space': {row}"
+        );
+        assert!(
+            !row.contains("Change"),
+            "Flags bar must not contain 'Change': {row}"
+        );
+    }
+
+    #[test]
+    fn keybind_bar_list_editor_still_shows_save_esc_at_80_cols() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        for _ in 0..11 {
+            screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        }
+        assert_eq!(screen.active_tab(), SettingsTab::Advanced);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+        assert_eq!(screen.field_index, 2);
+        let output = render_settings_to_string(&mut screen, 80, 10);
+        let row = keybinds_row(&output);
+        assert!(
+            row.contains("Ctrl+s"),
+            "expected 'Ctrl+s' in keybinds row: {row}"
+        );
+        assert!(row.contains("Esc"), "expected 'Esc' in keybinds row: {row}");
+    }
+
+    #[test]
+    fn keybindings_includes_edit_group() {
+        let screen = SettingsScreen::new(make_config(), make_flags());
+        let groups = screen.keybindings();
+        assert!(
+            groups.len() >= 3,
+            "expected at least 3 keybinding groups, got {}",
+            groups.len()
+        );
+        let has_edit = groups.iter().any(|g| g.title == "Edit");
+        assert!(has_edit, "expected a group titled 'Edit' in keybindings");
     }
 }
