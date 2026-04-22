@@ -82,3 +82,27 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           ignore: RUSTSEC-2025-0141,RUSTSEC-2024-0436,RUSTSEC-2024-0320,RUSTSEC-2026-0097,RUSTSEC-2026-0098,RUSTSEC-2026-0099,RUSTSEC-2026-0104
+
+  coverage:
+    # Wave 2.1 — reporting-only during baseline phase.
+    # Once baseline coverage reaches each tier's floor, a follow-up PR
+    # removes continue-on-error per-tier (see docs/RUST-GUARDRAILS.md
+    # § CI Quality Gates Wave 2.1). Ratchet logic is deferred until
+    # after floor activation.
+    name: Coverage Tiers
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install yq
+        run: sudo apt-get update && sudo apt-get install -y yq
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+      - name: Generate lcov
+        run: cargo llvm-cov --workspace --lcov --output-path coverage.lcov
+      - name: Check coverage tiers
+        run: bash scripts/check-coverage-tiers.sh coverage.lcov
