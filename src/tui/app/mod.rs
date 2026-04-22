@@ -60,6 +60,7 @@ pub struct App {
     pub work_assignment_service: Option<WorkAssignmentService>,
     pub github_client: Option<Box<dyn GitHubClient>>,
     pub config: Option<Config>,
+    pub config_path: Option<std::path::PathBuf>,
     pub(crate) pending_issue_completions: Vec<PendingIssueCompletion>,
     pub(crate) pending_hooks: Vec<PendingHook>,
     pub health_monitor: Box<dyn HealthCheck>,
@@ -150,6 +151,7 @@ impl App {
             work_assignment_service: None,
             github_client: None,
             config: None,
+            config_path: None,
             pending_issue_completions: Vec::new(),
             pending_hooks: Vec::new(),
             health_monitor: Box::new(HealthMonitor::new()),
@@ -268,6 +270,12 @@ impl App {
             self.flags.set_enabled(crate::flags::Flag::TurboQuant, true);
         }
         self.config = Some(config);
+    }
+
+    /// Record the filesystem path the config was loaded from, so the Settings
+    /// screen can save back to the same file regardless of CWD at save time.
+    pub fn set_config_path(&mut self, path: std::path::PathBuf) {
+        self.config_path = Some(path);
     }
 
     /// Returns the preview theme if set, otherwise the base theme.

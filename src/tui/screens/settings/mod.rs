@@ -2,13 +2,15 @@ pub mod validation;
 
 use std::collections::HashMap;
 
+use anyhow::Context;
+
 use crate::config::Config;
 use crate::flags::FlagSource;
 use crate::flags::store::FeatureFlags;
 use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
-use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
+use crate::tui::screens::{ScreenAction, draw_keybinds_bar, sanitize_for_terminal};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
     Dropdown, ListEditor, NumberStepper, TextInput, Toggle, WidgetAction, WidgetKind,
@@ -94,6 +96,7 @@ pub struct SettingsScreen {
     scroll_offset: usize,
     confirm_discard: bool,
     save_flash: Option<std::time::Instant>,
+    save_error_flash: Option<(String, std::time::Instant)>,
     pub live_preview: bool,
     feature_flags: FeatureFlags,
     flags_selected: usize,
@@ -125,6 +128,7 @@ impl SettingsScreen {
             scroll_offset: 0,
             confirm_discard: false,
             save_flash: None,
+            save_error_flash: None,
             live_preview: false,
             feature_flags: flags,
             flags_selected: 0,
@@ -165,11 +169,18 @@ impl SettingsScreen {
     }
 
     fn save_config(&mut self) -> Result<(), anyhow::Error> {
-        if let Some(ref path) = self.config_path {
-            self.config.save(path)?;
-        }
+        let Some(path) = self.config_path.as_ref() else {
+            tracing::warn!("Settings save attempted with no config_path resolved");
+            anyhow::bail!(
+                "No config file resolved — cannot save. Run `maestro init` to create one."
+            );
+        };
+        self.config
+            .save(path)
+            .with_context(|| format!("saving settings to {}", path.display()))?;
         self.original_config = self.config.clone();
         self.save_flash = Some(std::time::Instant::now());
+        self.save_error_flash = None;
         Ok(())
     }
 
@@ -1097,11 +1108,20 @@ impl Screen for SettingsScreen {
                 if self.has_validation_errors() {
                     return ScreenAction::None;
                 }
-                let _ = self.save_config();
-                let config = self.config.clone();
-                // Promote preview to actual theme on save
-                self.live_preview = false;
-                ScreenAction::UpdateConfig(Box::new(config))
+                match self.save_config() {
+                    Ok(()) => {
+                        let config = self.config.clone();
+                        // Promote preview to actual theme on save
+                        self.live_preview = false;
+                        ScreenAction::UpdateConfig(Box::new(config))
+                    }
+                    Err(e) => {
+                        tracing::error!("Settings save failed: {:#}", e);
+                        let stored: String = format!("{:#}", e).chars().take(512).collect();
+                        self.save_error_flash = Some((stored, std::time::Instant::now()));
+                        ScreenAction::None
+                    }
+                }
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 self.reset_to_original();
@@ -1161,7 +1181,23 @@ impl Screen for SettingsScreen {
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let (title, title_color) = if self.has_validation_errors() {
+        let save_error_active = self
+            .save_error_flash
+            .as_ref()
+            .is_some_and(|(_, t)| t.elapsed().as_secs() < 5);
+        let error_title;
+        let (title, title_color) = if save_error_active {
+            let msg: String = self
+                .save_error_flash
+                .as_ref()
+                .map(|(m, _)| {
+                    let first = m.lines().next().unwrap_or(m);
+                    crate::tui::ui::truncate_str(&sanitize_for_terminal(first), 80).into_owned()
+                })
+                .unwrap_or_default();
+            error_title = format!(" Settings [Save failed: {}] ", msg);
+            (error_title.as_str(), theme.accent_error)
+        } else if self.has_validation_errors() {
             (" Settings [Errors] ", theme.accent_error)
         } else if self.is_dirty() {
             (" Settings [Modified] ", theme.accent_success)
@@ -1321,21 +1357,25 @@ mod tests {
     }
 
     fn make_config() -> Config {
-        let toml_str = r#"
-[project]
-repo = "owner/repo"
-[sessions]
-[budget]
-per_session_usd = 5.0
-total_usd = 50.0
-alert_threshold_pct = 80
-[github]
-[notifications]
-"#;
         let mut f = tempfile::NamedTempFile::new().unwrap();
         use std::io::Write;
-        write!(f, "{}", toml_str).unwrap();
+        write!(f, "{}", MINIMAL_SETTINGS_TOML).unwrap();
         Config::load(f.path()).unwrap()
+    }
+
+    const MINIMAL_SETTINGS_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n[github]\n[notifications]\n";
+
+    /// Construct a `SettingsScreen` backed by a real tempfile so `Ctrl+s`
+    /// actually writes. The `NamedTempFile` must be kept alive by the caller
+    /// for the duration of the test — dropping it deletes the backing file.
+    fn screen_with_config_path() -> (SettingsScreen, tempfile::NamedTempFile) {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(f, "{}", MINIMAL_SETTINGS_TOML).unwrap();
+        let config = Config::load(f.path()).unwrap();
+        let screen =
+            SettingsScreen::new(config, make_flags()).with_config_path(f.path().to_path_buf());
+        (screen, f)
     }
 
     #[test]
@@ -1547,7 +1587,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn ctrl_s_saves_and_returns_update_config() {
-        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        let (mut screen, _f) = screen_with_config_path();
         // Modify
         for _ in 0..4 {
             screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
@@ -1975,7 +2015,7 @@ alert_threshold_pct = 80
 
     #[test]
     fn save_allowed_when_no_validation_errors() {
-        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        let (mut screen, _f) = screen_with_config_path();
         assert!(!screen.has_validation_errors());
 
         let ctrl_s = Event::Key(KeyEvent {
@@ -2233,5 +2273,126 @@ alert_threshold_pct = 80
         );
         let has_edit = groups.iter().any(|g| g.title == "Edit");
         assert!(has_edit, "expected a group titled 'Edit' in keybindings");
+    }
+
+    // --- Issue #437: config_path-required save + save_error_flash ---
+
+    fn ctrl_s_event() -> Event {
+        Event::Key(KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        })
+    }
+
+    fn dirty_screen(screen: &mut SettingsScreen) {
+        for _ in 0..4 {
+            screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        }
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        assert!(screen.is_dirty(), "pre-condition: screen must be dirty");
+    }
+
+    #[test]
+    fn save_config_errors_when_no_config_path() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        dirty_screen(&mut screen);
+
+        let result = screen.save_config();
+
+        assert!(
+            result.is_err(),
+            "save_config must return Err when config_path is None"
+        );
+        assert!(
+            screen.save_flash.is_none(),
+            "save_flash must remain None on failure"
+        );
+        assert!(
+            screen.is_dirty(),
+            "is_dirty must remain true after failed save"
+        );
+    }
+
+    #[test]
+    fn save_config_success_sets_flash_and_clears_dirty() {
+        let (mut screen, _f) = screen_with_config_path();
+        dirty_screen(&mut screen);
+
+        let result = screen.save_config();
+
+        assert!(result.is_ok(), "save_config must succeed with a valid path");
+        assert!(
+            screen.save_flash.is_some(),
+            "save_flash must be set after successful save"
+        );
+        assert!(!screen.is_dirty(), "is_dirty must be false after save");
+    }
+
+    #[test]
+    fn ctrl_s_without_config_path_sets_error_flash() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        dirty_screen(&mut screen);
+
+        let action = screen.handle_input(&ctrl_s_event(), InputMode::Normal);
+
+        assert!(
+            matches!(action, ScreenAction::None),
+            "must return None when save fails, got {:?}",
+            action
+        );
+        assert!(
+            screen.save_error_flash.is_some(),
+            "save_error_flash must be set after failed Ctrl+S"
+        );
+        assert!(
+            screen.save_flash.is_none(),
+            "success flash must stay absent on failure"
+        );
+    }
+
+    #[test]
+    fn ctrl_s_with_valid_config_path_returns_update_config() {
+        let (mut screen, _f) = screen_with_config_path();
+        dirty_screen(&mut screen);
+
+        let action = screen.handle_input(&ctrl_s_event(), InputMode::Normal);
+
+        assert!(
+            matches!(action, ScreenAction::UpdateConfig(_)),
+            "must return UpdateConfig on successful save, got {:?}",
+            action
+        );
+        assert!(!screen.is_dirty());
+    }
+
+    #[test]
+    fn save_error_flash_title_renders_with_error_style() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        screen.save_error_flash = Some(("no path".into(), std::time::Instant::now()));
+
+        let output = render_settings_to_string(&mut screen, 80, 10);
+        let first_row = output.lines().next().unwrap_or("");
+        assert!(
+            first_row.contains("Save failed"),
+            "title row must contain 'Save failed', got: {first_row:?}"
+        );
+    }
+
+    #[test]
+    fn save_error_flash_expires_after_5_seconds() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        screen.save_error_flash = Some((
+            "x".into(),
+            std::time::Instant::now() - std::time::Duration::from_secs(6),
+        ));
+
+        let output = render_settings_to_string(&mut screen, 80, 10);
+        let first_row = output.lines().next().unwrap_or("");
+        assert!(
+            !first_row.contains("Save failed"),
+            "expired flash must NOT appear in title, got: {first_row:?}"
+        );
     }
 }

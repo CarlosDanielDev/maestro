@@ -1,4 +1,4 @@
-use crate::config::{Config, NotificationsConfig};
+use crate::config::{LoadedConfig, NotificationsConfig};
 use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::state::store::StateStore;
 use crate::tui::app::App;
@@ -6,13 +6,16 @@ use crate::tui::app::App;
 pub const DEFAULT_MAX_CONCURRENT: usize = 3;
 pub const DEFAULT_PLUGIN_TIMEOUT_SECS: u64 = 30;
 
-/// Build a fully-configured App from a Config.
+/// Build a fully-configured App from a `LoadedConfig`. The resolved path is
+/// propagated into `app.config_path` so the Settings screen can save back
+/// to the same file regardless of CWD at save time.
 pub fn setup_app_from_config(
-    config: Config,
+    loaded: LoadedConfig,
     store: StateStore,
     worktree_mgr: Box<dyn crate::session::worktree::WorktreeManager + Send>,
     max_concurrent_override: Option<usize>,
 ) -> App {
+    let LoadedConfig { config, path } = loaded;
     let max_concurrent = max_concurrent_override.unwrap_or(config.sessions.max_concurrent);
 
     let mut app = App::new(
@@ -44,6 +47,7 @@ pub fn setup_app_from_config(
     }
 
     app.configure(config);
+    app.set_config_path(path);
     app
 }
 

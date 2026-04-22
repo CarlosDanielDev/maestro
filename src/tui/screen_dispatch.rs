@@ -83,13 +83,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     if let Some(ref config) = app.config {
                         let mut screen =
                             screens::SettingsScreen::new(config.clone(), app.flags.clone());
-                        // Try to find the config file path for save
-                        for candidate in &["maestro.toml", ".maestro/config.toml"] {
-                            let path = std::path::PathBuf::from(candidate);
-                            if path.exists() {
-                                screen = screen.with_config_path(path);
-                                break;
-                            }
+                        if let Some(ref path) = app.config_path {
+                            screen = screen.with_config_path(path.clone());
+                        } else {
+                            tracing::warn!(
+                                "No config path resolved at boot — Settings save will surface an error"
+                            );
                         }
                         app.settings_screen = Some(screen);
                     }
