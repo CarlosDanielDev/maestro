@@ -2693,7 +2693,7 @@ git commit -m "refactor(implement): rewrite — Step 4 gatekeeper + auto-remedia
 ```markdown
 ### Step 5: Branch selection with idempotency
 
-Check for an existing branch matching `feat/issue-<n>-*`:
+Check for an existing branch matching `feat/issue-${ISSUE_NUMBER}-*`:
 
 ```bash
 existing=$(git branch --list "feat/issue-${ISSUE_NUMBER}-*" | head -1 | sed 's/^[ *]*//')
@@ -2884,7 +2884,7 @@ git commit -m "refactor(implement): rewrite — Step 6 subagent sequence + RED/G
 Print a summary:
 
 ```
-Implementation complete for Issue #<n>: <title>
+Implementation complete for Issue #$ISSUE_NUMBER: $TITLE
 
 Gates passed:
   - Pre-check hook (ok)
