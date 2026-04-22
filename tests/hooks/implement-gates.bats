@@ -31,3 +31,10 @@ teardown() {
 }
 
 # --- tests defined below, one per task ---
+
+@test "exits 1 when not in a git repo" {
+  cd "$(mktemp -d -t non-repo-XXXXXX)"
+  run bash "$HOOK" 123
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not inside a git repository"* ]]
+}
