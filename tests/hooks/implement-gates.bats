@@ -70,3 +70,10 @@ teardown() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"Issue #123 is CLOSED"* ]]
 }
+
+@test "exits 6 on dirty tree when user chooses (A)bort" {
+  echo "dirty" > new-file.txt
+  run bash -c "echo 'A' | bash '$HOOK' 123"
+  [ "$status" -eq 6 ]
+  [[ "$output" == *"Working tree has uncommitted changes"* ]]
+}

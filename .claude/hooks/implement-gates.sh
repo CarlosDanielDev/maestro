@@ -50,3 +50,22 @@ if [ "$issue_state" = "CLOSED" ]; then
   echo "implement-gates: Issue #${issue_number} is CLOSED. Re-open or pick a different issue." >&2
   exit 1
 fi
+
+# Gate 6: working tree must be clean, or user must confirm stash.
+if [ -n "$(git status --porcelain)" ]; then
+  echo "implement-gates: Working tree has uncommitted changes"
+  git status --short
+  echo ""
+  echo "(S)tash and continue, (A)bort"
+  read -r choice
+  case "$choice" in
+    S|s)
+      git stash push -m "auto-stash before /implement #${issue_number}"
+      echo "implement-gates: stashed as 'auto-stash before /implement #${issue_number}'"
+      ;;
+    *)
+      echo "implement-gates: aborting on dirty tree"
+      exit 6
+      ;;
+  esac
+fi
