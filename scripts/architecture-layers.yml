@@ -1,0 +1,65 @@
+# Module-level architecture layers.
+#
+# A file in layer N may import from layer N or any layer < N.
+# Imports from a higher layer are forbidden (by layer-number comparison).
+# Forbidden pairs catch specific disallowed imports even within the same layer.
+#
+# Enforcement: scripts/check-layers.sh (CI job `layers`).
+# Tolerance: docs/layers-debt.txt lists known violations with deadlines.
+# See docs/superpowers/specs/2026-04-22-ci-quality-gates-design.md § Wave 2.3.
+
+layers:
+  - name: primitives
+    number: 1
+    paths:
+      - "src/icons.rs"
+      - "src/icon_mode.rs"
+      - "src/util/**"
+
+  - name: domain
+    number: 2
+    paths:
+      - "src/session/**"
+      - "src/state/**"
+      - "src/adapt/**"
+      - "src/turboquant/**"
+      - "src/provider/**"
+      - "src/gates/**"
+      - "src/sanitize/**"
+      - "src/work/**"
+      - "src/config.rs"
+
+  - name: orchestration
+    number: 3
+    paths:
+      - "src/cli.rs"
+      - "src/commands/**"
+
+  - name: ui
+    number: 4
+    paths:
+      - "src/tui/**"
+
+  - name: entry
+    number: 5
+    paths:
+      - "src/main.rs"
+      - "src/lib.rs"
+
+forbidden:
+  # Specific disallowed imports that cross layer boundaries in ways
+  # that are hard to prevent with layer-number comparison alone.
+  # (These are redundant with the layer-number check for these specific
+  # cases, but are listed explicitly so the intent is documented.)
+  - from: "src/session/**"
+    to: "src/tui/**"
+    reason: "domain logic must not depend on UI rendering"
+  - from: "src/state/**"
+    to: "src/tui/**"
+    reason: "state persistence must not depend on UI rendering"
+  - from: "src/provider/**"
+    to: "src/tui/**"
+    reason: "external-service clients must not depend on UI rendering"
+  - from: "src/config.rs"
+    to: "src/tui/**"
+    reason: "config must not depend on UI (known debt: config.rs imports ThemeConfig from tui/theme; resolution via moving ThemeConfig to layer 2 — tracked in scripts/allowlist-large-files.txt config.rs deadline 2026-05-22)"
