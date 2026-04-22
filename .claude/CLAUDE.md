@@ -290,6 +290,7 @@ Immediately after language selection, ask:
 
 | Need | Delegate To |
 |------|-------------|
+| **Pre-check gate — DOR/blockers/contracts (MANDATORY)** | `subagent-gatekeeper` |
 | **Architecture (MANDATORY)** | `subagent-architect` |
 | **Quality Assurance (MANDATORY)** | `subagent-qa` |
 | Security review, OWASP | `subagent-security-analyst` |
@@ -300,6 +301,7 @@ Immediately after language selection, ask:
 
 | Subagent | Purpose | Status |
 |----------|---------|--------|
+| `subagent-gatekeeper` | DOR, Blocked By, API-contract gatekeeper for /implement | **Ready** |
 | `subagent-architect` | Architecture design and implementation planning | **Ready** |
 | `subagent-qa` | QA engineering, test design, quality gates | **Ready** |
 | `subagent-security-analyst` | Security review, OWASP, vulnerability analysis | **Ready** |
