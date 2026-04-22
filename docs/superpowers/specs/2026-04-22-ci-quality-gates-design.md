@@ -494,7 +494,8 @@ parsing strains.
 
 **Hard (infrastructure complete):**
 
-- `coverage` CI job green with ratchet active.
+- `coverage` CI job landed and running reporting-only during baseline
+  phase. Ratchet and floor enforcement are conditional (see below).
 - `scripts/check-file-size.sh` at 400 LOC cap; full allowlist triaged
   (including 400-500 band additions).
 - `scripts/architecture-layers.yml` + `scripts/check-layers.sh` in
@@ -505,6 +506,15 @@ parsing strains.
   sections (end-of-document, no fixed numbering).
 
 **Conditional (may extend beyond Wave 2 calendar):**
+
+- **Coverage ratchet activated.** Ratchet (fails when total coverage
+  decreases PR-over-PR) is intentionally deferred until baseline is
+  at or above the core floor. Activating ratchet during baseline
+  phase would block every test-less PR — including refactors and
+  documentation changes — because baseline is below floor. Activation
+  lands as a follow-up PR that removes `continue-on-error: true` from
+  the ratchet step. Before then, the CI job reports coverage but does
+  not block.
 
 - **Core-tier coverage floor of 90% activated.** Only activates once
   the measured core coverage is ≥ 90%. If the Wave 2.1 baseline
