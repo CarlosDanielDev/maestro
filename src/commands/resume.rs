@@ -6,7 +6,7 @@ use crate::session::worktree::GitWorktreeManager;
 use crate::state::store::StateStore;
 
 pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
-    let config = Config::find_and_load()?;
+    let loaded = Config::find_and_load_with_path()?;
     let store = StateStore::new(StateStore::default_path());
     let state = store.load()?;
     let repo_root = std::env::current_dir()?;
@@ -45,7 +45,7 @@ pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
     println!("Resuming {} incomplete session(s)...", incomplete.len());
 
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
-    let mut app = setup_app_from_config(config, store, worktree_mgr, None);
+    let mut app = setup_app_from_config(loaded, store, worktree_mgr, None);
 
     for s in &incomplete {
         let mut new_session = Session::new(

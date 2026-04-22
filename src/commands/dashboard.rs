@@ -29,7 +29,8 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         );
     }
 
-    let config = Config::find_and_load().ok();
+    let loaded = Config::find_and_load_with_path().ok();
+    let config = loaded.as_ref().map(|l| l.config.clone());
 
     let repo_name = config
         .as_ref()
@@ -108,8 +109,8 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
 
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
 
-    let mut app = if let Some(cfg) = config {
-        let mut app = setup_app_from_config(cfg, store, worktree_mgr, None);
+    let mut app = if let Some(lc) = loaded {
+        let mut app = setup_app_from_config(lc, store, worktree_mgr, None);
         app.github_client = Some(Box::new(GhCliClient::new()));
         app
     } else {

@@ -849,15 +849,32 @@ impl Config {
     }
 
     pub fn find_and_load() -> Result<Self> {
-        Self::find_and_load_in(Path::new("."))
+        Self::find_and_load_with_path().map(|lc| lc.config)
     }
 
     /// Find `maestro.toml` or `.maestro/config.toml` under `base` and load it.
     pub fn find_and_load_in(base: &Path) -> Result<Self> {
+        Self::find_and_load_in_with_path(base).map(|lc| lc.config)
+    }
+
+    /// Locate a config file and return both the parsed `Config` and the path
+    /// it was loaded from. Prefer this at TUI entry points that need to save
+    /// back to the same file.
+    pub fn find_and_load_with_path() -> Result<LoadedConfig> {
+        Self::find_and_load_in_with_path(Path::new("."))
+    }
+
+    pub fn find_and_load_in_with_path(base: &Path) -> Result<LoadedConfig> {
         for candidate in ["maestro.toml", ".maestro/config.toml"] {
             let path = base.join(candidate);
             match Self::load(&path) {
-                Ok(cfg) => return Ok(cfg),
+                Ok(config) => {
+                    let resolved = std::fs::canonicalize(&path).unwrap_or(path);
+                    return Ok(LoadedConfig {
+                        config,
+                        path: resolved,
+                    });
+                }
                 Err(e) => {
                     // Only keep searching if this particular file doesn't exist.
                     if let Some(io_err) = e.downcast_ref::<std::io::Error>()
@@ -874,6 +891,15 @@ impl Config {
             base.display()
         )
     }
+}
+
+/// A `Config` bundled with the filesystem path it was loaded from.
+/// Propagated from boot to the Settings screen so `Ctrl+s` writes back to
+/// the same file, regardless of later CWD changes.
+#[derive(Debug, Clone)]
+pub struct LoadedConfig {
+    pub config: Config,
+    pub path: std::path::PathBuf,
 }
 
 #[cfg(test)]
@@ -1879,5 +1905,62 @@ max_cost_total = 10.0
 "#;
         let cfg: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(cfg.adapt.milestone_naming, MilestoneNaming::Ai);
+    }
+
+    // --- Issue #437: LoadedConfig path plumbing ---
+
+    const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n[github]\n[notifications]\n";
+
+    #[test]
+    fn find_and_load_in_with_path_returns_resolved_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("maestro.toml");
+        std::fs::write(&file_path, MINIMAL_TOML).unwrap();
+
+        let loaded = Config::find_and_load_in_with_path(dir.path()).expect("should find config");
+
+        assert!(
+            loaded.path.ends_with("maestro.toml"),
+            "path must end with maestro.toml, got {:?}",
+            loaded.path
+        );
+        assert_eq!(loaded.config.project.repo, "owner/repo");
+    }
+
+    #[test]
+    fn find_and_load_in_with_path_finds_nested_candidate() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let nested = dir.path().join(".maestro");
+        std::fs::create_dir_all(&nested).unwrap();
+        let nested_toml = MINIMAL_TOML.replacen("owner/repo", "nested/repo", 1);
+        std::fs::write(nested.join("config.toml"), &nested_toml).unwrap();
+
+        let loaded =
+            Config::find_and_load_in_with_path(dir.path()).expect("should find nested config");
+
+        assert!(
+            loaded.path.ends_with("config.toml"),
+            "path must end with config.toml, got {:?}",
+            loaded.path
+        );
+        assert_eq!(loaded.config.project.repo, "nested/repo");
+    }
+
+    #[test]
+    fn find_and_load_in_with_path_errors_when_absent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let result = Config::find_and_load_in_with_path(dir.path());
+        assert!(result.is_err(), "should error when no config file present");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("No maestro.toml"),
+            "error message should mention 'No maestro.toml', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn find_and_load_shim_still_returns_config_only() {
+        // Regression guard: the legacy API must keep returning Result<Config>, not LoadedConfig.
+        let _: fn() -> anyhow::Result<Config> = Config::find_and_load;
     }
 }

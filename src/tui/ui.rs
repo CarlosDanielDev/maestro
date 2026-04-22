@@ -1371,7 +1371,7 @@ fn draw_upgrade_banner(
     f.render_widget(Paragraph::new(line), area);
 }
 
-fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
+pub(crate) fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
     if s.chars().count() <= max_len {
         std::borrow::Cow::Borrowed(s)
     } else {

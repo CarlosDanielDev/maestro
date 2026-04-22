@@ -218,7 +218,7 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use crate::commands::setup::setup_app_from_config;
-    use crate::config::Config;
+    use crate::config::{Config, LoadedConfig};
     use crate::session::types::Session;
     use crate::session::worktree::MockWorktreeManager;
     use crate::state::store::StateStore;
@@ -230,6 +230,13 @@ mod tests {
 
     fn make_worktree_mgr() -> Box<dyn crate::session::worktree::WorktreeManager + Send> {
         Box::new(MockWorktreeManager::new())
+    }
+
+    fn loaded(config: Config) -> LoadedConfig {
+        LoadedConfig {
+            config,
+            path: std::path::PathBuf::from("test-maestro.toml"),
+        }
     }
 
     fn minimal_config() -> Config {
@@ -270,19 +277,34 @@ mod tests {
 
     #[test]
     fn budget_enforcer_is_wired_from_config() {
-        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         assert!(app.budget_enforcer.is_some());
     }
 
     #[test]
     fn model_router_is_wired_from_config() {
-        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         assert!(app.model_router.is_some());
     }
 
     #[test]
     fn configure_sets_fork_policy() {
-        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         assert!(
             app.fork_policy.is_some(),
             "configure() must set fork_policy"
@@ -291,13 +313,23 @@ mod tests {
 
     #[test]
     fn config_is_stored_on_app() {
-        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         assert!(app.config.is_some());
     }
 
     #[test]
     fn plugin_runner_is_none_when_no_plugins() {
-        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         assert!(app.plugin_runner.is_none());
     }
 
@@ -321,14 +353,14 @@ mod tests {
             "#,
         )
         .unwrap();
-        let app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(loaded(config), make_store(), make_worktree_mgr(), None);
         assert!(app.plugin_runner.is_some());
     }
 
     #[test]
     fn permission_mode_from_config_is_preserved() {
         let config = config_with_sessions(r#"permission_mode = "acceptEdits""#);
-        let app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(loaded(config), make_store(), make_worktree_mgr(), None);
         assert_eq!(
             app.config.as_ref().unwrap().sessions.permission_mode,
             "acceptEdits"
@@ -337,7 +369,12 @@ mod tests {
 
     #[test]
     fn default_permission_mode_is_bypass_permissions() {
-        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         assert_eq!(
             app.config.as_ref().unwrap().sessions.permission_mode,
             "bypassPermissions"
@@ -347,7 +384,7 @@ mod tests {
     #[test]
     fn allowed_tools_from_config_are_preserved() {
         let config = config_with_sessions(r#"allowed_tools = ["Read", "Write"]"#);
-        let app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(loaded(config), make_store(), make_worktree_mgr(), None);
         assert_eq!(
             app.config.as_ref().unwrap().sessions.allowed_tools,
             vec!["Read", "Write"]
@@ -357,7 +394,8 @@ mod tests {
     #[test]
     fn max_concurrent_override_takes_priority() {
         let config = config_with_sessions("max_concurrent = 5");
-        let mut app = setup_app_from_config(config, make_store(), make_worktree_mgr(), Some(1));
+        let mut app =
+            setup_app_from_config(loaded(config), make_store(), make_worktree_mgr(), Some(1));
         for i in 0..3 {
             app.pool.enqueue(Session::new(
                 format!("prompt {i}"),
@@ -373,7 +411,8 @@ mod tests {
     #[test]
     fn max_concurrent_from_config_when_no_override() {
         let config = config_with_sessions("max_concurrent = 2");
-        let mut app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        let mut app =
+            setup_app_from_config(loaded(config), make_store(), make_worktree_mgr(), None);
         for i in 0..3 {
             app.pool.enqueue(Session::new(
                 format!("prompt {i}"),
@@ -389,7 +428,7 @@ mod tests {
     #[test]
     fn dashboard_does_not_hardcode_permission_mode() {
         let config = config_with_sessions(r#"permission_mode = "plan""#);
-        let app = setup_app_from_config(config, make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(loaded(config), make_store(), make_worktree_mgr(), None);
         assert_eq!(
             app.config.as_ref().unwrap().sessions.permission_mode,
             "plan",
@@ -399,7 +438,12 @@ mod tests {
 
     #[test]
     fn app_once_mode_field_defaults_to_false() {
-        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         assert!(
             !app.once_mode,
             "App built from config must have once_mode = false"
@@ -408,16 +452,24 @@ mod tests {
 
     #[test]
     fn app_once_mode_field_is_settable() {
-        let mut app =
-            setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let mut app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         app.once_mode = true;
         assert!(app.once_mode, "once_mode must be directly settable");
     }
 
     #[test]
     fn feature_flags_are_assignable_to_app() {
-        let mut app =
-            setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let mut app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         let flags = crate::flags::store::FeatureFlags::new(
             std::collections::HashMap::new(),
             vec!["ci_auto_fix".to_string()],
@@ -447,7 +499,12 @@ mod tests {
 
     #[test]
     fn feature_flags_default_on_app_matches_flag_defaults() {
-        let app = setup_app_from_config(minimal_config(), make_store(), make_worktree_mgr(), None);
+        let app = setup_app_from_config(
+            loaded(minimal_config()),
+            make_store(),
+            make_worktree_mgr(),
+            None,
+        );
         assert!(
             app.flags.is_enabled(crate::flags::Flag::ContinuousMode),
             "ContinuousMode must default to true"

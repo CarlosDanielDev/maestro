@@ -10,6 +10,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Fixed
 
 - Settings screen footer omitted edit keys (Space/Enter/←→) for non-Flags widgets — `WidgetKind::edit_hint()` now returns a contextual `(key, label)` tuple per variant; `SettingsScreen::draw` builds the footer from the focused widget's hint; `KeymapProvider::keybindings()` gains a third `"Edit"` group so the `?` help overlay stays consistent (#432)
+- Settings Ctrl+S save was a silent no-op in release builds — the config file path was never propagated from the loader into `App`, so `save_config` always received `None` and discarded all changes without error; fixed by introducing `LoadedConfig { config, path }` in `src/config.rs`, threading the resolved `PathBuf` through `setup_app_from_config` into `App.config_path`, and updating `screen_dispatch.rs` to read `app.config_path` directly instead of probing relative paths; `save_config` now returns `Err` when the path is absent; Ctrl+S surfaces failures as a 5-second title-bar flash (`Settings [Save failed: <msg>]` rendered in `accent_error`, message sanitized and truncated to 80 chars) (#437)
 
 ## [0.14.0] - 2026-04-21
 
