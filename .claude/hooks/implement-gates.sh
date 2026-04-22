@@ -43,3 +43,10 @@ if ! gh issue view "$issue_number" \
 fi
 
 export GATE_LOG_DIR
+
+# Gate 5: issue must not be CLOSED.
+issue_state=$(python3 -c "import json; print(json.load(open('$GATE_LOG_DIR/issue.json'))['state'])")
+if [ "$issue_state" = "CLOSED" ]; then
+  echo "implement-gates: Issue #${issue_number} is CLOSED. Re-open or pick a different issue." >&2
+  exit 1
+fi

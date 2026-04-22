@@ -63,3 +63,10 @@ teardown() {
   [ -f "$log_dir/issue.json" ]
   python3 -c "import json; json.load(open('$log_dir/issue.json'))"
 }
+
+@test "exits 1 when issue is CLOSED" {
+  export FAKE_GH_ISSUE_STATE=CLOSED
+  run bash "$HOOK" 123
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Issue #123 is CLOSED"* ]]
+}
