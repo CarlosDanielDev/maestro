@@ -1,5 +1,7 @@
 """Unit tests for .claude/hooks/parse_gatekeeper_report.py."""
 import importlib.util
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -121,6 +123,34 @@ Some prose.
         with self.assertRaises(self.parser.ParseError) as ctx:
             self.parser.extract_report(text)
         self.assertIn("unsupported report_version: 2", str(ctx.exception))
+
+class CliTests(unittest.TestCase):
+    def _run(self, stdin_text):
+        return subprocess.run(
+            [sys.executable, str(HOOK_PATH)],
+            input=stdin_text,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_cli_roundtrips_valid_report(self):
+        stdin_text = """
+```json gatekeeper
+{"report_version": 1, "status": "PASS", "task_type": "implementation",
+ "dor": {"passed": true}, "blockers": {"passed": true},
+ "contracts": {"passed": true}, "remediation": {}, "reasons": []}
+```
+"""
+        result = self._run(stdin_text)
+        self.assertEqual(result.returncode, 0)
+        import json as _json
+        parsed = _json.loads(result.stdout)
+        self.assertEqual(parsed["status"], "PASS")
+
+    def test_cli_reports_error_on_malformed_input(self):
+        result = self._run("no fence here")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no ```json gatekeeper", result.stderr)
 
 if __name__ == "__main__":
     unittest.main()
