@@ -28,3 +28,18 @@ if ! gh auth status >/dev/null 2>&1; then
   echo "implement-gates: gh not authenticated. Run: gh auth login" >&2
   exit 1
 fi
+
+# Gate 4: fetch and cache the issue JSON.
+GATE_LOG_DIR="/tmp/maestro-${issue_number}-$(date +%s)"
+mkdir -p "$GATE_LOG_DIR"
+echo "gate log dir: $GATE_LOG_DIR"
+
+if ! gh issue view "$issue_number" \
+  --json title,body,labels,assignees,milestone,state,comments \
+  > "$GATE_LOG_DIR/issue.json" 2>"$GATE_LOG_DIR/gh-error.log"; then
+  echo "implement-gates: failed to fetch issue #${issue_number}" >&2
+  cat "$GATE_LOG_DIR/gh-error.log" >&2
+  exit 1
+fi
+
+export GATE_LOG_DIR

@@ -55,3 +55,11 @@ teardown() {
   [[ "$output" == *"gh not authenticated"* ]]
   [[ "$output" == *"gh auth login"* ]]
 }
+
+@test "caches issue JSON to GATE_LOG_DIR/issue.json" {
+  run bash "$HOOK" 123
+  [[ "$output" == *"/tmp/maestro-123-"* ]]
+  log_dir=$(echo "$output" | grep -oE '/tmp/maestro-123-[0-9]+' | head -1)
+  [ -f "$log_dir/issue.json" ]
+  python3 -c "import json; json.load(open('$log_dir/issue.json'))"
+}
