@@ -69,5 +69,11 @@ Prose below the fence.
         self.assertEqual(len(report["blockers"]["open"]), 2)
         self.assertEqual(report["blockers"]["open"][0]["number"], 42)
 
+    def test_rejects_unclosed_fence(self):
+        text = "Prose.\n```json gatekeeper\n{\"report_version\": 1}\n"  # no closing ```
+        with self.assertRaises(self.parser.ParseError) as ctx:
+            self.parser.extract_report(text)
+        self.assertIn("no ```json gatekeeper fenced block found", str(ctx.exception))
+
 if __name__ == "__main__":
     unittest.main()
