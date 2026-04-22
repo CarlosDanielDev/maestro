@@ -1,0 +1,9 @@
+{
+  "title": "refactor: split tui/app.rs into modules",
+  "body": "## Overview\n\nThe TUI app.rs has grown past our 400-line guardrail. Split into focused modules.\n\n## Expected Behavior\n\nBehavior is unchanged; file layout is cleaner.\n\n## Acceptance Criteria\n\n- [ ] No file exceeds 400 lines\n- [ ] All existing tests pass unchanged\n\n## Files to Modify\n\n- src/tui/app.rs (split)\n- src/tui/ (new modules)\n\n## Test Hints\n\nRe-run existing test suite; no new tests needed for a pure refactor.\n\n## Blocked By\n\n- None\n\n## Definition of Done\n\n- [ ] Tests pass\n- [ ] Guardrail check passes",
+  "labels": [{"name": "type:refactor"}],
+  "state": "OPEN",
+  "milestone": null,
+  "assignees": [],
+  "comments": []
+}
