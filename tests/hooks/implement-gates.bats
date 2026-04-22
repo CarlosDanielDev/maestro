@@ -102,3 +102,42 @@ teardown() {
   [[ "$output" == *"stashed as 'auto-stash before /implement #123'"* ]]
   [ -n "$(git stash list | grep 'auto-stash before /implement #123')" ]
 }
+
+@test "calls preflight.sh when present and propagates exit code on failure" {
+  mkdir -p .claude/hooks
+  cat > .claude/hooks/preflight.sh <<'PFEOF'
+#!/usr/bin/env bash
+echo "preflight: simulated ci fail"
+exit 7
+PFEOF
+  chmod +x .claude/hooks/preflight.sh
+  git add .claude/hooks/preflight.sh
+  git commit -m "test: add failing preflight.sh"
+  export FAKE_CARGO_TEST_EXIT=0
+  run bash "$HOOK" 123
+  [ "$status" -eq 7 ]
+  [[ "$output" == *"Pre-flight CI checks failed"* ]]
+}
+
+@test "calls preflight.sh when present and passes on exit 0" {
+  mkdir -p .claude/hooks
+  cat > .claude/hooks/preflight.sh <<'PFEOF'
+#!/usr/bin/env bash
+echo "preflight: all clear"
+exit 0
+PFEOF
+  chmod +x .claude/hooks/preflight.sh
+  git add .claude/hooks/preflight.sh
+  git commit -m "test: add passing preflight.sh"
+  export FAKE_CARGO_TEST_EXIT=0
+  run bash "$HOOK" 123
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"preflight: all clear"* ]]
+}
+
+@test "silently skips when preflight.sh is absent" {
+  export FAKE_CARGO_TEST_EXIT=0
+  run bash "$HOOK" 123
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"preflight"* ]]
+}

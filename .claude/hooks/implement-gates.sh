@@ -77,3 +77,15 @@ if ! cargo test --quiet > "$GATE_LOG_DIR/baseline.log" 2>&1; then
   echo "implement-gates: See $GATE_LOG_DIR/baseline.log" >&2
   exit 2
 fi
+
+# Gate 8 (optional): preflight bridge.
+if [ -x .claude/hooks/preflight.sh ]; then
+  set +e
+  bash .claude/hooks/preflight.sh
+  preflight_exit=$?
+  set -e
+  if [ $preflight_exit -ne 0 ]; then
+    echo "implement-gates: Pre-flight CI checks failed. Fix before starting a new branch." >&2
+    exit $preflight_exit
+  fi
+fi
