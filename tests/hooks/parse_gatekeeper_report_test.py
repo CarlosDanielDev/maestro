@@ -75,5 +75,15 @@ Prose below the fence.
             self.parser.extract_report(text)
         self.assertIn("no ```json gatekeeper fenced block found", str(ctx.exception))
 
+    def test_rejects_malformed_json(self):
+        text = """
+```json gatekeeper
+{"report_version": 1, "status": "PASS", "trailing": }
+```
+"""
+        with self.assertRaises(self.parser.ParseError) as ctx:
+            self.parser.extract_report(text)
+        self.assertIn("malformed JSON", str(ctx.exception))
+
 if __name__ == "__main__":
     unittest.main()
