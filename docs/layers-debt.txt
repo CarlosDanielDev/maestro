@@ -1,0 +1,36 @@
+# Layer violation debt file.
+# Format: <importer> → <target> # deadline: YYYY-MM-DD, owner: @handle, ticket: #N, plan: <brief>
+#
+# Each entry is a known violation that scripts/check-layers.sh tolerates
+# until its deadline. After the deadline → CI fails with
+# "FORBIDDEN (DEADLINE PAST)" or "VIOLATION (DEADLINE PAST)".
+#
+# Generated baseline from Wave 2.3 (2026-04-22). See
+# docs/superpowers/specs/2026-04-22-ci-quality-gates-design.md § Wave 2.3
+# for the enforcement mechanism and
+# docs/RUST-GUARDRAILS.md § CI Quality Gates (Wave 2.3 — Layer Violations)
+# for policy.
+
+# --- config.rs → tui/theme.rs (4 import sites, one resolution) ---
+# Tied to the config.rs refactor already planned in
+# scripts/allowlist-large-files.txt (deadline 2026-05-22): move ThemeConfig,
+# ThemePreset, SerializableColor out of src/tui/theme.rs into a layer-2
+# module (src/theme.rs or src/config/theme.rs) so config can consume types
+# from layer 2 instead of reaching into layer 4.
+src/config.rs → src/tui/theme.rs # deadline: 2026-05-22, owner: @carlos, ticket: #TBD, plan: move ThemeConfig/ThemePreset/SerializableColor types to layer-2 module; see config.rs entry in scripts/allowlist-large-files.txt
+
+# --- sanitize/screen.rs → tui/* (2 pairs) ---
+# Tracked with sanitize/screen.rs's file-size allowlist entry (2026-06-22).
+# Resolution likely: extract the navigation/theme references into an
+# abstraction sanitize/ consumes without depending on tui/.
+src/sanitize/screen.rs → src/tui/navigation/mod.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: extract navigation abstraction; resolve alongside sanitize/screen.rs split
+src/sanitize/screen.rs → src/tui/theme.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: resolved by the config.rs→tui/theme fix above (ThemeConfig moves to layer 2) + sanitize/screen.rs split
+
+# --- commands/* → tui/app/* (3 pairs) ---
+# Commands are layer 3 (orchestration) but importing from layer 4 (UI) to
+# bootstrap the TUI. Inversion strategy: commands construct and return an
+# opaque "ready-to-run" value that main.rs (layer 5) hands to the TUI. Or
+# the tui/app entry points move to orchestration layer.
+src/commands/run.rs → src/tui/app/work_assigner.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: invert dependency — commands emit events or return opaque handles; work_assigner consumers move to orchestration layer
+src/commands/dashboard.rs → src/tui/app/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: commands construct AppConfig; entry point in main.rs passes it to tui
+src/commands/setup.rs → src/tui/app/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: same pattern as dashboard — commands return config, tui consumes

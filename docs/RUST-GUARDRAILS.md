@@ -442,6 +442,40 @@ Both tiers are within striking distance of their floors; activation is near-term
 
 **Extension policy:** unchanged from Wave 1. PR with paragraph justifying the new deadline; reviewer rejects habitual extensions in favor of re-planning the split.
 
+---
+
+## CI Quality Gates (Wave 2.3 — Layer Violations)
+
+**Status:** active (landed 2026-04-22 via chunk-4/layer-violations).
+
+**Manifest:** `scripts/architecture-layers.yml`. Enforcement: `scripts/check-layers.sh` (CI job `layers`).
+
+**Layers** (lowest to highest — a file in layer N may import from layer N or any lower layer; imports from higher layers are forbidden):
+
+1. **primitives** — `src/icons.rs`, `src/icon_mode.rs`, `src/util/**`
+2. **domain** — `src/session/**`, `src/state/**`, `src/adapt/**`, `src/turboquant/**`, `src/provider/**`, `src/gates/**`, `src/sanitize/**`, `src/work/**`, `src/config.rs`
+3. **orchestration** — `src/cli.rs`, `src/commands/**`
+4. **ui** — `src/tui/**`
+5. **entry** — `src/main.rs`, `src/lib.rs`
+
+**Forbidden pairs** catch specific disallowed imports independently of layer-number check: `session/**`, `state/**`, `provider/**`, and `config.rs` may not import from `tui/**`.
+
+**Debt file:** `docs/layers-debt.txt`. Same deadlined-tolerance pattern as `scripts/allowlist-large-files.txt` but for (importer, target) pairs instead of individual files. Format:
+
+```
+<importer> → <target> # deadline: YYYY-MM-DD, owner: @handle, ticket: #N, plan: <brief>
+```
+
+CI fails on new violations not in the debt file, or on debt entries whose deadlines have passed (surfaced as `VIOLATION (DEADLINE PAST)` or `FORBIDDEN (DEADLINE PAST)`).
+
+**Baseline (2026-04-22):** 6 unique (importer, target) pairs covering 9 import sites.
+
+- 1 pair: `config.rs → tui/theme` (2026-05-22) — resolution tied to config.rs refactor.
+- 2 pairs: `sanitize/screen.rs → tui/*` (2026-06-22) — tied to sanitize/screen.rs split.
+- 3 pairs: `commands/{run,dashboard,setup}.rs → tui/app/*` (2026-07-22) — dependency inversion.
+
+**Script v1 limitations (documented):** brace-group imports (`use crate::mod::{A, B};`) are silently skipped; `pub use` re-exports are treated like plain `use`. Addressable with a future Rust-parser upgrade; acceptable for v1 per the spec's "simple enough not to need a full parser" rationale.
+
 **Activation policy:** the `check-coverage-tiers.sh` script runs in **report mode by default** — it prints tier percentages and any VIOLATION lines but exits 0 so the CI check stays green while baseline is below floor. To activate enforcement, add `--enforce` to the script invocation in the `coverage` job (`.github/workflows/ci.yml`). Once baseline reaches a floor for a tier, a dedicated PR adds `--enforce` for that tier's first blocking run. (Per-tier activation can be modeled by running the checker twice with different manifests pointing at a subset of tiers — simplest evolution when we get there.)
 
 **Ratchet:** deferred until after floor activation. Enabling ratchet during baseline phase would block every PR that doesn't add tests, including refactors and documentation changes.
@@ -458,3 +492,4 @@ Both tiers are within striking distance of their floors; activation is near-term
 | 2026-04-22 | Appended CI Quality Gates (Wave 1) | chunk-1/ci-wave-1 |
 | 2026-04-22 | Appended CI Quality Gates (Wave 2.1 — Coverage) | chunk-2/coverage-infrastructure |
 | 2026-04-22 | File-size hard cap tightened 500 → 400 (Wave 2.2) | chunk-3/file-size-400 |
+| 2026-04-22 | Appended CI Quality Gates (Wave 2.3 — Layer Violations) | chunk-4/layer-violations |
