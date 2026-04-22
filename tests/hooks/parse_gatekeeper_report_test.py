@@ -85,5 +85,22 @@ Prose below the fence.
             self.parser.extract_report(text)
         self.assertIn("malformed JSON", str(ctx.exception))
 
+    def test_uses_first_fence_when_multiple(self):
+        text = """
+```json gatekeeper
+{"report_version": 1, "status": "PASS", "task_type": "implementation",
+ "dor": {"passed": true}, "blockers": {"passed": true},
+ "contracts": {"passed": true}, "remediation": {}, "reasons": []}
+```
+
+Some prose.
+
+```json gatekeeper
+{"report_version": 1, "status": "FAIL", "task_type": "docs"}
+```
+"""
+        report = self.parser.extract_report(text)
+        self.assertEqual(report["status"], "PASS")  # first fence wins
+
 if __name__ == "__main__":
     unittest.main()
