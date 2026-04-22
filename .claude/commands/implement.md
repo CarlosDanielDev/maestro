@@ -54,3 +54,28 @@ If no issue number found, ask: "Which issue should I implement?"
 ### Step 1: Language and mode selection
 
 If flags provided, honor them. Otherwise, ask the user.
+
+### Step 2: Pre-check hook (GATE — MANDATORY)
+
+Run the mechanical pre-check hook. Abort on non-zero exit, printing stderr verbatim.
+
+```bash
+bash .claude/hooks/implement-gates.sh "$ISSUE_NUMBER"
+```
+
+The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success; capture this path and `export GATE_LOG_DIR=<path>` for downstream steps.
+
+Exit codes:
+- `0` — proceed.
+- `1` — generic failure (gh missing, not authed, not in repo, closed issue). Abort with the hook's stderr.
+- `2` — baseline cargo test failing. Abort — fix the baseline before starting.
+- `6` — dirty tree, user chose abort. Abort cleanly.
+- `7+` — preflight.sh failure. Abort with its stderr.
+
+### Step 3: Read cached issue JSON
+
+The hook has cached the issue JSON at `$GATE_LOG_DIR/issue.json`. Read it directly — no second `gh` call.
+
+```bash
+cat "$GATE_LOG_DIR/issue.json"
+```
