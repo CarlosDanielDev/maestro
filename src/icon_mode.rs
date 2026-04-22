@@ -43,6 +43,17 @@ pub(crate) fn use_nerd_font_from_env(get_env: impl Fn(&str) -> Option<String>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Tests that mutate the global MODE atomic must not run in parallel
+    // with each other. Cargo runs #[test] functions concurrently by default,
+    // which lets one test's init_from_config() land between another test's
+    // write-and-assert pair and flip the answer — a deterministic-looking
+    // failure that surfaces as a race flake in CI.
+    //
+    // Guarding the MODE-mutating tests with a shared mutex serializes them
+    // without affecting tests that don't touch MODE (the env-var tests).
+    static MODE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn env_absent_returns_nerd_font_true() {
@@ -66,6 +77,7 @@ mod tests {
 
     #[test]
     fn init_from_config_ascii_true_disables_nerd_font() {
+        let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_from_config(true);
         assert!(!use_nerd_font());
         init_from_config(false); // restore
@@ -73,12 +85,14 @@ mod tests {
 
     #[test]
     fn init_from_config_ascii_false_enables_nerd_font() {
+        let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_from_config(false);
         assert!(use_nerd_font());
     }
 
     #[test]
     fn use_nerd_font_reads_initialized_flag_not_env() {
+        let _guard = MODE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_from_config(true);
         assert!(!use_nerd_font());
         init_from_config(false);
