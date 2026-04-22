@@ -113,3 +113,20 @@ jobs:
         run: cargo llvm-cov --workspace --lcov --output-path coverage.lcov
       - name: Check coverage tiers
         run: bash scripts/check-coverage-tiers.sh coverage.lcov
+
+  layers:
+    # Wave 2.3 — layer violation enforcement.
+    # Blocking by default (no continue-on-error). Existing violations
+    # are tolerated via docs/layers-debt.txt until their deadlines;
+    # the script fails on new violations or past-deadline debt.
+    name: Architecture Layers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install yq (Mike Farah Go-based, not Python apt package)
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+      - name: Check architecture layers
+        run: bash scripts/check-layers.sh

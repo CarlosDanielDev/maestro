@@ -52,3 +52,26 @@ teardown() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"FORBIDDEN"* ]]
 }
+
+@test "known-debt entry with future deadline is tolerated" {
+  mkdir -p src/state src/tui
+  cp "$FIXTURES/layers-forbiddenpair-fail.rs" src/state/store.rs
+  echo "pub struct SerializableColor;" > src/tui/theme.rs
+  cat > layers-debt.txt <<'EOF'
+src/state/store.rs → src/tui/theme.rs # deadline: 2099-12-31, owner: @test, ticket: #TEST, plan: resolve later
+EOF
+  DEBT_FILE_OVERRIDE="$PWD/layers-debt.txt" run bash "$SCRIPT" "$MANIFEST"
+  [ "$status" -eq 0 ]
+}
+
+@test "known-debt entry with past deadline fails with DEADLINE PAST" {
+  mkdir -p src/state src/tui
+  cp "$FIXTURES/layers-forbiddenpair-fail.rs" src/state/store.rs
+  echo "pub struct SerializableColor;" > src/tui/theme.rs
+  cat > layers-debt.txt <<'EOF'
+src/state/store.rs → src/tui/theme.rs # deadline: 2000-01-01, owner: @test, ticket: #TEST, plan: overdue
+EOF
+  DEBT_FILE_OVERRIDE="$PWD/layers-debt.txt" run bash "$SCRIPT" "$MANIFEST"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"DEADLINE PAST"* ]]
+}
