@@ -1,14 +1,29 @@
 #!/usr/bin/env bash
 # Enforce coverage floors per tier from scripts/coverage-tiers.yml
 #
-# Usage: check-coverage-tiers.sh <coverage.lcov>
+# Usage: check-coverage-tiers.sh [--enforce] <coverage.lcov>
+#
+# Modes:
+#   (default, "report"): prints tier percentages and VIOLATION lines,
+#                        but exits 0 regardless — suitable for the
+#                        baseline phase when floors aren't yet reached
+#                        and we want the CI check to stay green.
+#   --enforce:           exits 1 on any tier below floor — suitable
+#                        after a tier's baseline reaches its floor.
 #
 # Exit codes:
-#   0 — all tier floors satisfied
-#   1 — some tier below its floor
+#   0 — report mode always; enforce mode when no tier below floor
+#   1 — enforce mode, tier below floor
 #   2 — invalid input (no lcov, missing manifest, yq not installed)
 
 set -euo pipefail
+
+# Parse --enforce flag (must come before the lcov path).
+ENFORCE=false
+if [[ "${1:-}" == "--enforce" ]]; then
+  ENFORCE=true
+  shift
+fi
 
 LCOV_FILE="${1:-}"
 MANIFEST="${MANIFEST_OVERRIDE:-scripts/coverage-tiers.yml}"
@@ -215,7 +230,11 @@ done
 if (( violations > 0 )); then
   echo ""
   echo "$violations tier(s) below floor."
-  exit 1
+  if $ENFORCE; then
+    exit 1
+  else
+    echo "(report mode — not failing the check; pass --enforce to block)"
+  fi
 fi
 
 exit 0

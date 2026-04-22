@@ -425,7 +425,7 @@ During Wave 1 implementation, `scripts/check-file-size.sh` was found to have a p
 
 Both tiers are within striking distance of their floors; activation is near-term test-writing, not a multi-week project. Suggested sequence: add tests for the largest uncovered modules in each tier, rerun `coverage` to see the delta, repeat until ≥ floor, then open a follow-up PR that removes `continue-on-error` for that tier.
 
-**Activation policy:** `continue-on-error: true` is active for the `coverage` job until baseline reaches floor. At that point, a dedicated PR removes `continue-on-error` per-tier (tiers activate independently — core may be blocking while tui is still reporting-only).
+**Activation policy:** the `check-coverage-tiers.sh` script runs in **report mode by default** — it prints tier percentages and any VIOLATION lines but exits 0 so the CI check stays green while baseline is below floor. To activate enforcement, add `--enforce` to the script invocation in the `coverage` job (`.github/workflows/ci.yml`). Once baseline reaches a floor for a tier, a dedicated PR adds `--enforce` for that tier's first blocking run. (Per-tier activation can be modeled by running the checker twice with different manifests pointing at a subset of tiers — simplest evolution when we get there.)
 
 **Ratchet:** deferred until after floor activation. Enabling ratchet during baseline phase would block every PR that doesn't add tests, including refactors and documentation changes.
 

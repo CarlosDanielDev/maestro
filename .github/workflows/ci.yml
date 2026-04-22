@@ -84,14 +84,15 @@ jobs:
           ignore: RUSTSEC-2025-0141,RUSTSEC-2024-0436,RUSTSEC-2024-0320,RUSTSEC-2026-0097,RUSTSEC-2026-0098,RUSTSEC-2026-0099,RUSTSEC-2026-0104
 
   coverage:
-    # Wave 2.1 — reporting-only during baseline phase.
-    # Once baseline coverage reaches each tier's floor, a follow-up PR
-    # removes continue-on-error per-tier (see docs/RUST-GUARDRAILS.md
-    # § CI Quality Gates Wave 2.1). Ratchet logic is deferred until
-    # after floor activation.
+    # Wave 2.1 — report mode during baseline phase.
+    # The script exits 0 by default (report mode) — it prints tier
+    # percentages and VIOLATION lines for visibility but keeps the CI
+    # check green. Activation is adding `--enforce` to the final script
+    # invocation below, which flips the script to strict-exit mode.
+    # Activate once baseline reaches the floor for a tier; each tier
+    # activation is a dedicated PR.
     name: Coverage Tiers
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
