@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings screen footer omitted edit keys (Space/Enter/←→) for non-Flags widgets — `WidgetKind::edit_hint()` now returns a contextual `(key, label)` tuple per variant; `SettingsScreen::draw` builds the footer from the focused widget's hint; `KeymapProvider::keybindings()` gains a third `"Edit"` group so the `?` help overlay stays consistent (#432)
+
 ## [0.14.0] - 2026-04-21
 
 ### Added
