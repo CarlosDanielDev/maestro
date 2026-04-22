@@ -38,3 +38,12 @@ teardown() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"not inside a git repository"* ]]
 }
+
+@test "exits 1 when gh CLI is not installed" {
+  # Use a clean PATH without the shim dir.
+  export PATH="/bin:/usr/bin"
+  run bash "$HOOK" 123
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"gh CLI not installed"* ]]
+  [[ "$output" == *"brew install gh"* ]]
+}

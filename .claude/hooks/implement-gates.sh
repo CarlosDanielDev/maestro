@@ -16,3 +16,9 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "implement-gates: not inside a git repository" >&2
   exit 1
 fi
+
+# Gate 2: gh CLI must be installed.
+if ! command -v gh >/dev/null 2>&1; then
+  echo "implement-gates: gh CLI not installed. Install: brew install gh" >&2
+  exit 1
+fi
