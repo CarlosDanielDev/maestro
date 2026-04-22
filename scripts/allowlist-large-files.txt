@@ -3,63 +3,63 @@
 # Entries without a deadline field are tolerated but discouraged.
 # CI fails when any deadline is in the past.
 #
-# Phase 1b triage (follow-up PR within 14 days of Wave 1 merge) will replace
-# placeholder deadlines with real ones, real split plans, and reassign owners
-# if appropriate.
+# Phase 1b triage (complete as of 2026-04-22): every entry has a real
+# deadline, owner, and split plan. Deadlines grouped by category:
+#   - Outliers (>1500 LOC, highest-priority splits): 2026-05-22 (1 month)
+#   - Core modules (business logic, session/state/adapt/provider/config/cli): 2026-06-22 (2 months)
+#   - TUI screens and rendering: 2026-07-22 (3 months)
+#   - Test files (parallel priority to TUI because they drive confidence): 2026-08-22 (4 months)
 #
-# Scope expanded during Task 1.1 — a pre-existing silent-pass bug in
-# check-file-size.sh (fixed in the same PR) surfaced 23 previously-invisible
-# violations that had been slipping past CI. All 23 are pre-added here with
-# the same placeholder deadline.
+# Extensions allowed but require a PR with justification. Reviewers push
+# back on habitual extensions.
 
-# --- Originally allowlisted (from pre-existing list, stale src/github/* removed) ---
-src/tui/screens/issue_browser/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/screens/home/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/theme.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/config.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/ui.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/screens/prompt_input.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/markdown.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/doctor.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/work/assigner.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/session/types.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/integration_tests/stream_parsing.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/widgets/ci_monitor.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/screens/milestone.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/session/pool.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/cli.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/prompts.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/screens/queue_confirmation.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/input_handler.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/navigation/mode_hints.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+# --- Outliers (> 1500 LOC, immediate priority) ---
+src/tui/screens/settings/mod.rs # deadline: 2026-05-22, owner: @carlos, ticket: #TBD, plan: split into theme_editor, keybind_editor, general_prefs submodules — draw-logic-per-section already delineated
+src/provider/github/client.rs # deadline: 2026-05-22, owner: @carlos, ticket: #TBD, plan: split by resource (issues, PRs, milestones, workflows) into separate submodules with shared request helpers
+src/config.rs # deadline: 2026-05-22, owner: @carlos, ticket: #TBD, plan: split maestro.toml parsing from defaults from serialization; move ThemeConfig out to resolve layer debt (see docs/layers-debt.txt)
+src/tui/app/tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #TBD, plan: break into per-scenario test files under tui/app/tests/ (state transitions, event handling, rendering)
 
-# --- Stale src/github/* entries from pre-existing list, REMOVED during this migration:
-#     src/github/client.rs → replaced by src/provider/github/client.rs below
-#     src/github/ci.rs     → replaced by src/provider/github/ci.rs below
-#     src/github/types.rs  → replaced by src/provider/github/types.rs below
+# --- Core modules (2-month deadline) ---
+src/session/types.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: extract state-machine transitions into session/transition.rs (already exists — move matching logic) and split icon/display impls into session/display.rs
+src/session/parser.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split stream-json parser from result-type accumulation
+src/session/manager.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split subprocess lifecycle from command-routing from metrics
+src/session/retry.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split retry-strategy types from retry-loop execution
+src/session/intent.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split intent-parsing from intent-matching
+src/session/transition.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: extract transition-validation rules into rule modules
+src/session/fork.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split worktree-setup from session-resume
+src/session/pool.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split pool-state from scheduling logic
+src/adapt/materializer.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split template expansion from write-to-disk
+src/adapt/scanner.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split file-discovery from content-parsing
+src/adapt/knowledge.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split knowledge-base loading from querying
+src/adapt/prompts.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split prompt-templates from invocation
+src/provider/github/ci.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split CI-status parsing from workflow-run fetching
+src/provider/github/types.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split types by resource (issues/PRs/milestones)
+src/turboquant/adapter.rs # deadline: 2026-05-22, owner: @carlos, ticket: #TBD, plan: OUTLIER — split per compression strategy (turboquant, summary, rolling) into strategy submodules
+src/sanitize/scanner.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split pattern-registry from match-execution
+src/cli.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split clap command tree from dispatch logic
+src/prompts.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split content from template-resolution helpers
+src/doctor.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split per-check implementations into doctor/ submodule
+src/work/assigner.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split assignment-rules from work-item selection
 
-# --- Newly surfaced by check-file-size.sh bug fix (Task 1.1) ---
-src/adapt/materializer.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/adapt/prompts.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/adapt/scanner.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/adapt/knowledge.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/app/tests.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/marquee.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/navigation/keymap.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/screens/settings/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/screens/adapt/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/screens/issue_browser/draw.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/screens/pr_review/mod.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/tui/panels.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/sanitize/scanner.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/provider/github/types.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/provider/github/ci.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/provider/github/client.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/turboquant/adapter.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/session/transition.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/session/fork.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/session/intent.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/session/manager.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/session/parser.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
-src/session/retry.rs # deadline: 2026-05-06, owner: @carlos, ticket: #TBD, plan: TBD
+# --- TUI screens and rendering (3-month deadline) ---
+src/tui/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: extract event-loop into tui/event_loop.rs; mod.rs keeps only re-exports
+src/tui/ui.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split draw-coordinator from per-screen draw dispatch
+src/tui/theme.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split ThemeConfig types (to config layer per layer-debt) from runtime theme application
+src/tui/markdown.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split pulldown-cmark wrapping from per-element rendering
+src/tui/panels.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split by panel type (left nav / main / status)
+src/tui/marquee.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split scroll-animation from text-source abstraction
+src/tui/input_handler.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split key-event parsing from action-dispatch per screen
+src/tui/navigation/mode_hints.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: extract per-mode hint tables into data files
+src/tui/navigation/keymap.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split keymap definitions from action resolution
+src/tui/widgets/ci_monitor.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split widget state from drawing
+src/tui/screens/home/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split home state-management from draw; move draw into home/draw.rs
+src/tui/screens/issue_browser/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split filter logic from state from actions; move draw-related code to issue_browser/draw.rs (already partially split)
+src/tui/screens/issue_browser/draw.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split per-section draw helpers
+src/tui/screens/prompt_input.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split input-buffer management from draw from history
+src/tui/screens/milestone.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split milestone-list state from draw
+src/tui/screens/queue_confirmation.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split confirmation-dialog rendering from queue-state summary
+src/tui/screens/adapt/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split adapt-screen state from draw; extract sub-screens (scan-preview, materialize-preview)
+src/tui/screens/pr_review/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split PR-browsing state from diff-rendering; draw already partially split into draw.rs
+
+# --- Test files (4-month deadline — lower priority, but tracked) ---
+src/integration_tests/stream_parsing.rs # deadline: 2026-08-22, owner: @carlos, ticket: #TBD, plan: break by scenario (happy path / error recovery / edge cases) into separate test files
