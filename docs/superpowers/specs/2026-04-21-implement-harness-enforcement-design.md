@@ -87,7 +87,7 @@ Three cooperating pieces, each with a clear job:
 │  Step 3: gh issue view <n>                                  │
 │                                                              │
 │  Step 4: [GATE] subagent-gatekeeper                         │
-│          └─> structured YAML report                          │
+│          └─> structured JSON report                          │
 │          └─> orchestrator performs side effects              │
 │                                                              │
 │  Step 5: branch / idempotency prompt                         │
@@ -109,7 +109,7 @@ Three cooperating pieces, each with a clear job:
 - Command = concierge (orchestrates, acts on results, no judgment).
 
 Each piece has one job with a clean interface: shell exit code; subagent
-structured YAML; command flow control. Layers can be tested and evolved
+structured JSON; command flow control. Layers can be tested and evolved
 independently.
 
 ## Components
@@ -134,7 +134,7 @@ Silent skip if absent.
 
 New file: `.claude/agents/subagent-gatekeeper.md`. Registered in the
 subagent registry. Purely consultive per `CLAUDE.md §1` — reads via
-`gh issue view` / `gh api`, never mutates. Returns a structured YAML report
+`gh issue view` / `gh api`, never mutates. Returns a structured JSON report
 the orchestrator parses.
 
 Delegated checks: DOR presence, DOR semantic quality, `Blocked By`
@@ -177,9 +177,11 @@ No free-form "remember to check X" prose.
 
 ### 4. Optional parser utility: `.claude/hooks/parse-gatekeeper-report.py`
 
-Small Python (stdlib only) script that extracts the fenced YAML block from
-the gatekeeper's response and converts it into a shell-consumable form
-(JSON via `json.dumps`). ~30 lines. Tested independently.
+Small Python (stdlib only) script that extracts the fenced JSON block from
+the gatekeeper's response, validates `report_version: 1`, and re-emits
+the parsed object as compact JSON on stdout for shell consumers
+(`python3 parse-gatekeeper-report.py < input.txt`). ~40 lines. Tested
+independently.
 
 ### 5. Acceptance checklist: `docs/harness-acceptance.md`
 
@@ -247,7 +249,7 @@ command reads it directly and passes it to the gatekeeper. No additional
 ### Step 4 — Gatekeeper (GATE)
 
 Invoke `subagent-gatekeeper` with the issue JSON and the selected mode.
-Expected response contains a fenced YAML block (see Gatekeeper Contract below).
+Expected response contains a fenced JSON block (see Gatekeeper Contract below).
 Parse via `.claude/hooks/parse-gatekeeper-report.py`.
 
 - `status: FAIL` with `dor.passed: false` → orchestrator runs:
@@ -385,60 +387,69 @@ Derived from labels (in priority order):
 
 ### Output format
 
-The gatekeeper emits a **fenced code block with the `yaml gatekeeper`
+The gatekeeper emits a **fenced code block with the `json gatekeeper`
 language tag**. The parser extracts the content of the first matching
-fence. A `report_version` field pins the schema so the parser can reject
-drift.
+fence and passes it to `json.loads`. A `report_version` field pins the
+schema so the parser can reject drift.
 
 ````
-```yaml gatekeeper
-report_version: 1
-status: PASS | FAIL
-task_type: implementation | docs | refactor | test-only
-dor:
-  passed: true | false
-  missing_sections: []
-  weak_sections: []
-blockers:
-  passed: true | false
-  open:
-    - number: 42
-      title: "feat: upstream scaffolding"
-      state: OPEN
-contracts:
-  passed: true | false
-  missing:
-    - "POST /api/items"
-remediation:
-  comment_body: |
-    Thanks for the issue! Before we can start, the following DOR sections
-    are required:
-    - `## Acceptance Criteria` (testable checklist items)
-    - `## Blocked By` (issue numbers or `None`)
-    See .claude/CLAUDE.md §3 for the full DOR table.
-  labels_to_add:
-    - needs-info
-reasons:
-  - "Missing required section: ## Acceptance Criteria"
-  - "Blocker #42 is still OPEN"
+```json gatekeeper
+{
+  "report_version": 1,
+  "status": "FAIL",
+  "task_type": "implementation",
+  "dor": {
+    "passed": false,
+    "missing_sections": ["Acceptance Criteria"],
+    "weak_sections": []
+  },
+  "blockers": {
+    "passed": false,
+    "open": [
+      {"number": 42, "title": "feat: upstream scaffolding", "state": "OPEN"}
+    ]
+  },
+  "contracts": {
+    "passed": true,
+    "missing": []
+  },
+  "remediation": {
+    "comment_body": "Thanks for the issue! Before we can start, the following DOR sections are required:\n\n- `## Acceptance Criteria` (testable checklist items)\n- `## Blocked By` (issue numbers or `None`)\n\nSee .claude/CLAUDE.md §3 for the full DOR table.",
+    "labels_to_add": ["needs-info"]
+  },
+  "reasons": [
+    "Missing required section: ## Acceptance Criteria",
+    "Blocker #42 is still OPEN"
+  ]
+}
 ```
 ````
 
 The fenced code block is the machine-readable decision surface. Prose above
 and below the fence is human-readable explanation; the parser ignores it.
 
-**Why a fenced code block + `report_version` instead of a sentinel line:**
+**Why JSON over YAML:**
+
+- Python stdlib parses JSON with `json.loads` — no third-party dependency
+  needed. YAML would require `pyyaml`, which conflicts with the parser
+  utility's "stdlib only" promise.
+- JSON is the most rigorous LLM output format — LLMs are trained
+  heavily on JSON and emit it with high reliability.
+- Trade-off accepted: multi-line strings become `\n`-escaped rather than
+  YAML's `|` block scalars. The comment body is slightly less readable
+  in the raw report, but the orchestrator re-expands `\n` to newlines
+  when posting the comment to the issue.
+
+**Why a fenced code block + `report_version`:**
 
 - Triple-backtick fencing is markdown-native and renders cleanly in the
   orchestrator's display.
-- The `yaml gatekeeper` language tag uniquely identifies the fence — the
-  parser grepping for ```` ```yaml gatekeeper ```` will never false-match
-  against normal YAML code blocks the subagent might include in its prose.
+- The `json gatekeeper` language tag uniquely identifies the fence — the
+  parser grepping for ```` ```json gatekeeper ```` will never false-match
+  against normal JSON code blocks the subagent might include in its prose.
 - `report_version: 1` lets the parser reject schema drift. If a future
   version of the gatekeeper emits `report_version: 2` with new fields, v1
   parsers fail closed (abort) rather than silently dropping data.
-- Avoids collision with YAML document separators (`---`) which a
-  multi-document YAML emitter would produce.
 
 ### Side-effect discipline
 
@@ -891,8 +902,10 @@ Surfaced during brainstorming, explicitly parked:
 - **JSON fixtures vs real test-repo issues:** JSON fixtures only, v1.
   Real-repo testing is covered by the manual acceptance checklist.
 - **Python stdlib dependency for the parser:** accepted. Python ships on
-  macOS + most Linux images. A pure-shell YAML parser would be uglier than
-  the problem justifies.
+  macOS + most Linux images. Stdlib `json` + regex-based fence extraction
+  keeps the parser dependency-free. (Originally this was a YAML parser,
+  which would have required `pyyaml` — switched to JSON during planning
+  to preserve the stdlib-only property.)
 
 - **Baseline-green cost optimization:** v1 runs the full `cargo test` suite
   as the baseline assertion, which adds 30+ seconds on large projects. A
