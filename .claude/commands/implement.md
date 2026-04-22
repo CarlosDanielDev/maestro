@@ -283,8 +283,8 @@ Implementation complete for Issue #$ISSUE_NUMBER: $TITLE
 Gates passed:
   - Pre-check hook (ok)
   - Gatekeeper (task_type: $TASK_TYPE)
-  - RED checkpoint (verified failing → passing)
-  - GREEN checkpoint (all tests pass)
+  - RED checkpoint (verified failing → passing)   # omit if task_type is docs/refactor
+  - GREEN checkpoint (all tests pass)              # omit if task_type is docs
 
 Logs: $GATE_LOG_DIR
 
@@ -297,8 +297,8 @@ Next: run /pushup to commit, push, create PR, and close the issue.
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success |
-| 1 | Generic failure (gh missing, not authed, not in repo, closed issue, training mode rejected) |
+| 0 | Success — also returned when `--training` is passed (wrong-tool message, not a failure) |
+| 1 | Generic failure (gh missing, not authed, not in repo, closed issue) |
 | 2 | Baseline cargo test failing |
 | 3 | RED gate failed |
 | 4 | GREEN gate failed |
