@@ -56,3 +56,19 @@ teardown() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"VIOLATION"* ]]
 }
+
+@test "new 400 LOC cap: file at 450 LOC not on allowlist fails" {
+  printf 'line\n%.0s' {1..450} > src/new_bigfile.rs
+  echo "# empty" > scripts/allowlist-large-files.txt
+  run bash scripts/check-file-size.sh
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"VIOLATION"* ]]
+  [[ "$output" == *"max 400"* ]]
+}
+
+@test "new 400 LOC cap: file at 390 LOC passes without allowlist" {
+  printf 'line\n%.0s' {1..390} > src/small_file.rs
+  echo "# empty" > scripts/allowlist-large-files.txt
+  run bash scripts/check-file-size.sh
+  [ "$status" -eq 0 ]
+}
