@@ -1,0 +1,39 @@
+# Coverage tiers for scripts/check-coverage-tiers.sh.
+#
+# Each tier has a floor (enforced once baseline is at or above it)
+# and an aspiration (documentary, not enforced).
+# Paths use glob patterns; a file is classified into the first tier
+# whose glob matches.
+#
+# Special tier "excluded" — files NOT counted toward total coverage.
+# (Binary wiring, integration tests, trivial mod.rs re-exports.)
+#
+# See docs/superpowers/specs/2026-04-22-ci-quality-gates-design.md
+# § Wave 2.1 for policy.
+
+tiers:
+  core:
+    floor: 90.0
+    aspiration: 96.0
+    paths:
+      - "src/session/**"
+      - "src/state/**"
+      - "src/adapt/**"
+      - "src/turboquant/**"
+      - "src/gates/**"
+      - "src/provider/**"
+      - "src/config.rs"
+      - "src/cli.rs"
+
+  tui:
+    floor: 70.0
+    paths:
+      - "src/tui/**"
+
+  excluded:
+    paths:
+      - "src/main.rs"
+      - "src/lib.rs"
+      - "src/integration_tests/**"
+      - "**/tests.rs"
+      - "**/*_test.rs"
