@@ -120,3 +120,78 @@ export TASK_TYPE="$task_type"
 ```
 
 Exit code `5` is reserved for gatekeeper failure.
+
+### Step 5: Branch selection with idempotency
+
+Check for an existing branch matching `feat/issue-${ISSUE_NUMBER}-*`:
+
+```bash
+existing=$(git branch --list "feat/issue-${ISSUE_NUMBER}-*" | head -1 | sed 's/^[ *]*//')
+```
+
+**If empty:** derive a slug from the issue title and create a new branch:
+
+```bash
+slug=$(jq -r .title "$GATE_LOG_DIR/issue.json" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c -40)
+git checkout -b "feat/issue-${ISSUE_NUMBER}-${slug}"
+```
+
+**If non-empty:** fire the idempotency prompt. Show recent commits:
+
+```
+Branch `<existing>` already exists.
+
+Recent commits on that branch:
+<git log main..HEAD --oneline -5>
+
+  (C)ontinue on this branch
+  (R)estart — delete branch and start over
+  (A)bort
+
+Choice [C/R/A]:
+```
+
+Handle each choice:
+
+**(C)ontinue:**
+- `git checkout <existing>`.
+- Re-invoke the gatekeeper (idempotent).
+- When delegating to architect/QA in Step 6, prepend the resumption context prompt from the spec (§Idempotency UX → Continue semantics):
+
+  > **Context for resumption:** This branch already has commits. Here is the history since `main`:
+  >
+  > ```
+  > $(git log --oneline main..HEAD)
+  > ```
+  >
+  > Before producing a full blueprint, inspect these commits (via Read / Grep on the branch). If the work described by the issue appears substantially done (architecture scaffolded, tests present, or implementation in place), return a **minimal response** acknowledging the existing state and listing only what remains. Do not duplicate work already in the branch. If the branch diverges from what you would design (e.g., different module layout, different abstractions), flag the divergence and recommend either reconciling or restarting — do not silently layer a conflicting plan on top.
+
+- **Divergence handling (spec §Idempotency UX → Divergence handling):** if the architect or QA subagent flags divergence, the orchestrator presents a secondary prompt:
+
+  ```
+  Architect detected divergence between the existing branch and the
+  issue's requirements:
+
+  <architect's divergence summary>
+
+    (R)econcile — continue and let subagents bridge the gap
+    (S)witch to Restart — delete and start over
+    (A)bort — inspect manually
+
+  Choice [R/S/A]:
+  ```
+
+  - **(R)econcile**: proceed with Step 6's subagent sequence, trusting the architect/QA to bridge the gap via follow-up edits.
+  - **(S)witch to Restart**: fall through to the Restart flow below (typed `RESTART` confirmation, branch deletion).
+  - **(A)bort**: exit cleanly, tell the user to inspect manually.
+
+**(R)estart:**
+- Require typed `RESTART` confirmation.
+- `git checkout main && git branch -D "$existing"`.
+- If the branch was pushed, prompt about remote deletion (default no).
+- Create fresh branch.
+
+**(A)bort:**
+- Exit cleanly. Tell the user to `git checkout <branch>` manually to inspect.
+
+If the user is already on the matching branch, skip the prompt and use Continue semantics.
