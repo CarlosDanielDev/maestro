@@ -1,0 +1,9 @@
+{
+  "title": "feat: add retry policy to session manager",
+  "body": "## Overview\n\nAdd configurable retry policy for transient session failures.\n\n## Expected Behavior\n\nSession failures with transient errors (network, timeout) retry up to N times with exponential backoff.\n\n## Acceptance Criteria\n\n- [ ] Retry count is configurable via maestro.toml\n- [ ] Exponential backoff between attempts\n- [ ] Permanent errors do not retry\n- [ ] Metrics track retry count per session\n\n## Files to Modify\n\n- src/session/manager.rs\n- src/config.rs\n\n## Test Hints\n\nMock the Claude CLI subprocess via a trait-based fake. Assert retry count matches config.\n\n## Blocked By\n\n- None\n\n## Definition of Done\n\n- [ ] Tests pass\n- [ ] Docs updated\n- [ ] Feature flag added",
+  "labels": [{"name": "type:feature"}, {"name": "area:session"}],
+  "assignees": [],
+  "milestone": {"number": 5, "title": "v0.15.0"},
+  "state": "OPEN",
+  "comments": []
+}
