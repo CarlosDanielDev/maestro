@@ -106,6 +106,20 @@ skip = [
     # windows-sys: ring uses 0.52.0; rustix 0.38/newer uses 0.59.0; clap/tokio use 0.61.2.
     { name = "windows-sys", version = "0.52", reason = "ring pins v0.52.0; rustix/clap use newer versions — no single upgrade path" },
     { name = "windows-sys", version = "0.59", reason = "rustix v0.38 pins v0.59.0; clap/tokio use v0.61.2 — no single upgrade path" },
+    # --- Additional duplicates surfaced on Linux/musl CI that don't appear on macOS ---
+    # These are all transitive through the Windows crate ecosystem
+    # (windows-targets + per-architecture variants). Name-only skips cover
+    # all versions — robust to lockfile drift.
+    { name = "windows-targets", reason = "transitive via windows ecosystem; multiple versions across dep graph on Linux CI" },
+    { name = "windows_aarch64_gnullvm", reason = "transitive via windows-targets; per-target variant" },
+    { name = "windows_aarch64_msvc", reason = "transitive via windows-targets; per-target variant" },
+    { name = "windows_i686_gnu", reason = "transitive via windows-targets; per-target variant" },
+    { name = "windows_i686_gnullvm", reason = "transitive via windows-targets; per-target variant" },
+    { name = "windows_i686_msvc", reason = "transitive via windows-targets; per-target variant" },
+    { name = "windows_x86_64_gnu", reason = "transitive via windows-targets; per-target variant" },
+    { name = "windows_x86_64_gnullvm", reason = "transitive via windows-targets; per-target variant" },
+    { name = "windows_x86_64_msvc", reason = "transitive via windows-targets; per-target variant" },
+    { name = "wit-bindgen", reason = "transitive via wasm-adjacent deps; multiple versions" },
 ]
 skip-tree = []
 
