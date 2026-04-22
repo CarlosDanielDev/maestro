@@ -1,0 +1,9 @@
+{
+  "title": "docs: update CLAUDE.md subagent registry",
+  "body": "## Overview\n\nAdd new subagents to the registry table.\n\n## Expected Behavior\n\nRegistry reflects all current subagents.\n\n## Acceptance Criteria\n\n- [ ] All subagents listed\n- [ ] Status column up to date\n\n## Files to Modify\n\n- .claude/CLAUDE.md\n\n## Blocked By\n\n- None\n\n## Definition of Done\n\n- [ ] Change committed",
+  "labels": [{"name": "type:docs"}],
+  "state": "OPEN",
+  "milestone": null,
+  "assignees": [],
+  "comments": []
+}
