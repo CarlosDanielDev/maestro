@@ -28,24 +28,29 @@
 
 **Orchestrator Mode workflow is ALWAYS (TDD ENFORCED):**
 1. Receive user request
-2. **Verify DOR (Definition of Ready) - MANDATORY:**
-   - Check the issue has all required DOR fields (see section 3)
-   - If missing required fields → comment on issue, apply `needs-info` label, **STOP**
-3. **Delegate to Architect for blueprint - MANDATORY:**
+2. **Pre-check hook (MANDATORY):**
+   - Run `bash .claude/hooks/implement-gates.sh <issue-number>`
+   - Abort on any non-zero exit (see exit-code table in `/implement`)
+3. **Delegate to Gatekeeper (MANDATORY):**
+   - `subagent-gatekeeper` → structured JSON report (DOR, blockers, contracts, task_type)
+   - Parse via `.claude/hooks/parse_gatekeeper_report.py`
+   - On DOR FAIL → orchestrator posts gatekeeper-drafted comment, applies `needs-info` label, **STOP**
+   - On blocker/contract FAIL → **STOP** with reasons from the report
+4. **Delegate to Architect for blueprint - MANDATORY:**
    - `subagent-architect` - For all architecture decisions
    - **NEVER skip architecture step - the architect MUST be called**
-4. **CONTRACT VALIDATION (if task involves API endpoints) - MANDATORY:**
+5. **CONTRACT VALIDATION (if task involves API endpoints) - MANDATORY:**
    - Run `/validate-contracts` to check existing models against `docs/api-contracts/` schemas
    - If no contract schema exists for the endpoint → **STOP and ask user to provide the JSON schema**
    - If contract exists but models mismatch → fix models BEFORE proceeding
-5. **Delegate to QA for test blueprint - MANDATORY (TDD):**
+6. **Delegate to QA for test blueprint - MANDATORY (TDD):**
    - `subagent-qa` - Provides test cases, mocks, and expected behaviors
    - **Tests are designed BEFORE implementation**
-6. **Write tests FIRST (RED)** — verify they fail
-7. **Implement minimum code (GREEN)** — make tests pass
-8. **Refactor** — clean up while tests stay green
-9. Delegate to Security for review of implemented code
-10. Call docs-analyst at the end
+7. **Write tests FIRST (RED)** — verify they fail (enforced by `/implement` Step 6e bash gate)
+8. **Implement minimum code (GREEN)** — make tests pass (enforced by `/implement` Step 6g bash gate)
+9. **Refactor** — clean up while tests stay green
+10. Delegate to Security for review of implemented code
+11. Call docs-analyst at the end
 
 **In 🎸 Vibe Coding Mode - You work DIRECTLY:**
 - Research, plan, and execute yourself
@@ -162,7 +167,11 @@ A conforming issue contains these sections (enforced by GitHub issue templates):
 
 **Orchestrator Mode TDD Flow:**
 ```
-VERIFY DOR (Definition of Ready) → STOP if missing required fields
+Pre-check hook (implement-gates.sh) → STOP on any gate failure
+    │
+    ▼
+subagent-gatekeeper → STOP if DOR/blockers/contracts FAIL
+                      (auto-comment + needs-info on DOR FAIL)
     │
     ▼
 subagent-architect → Blueprint (includes testable interfaces)
@@ -265,15 +274,16 @@ Immediately after language selection, ask:
 
 **Mandatory Subagent Sequence (IN THIS ORDER — TDD ENFORCED):**
 
-1. VERIFY DOR → Check issue has all required fields (MANDATORY)
-2. `subagent-architect` → Architecture Blueprint (MANDATORY)
-3. `/validate-contracts` → Contract validation (if API endpoints)
-4. `subagent-qa` → Test Blueprint (TDD RED)
-5. YOU WRITE TESTS (RED — verify they fail)
-6. YOU IMPLEMENT (GREEN — minimum code to pass)
-7. YOU REFACTOR (tests stay green)
-8. `subagent-security-analyst` → Security review
-9. `subagent-docs-analyst` → Documentation (MANDATORY)
+1. Pre-check hook → `bash .claude/hooks/implement-gates.sh <issue-number>` (MANDATORY)
+2. `subagent-gatekeeper` → DOR/blockers/contracts (MANDATORY)
+3. `subagent-architect` → Architecture Blueprint (MANDATORY)
+4. `/validate-contracts` → Contract validation (if API endpoints)
+5. `subagent-qa` → Test Blueprint (TDD RED)
+6. YOU WRITE TESTS (RED — verify they fail)
+7. YOU IMPLEMENT (GREEN — minimum code to pass)
+8. YOU REFACTOR (tests stay green)
+9. `subagent-security-analyst` → Security review
+10. `subagent-docs-analyst` → Documentation (MANDATORY)
 
 ### 📚 Training Mode
 
