@@ -103,9 +103,10 @@ skip = [
     { name = "windows-interface", version = "0.57", reason = "windows v0.57 (sysinfo) uses v0.57.0; iana-time-zone uses v0.59 — no upgrade path" },
     # windows-result: windows v0.57 (sysinfo) uses 0.1.2; iana-time-zone uses 0.4.1.
     { name = "windows-result", version = "0.1", reason = "windows v0.57 (sysinfo) uses v0.1.2; iana-time-zone uses v0.4 — no upgrade path" },
-    # windows-sys: ring uses 0.52.0; rustix 0.38/newer uses 0.59.0; clap/tokio use 0.61.2.
-    { name = "windows-sys", version = "0.52", reason = "ring pins v0.52.0; rustix/clap use newer versions — no single upgrade path" },
-    { name = "windows-sys", version = "0.59", reason = "rustix v0.38 pins v0.59.0; clap/tokio use v0.61.2 — no single upgrade path" },
+    # windows-sys: multiple versions across the Windows crate ecosystem.
+    # Name-only skip covers all versions — resilient to Cargo.lock churn
+    # (seen v0.52, v0.59, v0.60, v0.61 depending on resolution target).
+    { name = "windows-sys", reason = "multiple versions across windows ecosystem (ring/rustix/clap/tokio/arboard pin different majors); no single upgrade path" },
     # --- Additional duplicates surfaced on Linux/musl CI that don't appear on macOS ---
     # These are all transitive through the Windows crate ecosystem
     # (windows-targets + per-architecture variants). Name-only skips cover
