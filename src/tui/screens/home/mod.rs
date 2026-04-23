@@ -298,7 +298,7 @@ impl Screen for HomeScreen {
                         return ScreenAction::None;
                     }
                 }
-                KeyCode::Esc => return ScreenAction::None,
+                KeyCode::Esc => return ScreenAction::Pop,
                 _ => {}
             }
         }
@@ -521,10 +521,11 @@ mod tests {
     }
 
     #[test]
-    fn home_esc_returns_none() {
+    fn home_esc_returns_pop() {
+        // #290: Esc on the Dashboard pops back to the Landing screen.
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
-        assert_eq!(action, ScreenAction::None);
+        assert_eq!(action, ScreenAction::Pop);
     }
 
     #[test]

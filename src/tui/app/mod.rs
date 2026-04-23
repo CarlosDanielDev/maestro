@@ -81,6 +81,10 @@ pub struct App {
     pub context_monitor: Box<dyn ContextMonitor>,
     pub fork_policy: Option<ForkPolicy>,
     pub home_screen: Option<crate::tui::screens::HomeScreen>,
+    pub landing_screen: Option<crate::tui::screens::LandingScreen>,
+    pub issue_wizard_screen: Option<crate::tui::screens::IssueWizardScreen>,
+    pub project_stats_screen: Option<crate::tui::screens::ProjectStatsScreen>,
+    pub milestone_wizard_screen: Option<crate::tui::screens::MilestoneWizardScreen>,
     pub issue_browser_screen: Option<crate::tui::screens::IssueBrowserScreen>,
     pub milestone_screen: Option<crate::tui::screens::MilestoneScreen>,
     pub prompt_input_screen: Option<crate::tui::screens::PromptInputScreen>,
@@ -120,6 +124,13 @@ pub struct App {
     pub log_viewer_cache: crate::tui::log_viewer::LogViewerCache,
     pub session_summary_state: Option<crate::tui::app::types::SessionSummaryState>,
     pub show_activity_log: bool,
+    /// Marquee animation state for the top status bar (#417). Scrolls
+    /// when the assembled spans exceed the viewport width.
+    pub status_bar_marquee: crate::tui::marquee::MarqueeState,
+    /// Cheap content fingerprint (total span char width) used to reset
+    /// `status_bar_marquee` when the bar's identity changes (breadcrumb
+    /// depth, agent count, TQ toggle, …).
+    pub status_bar_marquee_fingerprint: usize,
     pub resource_monitor: Box<dyn crate::system::monitor::ResourceMonitor>,
 }
 
@@ -171,6 +182,10 @@ impl App {
             context_monitor: Box::new(ProductionContextMonitor::new()),
             fork_policy: None,
             home_screen: None,
+            landing_screen: None,
+            issue_wizard_screen: None,
+            project_stats_screen: None,
+            milestone_wizard_screen: None,
             issue_browser_screen: None,
             milestone_screen: None,
             prompt_input_screen: None,
@@ -214,6 +229,8 @@ impl App {
             session_summary_state: None,
             show_activity_log: true,
             resource_monitor: Box::new(crate::system::SysInfoMonitor::new(1000)),
+            status_bar_marquee: crate::tui::marquee::MarqueeState::new(),
+            status_bar_marquee_fingerprint: 0,
         }
     }
 

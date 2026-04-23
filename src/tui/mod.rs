@@ -19,7 +19,6 @@ pub mod screens;
 pub mod session_summary;
 pub mod session_switcher;
 pub mod spinner;
-pub mod splash;
 mod summary;
 pub mod theme;
 pub mod token_dashboard;
@@ -46,6 +45,16 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use std::time::Duration;
 use summary::print_summary;
+
+/// Wrapper around `adapt::prompts::run_claude_print` that maps the result
+/// into the `Result<String, String>` shape the wizards' background tasks
+/// expect, with sensible defaults (sonnet model, current directory).
+async fn run_claude_print_for_wizard(prompt: &str) -> Result<String, String> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    crate::adapt::prompts::run_claude_print("sonnet", prompt, &cwd)
+        .await
+        .map_err(|e| e.to_string())
+}
 
 fn enter_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     execute!(
@@ -74,9 +83,14 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Show splash screen unless disabled
-    if !no_splash {
-        splash::show_splash(&mut terminal)?;
+    // The legacy timed splash is replaced by the persistent Landing screen
+    // (#290). Only intercept the Dashboard boot path — session-launching
+    // subcommands (cmd_run / cmd_resume) go straight to their work view.
+    if !no_splash && matches!(app.tui_mode, app::TuiMode::Dashboard) {
+        if app.landing_screen.is_none() {
+            app.landing_screen = Some(screens::LandingScreen::new());
+        }
+        app.tui_mode = app::TuiMode::Landing;
     }
 
     let result = event_loop(&mut terminal, &mut app).await;
@@ -409,6 +423,89 @@ async fn event_loop(
                         let materializer = GhMaterializer::new(github);
                         let result = materializer.materialize(&plan, &report, false).await;
                         let _ = tx.send(app::TuiDataEvent::AdaptMaterializeResult(result));
+                    });
+                }
+                app::TuiCommand::CreateIssue(payload) => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let body =
+                            crate::tui::screens::issue_wizard::render_body_markdown(&payload);
+                        let labels = crate::tui::screens::issue_wizard::render_labels(&payload);
+                        let client = GhCliClient::new();
+                        let result = client
+                            .create_issue(&payload.title, &body, &labels, payload.milestone)
+                            .await;
+                        let _ = tx.send(app::TuiDataEvent::IssueCreated(result));
+                    });
+                }
+                app::TuiCommand::FetchWizardDependencies => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result = client.list_issues(&[]).await;
+                        let _ = tx.send(app::TuiDataEvent::WizardDependencyIssues(result));
+                    });
+                }
+                app::TuiCommand::LaunchAiReview(payload) => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let prompt =
+                            crate::tui::screens::issue_wizard::build_review_prompt(&payload);
+                        let res = run_claude_print_for_wizard(&prompt).await;
+                        let _ = tx.send(app::TuiDataEvent::AiReviewResult(res));
+                    });
+                }
+                app::TuiCommand::CreateMilestoneWithIssues(plan) => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let res =
+                            crate::tui::screens::milestone_wizard::materialize_plan(&plan).await;
+                        let _ = tx.send(app::TuiDataEvent::MilestonePlanCreated(res));
+                    });
+                }
+                app::TuiCommand::LaunchAiPlanning(payload) => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let prompt =
+                            crate::tui::screens::milestone_wizard::build_planning_prompt(&payload);
+                        let res = run_claude_print_for_wizard(&prompt).await;
+                        let parsed = res.and_then(|raw| {
+                            crate::tui::screens::milestone_wizard::parse_planning_response(&raw)
+                        });
+                        let _ = tx.send(app::TuiDataEvent::AiPlanningResult(parsed));
+                    });
+                }
+                app::TuiCommand::FetchProjectStats => {
+                    let tx = app.data_tx.clone();
+                    let local_sessions: Vec<crate::session::types::Session> =
+                        app.pool.all_sessions().into_iter().cloned().collect();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let (
+                            open_result,
+                            closed_result,
+                            ready_result,
+                            failed_result,
+                            done_result,
+                            milestones_result,
+                        ) = tokio::join!(
+                            client.list_issues(&[]),
+                            client.list_issues(&["state:closed"]),
+                            client.list_issues(&["maestro:ready"]),
+                            client.list_issues(&["maestro:failed"]),
+                            client.list_issues(&["maestro:done"]),
+                            client.list_milestones("open"),
+                        );
+                        let data = crate::tui::screens::project_stats::aggregate(
+                            open_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            closed_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            ready_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            failed_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            done_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            milestones_result.unwrap_or_default(),
+                            &local_sessions,
+                        );
+                        let _ = tx.send(app::TuiDataEvent::ProjectStats(data));
                     });
                 }
             }

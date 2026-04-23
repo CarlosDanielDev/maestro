@@ -1,6 +1,8 @@
 use crate::tui::activity_log::LogLevel;
 use crate::tui::app::{self, App};
-use crate::tui::screen_dispatch::{dispatch_to_active_screen, handle_screen_action};
+use crate::tui::screen_dispatch::{
+    dispatch_to_active_screen_then_hook as dispatch_to_active_screen, handle_screen_action,
+};
 use crate::tui::screens;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
@@ -581,7 +583,19 @@ fn dispatch_fkey_action(app: &mut App, action: crate::tui::navigation::keymap::F
 }
 
 /// Returns true if the current TUI mode accepts text input (q should type, not quit).
+///
+/// Primary source of truth is the active `Screen`'s `desired_input_mode()`
+/// — this lets per-step wizards (Insert on form steps, Normal elsewhere)
+/// toggle the global `q` gate without the gate needing to know about
+/// every screen. Falls back to a small allowlist for modes whose text
+/// entry predates the `Screen` trait (`SessionSwitcher`) or whose
+/// default mode is Normal but still have ambient typing surfaces
+/// (`PromptInput`, `Settings`).
 fn is_text_input_mode(app: &App) -> bool {
+    use crate::tui::navigation::InputMode;
+    if crate::tui::ui::active_screen_input_mode(app) == InputMode::Insert {
+        return true;
+    }
     matches!(
         app.tui_mode,
         app::TuiMode::PromptInput | app::TuiMode::SessionSwitcher | app::TuiMode::Settings
@@ -826,6 +840,52 @@ mod tests {
     fn is_text_input_mode_false_for_dependency_graph() {
         let mut app = make_app();
         app.tui_mode = TuiMode::DependencyGraph;
+        assert!(!is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn is_text_input_mode_true_for_issue_wizard_on_basic_info() {
+        // Regression: pressing `q` on a wizard text field must not route
+        // through the global ConfirmExit handler. The wizard returns
+        // `InputMode::Insert` on BasicInfo/DorFields; the global gate
+        // must honour that (mirrors neovim's mode-aware keybindings).
+        let mut app = make_app();
+        let mut wizard = crate::tui::screens::IssueWizardScreen::new();
+        // Walk the step machine into BasicInfo (the first form step).
+        use crate::tui::screens::issue_wizard::IssueWizardStep;
+        while wizard.step() != IssueWizardStep::BasicInfo {
+            wizard.try_advance();
+        }
+        app.issue_wizard_screen = Some(wizard);
+        app.tui_mode = TuiMode::IssueWizard;
+        assert!(is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn is_text_input_mode_false_for_issue_wizard_on_type_select() {
+        // TypeSelect requests Normal input — `q` should still route to
+        // ConfirmExit because nothing is being typed here.
+        let mut app = make_app();
+        let mut wizard = crate::tui::screens::IssueWizardScreen::new();
+        wizard.try_advance(); // Context → TypeSelect
+        app.issue_wizard_screen = Some(wizard);
+        app.tui_mode = TuiMode::IssueWizard;
+        assert!(!is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn is_text_input_mode_true_for_milestone_wizard_on_goal_definition() {
+        let mut app = make_app();
+        app.milestone_wizard_screen = Some(crate::tui::screens::MilestoneWizardScreen::new());
+        app.tui_mode = TuiMode::MilestoneWizard;
+        assert!(is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn is_text_input_mode_false_for_project_stats() {
+        let mut app = make_app();
+        app.project_stats_screen = Some(crate::tui::screens::ProjectStatsScreen::new());
+        app.tui_mode = TuiMode::ProjectStats;
         assert!(!is_text_input_mode(&app));
     }
 

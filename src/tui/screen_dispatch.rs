@@ -4,11 +4,123 @@ use crate::provider::github::types::GhIssue;
 use crate::session::transition::TransitionReason;
 use crossterm::event::Event;
 
+/// Fire wizard step-entry hooks so internal transitions (Enter advances
+/// inside the wizard) trigger the same fetch/launch side effects as a
+/// fresh Push. Idempotent — guarded by the wizard's own `entered_*` checks.
+pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
+    if app.tui_mode != app::TuiMode::IssueWizard {
+        return;
+    }
+    let (start_dep_fetch, start_review) = match app.issue_wizard_screen.as_ref() {
+        Some(s) => (s.entered_dependencies_step(), s.entered_ai_review_step()),
+        None => (false, false),
+    };
+    if start_dep_fetch {
+        if let Some(ref mut s) = app.issue_wizard_screen {
+            s.begin_dependency_fetch();
+        }
+        app.pending_commands
+            .push(app::TuiCommand::FetchWizardDependencies);
+    }
+    if start_review {
+        let payload = app
+            .issue_wizard_screen
+            .as_ref()
+            .map(|s| s.payload().clone());
+        if let Some(payload) = payload {
+            if let Some(ref mut s) = app.issue_wizard_screen {
+                s.begin_ai_review();
+            }
+            app.pending_commands
+                .push(app::TuiCommand::LaunchAiReview(payload));
+        }
+    }
+
+    let needs_create = app
+        .issue_wizard_screen
+        .as_ref()
+        .map(|s| {
+            matches!(
+                s.step(),
+                crate::tui::screens::issue_wizard::IssueWizardStep::Creating
+            ) && s.create_in_flight()
+                && !s.create_enqueued()
+        })
+        .unwrap_or(false);
+    if needs_create {
+        let payload = app
+            .issue_wizard_screen
+            .as_ref()
+            .map(|s| s.payload().clone());
+        if let Some(payload) = payload {
+            if let Some(ref mut s) = app.issue_wizard_screen {
+                s.mark_create_enqueued();
+            }
+            app.pending_commands
+                .push(app::TuiCommand::CreateIssue(payload));
+        }
+    }
+
+    // Milestone wizard: AiStructuring auto-launch + Materializing creation.
+    if app.tui_mode == app::TuiMode::MilestoneWizard {
+        let (start_planning, start_creating) = match app.milestone_wizard_screen.as_ref() {
+            Some(s) => (
+                s.entered_ai_structuring_step(),
+                matches!(
+                    s.step(),
+                    crate::tui::screens::milestone_wizard::MilestoneWizardStep::Materializing
+                ) && s.materialize_progress().is_some()
+                    && !s.materialize_enqueued(),
+            ),
+            None => (false, false),
+        };
+        if start_planning {
+            let payload = app
+                .milestone_wizard_screen
+                .as_ref()
+                .map(|s| s.payload().clone());
+            if let Some(payload) = payload {
+                if let Some(ref mut s) = app.milestone_wizard_screen {
+                    s.start_planning();
+                }
+                app.pending_commands
+                    .push(app::TuiCommand::LaunchAiPlanning(payload));
+            }
+        }
+        if start_creating {
+            let plan = app
+                .milestone_wizard_screen
+                .as_ref()
+                .and_then(|s| s.generated_plan().cloned());
+            if let Some(plan) = plan {
+                if let Some(ref mut s) = app.milestone_wizard_screen {
+                    s.mark_materialize_enqueued();
+                }
+                app.pending_commands
+                    .push(app::TuiCommand::CreateMilestoneWithIssues(plan));
+            }
+        }
+    }
+}
+
+pub(super) fn dispatch_to_active_screen_then_hook(
+    app: &mut app::App,
+    event: &Event,
+) -> Option<ScreenAction> {
+    let action = dispatch_to_active_screen(app, event);
+    tick_wizard_step_hooks(app);
+    action
+}
+
 pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Option<ScreenAction> {
     use crate::tui::navigation::InputMode;
 
     let screen: &mut dyn Screen = match app.tui_mode {
         app::TuiMode::Dashboard => app.home_screen.as_mut()?,
+        app::TuiMode::Landing => app.landing_screen.as_mut()?,
+        app::TuiMode::IssueWizard => app.issue_wizard_screen.as_mut()?,
+        app::TuiMode::ProjectStats => app.project_stats_screen.as_mut()?,
+        app::TuiMode::MilestoneWizard => app.milestone_wizard_screen.as_mut()?,
         app::TuiMode::IssueBrowser => app.issue_browser_screen.as_mut()?,
         app::TuiMode::MilestoneView => app.milestone_screen.as_mut()?,
         app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
@@ -66,6 +178,23 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         ScreenAction::None => {}
         ScreenAction::Push(mode) => {
             match mode {
+                app::TuiMode::Landing => {
+                    app.landing_screen
+                        .get_or_insert_with(screens::LandingScreen::new);
+                }
+                app::TuiMode::IssueWizard => {
+                    app.issue_wizard_screen
+                        .get_or_insert_with(screens::IssueWizardScreen::new);
+                }
+                app::TuiMode::ProjectStats => {
+                    app.project_stats_screen = Some(screens::ProjectStatsScreen::new());
+                    app.pending_commands
+                        .push(app::TuiCommand::FetchProjectStats);
+                }
+                app::TuiMode::MilestoneWizard => {
+                    app.milestone_wizard_screen
+                        .get_or_insert_with(screens::MilestoneWizardScreen::new);
+                }
                 app::TuiMode::IssueBrowser => {
                     let layout = app
                         .config
@@ -124,11 +253,21 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 _ => {}
             }
             app.navigate_to(mode);
+            tick_wizard_step_hooks(app);
         }
         ScreenAction::Pop => {
             match app.tui_mode {
                 app::TuiMode::IssueBrowser => {
                     app.issue_browser_screen = None;
+                }
+                app::TuiMode::IssueWizard => {
+                    app.issue_wizard_screen = None;
+                }
+                app::TuiMode::ProjectStats => {
+                    app.project_stats_screen = None;
+                }
+                app::TuiMode::MilestoneWizard => {
+                    app.milestone_wizard_screen = None;
                 }
                 app::TuiMode::MilestoneView => {
                     app.milestone_screen = None;
@@ -278,6 +417,22 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 event,
                 body,
             });
+        }
+        ScreenAction::OpenIssueWizardForMilestone {
+            milestone,
+            suggested_blocked_by,
+        } => {
+            // Reuse an existing wizard if present, otherwise spin one up.
+            // Pre-fill milestone + suggested Blocked By so the user can
+            // accept/override on the Dependencies step.
+            let mut wizard = app.issue_wizard_screen.take().unwrap_or_default();
+            {
+                let payload = wizard.payload_mut();
+                payload.milestone = Some(milestone);
+                payload.blocked_by = suggested_blocked_by;
+            }
+            app.issue_wizard_screen = Some(wizard);
+            app.navigate_to(app::TuiMode::IssueWizard);
         }
         ScreenAction::StartAdaptPipeline(config) => {
             if let Some(ref mut screen) = app.adapt_screen {

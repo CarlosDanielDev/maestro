@@ -345,6 +345,48 @@ impl App {
                     LogLevel::Error,
                 );
             }
+            TuiDataEvent::IssueCreated(result) => {
+                if let Some(ref mut screen) = self.issue_wizard_screen {
+                    screen.finish_create(result);
+                }
+            }
+            TuiDataEvent::ProjectStats(data) => {
+                if let Some(ref mut screen) = self.project_stats_screen {
+                    screen.set_data(data);
+                }
+            }
+            TuiDataEvent::AiPlanningResult(result) => {
+                if let Some(ref mut screen) = self.milestone_wizard_screen {
+                    screen.apply_planning_result(result);
+                }
+            }
+            TuiDataEvent::WizardDependencyIssues(result) => match result {
+                Ok(issues) => {
+                    if let Some(ref mut screen) = self.issue_wizard_screen {
+                        screen.apply_dep_issues(issues);
+                    }
+                }
+                Err(e) => {
+                    self.activity_log.push_simple(
+                        "Wizard".into(),
+                        format!("Failed to fetch issues for Dependencies step: {}", e),
+                        LogLevel::Error,
+                    );
+                    if let Some(ref mut screen) = self.issue_wizard_screen {
+                        screen.apply_dep_issues(Vec::new());
+                    }
+                }
+            },
+            TuiDataEvent::AiReviewResult(result) => {
+                if let Some(ref mut screen) = self.issue_wizard_screen {
+                    screen.apply_ai_review(result);
+                }
+            }
+            TuiDataEvent::MilestonePlanCreated(result) => {
+                if let Some(ref mut screen) = self.milestone_wizard_screen {
+                    screen.finish_materialization(result);
+                }
+            }
         }
     }
 }

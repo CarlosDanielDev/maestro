@@ -74,9 +74,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         ));
         app.cached_mode_km_key = cache_key;
     }
-    let mode_km = app.cached_mode_km.as_ref().unwrap();
+    let mode_km = app.cached_mode_km.as_ref().unwrap().clone();
 
-    draw_status_bar(f, app, mode_km, chunks[0]);
+    draw_status_bar(f, app, mode_km.clone(), chunks[0]);
 
     // Render main content based on TUI mode
     let spinner_tick = app.spinner_tick;
@@ -157,6 +157,30 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     app.mascot_animator.state(),
                     app.mascot_animator.frame_index(),
                 );
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
+        TuiMode::Landing => {
+            if let Some(ref mut screen) = app.landing_screen {
+                screen.set_mascot(
+                    app.mascot_animator.state(),
+                    app.mascot_animator.frame_index(),
+                );
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
+        TuiMode::IssueWizard => {
+            if let Some(ref mut screen) = app.issue_wizard_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
+        TuiMode::ProjectStats => {
+            if let Some(ref mut screen) = app.project_stats_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
+        TuiMode::MilestoneWizard => {
+            if let Some(ref mut screen) = app.milestone_wizard_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -496,14 +520,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Draw upgrade banner if visible (overlays status bar)
     draw_upgrade_banner(f, &app.upgrade_state, chunks[0], &app.theme);
 
-    draw_fkey_bar(f, mode_km, chunks[3], &theme);
+    draw_fkey_bar(f, &mode_km, chunks[3], &theme);
 
     if let Some(ref help) = app.help_state {
         let input_mode = active_screen_input_mode(app);
         help::draw_help_overlay_with_search(
             f,
             f.area(),
-            mode_km,
+            &mode_km,
             input_mode,
             help.scroll,
             &help.search_query,
@@ -513,11 +537,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 }
 
 /// Resolve the active screen (if any) to extract keybindings and input mode.
-fn active_screen(app: &App) -> Option<&dyn Screen> {
+pub(super) fn active_screen(app: &App) -> Option<&dyn Screen> {
     match app.tui_mode {
         TuiMode::Dashboard => app.home_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::Landing => app.landing_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::IssueBrowser => app.issue_browser_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::IssueWizard => app.issue_wizard_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::MilestoneView => app.milestone_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::MilestoneWizard => app
+            .milestone_wizard_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::ProjectStats => app.project_stats_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::PromptInput => app.prompt_input_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::QueueConfirmation => app
             .queue_confirmation_screen
@@ -543,7 +574,7 @@ fn active_screen_bindings(app: &App) -> Vec<KeyBindingGroup> {
         .unwrap_or_default()
 }
 
-fn active_screen_input_mode(app: &App) -> crate::tui::navigation::InputMode {
+pub(super) fn active_screen_input_mode(app: &App) -> crate::tui::navigation::InputMode {
     active_screen(app)
         .and_then(|s| s.desired_input_mode())
         .unwrap_or(crate::tui::navigation::InputMode::Normal)
@@ -574,8 +605,18 @@ fn draw_mascot_block(
     }
 }
 
-fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
-    let theme = app.active_theme();
+fn draw_status_bar(f: &mut Frame, app: &mut App, mode_km: ModeKeyMap, area: Rect) {
+    let theme = app.active_theme().clone();
+    draw_status_bar_inner(f, app, &theme, &mode_km, area);
+}
+
+fn draw_status_bar_inner(
+    f: &mut Frame,
+    app: &mut App,
+    theme: &crate::tui::theme::Theme,
+    mode_km: &ModeKeyMap,
+    area: Rect,
+) {
     let elapsed = Utc::now() - app.start_time;
     let elapsed_str = format!(
         "{:02}:{:02}:{:02}",
@@ -719,10 +760,11 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
         ));
     }
 
-    // Append inline keybinding hints if space remains
-    let inner_width = area.width.saturating_sub(2); // account for borders
-    let status_used: u16 = spans.iter().map(|s| s.width() as u16).sum();
-    let remaining = inner_width.saturating_sub(status_used);
+    // Walk the spans once for the hint-fitting check; reuse the result
+    // for the marquee fingerprint below (this is hot — runs every frame).
+    let inner_width = area.width.saturating_sub(2);
+    let status_used: usize = spans.iter().map(|s| s.width()).sum();
+    let remaining = inner_width.saturating_sub(status_used as u16);
     if remaining > 10 && !mode_km.hints.is_empty() {
         let fitted = keymap::fit_hints_to_width(mode_km.hints, remaining.saturating_sub(4));
         if !fitted.is_empty() {
@@ -739,6 +781,8 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
                     format!(" {}", action),
                     Style::default().fg(theme.text_secondary),
                 ));
+                // Account for the appended hint width incrementally so we
+                // don't re-walk the whole vec for the marquee check.
             }
         }
     }
@@ -747,7 +791,31 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
         .styled_block_plain(false)
         .border_style(Style::default().fg(theme.border_active));
 
-    f.render_widget(Paragraph::new(Line::from(spans)).block(block), area);
+    let inner_area = block.inner(area);
+    f.render_widget(block, area);
+
+    // Recompute total_width because hint-spans may have been appended.
+    let total_width: usize = spans.iter().map(|s| s.width()).sum();
+    if total_width != app.status_bar_marquee_fingerprint {
+        app.status_bar_marquee.reset();
+        app.status_bar_marquee_fingerprint = total_width;
+    }
+
+    let viewport_width = inner_area.width as usize;
+    if total_width <= viewport_width {
+        app.status_bar_marquee.reset();
+        f.render_widget(Paragraph::new(Line::from(spans)), inner_area);
+    } else {
+        let overflow = total_width.saturating_sub(viewport_width);
+        app.status_bar_marquee
+            .advance(overflow, &crate::tui::marquee::MarqueeConfig::default());
+        let windowed = crate::tui::marquee::visible_spans(
+            &spans,
+            app.status_bar_marquee.offset,
+            viewport_width,
+        );
+        f.render_widget(Paragraph::new(Line::from(windowed)), inner_area);
+    }
 }
 
 fn draw_fkey_bar(

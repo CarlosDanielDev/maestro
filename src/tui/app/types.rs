@@ -16,6 +16,8 @@ pub enum TuiMode {
     Fullscreen(uuid::Uuid),
     CostDashboard,
     Dashboard,
+    /// Persistent landing menu shown at startup.
+    Landing,
     IssueBrowser,
     MilestoneView,
     PromptInput,
@@ -33,6 +35,13 @@ pub enum TuiMode {
     AdaptWizard,
     PrReview,
     ReleaseNotes,
+    /// Multi-step wizard for guided issue creation. The screen is built
+    /// out across #291/#293/#295/#296/#298; #290 only routes here.
+    IssueWizard,
+    /// AI-guided wizard for milestone planning. Built across #294/#297.
+    MilestoneWizard,
+    /// Read-only stats dashboard. Built in #292.
+    ProjectStats,
     LogViewer(uuid::Uuid),
     ConfirmKill(uuid::Uuid),
     ConfirmExit,
@@ -53,6 +62,7 @@ impl TuiMode {
             Self::Fullscreen(_) => "Fullscreen",
             Self::CostDashboard => "Cost",
             Self::Dashboard => "Dashboard",
+            Self::Landing => "Welcome",
             Self::IssueBrowser => "Issues",
             Self::MilestoneView => "Milestones",
             Self::PromptInput => "Prompt",
@@ -68,6 +78,9 @@ impl TuiMode {
             Self::AdaptWizard => "Adapt",
             Self::PrReview => "PR Review",
             Self::ReleaseNotes => "Release Notes",
+            Self::IssueWizard => "New Issue",
+            Self::MilestoneWizard => "New Milestone",
+            Self::ProjectStats => "Project Stats",
             Self::LogViewer(_) => "Logs",
             Self::ConfirmKill(_) => "Confirm Kill",
             Self::ConfirmExit => "Confirm Exit",
@@ -164,6 +177,24 @@ pub enum TuiCommand {
     FetchIssues,
     FetchMilestones,
     FetchSuggestionData,
+    /// Create a new GitHub issue from a wizard payload (#291+#298).
+    CreateIssue(crate::tui::screens::issue_wizard::IssueCreationPayload),
+    /// Fetch milestones, issue counts, and session metrics for the
+    /// Project Stats screen (#292).
+    FetchProjectStats,
+    /// Launch a `claude --print` subprocess to structure a milestone plan
+    /// from the goals/non-goals/references the user supplied (#294).
+    LaunchAiPlanning(crate::tui::screens::milestone_wizard::MilestonePlanPayload),
+    /// Fetch open GitHub issues for the Issue Wizard's Dependencies step
+    /// (#295). Routed via its own command so the result lands on the
+    /// wizard rather than the issue browser.
+    FetchWizardDependencies,
+    /// Run the AI review companion against the current draft (#296).
+    LaunchAiReview(crate::tui::screens::issue_wizard::IssueCreationPayload),
+    /// Materialize a Milestone Wizard plan into GitHub (#297). Creates
+    /// the milestone first, then each accepted issue with its
+    /// `Blocked By` rewritten to actual issue numbers.
+    CreateMilestoneWithIssues(crate::tui::screens::milestone_wizard::AiGeneratedPlan),
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
     LaunchPromptSession(PromptSessionConfig),
@@ -185,6 +216,22 @@ pub enum TuiCommand {
 /// Data events delivered from background fetch tasks.
 pub enum TuiDataEvent {
     Issues(anyhow::Result<Vec<GhIssue>>),
+    /// Result of creating a GitHub issue via the Issue Wizard (#291+#298).
+    IssueCreated(anyhow::Result<u64>),
+    /// Aggregated stats for the Project Stats screen (#292).
+    ProjectStats(crate::tui::screens::project_stats::ProjectStatsData),
+    /// AI planning result for the Milestone Wizard (#294). `Err(s)` is the
+    /// human-readable failure reason rendered on the `Failed` step.
+    AiPlanningResult(Result<crate::tui::screens::milestone_wizard::AiGeneratedPlan, String>),
+    /// Open issues fetched for the Issue Wizard's Dependencies step (#295).
+    WizardDependencyIssues(anyhow::Result<Vec<GhIssue>>),
+    /// AI review companion result (#296). Carries the raw response text
+    /// or a human-readable failure reason.
+    AiReviewResult(Result<String, String>),
+    /// Result of materializing a milestone plan into GitHub (#297).
+    MilestonePlanCreated(
+        Result<crate::tui::screens::milestone_wizard::MilestoneCreationResult, String>,
+    ),
     Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
     Issue(anyhow::Result<GhIssue>, Option<String>),
     SuggestionData(SuggestionDataPayload),

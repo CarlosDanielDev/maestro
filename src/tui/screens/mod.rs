@@ -4,19 +4,28 @@ pub mod hollow_retry;
 pub mod home;
 #[allow(dead_code)]
 pub mod issue_browser;
+pub mod issue_wizard;
+pub mod landing;
 pub mod milestone;
+pub mod milestone_wizard;
 pub mod pr_review;
+pub mod project_stats;
 pub mod prompt_input;
 pub mod queue_confirmation;
 pub mod release_notes;
 pub mod settings;
+mod wizard_paste;
 pub mod wrap;
 
 pub use adapt_follow_up::AdaptFollowUpScreen;
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
 pub use issue_browser::IssueBrowserScreen;
+pub use issue_wizard::IssueWizardScreen;
+pub use landing::LandingScreen;
 pub use milestone::MilestoneScreen;
+pub use milestone_wizard::MilestoneWizardScreen;
+pub use project_stats::ProjectStatsScreen;
 pub use prompt_input::PromptInputScreen;
 pub use queue_confirmation::QueueConfirmationScreen;
 pub use release_notes::ReleaseNotesScreen;
@@ -116,6 +125,13 @@ pub enum ScreenAction {
         pr_number: u64,
         event: crate::provider::github::types::PrReviewEvent,
         body: String,
+    },
+    /// Open the Issue Wizard with the milestone pre-selected (#326).
+    /// `suggested_blocked_by` is the dependency-analysis suggestion the
+    /// user may accept or override on the Dependencies step.
+    OpenIssueWizardForMilestone {
+        milestone: u64,
+        suggested_blocked_by: Vec<u64>,
     },
 }
 
