@@ -458,6 +458,14 @@ async fn event_loop(
                     // The scaffold (#291) carries the command variant so the
                     // payload type and dispatch shape are stable.
                 }
+                app::TuiCommand::FetchWizardDependencies => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result = client.list_issues(&[]).await;
+                        let _ = tx.send(app::TuiDataEvent::WizardDependencyIssues(result));
+                    });
+                }
                 app::TuiCommand::LaunchAiPlanning(payload) => {
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {

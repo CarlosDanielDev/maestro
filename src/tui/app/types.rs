@@ -186,6 +186,10 @@ pub enum TuiCommand {
     /// Launch a `claude --print` subprocess to structure a milestone plan
     /// from the goals/non-goals/references the user supplied (#294).
     LaunchAiPlanning(crate::tui::screens::milestone_wizard::MilestonePlanPayload),
+    /// Fetch open GitHub issues for the Issue Wizard's Dependencies step
+    /// (#295). Routed via its own command so the result lands on the
+    /// wizard rather than the issue browser.
+    FetchWizardDependencies,
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
     LaunchPromptSession(PromptSessionConfig),
@@ -218,6 +222,8 @@ pub enum TuiDataEvent {
     AiPlanningResult(
         Result<crate::tui::screens::milestone_wizard::AiGeneratedPlan, String>,
     ),
+    /// Open issues fetched for the Issue Wizard's Dependencies step (#295).
+    WizardDependencyIssues(anyhow::Result<Vec<GhIssue>>),
     Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
     Issue(anyhow::Result<GhIssue>, Option<String>),
     SuggestionData(SuggestionDataPayload),

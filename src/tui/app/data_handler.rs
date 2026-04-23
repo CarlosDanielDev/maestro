@@ -360,6 +360,23 @@ impl App {
                     screen.apply_planning_result(result);
                 }
             }
+            TuiDataEvent::WizardDependencyIssues(result) => match result {
+                Ok(issues) => {
+                    if let Some(ref mut screen) = self.issue_wizard_screen {
+                        screen.apply_dep_issues(issues);
+                    }
+                }
+                Err(e) => {
+                    self.activity_log.push_simple(
+                        "Wizard".into(),
+                        format!("Failed to fetch issues for Dependencies step: {}", e),
+                        LogLevel::Error,
+                    );
+                    if let Some(ref mut screen) = self.issue_wizard_screen {
+                        screen.apply_dep_issues(Vec::new());
+                    }
+                }
+            },
         }
     }
 }

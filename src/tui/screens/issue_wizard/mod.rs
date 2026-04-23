@@ -49,6 +49,11 @@ pub struct IssueWizardScreen {
     payload: IssueCreationPayload,
     /// Index into `step_fields()` for the focused field (0 if step has none).
     pub(super) focus: usize,
+    /// #295 Dependencies step state.
+    pub(super) dep_issues: Option<Vec<crate::provider::github::types::GhIssue>>,
+    pub(super) dep_loading: bool,
+    pub(super) dep_selected: usize,
+    pub(super) dep_checked: std::collections::BTreeSet<u64>,
 }
 
 impl IssueWizardScreen {
@@ -57,7 +62,64 @@ impl IssueWizardScreen {
             step: IssueWizardStep::default(),
             payload: IssueCreationPayload::new(),
             focus: 0,
+            dep_issues: None,
+            dep_loading: false,
+            dep_selected: 0,
+            dep_checked: std::collections::BTreeSet::new(),
         }
+    }
+
+    /// #295: called by dispatch when entering the Dependencies step so the
+    /// loading spinner shows immediately and the fetch is queued.
+    pub fn begin_dependency_fetch(&mut self) {
+        self.dep_issues = None;
+        self.dep_loading = true;
+        // Seed the checkbox set from any pre-existing payload (e.g. #326).
+        self.dep_checked = self.payload.blocked_by.iter().copied().collect();
+    }
+
+    /// #295: apply the result of a `FetchIssues` background task.
+    pub fn apply_dep_issues(
+        &mut self,
+        issues: Vec<crate::provider::github::types::GhIssue>,
+    ) {
+        // Filter to open issues only — closed issues can't block anything.
+        let open: Vec<_> = issues.into_iter().filter(|i| i.state == "open").collect();
+        self.dep_selected = self.dep_selected.min(open.len().saturating_sub(1));
+        self.dep_issues = Some(open);
+        self.dep_loading = false;
+    }
+
+    pub fn dep_issues(&self) -> Option<&[crate::provider::github::types::GhIssue]> {
+        self.dep_issues.as_deref()
+    }
+
+    pub fn dep_loading(&self) -> bool {
+        self.dep_loading
+    }
+
+    pub fn dep_selected(&self) -> usize {
+        self.dep_selected
+    }
+
+    pub fn dep_is_checked(&self, issue_number: u64) -> bool {
+        self.dep_checked.contains(&issue_number)
+    }
+
+    fn dep_toggle_selected(&mut self) {
+        let Some(issues) = self.dep_issues.as_ref() else {
+            return;
+        };
+        let Some(issue) = issues.get(self.dep_selected) else {
+            return;
+        };
+        if !self.dep_checked.remove(&issue.number) {
+            self.dep_checked.insert(issue.number);
+        }
+    }
+
+    fn dep_persist_to_payload(&mut self) {
+        self.payload.blocked_by = self.dep_checked.iter().copied().collect();
     }
 
     pub fn step(&self) -> IssueWizardStep {
@@ -161,6 +223,10 @@ impl IssueWizardScreen {
     pub fn try_advance(&mut self) -> bool {
         if self.validation_error().is_some() {
             return false;
+        }
+        // Persist Dependencies-step selections before leaving the step.
+        if matches!(self.step, IssueWizardStep::Dependencies) {
+            self.dep_persist_to_payload();
         }
         if let Some(next) = self.step.next() {
             self.step = next;
@@ -314,6 +380,26 @@ impl Screen for IssueWizardScreen {
                     _ => {}
                 }
             }
+            IssueWizardStep::Dependencies => match code {
+                KeyCode::Esc => {
+                    self.retreat();
+                }
+                KeyCode::Char(' ') => self.dep_toggle_selected(),
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if let Some(issues) = self.dep_issues.as_ref() {
+                        if !issues.is_empty() && self.dep_selected + 1 < issues.len() {
+                            self.dep_selected += 1;
+                        }
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.dep_selected = self.dep_selected.saturating_sub(1);
+                }
+                KeyCode::Enter => {
+                    self.try_advance();
+                }
+                _ => {}
+            },
             _ => match code {
                 KeyCode::Esc => {
                     if self.step.is_first() {
@@ -345,6 +431,14 @@ impl Screen for IssueWizardScreen {
         } else {
             Some(InputMode::Normal)
         }
+    }
+}
+
+impl IssueWizardScreen {
+    /// Step-aware advance hook used by the dispatch layer to know whether
+    /// an entry into `Dependencies` should kick off a fetch.
+    pub fn entered_dependencies_step(&self) -> bool {
+        matches!(self.step, IssueWizardStep::Dependencies) && self.dep_issues.is_none()
     }
 }
 
@@ -600,5 +694,125 @@ mod tests {
         let mut s = IssueWizardScreen::new();
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(s.desired_input_mode(), Some(InputMode::Normal));
+    }
+
+    // ---- #295 Dependencies step ----
+
+    fn make_open_issue(number: u64) -> crate::provider::github::types::GhIssue {
+        crate::provider::github::types::GhIssue {
+            number,
+            title: format!("Issue #{}", number),
+            body: String::new(),
+            labels: vec![],
+            state: "open".to_string(),
+            html_url: String::new(),
+            milestone: None,
+            assignees: vec![],
+        }
+    }
+
+    fn at_dependencies() -> IssueWizardScreen {
+        let mut s = at_dor_fields(IssueType::Feature);
+        // Move to acceptance criteria field, fill it, advance to Dependencies.
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
+        type_string(&mut s, "criteria");
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+        assert_eq!(s.step(), IssueWizardStep::Dependencies);
+        s
+    }
+
+    #[test]
+    fn entering_dependencies_marks_fetch_required() {
+        let s = at_dependencies();
+        assert!(s.entered_dependencies_step());
+    }
+
+    #[test]
+    fn begin_dependency_fetch_seeds_loading_flag() {
+        let mut s = at_dependencies();
+        s.begin_dependency_fetch();
+        assert!(s.dep_loading());
+    }
+
+    #[test]
+    fn apply_dep_issues_filters_to_open_only() {
+        let mut s = at_dependencies();
+        s.begin_dependency_fetch();
+        let mut closed = make_open_issue(99);
+        closed.state = "closed".into();
+        s.apply_dep_issues(vec![make_open_issue(10), closed, make_open_issue(11)]);
+        assert!(!s.dep_loading());
+        assert_eq!(s.dep_issues().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn space_toggles_checkbox_on_selected() {
+        let mut s = at_dependencies();
+        s.begin_dependency_fetch();
+        s.apply_dep_issues(vec![make_open_issue(10), make_open_issue(11)]);
+        s.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        assert!(s.dep_is_checked(10));
+        s.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        assert!(!s.dep_is_checked(10));
+    }
+
+    #[test]
+    fn j_navigates_dependency_list() {
+        let mut s = at_dependencies();
+        s.begin_dependency_fetch();
+        s.apply_dep_issues(vec![make_open_issue(10), make_open_issue(11)]);
+        s.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        assert_eq!(s.dep_selected(), 1);
+    }
+
+    #[test]
+    fn j_clamps_at_end_of_list() {
+        let mut s = at_dependencies();
+        s.begin_dependency_fetch();
+        s.apply_dep_issues(vec![make_open_issue(10)]);
+        for _ in 0..5 {
+            s.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        }
+        assert_eq!(s.dep_selected(), 0);
+    }
+
+    #[test]
+    fn k_does_not_underflow() {
+        let mut s = at_dependencies();
+        s.begin_dependency_fetch();
+        s.apply_dep_issues(vec![make_open_issue(10)]);
+        s.handle_input(&key_event(KeyCode::Char('k')), InputMode::Normal);
+        assert_eq!(s.dep_selected(), 0);
+    }
+
+    #[test]
+    fn enter_persists_checked_set_to_payload_blocked_by() {
+        let mut s = at_dependencies();
+        s.begin_dependency_fetch();
+        s.apply_dep_issues(vec![make_open_issue(10), make_open_issue(11)]);
+        s.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        s.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        s.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(s.payload().blocked_by, vec![10, 11]);
+        assert_eq!(s.step(), IssueWizardStep::AiReview);
+    }
+
+    #[test]
+    fn esc_in_dependencies_step_retreats() {
+        let mut s = at_dependencies();
+        s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert_eq!(s.step(), IssueWizardStep::DorFields);
+    }
+
+    #[test]
+    fn pre_seeded_blocked_by_shows_as_checked_after_fetch() {
+        // #326 path: payload arrived with blocked_by pre-filled.
+        let mut s = at_dependencies();
+        s.payload_mut().blocked_by = vec![11];
+        s.begin_dependency_fetch();
+        s.apply_dep_issues(vec![make_open_issue(10), make_open_issue(11)]);
+        assert!(s.dep_is_checked(11));
+        assert!(!s.dep_is_checked(10));
     }
 }

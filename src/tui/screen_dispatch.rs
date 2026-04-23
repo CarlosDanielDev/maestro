@@ -79,6 +79,15 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     if app.issue_wizard_screen.is_none() {
                         app.issue_wizard_screen = Some(screens::IssueWizardScreen::new());
                     }
+                    if let Some(ref s) = app.issue_wizard_screen {
+                        if s.entered_dependencies_step() {
+                            if let Some(ref mut s) = app.issue_wizard_screen {
+                                s.begin_dependency_fetch();
+                            }
+                            app.pending_commands
+                                .push(app::TuiCommand::FetchWizardDependencies);
+                        }
+                    }
                 }
                 app::TuiMode::ProjectStats => {
                     app.project_stats_screen = Some(screens::ProjectStatsScreen::new());

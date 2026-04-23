@@ -24,6 +24,7 @@ impl IssueWizardScreen {
             IssueWizardStep::TypeSelect => self.draw_type_select(f, chunks[1], theme),
             IssueWizardStep::BasicInfo => self.draw_basic_info(f, chunks[1]),
             IssueWizardStep::DorFields => self.draw_dor_fields(f, chunks[1]),
+            IssueWizardStep::Dependencies => self.draw_dependencies(f, chunks[1]),
             _ => self.draw_stub(f, chunks[1]),
         }
         self.draw_footer(f, chunks[2]);
@@ -140,6 +141,80 @@ impl IssueWizardScreen {
         for (i, field) in fields.iter().enumerate() {
             self.draw_field(f, chunks[i], *field);
         }
+    }
+
+    fn draw_dependencies(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Blocked By  (Space toggles, j/k navigates, Enter advances)");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        if self.dep_loading() {
+            f.render_widget(
+                Paragraph::new("  Loading open issues…")
+                    .style(Style::default().add_modifier(Modifier::DIM)),
+                inner,
+            );
+            return;
+        }
+
+        let Some(issues) = self.dep_issues() else {
+            f.render_widget(
+                Paragraph::new("  Press Enter to continue without dependencies.")
+                    .style(Style::default().add_modifier(Modifier::DIM)),
+                inner,
+            );
+            return;
+        };
+
+        if issues.is_empty() {
+            f.render_widget(
+                Paragraph::new("  No open issues found.")
+                    .style(Style::default().add_modifier(Modifier::DIM)),
+                inner,
+            );
+            return;
+        }
+
+        let lines: Vec<Line> = issues
+            .iter()
+            .enumerate()
+            .take(inner.height as usize)
+            .map(|(i, issue)| {
+                let cursor = if i == self.dep_selected() { ">" } else { " " };
+                let check = if self.dep_is_checked(issue.number) {
+                    "[x]"
+                } else {
+                    "[ ]"
+                };
+                let labels = if issue.labels.is_empty() {
+                    String::new()
+                } else {
+                    let names: Vec<&str> = issue
+                        .labels
+                        .iter()
+                        .map(|s| s.as_str())
+                        .take(3)
+                        .collect();
+                    format!("  ({})", names.join(", "))
+                };
+                Line::from(vec![
+                    Span::raw(format!("{} ", cursor)),
+                    Span::styled(
+                        check.to_string(),
+                        Style::default().fg(Color::LightGreen),
+                    ),
+                    Span::raw(format!(" #{} ", issue.number)),
+                    Span::raw(issue.title.clone()),
+                    Span::styled(
+                        labels,
+                        Style::default().add_modifier(Modifier::DIM),
+                    ),
+                ])
+            })
+            .collect();
+        f.render_widget(Paragraph::new(lines), inner);
     }
 
     fn draw_field(&self, f: &mut Frame, area: Rect, field: FieldId) {
