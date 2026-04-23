@@ -7,6 +7,37 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-04-23
+
+Milestone "Guided Creation Flows" — transforms the startup experience into a persistent landing screen and ships two AI-assisted wizards for structured issue and milestone creation, plus a read-only project stats dashboard, a tabbed compact milestone view, and a marquee-scrolled header. Twelve issues closed via PR #446 on the bundled milestone branch.
+
+### Added
+
+- Persistent `LandingScreen` replaces the 1.2s timed splash: mascot + MAESTRO logo + 5-item menu (Dashboard / Create Issue / Create Milestone / Project Stats / Quit); j/k or Up/Down navigates, Enter activates, direct shortcuts (d/i/m/s/q) jump; Esc on Dashboard pops back to Landing; `--no-splash` bypasses Landing for Dashboard entry (#290)
+- `IssueWizardScreen` scaffold with 10-step linear state machine (Context → TypeSelect → BasicInfo → DorFields → Dependencies → AiReview → Preview → Creating → Complete → Failed), `IssueCreationPayload` DTO carrying all DOR fields, and `TuiCommand::CreateIssue` + `TuiDataEvent::IssueCreated` (#291)
+- `ProjectStatsScreen` read-only dashboard: milestone progress bars (ratatui `Gauge`), issue counts table (open/closed/ready/done/failed), session metrics (cost, tokens, success rate), last-10 recent activity; pure `aggregate()` helper keeps the math testable without async (#292)
+- `MilestoneScreen` compact view redesign: left/right layout with tabbed right pane (Issues, Preview); Tab cycles tabs, `1`/`2` jump directly; issue list sorted by parsed dependency level (`count_blocked_by` ascending, ties on issue number); J/K navigates focused issue inside the right pane (#325)
+- Marquee carousel on the header status bar: `App::status_bar_marquee: MarqueeState` + content-width fingerprint; renders static on fit, 3-phase scroll on overflow with span styles preserved; mirrors the existing stats-bar (#410) and issues-tab (#262) marquee integration (#417)
+- Issue Wizard form steps: TypeSelect (Feature/Bug toggle via ←/→ or h/l), BasicInfo (Title + Overview with Tab cycling, Shift+Enter for multi-line newlines), DorFields (4 fields for Feature, 6 for Bug); Title must be non-empty to advance BasicInfo, Acceptance Criteria required to advance DorFields (#293)
+- `MilestoneWizardScreen` scaffold with 9-step AI-guided flow (GoalDefinition → NonGoals → DocReferences → AiStructuring → ReviewPlan → Preview → Materializing → Complete → Failed); doc references validated as URL-or-existing-file; `claude --print` invocation via the canonical `adapt::prompts::run_claude_print` (#294)
+- `c` keybinding on `MilestoneScreen` opens the Issue Wizard pre-filled with the selected milestone + a suggested `Blocked By` list derived from the milestone's open-issue leaves; `update_milestone_dependency_graph` helper ready for the description PATCH on create (#326)
+- Dependency selection step on Issue Wizard: multi-select checkbox list of open GitHub issues via `TuiCommand::FetchWizardDependencies`; Space toggles, j/k navigates, Enter persists; pre-seeded `payload.blocked_by` (from #326 path) renders as already-checked (#295)
+- AI Review companion step on Issue Wizard: structured critique prompt built from all DOR fields + Blocked By, run via `claude --print`; keys `r` revise (jumps back to BasicInfo), `s` skip, `Enter` continue, `R` retry on error; auto-launches on step entry via `tick_wizard_step_hooks` (#296)
+- Milestone Wizard Review → Preview → Materialize → Complete/Failed: ReviewPlan accepts/rejects proposed issues with `a`/`x`; Preview renders an ASCII dependency graph via `level_buckets` BFS + `Sequence:` line in the project's `→` / `∥` convention; Materializing creates the milestone first, then each issue in dependency order with `Blocked By` rewritten to actual issue numbers; Complete shows the created milestone + issue URLs (#297)
+- Issue Wizard Preview → Creating → Complete/Failed: `render_body_markdown` emits all DOR sections plus an auto-generated `## Definition of Done` checklist synthesised from Acceptance Criteria; `GhCliClient::create_issue` call auto-applies `maestro:ready` + `enhancement`/`bug` labels; Complete resets for another issue; Failed supports `r` retry (#298)
+
+### Changed
+
+- All wizard text fields accept `Event::Paste(…)` (bracketed paste, Cmd+V in the terminal) and Ctrl+V (reads the system clipboard via the existing `ClipboardProvider` trait). Image clipboard content → `payload.image_paths` rendered into the issue body as a `## Attachments` section. C0/C1 control characters (ANSI escapes, DEL) are stripped before insert, preserving `\n` and `\t`. Title fields collapse embedded newlines to spaces so GitHub accepts the payload.
+- Global `q` → `ConfirmExit` gate in `input_handler::is_text_input_mode` now consults the active screen's `Screen::desired_input_mode()` instead of a hardcoded `TuiMode` allowlist (neovim-style mode-aware global shortcuts). Wizard Insert-mode surfaces swallow `q` as a typed character. `PromptInput` / `Settings` / `SessionSwitcher` retained as a fallback allowlist (SessionSwitcher doesn't implement the `Screen` trait yet).
+- `ui::active_screen()` dispatch table now includes `Landing`, `IssueWizard`, `MilestoneWizard`, and `ProjectStats` — restoring help-overlay content, F-key hints, and keybinding resolution on those screens.
+- `adapt::prompts::run_claude_print` is now `pub`; both wizards route through it with sensible defaults (sonnet model, current-dir cwd) instead of maintaining a duplicate in `src/tui/mod.rs`.
+- `IssueWizardScreen::render_body_markdown` and `render_labels` promoted to free functions in the wizard module so the background `CreateIssue` task can call them without a screen handle (eliminates a ~70-line duplicate).
+
+### Removed
+
+- Deleted `src/tui/splash.rs` outright — replaced by `LandingScreen` (#290).
+
 ## [0.14.1] - 2026-04-22
 
 ### Fixed
