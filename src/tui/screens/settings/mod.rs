@@ -198,6 +198,38 @@ impl SettingsScreen {
         self.validation_results.values().any(|v| v.is_error())
     }
 
+    fn validation_error_summary(&self) -> Option<String> {
+        let mut errors: Vec<((usize, usize), &ValidationFeedback)> = self
+            .validation_results
+            .iter()
+            .filter(|(_, v)| v.is_error())
+            .map(|(k, v)| (*k, v))
+            .collect();
+        errors.sort_by_key(|&(k, _)| k);
+        let first = errors.first()?;
+        let ((tab_idx, field_idx), feedback) = *first;
+        let tab_label = SettingsTab::ALL
+            .get(tab_idx)
+            .map(|t| t.label())
+            .unwrap_or("?");
+        let field_label = self
+            .fields_per_tab
+            .get(tab_idx)
+            .and_then(|fs| fs.get(field_idx))
+            .map(|f| f.widget.label())
+            .unwrap_or("?");
+        let msg = if feedback.message.is_empty() {
+            "validation failed"
+        } else {
+            feedback.message.as_str()
+        };
+        let mut summary = format!("{}.{}: {}", tab_label, field_label, msg);
+        if errors.len() > 1 {
+            summary.push_str(&format!(" (+{} more)", errors.len() - 1));
+        }
+        Some(summary)
+    }
+
     fn feedback_for(&self, tab: usize, field: usize) -> Option<&ValidationFeedback> {
         self.validation_results.get(&(tab, field))
     }
@@ -1106,6 +1138,10 @@ impl Screen for SettingsScreen {
             }
             (KeyCode::Char('s'), KeyModifiers::CONTROL) => {
                 if self.has_validation_errors() {
+                    let summary = self
+                        .validation_error_summary()
+                        .unwrap_or_else(|| "validation failed".to_string());
+                    self.save_error_flash = Some((summary, std::time::Instant::now()));
                     return ScreenAction::None;
                 }
                 match self.save_config() {
@@ -2011,6 +2047,52 @@ alert_threshold_pct = 80
         });
         let action = screen.handle_input(&ctrl_s, InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
+    }
+
+    #[test]
+    fn save_with_validation_errors_populates_save_error_flash() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        screen.config.project.base_branch = String::new();
+        screen.run_all_validations();
+        assert!(screen.has_validation_errors());
+        assert!(screen.save_error_flash.is_none());
+
+        let ctrl_s = Event::Key(KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        });
+        screen.handle_input(&ctrl_s, InputMode::Normal);
+
+        let flash = screen
+            .save_error_flash
+            .as_ref()
+            .expect("save_error_flash must be set when validation blocks the save");
+        assert!(
+            flash.0.to_lowercase().contains("base_branch"),
+            "flash message must name the failing field, got: {:?}",
+            flash.0
+        );
+    }
+
+    #[test]
+    fn save_with_no_validation_errors_does_not_set_error_flash() {
+        let (mut screen, _f) = screen_with_config_path();
+        assert!(!screen.has_validation_errors());
+
+        let ctrl_s = Event::Key(KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        });
+        screen.handle_input(&ctrl_s, InputMode::Normal);
+
+        assert!(
+            screen.save_error_flash.is_none(),
+            "valid save must not set save_error_flash"
+        );
     }
 
     #[test]
