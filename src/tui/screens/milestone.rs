@@ -55,6 +55,25 @@ impl MilestoneEntry {
     }
 }
 
+/// Right-pane tabs in the compact milestone view (#325).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MilestoneTab {
+    /// Scrollable list of issues belonging to the selected milestone.
+    #[default]
+    IssueList,
+    /// Markdown preview of the focused issue.
+    IssuePreview,
+}
+
+impl MilestoneTab {
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::IssueList => Self::IssuePreview,
+            Self::IssuePreview => Self::IssueList,
+        }
+    }
+}
+
 pub struct MilestoneScreen {
     pub(crate) milestones: Vec<MilestoneEntry>,
     pub(crate) selected: usize,
@@ -62,6 +81,10 @@ pub struct MilestoneScreen {
     pub(crate) loading: bool,
     /// Last known visible slots from draw, used for scroll sync.
     last_visible_slots: usize,
+    /// Active tab in the right pane (#325).
+    pub active_tab: MilestoneTab,
+    /// Focused issue index within the right-pane Issue List tab (#325).
+    pub focused_issue: usize,
 }
 
 impl MilestoneScreen {
@@ -72,31 +95,190 @@ impl MilestoneScreen {
             scroll_offset: 0,
             loading: false,
             last_visible_slots: 6,
+            active_tab: MilestoneTab::default(),
+            focused_issue: 0,
+        }
+    }
+
+    /// Cycle to the next right-pane tab. Returns the new tab.
+    pub fn cycle_tab(&mut self) -> MilestoneTab {
+        self.active_tab = self.active_tab.cycle();
+        self.active_tab
+    }
+
+    pub fn set_tab(&mut self, tab: MilestoneTab) {
+        self.active_tab = tab;
+    }
+
+    /// Issues for the selected milestone, sorted ascending by the count of
+    /// `#NNN` references inside their `## Blocked By` section. Issues with
+    /// no parsed dependencies sort first (Level 0). Ties break on issue
+    /// number ascending.
+    pub fn sorted_issues(&self) -> Vec<&GhIssue> {
+        let Some(entry) = self.milestones.get(self.selected) else {
+            return Vec::new();
+        };
+        let mut with_levels: Vec<(usize, &GhIssue)> = entry
+            .issues
+            .iter()
+            .map(|i| (count_blocked_by(&i.body), i))
+            .collect();
+        with_levels.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.number.cmp(&b.1.number)));
+        with_levels.into_iter().map(|(_, i)| i).collect()
+    }
+
+    fn focused_issue_clamped(&self) -> usize {
+        let len = self.sorted_issues().len();
+        if len == 0 {
+            0
+        } else {
+            self.focused_issue.min(len - 1)
         }
     }
 
     fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let chunks = Layout::default()
+        // #325 compact layout: left = milestone list, right = tabbed
+        // (issue list / preview). Bottom row is keybindings.
+        let outer = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(6),    // milestone list
-                Constraint::Length(8), // detail pane
-                Constraint::Length(1), // keybinds
-            ])
+            .constraints([Constraint::Min(6), Constraint::Length(1)])
             .split(area);
 
-        self.draw_milestone_list(f, chunks[0], theme);
-        self.draw_detail(f, chunks[1], theme);
+        let body = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
+            .split(outer[0]);
+
+        self.draw_milestone_list(f, body[0], theme);
+        self.draw_right_pane(f, body[1], theme);
         draw_keybinds_bar(
             f,
-            chunks[2],
+            outer[1],
             &[
                 ("Enter", "View Issues"),
+                ("Tab", "Switch Tab"),
                 ("r", "Run All Open"),
                 ("Esc", "Back"),
             ],
             theme,
         );
+    }
+
+    fn draw_right_pane(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Min(1)])
+            .split(area);
+        self.draw_tab_bar(f, chunks[0], theme);
+        match self.active_tab {
+            MilestoneTab::IssueList => self.draw_tab_issue_list(f, chunks[1], theme),
+            MilestoneTab::IssuePreview => self.draw_tab_issue_preview(f, chunks[1], theme),
+        }
+    }
+
+    fn draw_tab_bar(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let mk = |label: &'static str, key: char, tab: MilestoneTab| {
+            let active = self.active_tab == tab;
+            let style = if active {
+                Style::default()
+                    .fg(theme.accent_identifier)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            } else {
+                Style::default().fg(theme.text_secondary)
+            };
+            Span::styled(format!("[{}] {}  ", key, label), style)
+        };
+        let line = Line::from(vec![
+            mk("Issues", '1', MilestoneTab::IssueList),
+            mk("Preview", '2', MilestoneTab::IssuePreview),
+        ]);
+        f.render_widget(Paragraph::new(line), area);
+    }
+
+    fn draw_tab_issue_list(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let block = theme.styled_block("Issues", false);
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let issues = self.sorted_issues();
+        if issues.is_empty() {
+            let msg = if let Some(entry) = self.milestones.get(self.selected) {
+                format!("  {} — no issues loaded", entry.title)
+            } else {
+                "  Select a milestone".to_string()
+            };
+            f.render_widget(
+                Paragraph::new(msg).style(Style::default().fg(theme.text_secondary)),
+                inner,
+            );
+            return;
+        }
+
+        let focused = self.focused_issue_clamped();
+        let lines: Vec<Line> = issues
+            .iter()
+            .take(inner.height as usize)
+            .enumerate()
+            .map(|(i, issue)| {
+                let (symbol, symbol_color) = if issue.state == "closed" {
+                    (icons::get(IconId::IssueClosed), theme.accent_success)
+                } else {
+                    (icons::get(IconId::IssueOpened), theme.accent_warning)
+                };
+                let cursor = if i == focused { ">" } else { " " };
+                Line::from(vec![
+                    Span::raw(format!("{} ", cursor)),
+                    Span::styled(format!("{} ", symbol), Style::default().fg(symbol_color)),
+                    Span::styled(
+                        format!("#{} ", issue.number),
+                        Style::default()
+                            .fg(theme.accent_identifier)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        sanitize_for_terminal(&issue.title),
+                        Style::default().fg(theme.text_secondary),
+                    ),
+                ])
+            })
+            .collect();
+        f.render_widget(Paragraph::new(lines), inner);
+    }
+
+    fn draw_tab_issue_preview(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let block = theme.styled_block("Preview", false);
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let issues = self.sorted_issues();
+        let focused = self.focused_issue_clamped();
+        let Some(issue) = issues.get(focused) else {
+            f.render_widget(
+                Paragraph::new("  No issue to preview")
+                    .style(Style::default().fg(theme.text_secondary)),
+                inner,
+            );
+            return;
+        };
+
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("#{}  ", issue.number),
+                Style::default()
+                    .fg(theme.accent_identifier)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                sanitize_for_terminal(&issue.title),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Line::from(""));
+        for raw in issue.body.lines().take(inner.height.saturating_sub(2) as usize) {
+            lines.push(Line::from(sanitize_for_terminal(raw)));
+        }
+        f.render_widget(Paragraph::new(lines), inner);
     }
 
     #[allow(dead_code)]
@@ -259,53 +441,42 @@ impl MilestoneScreen {
         }
     }
 
-    fn draw_detail(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block("Issues", false);
+}
 
-        if let Some(entry) = self.milestones.get(self.selected) {
-            if entry.issues.is_empty() {
-                let para = Paragraph::new(format!("  {} — no issues loaded", entry.title))
-                    .style(Style::default().fg(theme.text_secondary))
-                    .block(block);
-                f.render_widget(para, area);
-                return;
+/// Counts `#NNN` references inside the `## Blocked By` section of an issue
+/// body. Used by `MilestoneScreen::sorted_issues` to approximate the
+/// dependency level — Level 0 = no dependencies, Level N = depends on N
+/// other issues. Returns 0 if the section is missing or contains "None".
+pub(crate) fn count_blocked_by(body: &str) -> usize {
+    let mut in_section = false;
+    let mut count = 0usize;
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("## ") {
+            in_section = trimmed.eq_ignore_ascii_case("## blocked by");
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Stop counting once we hit the next section.
+        if trimmed.starts_with('#') && !trimmed.starts_with("#") {
+            break;
+        }
+        // A line like "- #123 title" or "* #45 ..." or "- None"
+        let after_bullet = trimmed.trim_start_matches(['-', '*', ' ']);
+        if after_bullet.starts_with('#') {
+            // Skip the '#' and check the next char is a digit.
+            let after_hash = &after_bullet[1..];
+            if after_hash.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                count += 1;
             }
-
-            let lines: Vec<Line> = entry
-                .issues
-                .iter()
-                .take(5)
-                .map(|i| {
-                    let (symbol, symbol_color) = if i.state == "closed" {
-                        (icons::get(IconId::IssueClosed), theme.accent_success)
-                    } else {
-                        (icons::get(IconId::IssueOpened), theme.accent_warning)
-                    };
-                    Line::from(vec![
-                        Span::styled(format!("  {} ", symbol), Style::default().fg(symbol_color)),
-                        Span::styled(
-                            format!("#{} ", i.number),
-                            Style::default()
-                                .fg(theme.accent_identifier)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            sanitize_for_terminal(&i.title),
-                            Style::default().fg(theme.text_secondary),
-                        ),
-                    ])
-                })
-                .collect();
-
-            let para = Paragraph::new(lines).block(block);
-            f.render_widget(para, area);
-        } else {
-            let para = Paragraph::new("  Select a milestone")
-                .style(Style::default().fg(theme.text_secondary))
-                .block(block);
-            f.render_widget(para, area);
         }
     }
+    count
 }
 
 impl KeymapProvider for MilestoneScreen {
@@ -348,14 +519,37 @@ impl Screen for MilestoneScreen {
         {
             match code {
                 KeyCode::Esc => return ScreenAction::Pop,
+                KeyCode::Tab => {
+                    self.cycle_tab();
+                }
+                KeyCode::Char('1') => {
+                    self.set_tab(MilestoneTab::IssueList);
+                }
+                KeyCode::Char('2') => {
+                    self.set_tab(MilestoneTab::IssuePreview);
+                }
+                KeyCode::Char('J') => {
+                    let len = self.sorted_issues().len();
+                    if len > 0 && self.focused_issue + 1 < len {
+                        self.focused_issue += 1;
+                    }
+                }
+                KeyCode::Char('K') => {
+                    self.focused_issue = self.focused_issue.saturating_sub(1);
+                }
                 KeyCode::Char('j') | KeyCode::Down
                     if !self.milestones.is_empty() && self.selected < self.milestones.len() - 1 =>
                 {
                     self.selected += 1;
+                    self.focused_issue = 0;
                     self.sync_scroll();
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
+                    let prev = self.selected;
                     self.selected = self.selected.saturating_sub(1);
+                    if self.selected != prev {
+                        self.focused_issue = 0;
+                    }
                     self.sync_scroll();
                 }
                 KeyCode::Enter => {
@@ -424,6 +618,108 @@ mod tests {
             closed_issues: 0,
             issues,
         }
+    }
+
+    // ---- #325 compact view: tab switching and dependency sorting ----
+
+    fn make_issue_with_body(number: u64, body: &str) -> GhIssue {
+        let mut i = make_issue(number);
+        i.body = body.to_string();
+        i
+    }
+
+    #[test]
+    fn new_screen_starts_on_issue_list_tab() {
+        let s = MilestoneScreen::new(vec![]);
+        assert_eq!(s.active_tab, MilestoneTab::IssueList);
+    }
+
+    #[test]
+    fn tab_key_cycles_to_preview() {
+        let mut s = MilestoneScreen::new(vec![make_entry(1, 0, 0)]);
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        assert_eq!(s.active_tab, MilestoneTab::IssuePreview);
+    }
+
+    #[test]
+    fn tab_key_cycles_back_to_list() {
+        let mut s = MilestoneScreen::new(vec![make_entry(1, 0, 0)]);
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+        assert_eq!(s.active_tab, MilestoneTab::IssueList);
+    }
+
+    #[test]
+    fn key_2_jumps_to_preview() {
+        let mut s = MilestoneScreen::new(vec![make_entry(1, 0, 0)]);
+        s.handle_input(&key_event(KeyCode::Char('2')), InputMode::Normal);
+        assert_eq!(s.active_tab, MilestoneTab::IssuePreview);
+    }
+
+    #[test]
+    fn key_1_jumps_to_list() {
+        let mut s = MilestoneScreen::new(vec![make_entry(1, 0, 0)]);
+        s.set_tab(MilestoneTab::IssuePreview);
+        s.handle_input(&key_event(KeyCode::Char('1')), InputMode::Normal);
+        assert_eq!(s.active_tab, MilestoneTab::IssueList);
+    }
+
+    #[test]
+    fn count_blocked_by_returns_zero_for_empty_body() {
+        assert_eq!(count_blocked_by(""), 0);
+    }
+
+    #[test]
+    fn count_blocked_by_returns_zero_for_none() {
+        let body = "## Blocked By\n\n- None\n";
+        assert_eq!(count_blocked_by(body), 0);
+    }
+
+    #[test]
+    fn count_blocked_by_counts_issue_references() {
+        let body = "## Overview\nx\n\n## Blocked By\n\n- #100 first\n- #101 second\n";
+        assert_eq!(count_blocked_by(body), 2);
+    }
+
+    #[test]
+    fn sorted_issues_orders_level_zero_before_dependent() {
+        let issues = vec![
+            make_issue_with_body(20, "## Blocked By\n\n- #10 dep\n"),
+            make_issue_with_body(10, "## Blocked By\n\n- None\n"),
+        ];
+        let entry = make_entry_with_issues(1, issues);
+        let s = MilestoneScreen::new(vec![entry]);
+        let sorted = s.sorted_issues();
+        assert_eq!(sorted[0].number, 10);
+        assert_eq!(sorted[1].number, 20);
+    }
+
+    #[test]
+    fn navigating_milestone_resets_focused_issue() {
+        let issues = vec![make_issue(10), make_issue(11), make_issue(12)];
+        let mut s = MilestoneScreen::new(vec![
+            make_entry_with_issues(1, issues),
+            make_entry(2, 0, 0),
+        ]);
+        s.focused_issue = 2;
+        s.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        assert_eq!(s.focused_issue, 0);
+    }
+
+    #[test]
+    fn shift_j_advances_focused_issue() {
+        let issues = vec![make_issue(10), make_issue(11), make_issue(12)];
+        let mut s = MilestoneScreen::new(vec![make_entry_with_issues(1, issues)]);
+        s.handle_input(&key_event(KeyCode::Char('J')), InputMode::Normal);
+        assert_eq!(s.focused_issue, 1);
+    }
+
+    #[test]
+    fn shift_k_does_not_underflow_focused_issue() {
+        let issues = vec![make_issue(10)];
+        let mut s = MilestoneScreen::new(vec![make_entry_with_issues(1, issues)]);
+        s.handle_input(&key_event(KeyCode::Char('K')), InputMode::Normal);
+        assert_eq!(s.focused_issue, 0);
     }
 
     // ---- initial state ----
