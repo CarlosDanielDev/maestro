@@ -634,7 +634,10 @@ pub(crate) fn count_blocked_by(body: &str) -> usize {
         // A line like "- #123 title" or "* #45 ..." or "- None"
         let after_bullet = trimmed.trim_start_matches(['-', '*', ' ']);
         if let Some(after_hash) = after_bullet.strip_prefix('#')
-            && after_hash.chars().next().is_some_and(|c| c.is_ascii_digit())
+            && after_hash
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit())
         {
             count += 1;
         }

@@ -341,9 +341,7 @@ impl MilestoneWizardScreen {
         } else {
             content.split('\n').map(Line::from).collect()
         };
-        if focused
-            && let Some(last) = lines.last_mut()
-        {
+        if focused && let Some(last) = lines.last_mut() {
             last.spans.push(Span::styled(
                 "▏",
                 Style::default().add_modifier(Modifier::SLOW_BLINK),
