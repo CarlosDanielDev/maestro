@@ -6,13 +6,18 @@ pub use ai_review::build_review_prompt;
 pub use types::{IssueCreationPayload, IssueType, IssueWizardStep};
 
 use super::prompt_input::{ClipboardContent, ClipboardProvider, SystemClipboard};
-use super::wizard_paste::{append_paste, sanitize_paste};
+use super::wizard_fields::{TextAreaField, WizardFields};
 use super::{Screen, ScreenAction};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::{Frame, layout::Rect};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders},
+};
 
 /// Identifier of a focusable text field inside a wizard step. Stable across
 /// re-renders so the focused field survives a redraw.
@@ -46,13 +51,41 @@ impl FieldId {
     pub const fn is_multiline(&self) -> bool {
         !matches!(self, Self::Title)
     }
+
+    fn payload_ref<'a>(&self, p: &'a IssueCreationPayload) -> &'a str {
+        match self {
+            Self::Title => &p.title,
+            Self::Overview => &p.overview,
+            Self::ExpectedBehavior => &p.expected_behavior,
+            Self::CurrentBehavior => &p.current_behavior,
+            Self::StepsToReproduce => &p.steps_to_reproduce,
+            Self::AcceptanceCriteria => &p.acceptance_criteria,
+            Self::FilesToModify => &p.files_to_modify,
+            Self::TestHints => &p.test_hints,
+        }
+    }
+
+    fn payload_ref_mut<'a>(&self, p: &'a mut IssueCreationPayload) -> &'a mut String {
+        match self {
+            Self::Title => &mut p.title,
+            Self::Overview => &mut p.overview,
+            Self::ExpectedBehavior => &mut p.expected_behavior,
+            Self::CurrentBehavior => &mut p.current_behavior,
+            Self::StepsToReproduce => &mut p.steps_to_reproduce,
+            Self::AcceptanceCriteria => &mut p.acceptance_criteria,
+            Self::FilesToModify => &mut p.files_to_modify,
+            Self::TestHints => &mut p.test_hints,
+        }
+    }
 }
 
 pub struct IssueWizardScreen {
     step: IssueWizardStep,
     payload: IssueCreationPayload,
-    /// Index into `step_fields()` for the focused field (0 if step has none).
-    pub(super) focus: usize,
+    /// Text fields for the current step. Rebuilt whenever the step
+    /// changes so BasicInfo owns Title+Overview textareas, DorFields
+    /// owns its 4 or 6 textareas, and non-text steps hold `empty()`.
+    pub(super) fields: WizardFields,
     /// #295 Dependencies step state.
     pub(super) dep_issues: Option<Vec<crate::provider::github::types::GhIssue>>,
     pub(super) dep_loading: bool,
@@ -85,7 +118,7 @@ impl IssueWizardScreen {
         Self {
             step: IssueWizardStep::default(),
             payload: IssueCreationPayload::new(),
-            focus: 0,
+            fields: WizardFields::empty(),
             dep_issues: None,
             dep_loading: false,
             dep_selected: 0,
@@ -101,16 +134,16 @@ impl IssueWizardScreen {
         }
     }
 
-    /// Insert a pasted payload into the focused field. Multi-line paste
-    /// is preserved on every field except `Title` (GitHub titles must
-    /// be single-line).
+    /// Insert a pasted payload into the focused textarea. `TextAreaField`
+    /// handles the control-char filter + single-line newline collapse.
+    /// Syncs immediately so downstream readers of `payload` (preview
+    /// markdown, AI prompts) see the pasted content without waiting for
+    /// the next step transition.
     pub fn paste_text_into_focused(&mut self, text: &str) {
-        let Some(field) = self.focused_field() else {
-            return;
-        };
-        let allow_newlines = field.is_multiline();
-        let target = self.field_value_mut(field);
-        append_paste(target, text, allow_newlines);
+        if let Some(field) = self.fields.focused_mut() {
+            field.insert_sanitized(text);
+        }
+        self.sync_fields_into_payload();
     }
 
     /// Read the system clipboard synchronously and route the content:
@@ -124,10 +157,7 @@ impl IssueWizardScreen {
                     .push(path.to_string_lossy().to_string());
             }
             ClipboardContent::Text(text) => {
-                let sanitised = sanitize_paste(&text);
-                if !sanitised.is_empty() {
-                    self.paste_text_into_focused(&sanitised);
-                }
+                self.paste_text_into_focused(&text);
             }
             ClipboardContent::Empty | ClipboardContent::Unavailable => {}
         }
@@ -164,11 +194,13 @@ impl IssueWizardScreen {
     }
 
     pub fn begin_create(&mut self) {
+        self.sync_fields_into_payload();
         self.create_in_flight = true;
         self.create_enqueued = false;
         self.create_error = None;
         self.created_issue_number = None;
         self.step = IssueWizardStep::Creating;
+        self.rebuild_fields_for_step();
     }
 
     pub fn finish_create(&mut self, result: anyhow::Result<u64>) {
@@ -195,6 +227,7 @@ impl IssueWizardScreen {
     // ---- #296 AI Review ----
 
     pub fn begin_ai_review(&mut self) {
+        self.sync_fields_into_payload();
         self.review_loading = true;
         self.review_text = None;
         self.review_error = None;
@@ -234,8 +267,9 @@ impl IssueWizardScreen {
     }
 
     fn jump_to(&mut self, target: IssueWizardStep) {
+        self.sync_fields_into_payload();
         self.step = target;
-        self.focus = 0;
+        self.rebuild_fields_for_step();
     }
 }
 
@@ -416,56 +450,116 @@ impl IssueWizardScreen {
         }
     }
 
+    #[cfg(test)]
     pub fn focused_field(&self) -> Option<FieldId> {
-        let fields = self.step_fields();
-        if fields.is_empty() {
+        let step_fields = self.step_fields();
+        if step_fields.is_empty() {
             None
         } else {
-            fields.get(self.focus % fields.len()).copied()
+            step_fields.get(self.fields.focus()).copied()
         }
     }
 
-    fn field_value_mut(&mut self, field: FieldId) -> &mut String {
-        match field {
-            FieldId::Title => &mut self.payload.title,
-            FieldId::Overview => &mut self.payload.overview,
-            FieldId::ExpectedBehavior => &mut self.payload.expected_behavior,
-            FieldId::CurrentBehavior => &mut self.payload.current_behavior,
-            FieldId::StepsToReproduce => &mut self.payload.steps_to_reproduce,
-            FieldId::AcceptanceCriteria => &mut self.payload.acceptance_criteria,
-            FieldId::FilesToModify => &mut self.payload.files_to_modify,
-            FieldId::TestHints => &mut self.payload.test_hints,
+    /// Current text for `field`. Reads from the live textarea when the
+    /// field belongs to the current step; otherwise falls back to the
+    /// last-synced value on `payload`. Validation, preview rendering,
+    /// and AI prompts all flow through this single reader.
+    pub fn field_text(&self, field: FieldId) -> String {
+        let step_fields = self.step_fields();
+        if let Some(idx) = step_fields.iter().position(|f| *f == field)
+            && let Some(ta_field) = self.fields.get(idx)
+        {
+            return ta_field.text();
+        }
+        field.payload_ref(&self.payload).to_string()
+    }
+
+    /// Flush live textarea content into the payload strings. Called at
+    /// every seam where `payload` is consumed: step transitions
+    /// (`try_advance`, `retreat`, `jump_to`), paste insertion, and the
+    /// AI/create launch hooks.
+    fn sync_fields_into_payload(&mut self) {
+        let step_fields = self.step_fields();
+        for (idx, field_id) in step_fields.iter().enumerate() {
+            let Some(ta_field) = self.fields.get(idx) else {
+                continue;
+            };
+            let text = ta_field.text();
+            *field_id.payload_ref_mut(&mut self.payload) = text;
         }
     }
 
-    pub fn field_value(&self, field: FieldId) -> &str {
-        match field {
-            FieldId::Title => &self.payload.title,
-            FieldId::Overview => &self.payload.overview,
-            FieldId::ExpectedBehavior => &self.payload.expected_behavior,
-            FieldId::CurrentBehavior => &self.payload.current_behavior,
-            FieldId::StepsToReproduce => &self.payload.steps_to_reproduce,
-            FieldId::AcceptanceCriteria => &self.payload.acceptance_criteria,
-            FieldId::FilesToModify => &self.payload.files_to_modify,
-            FieldId::TestHints => &self.payload.test_hints,
+    /// Reconstruct `self.fields` for the current step, seeding each
+    /// textarea with the existing payload value so Back-then-Forward
+    /// recovers what the user typed earlier. Called after every step
+    /// change.
+    fn rebuild_fields_for_step(&mut self) {
+        let step_fields = self.step_fields();
+        if step_fields.is_empty() {
+            self.fields = WizardFields::empty();
+            return;
+        }
+        let mut new_fields: Vec<TextAreaField> = Vec::with_capacity(step_fields.len());
+        for field_id in step_fields {
+            let mut ta = if matches!(field_id, FieldId::Title) {
+                TextAreaField::single_line()
+            } else {
+                TextAreaField::multi_line()
+            };
+            let initial = field_id.payload_ref(&self.payload);
+            if !initial.is_empty() {
+                ta.set_text(initial);
+            }
+            new_fields.push(ta);
+        }
+        self.fields = WizardFields::new(new_fields);
+    }
+
+    /// Paint focused/unfocused border styles onto each textarea's
+    /// internal `Block`. Called from `Screen::draw` (the only mutable
+    /// entry point) so `draw_impl` can stay `&self`.
+    pub(super) fn refresh_field_blocks(&mut self) {
+        let step_fields = self.step_fields();
+        let focused_idx = self.fields.focus();
+        for (i, field_id) in step_fields.iter().enumerate() {
+            let focused = i == focused_idx;
+            let border_style = if focused {
+                Style::default()
+                    .fg(Color::LightCyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().add_modifier(Modifier::DIM)
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(field_id.label());
+            if let Some(ta) = self.fields.get_mut(i) {
+                ta.area_mut().set_block(block);
+            }
         }
     }
 
-    /// Validate that the current step is allowed to advance. Returns the
-    /// failure reason for the user (empty string when valid).
+    /// Validate that the current step is allowed to advance. Reads
+    /// live textarea content via `field_text` so the footer error
+    /// updates as the user types (no wait for a sync boundary).
     pub fn validation_error(&self) -> Option<&'static str> {
         match self.step {
             IssueWizardStep::BasicInfo => {
-                if self.payload.title.trim().is_empty() {
+                if self.field_text(FieldId::Title).trim().is_empty() {
                     Some("Title is required")
-                } else if self.payload.overview.trim().is_empty() {
+                } else if self.field_text(FieldId::Overview).trim().is_empty() {
                     Some("Overview is required")
                 } else {
                     None
                 }
             }
             IssueWizardStep::DorFields => {
-                if self.payload.acceptance_criteria.trim().is_empty() {
+                if self
+                    .field_text(FieldId::AcceptanceCriteria)
+                    .trim()
+                    .is_empty()
+                {
                     Some("Acceptance Criteria is required")
                 } else {
                     None
@@ -478,16 +572,18 @@ impl IssueWizardScreen {
     /// Try to advance. Returns true on success, false if validation
     /// blocked the move.
     pub fn try_advance(&mut self) -> bool {
+        // Sync BEFORE validation so payload reflects the live textarea
+        // content, then validation reads the canonical source.
+        self.sync_fields_into_payload();
         if self.validation_error().is_some() {
             return false;
         }
-        // Persist Dependencies-step selections before leaving the step.
         if matches!(self.step, IssueWizardStep::Dependencies) {
             self.dep_persist_to_payload();
         }
         if let Some(next) = self.step.next() {
             self.step = next;
-            self.focus = 0;
+            self.rebuild_fields_for_step();
             true
         } else {
             false
@@ -495,46 +591,13 @@ impl IssueWizardScreen {
     }
 
     pub fn retreat(&mut self) -> bool {
+        self.sync_fields_into_payload();
         if let Some(prev) = self.step.previous() {
             self.step = prev;
-            self.focus = 0;
+            self.rebuild_fields_for_step();
             true
         } else {
             false
-        }
-    }
-
-    fn cycle_focus_forward(&mut self) {
-        let len = self.step_fields().len();
-        if len > 0 {
-            self.focus = (self.focus + 1) % len;
-        }
-    }
-
-    fn cycle_focus_backward(&mut self) {
-        let len = self.step_fields().len();
-        if len > 0 {
-            self.focus = (self.focus + len - 1) % len;
-        }
-    }
-
-    fn append_to_focused(&mut self, c: char) {
-        if let Some(field) = self.focused_field() {
-            self.field_value_mut(field).push(c);
-        }
-    }
-
-    fn backspace_focused(&mut self) {
-        if let Some(field) = self.focused_field() {
-            self.field_value_mut(field).pop();
-        }
-    }
-
-    fn newline_focused(&mut self) {
-        if let Some(field) = self.focused_field()
-            && field.is_multiline()
-        {
-            self.field_value_mut(field).push('\n');
         }
     }
 
@@ -631,24 +694,32 @@ impl Screen for IssueWizardScreen {
                     self.retreat();
                 }
                 (KeyCode::Tab, _) => {
-                    self.cycle_focus_forward();
+                    self.fields.focus_next();
                 }
                 (KeyCode::BackTab, _) => {
-                    self.cycle_focus_backward();
+                    self.fields.focus_prev();
                 }
                 (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) => {
-                    self.newline_focused();
+                    // Shift+Enter inserts a newline on multi-line fields
+                    // (the Title single-line field filters it out).
+                    if let Some(field) = self.fields.focused_mut()
+                        && !field.is_single_line()
+                    {
+                        field.area_mut().insert_newline();
+                    }
                 }
                 (KeyCode::Enter, _) => {
                     self.try_advance();
                 }
-                (KeyCode::Backspace, _) => {
-                    self.backspace_focused();
+                _ => {
+                    // Everything else — printable Chars, Backspace,
+                    // arrow keys, Home/End, Ctrl+Left/Right (word jump),
+                    // Ctrl+W (delete word back), Ctrl+Z/Y (undo/redo),
+                    // Shift+arrow selection — delegates to TextArea.
+                    if let Some(field) = self.fields.focused_mut() {
+                        field.area_mut().input(event.clone());
+                    }
                 }
-                (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) => {
-                    self.append_to_focused(*c);
-                }
-                _ => {}
             },
             IssueWizardStep::AiReview => match code {
                 KeyCode::Esc => {
@@ -750,6 +821,8 @@ impl Screen for IssueWizardScreen {
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        self.fields.refresh_focus_styles();
+        self.refresh_field_blocks();
         self.draw_impl(f, area, theme);
     }
 
@@ -872,7 +945,23 @@ mod tests {
     fn basic_info_chars_append_to_title() {
         let mut s = at_basic_info();
         type_string(&mut s, "hello");
-        assert_eq!(s.payload().title, "hello");
+        assert_eq!(s.field_text(FieldId::Title), "hello");
+    }
+
+    /// Post-migration invariant: typed text lives in the textarea until
+    /// a step transition (advance / Esc / Ctrl+V) syncs it into the
+    /// payload. The previous `String`-buffer wizard pushed chars
+    /// directly into `payload.title` — keeping those two paths distinct
+    /// is the whole point of #447 (so validation, preview, and AI
+    /// prompts read from one source of truth — the live textarea).
+    #[test]
+    fn basic_info_typed_text_not_in_payload_until_sync() {
+        let mut s = at_basic_info();
+        type_string(&mut s, "hello");
+        assert!(
+            s.payload().title.is_empty(),
+            "payload.title should stay empty until a sync boundary"
+        );
     }
 
     #[test]
@@ -881,8 +970,8 @@ mod tests {
         s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
         assert_eq!(s.focused_field(), Some(FieldId::Overview));
         type_string(&mut s, "x");
-        assert_eq!(s.payload().overview, "x");
-        assert_eq!(s.payload().title, "");
+        assert_eq!(s.field_text(FieldId::Overview), "x");
+        assert_eq!(s.field_text(FieldId::Title), "");
     }
 
     #[test]
@@ -890,7 +979,7 @@ mod tests {
         let mut s = at_basic_info();
         type_string(&mut s, "hi");
         s.handle_input(&key_event(KeyCode::Backspace), InputMode::Insert);
-        assert_eq!(s.payload().title, "h");
+        assert_eq!(s.field_text(FieldId::Title), "h");
     }
 
     #[test]
@@ -928,7 +1017,7 @@ mod tests {
             InputMode::Insert,
         );
         type_string(&mut s, "b");
-        assert_eq!(s.payload().overview, "a\nb");
+        assert_eq!(s.field_text(FieldId::Overview), "a\nb");
     }
 
     #[test]
@@ -940,16 +1029,21 @@ mod tests {
             InputMode::Insert,
         );
         type_string(&mut s, "b");
-        assert_eq!(s.payload().title, "ab");
+        assert_eq!(s.field_text(FieldId::Title), "ab");
     }
 
     // ---- DorFields ----
 
     fn at_dor_fields(issue_type: IssueType) -> IssueWizardScreen {
         let mut s = at_basic_info();
+        // `issue_type` is a payload-only field (not a textarea), so
+        // setting it via `payload_mut` stays correct.
         s.payload_mut().issue_type = issue_type;
-        s.payload_mut().title = "t".to_string();
-        s.payload_mut().overview = "o".to_string();
+        // Title + Overview now live in textareas; seed them via the
+        // public input path so try_advance sees populated content.
+        type_string(&mut s, "t");
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
+        type_string(&mut s, "o");
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         s
     }

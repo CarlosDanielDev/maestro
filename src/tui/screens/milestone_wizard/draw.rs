@@ -86,7 +86,10 @@ impl MilestoneWizardScreen {
             ])
             .split(area);
         self.draw_questions(f, chunks[0], "AI", GOAL_QUESTIONS);
-        self.draw_field(f, chunks[1], "Your goals", &self.payload().goals, true);
+        // Block + cursor style were set by `refresh_field_blocks` on the
+        // mutable draw entry point. TextArea::widget renders its own
+        // content, cursor, and border.
+        f.render_widget(self.goal_field.area(), chunks[1]);
     }
 
     fn draw_non_goals_step(&self, f: &mut Frame, area: Rect) {
@@ -95,15 +98,26 @@ impl MilestoneWizardScreen {
             .constraints([Constraint::Length(3), Constraint::Min(3)])
             .split(area);
         self.draw_questions(f, chunks[0], "AI", &[NON_GOAL_PROMPT]);
-        self.draw_field(f, chunks[1], "Non-goals", &self.payload().non_goals, true);
+        f.render_widget(self.non_goals_field.area(), chunks[1]);
     }
 
     fn draw_doc_refs_step(&self, f: &mut Frame, area: Rect) {
-        let block = Block::default()
+        let outer = Block::default()
             .borders(Borders::ALL)
             .title("Doc references (one per line, file path or URL)");
-        let inner = block.inner(area);
-        f.render_widget(block, area);
+        let inner = outer.inner(area);
+        f.render_widget(outer, area);
+
+        // Top: committed references list. Middle: in-progress buffer
+        // rendered by TextArea. Bottom: the help hint.
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(1),    // references list (grows)
+                Constraint::Length(1), // doc_buffer_field (single line)
+                Constraint::Length(2), // help hint
+            ])
+            .split(inner);
 
         let mut lines: Vec<Line> = Vec::new();
         for (i, r) in self.payload().doc_references.iter().enumerate() {
@@ -124,18 +138,29 @@ impl MilestoneWizardScreen {
                 Span::raw(r.clone()),
             ]));
         }
-        // Active editing buffer (the line being typed)
-        lines.push(Line::from(vec![
-            Span::styled("> ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(self.doc_buffer().to_string()),
-            Span::styled("▏", Style::default().add_modifier(Modifier::SLOW_BLINK)),
-        ]));
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            "Type a path/URL and press Enter to add.  Shift+Enter advances.",
-            Style::default().add_modifier(Modifier::DIM),
-        )));
-        f.render_widget(Paragraph::new(lines), inner);
+        f.render_widget(Paragraph::new(lines), layout[0]);
+
+        // `> ` prefix + the single-line textarea side by side.
+        let buffer_row = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(2), Constraint::Min(1)])
+            .split(layout[1]);
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "> ",
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
+            buffer_row[0],
+        );
+        f.render_widget(self.doc_buffer_field.area(), buffer_row[1]);
+
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "Type a path/URL and press Enter to add.  Shift+Enter advances.",
+                Style::default().add_modifier(Modifier::DIM),
+            )),
+            layout[2],
+        );
     }
 
     fn draw_ai_structuring_step(&self, f: &mut Frame, area: Rect) {
@@ -316,37 +341,5 @@ impl MilestoneWizardScreen {
             Paragraph::new(lines).block(Block::default().borders(Borders::BOTTOM)),
             area,
         );
-    }
-
-    fn draw_field(&self, f: &mut Frame, area: Rect, title: &str, content: &str, focused: bool) {
-        let border_style = if focused {
-            Style::default()
-                .fg(Color::LightCyan)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().add_modifier(Modifier::DIM)
-        };
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(border_style)
-            .title(title.to_string());
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        let mut lines: Vec<Line> = if content.is_empty() && !focused {
-            vec![Line::from(Span::styled(
-                "(empty)",
-                Style::default().add_modifier(Modifier::DIM),
-            ))]
-        } else {
-            content.split('\n').map(Line::from).collect()
-        };
-        if focused && let Some(last) = lines.last_mut() {
-            last.spans.push(Span::styled(
-                "▏",
-                Style::default().add_modifier(Modifier::SLOW_BLINK),
-            ));
-        }
-        f.render_widget(Paragraph::new(lines), inner);
     }
 }

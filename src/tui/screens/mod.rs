@@ -14,7 +14,7 @@ pub mod prompt_input;
 pub mod queue_confirmation;
 pub mod release_notes;
 pub mod settings;
-mod wizard_paste;
+pub mod wizard_fields;
 pub mod wrap;
 
 pub use adapt_follow_up::AdaptFollowUpScreen;
