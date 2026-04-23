@@ -8,7 +8,9 @@ use super::types::{AiGeneratedPlan, AiProposedIssue, MilestonePlanPayload};
 /// `AiStructuring` step.
 pub fn build_planning_prompt(payload: &MilestonePlanPayload) -> String {
     let mut prompt = String::new();
-    prompt.push_str("You are helping plan a software milestone. Output ONLY a JSON object with this shape:\n");
+    prompt.push_str(
+        "You are helping plan a software milestone. Output ONLY a JSON object with this shape:\n",
+    );
     prompt.push_str(
         "{\"title\":\"…\",\"description\":\"…\",\"issues\":[{\"title\":\"…\",\"overview\":\"…\",\"blocked_by\":[<indices>]}]}\n\n",
     );
@@ -36,9 +38,7 @@ pub fn build_planning_prompt(payload: &MilestonePlanPayload) -> String {
             prompt.push_str("]\n");
         }
     }
-    prompt.push_str(
-        "\n\nRespond with the JSON object only, no commentary, no markdown fences.",
-    );
+    prompt.push_str("\n\nRespond with the JSON object only, no commentary, no markdown fences.");
     prompt
 }
 

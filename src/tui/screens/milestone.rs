@@ -275,7 +275,11 @@ impl MilestoneScreen {
             ),
         ]));
         lines.push(Line::from(""));
-        for raw in issue.body.lines().take(inner.height.saturating_sub(2) as usize) {
+        for raw in issue
+            .body
+            .lines()
+            .take(inner.height.saturating_sub(2) as usize)
+        {
             lines.push(Line::from(sanitize_for_terminal(raw)));
         }
         f.render_widget(Paragraph::new(lines), inner);
@@ -454,7 +458,6 @@ impl MilestoneScreen {
             f.render_widget(Paragraph::new(status_line), status_area);
         }
     }
-
 }
 
 /// #326: suggest a `Blocked By` list for a new issue inserted into a
@@ -582,7 +585,9 @@ fn append_new_level(section: &str, bullet: &str, blocked_by: &[u64]) -> String {
         .filter_map(|l| {
             let trimmed = l.trim_start();
             trimmed.strip_prefix("Level ").and_then(|rest| {
-                rest.split_whitespace().next().and_then(|n| n.parse::<u32>().ok())
+                rest.split_whitespace()
+                    .next()
+                    .and_then(|n| n.parse::<u32>().ok())
             })
         })
         .max()
@@ -628,12 +633,10 @@ pub(crate) fn count_blocked_by(body: &str) -> usize {
         }
         // A line like "- #123 title" or "* #45 ..." or "- None"
         let after_bullet = trimmed.trim_start_matches(['-', '*', ' ']);
-        if after_bullet.starts_with('#') {
-            // Skip the '#' and check the next char is a digit.
-            let after_hash = &after_bullet[1..];
-            if after_hash.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-                count += 1;
-            }
+        if let Some(after_hash) = after_bullet.strip_prefix('#')
+            && after_hash.chars().next().is_some_and(|c| c.is_ascii_digit())
+        {
+            count += 1;
         }
     }
     count
@@ -860,10 +863,8 @@ mod tests {
     #[test]
     fn navigating_milestone_resets_focused_issue() {
         let issues = vec![make_issue(10), make_issue(11), make_issue(12)];
-        let mut s = MilestoneScreen::new(vec![
-            make_entry_with_issues(1, issues),
-            make_entry(2, 0, 0),
-        ]);
+        let mut s =
+            MilestoneScreen::new(vec![make_entry_with_issues(1, issues), make_entry(2, 0, 0)]);
         s.focused_issue = 2;
         s.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
         assert_eq!(s.focused_issue, 0);
@@ -920,7 +921,10 @@ mod tests {
     fn suggest_blocked_by_skips_closed_issues() {
         let mut closed = make_issue_with_body(10, "## Blocked By\n\n- None\n");
         closed.state = "closed".into();
-        let issues = vec![closed, make_issue_with_body(11, "## Blocked By\n\n- None\n")];
+        let issues = vec![
+            closed,
+            make_issue_with_body(11, "## Blocked By\n\n- None\n"),
+        ];
         let suggested = suggest_blocked_by_for_new_issue(&issues);
         assert_eq!(suggested, vec![11]);
     }

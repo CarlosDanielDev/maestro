@@ -548,10 +548,7 @@ pub(super) fn active_screen(app: &App) -> Option<&dyn Screen> {
             .milestone_wizard_screen
             .as_ref()
             .map(|s| s as &dyn Screen),
-        TuiMode::ProjectStats => app
-            .project_stats_screen
-            .as_ref()
-            .map(|s| s as &dyn Screen),
+        TuiMode::ProjectStats => app.project_stats_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::PromptInput => app.prompt_input_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::QueueConfirmation => app
             .queue_confirmation_screen

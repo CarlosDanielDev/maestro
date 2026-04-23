@@ -7,7 +7,6 @@ pub enum IssueType {
     Bug,
 }
 
-
 /// Linear step machine for the Issue Wizard. Order is the displayed order
 /// — `Self::ALL.iter().position(|s| s == self)` gives the step number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

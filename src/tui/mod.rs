@@ -50,8 +50,7 @@ use summary::print_summary;
 /// into the `Result<String, String>` shape the wizards' background tasks
 /// expect, with sensible defaults (sonnet model, current directory).
 async fn run_claude_print_for_wizard(prompt: &str) -> Result<String, String> {
-    let cwd = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     crate::adapt::prompts::run_claude_print("sonnet", prompt, &cwd)
         .await
         .map_err(|e| e.to_string())
@@ -431,8 +430,7 @@ async fn event_loop(
                     tokio::spawn(async move {
                         let body =
                             crate::tui::screens::issue_wizard::render_body_markdown(&payload);
-                        let labels =
-                            crate::tui::screens::issue_wizard::render_labels(&payload);
+                        let labels = crate::tui::screens::issue_wizard::render_labels(&payload);
                         let client = GhCliClient::new();
                         let result = client
                             .create_issue(&payload.title, &body, &labels, payload.milestone)
@@ -469,9 +467,7 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {
                         let prompt =
-                            crate::tui::screens::milestone_wizard::build_planning_prompt(
-                                &payload,
-                            );
+                            crate::tui::screens::milestone_wizard::build_planning_prompt(&payload);
                         let res = run_claude_print_for_wizard(&prompt).await;
                         let parsed = res.and_then(|raw| {
                             crate::tui::screens::milestone_wizard::parse_planning_response(&raw)
@@ -481,15 +477,18 @@ async fn event_loop(
                 }
                 app::TuiCommand::FetchProjectStats => {
                     let tx = app.data_tx.clone();
-                    let local_sessions: Vec<crate::session::types::Session> = app
-                        .pool
-                        .all_sessions()
-                        .into_iter()
-                        .cloned()
-                        .collect();
+                    let local_sessions: Vec<crate::session::types::Session> =
+                        app.pool.all_sessions().into_iter().cloned().collect();
                     tokio::spawn(async move {
                         let client = GhCliClient::new();
-                        let (open_result, closed_result, ready_result, failed_result, done_result, milestones_result) = tokio::join!(
+                        let (
+                            open_result,
+                            closed_result,
+                            ready_result,
+                            failed_result,
+                            done_result,
+                            milestones_result,
+                        ) = tokio::join!(
                             client.list_issues(&[]),
                             client.list_issues(&["state:closed"]),
                             client.list_issues(&["maestro:ready"]),

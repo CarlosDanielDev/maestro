@@ -14,8 +14,7 @@ const GOAL_QUESTIONS: &[&str] = &[
     "Who benefits when this ships?",
 ];
 
-const NON_GOAL_PROMPT: &str =
-    "What should this milestone explicitly NOT include? Listing non-goals up front prevents scope creep.";
+const NON_GOAL_PROMPT: &str = "What should this milestone explicitly NOT include? Listing non-goals up front prevents scope creep.";
 
 impl MilestoneWizardScreen {
     pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, _theme: &Theme) {
@@ -53,7 +52,11 @@ impl MilestoneWizardScreen {
             Span::styled(step.label(), Style::default().add_modifier(Modifier::BOLD)),
         ]))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::BOTTOM).title("Milestone Wizard"));
+        .block(
+            Block::default()
+                .borders(Borders::BOTTOM)
+                .title("Milestone Wizard"),
+        );
         f.render_widget(header, area);
     }
 
@@ -71,16 +74,16 @@ impl MilestoneWizardScreen {
                 Style::default().add_modifier(Modifier::DIM),
             ))
         };
-        f.render_widget(
-            Paragraph::new(line).alignment(Alignment::Center),
-            area,
-        );
+        f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
     }
 
     fn draw_goal_step(&self, f: &mut Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(GOAL_QUESTIONS.len() as u16 + 2), Constraint::Min(3)])
+            .constraints([
+                Constraint::Length(GOAL_QUESTIONS.len() as u16 + 2),
+                Constraint::Min(3),
+            ])
             .split(area);
         self.draw_questions(f, chunks[0], "AI", GOAL_QUESTIONS);
         self.draw_field(f, chunks[1], "Your goals", &self.payload().goals, true);
@@ -92,13 +95,7 @@ impl MilestoneWizardScreen {
             .constraints([Constraint::Length(3), Constraint::Min(3)])
             .split(area);
         self.draw_questions(f, chunks[0], "AI", &[NON_GOAL_PROMPT]);
-        self.draw_field(
-            f,
-            chunks[1],
-            "Non-goals",
-            &self.payload().non_goals,
-            true,
-        );
+        self.draw_field(f, chunks[1], "Non-goals", &self.payload().non_goals, true);
     }
 
     fn draw_doc_refs_step(&self, f: &mut Frame, area: Rect) {
@@ -131,10 +128,7 @@ impl MilestoneWizardScreen {
         lines.push(Line::from(vec![
             Span::styled("> ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(self.doc_buffer().to_string()),
-            Span::styled(
-                "▏",
-                Style::default().add_modifier(Modifier::SLOW_BLINK),
-            ),
+            Span::styled("▏", Style::default().add_modifier(Modifier::SLOW_BLINK)),
         ]));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
@@ -145,7 +139,9 @@ impl MilestoneWizardScreen {
     }
 
     fn draw_ai_structuring_step(&self, f: &mut Frame, area: Rect) {
-        let block = Block::default().borders(Borders::ALL).title("AI structuring");
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("AI structuring");
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -163,10 +159,7 @@ impl MilestoneWizardScreen {
                 Style::default().add_modifier(Modifier::BOLD),
             )),
         ];
-        f.render_widget(
-            Paragraph::new(lines).alignment(Alignment::Center),
-            inner,
-        );
+        f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
     fn draw_review_step(&self, f: &mut Frame, area: Rect) {
@@ -303,10 +296,7 @@ impl MilestoneWizardScreen {
             Line::from(""),
             Line::from("Press r to retry, Esc to go back."),
         ];
-        f.render_widget(
-            Paragraph::new(lines).alignment(Alignment::Center),
-            inner,
-        );
+        f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
     fn draw_questions(&self, f: &mut Frame, area: Rect, role: &str, questions: &[&str]) {
@@ -351,13 +341,13 @@ impl MilestoneWizardScreen {
         } else {
             content.split('\n').map(Line::from).collect()
         };
-        if focused {
-            if let Some(last) = lines.last_mut() {
-                last.spans.push(Span::styled(
-                    "▏",
-                    Style::default().add_modifier(Modifier::SLOW_BLINK),
-                ));
-            }
+        if focused
+            && let Some(last) = lines.last_mut()
+        {
+            last.spans.push(Span::styled(
+                "▏",
+                Style::default().add_modifier(Modifier::SLOW_BLINK),
+            ));
         }
         f.render_widget(Paragraph::new(lines), inner);
     }

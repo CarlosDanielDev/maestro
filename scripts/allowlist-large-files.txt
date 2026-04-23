@@ -89,3 +89,13 @@ src/state/file_claims.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, p
 src/updater/checker.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split version-check from download/install
 src/work/executor.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split execution loop from retry/backoff
 src/main.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: extract dispatch logic into src/cli/dispatch.rs (keep main.rs minimal — crate entry only)
+
+# --- Milestone v0.15.0 Wizard additions (tui-textarea migration will shrink these) ---
+# All four files are driven by hand-rolled String-buffer text editing in the
+# Issue Wizard and Milestone Wizard. Issue #447 migrates the fields to
+# `tui-textarea`, which deletes the manual char/backspace/newline/paste
+# handling and drops these back under the 400-LOC cap.
+src/tui/screen_dispatch.rs # deadline: 2026-07-22, owner: @carlos, ticket: #447, plan: after tui-textarea migration the wizard step-entry hooks compress; also consider splitting Push/Pop/LaunchXxx handlers into separate files if still over cap
+src/tui/screens/milestone_wizard/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #447, plan: tui-textarea migration removes the hand-rolled buffer/backspace/newline code; remaining size can be split into lifecycle, materialization, and ai_planning submodules
+src/tui/screens/issue_wizard/draw.rs # deadline: 2026-07-22, owner: @carlos, ticket: #447, plan: tui-textarea handles its own widget rendering — the per-field draw_field helper disappears; barely over the cap today (401)
+src/tui/screens/issue_wizard/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #447, plan: tui-textarea migration + splitting dep_* state + ai_review state + create_* state into submodules; this is the biggest violator and where most of the payoff lives

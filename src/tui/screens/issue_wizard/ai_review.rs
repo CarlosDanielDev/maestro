@@ -29,7 +29,11 @@ pub fn build_review_prompt(payload: &IssueCreationPayload) -> String {
     push_section(&mut s, "Files to Modify", &payload.files_to_modify);
     push_section(&mut s, "Test Hints", &payload.test_hints);
     if !payload.blocked_by.is_empty() {
-        let refs: Vec<String> = payload.blocked_by.iter().map(|n| format!("#{}", n)).collect();
+        let refs: Vec<String> = payload
+            .blocked_by
+            .iter()
+            .map(|n| format!("#{}", n))
+            .collect();
         push_section(&mut s, "Blocked By", &refs.join(", "));
     }
     s.push_str("\n--- END DRAFT ---\n");
@@ -47,8 +51,8 @@ fn push_section(out: &mut String, title: &str, body: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::IssueType;
+    use super::*;
 
     fn sample_payload() -> IssueCreationPayload {
         IssueCreationPayload {

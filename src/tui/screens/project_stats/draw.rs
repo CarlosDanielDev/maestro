@@ -19,7 +19,11 @@ impl ProjectStatsScreen {
                 )),
             ])
             .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).title("Project Stats"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Project Stats"),
+            );
             f.render_widget(msg, area);
             return;
         }
@@ -52,7 +56,7 @@ impl ProjectStatsScreen {
 
     fn milestones_height(&self) -> u16 {
         let body = self.data.milestones.len() as u16;
-        body.saturating_add(2).max(3).min(12)
+        body.saturating_add(2).clamp(3, 12)
     }
 
     fn draw_milestones(&self, f: &mut Frame, area: Rect) {
@@ -83,22 +87,18 @@ impl ProjectStatsScreen {
             .constraints(rows)
             .split(inner);
 
-        for (i, ms) in self
-            .data
-            .milestones
-            .iter()
-            .take(chunks.len())
-            .enumerate()
-        {
+        for (i, ms) in self.data.milestones.iter().take(chunks.len()).enumerate() {
             let label = format!(
                 "{} ({}/{})",
                 truncate_label(&ms.title, 40),
                 ms.closed,
                 ms.total
             );
-            let gauge = Gauge::default()
-                .ratio(ms.ratio())
-                .label(format!("{:>3}%  {}", ms.percent(), label));
+            let gauge = Gauge::default().ratio(ms.ratio()).label(format!(
+                "{:>3}%  {}",
+                ms.percent(),
+                label
+            ));
             f.render_widget(gauge, chunks[i]);
         }
     }
@@ -142,14 +142,15 @@ impl ProjectStatsScreen {
             )),
         ];
         f.render_widget(
-            Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("Sessions")),
+            Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title("Sessions")),
             area,
         );
     }
 
     fn draw_recent(&self, f: &mut Frame, area: Rect) {
-        let block = Block::default().borders(Borders::ALL).title("Recent activity");
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Recent activity");
         let inner = block.inner(area);
         f.render_widget(block, area);
 

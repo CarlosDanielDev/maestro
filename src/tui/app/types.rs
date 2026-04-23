@@ -222,9 +222,7 @@ pub enum TuiDataEvent {
     ProjectStats(crate::tui::screens::project_stats::ProjectStatsData),
     /// AI planning result for the Milestone Wizard (#294). `Err(s)` is the
     /// human-readable failure reason rendered on the `Failed` step.
-    AiPlanningResult(
-        Result<crate::tui::screens::milestone_wizard::AiGeneratedPlan, String>,
-    ),
+    AiPlanningResult(Result<crate::tui::screens::milestone_wizard::AiGeneratedPlan, String>),
     /// Open issues fetched for the Issue Wizard's Dependencies step (#295).
     WizardDependencyIssues(anyhow::Result<Vec<GhIssue>>),
     /// AI review companion result (#296). Carries the raw response text

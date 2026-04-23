@@ -190,12 +190,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::ProjectStats => {
                     app.project_stats_screen = Some(screens::ProjectStatsScreen::new());
-                    app.pending_commands.push(app::TuiCommand::FetchProjectStats);
+                    app.pending_commands
+                        .push(app::TuiCommand::FetchProjectStats);
                 }
                 app::TuiMode::MilestoneWizard => {
                     if app.milestone_wizard_screen.is_none() {
-                        app.milestone_wizard_screen =
-                            Some(screens::MilestoneWizardScreen::new());
+                        app.milestone_wizard_screen = Some(screens::MilestoneWizardScreen::new());
                     }
                 }
                 app::TuiMode::IssueBrowser => {
@@ -428,10 +428,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // Reuse an existing wizard if present, otherwise spin one up.
             // Pre-fill milestone + suggested Blocked By so the user can
             // accept/override on the Dependencies step.
-            let mut wizard = app
-                .issue_wizard_screen
-                .take()
-                .unwrap_or_else(screens::IssueWizardScreen::new);
+            let mut wizard = app.issue_wizard_screen.take().unwrap_or_default();
             {
                 let payload = wizard.payload_mut();
                 payload.milestone = Some(milestone);

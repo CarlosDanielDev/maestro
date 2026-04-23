@@ -340,10 +340,7 @@ impl IssueWizardScreen {
     }
 
     /// #295: apply the result of a `FetchIssues` background task.
-    pub fn apply_dep_issues(
-        &mut self,
-        issues: Vec<crate::provider::github::types::GhIssue>,
-    ) {
+    pub fn apply_dep_issues(&mut self, issues: Vec<crate::provider::github::types::GhIssue>) {
         // Filter to open issues only — closed issues can't block anything.
         let open: Vec<_> = issues.into_iter().filter(|i| i.state == "open").collect();
         self.dep_selected = self.dep_selected.min(open.len().saturating_sub(1));
@@ -534,10 +531,10 @@ impl IssueWizardScreen {
     }
 
     fn newline_focused(&mut self) {
-        if let Some(field) = self.focused_field() {
-            if field.is_multiline() {
-                self.field_value_mut(field).push('\n');
-            }
+        if let Some(field) = self.focused_field()
+            && field.is_multiline()
+        {
+            self.field_value_mut(field).push('\n');
         }
     }
 
@@ -629,32 +626,30 @@ impl Screen for IssueWizardScreen {
                 }
                 _ => return self.handle_type_select(*code),
             },
-            IssueWizardStep::BasicInfo | IssueWizardStep::DorFields => {
-                match (code, *modifiers) {
-                    (KeyCode::Esc, _) => {
-                        self.retreat();
-                    }
-                    (KeyCode::Tab, _) => {
-                        self.cycle_focus_forward();
-                    }
-                    (KeyCode::BackTab, _) => {
-                        self.cycle_focus_backward();
-                    }
-                    (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) => {
-                        self.newline_focused();
-                    }
-                    (KeyCode::Enter, _) => {
-                        self.try_advance();
-                    }
-                    (KeyCode::Backspace, _) => {
-                        self.backspace_focused();
-                    }
-                    (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) => {
-                        self.append_to_focused(*c);
-                    }
-                    _ => {}
+            IssueWizardStep::BasicInfo | IssueWizardStep::DorFields => match (code, *modifiers) {
+                (KeyCode::Esc, _) => {
+                    self.retreat();
                 }
-            }
+                (KeyCode::Tab, _) => {
+                    self.cycle_focus_forward();
+                }
+                (KeyCode::BackTab, _) => {
+                    self.cycle_focus_backward();
+                }
+                (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) => {
+                    self.newline_focused();
+                }
+                (KeyCode::Enter, _) => {
+                    self.try_advance();
+                }
+                (KeyCode::Backspace, _) => {
+                    self.backspace_focused();
+                }
+                (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) => {
+                    self.append_to_focused(*c);
+                }
+                _ => {}
+            },
             IssueWizardStep::AiReview => match code {
                 KeyCode::Esc => {
                     self.retreat();
@@ -723,10 +718,11 @@ impl Screen for IssueWizardScreen {
                 }
                 KeyCode::Char(' ') => self.dep_toggle_selected(),
                 KeyCode::Char('j') | KeyCode::Down => {
-                    if let Some(issues) = self.dep_issues.as_ref() {
-                        if !issues.is_empty() && self.dep_selected + 1 < issues.len() {
-                            self.dep_selected += 1;
-                        }
+                    if let Some(issues) = self.dep_issues.as_ref()
+                        && !issues.is_empty()
+                        && self.dep_selected + 1 < issues.len()
+                    {
+                        self.dep_selected += 1;
                     }
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
@@ -1104,9 +1100,7 @@ mod tests {
 
     #[test]
     fn ctrl_v_text_clipboard_pastes_into_focused_field() {
-        let mut s = basic_info_wizard(super::ClipboardContent::Text(
-            "clipboard text".to_string(),
-        ));
+        let mut s = basic_info_wizard(super::ClipboardContent::Text("clipboard text".to_string()));
         s.handle_input(
             &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
             InputMode::Insert,

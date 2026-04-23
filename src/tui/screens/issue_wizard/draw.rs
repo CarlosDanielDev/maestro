@@ -45,7 +45,11 @@ impl IssueWizardScreen {
             Span::styled(step.label(), Style::default().add_modifier(Modifier::BOLD)),
         ]))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::BOTTOM).title("Issue Wizard"));
+        .block(
+            Block::default()
+                .borders(Borders::BOTTOM)
+                .title("Issue Wizard"),
+        );
         f.render_widget(header, area);
     }
 
@@ -166,7 +170,11 @@ impl IssueWizardScreen {
             lines.push(Line::from(format!("Milestone: #{}", m)));
         }
         lines.push(Line::from(""));
-        for raw in self.render_body_markdown().lines().take(inner.height.saturating_sub(4) as usize) {
+        for raw in self
+            .render_body_markdown()
+            .lines()
+            .take(inner.height.saturating_sub(4) as usize)
+        {
             lines.push(Line::from(raw.to_string()));
         }
         f.render_widget(Paragraph::new(lines), inner);
@@ -183,10 +191,7 @@ impl IssueWizardScreen {
                 Style::default().add_modifier(Modifier::BOLD),
             )),
         ];
-        f.render_widget(
-            Paragraph::new(lines).alignment(Alignment::Center),
-            inner,
-        );
+        f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
     fn draw_complete(&self, f: &mut Frame, area: Rect) {
@@ -204,10 +209,7 @@ impl IssueWizardScreen {
         }
         lines.push(Line::from(""));
         lines.push(Line::from("Enter: create another  Esc: return to Landing"));
-        f.render_widget(
-            Paragraph::new(lines).alignment(Alignment::Center),
-            inner,
-        );
+        f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
     fn draw_failed(&self, f: &mut Frame, area: Rect) {
@@ -217,24 +219,19 @@ impl IssueWizardScreen {
         let lines = vec![
             Line::from(""),
             Line::from(Span::styled(
-                self.create_error()
-                    .unwrap_or("Unknown error")
-                    .to_string(),
+                self.create_error().unwrap_or("Unknown error").to_string(),
                 Style::default().fg(Color::LightRed),
             )),
             Line::from(""),
             Line::from("r: retry  Esc: back to Preview"),
         ];
-        f.render_widget(
-            Paragraph::new(lines).alignment(Alignment::Center),
-            inner,
-        );
+        f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
     fn draw_ai_review(&self, f: &mut Frame, area: Rect) {
-        let block = Block::default().borders(Borders::ALL).title(
-            "AI Review  (r: revise, s: skip, Enter: continue, R: retry on error)",
-        );
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("AI Review  (r: revise, s: skip, Enter: continue, R: retry on error)");
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -251,10 +248,7 @@ impl IssueWizardScreen {
                 Line::from(""),
                 Line::from("Press R to retry, s to skip, Esc to go back."),
             ];
-            f.render_widget(
-                Paragraph::new(lines).alignment(Alignment::Center),
-                inner,
-            );
+            f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
             return;
         }
 
@@ -266,18 +260,13 @@ impl IssueWizardScreen {
                     Style::default().add_modifier(Modifier::BOLD),
                 )),
             ];
-            f.render_widget(
-                Paragraph::new(lines).alignment(Alignment::Center),
-                inner,
-            );
+            f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
             return;
         }
 
         let body: Vec<Line> = match self.review_text() {
             Some(text) => text.lines().map(Line::from).collect(),
-            None => vec![Line::from(
-                "Press Enter to continue (no review run yet).",
-            )],
+            None => vec![Line::from("Press Enter to continue (no review run yet).")],
         };
         f.render_widget(Paragraph::new(body), inner);
     }
@@ -330,26 +319,16 @@ impl IssueWizardScreen {
                 let labels = if issue.labels.is_empty() {
                     String::new()
                 } else {
-                    let names: Vec<&str> = issue
-                        .labels
-                        .iter()
-                        .map(|s| s.as_str())
-                        .take(3)
-                        .collect();
+                    let names: Vec<&str> =
+                        issue.labels.iter().map(|s| s.as_str()).take(3).collect();
                     format!("  ({})", names.join(", "))
                 };
                 Line::from(vec![
                     Span::raw(format!("{} ", cursor)),
-                    Span::styled(
-                        check.to_string(),
-                        Style::default().fg(Color::LightGreen),
-                    ),
+                    Span::styled(check.to_string(), Style::default().fg(Color::LightGreen)),
                     Span::raw(format!(" #{} ", issue.number)),
                     Span::raw(issue.title.clone()),
-                    Span::styled(
-                        labels,
-                        Style::default().add_modifier(Modifier::DIM),
-                    ),
+                    Span::styled(labels, Style::default().add_modifier(Modifier::DIM)),
                 ])
             })
             .collect();
@@ -380,13 +359,13 @@ impl IssueWizardScreen {
             ))]
         } else {
             let mut lines: Vec<Line> = content.split('\n').map(Line::from).collect();
-            if focused {
-                if let Some(last) = lines.last_mut() {
-                    last.spans.push(Span::styled(
-                        "▏",
-                        Style::default().add_modifier(Modifier::SLOW_BLINK),
-                    ));
-                }
+            if focused
+                && let Some(last) = lines.last_mut()
+            {
+                last.spans.push(Span::styled(
+                    "▏",
+                    Style::default().add_modifier(Modifier::SLOW_BLINK),
+                ));
             }
             lines
         };

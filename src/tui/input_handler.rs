@@ -876,8 +876,7 @@ mod tests {
     #[test]
     fn is_text_input_mode_true_for_milestone_wizard_on_goal_definition() {
         let mut app = make_app();
-        app.milestone_wizard_screen =
-            Some(crate::tui::screens::MilestoneWizardScreen::new());
+        app.milestone_wizard_screen = Some(crate::tui::screens::MilestoneWizardScreen::new());
         app.tui_mode = TuiMode::MilestoneWizard;
         assert!(is_text_input_mode(&app));
     }
@@ -885,8 +884,7 @@ mod tests {
     #[test]
     fn is_text_input_mode_false_for_project_stats() {
         let mut app = make_app();
-        app.project_stats_screen =
-            Some(crate::tui::screens::ProjectStatsScreen::new());
+        app.project_stats_screen = Some(crate::tui::screens::ProjectStatsScreen::new());
         app.tui_mode = TuiMode::ProjectStats;
         assert!(!is_text_input_mode(&app));
     }

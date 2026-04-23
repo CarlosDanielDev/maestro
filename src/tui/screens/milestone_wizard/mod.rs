@@ -49,9 +49,7 @@ pub fn level_buckets(issues: &[AiProposedIssue]) -> Vec<Vec<usize>> {
 /// each accepted issue in dependency order with its `Blocked By` section
 /// rewritten to use actual issue numbers. Used by the `Materializing`
 /// step's background task (#297).
-pub async fn materialize_plan(
-    plan: &AiGeneratedPlan,
-) -> Result<MilestoneCreationResult, String> {
+pub async fn materialize_plan(plan: &AiGeneratedPlan) -> Result<MilestoneCreationResult, String> {
     use crate::provider::github::client::{GhCliClient, GitHubClient};
     let client = GhCliClient::new();
     let milestone_number = client
@@ -84,12 +82,7 @@ pub async fn materialize_plan(
             );
             let labels = vec!["enhancement".to_string(), "maestro:ready".to_string()];
             let number = client
-                .create_issue(
-                    &issue.title,
-                    &body,
-                    &labels,
-                    Some(milestone_number),
-                )
+                .create_issue(&issue.title, &body, &labels, Some(milestone_number))
                 .await
                 .map_err(|e| format!("create_issue '{}' failed: {e}", issue.title))?;
             number_for_index.insert(idx, number);
@@ -203,7 +196,10 @@ impl MilestoneWizardScreen {
             MilestoneWizardStep::DocReferences => {
                 let sanitised = sanitize_paste(text);
                 if sanitised.contains('\n') {
-                    for line in sanitised.lines().map(|l| l.trim()).filter(|l| !l.is_empty())
+                    for line in sanitised
+                        .lines()
+                        .map(|l| l.trim())
+                        .filter(|l| !l.is_empty())
                     {
                         self.doc_buffer.clear();
                         self.doc_buffer.push_str(line);
@@ -244,7 +240,6 @@ impl MilestoneWizardScreen {
         self.materialize_enqueued = true;
     }
 
-
     pub fn review_focus(&self) -> usize {
         self.review_focus
     }
@@ -276,10 +271,7 @@ impl MilestoneWizardScreen {
         self.step = MilestoneWizardStep::Materializing;
     }
 
-    pub fn finish_materialization(
-        &mut self,
-        result: Result<MilestoneCreationResult, String>,
-    ) {
+    pub fn finish_materialization(&mut self, result: Result<MilestoneCreationResult, String>) {
         self.materialize_progress = None;
         self.materialize_enqueued = false;
         match result {
@@ -311,10 +303,10 @@ impl MilestoneWizardScreen {
     }
 
     fn review_toggle_focused(&mut self, accepted: bool) {
-        if let Some(plan) = self.generated_plan.as_mut() {
-            if let Some(issue) = plan.issues.get_mut(self.review_focus) {
-                issue.accepted = accepted;
-            }
+        if let Some(plan) = self.generated_plan.as_mut()
+            && let Some(issue) = plan.issues.get_mut(self.review_focus)
+        {
+            issue.accepted = accepted;
         }
     }
 
@@ -337,7 +329,6 @@ impl MilestoneWizardScreen {
     pub fn payload(&self) -> &MilestonePlanPayload {
         &self.payload
     }
-
 
     pub fn doc_buffer(&self) -> &str {
         &self.doc_buffer
@@ -716,8 +707,12 @@ mod tests {
 
     #[test]
     fn validate_reference_accepts_url() {
-        assert!(MilestoneWizardScreen::validate_reference("https://example.com"));
-        assert!(MilestoneWizardScreen::validate_reference("http://localhost"));
+        assert!(MilestoneWizardScreen::validate_reference(
+            "https://example.com"
+        ));
+        assert!(MilestoneWizardScreen::validate_reference(
+            "http://localhost"
+        ));
     }
 
     #[test]
@@ -787,18 +782,18 @@ mod tests {
 
     #[test]
     fn bracketed_paste_on_goal_appends_to_goals() {
-        let mut s = MilestoneWizardScreen::with_clipboard(
-            Box::new(FakeClipboard::new(super::ClipboardContent::Empty)),
-        );
+        let mut s = MilestoneWizardScreen::with_clipboard(Box::new(FakeClipboard::new(
+            super::ClipboardContent::Empty,
+        )));
         s.handle_input(&paste_event("first\nsecond"), InputMode::Insert);
         assert_eq!(s.payload().goals, "first\nsecond");
     }
 
     #[test]
     fn bracketed_paste_on_doc_refs_splits_lines_into_entries() {
-        let mut s = MilestoneWizardScreen::with_clipboard(
-            Box::new(FakeClipboard::new(super::ClipboardContent::Empty)),
-        );
+        let mut s = MilestoneWizardScreen::with_clipboard(Box::new(FakeClipboard::new(
+            super::ClipboardContent::Empty,
+        )));
         type_chars(&mut s, "goal");
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert); // → NonGoals
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert); // → DocReferences
