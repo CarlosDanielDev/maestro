@@ -537,11 +537,21 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 }
 
 /// Resolve the active screen (if any) to extract keybindings and input mode.
-fn active_screen(app: &App) -> Option<&dyn Screen> {
+pub(super) fn active_screen(app: &App) -> Option<&dyn Screen> {
     match app.tui_mode {
         TuiMode::Dashboard => app.home_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::Landing => app.landing_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::IssueBrowser => app.issue_browser_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::IssueWizard => app.issue_wizard_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::MilestoneView => app.milestone_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::MilestoneWizard => app
+            .milestone_wizard_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::ProjectStats => app
+            .project_stats_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
         TuiMode::PromptInput => app.prompt_input_screen.as_ref().map(|s| s as &dyn Screen),
         TuiMode::QueueConfirmation => app
             .queue_confirmation_screen
@@ -567,7 +577,7 @@ fn active_screen_bindings(app: &App) -> Vec<KeyBindingGroup> {
         .unwrap_or_default()
 }
 
-fn active_screen_input_mode(app: &App) -> crate::tui::navigation::InputMode {
+pub(super) fn active_screen_input_mode(app: &App) -> crate::tui::navigation::InputMode {
     active_screen(app)
         .and_then(|s| s.desired_input_mode())
         .unwrap_or(crate::tui::navigation::InputMode::Normal)
