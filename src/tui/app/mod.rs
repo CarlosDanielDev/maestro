@@ -123,6 +123,13 @@ pub struct App {
     pub log_viewer_cache: crate::tui::log_viewer::LogViewerCache,
     pub session_summary_state: Option<crate::tui::app::types::SessionSummaryState>,
     pub show_activity_log: bool,
+    /// Marquee animation state for the top status bar (#417). Scrolls
+    /// when the assembled spans exceed the viewport width.
+    pub status_bar_marquee: crate::tui::marquee::MarqueeState,
+    /// Cheap content fingerprint (total span char width) used to reset
+    /// `status_bar_marquee` when the bar's identity changes (breadcrumb
+    /// depth, agent count, TQ toggle, …).
+    pub status_bar_marquee_fingerprint: usize,
     pub resource_monitor: Box<dyn crate::system::monitor::ResourceMonitor>,
 }
 
@@ -220,6 +227,8 @@ impl App {
             session_summary_state: None,
             show_activity_log: true,
             resource_monitor: Box::new(crate::system::SysInfoMonitor::new(1000)),
+            status_bar_marquee: crate::tui::marquee::MarqueeState::new(),
+            status_bar_marquee_fingerprint: 0,
         }
     }
 

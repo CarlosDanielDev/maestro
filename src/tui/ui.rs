@@ -74,9 +74,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         ));
         app.cached_mode_km_key = cache_key;
     }
-    let mode_km = app.cached_mode_km.as_ref().unwrap();
+    let mode_km = app.cached_mode_km.as_ref().unwrap().clone();
 
-    draw_status_bar(f, app, mode_km, chunks[0]);
+    draw_status_bar(f, app, mode_km.clone(), chunks[0]);
 
     // Render main content based on TUI mode
     let spinner_tick = app.spinner_tick;
@@ -530,14 +530,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Draw upgrade banner if visible (overlays status bar)
     draw_upgrade_banner(f, &app.upgrade_state, chunks[0], &app.theme);
 
-    draw_fkey_bar(f, mode_km, chunks[3], &theme);
+    draw_fkey_bar(f, &mode_km, chunks[3], &theme);
 
     if let Some(ref help) = app.help_state {
         let input_mode = active_screen_input_mode(app);
         help::draw_help_overlay_with_search(
             f,
             f.area(),
-            mode_km,
+            &mode_km,
             input_mode,
             help.scroll,
             &help.search_query,
@@ -608,8 +608,18 @@ fn draw_mascot_block(
     }
 }
 
-fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
-    let theme = app.active_theme();
+fn draw_status_bar(f: &mut Frame, app: &mut App, mode_km: ModeKeyMap, area: Rect) {
+    let theme = app.active_theme().clone();
+    draw_status_bar_inner(f, app, &theme, &mode_km, area);
+}
+
+fn draw_status_bar_inner(
+    f: &mut Frame,
+    app: &mut App,
+    theme: &crate::tui::theme::Theme,
+    mode_km: &ModeKeyMap,
+    area: Rect,
+) {
     let elapsed = Utc::now() - app.start_time;
     let elapsed_str = format!(
         "{:02}:{:02}:{:02}",
@@ -781,7 +791,31 @@ fn draw_status_bar(f: &mut Frame, app: &App, mode_km: &ModeKeyMap, area: Rect) {
         .styled_block_plain(false)
         .border_style(Style::default().fg(theme.border_active));
 
-    f.render_widget(Paragraph::new(Line::from(spans)).block(block), area);
+    // #417: marquee the assembled spans when they overflow the inner viewport.
+    let inner_area = block.inner(area);
+    f.render_widget(block, area);
+
+    let total_width: usize = spans.iter().map(|s| s.width()).sum();
+    if total_width != app.status_bar_marquee_fingerprint {
+        app.status_bar_marquee.reset();
+        app.status_bar_marquee_fingerprint = total_width;
+    }
+
+    let viewport_width = inner_area.width as usize;
+    if total_width <= viewport_width {
+        app.status_bar_marquee.reset();
+        f.render_widget(Paragraph::new(Line::from(spans)), inner_area);
+    } else {
+        let overflow = total_width.saturating_sub(viewport_width);
+        app.status_bar_marquee
+            .advance(overflow, &crate::tui::marquee::MarqueeConfig::default());
+        let windowed = crate::tui::marquee::visible_spans(
+            &spans,
+            app.status_bar_marquee.offset,
+            viewport_width,
+        );
+        f.render_widget(Paragraph::new(Line::from(windowed)), inner_area);
+    }
 }
 
 fn draw_fkey_bar(
