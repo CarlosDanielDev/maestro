@@ -270,4 +270,14 @@ impl App {
         self.check_budget(session_id);
         self.sync_state();
     }
+
+    /// Route a bracketed-paste payload to the active screen.
+    ///
+    /// Embedded newlines are preserved as newline characters; the payload
+    /// is never interpreted as a submit event. Screens without a text
+    /// field fall through to a no-op.
+    pub fn handle_paste(&mut self, text: &str) {
+        tracing::debug!(paste_len = text.len(), "bracketed paste received");
+        crate::tui::screen_dispatch::dispatch_paste_to_active_screen(self, text);
+    }
 }

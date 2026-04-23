@@ -210,21 +210,14 @@ impl PromptInputScreen {
     }
 
     fn paste_from_clipboard(&mut self) {
-        let editor_focused = self.is_prompt_editor_focused();
         match self.clipboard.read() {
             ClipboardContent::Image(path) => {
                 let path_str = path.to_string_lossy().to_string();
                 self.status_message = Some(format!("Pasted image: {}", path_str));
                 self.image_paths.push(path_str);
             }
-            ClipboardContent::Text(text) if editor_focused => {
-                self.editor.insert_str(&text);
-                self.status_message = Some("Pasted text into prompt".to_string());
-                self.history_cursor = None;
-            }
             ClipboardContent::Text(text) => {
-                self.status_message = Some(format!("Pasted path: {}", text));
-                self.image_paths.push(text);
+                self.paste_text(&text);
             }
             ClipboardContent::Empty => {
                 self.status_message = Some("Clipboard is empty".to_string());
@@ -233,6 +226,40 @@ impl PromptInputScreen {
                 self.status_message = Some("Clipboard not available on this platform".to_string());
             }
         }
+    }
+
+    /// Insert a pasted payload into the active text target.
+    ///
+    /// Insertion is atomic: embedded newlines stay as newline characters
+    /// and never become `KeyCode::Enter` submit events. Shared by the
+    /// `Ctrl+V` clipboard path and the bracketed-paste event arm.
+    ///
+    /// Unicode control chars (C0 + C1 + DEL) are stripped before insert —
+    /// only `\n` and `\t` are preserved — so ANSI colour codes in a pasted
+    /// terminal dump don't survive into the textarea or the prompt payload
+    /// shipped to the model.
+    pub fn paste_text(&mut self, text: &str) {
+        let sanitized = Self::sanitize_paste(text);
+        if sanitized.is_empty() {
+            return;
+        }
+        if self.is_prompt_editor_focused() {
+            self.editor.insert_str(&sanitized);
+            self.status_message = Some(Self::STATUS_PASTED_TEXT.to_string());
+            self.history_cursor = None;
+            self.refresh_detected_refs();
+        } else if self.is_image_list_focused() {
+            self.status_message = Some(format!("Pasted path: {}", sanitized));
+            self.image_paths.push(sanitized);
+        }
+    }
+
+    const STATUS_PASTED_TEXT: &'static str = "Pasted text into prompt";
+
+    fn sanitize_paste(text: &str) -> String {
+        text.chars()
+            .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+            .collect()
     }
 
     fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -463,6 +490,11 @@ impl KeymapProvider for PromptInputScreen {
 
 impl Screen for PromptInputScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
+        if let Event::Paste(text) = event {
+            self.paste_text(text);
+            return ScreenAction::None;
+        }
+
         if let Event::Key(KeyEvent {
             code,
             modifiers,
@@ -472,7 +504,6 @@ impl Screen for PromptInputScreen {
         {
             if *modifiers == KeyModifiers::CONTROL && *code == KeyCode::Char('v') {
                 self.paste_from_clipboard();
-                self.refresh_detected_refs();
                 return ScreenAction::None;
             }
 
@@ -1589,5 +1620,166 @@ mod tests {
             }
             other => panic!("Expected LaunchPromptSession, got {:?}", other),
         }
+    }
+
+    // --- Group 14: Bracketed paste (Event::Paste) ---
+
+    #[test]
+    fn paste_text_inserts_verbatim_into_editor_when_prompt_focused() {
+        let mut screen = mock_screen();
+        assert!(
+            screen
+                .focus_ring
+                .is_focused(PromptInputScreen::PROMPT_EDITOR_PANE)
+        );
+
+        screen.paste_text("hello world");
+
+        assert_eq!(screen.prompt_text(), "hello world");
+    }
+
+    #[test]
+    fn paste_text_preserves_embedded_newlines_as_newline_chars() {
+        let mut screen = mock_screen();
+
+        screen.paste_text("line1\nline2\nline3");
+
+        assert_eq!(screen.prompt_text(), "line1\nline2\nline3");
+        assert_eq!(screen.editor.lines().len(), 3);
+    }
+
+    #[test]
+    fn paste_text_never_submits_even_with_trailing_newline() {
+        let mut screen = mock_screen();
+        let event = crossterm::event::Event::Paste("line1\nline2\n".to_string());
+
+        let action = screen.handle_input(&event, InputMode::Normal);
+
+        assert_eq!(action, ScreenAction::None);
+        assert!(!screen.prompt_text().is_empty());
+    }
+
+    #[test]
+    fn paste_text_multiline_shell_payload_returns_screen_action_none() {
+        let mut screen = screen_with_prompt("existing text");
+        let payload = "gh issue create --title \"test\"\necho hello\nrm -rf /tmp/test\n";
+        let event = crossterm::event::Event::Paste(payload.to_string());
+
+        let action = screen.handle_input(&event, InputMode::Normal);
+
+        assert_eq!(
+            action,
+            ScreenAction::None,
+            "Event::Paste must never return LaunchPromptSession regardless of payload newlines"
+        );
+    }
+
+    #[test]
+    fn paste_text_resets_history_cursor() {
+        let mut screen = mock_screen();
+        screen.history_cursor = Some(2);
+
+        screen.paste_text("some text");
+
+        assert!(screen.history_cursor.is_none());
+    }
+
+    #[test]
+    fn paste_text_sets_status_message() {
+        let mut screen = mock_screen();
+
+        screen.paste_text("any content");
+
+        assert!(
+            screen.status_message.is_some(),
+            "paste_text must set a status_message"
+        );
+    }
+
+    #[test]
+    fn paste_text_empty_string_is_noop_for_content() {
+        let mut screen = mock_screen();
+
+        screen.paste_text("");
+
+        assert_eq!(screen.prompt_text(), "");
+    }
+
+    #[test]
+    fn handle_input_event_paste_inserts_content_into_editor() {
+        let mut screen = mock_screen();
+        let event = crossterm::event::Event::Paste("injected via bracketed paste".to_string());
+
+        screen.handle_input(&event, InputMode::Normal);
+
+        assert_eq!(screen.prompt_text(), "injected via bracketed paste");
+    }
+
+    #[test]
+    fn handle_input_event_paste_returns_screen_action_none() {
+        let mut screen = mock_screen();
+        let event = crossterm::event::Event::Paste("line1\nline2\nline3\n".to_string());
+
+        let action = screen.handle_input(&event, InputMode::Normal);
+
+        assert_eq!(action, ScreenAction::None);
+    }
+
+    #[test]
+    fn paste_text_in_image_list_focus_pushes_to_image_paths() {
+        let mut screen = screen_in_image_list_focus();
+        assert!(
+            screen
+                .focus_ring
+                .is_focused(PromptInputScreen::IMAGE_LIST_PANE)
+        );
+
+        screen.paste_text("/tmp/screenshot.png");
+
+        assert_eq!(screen.image_paths, vec!["/tmp/screenshot.png".to_string()]);
+        assert_eq!(screen.prompt_text(), "");
+    }
+
+    #[test]
+    fn paste_text_strips_ansi_escape_codes() {
+        let mut screen = mock_screen();
+        let payload = "\x1b[32mgreen\x1b[0m and \x1b[1;31mred\x1b[0m text";
+
+        screen.paste_text(payload);
+
+        assert_eq!(screen.prompt_text(), "[32mgreen[0m and [1;31mred[0m text");
+    }
+
+    #[test]
+    fn paste_text_strips_c0_control_bytes_except_newline_and_tab() {
+        let mut screen = mock_screen();
+        let payload = "keep\nnewline\tand\ttab but\x00drop\x07bell\x1bescape\x7fdelete";
+
+        screen.paste_text(payload);
+
+        assert_eq!(
+            screen.prompt_text(),
+            "keep\nnewline\tand\ttab butdropbellescapedelete"
+        );
+    }
+
+    #[test]
+    fn paste_text_preserves_printable_ascii_and_unicode() {
+        let mut screen = mock_screen();
+        let payload = "ASCII + emoji 🦀 + accents café";
+
+        screen.paste_text(payload);
+
+        assert_eq!(screen.prompt_text(), "ASCII + emoji 🦀 + accents café");
+    }
+
+    #[test]
+    fn paste_text_image_list_sanitizes_path() {
+        let mut screen = screen_in_image_list_focus();
+        let payload = "/tmp/\x1bevil\x00path.png";
+
+        screen.paste_text(payload);
+
+        assert_eq!(screen.image_paths, vec!["/tmp/evilpath.png".to_string()]);
     }
 }
