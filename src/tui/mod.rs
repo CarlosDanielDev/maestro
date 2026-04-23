@@ -420,6 +420,36 @@ async fn event_loop(
                     // The scaffold (#291) carries the command variant so the
                     // payload type and dispatch shape are stable.
                 }
+                app::TuiCommand::FetchProjectStats => {
+                    let tx = app.data_tx.clone();
+                    let local_sessions: Vec<crate::session::types::Session> = app
+                        .pool
+                        .all_sessions()
+                        .into_iter()
+                        .cloned()
+                        .collect();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let (open_result, closed_result, ready_result, failed_result, done_result, milestones_result) = tokio::join!(
+                            client.list_issues(&[]),
+                            client.list_issues(&["state:closed"]),
+                            client.list_issues(&["maestro:ready"]),
+                            client.list_issues(&["maestro:failed"]),
+                            client.list_issues(&["maestro:done"]),
+                            client.list_milestones("open"),
+                        );
+                        let data = crate::tui::screens::project_stats::aggregate(
+                            open_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            closed_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            ready_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            failed_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            done_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                            milestones_result.unwrap_or_default(),
+                            &local_sessions,
+                        );
+                        let _ = tx.send(app::TuiDataEvent::ProjectStats(data));
+                    });
+                }
             }
         }
 

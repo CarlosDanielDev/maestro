@@ -350,6 +350,11 @@ impl App {
                 // #298. The scaffold (#291) carries the variant so the
                 // event stream shape is stable.
             }
+            TuiDataEvent::ProjectStats(data) => {
+                if let Some(ref mut screen) = self.project_stats_screen {
+                    screen.set_data(data);
+                }
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::Dashboard => app.home_screen.as_mut()?,
         app::TuiMode::Landing => app.landing_screen.as_mut()?,
         app::TuiMode::IssueWizard => app.issue_wizard_screen.as_mut()?,
+        app::TuiMode::ProjectStats => app.project_stats_screen.as_mut()?,
         app::TuiMode::IssueBrowser => app.issue_browser_screen.as_mut()?,
         app::TuiMode::MilestoneView => app.milestone_screen.as_mut()?,
         app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
@@ -78,6 +79,10 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         app.issue_wizard_screen = Some(screens::IssueWizardScreen::new());
                     }
                 }
+                app::TuiMode::ProjectStats => {
+                    app.project_stats_screen = Some(screens::ProjectStatsScreen::new());
+                    app.pending_commands.push(app::TuiCommand::FetchProjectStats);
+                }
                 app::TuiMode::IssueBrowser => {
                     let layout = app
                         .config
@@ -144,6 +149,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::IssueWizard => {
                     app.issue_wizard_screen = None;
+                }
+                app::TuiMode::ProjectStats => {
+                    app.project_stats_screen = None;
                 }
                 app::TuiMode::MilestoneView => {
                     app.milestone_screen = None;

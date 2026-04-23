@@ -174,17 +174,20 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
-        TuiMode::MilestoneWizard | TuiMode::ProjectStats => {
-            let label = app.tui_mode.breadcrumb_label();
+        TuiMode::ProjectStats => {
+            if let Some(ref mut screen) = app.project_stats_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
+        TuiMode::MilestoneWizard => {
             let lines = vec![
                 Line::from(""),
                 Line::from(Span::styled(
-                    format!("{} — coming soon", label),
+                    "New Milestone — coming soon",
                     Style::default().add_modifier(Modifier::BOLD),
                 )),
                 Line::from(""),
-                Line::from("This screen is part of milestone v0.15.0 and is wired in"),
-                Line::from("a follow-up issue. Press Esc to return."),
+                Line::from("This wizard lands in #294. Press Esc to return."),
             ];
             f.render_widget(
                 Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center),
