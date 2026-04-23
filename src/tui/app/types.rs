@@ -190,6 +190,8 @@ pub enum TuiCommand {
     /// (#295). Routed via its own command so the result lands on the
     /// wizard rather than the issue browser.
     FetchWizardDependencies,
+    /// Run the AI review companion against the current draft (#296).
+    LaunchAiReview(crate::tui::screens::issue_wizard::IssueCreationPayload),
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
     LaunchPromptSession(PromptSessionConfig),
@@ -224,6 +226,9 @@ pub enum TuiDataEvent {
     ),
     /// Open issues fetched for the Issue Wizard's Dependencies step (#295).
     WizardDependencyIssues(anyhow::Result<Vec<GhIssue>>),
+    /// AI review companion result (#296). Carries the raw response text
+    /// or a human-readable failure reason.
+    AiReviewResult(Result<String, String>),
     Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
     Issue(anyhow::Result<GhIssue>, Option<String>),
     SuggestionData(SuggestionDataPayload),

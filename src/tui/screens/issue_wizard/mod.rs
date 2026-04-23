@@ -1,6 +1,8 @@
+pub mod ai_review;
 mod draw;
 pub mod types;
 
+pub use ai_review::build_review_prompt;
 pub use types::{IssueCreationPayload, IssueType, IssueWizardStep};
 
 use super::{Screen, ScreenAction};
@@ -54,6 +56,10 @@ pub struct IssueWizardScreen {
     pub(super) dep_loading: bool,
     pub(super) dep_selected: usize,
     pub(super) dep_checked: std::collections::BTreeSet<u64>,
+    /// #296 AI Review step state.
+    pub(super) review_loading: bool,
+    pub(super) review_text: Option<String>,
+    pub(super) review_error: Option<String>,
 }
 
 impl IssueWizardScreen {
@@ -66,7 +72,56 @@ impl IssueWizardScreen {
             dep_loading: false,
             dep_selected: 0,
             dep_checked: std::collections::BTreeSet::new(),
+            review_loading: false,
+            review_text: None,
+            review_error: None,
         }
+    }
+
+    // ---- #296 AI Review ----
+
+    pub fn begin_ai_review(&mut self) {
+        self.review_loading = true;
+        self.review_text = None;
+        self.review_error = None;
+    }
+
+    pub fn apply_ai_review(&mut self, result: Result<String, String>) {
+        self.review_loading = false;
+        match result {
+            Ok(text) => {
+                self.review_text = Some(text);
+                self.review_error = None;
+            }
+            Err(e) => {
+                self.review_error = Some(e);
+                self.review_text = None;
+            }
+        }
+    }
+
+    pub fn review_loading(&self) -> bool {
+        self.review_loading
+    }
+
+    pub fn review_text(&self) -> Option<&str> {
+        self.review_text.as_deref()
+    }
+
+    pub fn review_error(&self) -> Option<&str> {
+        self.review_error.as_deref()
+    }
+
+    pub fn entered_ai_review_step(&self) -> bool {
+        matches!(self.step, IssueWizardStep::AiReview)
+            && self.review_text.is_none()
+            && !self.review_loading
+            && self.review_error.is_none()
+    }
+
+    fn jump_to(&mut self, target: IssueWizardStep) {
+        self.step = target;
+        self.focus = 0;
     }
 
     /// #295: called by dispatch when entering the Dependencies step so the
@@ -380,6 +435,32 @@ impl Screen for IssueWizardScreen {
                     _ => {}
                 }
             }
+            IssueWizardStep::AiReview => match code {
+                KeyCode::Esc => {
+                    self.retreat();
+                }
+                KeyCode::Char('r') => {
+                    // "Revise" — jump back to BasicInfo so the user can edit.
+                    self.jump_to(IssueWizardStep::BasicInfo);
+                }
+                KeyCode::Char('s') => {
+                    // Skip the review and head straight to Preview.
+                    self.jump_to(IssueWizardStep::Preview);
+                }
+                KeyCode::Char('R') if self.review_error.is_some() => {
+                    // Retry on error.
+                    self.begin_ai_review();
+                }
+                KeyCode::Enter => {
+                    if self.review_loading || self.review_error.is_some() {
+                        // Block advance while loading or after an error
+                        // (use 'R' to retry, 's' to skip).
+                    } else {
+                        self.try_advance();
+                    }
+                }
+                _ => {}
+            },
             IssueWizardStep::Dependencies => match code {
                 KeyCode::Esc => {
                     self.retreat();

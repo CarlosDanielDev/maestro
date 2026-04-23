@@ -466,6 +466,15 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::WizardDependencyIssues(result));
                     });
                 }
+                app::TuiCommand::LaunchAiReview(payload) => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let prompt =
+                            crate::tui::screens::issue_wizard::build_review_prompt(&payload);
+                        let res = run_claude_print(&prompt).await;
+                        let _ = tx.send(app::TuiDataEvent::AiReviewResult(res));
+                    });
+                }
                 app::TuiCommand::LaunchAiPlanning(payload) => {
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {

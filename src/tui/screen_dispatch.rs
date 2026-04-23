@@ -4,6 +4,48 @@ use crate::provider::github::types::GhIssue;
 use crate::session::transition::TransitionReason;
 use crossterm::event::Event;
 
+/// Fire wizard step-entry hooks so internal transitions (Enter advances
+/// inside the wizard) trigger the same fetch/launch side effects as a
+/// fresh Push. Idempotent — guarded by the wizard's own `entered_*` checks.
+pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
+    if app.tui_mode != app::TuiMode::IssueWizard {
+        return;
+    }
+    let (start_dep_fetch, start_review) = match app.issue_wizard_screen.as_ref() {
+        Some(s) => (s.entered_dependencies_step(), s.entered_ai_review_step()),
+        None => (false, false),
+    };
+    if start_dep_fetch {
+        if let Some(ref mut s) = app.issue_wizard_screen {
+            s.begin_dependency_fetch();
+        }
+        app.pending_commands
+            .push(app::TuiCommand::FetchWizardDependencies);
+    }
+    if start_review {
+        let payload = app
+            .issue_wizard_screen
+            .as_ref()
+            .map(|s| s.payload().clone());
+        if let Some(payload) = payload {
+            if let Some(ref mut s) = app.issue_wizard_screen {
+                s.begin_ai_review();
+            }
+            app.pending_commands
+                .push(app::TuiCommand::LaunchAiReview(payload));
+        }
+    }
+}
+
+pub(super) fn dispatch_to_active_screen_then_hook(
+    app: &mut app::App,
+    event: &Event,
+) -> Option<ScreenAction> {
+    let action = dispatch_to_active_screen(app, event);
+    tick_wizard_step_hooks(app);
+    action
+}
+
 pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Option<ScreenAction> {
     use crate::tui::navigation::InputMode;
 
@@ -79,15 +121,6 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     if app.issue_wizard_screen.is_none() {
                         app.issue_wizard_screen = Some(screens::IssueWizardScreen::new());
                     }
-                    if let Some(ref s) = app.issue_wizard_screen {
-                        if s.entered_dependencies_step() {
-                            if let Some(ref mut s) = app.issue_wizard_screen {
-                                s.begin_dependency_fetch();
-                            }
-                            app.pending_commands
-                                .push(app::TuiCommand::FetchWizardDependencies);
-                        }
-                    }
                 }
                 app::TuiMode::ProjectStats => {
                     app.project_stats_screen = Some(screens::ProjectStatsScreen::new());
@@ -157,6 +190,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 _ => {}
             }
             app.navigate_to(mode);
+            tick_wizard_step_hooks(app);
         }
         ScreenAction::Pop => {
             match app.tui_mode {

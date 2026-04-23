@@ -377,6 +377,11 @@ impl App {
                     }
                 }
             },
+            TuiDataEvent::AiReviewResult(result) => {
+                if let Some(ref mut screen) = self.issue_wizard_screen {
+                    screen.apply_ai_review(result);
+                }
+            }
         }
     }
 }

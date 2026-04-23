@@ -25,6 +25,7 @@ impl IssueWizardScreen {
             IssueWizardStep::BasicInfo => self.draw_basic_info(f, chunks[1]),
             IssueWizardStep::DorFields => self.draw_dor_fields(f, chunks[1]),
             IssueWizardStep::Dependencies => self.draw_dependencies(f, chunks[1]),
+            IssueWizardStep::AiReview => self.draw_ai_review(f, chunks[1]),
             _ => self.draw_stub(f, chunks[1]),
         }
         self.draw_footer(f, chunks[2]);
@@ -141,6 +142,57 @@ impl IssueWizardScreen {
         for (i, field) in fields.iter().enumerate() {
             self.draw_field(f, chunks[i], *field);
         }
+    }
+
+    fn draw_ai_review(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::ALL).title(
+            "AI Review  (r: revise, s: skip, Enter: continue, R: retry on error)",
+        );
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        if let Some(err) = self.review_error() {
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "AI review failed:",
+                    Style::default()
+                        .fg(Color::LightRed)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(err.to_string()),
+                Line::from(""),
+                Line::from("Press R to retry, s to skip, Esc to go back."),
+            ];
+            f.render_widget(
+                Paragraph::new(lines).alignment(Alignment::Center),
+                inner,
+            );
+            return;
+        }
+
+        if self.review_loading() {
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "AI is reviewing your issue…",
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+            ];
+            f.render_widget(
+                Paragraph::new(lines).alignment(Alignment::Center),
+                inner,
+            );
+            return;
+        }
+
+        let body: Vec<Line> = match self.review_text() {
+            Some(text) => text.lines().map(Line::from).collect(),
+            None => vec![Line::from(
+                "Press Enter to continue (no review run yet).",
+            )],
+        };
+        f.render_widget(Paragraph::new(body), inner);
     }
 
     fn draw_dependencies(&self, f: &mut Frame, area: Rect) {

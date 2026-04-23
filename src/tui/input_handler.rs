@@ -1,6 +1,8 @@
 use crate::tui::activity_log::LogLevel;
 use crate::tui::app::{self, App};
-use crate::tui::screen_dispatch::{dispatch_to_active_screen, handle_screen_action};
+use crate::tui::screen_dispatch::{
+    dispatch_to_active_screen_then_hook as dispatch_to_active_screen, handle_screen_action,
+};
 use crate::tui::screens;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
