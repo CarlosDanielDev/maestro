@@ -35,7 +35,10 @@ use crate::tui::activity_log::LogLevel;
 use app::App;
 use background_tasks::{spawn_issue_fetch, spawn_version_check};
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseEventKind},
+    event::{
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, KeyCode, MouseEventKind,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -44,12 +47,30 @@ use std::io;
 use std::time::Duration;
 use summary::print_summary;
 
+fn enter_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
+    execute!(
+        out,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )
+}
+
+fn leave_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
+    execute!(
+        out,
+        LeaveAlternateScreen,
+        DisableMouseCapture,
+        DisableBracketedPaste
+    )
+}
+
 /// Run the TUI event loop.
 pub async fn run(mut app: App) -> anyhow::Result<()> {
     let no_splash = app.no_splash;
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    enter_tui_mode(&mut stdout)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -61,11 +82,7 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
     let result = event_loop(&mut terminal, &mut app).await;
 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    leave_tui_mode(terminal.backend_mut())?;
     terminal.show_cursor()?;
 
     app.kill_all().await;
@@ -105,16 +122,11 @@ async fn event_loop(
                         && key.code == KeyCode::Char('y')
                     {
                         disable_raw_mode().ok();
-                        execute!(
-                            terminal.backend_mut(),
-                            LeaveAlternateScreen,
-                            DisableMouseCapture
-                        )
-                        .ok();
+                        leave_tui_mode(terminal.backend_mut()).ok();
                         terminal.show_cursor().ok();
                         if let Err(e) = crate::updater::installer::restart_with_same_args() {
                             enable_raw_mode().ok();
-                            execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).ok();
+                            enter_tui_mode(&mut io::stdout()).ok();
                             app.upgrade_state = crate::updater::UpgradeState::Failed(format!(
                                 "Restart failed: {}",
                                 e
@@ -137,6 +149,9 @@ async fn event_loop(
                     }
                     _ => {}
                 },
+                Event::Paste(data) => {
+                    app.handle_paste(&data);
+                }
                 _ => {}
             }
         }
@@ -505,26 +520,29 @@ async fn event_loop(
 }
 
 #[cfg(test)]
-mod handle_screen_action_tests {
-    use super::*;
+fn make_test_app(name: &str) -> app::App {
     use crate::session::worktree::MockWorktreeManager;
     use crate::state::store::StateStore;
+
+    let tmp = std::env::temp_dir().join(format!("{}-{}.json", name, uuid::Uuid::new_v4()));
+    let store = StateStore::new(tmp);
+    app::App::new(
+        store,
+        3,
+        Box::new(MockWorktreeManager::new()),
+        "bypassPermissions".into(),
+        vec![],
+    )
+}
+
+#[cfg(test)]
+mod handle_screen_action_tests {
+    use super::*;
     use crate::tui::screen_dispatch::handle_screen_action;
     use screens::ScreenAction;
 
     fn make_app() -> app::App {
-        let tmp = std::env::temp_dir().join(format!(
-            "maestro-tui-mod-test-{}.json",
-            uuid::Uuid::new_v4()
-        ));
-        let store = StateStore::new(tmp);
-        app::App::new(
-            store,
-            3,
-            Box::new(MockWorktreeManager::new()),
-            "bypassPermissions".into(),
-            vec![],
-        )
+        super::make_test_app("maestro-tui-mod-test")
     }
 
     #[test]
@@ -690,5 +708,84 @@ mod handle_screen_action_tests {
         let screen = app.issue_browser_screen.as_ref().unwrap();
         assert_eq!(screen.issues.len(), 2);
         assert!(screen.issues.iter().all(|i| i.state == "open"));
+    }
+}
+
+#[cfg(test)]
+mod handle_paste_tests {
+    use super::*;
+    use crate::tui::screen_dispatch::dispatch_paste_to_active_screen;
+
+    fn make_app() -> app::App {
+        super::make_test_app("maestro-paste-test")
+    }
+
+    #[test]
+    fn dispatch_paste_routes_to_prompt_input_screen_when_active() {
+        let mut app = make_app();
+        app.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.tui_mode = app::TuiMode::PromptInput;
+
+        dispatch_paste_to_active_screen(&mut app, "hello from paste");
+
+        let text = app
+            .prompt_input_screen
+            .as_ref()
+            .expect("prompt_input_screen must be Some")
+            .editor_text();
+        assert_eq!(text, "hello from paste");
+    }
+
+    #[test]
+    fn dispatch_paste_preserves_embedded_newlines() {
+        let mut app = make_app();
+        app.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.tui_mode = app::TuiMode::PromptInput;
+
+        dispatch_paste_to_active_screen(&mut app, "line1\nline2\nline3");
+
+        let text = app.prompt_input_screen.as_ref().unwrap().editor_text();
+        assert_eq!(text, "line1\nline2\nline3");
+    }
+
+    #[test]
+    fn dispatch_paste_does_not_launch_session() {
+        let mut app = make_app();
+        app.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.tui_mode = app::TuiMode::PromptInput;
+        app.pending_commands.clear();
+
+        dispatch_paste_to_active_screen(&mut app, "line1\nline2\n");
+
+        assert!(
+            !app.pending_commands.iter().any(|c| matches!(
+                c,
+                app::TuiCommand::LaunchPromptSession(_)
+                    | app::TuiCommand::LaunchSession(_)
+                    | app::TuiCommand::LaunchSessions(_)
+                    | app::TuiCommand::LaunchUnifiedSession(_)
+            )),
+            "Bracketed paste must not spawn a session"
+        );
+    }
+
+    #[test]
+    fn app_handle_paste_with_prompt_input_active_inserts_text() {
+        let mut app = make_app();
+        app.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.tui_mode = app::TuiMode::PromptInput;
+
+        app.handle_paste("multi\nline\npaste");
+
+        let text = app.prompt_input_screen.as_ref().unwrap().editor_text();
+        assert_eq!(text, "multi\nline\npaste");
+    }
+
+    #[test]
+    fn app_handle_paste_with_dashboard_active_does_not_panic() {
+        let mut app = make_app();
+        app.transition_to_dashboard();
+
+        app.handle_paste("ignored text");
     }
 }

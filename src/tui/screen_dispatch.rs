@@ -26,6 +26,18 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
     Some(screen.handle_input(event, mode))
 }
 
+/// Dispatch a bracketed-paste payload to the currently focused screen.
+///
+/// Synthesises `Event::Paste(text.to_string())` and routes it through the
+/// same `Screen::handle_input` path as keys. Screens without a text field
+/// fall through to `ScreenAction::None`.
+pub(super) fn dispatch_paste_to_active_screen(app: &mut app::App, text: &str) {
+    let event = Event::Paste(text.to_string());
+    if let Some(action) = dispatch_to_active_screen(app, &event) {
+        handle_screen_action(app, action);
+    }
+}
+
 /// Returns milestone issues only when navigating from `MilestoneView`.
 fn milestone_issues_if_applicable(app: &app::App) -> Option<Vec<GhIssue>> {
     if app.tui_mode != app::TuiMode::MilestoneView {
