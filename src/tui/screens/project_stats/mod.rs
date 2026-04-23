@@ -159,10 +159,8 @@ impl Screen for ProjectStatsScreen {
                 return ScreenAction::None;
             }
             match code {
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if self.scroll_offset < self.max_scroll() {
-                        self.scroll_offset += 1;
-                    }
+                KeyCode::Char('j') | KeyCode::Down if self.scroll_offset < self.max_scroll() => {
+                    self.scroll_offset += 1;
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     self.scroll_offset = self.scroll_offset.saturating_sub(1);

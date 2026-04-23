@@ -93,10 +93,8 @@ impl Screen for LandingScreen {
             }
 
             match code {
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if self.selected + 1 < MENU_ITEMS.len() {
-                        self.selected += 1;
-                    }
+                KeyCode::Char('j') | KeyCode::Down if self.selected + 1 < MENU_ITEMS.len() => {
+                    self.selected += 1;
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     self.selected = self.selected.saturating_sub(1);

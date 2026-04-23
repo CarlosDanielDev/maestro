@@ -179,14 +179,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         ScreenAction::Push(mode) => {
             match mode {
                 app::TuiMode::Landing => {
-                    if app.landing_screen.is_none() {
-                        app.landing_screen = Some(screens::LandingScreen::new());
-                    }
+                    app.landing_screen
+                        .get_or_insert_with(screens::LandingScreen::new);
                 }
                 app::TuiMode::IssueWizard => {
-                    if app.issue_wizard_screen.is_none() {
-                        app.issue_wizard_screen = Some(screens::IssueWizardScreen::new());
-                    }
+                    app.issue_wizard_screen
+                        .get_or_insert_with(screens::IssueWizardScreen::new);
                 }
                 app::TuiMode::ProjectStats => {
                     app.project_stats_screen = Some(screens::ProjectStatsScreen::new());
@@ -194,9 +192,8 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         .push(app::TuiCommand::FetchProjectStats);
                 }
                 app::TuiMode::MilestoneWizard => {
-                    if app.milestone_wizard_screen.is_none() {
-                        app.milestone_wizard_screen = Some(screens::MilestoneWizardScreen::new());
-                    }
+                    app.milestone_wizard_screen
+                        .get_or_insert_with(screens::MilestoneWizardScreen::new);
                 }
                 app::TuiMode::IssueBrowser => {
                     let layout = app
