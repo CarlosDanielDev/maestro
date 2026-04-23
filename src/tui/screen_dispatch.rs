@@ -312,6 +312,25 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 body,
             });
         }
+        ScreenAction::OpenIssueWizardForMilestone {
+            milestone,
+            suggested_blocked_by,
+        } => {
+            // Reuse an existing wizard if present, otherwise spin one up.
+            // Pre-fill milestone + suggested Blocked By so the user can
+            // accept/override on the Dependencies step.
+            let mut wizard = app
+                .issue_wizard_screen
+                .take()
+                .unwrap_or_else(screens::IssueWizardScreen::new);
+            {
+                let payload = wizard.payload_mut();
+                payload.milestone = Some(milestone);
+                payload.blocked_by = suggested_blocked_by;
+            }
+            app.issue_wizard_screen = Some(wizard);
+            app.navigate_to(app::TuiMode::IssueWizard);
+        }
         ScreenAction::StartAdaptPipeline(config) => {
             if let Some(ref mut screen) = app.adapt_screen {
                 use crate::tui::screens::adapt::types::AdaptStep;

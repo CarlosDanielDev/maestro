@@ -297,6 +297,20 @@ impl MilestoneScreen {
         }
     }
 
+    /// #326: open the Issue Wizard pre-filled with the selected milestone
+    /// and a suggested Blocked By list derived from the milestone's open
+    /// issues.
+    fn handle_create_issue(&self) -> ScreenAction {
+        let Some(entry) = self.milestones.get(self.selected) else {
+            return ScreenAction::None;
+        };
+        let suggested = suggest_blocked_by_for_new_issue(&entry.issues);
+        ScreenAction::OpenIssueWizardForMilestone {
+            milestone: entry.number,
+            suggested_blocked_by: suggested,
+        }
+    }
+
     fn handle_run_all(&self) -> ScreenAction {
         if let Some(entry) = self.milestones.get(self.selected) {
             if entry.issues.is_empty() {
@@ -443,6 +457,145 @@ impl MilestoneScreen {
 
 }
 
+/// #326: suggest a `Blocked By` list for a new issue inserted into a
+/// milestone. Picks the open issues at the deepest existing dependency
+/// level — typically a leaf of the current chain — so a new "next step"
+/// issue is wired up correctly without manual graph editing.
+pub fn suggest_blocked_by_for_new_issue(issues: &[GhIssue]) -> Vec<u64> {
+    let open: Vec<&GhIssue> = issues.iter().filter(|i| i.state == "open").collect();
+    if open.is_empty() {
+        return Vec::new();
+    }
+    let max_level = open
+        .iter()
+        .map(|i| count_blocked_by(&i.body))
+        .max()
+        .unwrap_or(0);
+    let mut leaves: Vec<u64> = open
+        .into_iter()
+        .filter(|i| count_blocked_by(&i.body) == max_level)
+        .map(|i| i.number)
+        .collect();
+    leaves.sort();
+    leaves
+}
+
+/// #326: insert a new issue into the milestone's `## Dependency Graph`
+/// section. Adds a new "Level N" if `blocked_by` is non-empty and the
+/// referenced issues live in the previous level; otherwise appends to
+/// Level 0.
+pub fn update_milestone_dependency_graph(
+    description: &str,
+    new_issue_number: u64,
+    new_issue_title: &str,
+    blocked_by: &[u64],
+) -> String {
+    let bullet = format!("• #{} {}", new_issue_number, new_issue_title);
+
+    // Locate the dep-graph section. If absent, append a fresh one.
+    let Some(start) = find_section_start(description, "## Dependency Graph") else {
+        let mut out = description.to_string();
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str("\n## Dependency Graph (Implementation Order)\n\n");
+        out.push_str(if blocked_by.is_empty() {
+            "Level 0 — no dependencies:\n"
+        } else {
+            "Level 1 — depends on prior issues:\n"
+        });
+        out.push_str(&bullet);
+        out.push('\n');
+        return out;
+    };
+
+    // Find the section's body and split off the trailing content.
+    let after = &description[start..];
+    let (section_body, rest) = match after.find("\n## ") {
+        Some(idx) => (&after[..idx], &after[idx..]),
+        None => (after, ""),
+    };
+
+    let updated = if blocked_by.is_empty() {
+        insert_into_level_zero(section_body, &bullet)
+    } else {
+        append_new_level(section_body, &bullet, blocked_by)
+    };
+
+    let mut out = String::with_capacity(description.len() + bullet.len() + 64);
+    out.push_str(&description[..start]);
+    out.push_str(&updated);
+    out.push_str(rest);
+    out
+}
+
+fn find_section_start(description: &str, header: &str) -> Option<usize> {
+    description
+        .lines()
+        .scan(0usize, |pos, line| {
+            let p = *pos;
+            *pos += line.len() + 1;
+            Some((p, line))
+        })
+        .find(|(_, line)| line.trim_start().starts_with(header))
+        .map(|(p, _)| p)
+}
+
+fn insert_into_level_zero(section: &str, bullet: &str) -> String {
+    let mut out = String::with_capacity(section.len() + bullet.len() + 1);
+    let mut found = false;
+    for (i, line) in section.lines().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(line);
+        if !found && line.trim_start().starts_with("Level 0") {
+            out.push('\n');
+            out.push_str(bullet);
+            found = true;
+        }
+    }
+    if !found {
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str("\nLevel 0 — no dependencies:\n");
+        out.push_str(bullet);
+    }
+    if !section.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+fn append_new_level(section: &str, bullet: &str, blocked_by: &[u64]) -> String {
+    // Find the highest existing level number.
+    let max_level = section
+        .lines()
+        .filter_map(|l| {
+            let trimmed = l.trim_start();
+            trimmed.strip_prefix("Level ").and_then(|rest| {
+                rest.split_whitespace().next().and_then(|n| n.parse::<u32>().ok())
+            })
+        })
+        .max()
+        .unwrap_or(0);
+    let new_level = max_level + 1;
+    let dep_list = blocked_by
+        .iter()
+        .map(|n| format!("#{}", n))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let mut out = section.trim_end().to_string();
+    out.push('\n');
+    out.push_str(&format!(
+        "\nLevel {} — depends on {}:\n{}\n",
+        new_level, dep_list, bullet
+    ));
+    out
+}
+
 /// Counts `#NNN` references inside the `## Blocked By` section of an issue
 /// body. Used by `MilestoneScreen::sorted_issues` to approximate the
 /// dependency level — Level 0 = no dependencies, Level N = depends on N
@@ -560,6 +713,9 @@ impl Screen for MilestoneScreen {
                 }
                 KeyCode::Char('r') => {
                     return self.handle_run_all();
+                }
+                KeyCode::Char('c') => {
+                    return self.handle_create_issue();
                 }
                 _ => {}
             }
@@ -720,6 +876,74 @@ mod tests {
         let mut s = MilestoneScreen::new(vec![make_entry_with_issues(1, issues)]);
         s.handle_input(&key_event(KeyCode::Char('K')), InputMode::Normal);
         assert_eq!(s.focused_issue, 0);
+    }
+
+    // ---- #326 create-from-milestone ----
+
+    #[test]
+    fn key_c_opens_issue_wizard_for_milestone() {
+        let mut s = MilestoneScreen::new(vec![make_entry(7, 0, 0)]);
+        let action = s.handle_input(&key_event(KeyCode::Char('c')), InputMode::Normal);
+        match action {
+            ScreenAction::OpenIssueWizardForMilestone { milestone, .. } => {
+                assert_eq!(milestone, 7);
+            }
+            other => panic!("expected OpenIssueWizardForMilestone, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn suggest_blocked_by_returns_empty_when_no_open_issues() {
+        assert!(suggest_blocked_by_for_new_issue(&[]).is_empty());
+    }
+
+    #[test]
+    fn suggest_blocked_by_returns_deepest_level_leaves() {
+        let issues = vec![
+            make_issue_with_body(10, "## Blocked By\n\n- None\n"),
+            make_issue_with_body(11, "## Blocked By\n\n- #10\n"),
+            make_issue_with_body(12, "## Blocked By\n\n- #10\n- #11\n"),
+            make_issue_with_body(13, "## Blocked By\n\n- #10\n- #11\n"),
+        ];
+        let suggested = suggest_blocked_by_for_new_issue(&issues);
+        assert_eq!(suggested, vec![12, 13]);
+    }
+
+    #[test]
+    fn suggest_blocked_by_skips_closed_issues() {
+        let mut closed = make_issue_with_body(10, "## Blocked By\n\n- None\n");
+        closed.state = "closed".into();
+        let issues = vec![closed, make_issue_with_body(11, "## Blocked By\n\n- None\n")];
+        let suggested = suggest_blocked_by_for_new_issue(&issues);
+        assert_eq!(suggested, vec![11]);
+    }
+
+    #[test]
+    fn update_dep_graph_appends_new_level_when_blocked_by_present() {
+        let desc = "intro\n\n## Dependency Graph (Implementation Order)\n\nLevel 0 — no dependencies:\n• #10 first\n";
+        let updated = update_milestone_dependency_graph(desc, 11, "second", &[10]);
+        assert!(updated.contains("Level 1 — depends on #10"));
+        assert!(updated.contains("• #11 second"));
+        // Must preserve the existing Level 0 entries.
+        assert!(updated.contains("• #10 first"));
+    }
+
+    #[test]
+    fn update_dep_graph_inserts_into_level_zero_when_no_blockers() {
+        let desc = "## Dependency Graph (Implementation Order)\n\nLevel 0 — no dependencies:\n• #10 first\n";
+        let updated = update_milestone_dependency_graph(desc, 11, "second", &[]);
+        assert!(updated.contains("• #10 first"));
+        assert!(updated.contains("• #11 second"));
+        // No new level header was added.
+        assert!(!updated.contains("Level 1"));
+    }
+
+    #[test]
+    fn update_dep_graph_creates_section_when_missing() {
+        let desc = "no graph here";
+        let updated = update_milestone_dependency_graph(desc, 11, "first", &[]);
+        assert!(updated.contains("## Dependency Graph (Implementation Order)"));
+        assert!(updated.contains("• #11 first"));
     }
 
     // ---- initial state ----

@@ -125,6 +125,13 @@ pub enum ScreenAction {
         event: crate::provider::github::types::PrReviewEvent,
         body: String,
     },
+    /// Open the Issue Wizard with the milestone pre-selected (#326).
+    /// `suggested_blocked_by` is the dependency-analysis suggestion the
+    /// user may accept or override on the Dependencies step.
+    OpenIssueWizardForMilestone {
+        milestone: u64,
+        suggested_blocked_by: Vec<u64>,
+    },
 }
 
 /// Configuration for launching a conflict-fix session.
