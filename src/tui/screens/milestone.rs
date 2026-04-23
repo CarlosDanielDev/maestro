@@ -484,6 +484,10 @@ pub fn suggest_blocked_by_for_new_issue(issues: &[GhIssue]) -> Vec<u64> {
 /// section. Adds a new "Level N" if `blocked_by` is non-empty and the
 /// referenced issues live in the previous level; otherwise appends to
 /// Level 0.
+///
+/// Currently only exercised by tests — the milestone-description PATCH
+/// after a wizard-driven create lands in a follow-up issue.
+#[allow(dead_code)]
 pub fn update_milestone_dependency_graph(
     description: &str,
     new_issue_number: u64,
@@ -529,6 +533,7 @@ pub fn update_milestone_dependency_graph(
     out
 }
 
+#[allow(dead_code)]
 fn find_section_start(description: &str, header: &str) -> Option<usize> {
     description
         .lines()
@@ -541,6 +546,7 @@ fn find_section_start(description: &str, header: &str) -> Option<usize> {
         .map(|(p, _)| p)
 }
 
+#[allow(dead_code)]
 fn insert_into_level_zero(section: &str, bullet: &str) -> String {
     let mut out = String::with_capacity(section.len() + bullet.len() + 1);
     let mut found = false;
@@ -568,6 +574,7 @@ fn insert_into_level_zero(section: &str, bullet: &str) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn append_new_level(section: &str, bullet: &str, blocked_by: &[u64]) -> String {
     // Find the highest existing level number.
     let max_level = section

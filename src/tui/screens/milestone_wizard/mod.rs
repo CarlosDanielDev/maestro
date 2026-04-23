@@ -153,6 +153,11 @@ pub struct MilestoneWizardScreen {
     pub(super) review_focus: usize,
     /// Materialization progress: (created, total) when a creation is in flight.
     pub(super) materialize_progress: Option<(usize, usize)>,
+    /// True between `begin_materialization()` and the moment dispatch
+    /// enqueues the `CreateMilestoneWithIssues` command. Prevents
+    /// duplicate dispatches while keeping `materialize_progress` live
+    /// until the background task completes.
+    pub(super) materialize_enqueued: bool,
     /// Numbers of GitHub issues that succeeded; populated as `MilestonePlanCreated` arrives.
     pub(super) created_issue_numbers: Vec<u64>,
     /// Created milestone number on success.
@@ -170,18 +175,20 @@ impl MilestoneWizardScreen {
             failure_reason: None,
             review_focus: 0,
             materialize_progress: None,
+            materialize_enqueued: false,
             created_issue_numbers: Vec::new(),
             created_milestone_number: None,
         }
     }
 
-    pub fn generated_plan_mut(&mut self) -> Option<&mut AiGeneratedPlan> {
-        self.generated_plan.as_mut()
+    pub fn materialize_enqueued(&self) -> bool {
+        self.materialize_enqueued
     }
 
-    pub fn generated_plan_ref(&self) -> Option<&AiGeneratedPlan> {
-        self.generated_plan.as_ref()
+    pub fn mark_materialize_enqueued(&mut self) {
+        self.materialize_enqueued = true;
     }
+
 
     pub fn review_focus(&self) -> usize {
         self.review_focus
@@ -207,14 +214,11 @@ impl MilestoneWizardScreen {
             .map(|p| p.issues.iter().filter(|i| i.accepted).count())
             .unwrap_or(0);
         self.materialize_progress = Some((0, total));
+        self.materialize_enqueued = false;
         self.created_issue_numbers.clear();
         self.created_milestone_number = None;
         self.failure_reason = None;
         self.step = MilestoneWizardStep::Materializing;
-    }
-
-    pub fn record_materialization_progress(&mut self, created: usize, total: usize) {
-        self.materialize_progress = Some((created, total));
     }
 
     pub fn finish_materialization(
@@ -222,6 +226,7 @@ impl MilestoneWizardScreen {
         result: Result<MilestoneCreationResult, String>,
     ) {
         self.materialize_progress = None;
+        self.materialize_enqueued = false;
         match result {
             Ok(r) => {
                 self.created_milestone_number = Some(r.milestone_number);
@@ -278,9 +283,6 @@ impl MilestoneWizardScreen {
         &self.payload
     }
 
-    pub fn payload_mut(&mut self) -> &mut MilestonePlanPayload {
-        &mut self.payload
-    }
 
     pub fn doc_buffer(&self) -> &str {
         &self.doc_buffer
@@ -294,7 +296,6 @@ impl MilestoneWizardScreen {
         self.generated_plan.is_some()
     }
 
-    #[allow(dead_code)] // Reason: consumed by ReviewPlan rendering in #297
     pub fn generated_plan(&self) -> Option<&AiGeneratedPlan> {
         self.generated_plan.as_ref()
     }

@@ -346,7 +346,6 @@ impl App {
                 );
             }
             TuiDataEvent::IssueCreated(result) => {
-                self.issue_wizard_creating_in_flight = None;
                 if let Some(ref mut screen) = self.issue_wizard_screen {
                     screen.finish_create(result);
                 }
@@ -384,7 +383,6 @@ impl App {
                 }
             }
             TuiDataEvent::MilestonePlanCreated(result) => {
-                self.milestone_wizard_creating_in_flight = None;
                 if let Some(ref mut screen) = self.milestone_wizard_screen {
                     screen.finish_materialization(result);
                 }

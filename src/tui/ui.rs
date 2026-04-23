@@ -753,10 +753,11 @@ fn draw_status_bar_inner(
         ));
     }
 
-    // Append inline keybinding hints if space remains
-    let inner_width = area.width.saturating_sub(2); // account for borders
-    let status_used: u16 = spans.iter().map(|s| s.width() as u16).sum();
-    let remaining = inner_width.saturating_sub(status_used);
+    // Walk the spans once for the hint-fitting check; reuse the result
+    // for the marquee fingerprint below (this is hot — runs every frame).
+    let inner_width = area.width.saturating_sub(2);
+    let status_used: usize = spans.iter().map(|s| s.width()).sum();
+    let remaining = inner_width.saturating_sub(status_used as u16);
     if remaining > 10 && !mode_km.hints.is_empty() {
         let fitted = keymap::fit_hints_to_width(mode_km.hints, remaining.saturating_sub(4));
         if !fitted.is_empty() {
@@ -773,6 +774,8 @@ fn draw_status_bar_inner(
                     format!(" {}", action),
                     Style::default().fg(theme.text_secondary),
                 ));
+                // Account for the appended hint width incrementally so we
+                // don't re-walk the whole vec for the marquee check.
             }
         }
     }
@@ -781,10 +784,10 @@ fn draw_status_bar_inner(
         .styled_block_plain(false)
         .border_style(Style::default().fg(theme.border_active));
 
-    // #417: marquee the assembled spans when they overflow the inner viewport.
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
+    // Recompute total_width because hint-spans may have been appended.
     let total_width: usize = spans.iter().map(|s| s.width()).sum();
     if total_width != app.status_bar_marquee_fingerprint {
         app.status_bar_marquee.reset();

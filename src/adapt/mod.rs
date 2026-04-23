@@ -6,7 +6,7 @@ pub mod planner;
 pub mod prd;
 pub mod prd_fetcher;
 pub mod prd_source;
-mod prompts;
+pub mod prompts;
 pub mod scaffolder;
 pub mod scanner;
 pub mod suggestions;

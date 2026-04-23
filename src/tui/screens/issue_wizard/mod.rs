@@ -62,6 +62,11 @@ pub struct IssueWizardScreen {
     pub(super) review_error: Option<String>,
     /// #298 Creating/Complete/Failed state.
     pub(super) create_in_flight: bool,
+    /// True between `begin_create()` and the moment dispatch enqueues
+    /// the `CreateIssue` command — guards against duplicate dispatches
+    /// while still letting `create_in_flight` remain true until the
+    /// background task completes.
+    pub(super) create_enqueued: bool,
     pub(super) created_issue_number: Option<u64>,
     pub(super) create_error: Option<String>,
 }
@@ -80,56 +85,28 @@ impl IssueWizardScreen {
             review_text: None,
             review_error: None,
             create_in_flight: false,
+            create_enqueued: false,
             created_issue_number: None,
             create_error: None,
         }
     }
 
-    // ---- #298 Creation ----
-
-    /// Render the issue body to GitHub-flavored markdown with all DOR
-    /// sections, gracefully omitting empty optional sections.
-    pub fn render_body_markdown(&self) -> String {
-        let p = &self.payload;
-        let mut s = String::new();
-        push_section(&mut s, "Overview", &p.overview);
-        push_section(&mut s, "Expected Behavior", &p.expected_behavior);
-        if !p.current_behavior.trim().is_empty() {
-            push_section(&mut s, "Current Behavior", &p.current_behavior);
-        }
-        if !p.steps_to_reproduce.trim().is_empty() {
-            push_section(&mut s, "Steps to Reproduce", &p.steps_to_reproduce);
-        }
-        push_section(&mut s, "Acceptance Criteria", &p.acceptance_criteria);
-        if !p.files_to_modify.trim().is_empty() {
-            push_section(&mut s, "Files to Modify", &p.files_to_modify);
-        }
-        if !p.test_hints.trim().is_empty() {
-            push_section(&mut s, "Test Hints", &p.test_hints);
-        }
-        let blocked = if p.blocked_by.is_empty() {
-            "- None".to_string()
-        } else {
-            p.blocked_by
-                .iter()
-                .map(|n| format!("- #{}", n))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        push_section(&mut s, "Blocked By", &blocked);
-        let dod = build_definition_of_done(&p.acceptance_criteria);
-        push_section(&mut s, "Definition of Done", &dod);
-        s
+    pub fn create_enqueued(&self) -> bool {
+        self.create_enqueued
     }
 
-    /// Labels applied to the new issue based on its type.
+    pub fn mark_create_enqueued(&mut self) {
+        self.create_enqueued = true;
+    }
+
+    // ---- #298 Creation ----
+
+    pub fn render_body_markdown(&self) -> String {
+        render_body_markdown(&self.payload)
+    }
+
     pub fn render_labels(&self) -> Vec<String> {
-        let mut labels = vec!["maestro:ready".to_string()];
-        labels.push(match self.payload.issue_type {
-            IssueType::Feature => "enhancement".to_string(),
-            IssueType::Bug => "bug".to_string(),
-        });
-        labels
+        render_labels(&self.payload)
     }
 
     pub fn create_in_flight(&self) -> bool {
@@ -146,6 +123,7 @@ impl IssueWizardScreen {
 
     pub fn begin_create(&mut self) {
         self.create_in_flight = true;
+        self.create_enqueued = false;
         self.create_error = None;
         self.created_issue_number = None;
         self.step = IssueWizardStep::Creating;
@@ -153,6 +131,7 @@ impl IssueWizardScreen {
 
     pub fn finish_create(&mut self, result: anyhow::Result<u64>) {
         self.create_in_flight = false;
+        self.create_enqueued = false;
         match result {
             Ok(n) => {
                 self.created_issue_number = Some(n);
@@ -218,7 +197,55 @@ impl IssueWizardScreen {
     }
 }
 
-/// Append a `## Title\n\nbody\n` section to the markdown buffer.
+/// Render a wizard payload to the GitHub-flavored markdown body. Used both
+/// from the wizard screen (for the Preview step) and from the background
+/// `CreateIssue` task in `tui::run`, which has no screen handle.
+pub fn render_body_markdown(p: &IssueCreationPayload) -> String {
+    let mut s = String::new();
+    push_section(&mut s, "Overview", &p.overview);
+    push_section(&mut s, "Expected Behavior", &p.expected_behavior);
+    if matches!(p.issue_type, IssueType::Bug) {
+        if !p.current_behavior.trim().is_empty() {
+            push_section(&mut s, "Current Behavior", &p.current_behavior);
+        }
+        if !p.steps_to_reproduce.trim().is_empty() {
+            push_section(&mut s, "Steps to Reproduce", &p.steps_to_reproduce);
+        }
+    }
+    push_section(&mut s, "Acceptance Criteria", &p.acceptance_criteria);
+    if !p.files_to_modify.trim().is_empty() {
+        push_section(&mut s, "Files to Modify", &p.files_to_modify);
+    }
+    if !p.test_hints.trim().is_empty() {
+        push_section(&mut s, "Test Hints", &p.test_hints);
+    }
+    let blocked = if p.blocked_by.is_empty() {
+        "- None".to_string()
+    } else {
+        p.blocked_by
+            .iter()
+            .map(|n| format!("- #{}", n))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    push_section(&mut s, "Blocked By", &blocked);
+    let dod = build_definition_of_done(&p.acceptance_criteria);
+    push_section(&mut s, "Definition of Done", &dod);
+    s
+}
+
+/// Labels applied to the new issue based on its type. Always includes
+/// `maestro:ready` so the queue picks it up.
+pub fn render_labels(p: &IssueCreationPayload) -> Vec<String> {
+    vec![
+        "maestro:ready".to_string(),
+        match p.issue_type {
+            IssueType::Feature => "enhancement".to_string(),
+            IssueType::Bug => "bug".to_string(),
+        },
+    ]
+}
+
 fn push_section(out: &mut String, title: &str, body: &str) {
     out.push_str("## ");
     out.push_str(title);
@@ -313,7 +340,6 @@ impl IssueWizardScreen {
         &self.payload
     }
 
-    #[allow(dead_code)] // Reason: payload mutated by AI/dependency steps in #295/#296
     pub fn payload_mut(&mut self) -> &mut IssueCreationPayload {
         &mut self.payload
     }
@@ -681,9 +707,13 @@ impl Screen for IssueWizardScreen {
 
 impl IssueWizardScreen {
     /// Step-aware advance hook used by the dispatch layer to know whether
-    /// an entry into `Dependencies` should kick off a fetch.
+    /// an entry into `Dependencies` should kick off a fetch. Guards
+    /// against re-enqueuing while a previous fetch is in flight (would
+    /// otherwise spawn a duplicate `gh` subprocess on every keypress).
     pub fn entered_dependencies_step(&self) -> bool {
-        matches!(self.step, IssueWizardStep::Dependencies) && self.dep_issues.is_none()
+        matches!(self.step, IssueWizardStep::Dependencies)
+            && self.dep_issues.is_none()
+            && !self.dep_loading
     }
 }
 

@@ -76,7 +76,6 @@ impl MilestoneWizardStep {
 /// Inputs the user has supplied so far. Sent to `claude --print` during
 /// the `AiStructuring` step to produce an `AiGeneratedPlan`.
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)] // Reason: fields read by AiStructuring step (#294 + #297)
 pub struct MilestonePlanPayload {
     pub goals: String,
     pub non_goals: String,
@@ -90,7 +89,6 @@ pub struct MilestonePlanPayload {
 /// One AI-proposed issue that will be materialized into GitHub. The
 /// `accepted` flag is toggled by the user during the `ReviewPlan` step.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Reason: shape consumed by Review/Preview/Materializing in #297
 pub struct AiProposedIssue {
     pub title: String,
     pub overview: String,
@@ -103,7 +101,6 @@ pub struct AiProposedIssue {
 /// Result of the `AiStructuring` step: a milestone title + description, plus
 /// a list of proposed issues with dependency edges.
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)] // Reason: consumed by Review/Preview/Materializing in #297
 pub struct AiGeneratedPlan {
     pub milestone_title: String,
     pub milestone_description: String,

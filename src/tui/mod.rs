@@ -46,115 +46,15 @@ use std::io;
 use std::time::Duration;
 use summary::print_summary;
 
-/// Render an Issue Wizard payload as the markdown body for GitHub. Mirrors
-/// `IssueWizardScreen::render_body_markdown` but operates on the bare
-/// payload so the background task doesn't need a screen handle.
-fn render_issue_body_markdown(p: &crate::tui::screens::issue_wizard::IssueCreationPayload) -> String {
-    use crate::tui::screens::issue_wizard::IssueType;
-    let mut s = String::new();
-    let push = |out: &mut String, title: &str, body: &str| {
-        out.push_str("## ");
-        out.push_str(title);
-        out.push_str("\n\n");
-        out.push_str(body.trim());
-        out.push_str("\n\n");
-    };
-    push(&mut s, "Overview", &p.overview);
-    push(&mut s, "Expected Behavior", &p.expected_behavior);
-    if matches!(p.issue_type, IssueType::Bug) {
-        if !p.current_behavior.trim().is_empty() {
-            push(&mut s, "Current Behavior", &p.current_behavior);
-        }
-        if !p.steps_to_reproduce.trim().is_empty() {
-            push(&mut s, "Steps to Reproduce", &p.steps_to_reproduce);
-        }
-    }
-    push(&mut s, "Acceptance Criteria", &p.acceptance_criteria);
-    if !p.files_to_modify.trim().is_empty() {
-        push(&mut s, "Files to Modify", &p.files_to_modify);
-    }
-    if !p.test_hints.trim().is_empty() {
-        push(&mut s, "Test Hints", &p.test_hints);
-    }
-    let blocked = if p.blocked_by.is_empty() {
-        "- None".to_string()
-    } else {
-        p.blocked_by
-            .iter()
-            .map(|n| format!("- #{}", n))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    push(&mut s, "Blocked By", &blocked);
-    let dod = if p.acceptance_criteria.trim().is_empty() {
-        "- [ ] All acceptance criteria met".to_string()
-    } else {
-        p.acceptance_criteria
-            .trim()
-            .lines()
-            .map(|line| {
-                let l = line.trim_start();
-                if let Some(rest) = l.strip_prefix("- [ ]").or_else(|| l.strip_prefix("- [x]")) {
-                    format!("- [ ]{}", rest)
-                } else if let Some(rest) = l.strip_prefix("- ").or_else(|| l.strip_prefix("* ")) {
-                    format!("- [ ] {}", rest)
-                } else {
-                    format!("- [ ] {}", l)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    push(&mut s, "Definition of Done", &dod);
-    s
-}
-
-fn render_issue_labels(p: &crate::tui::screens::issue_wizard::IssueCreationPayload) -> Vec<String> {
-    use crate::tui::screens::issue_wizard::IssueType;
-    let mut labels = vec!["maestro:ready".to_string()];
-    labels.push(match p.issue_type {
-        IssueType::Feature => "enhancement".to_string(),
-        IssueType::Bug => "bug".to_string(),
-    });
-    labels
-}
-
-/// Spawn `claude --print` with the supplied prompt and return its stdout.
-/// Used by the Milestone Wizard's `AiStructuring` step. Errors are
-/// converted to human-readable strings shown on the wizard's `Failed`
-/// step.
-async fn run_claude_print(prompt: &str) -> Result<String, String> {
-    use tokio::io::AsyncWriteExt;
-    use tokio::process::Command;
-
-    let mut child = Command::new("claude")
-        .args(["--print"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("failed to spawn `claude`: {e}"))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(prompt.as_bytes())
-            .await
-            .map_err(|e| format!("failed writing prompt: {e}"))?;
-    }
-
-    let output = child
-        .wait_with_output()
+/// Wrapper around `adapt::prompts::run_claude_print` that maps the result
+/// into the `Result<String, String>` shape the wizards' background tasks
+/// expect, with sensible defaults (sonnet model, current directory).
+async fn run_claude_print_for_wizard(prompt: &str) -> Result<String, String> {
+    let cwd = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    crate::adapt::prompts::run_claude_print("sonnet", prompt, &cwd)
         .await
-        .map_err(|e| format!("failed waiting on `claude`: {e}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "`claude --print` exited with {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        .map_err(|e| e.to_string())
 }
 
 fn enter_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
@@ -529,8 +429,10 @@ async fn event_loop(
                 app::TuiCommand::CreateIssue(payload) => {
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {
-                        let body = render_issue_body_markdown(&payload);
-                        let labels = render_issue_labels(&payload);
+                        let body =
+                            crate::tui::screens::issue_wizard::render_body_markdown(&payload);
+                        let labels =
+                            crate::tui::screens::issue_wizard::render_labels(&payload);
                         let client = GhCliClient::new();
                         let result = client
                             .create_issue(&payload.title, &body, &labels, payload.milestone)
@@ -551,7 +453,7 @@ async fn event_loop(
                     tokio::spawn(async move {
                         let prompt =
                             crate::tui::screens::issue_wizard::build_review_prompt(&payload);
-                        let res = run_claude_print(&prompt).await;
+                        let res = run_claude_print_for_wizard(&prompt).await;
                         let _ = tx.send(app::TuiDataEvent::AiReviewResult(res));
                     });
                 }
@@ -570,7 +472,7 @@ async fn event_loop(
                             crate::tui::screens::milestone_wizard::build_planning_prompt(
                                 &payload,
                             );
-                        let res = run_claude_print(&prompt).await;
+                        let res = run_claude_print_for_wizard(&prompt).await;
                         let parsed = res.and_then(|raw| {
                             crate::tui::screens::milestone_wizard::parse_planning_response(&raw)
                         });

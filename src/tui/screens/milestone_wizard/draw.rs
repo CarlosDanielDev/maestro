@@ -309,21 +309,6 @@ impl MilestoneWizardScreen {
         );
     }
 
-    #[allow(dead_code)]
-    fn draw_stub(&self, f: &mut Frame, area: Rect) {
-        let body = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(format!(
-                "Stub for `{}` — wired in #297.",
-                self.step().label()
-            )),
-            Line::from(""),
-            Line::from("Press Enter to advance, Esc to go back."),
-        ])
-        .alignment(Alignment::Center);
-        f.render_widget(body, area);
-    }
-
     fn draw_questions(&self, f: &mut Frame, area: Rect, role: &str, questions: &[&str]) {
         let mut lines: Vec<Line> = Vec::new();
         for q in questions {

@@ -1,21 +1,12 @@
 /// Issue type the user is creating. Drives conditional fields in the
 /// `DorFields` step (Bug shows extra fields that Feature does not).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[allow(dead_code)] // Reason: Bug variant set by TypeSelect step (#293)
 pub enum IssueType {
     #[default]
     Feature,
     Bug,
 }
 
-impl IssueType {
-    pub const fn label(&self) -> &'static str {
-        match self {
-            Self::Feature => "Feature",
-            Self::Bug => "Bug",
-        }
-    }
-}
 
 /// Linear step machine for the Issue Wizard. Order is the displayed order
 /// — `Self::ALL.iter().position(|s| s == self)` gives the step number.
@@ -111,7 +102,6 @@ impl IssueWizardStep {
 /// far. This payload travels with the wizard and is shipped to GitHub on
 /// the `Creating` step.
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)] // Reason: fields populated by step handlers in #293/#295/#298
 pub struct IssueCreationPayload {
     pub issue_type: IssueType,
     pub title: String,

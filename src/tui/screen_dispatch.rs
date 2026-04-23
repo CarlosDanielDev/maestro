@@ -36,8 +36,6 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
         }
     }
 
-    // #298 Creating step → enqueue CreateIssue if the wizard just
-    // transitioned and a request isn't already in flight.
     let needs_create = app
         .issue_wizard_screen
         .as_ref()
@@ -46,7 +44,7 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
                 s.step(),
                 crate::tui::screens::issue_wizard::IssueWizardStep::Creating
             ) && s.create_in_flight()
-                && app.issue_wizard_creating_in_flight.is_none()
+                && !s.create_enqueued()
         })
         .unwrap_or(false);
     if needs_create {
@@ -55,7 +53,9 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
             .as_ref()
             .map(|s| s.payload().clone());
         if let Some(payload) = payload {
-            app.issue_wizard_creating_in_flight = Some(());
+            if let Some(ref mut s) = app.issue_wizard_screen {
+                s.mark_create_enqueued();
+            }
             app.pending_commands
                 .push(app::TuiCommand::CreateIssue(payload));
         }
@@ -70,7 +70,7 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
                     s.step(),
                     crate::tui::screens::milestone_wizard::MilestoneWizardStep::Materializing
                 ) && s.materialize_progress().is_some()
-                    && app.milestone_wizard_creating_in_flight.is_none(),
+                    && !s.materialize_enqueued(),
             ),
             None => (false, false),
         };
@@ -93,7 +93,9 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
                 .as_ref()
                 .and_then(|s| s.generated_plan().cloned());
             if let Some(plan) = plan {
-                app.milestone_wizard_creating_in_flight = Some(());
+                if let Some(ref mut s) = app.milestone_wizard_screen {
+                    s.mark_materialize_enqueued();
+                }
                 app.pending_commands
                     .push(app::TuiCommand::CreateMilestoneWithIssues(plan));
             }
