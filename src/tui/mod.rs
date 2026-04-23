@@ -46,6 +46,79 @@ use std::io;
 use std::time::Duration;
 use summary::print_summary;
 
+/// Render an Issue Wizard payload as the markdown body for GitHub. Mirrors
+/// `IssueWizardScreen::render_body_markdown` but operates on the bare
+/// payload so the background task doesn't need a screen handle.
+fn render_issue_body_markdown(p: &crate::tui::screens::issue_wizard::IssueCreationPayload) -> String {
+    use crate::tui::screens::issue_wizard::IssueType;
+    let mut s = String::new();
+    let push = |out: &mut String, title: &str, body: &str| {
+        out.push_str("## ");
+        out.push_str(title);
+        out.push_str("\n\n");
+        out.push_str(body.trim());
+        out.push_str("\n\n");
+    };
+    push(&mut s, "Overview", &p.overview);
+    push(&mut s, "Expected Behavior", &p.expected_behavior);
+    if matches!(p.issue_type, IssueType::Bug) {
+        if !p.current_behavior.trim().is_empty() {
+            push(&mut s, "Current Behavior", &p.current_behavior);
+        }
+        if !p.steps_to_reproduce.trim().is_empty() {
+            push(&mut s, "Steps to Reproduce", &p.steps_to_reproduce);
+        }
+    }
+    push(&mut s, "Acceptance Criteria", &p.acceptance_criteria);
+    if !p.files_to_modify.trim().is_empty() {
+        push(&mut s, "Files to Modify", &p.files_to_modify);
+    }
+    if !p.test_hints.trim().is_empty() {
+        push(&mut s, "Test Hints", &p.test_hints);
+    }
+    let blocked = if p.blocked_by.is_empty() {
+        "- None".to_string()
+    } else {
+        p.blocked_by
+            .iter()
+            .map(|n| format!("- #{}", n))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    push(&mut s, "Blocked By", &blocked);
+    let dod = if p.acceptance_criteria.trim().is_empty() {
+        "- [ ] All acceptance criteria met".to_string()
+    } else {
+        p.acceptance_criteria
+            .trim()
+            .lines()
+            .map(|line| {
+                let l = line.trim_start();
+                if let Some(rest) = l.strip_prefix("- [ ]").or_else(|| l.strip_prefix("- [x]")) {
+                    format!("- [ ]{}", rest)
+                } else if let Some(rest) = l.strip_prefix("- ").or_else(|| l.strip_prefix("* ")) {
+                    format!("- [ ] {}", rest)
+                } else {
+                    format!("- [ ] {}", l)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    push(&mut s, "Definition of Done", &dod);
+    s
+}
+
+fn render_issue_labels(p: &crate::tui::screens::issue_wizard::IssueCreationPayload) -> Vec<String> {
+    use crate::tui::screens::issue_wizard::IssueType;
+    let mut labels = vec!["maestro:ready".to_string()];
+    labels.push(match p.issue_type {
+        IssueType::Feature => "enhancement".to_string(),
+        IssueType::Bug => "bug".to_string(),
+    });
+    labels
+}
+
 /// Spawn `claude --print` with the supplied prompt and return its stdout.
 /// Used by the Milestone Wizard's `AiStructuring` step. Errors are
 /// converted to human-readable strings shown on the wizard's `Failed`
@@ -453,10 +526,17 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::AdaptMaterializeResult(result));
                     });
                 }
-                app::TuiCommand::CreateIssue(_payload) => {
-                    // The Issue Wizard `Creating` step is fully wired in #298.
-                    // The scaffold (#291) carries the command variant so the
-                    // payload type and dispatch shape are stable.
+                app::TuiCommand::CreateIssue(payload) => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let body = render_issue_body_markdown(&payload);
+                        let labels = render_issue_labels(&payload);
+                        let client = GhCliClient::new();
+                        let result = client
+                            .create_issue(&payload.title, &body, &labels, payload.milestone)
+                            .await;
+                        let _ = tx.send(app::TuiDataEvent::IssueCreated(result));
+                    });
                 }
                 app::TuiCommand::FetchWizardDependencies => {
                     let tx = app.data_tx.clone();

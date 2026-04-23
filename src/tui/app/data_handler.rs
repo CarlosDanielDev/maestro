@@ -345,10 +345,11 @@ impl App {
                     LogLevel::Error,
                 );
             }
-            TuiDataEvent::IssueCreated(_) => {
-                // Wired by Issue Wizard `Complete`/`Failed` step handlers in
-                // #298. The scaffold (#291) carries the variant so the
-                // event stream shape is stable.
+            TuiDataEvent::IssueCreated(result) => {
+                self.issue_wizard_creating_in_flight = None;
+                if let Some(ref mut screen) = self.issue_wizard_screen {
+                    screen.finish_create(result);
+                }
             }
             TuiDataEvent::ProjectStats(data) => {
                 if let Some(ref mut screen) = self.project_stats_screen {

@@ -26,6 +26,10 @@ impl IssueWizardScreen {
             IssueWizardStep::DorFields => self.draw_dor_fields(f, chunks[1]),
             IssueWizardStep::Dependencies => self.draw_dependencies(f, chunks[1]),
             IssueWizardStep::AiReview => self.draw_ai_review(f, chunks[1]),
+            IssueWizardStep::Preview => self.draw_preview(f, chunks[1]),
+            IssueWizardStep::Creating => self.draw_creating(f, chunks[1]),
+            IssueWizardStep::Complete => self.draw_complete(f, chunks[1]),
+            IssueWizardStep::Failed => self.draw_failed(f, chunks[1]),
             _ => self.draw_stub(f, chunks[1]),
         }
         self.draw_footer(f, chunks[2]);
@@ -142,6 +146,89 @@ impl IssueWizardScreen {
         for (i, field) in fields.iter().enumerate() {
             self.draw_field(f, chunks[i], *field);
         }
+    }
+
+    fn draw_preview(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Preview  (Enter to create on GitHub, Esc to revise)");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(Span::styled(
+            self.payload().title.clone(),
+            Style::default().add_modifier(Modifier::BOLD),
+        )));
+        let labels = self.render_labels();
+        lines.push(Line::from(format!("Labels: {}", labels.join(", "))));
+        if let Some(m) = self.payload().milestone {
+            lines.push(Line::from(format!("Milestone: #{}", m)));
+        }
+        lines.push(Line::from(""));
+        for raw in self.render_body_markdown().lines().take(inner.height.saturating_sub(4) as usize) {
+            lines.push(Line::from(raw.to_string()));
+        }
+        f.render_widget(Paragraph::new(lines), inner);
+    }
+
+    fn draw_creating(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::ALL).title("Creating");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let lines = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Creating issue on GitHub…",
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
+        ];
+        f.render_widget(
+            Paragraph::new(lines).alignment(Alignment::Center),
+            inner,
+        );
+    }
+
+    fn draw_complete(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::ALL).title("Complete");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let mut lines: Vec<Line> = Vec::new();
+        if let Some(num) = self.created_issue_number() {
+            lines.push(Line::from(Span::styled(
+                format!("Issue #{} created successfully", num),
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from("Enter: create another  Esc: return to Landing"));
+        f.render_widget(
+            Paragraph::new(lines).alignment(Alignment::Center),
+            inner,
+        );
+    }
+
+    fn draw_failed(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::ALL).title("Failed");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let lines = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                self.create_error()
+                    .unwrap_or("Unknown error")
+                    .to_string(),
+                Style::default().fg(Color::LightRed),
+            )),
+            Line::from(""),
+            Line::from("r: retry  Esc: back to Preview"),
+        ];
+        f.render_widget(
+            Paragraph::new(lines).alignment(Alignment::Center),
+            inner,
+        );
     }
 
     fn draw_ai_review(&self, f: &mut Frame, area: Rect) {

@@ -36,6 +36,31 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
         }
     }
 
+    // #298 Creating step → enqueue CreateIssue if the wizard just
+    // transitioned and a request isn't already in flight.
+    let needs_create = app
+        .issue_wizard_screen
+        .as_ref()
+        .map(|s| {
+            matches!(
+                s.step(),
+                crate::tui::screens::issue_wizard::IssueWizardStep::Creating
+            ) && s.create_in_flight()
+                && app.issue_wizard_creating_in_flight.is_none()
+        })
+        .unwrap_or(false);
+    if needs_create {
+        let payload = app
+            .issue_wizard_screen
+            .as_ref()
+            .map(|s| s.payload().clone());
+        if let Some(payload) = payload {
+            app.issue_wizard_creating_in_flight = Some(());
+            app.pending_commands
+                .push(app::TuiCommand::CreateIssue(payload));
+        }
+    }
+
     // Milestone wizard: AiStructuring auto-launch + Materializing creation.
     if app.tui_mode == app::TuiMode::MilestoneWizard {
         let (start_planning, start_creating) = match app.milestone_wizard_screen.as_ref() {

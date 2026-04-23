@@ -88,6 +88,9 @@ pub struct App {
     /// Guard preventing duplicate `CreateMilestoneWithIssues` dispatches
     /// while a previous one is still in flight (#297).
     pub milestone_wizard_creating_in_flight: Option<()>,
+    /// Guard preventing duplicate `CreateIssue` dispatches while a
+    /// previous one is still in flight (#298).
+    pub issue_wizard_creating_in_flight: Option<()>,
     pub issue_browser_screen: Option<crate::tui::screens::IssueBrowserScreen>,
     pub milestone_screen: Option<crate::tui::screens::MilestoneScreen>,
     pub prompt_input_screen: Option<crate::tui::screens::PromptInputScreen>,
@@ -190,6 +193,7 @@ impl App {
             project_stats_screen: None,
             milestone_wizard_screen: None,
             milestone_wizard_creating_in_flight: None,
+            issue_wizard_creating_in_flight: None,
             issue_browser_screen: None,
             milestone_screen: None,
             prompt_input_screen: None,

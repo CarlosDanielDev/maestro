@@ -60,6 +60,10 @@ pub struct IssueWizardScreen {
     pub(super) review_loading: bool,
     pub(super) review_text: Option<String>,
     pub(super) review_error: Option<String>,
+    /// #298 Creating/Complete/Failed state.
+    pub(super) create_in_flight: bool,
+    pub(super) created_issue_number: Option<u64>,
+    pub(super) create_error: Option<String>,
 }
 
 impl IssueWizardScreen {
@@ -75,7 +79,96 @@ impl IssueWizardScreen {
             review_loading: false,
             review_text: None,
             review_error: None,
+            create_in_flight: false,
+            created_issue_number: None,
+            create_error: None,
         }
+    }
+
+    // ---- #298 Creation ----
+
+    /// Render the issue body to GitHub-flavored markdown with all DOR
+    /// sections, gracefully omitting empty optional sections.
+    pub fn render_body_markdown(&self) -> String {
+        let p = &self.payload;
+        let mut s = String::new();
+        push_section(&mut s, "Overview", &p.overview);
+        push_section(&mut s, "Expected Behavior", &p.expected_behavior);
+        if !p.current_behavior.trim().is_empty() {
+            push_section(&mut s, "Current Behavior", &p.current_behavior);
+        }
+        if !p.steps_to_reproduce.trim().is_empty() {
+            push_section(&mut s, "Steps to Reproduce", &p.steps_to_reproduce);
+        }
+        push_section(&mut s, "Acceptance Criteria", &p.acceptance_criteria);
+        if !p.files_to_modify.trim().is_empty() {
+            push_section(&mut s, "Files to Modify", &p.files_to_modify);
+        }
+        if !p.test_hints.trim().is_empty() {
+            push_section(&mut s, "Test Hints", &p.test_hints);
+        }
+        let blocked = if p.blocked_by.is_empty() {
+            "- None".to_string()
+        } else {
+            p.blocked_by
+                .iter()
+                .map(|n| format!("- #{}", n))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        push_section(&mut s, "Blocked By", &blocked);
+        let dod = build_definition_of_done(&p.acceptance_criteria);
+        push_section(&mut s, "Definition of Done", &dod);
+        s
+    }
+
+    /// Labels applied to the new issue based on its type.
+    pub fn render_labels(&self) -> Vec<String> {
+        let mut labels = vec!["maestro:ready".to_string()];
+        labels.push(match self.payload.issue_type {
+            IssueType::Feature => "enhancement".to_string(),
+            IssueType::Bug => "bug".to_string(),
+        });
+        labels
+    }
+
+    pub fn create_in_flight(&self) -> bool {
+        self.create_in_flight
+    }
+
+    pub fn created_issue_number(&self) -> Option<u64> {
+        self.created_issue_number
+    }
+
+    pub fn create_error(&self) -> Option<&str> {
+        self.create_error.as_deref()
+    }
+
+    pub fn begin_create(&mut self) {
+        self.create_in_flight = true;
+        self.create_error = None;
+        self.created_issue_number = None;
+        self.step = IssueWizardStep::Creating;
+    }
+
+    pub fn finish_create(&mut self, result: anyhow::Result<u64>) {
+        self.create_in_flight = false;
+        match result {
+            Ok(n) => {
+                self.created_issue_number = Some(n);
+                self.step = IssueWizardStep::Complete;
+            }
+            Err(e) => {
+                self.create_error = Some(e.to_string());
+                self.step = IssueWizardStep::Failed;
+            }
+        }
+    }
+
+    /// Reset to Context with a fresh payload — used by the Complete
+    /// step's "Enter to create another" action.
+    pub fn reset_for_another(&mut self) {
+        *self = Self::new();
     }
 
     // ---- #296 AI Review ----
@@ -123,7 +216,42 @@ impl IssueWizardScreen {
         self.step = target;
         self.focus = 0;
     }
+}
 
+/// Append a `## Title\n\nbody\n` section to the markdown buffer.
+fn push_section(out: &mut String, title: &str, body: &str) {
+    out.push_str("## ");
+    out.push_str(title);
+    out.push_str("\n\n");
+    out.push_str(body.trim());
+    out.push_str("\n\n");
+}
+
+/// Convert `acceptance_criteria` into a checklist used as the
+/// `Definition of Done`. Lines starting with `-` or `*` are normalised
+/// into `- [ ] …`; other lines pass through.
+fn build_definition_of_done(acceptance_criteria: &str) -> String {
+    let trimmed = acceptance_criteria.trim();
+    if trimmed.is_empty() {
+        return "- [ ] All acceptance criteria met".to_string();
+    }
+    trimmed
+        .lines()
+        .map(|line| {
+            let l = line.trim_start();
+            if let Some(rest) = l.strip_prefix("- [ ]").or_else(|| l.strip_prefix("- [x]")) {
+                format!("- [ ]{}", rest)
+            } else if let Some(rest) = l.strip_prefix("- ").or_else(|| l.strip_prefix("* ")) {
+                format!("- [ ] {}", rest)
+            } else {
+                format!("- [ ] {}", l)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+impl IssueWizardScreen {
     /// #295: called by dispatch when entering the Dependencies step so the
     /// loading spinner shows immediately and the fetch is queued.
     pub fn begin_dependency_fetch(&mut self) {
@@ -461,6 +589,42 @@ impl Screen for IssueWizardScreen {
                 }
                 _ => {}
             },
+            IssueWizardStep::Preview => match code {
+                KeyCode::Esc => {
+                    self.retreat();
+                }
+                KeyCode::Enter => {
+                    // The dispatch layer's `tick_wizard_step_hooks` queues
+                    // `TuiCommand::CreateIssue` when the wizard transitions
+                    // to `Creating`.
+                    self.begin_create();
+                }
+                _ => {}
+            },
+            IssueWizardStep::Failed => match code {
+                KeyCode::Esc => {
+                    self.step = IssueWizardStep::Preview;
+                    self.create_error = None;
+                }
+                KeyCode::Char('r') => {
+                    self.create_error = None;
+                    self.begin_create();
+                }
+                _ => {}
+            },
+            IssueWizardStep::Complete => match code {
+                KeyCode::Enter => {
+                    self.reset_for_another();
+                }
+                KeyCode::Esc => {
+                    return ScreenAction::Pop;
+                }
+                _ => {}
+            },
+            IssueWizardStep::Creating => {
+                // No-op while in flight — the data event triggers the
+                // transition to Complete or Failed.
+            }
             IssueWizardStep::Dependencies => match code {
                 KeyCode::Esc => {
                     self.retreat();
@@ -884,6 +1048,145 @@ mod tests {
         let mut s = at_dependencies();
         s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(s.step(), IssueWizardStep::DorFields);
+    }
+
+    // ---- #298 Preview / Creating / Complete / Failed ----
+
+    fn at_preview() -> IssueWizardScreen {
+        let mut s = IssueWizardScreen::new();
+        s.payload_mut().title = "Add gauge widget".into();
+        s.payload_mut().overview = "Render progress".into();
+        s.payload_mut().expected_behavior = "Fills proportionally".into();
+        s.payload_mut().acceptance_criteria = "- Renders 0..100".into();
+        s.payload_mut().blocked_by = vec![10];
+        // Jump directly for testing.
+        s.jump_to(IssueWizardStep::Preview);
+        s
+    }
+
+    #[test]
+    fn render_body_includes_all_required_sections() {
+        let s = at_preview();
+        let body = s.render_body_markdown();
+        for section in [
+            "## Overview",
+            "## Expected Behavior",
+            "## Acceptance Criteria",
+            "## Blocked By",
+            "## Definition of Done",
+        ] {
+            assert!(body.contains(section), "missing section {section}");
+        }
+        assert!(body.contains("- #10"));
+    }
+
+    #[test]
+    fn render_body_blocked_by_none_when_empty() {
+        let mut s = at_preview();
+        s.payload_mut().blocked_by.clear();
+        let body = s.render_body_markdown();
+        assert!(body.contains("## Blocked By\n\n- None"));
+    }
+
+    #[test]
+    fn render_body_definition_of_done_converts_bullets_to_checklist() {
+        let mut s = at_preview();
+        s.payload_mut().acceptance_criteria = "- A\n- B\n* C".into();
+        let body = s.render_body_markdown();
+        assert!(body.contains("- [ ] A"));
+        assert!(body.contains("- [ ] B"));
+        assert!(body.contains("- [ ] C"));
+    }
+
+    #[test]
+    fn render_body_omits_bug_only_sections_for_feature() {
+        let s = at_preview();
+        let body = s.render_body_markdown();
+        assert!(!body.contains("## Current Behavior"));
+        assert!(!body.contains("## Steps to Reproduce"));
+    }
+
+    #[test]
+    fn render_body_includes_bug_only_sections_when_filled() {
+        let mut s = at_preview();
+        s.payload_mut().issue_type = IssueType::Bug;
+        s.payload_mut().current_behavior = "Crashes".into();
+        s.payload_mut().steps_to_reproduce = "open then crash".into();
+        let body = s.render_body_markdown();
+        assert!(body.contains("## Current Behavior"));
+        assert!(body.contains("## Steps to Reproduce"));
+    }
+
+    #[test]
+    fn render_labels_includes_maestro_ready_and_type_label() {
+        let s = at_preview();
+        let labels = s.render_labels();
+        assert!(labels.contains(&"maestro:ready".to_string()));
+        assert!(labels.contains(&"enhancement".to_string()));
+    }
+
+    #[test]
+    fn render_labels_uses_bug_for_bug_type() {
+        let mut s = at_preview();
+        s.payload_mut().issue_type = IssueType::Bug;
+        assert!(s.render_labels().contains(&"bug".to_string()));
+    }
+
+    #[test]
+    fn enter_on_preview_begins_create() {
+        let mut s = at_preview();
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert!(s.create_in_flight());
+        assert_eq!(s.step(), IssueWizardStep::Creating);
+    }
+
+    #[test]
+    fn finish_create_ok_transitions_to_complete() {
+        let mut s = at_preview();
+        s.begin_create();
+        s.finish_create(Ok(42));
+        assert!(!s.create_in_flight());
+        assert_eq!(s.created_issue_number(), Some(42));
+        assert_eq!(s.step(), IssueWizardStep::Complete);
+    }
+
+    #[test]
+    fn finish_create_err_transitions_to_failed() {
+        let mut s = at_preview();
+        s.begin_create();
+        s.finish_create(Err(anyhow::anyhow!("API down")));
+        assert_eq!(s.step(), IssueWizardStep::Failed);
+        assert_eq!(s.create_error(), Some("API down"));
+    }
+
+    #[test]
+    fn enter_on_complete_resets_for_another_issue() {
+        let mut s = at_preview();
+        s.begin_create();
+        s.finish_create(Ok(42));
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(s.step(), IssueWizardStep::Context);
+        assert!(s.payload().title.is_empty());
+    }
+
+    #[test]
+    fn esc_on_complete_pops_back_to_landing() {
+        let mut s = at_preview();
+        s.begin_create();
+        s.finish_create(Ok(42));
+        let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Pop);
+    }
+
+    #[test]
+    fn r_on_failed_retries_create() {
+        let mut s = at_preview();
+        s.begin_create();
+        s.finish_create(Err(anyhow::anyhow!("boom")));
+        s.handle_input(&key_event(KeyCode::Char('r')), InputMode::Normal);
+        assert_eq!(s.step(), IssueWizardStep::Creating);
+        assert!(s.create_in_flight());
+        assert!(s.create_error().is_none());
     }
 
     #[test]
