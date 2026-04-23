@@ -132,6 +132,8 @@ pub fn sequence_line(issues: &[AiProposedIssue]) -> String {
     }
 }
 
+use super::prompt_input::{ClipboardContent, ClipboardProvider, SystemClipboard};
+use super::wizard_paste::{append_paste, sanitize_paste};
 use super::{Screen, ScreenAction};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -146,6 +148,7 @@ pub struct MilestoneWizardScreen {
     step: MilestoneWizardStep,
     payload: MilestonePlanPayload,
     doc_buffer: String,
+    clipboard: Box<dyn ClipboardProvider>,
     planning_in_flight: bool,
     generated_plan: Option<AiGeneratedPlan>,
     failure_reason: Option<String>,
@@ -166,10 +169,15 @@ pub struct MilestoneWizardScreen {
 
 impl MilestoneWizardScreen {
     pub fn new() -> Self {
+        Self::with_clipboard(Box::new(SystemClipboard))
+    }
+
+    pub fn with_clipboard(clipboard: Box<dyn ClipboardProvider>) -> Self {
         Self {
             step: MilestoneWizardStep::default(),
             payload: MilestonePlanPayload::default(),
             doc_buffer: String::new(),
+            clipboard,
             planning_in_flight: false,
             generated_plan: None,
             failure_reason: None,
@@ -178,6 +186,53 @@ impl MilestoneWizardScreen {
             materialize_enqueued: false,
             created_issue_numbers: Vec::new(),
             created_milestone_number: None,
+        }
+    }
+
+    /// Append a bracketed paste to the step's active text surface. On
+    /// `DocReferences`, newline-separated lines each become a separate
+    /// reference entry (matches how users typically copy paths).
+    pub fn paste_text_into_active(&mut self, text: &str) {
+        match self.step {
+            MilestoneWizardStep::GoalDefinition => {
+                append_paste(&mut self.payload.goals, text, true);
+            }
+            MilestoneWizardStep::NonGoals => {
+                append_paste(&mut self.payload.non_goals, text, true);
+            }
+            MilestoneWizardStep::DocReferences => {
+                let sanitised = sanitize_paste(text);
+                if sanitised.contains('\n') {
+                    for line in sanitised.lines().map(|l| l.trim()).filter(|l| !l.is_empty())
+                    {
+                        self.doc_buffer.clear();
+                        self.doc_buffer.push_str(line);
+                        self.commit_doc_buffer();
+                    }
+                } else {
+                    self.doc_buffer.push_str(&sanitised);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Ctrl+V handler — image clipboard content is captured as an
+    /// attachment, text is appended to the active field.
+    pub fn paste_from_clipboard(&mut self) {
+        match self.clipboard.read() {
+            ClipboardContent::Image(path) => {
+                self.payload
+                    .image_paths
+                    .push(path.to_string_lossy().to_string());
+            }
+            ClipboardContent::Text(text) => {
+                let sanitised = sanitize_paste(&text);
+                if !sanitised.is_empty() {
+                    self.paste_text_into_active(&sanitised);
+                }
+            }
+            ClipboardContent::Empty | ClipboardContent::Unavailable => {}
         }
     }
 
@@ -449,6 +504,11 @@ impl KeymapProvider for MilestoneWizardScreen {
 
 impl Screen for MilestoneWizardScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
+        if let Event::Paste(text) = event {
+            self.paste_text_into_active(text);
+            return ScreenAction::None;
+        }
+
         let Event::Key(KeyEvent {
             code,
             kind: KeyEventKind::Press,
@@ -458,6 +518,11 @@ impl Screen for MilestoneWizardScreen {
         else {
             return ScreenAction::None;
         };
+
+        if modifiers.contains(KeyModifiers::CONTROL) && *code == KeyCode::Char('v') {
+            self.paste_from_clipboard();
+            return ScreenAction::None;
+        }
 
         match (self.step, code, *modifiers) {
             (_, KeyCode::Esc, _) => {
@@ -697,6 +762,85 @@ mod tests {
         s.apply_planning_result(Err("API down".into()));
         assert_eq!(s.step(), MilestoneWizardStep::Failed);
         assert_eq!(s.failure_reason(), Some("API down"));
+    }
+
+    // ---- Paste handling ----
+
+    struct FakeClipboard(std::sync::Mutex<super::ClipboardContent>);
+
+    impl FakeClipboard {
+        fn new(content: super::ClipboardContent) -> Self {
+            Self(std::sync::Mutex::new(content))
+        }
+    }
+
+    impl super::ClipboardProvider for FakeClipboard {
+        fn read(&self) -> super::ClipboardContent {
+            let mut guard = self.0.lock().unwrap();
+            std::mem::replace(&mut *guard, super::ClipboardContent::Empty)
+        }
+    }
+
+    fn paste_event(text: &str) -> crossterm::event::Event {
+        crossterm::event::Event::Paste(text.to_string())
+    }
+
+    #[test]
+    fn bracketed_paste_on_goal_appends_to_goals() {
+        let mut s = MilestoneWizardScreen::with_clipboard(
+            Box::new(FakeClipboard::new(super::ClipboardContent::Empty)),
+        );
+        s.handle_input(&paste_event("first\nsecond"), InputMode::Insert);
+        assert_eq!(s.payload().goals, "first\nsecond");
+    }
+
+    #[test]
+    fn bracketed_paste_on_doc_refs_splits_lines_into_entries() {
+        let mut s = MilestoneWizardScreen::with_clipboard(
+            Box::new(FakeClipboard::new(super::ClipboardContent::Empty)),
+        );
+        type_chars(&mut s, "goal");
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert); // → NonGoals
+        s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert); // → DocReferences
+        s.handle_input(
+            &paste_event("https://example.com/a\nhttps://example.com/b"),
+            InputMode::Insert,
+        );
+        assert_eq!(
+            s.payload().doc_references,
+            vec![
+                "https://example.com/a".to_string(),
+                "https://example.com/b".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn ctrl_v_image_clipboard_attaches_to_payload() {
+        let tmp = std::env::temp_dir().join("milestone-test.png");
+        let mut s = MilestoneWizardScreen::with_clipboard(Box::new(FakeClipboard::new(
+            super::ClipboardContent::Image(tmp.clone()),
+        )));
+        s.handle_input(
+            &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
+            InputMode::Insert,
+        );
+        assert_eq!(
+            s.payload().image_paths,
+            vec![tmp.to_string_lossy().to_string()]
+        );
+    }
+
+    #[test]
+    fn build_planning_prompt_includes_attachments_when_present() {
+        let payload = MilestonePlanPayload {
+            goals: "g".into(),
+            image_paths: vec!["/tmp/a.png".into()],
+            ..Default::default()
+        };
+        let prompt = ai_planning::build_planning_prompt(&payload);
+        assert!(prompt.contains("## Attachments"));
+        assert!(prompt.contains("[Attached image: /tmp/a.png]"));
     }
 
     #[test]

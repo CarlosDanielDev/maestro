@@ -5,6 +5,8 @@ pub mod types;
 pub use ai_review::build_review_prompt;
 pub use types::{IssueCreationPayload, IssueType, IssueWizardStep};
 
+use super::prompt_input::{ClipboardContent, ClipboardProvider, SystemClipboard};
+use super::wizard_paste::{append_paste, sanitize_paste};
 use super::{Screen, ScreenAction};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -60,6 +62,9 @@ pub struct IssueWizardScreen {
     pub(super) review_loading: bool,
     pub(super) review_text: Option<String>,
     pub(super) review_error: Option<String>,
+    /// Clipboard provider for Ctrl+V. Injected as a trait object so
+    /// tests can supply a deterministic fake.
+    clipboard: Box<dyn ClipboardProvider>,
     /// #298 Creating/Complete/Failed state.
     pub(super) create_in_flight: bool,
     /// True between `begin_create()` and the moment dispatch enqueues
@@ -73,6 +78,10 @@ pub struct IssueWizardScreen {
 
 impl IssueWizardScreen {
     pub fn new() -> Self {
+        Self::with_clipboard(Box::new(SystemClipboard))
+    }
+
+    pub fn with_clipboard(clipboard: Box<dyn ClipboardProvider>) -> Self {
         Self {
             step: IssueWizardStep::default(),
             payload: IssueCreationPayload::new(),
@@ -84,10 +93,43 @@ impl IssueWizardScreen {
             review_loading: false,
             review_text: None,
             review_error: None,
+            clipboard,
             create_in_flight: false,
             create_enqueued: false,
             created_issue_number: None,
             create_error: None,
+        }
+    }
+
+    /// Insert a pasted payload into the focused field. Multi-line paste
+    /// is preserved on every field except `Title` (GitHub titles must
+    /// be single-line).
+    pub fn paste_text_into_focused(&mut self, text: &str) {
+        let Some(field) = self.focused_field() else {
+            return;
+        };
+        let allow_newlines = field.is_multiline();
+        let target = self.field_value_mut(field);
+        append_paste(target, text, allow_newlines);
+    }
+
+    /// Read the system clipboard synchronously and route the content:
+    /// image → `payload.image_paths`; text → focused field; anything
+    /// else → no-op. Invoked on Ctrl+V.
+    pub fn paste_from_clipboard(&mut self) {
+        match self.clipboard.read() {
+            ClipboardContent::Image(path) => {
+                self.payload
+                    .image_paths
+                    .push(path.to_string_lossy().to_string());
+            }
+            ClipboardContent::Text(text) => {
+                let sanitised = sanitize_paste(&text);
+                if !sanitised.is_empty() {
+                    self.paste_text_into_focused(&sanitised);
+                }
+            }
+            ClipboardContent::Empty | ClipboardContent::Unavailable => {}
         }
     }
 
@@ -229,6 +271,15 @@ pub fn render_body_markdown(p: &IssueCreationPayload) -> String {
             .join("\n")
     };
     push_section(&mut s, "Blocked By", &blocked);
+    if !p.image_paths.is_empty() {
+        let attachments = p
+            .image_paths
+            .iter()
+            .map(|p| format!("- [Attached image: {}]", p))
+            .collect::<Vec<_>>()
+            .join("\n");
+        push_section(&mut s, "Attachments", &attachments);
+    }
     let dod = build_definition_of_done(&p.acceptance_criteria);
     push_section(&mut s, "Definition of Done", &dod);
     s
@@ -540,6 +591,14 @@ impl KeymapProvider for IssueWizardScreen {
 
 impl Screen for IssueWizardScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
+        // Bracketed paste (Cmd+V in the terminal) arrives as Event::Paste.
+        // Route it to the focused field regardless of step, so every
+        // text surface in the wizard accepts clipboard content.
+        if let Event::Paste(text) = event {
+            self.paste_text_into_focused(text);
+            return ScreenAction::None;
+        }
+
         let Event::Key(KeyEvent {
             code,
             kind: KeyEventKind::Press,
@@ -549,6 +608,13 @@ impl Screen for IssueWizardScreen {
         else {
             return ScreenAction::None;
         };
+
+        // Ctrl+V: explicit clipboard read (covers images on the clipboard,
+        // which bracketed paste can't carry).
+        if modifiers.contains(KeyModifiers::CONTROL) && *code == KeyCode::Char('v') {
+            self.paste_from_clipboard();
+            return ScreenAction::None;
+        }
 
         // Step-specific routing.
         match self.step {
@@ -969,6 +1035,134 @@ mod tests {
         let mut s = IssueWizardScreen::new();
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         assert_eq!(s.desired_input_mode(), Some(InputMode::Normal));
+    }
+
+    // ---- Paste handling (Event::Paste + Ctrl+V) ----
+
+    struct FakeClipboard(std::sync::Mutex<super::ClipboardContent>);
+
+    impl FakeClipboard {
+        fn new(content: super::ClipboardContent) -> Self {
+            Self(std::sync::Mutex::new(content))
+        }
+    }
+
+    impl super::ClipboardProvider for FakeClipboard {
+        fn read(&self) -> super::ClipboardContent {
+            let mut guard = self.0.lock().unwrap();
+            std::mem::replace(&mut *guard, super::ClipboardContent::Empty)
+        }
+    }
+
+    fn basic_info_wizard(clip: super::ClipboardContent) -> IssueWizardScreen {
+        let mut s = IssueWizardScreen::with_clipboard(Box::new(FakeClipboard::new(clip)));
+        s.try_advance(); // Context → TypeSelect
+        s.try_advance(); // TypeSelect → BasicInfo
+        s
+    }
+
+    fn paste_event(text: &str) -> crossterm::event::Event {
+        crossterm::event::Event::Paste(text.to_string())
+    }
+
+    #[test]
+    fn bracketed_paste_appends_to_title_when_title_focused() {
+        let mut s = basic_info_wizard(super::ClipboardContent::Empty);
+        type_string(&mut s, "hi ");
+        s.handle_input(&paste_event("from clipboard"), InputMode::Insert);
+        assert_eq!(s.payload().title, "hi from clipboard");
+    }
+
+    #[test]
+    fn bracketed_paste_replaces_newlines_with_spaces_in_single_line_title() {
+        let mut s = basic_info_wizard(super::ClipboardContent::Empty);
+        s.handle_input(&paste_event("line1\nline2"), InputMode::Insert);
+        assert_eq!(s.payload().title, "line1 line2");
+    }
+
+    #[test]
+    fn bracketed_paste_preserves_newlines_in_overview() {
+        let mut s = basic_info_wizard(super::ClipboardContent::Empty);
+        s.handle_input(&key_event(KeyCode::Tab), InputMode::Insert); // focus Overview
+        s.handle_input(&paste_event("line1\nline2"), InputMode::Insert);
+        assert_eq!(s.payload().overview, "line1\nline2");
+    }
+
+    #[test]
+    fn bracketed_paste_strips_ansi_escape_sequences() {
+        let mut s = basic_info_wizard(super::ClipboardContent::Empty);
+        s.handle_input(&paste_event("\x1b[31mred\x1b[0m"), InputMode::Insert);
+        assert!(!s.payload().title.contains('\x1b'));
+    }
+
+    #[test]
+    fn bracketed_paste_does_not_trigger_try_advance() {
+        let mut s = basic_info_wizard(super::ClipboardContent::Empty);
+        s.handle_input(&paste_event("title\n\nmore"), InputMode::Insert);
+        assert_eq!(s.step(), IssueWizardStep::BasicInfo);
+    }
+
+    #[test]
+    fn ctrl_v_text_clipboard_pastes_into_focused_field() {
+        let mut s = basic_info_wizard(super::ClipboardContent::Text(
+            "clipboard text".to_string(),
+        ));
+        s.handle_input(
+            &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
+            InputMode::Insert,
+        );
+        assert_eq!(s.payload().title, "clipboard text");
+    }
+
+    #[test]
+    fn ctrl_v_image_clipboard_adds_to_image_paths() {
+        let tmp = std::env::temp_dir().join("wizard-test.png");
+        let mut s = basic_info_wizard(super::ClipboardContent::Image(tmp.clone()));
+        s.handle_input(
+            &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
+            InputMode::Insert,
+        );
+        assert_eq!(
+            s.payload().image_paths,
+            vec![tmp.to_string_lossy().to_string()]
+        );
+        assert!(s.payload().title.is_empty());
+    }
+
+    #[test]
+    fn ctrl_v_on_empty_clipboard_is_noop() {
+        let mut s = basic_info_wizard(super::ClipboardContent::Empty);
+        s.handle_input(
+            &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
+            InputMode::Insert,
+        );
+        assert!(s.payload().title.is_empty());
+        assert!(s.payload().image_paths.is_empty());
+    }
+
+    #[test]
+    fn render_body_includes_attachments_section_when_images_present() {
+        let mut p = IssueCreationPayload::default();
+        p.title = "t".into();
+        p.overview = "o".into();
+        p.expected_behavior = "e".into();
+        p.acceptance_criteria = "a".into();
+        p.image_paths = vec!["/tmp/a.png".into(), "/tmp/b.png".into()];
+        let body = render_body_markdown(&p);
+        assert!(body.contains("## Attachments"));
+        assert!(body.contains("[Attached image: /tmp/a.png]"));
+        assert!(body.contains("[Attached image: /tmp/b.png]"));
+    }
+
+    #[test]
+    fn render_body_omits_attachments_section_when_empty() {
+        let mut p = IssueCreationPayload::default();
+        p.title = "t".into();
+        p.overview = "o".into();
+        p.expected_behavior = "e".into();
+        p.acceptance_criteria = "a".into();
+        let body = render_body_markdown(&p);
+        assert!(!body.contains("## Attachments"));
     }
 
     // ---- #295 Dependencies step ----

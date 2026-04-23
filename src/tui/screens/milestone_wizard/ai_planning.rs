@@ -28,6 +28,14 @@ pub fn build_planning_prompt(payload: &MilestonePlanPayload) -> String {
             prompt.push('\n');
         }
     }
+    if !payload.image_paths.is_empty() {
+        prompt.push_str("\n\n## Attachments\n");
+        for p in &payload.image_paths {
+            prompt.push_str("- [Attached image: ");
+            prompt.push_str(p);
+            prompt.push_str("]\n");
+        }
+    }
     prompt.push_str(
         "\n\nRespond with the JSON object only, no commentary, no markdown fences.",
     );

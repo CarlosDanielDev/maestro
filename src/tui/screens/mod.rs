@@ -11,6 +11,7 @@ pub mod milestone_wizard;
 pub mod pr_review;
 pub mod project_stats;
 pub mod prompt_input;
+mod wizard_paste;
 pub mod queue_confirmation;
 pub mod release_notes;
 pub mod settings;

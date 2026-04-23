@@ -119,6 +119,10 @@ pub struct IssueCreationPayload {
     pub blocked_by: Vec<u64>,
     /// Optional milestone number to attach the new issue to.
     pub milestone: Option<u64>,
+    /// Image attachments collected via paste (Cmd+V with an image on the
+    /// clipboard) or bracketed paste of a file path. Rendered into the
+    /// body as `[Attached image: <path>]` references.
+    pub image_paths: Vec<String>,
 }
 
 impl IssueCreationPayload {

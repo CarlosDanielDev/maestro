@@ -84,6 +84,9 @@ pub struct MilestonePlanPayload {
     /// Path validation result for each entry — `true` if the path exists or
     /// the entry is a URL. Index-aligned with `doc_references`.
     pub doc_reference_valid: Vec<bool>,
+    /// Image attachments collected via paste. Sent to the AI planner as
+    /// additional references alongside the doc paths.
+    pub image_paths: Vec<String>,
 }
 
 /// One AI-proposed issue that will be materialized into GitHub. The
