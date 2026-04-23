@@ -355,6 +355,11 @@ impl App {
                     screen.set_data(data);
                 }
             }
+            TuiDataEvent::AiPlanningResult(result) => {
+                if let Some(ref mut screen) = self.milestone_wizard_screen {
+                    screen.apply_planning_result(result);
+                }
+            }
         }
     }
 }

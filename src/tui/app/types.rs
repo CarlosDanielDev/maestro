@@ -183,6 +183,9 @@ pub enum TuiCommand {
     /// Fetch milestones, issue counts, and session metrics for the
     /// Project Stats screen (#292).
     FetchProjectStats,
+    /// Launch a `claude --print` subprocess to structure a milestone plan
+    /// from the goals/non-goals/references the user supplied (#294).
+    LaunchAiPlanning(crate::tui::screens::milestone_wizard::MilestonePlanPayload),
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
     LaunchPromptSession(PromptSessionConfig),
@@ -210,6 +213,11 @@ pub enum TuiDataEvent {
     IssueCreated(anyhow::Result<u64>),
     /// Aggregated stats for the Project Stats screen (#292).
     ProjectStats(crate::tui::screens::project_stats::ProjectStatsData),
+    /// AI planning result for the Milestone Wizard (#294). `Err(s)` is the
+    /// human-readable failure reason rendered on the `Failed` step.
+    AiPlanningResult(
+        Result<crate::tui::screens::milestone_wizard::AiGeneratedPlan, String>,
+    ),
     Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
     Issue(anyhow::Result<GhIssue>, Option<String>),
     SuggestionData(SuggestionDataPayload),

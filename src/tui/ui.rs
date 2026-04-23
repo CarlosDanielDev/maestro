@@ -180,19 +180,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::MilestoneWizard => {
-            let lines = vec![
-                Line::from(""),
-                Line::from(Span::styled(
-                    "New Milestone — coming soon",
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
-                Line::from(""),
-                Line::from("This wizard lands in #294. Press Esc to return."),
-            ];
-            f.render_widget(
-                Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center),
-                chunks[1],
-            );
+            if let Some(ref mut screen) = app.milestone_wizard_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
         }
         TuiMode::IssueBrowser => {
             if let Some(ref mut screen) = app.issue_browser_screen {

@@ -46,6 +46,44 @@ use std::io;
 use std::time::Duration;
 use summary::print_summary;
 
+/// Spawn `claude --print` with the supplied prompt and return its stdout.
+/// Used by the Milestone Wizard's `AiStructuring` step. Errors are
+/// converted to human-readable strings shown on the wizard's `Failed`
+/// step.
+async fn run_claude_print(prompt: &str) -> Result<String, String> {
+    use tokio::io::AsyncWriteExt;
+    use tokio::process::Command;
+
+    let mut child = Command::new("claude")
+        .args(["--print"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to spawn `claude`: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(prompt.as_bytes())
+            .await
+            .map_err(|e| format!("failed writing prompt: {e}"))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("failed waiting on `claude`: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "`claude --print` exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 fn enter_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     execute!(
         out,
@@ -419,6 +457,20 @@ async fn event_loop(
                     // The Issue Wizard `Creating` step is fully wired in #298.
                     // The scaffold (#291) carries the command variant so the
                     // payload type and dispatch shape are stable.
+                }
+                app::TuiCommand::LaunchAiPlanning(payload) => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let prompt =
+                            crate::tui::screens::milestone_wizard::build_planning_prompt(
+                                &payload,
+                            );
+                        let res = run_claude_print(&prompt).await;
+                        let parsed = res.and_then(|raw| {
+                            crate::tui::screens::milestone_wizard::parse_planning_response(&raw)
+                        });
+                        let _ = tx.send(app::TuiDataEvent::AiPlanningResult(parsed));
+                    });
                 }
                 app::TuiCommand::FetchProjectStats => {
                     let tx = app.data_tx.clone();
