@@ -336,38 +336,16 @@ impl IssueWizardScreen {
     }
 
     fn draw_field(&self, f: &mut Frame, area: Rect, field: FieldId) {
-        let focused = self.focused_field() == Some(field);
-        let border_style = if focused {
-            Style::default()
-                .fg(Color::LightCyan)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().add_modifier(Modifier::DIM)
+        // The textarea owns its own block (set by `refresh_field_blocks`
+        // on the mutable draw entry point) and its own cursor rendering.
+        let step_fields = self.step_fields();
+        let Some(idx) = step_fields.iter().position(|f| *f == field) else {
+            return;
         };
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(border_style)
-            .title(field.label());
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        let content = self.field_value(field);
-        let display: Vec<Line> = if content.is_empty() && !focused {
-            vec![Line::from(Span::styled(
-                "(empty)",
-                Style::default().add_modifier(Modifier::DIM),
-            ))]
-        } else {
-            let mut lines: Vec<Line> = content.split('\n').map(Line::from).collect();
-            if focused && let Some(last) = lines.last_mut() {
-                last.spans.push(Span::styled(
-                    "▏",
-                    Style::default().add_modifier(Modifier::SLOW_BLINK),
-                ));
-            }
-            lines
+        let Some(ta_field) = self.fields.get(idx) else {
+            return;
         };
-        f.render_widget(Paragraph::new(display), inner);
+        f.render_widget(ta_field.area(), area);
     }
 }
 

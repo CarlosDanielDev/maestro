@@ -126,13 +126,18 @@ pub fn sequence_line(issues: &[AiProposedIssue]) -> String {
 }
 
 use super::prompt_input::{ClipboardContent, ClipboardProvider, SystemClipboard};
-use super::wizard_paste::{append_paste, sanitize_paste};
+use super::wizard_fields::TextAreaField;
 use super::{Screen, ScreenAction};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::{Frame, layout::Rect};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders},
+};
 
 /// AI-guided wizard for milestone planning. #294 set up the scaffold
 /// and AI launch; #297 wires the Review/Preview/Materializing/Complete
@@ -140,7 +145,9 @@ use ratatui::{Frame, layout::Rect};
 pub struct MilestoneWizardScreen {
     step: MilestoneWizardStep,
     payload: MilestonePlanPayload,
-    doc_buffer: String,
+    pub(super) goal_field: TextAreaField,
+    pub(super) non_goals_field: TextAreaField,
+    pub(super) doc_buffer_field: TextAreaField,
     clipboard: Box<dyn ClipboardProvider>,
     planning_in_flight: bool,
     generated_plan: Option<AiGeneratedPlan>,
@@ -169,7 +176,9 @@ impl MilestoneWizardScreen {
         Self {
             step: MilestoneWizardStep::default(),
             payload: MilestonePlanPayload::default(),
-            doc_buffer: String::new(),
+            goal_field: TextAreaField::multi_line(),
+            non_goals_field: TextAreaField::multi_line(),
+            doc_buffer_field: TextAreaField::single_line(),
             clipboard,
             planning_in_flight: false,
             generated_plan: None,
@@ -182,39 +191,47 @@ impl MilestoneWizardScreen {
         }
     }
 
-    /// Append a bracketed paste to the step's active text surface. On
-    /// `DocReferences`, newline-separated lines each become a separate
-    /// reference entry (matches how users typically copy paths).
+    /// Route a pasted payload into the active text surface for the
+    /// current step. `TextAreaField::insert_sanitized` handles the
+    /// control-char filter; on `DocReferences`, newline-separated
+    /// lines each commit as a separate reference (matches how users
+    /// typically copy path lists).
     pub fn paste_text_into_active(&mut self, text: &str) {
         match self.step {
             MilestoneWizardStep::GoalDefinition => {
-                append_paste(&mut self.payload.goals, text, true);
+                self.goal_field.insert_sanitized(text);
             }
             MilestoneWizardStep::NonGoals => {
-                append_paste(&mut self.payload.non_goals, text, true);
+                self.non_goals_field.insert_sanitized(text);
             }
             MilestoneWizardStep::DocReferences => {
-                let sanitised = sanitize_paste(text);
+                // Filter control chars once so the branch logic below
+                // can split on `\n` cleanly (stray `\x1b` etc. won't
+                // mask a newline).
+                let sanitised: String = text
+                    .chars()
+                    .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+                    .collect();
                 if sanitised.contains('\n') {
                     for line in sanitised
                         .lines()
                         .map(|l| l.trim())
                         .filter(|l| !l.is_empty())
                     {
-                        self.doc_buffer.clear();
-                        self.doc_buffer.push_str(line);
+                        self.doc_buffer_field.set_text(line);
                         self.commit_doc_buffer();
                     }
                 } else {
-                    self.doc_buffer.push_str(&sanitised);
+                    self.doc_buffer_field.insert_sanitized(&sanitised);
                 }
             }
             _ => {}
         }
+        self.sync_fields_into_payload();
     }
 
     /// Ctrl+V handler — image clipboard content is captured as an
-    /// attachment, text is appended to the active field.
+    /// attachment, text is routed through `paste_text_into_active`.
     pub fn paste_from_clipboard(&mut self) {
         match self.clipboard.read() {
             ClipboardContent::Image(path) => {
@@ -223,13 +240,29 @@ impl MilestoneWizardScreen {
                     .push(path.to_string_lossy().to_string());
             }
             ClipboardContent::Text(text) => {
-                let sanitised = sanitize_paste(&text);
-                if !sanitised.is_empty() {
-                    self.paste_text_into_active(&sanitised);
-                }
+                self.paste_text_into_active(&text);
             }
             ClipboardContent::Empty | ClipboardContent::Unavailable => {}
         }
+    }
+
+    /// Flush live textarea content into `payload.goals` and
+    /// `payload.non_goals`. `payload.doc_references` is a commit-
+    /// per-entry list and is not covered here — entries land there
+    /// via `commit_doc_buffer`.
+    fn sync_fields_into_payload(&mut self) {
+        self.payload.goals = self.goal_field.text();
+        self.payload.non_goals = self.non_goals_field.text();
+    }
+
+    /// Re-seed the Goals / Non-Goals textareas from `payload` after
+    /// an external caller has mutated `payload_mut()`. Not invoked by
+    /// the wizard itself — it exists so tests can set payload directly
+    /// and still have the textareas render the same content.
+    #[cfg(test)]
+    pub(crate) fn reseed_fields_from_payload(&mut self) {
+        self.goal_field.set_text(&self.payload.goals);
+        self.non_goals_field.set_text(&self.payload.non_goals);
     }
 
     pub fn materialize_enqueued(&self) -> bool {
@@ -330,8 +363,9 @@ impl MilestoneWizardScreen {
         &self.payload
     }
 
-    pub fn doc_buffer(&self) -> &str {
-        &self.doc_buffer
+    #[cfg(test)]
+    pub fn doc_buffer(&self) -> String {
+        self.doc_buffer_field.text()
     }
 
     pub fn is_planning_in_flight(&self) -> bool {
@@ -350,10 +384,13 @@ impl MilestoneWizardScreen {
         self.failure_reason.as_deref()
     }
 
+    /// Validate the current step is allowed to advance. Reads the live
+    /// `goal_field` textarea so the footer error updates as the user
+    /// types (no wait for a sync boundary).
     pub fn validation_error(&self) -> Option<&'static str> {
         match self.step {
             MilestoneWizardStep::GoalDefinition => {
-                if self.payload.goals.trim().is_empty() {
+                if self.goal_field.text().trim().is_empty() {
                     Some("Goals are required")
                 } else {
                     None
@@ -367,6 +404,7 @@ impl MilestoneWizardScreen {
     }
 
     pub fn try_advance(&mut self) -> bool {
+        self.sync_fields_into_payload();
         if self.validation_error().is_some() {
             return false;
         }
@@ -379,6 +417,7 @@ impl MilestoneWizardScreen {
     }
 
     pub fn retreat(&mut self) -> bool {
+        self.sync_fields_into_payload();
         if let Some(prev) = self.step.previous() {
             self.step = prev;
             true
@@ -397,21 +436,22 @@ impl MilestoneWizardScreen {
     }
 
     /// Add the current doc-buffer as a new reference (validated). Clears
-    /// the buffer.
+    /// the buffer field.
     pub fn commit_doc_buffer(&mut self) {
-        let entry = self.doc_buffer.trim().to_string();
+        let entry = self.doc_buffer_field.text().trim().to_string();
         if entry.is_empty() {
             return;
         }
         let valid = Self::validate_reference(&entry);
         self.payload.doc_references.push(entry);
         self.payload.doc_reference_valid.push(valid);
-        self.doc_buffer.clear();
+        self.doc_buffer_field.set_text("");
     }
 
     /// Begin an AI planning request. Caller (event loop) is responsible
     /// for actually spawning the work via `TuiCommand::LaunchAiPlanning`.
     pub fn start_planning(&mut self) {
+        self.sync_fields_into_payload();
         self.planning_in_flight = true;
         self.generated_plan = None;
         self.failure_reason = None;
@@ -432,36 +472,53 @@ impl MilestoneWizardScreen {
         }
     }
 
-    fn append_to_active(&mut self, c: char) {
+    /// Mutable reference to the textarea active on the current step,
+    /// if any. Used to delegate raw key events (char insertion,
+    /// backspace, arrows, selection, undo/redo) to tui-textarea.
+    fn active_field_mut(&mut self) -> Option<&mut TextAreaField> {
         match self.step {
-            MilestoneWizardStep::GoalDefinition => self.payload.goals.push(c),
-            MilestoneWizardStep::NonGoals => self.payload.non_goals.push(c),
-            MilestoneWizardStep::DocReferences => self.doc_buffer.push(c),
-            _ => {}
+            MilestoneWizardStep::GoalDefinition => Some(&mut self.goal_field),
+            MilestoneWizardStep::NonGoals => Some(&mut self.non_goals_field),
+            MilestoneWizardStep::DocReferences => Some(&mut self.doc_buffer_field),
+            _ => None,
         }
     }
 
-    fn backspace_active(&mut self) {
+    /// Refresh the border style on the active textarea to match focus
+    /// visuals (focused = LightCyan + BOLD). Called from `Screen::draw`
+    /// before rendering so `draw_impl` can stay `&self`.
+    pub(super) fn refresh_field_blocks(&mut self) {
+        let border_style = Style::default()
+            .fg(Color::LightCyan)
+            .add_modifier(Modifier::BOLD);
+        let block = |title: &'static str| {
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(title)
+        };
         match self.step {
             MilestoneWizardStep::GoalDefinition => {
-                self.payload.goals.pop();
+                self.goal_field.area_mut().set_block(block("Your goals"));
             }
             MilestoneWizardStep::NonGoals => {
-                self.payload.non_goals.pop();
-            }
-            MilestoneWizardStep::DocReferences => {
-                self.doc_buffer.pop();
+                self.non_goals_field
+                    .area_mut()
+                    .set_block(block("Non-goals"));
             }
             _ => {}
         }
-    }
-
-    fn newline_active(&mut self) {
-        match self.step {
-            MilestoneWizardStep::GoalDefinition => self.payload.goals.push('\n'),
-            MilestoneWizardStep::NonGoals => self.payload.non_goals.push('\n'),
-            _ => {}
-        }
+        // Always-reversed cursor on the active field so it blinks
+        // visibly; other fields keep their default (unused) style.
+        self.goal_field
+            .area_mut()
+            .set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+        self.non_goals_field
+            .area_mut()
+            .set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+        self.doc_buffer_field
+            .area_mut()
+            .set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
     }
 }
 
@@ -537,13 +594,10 @@ impl Screen for MilestoneWizardScreen {
                 self.review_toggle_focused(false);
             }
             (MilestoneWizardStep::Preview, KeyCode::Enter, _) => {
-                // From Preview, Enter starts materialization.
                 self.begin_materialization();
                 return ScreenAction::None;
             }
             (MilestoneWizardStep::Failed, KeyCode::Char('r'), _) => {
-                // Retry from Failed jumps back to Preview so the user can
-                // re-confirm before another creation attempt.
                 self.failure_reason = None;
                 self.step = MilestoneWizardStep::Preview;
             }
@@ -563,7 +617,9 @@ impl Screen for MilestoneWizardScreen {
                 KeyCode::Enter,
                 m,
             ) if m.contains(KeyModifiers::SHIFT) => {
-                self.newline_active();
+                if let Some(field) = self.active_field_mut() {
+                    field.area_mut().insert_newline();
+                }
             }
             (_, KeyCode::Enter, _) => {
                 self.try_advance();
@@ -572,19 +628,15 @@ impl Screen for MilestoneWizardScreen {
                 MilestoneWizardStep::GoalDefinition
                 | MilestoneWizardStep::NonGoals
                 | MilestoneWizardStep::DocReferences,
-                KeyCode::Backspace,
+                _,
                 _,
             ) => {
-                self.backspace_active();
-            }
-            (
-                MilestoneWizardStep::GoalDefinition
-                | MilestoneWizardStep::NonGoals
-                | MilestoneWizardStep::DocReferences,
-                KeyCode::Char(c),
-                m,
-            ) if !m.contains(KeyModifiers::CONTROL) => {
-                self.append_to_active(*c);
+                // Delegate Char, Backspace, Arrows, Home/End, word-wise
+                // jumps, Ctrl+W / Ctrl+Z / Ctrl+Y, selection (Shift+arrows),
+                // etc. to the active TextArea.
+                if let Some(field) = self.active_field_mut() {
+                    field.area_mut().input(event.clone());
+                }
             }
             _ => {}
         }
@@ -592,6 +644,7 @@ impl Screen for MilestoneWizardScreen {
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        self.refresh_field_blocks();
         self.draw_impl(f, area, theme);
     }
 
@@ -645,10 +698,14 @@ mod tests {
     }
 
     #[test]
-    fn goal_chars_append_to_payload_goals() {
+    fn goal_chars_appear_in_live_textarea() {
         let mut s = MilestoneWizardScreen::new();
         type_chars(&mut s, "ship");
-        assert_eq!(s.payload().goals, "ship");
+        // Live textarea reflects the typed content immediately.
+        assert_eq!(s.goal_field.text(), "ship");
+        // Payload is only updated at step-transition / paste boundaries;
+        // typing alone does not flush.
+        assert!(s.payload().goals.is_empty());
     }
 
     #[test]
@@ -675,7 +732,7 @@ mod tests {
             InputMode::Insert,
         );
         type_chars(&mut s, "b");
-        assert_eq!(s.payload().goals, "a\nb");
+        assert_eq!(s.goal_field.text(), "a\nb");
     }
 
     #[test]

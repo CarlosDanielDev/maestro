@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-22 20:00 (UTC)
+> Last updated: 2026-04-23 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -205,12 +205,14 @@ maestro/
 │   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files)
 │   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen; ScreenAction::Push delegates to navigate_to(), ScreenAction::Pop delegates to navigate_back(); Scaffolding case in StartAdaptPipeline dispatch; reads app.config_path directly for settings save (removed relative-path probe at TuiMode::Settings); tracing::warn! when config_path is absent  [Issue #146, #232, #342, #371, #437]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
-│   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen  [Issue #31-33, #86]
+│   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen; pub mod wizard_fields (added #447); wizard_paste removed  [Issue #31-33, #86, #447]
+│   │       ├── adapt_follow_up.rs         # AdaptFollowUp: post-scaffold follow-up prompt screen
 │   │       ├── hollow_retry.rs            # HollowRetryScreen: minimal retry prompt overlay shown when a session stalls and user confirmation is required
-│   │       ├── issue_browser.rs           # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery; set_issues() calls reapply_filters() so active milestone filters are honoured when new issue data arrives  [Issue #32, #46, #117]
 │   │       ├── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action; selected row uses SLOW_BLINK modifier for visibility; border color derived from selection state; progress gauge fill color uses milestone_gauge_color() (green=high completion, red=low); gauge empty portion dimmed; status counts (open/closed/in-progress) rendered BOLD; issue list uses visual hierarchy to distinguish selected vs unselected items  [Issue #33, #299]
 │   │       ├── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter/Alt+Enter inserts newline via insert_newline() (not input()), Ctrl+V pastes from clipboard (image or text), Esc cancels; Up/Down arrows navigate prompt history (injected at construction); image attachment list with [a]/[d]; keybinds bar always visible; uses wrap::soft_wrap_lines() for word-wrapped rendering  [Issue #101, #232, #263]
 │   │       ├── queue_confirmation.rs      # QueueConfirmationScreen: confirmation overlay before bulk-queuing selected issues from the issue browser
+│   │       ├── wizard_fields.rs           # Shared tui-textarea helpers: TextAreaField wraps tui_textarea::TextArea with single-line enforcement and insert_sanitized() paste path; WizardFields manages a fixed-size array of TextAreaField; strips Bidi overrides (U+202A-E, U+2066-9), Unicode line/paragraph separators (U+2028, U+2029), and BOM (U+FEFF) per CVE-2021-42574  [Issue #447]
+│   │       ├── wizard_fields_tests.rs     # Inline unit tests for wizard_fields (split into sibling file to stay under the 400-LOC cap)  [Issue #447]
 │   │       ├── wrap.rs                    # Soft-wrap utilities: soft_wrap_lines() splits a multi-line string into display lines that fit within a given column width using unicode-width for correct grapheme measurement  [Issue #263]
 │   │       ├── adapt/                     # Adapt wizard screen components  [Issue #88, #371]
 │   │       │   ├── mod.rs                 # AdaptScreen struct with Screen trait impl; wizard entry point; complete_scaffold(), set_scaffold_result()  [Issue #371]
@@ -220,10 +222,31 @@ maestro/
 │   │       │   ├── mod.rs                 # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; loading_suggestions bool field; R key emits RefreshSuggestions; Tab-based focus navigation  [Issue #31, #49, #34, #35, #86]
 │   │       │   ├── draw.rs                # ratatui rendering for home screen layout and panels; draw_suggestions() renders Suggestions panel with "Loading..." placeholder
 │   │       │   └── types.rs               # HomeSection, SuggestionKind, Suggestion, ProjectInfo types (username field)
+│   │       ├── issue_browser/             # Issue browser screen components
+│   │       │   ├── mod.rs                 # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery; reapply_filters() honours active filters on new data  [Issue #32, #46, #117]
+│   │       │   └── draw.rs                # ratatui rendering for issue browser layout and panels
+│   │       ├── issue_wizard/              # Issue creation wizard screen components  [Issue #447]
+│   │       │   ├── mod.rs                 # IssueWizardScreen: multi-step wizard using WizardFields; sync_fields_into_payload(), rebuild_fields_for_step(), field_text(), refresh_field_blocks()  [Issue #447]
+│   │       │   ├── types.rs               # IssueWizardStep state machine and form payload types
+│   │       │   ├── ai_review.rs           # AI-assisted review step: calls LLM to review draft issue fields before submission
+│   │       │   └── draw.rs                # ratatui rendering; renders TextArea widgets via refresh_field_blocks() mutable draw entry point  [Issue #447]
+│   │       ├── landing/                   # Landing screen components
+│   │       │   ├── mod.rs                 # LandingScreen struct with Screen trait impl
+│   │       │   ├── types.rs               # Landing screen type definitions
+│   │       │   └── draw.rs                # ratatui rendering for landing screen
+│   │       ├── milestone_wizard/          # Milestone creation wizard screen components  [Issue #447]
+│   │       │   ├── mod.rs                 # MilestoneWizardScreen: three persistent TextAreaFields (goal_field, non_goals_field, doc_buffer_field)  [Issue #447]
+│   │       │   ├── types.rs               # MilestoneWizardStep state machine and form payload types
+│   │       │   ├── ai_planning.rs         # AI-assisted planning step: calls LLM to generate milestone dependency graph
+│   │       │   └── draw.rs                # ratatui rendering; doc-refs step splits committed list / in-progress buffer / help hint  [Issue #447]
 │   │       ├── pr_review/                 # PR review screen components
 │   │       │   ├── mod.rs                 # PrReviewScreen struct with Screen trait impl
 │   │       │   ├── types.rs               # PrReviewStep state machine, ReviewForm types
 │   │       │   └── draw.rs                # ratatui rendering logic with markdown integration
+│   │       ├── project_stats/             # Project statistics screen components
+│   │       │   ├── mod.rs                 # ProjectStatsScreen struct with Screen trait impl
+│   │       │   ├── types.rs               # Project stats type definitions
+│   │       │   └── draw.rs                # ratatui rendering for project statistics display
 │   │       ├── release_notes/             # Release notes screen components
 │   │       │   ├── mod.rs                 # ReleaseNotesScreen struct with Screen trait impl
 │   │       │   └── draw.rs                # ratatui rendering for release notes display
@@ -405,14 +428,36 @@ maestro/
 | `src/tui/panels.rs` | Split-pane multi-session view; `panel_border_type()` returns thick borders for the focused grid panel; `▸` indicator on the selected panel title; `GatesRunning` (Cyan), `NeedsReview` (LightYellow), and `CiFix` (LightMagenta) status colors (Issues #40, #41) |
 | `src/tui/ui.rs` | `draw_upgrade_banner()`: top-of-screen banner that renders all `UpgradeState` variants; `draw_gh_auth_warning()`: persistent top-of-screen banner shown when gh CLI is not authenticated, blocks gh-dependent actions until resolved; `draw_completion_overlay()`: centred overlay rendering PR links (underlined, full GitHub URL or `#N`), per-session error summaries in error color, and a keybindings bar with `[i]` Browse issues, `[r]` New prompt, `[l]` View logs, `[q]` Quit, `[Esc]` Dashboard; `ContinuousPause` render branch with pause overlay and status bar indicator; `HelpBarContext` struct drives context-aware keybinding dimming in the help bar; breadcrumb trail rendered in status bar from `nav_stack.breadcrumbs()` using `TuiMode::breadcrumb_label()` (Issues #83, #84, #85, #118, #158, #342) |
 | `src/tui/screens/` | Interactive TUI screen components (Issues #31-33) |
-| `src/tui/screens/mod.rs` | `ScreenAction` enum, `SessionConfig`; re-exports all screen types including `PromptInputScreen` |
-| `src/tui/screens/home/mod.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
-| `src/tui/screens/issue_browser.rs` | `IssueBrowserScreen`: navigable issue list with multi-select, label/milestone filters; `set_issues()` (Issues #32, #46) |
+| `src/tui/screens/mod.rs` | `ScreenAction` enum, `SessionConfig`; re-exports all screen types including `PromptInputScreen`; adds `pub mod wizard_fields`; removes `wizard_paste` (sanitizer moved into `TextAreaField::insert_sanitized`) (Issues #31-33, #86, #447) |
+| `src/tui/screens/adapt_follow_up.rs` | `AdaptFollowUp`: post-scaffold follow-up prompt screen |
+| `src/tui/screens/hollow_retry.rs` | `HollowRetryScreen`: minimal retry prompt overlay for stalled sessions awaiting user confirmation |
 | `src/tui/screens/milestone.rs` | `MilestoneScreen`: milestone list with progress gauge and run-all action (Issue #33) |
 | `src/tui/screens/prompt_input.rs` | `PromptInputScreen`: free-text prompt entry; `Enter` submits, `Shift+Enter`/`Alt+Enter` inserts newline via `insert_newline()` (not `input()`), `Ctrl+V` pastes from clipboard (image or text), `Esc` cancels; Up/Down arrows navigate prompt history; image attachment list with `[a]`/`[d]`; custom wrapped rendering via `wrap::soft_wrap_lines()` replaces tui-textarea widget rendering (Issues #101, #232, #263) |
-| `src/tui/screens/wrap.rs` | Soft-wrap utilities: `soft_wrap_lines()` splits a multi-line string into display lines that fit within a given column width using `unicode-width` for correct grapheme measurement (Issue #263) |
-| `src/tui/screens/hollow_retry.rs` | `HollowRetryScreen`: minimal retry prompt overlay for stalled sessions awaiting user confirmation |
 | `src/tui/screens/queue_confirmation.rs` | `QueueConfirmationScreen`: confirmation overlay before bulk-queuing selected issues from the issue browser |
+| `src/tui/screens/wizard_fields.rs` | Shared `tui-textarea` helpers: `TextAreaField` wraps `tui_textarea::TextArea` with single-line enforcement and `insert_sanitized()` paste path; `WizardFields` manages a fixed-size array of `TextAreaField`; strips Bidi overrides (U+202A–E, U+2066–9), Unicode line/paragraph separators (U+2028, U+2029), and BOM (U+FEFF) — CVE-2021-42574 "Trojan Source" hardening (Issue #447) |
+| `src/tui/screens/wizard_fields_tests.rs` | Inline unit tests for `wizard_fields` — split into sibling file to stay under the 400-LOC cap (Issue #447) |
+| `src/tui/screens/wrap.rs` | Soft-wrap utilities: `soft_wrap_lines()` splits a multi-line string into display lines that fit within a given column width using `unicode-width` for correct grapheme measurement (Issue #263) |
+| `src/tui/screens/home/mod.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
+| `src/tui/screens/issue_browser/` | Issue browser screen: navigable issue list with multi-select, label/milestone filters, and preview pane |
+| `src/tui/screens/issue_browser/mod.rs` | `IssueBrowserScreen`: multi-select list with label/milestone filters; `set_issues()` delivers async data; `reapply_filters()` honours active filters when new data arrives (Issues #32, #46, #117) |
+| `src/tui/screens/issue_wizard/` | Issue creation wizard screen: multi-step TUI wizard for authoring GitHub issues (Issue #447) |
+| `src/tui/screens/issue_wizard/mod.rs` | `IssueWizardScreen`: replaced hand-rolled `String` buffer with `WizardFields`; adds `sync_fields_into_payload()`, `rebuild_fields_for_step()`, `field_text()`, `refresh_field_blocks()`; paste path via `insert_sanitized()` (Issue #447) |
+| `src/tui/screens/issue_wizard/types.rs` | `IssueWizardStep` state machine and form payload types |
+| `src/tui/screens/issue_wizard/ai_review.rs` | AI-assisted review step: calls LLM to review draft issue fields before submission |
+| `src/tui/screens/issue_wizard/draw.rs` | ratatui rendering; renders `TextArea` widget directly; blocks set via `refresh_field_blocks()` on mutable draw entry point (Issue #447) |
+| `src/tui/screens/landing/` | Landing screen components |
+| `src/tui/screens/landing/mod.rs` | `LandingScreen` struct with `Screen` trait impl |
+| `src/tui/screens/landing/types.rs` | Landing screen type definitions |
+| `src/tui/screens/landing/draw.rs` | ratatui rendering for landing screen |
+| `src/tui/screens/milestone_wizard/` | Milestone creation wizard screen: multi-step TUI wizard for authoring GitHub milestones (Issue #447) |
+| `src/tui/screens/milestone_wizard/mod.rs` | `MilestoneWizardScreen`: three persistent `TextAreaField`s (`goal_field`, `non_goals_field`, `doc_buffer_field`); analogous migration to `IssueWizardScreen` (Issue #447) |
+| `src/tui/screens/milestone_wizard/types.rs` | `MilestoneWizardStep` state machine and form payload types |
+| `src/tui/screens/milestone_wizard/ai_planning.rs` | AI-assisted planning step: calls LLM to generate milestone dependency graph |
+| `src/tui/screens/milestone_wizard/draw.rs` | ratatui rendering; doc-refs step splits committed list / in-progress buffer / help hint (Issue #447) |
+| `src/tui/screens/project_stats/` | Project statistics screen components |
+| `src/tui/screens/project_stats/mod.rs` | `ProjectStatsScreen` struct with `Screen` trait impl |
+| `src/tui/screens/project_stats/types.rs` | Project stats type definitions |
+| `src/tui/screens/project_stats/draw.rs` | ratatui rendering for project statistics display |
 | `src/tui/screens/settings/mod.rs` | `SettingsScreen`: tabbed interactive settings UI; `Flags` tab shows all feature flags with name, state, source (`Default`/`Config`/`Cli`), and description; footer built from focused widget's `edit_hint()` so edit keys (`Space`/`Enter`/`←→`) are always advertised; `KeymapProvider::keybindings()` gains a third `"Edit"` group for the `?` help overlay; `save_config` returns `Err` when `config_path` is `None`; Ctrl+S failures surfaced as a 5-second title-bar flash via `save_error_flash: Option<(String, Instant)>` (`accent_error`, message sanitized + truncated to 80 chars) (Issues #124, #146, #432, #437) |
 | `src/icon_mode.rs` | Shared icon mode detection: `AtomicBool` global, `init_from_config()`, `use_nerd_font()`; reads `tui.ascii_icons` config and `MAESTRO_ASCII_ICONS` env var (Issue #307) |
 | `src/icons.rs` | Shared icon registry: `IconId` enum (38 variants + `NeedsReview`), `IconPair` struct, `icon_pair()` const jump table, `get(IconId)`, `get_for_mode(id, nerd_font)`; `CheckboxOn` = U+F14A (nf-fa-check_square), `CheckboxOff` = U+F0C8 (nf-fa-square) — FA-core glyphs replacing legacy nf-oct codepoints (Issues #308, #433) |
