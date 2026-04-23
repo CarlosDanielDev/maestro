@@ -177,6 +177,9 @@ pub enum TuiCommand {
     FetchIssues,
     FetchMilestones,
     FetchSuggestionData,
+    /// Create a new GitHub issue from a wizard payload (#291+#298).
+    #[allow(dead_code)] // Reason: emitted from Issue Wizard `Creating` step (#298)
+    CreateIssue(crate::tui::screens::issue_wizard::IssueCreationPayload),
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
     LaunchPromptSession(PromptSessionConfig),
@@ -198,6 +201,10 @@ pub enum TuiCommand {
 /// Data events delivered from background fetch tasks.
 pub enum TuiDataEvent {
     Issues(anyhow::Result<Vec<GhIssue>>),
+    /// Result of creating a GitHub issue via the Issue Wizard (#291+#298).
+    /// Carries the new issue number on success.
+    #[allow(dead_code)] // Reason: consumed by Issue Wizard `Complete`/`Failed` steps (#298)
+    IssueCreated(anyhow::Result<u64>),
     Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
     Issue(anyhow::Result<GhIssue>, Option<String>),
     SuggestionData(SuggestionDataPayload),

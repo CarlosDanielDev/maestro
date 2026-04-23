@@ -415,6 +415,11 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::AdaptMaterializeResult(result));
                     });
                 }
+                app::TuiCommand::CreateIssue(_payload) => {
+                    // The Issue Wizard `Creating` step is fully wired in #298.
+                    // The scaffold (#291) carries the command variant so the
+                    // payload type and dispatch shape are stable.
+                }
             }
         }
 

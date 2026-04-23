@@ -10,6 +10,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
     let screen: &mut dyn Screen = match app.tui_mode {
         app::TuiMode::Dashboard => app.home_screen.as_mut()?,
         app::TuiMode::Landing => app.landing_screen.as_mut()?,
+        app::TuiMode::IssueWizard => app.issue_wizard_screen.as_mut()?,
         app::TuiMode::IssueBrowser => app.issue_browser_screen.as_mut()?,
         app::TuiMode::MilestoneView => app.milestone_screen.as_mut()?,
         app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
@@ -70,6 +71,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app::TuiMode::Landing => {
                     if app.landing_screen.is_none() {
                         app.landing_screen = Some(screens::LandingScreen::new());
+                    }
+                }
+                app::TuiMode::IssueWizard => {
+                    if app.issue_wizard_screen.is_none() {
+                        app.issue_wizard_screen = Some(screens::IssueWizardScreen::new());
                     }
                 }
                 app::TuiMode::IssueBrowser => {
@@ -135,6 +141,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             match app.tui_mode {
                 app::TuiMode::IssueBrowser => {
                     app.issue_browser_screen = None;
+                }
+                app::TuiMode::IssueWizard => {
+                    app.issue_wizard_screen = None;
                 }
                 app::TuiMode::MilestoneView => {
                     app.milestone_screen = None;

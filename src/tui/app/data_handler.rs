@@ -345,6 +345,11 @@ impl App {
                     LogLevel::Error,
                 );
             }
+            TuiDataEvent::IssueCreated(_) => {
+                // Wired by Issue Wizard `Complete`/`Failed` step handlers in
+                // #298. The scaffold (#291) carries the variant so the
+                // event stream shape is stable.
+            }
         }
     }
 }

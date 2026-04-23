@@ -4,6 +4,7 @@ pub mod hollow_retry;
 pub mod home;
 #[allow(dead_code)]
 pub mod issue_browser;
+pub mod issue_wizard;
 pub mod landing;
 pub mod milestone;
 pub mod pr_review;
@@ -17,6 +18,7 @@ pub use adapt_follow_up::AdaptFollowUpScreen;
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
 pub use issue_browser::IssueBrowserScreen;
+pub use issue_wizard::IssueWizardScreen;
 pub use landing::LandingScreen;
 pub use milestone::MilestoneScreen;
 pub use prompt_input::PromptInputScreen;

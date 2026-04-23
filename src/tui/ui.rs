@@ -169,7 +169,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
-        TuiMode::IssueWizard | TuiMode::MilestoneWizard | TuiMode::ProjectStats => {
+        TuiMode::IssueWizard => {
+            if let Some(ref mut screen) = app.issue_wizard_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
+        TuiMode::MilestoneWizard | TuiMode::ProjectStats => {
             let label = app.tui_mode.breadcrumb_label();
             let lines = vec![
                 Line::from(""),
