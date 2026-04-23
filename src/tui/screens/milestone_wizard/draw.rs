@@ -34,8 +34,11 @@ impl MilestoneWizardScreen {
             MilestoneWizardStep::NonGoals => self.draw_non_goals_step(f, chunks[1]),
             MilestoneWizardStep::DocReferences => self.draw_doc_refs_step(f, chunks[1]),
             MilestoneWizardStep::AiStructuring => self.draw_ai_structuring_step(f, chunks[1]),
+            MilestoneWizardStep::ReviewPlan => self.draw_review_step(f, chunks[1]),
+            MilestoneWizardStep::Preview => self.draw_preview_step(f, chunks[1]),
+            MilestoneWizardStep::Materializing => self.draw_materializing_step(f, chunks[1]),
+            MilestoneWizardStep::Complete => self.draw_complete_step(f, chunks[1]),
             MilestoneWizardStep::Failed => self.draw_failed_step(f, chunks[1]),
-            _ => self.draw_stub(f, chunks[1]),
         }
         self.draw_footer(f, chunks[2]);
     }
@@ -166,6 +169,127 @@ impl MilestoneWizardScreen {
         );
     }
 
+    fn draw_review_step(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Review Plan  (j/k: navigate, a: accept, x: reject, Enter: continue)");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let Some(plan) = self.generated_plan() else {
+            f.render_widget(
+                Paragraph::new("  No plan yet. Press Enter on AI Structuring to fetch one."),
+                inner,
+            );
+            return;
+        };
+        let lines: Vec<Line> = plan
+            .issues
+            .iter()
+            .enumerate()
+            .map(|(i, issue)| {
+                let cursor = if i == self.review_focus() { ">" } else { " " };
+                let mark = if issue.accepted {
+                    Span::styled("[a]", Style::default().fg(Color::LightGreen))
+                } else {
+                    Span::styled("[x]", Style::default().fg(Color::LightRed))
+                };
+                Line::from(vec![
+                    Span::raw(format!("{} ", cursor)),
+                    mark,
+                    Span::raw(format!(" {}", issue.title)),
+                ])
+            })
+            .collect();
+        let count_accepted = plan.issues.iter().filter(|i| i.accepted).count();
+        let count_rejected = plan.issues.len() - count_accepted;
+        let mut all = lines;
+        all.push(Line::from(""));
+        all.push(Line::from(format!(
+            "{} accepted, {} rejected",
+            count_accepted, count_rejected
+        )));
+        f.render_widget(Paragraph::new(all), inner);
+    }
+
+    fn draw_preview_step(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Preview  (Enter to confirm and create on GitHub)");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let Some(plan) = self.generated_plan() else {
+            f.render_widget(Paragraph::new("  No plan to preview."), inner);
+            return;
+        };
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(Span::styled(
+            plan.milestone_title.clone(),
+            Style::default().add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(plan.milestone_description.clone()));
+        lines.push(Line::from(""));
+        let levels = super::level_buckets(&plan.issues);
+        for (level, indices) in levels.iter().enumerate() {
+            if indices.is_empty() {
+                continue;
+            }
+            lines.push(Line::from(Span::styled(
+                format!("Level {}", level),
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            for &idx in indices {
+                let issue = &plan.issues[idx];
+                let marker = if issue.accepted { "•" } else { "✗" };
+                lines.push(Line::from(format!("  {} {}", marker, issue.title)));
+            }
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(super::sequence_line(&plan.issues)));
+        f.render_widget(Paragraph::new(lines), inner);
+    }
+
+    fn draw_materializing_step(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::ALL).title("Creating");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let label = match self.materialize_progress() {
+            Some((created, total)) => format!("Creating issue {}/{}…", created, total),
+            None => "Submitting plan to GitHub…".to_string(),
+        };
+        f.render_widget(
+            Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    label,
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+            ])
+            .alignment(Alignment::Center),
+            inner,
+        );
+    }
+
+    fn draw_complete_step(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::ALL).title("Complete");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let mut lines: Vec<Line> = Vec::new();
+        if let Some(num) = self.created_milestone_number() {
+            lines.push(Line::from(Span::styled(
+                format!("Milestone #{} created", num),
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
+        for n in self.created_issue_numbers() {
+            lines.push(Line::from(format!("  • #{}", n)));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from("Press Enter to return to Landing."));
+        f.render_widget(Paragraph::new(lines), inner);
+    }
+
     fn draw_failed_step(&self, f: &mut Frame, area: Rect) {
         let block = Block::default().borders(Borders::ALL).title("Failed");
         let inner = block.inner(area);
@@ -177,7 +301,7 @@ impl MilestoneWizardScreen {
                 Style::default().fg(Color::LightRed),
             )),
             Line::from(""),
-            Line::from("Press Esc to go back."),
+            Line::from("Press r to retry, Esc to go back."),
         ];
         f.render_widget(
             Paragraph::new(lines).alignment(Alignment::Center),
@@ -185,6 +309,7 @@ impl MilestoneWizardScreen {
         );
     }
 
+    #[allow(dead_code)]
     fn draw_stub(&self, f: &mut Frame, area: Rect) {
         let body = Paragraph::new(vec![
             Line::from(""),

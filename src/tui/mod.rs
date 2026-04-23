@@ -475,6 +475,14 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::AiReviewResult(res));
                     });
                 }
+                app::TuiCommand::CreateMilestoneWithIssues(plan) => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let res =
+                            crate::tui::screens::milestone_wizard::materialize_plan(&plan).await;
+                        let _ = tx.send(app::TuiDataEvent::MilestonePlanCreated(res));
+                    });
+                }
                 app::TuiCommand::LaunchAiPlanning(payload) => {
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {

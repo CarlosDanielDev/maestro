@@ -35,6 +35,45 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
                 .push(app::TuiCommand::LaunchAiReview(payload));
         }
     }
+
+    // Milestone wizard: AiStructuring auto-launch + Materializing creation.
+    if app.tui_mode == app::TuiMode::MilestoneWizard {
+        let (start_planning, start_creating) = match app.milestone_wizard_screen.as_ref() {
+            Some(s) => (
+                s.entered_ai_structuring_step(),
+                matches!(
+                    s.step(),
+                    crate::tui::screens::milestone_wizard::MilestoneWizardStep::Materializing
+                ) && s.materialize_progress().is_some()
+                    && app.milestone_wizard_creating_in_flight.is_none(),
+            ),
+            None => (false, false),
+        };
+        if start_planning {
+            let payload = app
+                .milestone_wizard_screen
+                .as_ref()
+                .map(|s| s.payload().clone());
+            if let Some(payload) = payload {
+                if let Some(ref mut s) = app.milestone_wizard_screen {
+                    s.start_planning();
+                }
+                app.pending_commands
+                    .push(app::TuiCommand::LaunchAiPlanning(payload));
+            }
+        }
+        if start_creating {
+            let plan = app
+                .milestone_wizard_screen
+                .as_ref()
+                .and_then(|s| s.generated_plan().cloned());
+            if let Some(plan) = plan {
+                app.milestone_wizard_creating_in_flight = Some(());
+                app.pending_commands
+                    .push(app::TuiCommand::CreateMilestoneWithIssues(plan));
+            }
+        }
+    }
 }
 
 pub(super) fn dispatch_to_active_screen_then_hook(

@@ -192,6 +192,10 @@ pub enum TuiCommand {
     FetchWizardDependencies,
     /// Run the AI review companion against the current draft (#296).
     LaunchAiReview(crate::tui::screens::issue_wizard::IssueCreationPayload),
+    /// Materialize a Milestone Wizard plan into GitHub (#297). Creates
+    /// the milestone first, then each accepted issue with its
+    /// `Blocked By` rewritten to actual issue numbers.
+    CreateMilestoneWithIssues(crate::tui::screens::milestone_wizard::AiGeneratedPlan),
     LaunchSession(SessionConfig),
     LaunchSessions(Vec<SessionConfig>),
     LaunchPromptSession(PromptSessionConfig),
@@ -229,6 +233,10 @@ pub enum TuiDataEvent {
     /// AI review companion result (#296). Carries the raw response text
     /// or a human-readable failure reason.
     AiReviewResult(Result<String, String>),
+    /// Result of materializing a milestone plan into GitHub (#297).
+    MilestonePlanCreated(
+        Result<crate::tui::screens::milestone_wizard::MilestoneCreationResult, String>,
+    ),
     Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
     Issue(anyhow::Result<GhIssue>, Option<String>),
     SuggestionData(SuggestionDataPayload),

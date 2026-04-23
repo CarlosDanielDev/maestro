@@ -382,6 +382,12 @@ impl App {
                     screen.apply_ai_review(result);
                 }
             }
+            TuiDataEvent::MilestonePlanCreated(result) => {
+                self.milestone_wizard_creating_in_flight = None;
+                if let Some(ref mut screen) = self.milestone_wizard_screen {
+                    screen.finish_materialization(result);
+                }
+            }
         }
     }
 }

@@ -5,6 +5,133 @@ pub mod types;
 pub use ai_planning::{build_planning_prompt, parse_planning_response};
 pub use types::{AiGeneratedPlan, AiProposedIssue, MilestonePlanPayload, MilestoneWizardStep};
 
+/// Result of a successful milestone+issues materialization (#297).
+#[derive(Debug, Clone)]
+pub struct MilestoneCreationResult {
+    pub milestone_number: u64,
+    pub issue_numbers: Vec<u64>,
+}
+
+/// Group accepted issues by their dependency level (length of the longest
+/// `blocked_by` chain). Level 0 has no dependencies; Level N depends on
+/// at least one issue at Level N-1. Used by Preview rendering and the
+/// dependency graph generator.
+pub fn level_buckets(issues: &[AiProposedIssue]) -> Vec<Vec<usize>> {
+    let mut levels: Vec<Option<usize>> = vec![None; issues.len()];
+    let mut buckets: Vec<Vec<usize>> = Vec::new();
+    let mut progress = true;
+    while progress {
+        progress = false;
+        for (i, issue) in issues.iter().enumerate() {
+            if levels[i].is_some() || !issue.accepted {
+                continue;
+            }
+            let dep_levels: Option<Vec<usize>> = issue
+                .blocked_by
+                .iter()
+                .map(|d| issues.get(*d).and(levels[*d]))
+                .collect();
+            if let Some(deps) = dep_levels {
+                let level = deps.into_iter().max().map_or(0, |m| m + 1);
+                levels[i] = Some(level);
+                while buckets.len() <= level {
+                    buckets.push(Vec::new());
+                }
+                buckets[level].push(i);
+                progress = true;
+            }
+        }
+    }
+    buckets
+}
+
+/// Materialize an accepted plan into GitHub: create the milestone, then
+/// each accepted issue in dependency order with its `Blocked By` section
+/// rewritten to use actual issue numbers. Used by the `Materializing`
+/// step's background task (#297).
+pub async fn materialize_plan(
+    plan: &AiGeneratedPlan,
+) -> Result<MilestoneCreationResult, String> {
+    use crate::provider::github::client::{GhCliClient, GitHubClient};
+    let client = GhCliClient::new();
+    let milestone_number = client
+        .create_milestone(&plan.milestone_title, &plan.milestone_description)
+        .await
+        .map_err(|e| format!("create_milestone failed: {e}"))?;
+
+    let buckets = level_buckets(&plan.issues);
+    let mut number_for_index: std::collections::HashMap<usize, u64> =
+        std::collections::HashMap::new();
+    let mut created: Vec<u64> = Vec::new();
+
+    for level in buckets {
+        for idx in level {
+            let issue = &plan.issues[idx];
+            let blocked_lines: Vec<String> = issue
+                .blocked_by
+                .iter()
+                .filter_map(|d| number_for_index.get(d).map(|n| format!("- #{}", n)))
+                .collect();
+            let blocked_by_section = if blocked_lines.is_empty() {
+                "## Blocked By\n\n- None\n".to_string()
+            } else {
+                format!("## Blocked By\n\n{}\n", blocked_lines.join("\n"))
+            };
+            let body = format!(
+                "## Overview\n\n{}\n\n{}",
+                issue.overview.trim(),
+                blocked_by_section
+            );
+            let labels = vec!["enhancement".to_string(), "maestro:ready".to_string()];
+            let number = client
+                .create_issue(
+                    &issue.title,
+                    &body,
+                    &labels,
+                    Some(milestone_number),
+                )
+                .await
+                .map_err(|e| format!("create_issue '{}' failed: {e}", issue.title))?;
+            number_for_index.insert(idx, number);
+            created.push(number);
+        }
+    }
+
+    Ok(MilestoneCreationResult {
+        milestone_number,
+        issue_numbers: created,
+    })
+}
+
+/// Build the `Sequence:` line shown at the bottom of the Preview step.
+/// Mirrors the project convention: `#a → #b ∥ #c → #d`.
+pub fn sequence_line(issues: &[AiProposedIssue]) -> String {
+    let levels = level_buckets(issues);
+    let parts: Vec<String> = levels
+        .iter()
+        .filter(|l| !l.is_empty())
+        .map(|level| {
+            let titles: Vec<String> = level
+                .iter()
+                .map(|&idx| {
+                    let title = &issues[idx].title;
+                    if title.len() > 24 {
+                        format!("{}…", &title[..23])
+                    } else {
+                        title.clone()
+                    }
+                })
+                .collect();
+            titles.join(" ∥ ")
+        })
+        .collect();
+    if parts.is_empty() {
+        "Sequence: (empty)".to_string()
+    } else {
+        format!("Sequence: {}", parts.join(" → "))
+    }
+}
+
 use super::{Screen, ScreenAction};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -12,18 +139,24 @@ use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{Frame, layout::Rect};
 
-/// AI-guided wizard for milestone planning. #294 owns the scaffold
-/// (steps, payload, AI launch). Review/Preview/Materializing/Complete
-/// land in #297.
+/// AI-guided wizard for milestone planning. #294 set up the scaffold
+/// and AI launch; #297 wires the Review/Preview/Materializing/Complete
+/// steps and the GitHub creation chain.
 pub struct MilestoneWizardScreen {
     step: MilestoneWizardStep,
     payload: MilestonePlanPayload,
-    /// In-progress doc-reference line being typed by the user.
     doc_buffer: String,
-    /// Async planning state.
     planning_in_flight: bool,
     generated_plan: Option<AiGeneratedPlan>,
     failure_reason: Option<String>,
+    /// Index focused on the Review step.
+    pub(super) review_focus: usize,
+    /// Materialization progress: (created, total) when a creation is in flight.
+    pub(super) materialize_progress: Option<(usize, usize)>,
+    /// Numbers of GitHub issues that succeeded; populated as `MilestonePlanCreated` arrives.
+    pub(super) created_issue_numbers: Vec<u64>,
+    /// Created milestone number on success.
+    pub(super) created_milestone_number: Option<u64>,
 }
 
 impl MilestoneWizardScreen {
@@ -35,7 +168,106 @@ impl MilestoneWizardScreen {
             planning_in_flight: false,
             generated_plan: None,
             failure_reason: None,
+            review_focus: 0,
+            materialize_progress: None,
+            created_issue_numbers: Vec::new(),
+            created_milestone_number: None,
         }
+    }
+
+    pub fn generated_plan_mut(&mut self) -> Option<&mut AiGeneratedPlan> {
+        self.generated_plan.as_mut()
+    }
+
+    pub fn generated_plan_ref(&self) -> Option<&AiGeneratedPlan> {
+        self.generated_plan.as_ref()
+    }
+
+    pub fn review_focus(&self) -> usize {
+        self.review_focus
+    }
+
+    pub fn materialize_progress(&self) -> Option<(usize, usize)> {
+        self.materialize_progress
+    }
+
+    pub fn created_milestone_number(&self) -> Option<u64> {
+        self.created_milestone_number
+    }
+
+    pub fn created_issue_numbers(&self) -> &[u64] {
+        &self.created_issue_numbers
+    }
+
+    /// #297 Materialization lifecycle hooks.
+    pub fn begin_materialization(&mut self) {
+        let total = self
+            .generated_plan
+            .as_ref()
+            .map(|p| p.issues.iter().filter(|i| i.accepted).count())
+            .unwrap_or(0);
+        self.materialize_progress = Some((0, total));
+        self.created_issue_numbers.clear();
+        self.created_milestone_number = None;
+        self.failure_reason = None;
+        self.step = MilestoneWizardStep::Materializing;
+    }
+
+    pub fn record_materialization_progress(&mut self, created: usize, total: usize) {
+        self.materialize_progress = Some((created, total));
+    }
+
+    pub fn finish_materialization(
+        &mut self,
+        result: Result<MilestoneCreationResult, String>,
+    ) {
+        self.materialize_progress = None;
+        match result {
+            Ok(r) => {
+                self.created_milestone_number = Some(r.milestone_number);
+                self.created_issue_numbers = r.issue_numbers;
+                self.step = MilestoneWizardStep::Complete;
+            }
+            Err(e) => {
+                self.failure_reason = Some(e);
+                self.step = MilestoneWizardStep::Failed;
+            }
+        }
+    }
+
+    fn review_focus_inc(&mut self) {
+        let total = self
+            .generated_plan
+            .as_ref()
+            .map(|p| p.issues.len())
+            .unwrap_or(0);
+        if total > 0 && self.review_focus + 1 < total {
+            self.review_focus += 1;
+        }
+    }
+
+    fn review_focus_dec(&mut self) {
+        self.review_focus = self.review_focus.saturating_sub(1);
+    }
+
+    fn review_toggle_focused(&mut self, accepted: bool) {
+        if let Some(plan) = self.generated_plan.as_mut() {
+            if let Some(issue) = plan.issues.get_mut(self.review_focus) {
+                issue.accepted = accepted;
+            }
+        }
+    }
+
+    fn entered_ai_structuring(&self) -> bool {
+        matches!(self.step, MilestoneWizardStep::AiStructuring)
+            && !self.planning_in_flight
+            && self.generated_plan.is_none()
+            && self.failure_reason.is_none()
+    }
+
+    /// Whether the AI Structuring step's automatic launch should fire.
+    pub fn entered_ai_structuring_step(&self) -> bool {
+        self.entered_ai_structuring()
     }
 
     pub fn step(&self) -> MilestoneWizardStep {
@@ -232,6 +464,34 @@ impl Screen for MilestoneWizardScreen {
                     return ScreenAction::Pop;
                 }
                 self.retreat();
+            }
+            (MilestoneWizardStep::ReviewPlan, KeyCode::Char('j'), _)
+            | (MilestoneWizardStep::ReviewPlan, KeyCode::Down, _) => {
+                self.review_focus_inc();
+            }
+            (MilestoneWizardStep::ReviewPlan, KeyCode::Char('k'), _)
+            | (MilestoneWizardStep::ReviewPlan, KeyCode::Up, _) => {
+                self.review_focus_dec();
+            }
+            (MilestoneWizardStep::ReviewPlan, KeyCode::Char('a'), _) => {
+                self.review_toggle_focused(true);
+            }
+            (MilestoneWizardStep::ReviewPlan, KeyCode::Char('x'), _) => {
+                self.review_toggle_focused(false);
+            }
+            (MilestoneWizardStep::Preview, KeyCode::Enter, _) => {
+                // From Preview, Enter starts materialization.
+                self.begin_materialization();
+                return ScreenAction::None;
+            }
+            (MilestoneWizardStep::Failed, KeyCode::Char('r'), _) => {
+                // Retry from Failed jumps back to Preview so the user can
+                // re-confirm before another creation attempt.
+                self.failure_reason = None;
+                self.step = MilestoneWizardStep::Preview;
+            }
+            (MilestoneWizardStep::Complete, KeyCode::Enter, _) => {
+                return ScreenAction::Pop;
             }
             (MilestoneWizardStep::DocReferences, KeyCode::Enter, m)
                 if m.contains(KeyModifiers::SHIFT) =>
