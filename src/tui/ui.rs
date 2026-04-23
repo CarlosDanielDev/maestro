@@ -160,6 +160,32 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::Landing => {
+            if let Some(ref mut screen) = app.landing_screen {
+                screen.set_mascot(
+                    app.mascot_animator.state(),
+                    app.mascot_animator.frame_index(),
+                );
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
+        TuiMode::IssueWizard | TuiMode::MilestoneWizard | TuiMode::ProjectStats => {
+            let label = app.tui_mode.breadcrumb_label();
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("{} — coming soon", label),
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from("This screen is part of milestone v0.15.0 and is wired in"),
+                Line::from("a follow-up issue. Press Esc to return."),
+            ];
+            f.render_widget(
+                Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center),
+                chunks[1],
+            );
+        }
         TuiMode::IssueBrowser => {
             if let Some(ref mut screen) = app.issue_browser_screen {
                 screen.draw(f, chunks[1], &app.theme);

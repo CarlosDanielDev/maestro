@@ -16,6 +16,8 @@ pub enum TuiMode {
     Fullscreen(uuid::Uuid),
     CostDashboard,
     Dashboard,
+    /// Persistent landing menu shown at startup.
+    Landing,
     IssueBrowser,
     MilestoneView,
     PromptInput,
@@ -33,6 +35,13 @@ pub enum TuiMode {
     AdaptWizard,
     PrReview,
     ReleaseNotes,
+    /// Multi-step wizard for guided issue creation. The screen is built
+    /// out across #291/#293/#295/#296/#298; #290 only routes here.
+    IssueWizard,
+    /// AI-guided wizard for milestone planning. Built across #294/#297.
+    MilestoneWizard,
+    /// Read-only stats dashboard. Built in #292.
+    ProjectStats,
     LogViewer(uuid::Uuid),
     ConfirmKill(uuid::Uuid),
     ConfirmExit,
@@ -53,6 +62,7 @@ impl TuiMode {
             Self::Fullscreen(_) => "Fullscreen",
             Self::CostDashboard => "Cost",
             Self::Dashboard => "Dashboard",
+            Self::Landing => "Welcome",
             Self::IssueBrowser => "Issues",
             Self::MilestoneView => "Milestones",
             Self::PromptInput => "Prompt",
@@ -68,6 +78,9 @@ impl TuiMode {
             Self::AdaptWizard => "Adapt",
             Self::PrReview => "PR Review",
             Self::ReleaseNotes => "Release Notes",
+            Self::IssueWizard => "New Issue",
+            Self::MilestoneWizard => "New Milestone",
+            Self::ProjectStats => "Project Stats",
             Self::LogViewer(_) => "Logs",
             Self::ConfirmKill(_) => "Confirm Kill",
             Self::ConfirmExit => "Confirm Exit",

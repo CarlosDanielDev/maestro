@@ -547,6 +547,25 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::Landing => (
+            "Welcome",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "Enter",
+                    action: "Activate",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "j/k",
+                    action: "Navigate",
+                    priority: 1,
+                },
+            ],
+        ),
+        TuiMode::IssueWizard => ("New Issue", FKeyVis::Minimal, &[]),
+        TuiMode::MilestoneWizard => ("New Milestone", FKeyVis::Minimal, &[]),
+        TuiMode::ProjectStats => ("Project Stats", FKeyVis::Minimal, &[]),
     };
 
     let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);

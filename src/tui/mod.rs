@@ -19,7 +19,6 @@ pub mod screens;
 pub mod session_summary;
 pub mod session_switcher;
 pub mod spinner;
-pub mod splash;
 mod summary;
 pub mod theme;
 pub mod token_dashboard;
@@ -74,9 +73,14 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Show splash screen unless disabled
-    if !no_splash {
-        splash::show_splash(&mut terminal)?;
+    // The legacy timed splash is replaced by the persistent Landing screen
+    // (#290). Only intercept the Dashboard boot path — session-launching
+    // subcommands (cmd_run / cmd_resume) go straight to their work view.
+    if !no_splash && matches!(app.tui_mode, app::TuiMode::Dashboard) {
+        if app.landing_screen.is_none() {
+            app.landing_screen = Some(screens::LandingScreen::new());
+        }
+        app.tui_mode = app::TuiMode::Landing;
     }
 
     let result = event_loop(&mut terminal, &mut app).await;

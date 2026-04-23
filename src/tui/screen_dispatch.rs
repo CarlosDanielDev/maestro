@@ -9,6 +9,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
 
     let screen: &mut dyn Screen = match app.tui_mode {
         app::TuiMode::Dashboard => app.home_screen.as_mut()?,
+        app::TuiMode::Landing => app.landing_screen.as_mut()?,
         app::TuiMode::IssueBrowser => app.issue_browser_screen.as_mut()?,
         app::TuiMode::MilestoneView => app.milestone_screen.as_mut()?,
         app::TuiMode::PromptInput => app.prompt_input_screen.as_mut()?,
@@ -66,6 +67,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         ScreenAction::None => {}
         ScreenAction::Push(mode) => {
             match mode {
+                app::TuiMode::Landing => {
+                    if app.landing_screen.is_none() {
+                        app.landing_screen = Some(screens::LandingScreen::new());
+                    }
+                }
                 app::TuiMode::IssueBrowser => {
                     let layout = app
                         .config
