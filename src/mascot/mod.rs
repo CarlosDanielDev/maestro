@@ -10,6 +10,19 @@ pub use animator::MascotAnimator;
 pub use state::MascotState;
 
 use crate::session::types::SessionStatus;
+use serde::{Deserialize, Serialize};
+
+/// Rendering style for the mascot widget. Selects between the legacy Unicode
+/// block-character art and the 1-bit pixel-art sprites rendered via half-block
+/// encoding. Serde variants are lowercase (`"sprite"` / `"ascii"`) for
+/// human-friendly TOML.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MascotStyle {
+    #[default]
+    Sprite,
+    Ascii,
+}
 
 /// Derives the mascot display state from session statuses.
 /// Priority: Error > Conducting > Happy > Idle
