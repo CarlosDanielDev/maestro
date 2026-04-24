@@ -1,6 +1,7 @@
 use crate::continuous::ContinuousModeState;
+use crate::mascot::MascotStyle;
 use crate::mascot::animator::SystemClock;
-use crate::mascot::frames::{MASCOT_ROWS, MASCOT_WIDTH};
+use crate::mascot::frames::{MASCOT_ROWS_ASCII, MASCOT_WIDTH_ASCII};
 use crate::mascot::widget::MascotWidget;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
@@ -156,6 +157,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     app.show_mascot,
                     app.mascot_animator.state(),
                     app.mascot_animator.frame_index(),
+                    app.mascot_style,
                 );
                 screen.draw(f, chunks[1], &app.theme);
             }
@@ -165,6 +167,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.set_mascot(
                     app.mascot_animator.state(),
                     app.mascot_animator.frame_index(),
+                    app.mascot_style,
                 );
                 screen.draw(f, chunks[1], &app.theme);
             }
@@ -480,23 +483,23 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         } else {
             let is_dashboard = matches!(app.tui_mode, TuiMode::Dashboard);
             let log_area = chunks[2];
-            if app.show_mascot
-                && !is_dashboard
-                && log_area.width >= 25
-                && log_area.height >= MASCOT_ROWS as u16 + 2
-            {
+            if should_show_dashboard_mascot_panel(
+                log_area,
+                app.show_mascot,
+                is_dashboard,
+                app.mascot_style,
+            ) {
+                let panel_width = dashboard_mascot_panel_width(app.mascot_style);
                 let h_split = Layout::default()
                     .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Min(10),
-                        Constraint::Length(MASCOT_WIDTH as u16 + 2),
-                    ])
+                    .constraints([Constraint::Min(10), Constraint::Length(panel_width)])
                     .split(log_area);
                 app.activity_log.draw(f, h_split[0], &app.theme);
                 draw_mascot_block(
                     f,
                     app.mascot_animator.state(),
                     app.mascot_animator.frame_index(),
+                    app.mascot_style,
                     h_split[1],
                     &theme,
                 );
@@ -580,10 +583,40 @@ pub(super) fn active_screen_input_mode(app: &App) -> crate::tui::navigation::Inp
         .unwrap_or(crate::tui::navigation::InputMode::Normal)
 }
 
+/// Gate for the dashboard's side-panel mascot. Returns `true` when the panel
+/// should be drawn for the given area + style. Extracted from [`draw`] so it
+/// can be unit-tested — the full draw path needs a ratatui `Frame` and is
+/// therefore painful to drive from a test.
+fn should_show_dashboard_mascot_panel(
+    log_area: Rect,
+    show_mascot: bool,
+    is_dashboard: bool,
+    style: MascotStyle,
+) -> bool {
+    if !show_mascot || is_dashboard {
+        return false;
+    }
+    match style {
+        MascotStyle::Ascii => {
+            log_area.width >= 25 && log_area.height >= MASCOT_ROWS_ASCII as u16 + 2
+        }
+        MascotStyle::Sprite => log_area.width >= 14 && log_area.height >= 6,
+    }
+}
+
+/// Width reserved for the dashboard mascot side-panel for a given style.
+fn dashboard_mascot_panel_width(style: MascotStyle) -> u16 {
+    match style {
+        MascotStyle::Ascii => MASCOT_WIDTH_ASCII as u16 + 2,
+        MascotStyle::Sprite => 14,
+    }
+}
+
 fn draw_mascot_block(
     f: &mut Frame,
     state: crate::mascot::MascotState,
     frame_index: usize,
+    style: MascotStyle,
     area: Rect,
     theme: &crate::tui::theme::Theme,
 ) {
@@ -600,8 +633,15 @@ fn draw_mascot_block(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if inner.height >= MASCOT_ROWS as u16 && inner.width >= MASCOT_WIDTH as u16 {
-        f.render_widget(MascotWidget::new(state, frame_index, color), inner);
+    let (min_w, min_h) = match style {
+        MascotStyle::Ascii => (MASCOT_WIDTH_ASCII as u16, MASCOT_ROWS_ASCII as u16),
+        MascotStyle::Sprite => (6u16, 4u16),
+    };
+    if inner.height >= min_h && inner.width >= min_w {
+        f.render_widget(
+            MascotWidget::new(state, frame_index, color).with_style(style),
+            inner,
+        );
     }
 }
 
@@ -1445,5 +1485,58 @@ pub(crate) fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str>
     } else {
         let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
         std::borrow::Cow::Owned(format!("{}...", truncated))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashboard_panel_gate_allows_small_area_for_sprite_style() {
+        let area = Rect::new(0, 0, 14, 6);
+        assert!(should_show_dashboard_mascot_panel(
+            area,
+            true,
+            false,
+            MascotStyle::Sprite
+        ));
+        assert!(
+            !should_show_dashboard_mascot_panel(area, true, false, MascotStyle::Ascii),
+            "ASCII style needs >= 25 wide, so 14 should NOT pass"
+        );
+    }
+
+    #[test]
+    fn dashboard_panel_gate_respects_show_mascot_false() {
+        let area = Rect::new(0, 0, 80, 40);
+        assert!(!should_show_dashboard_mascot_panel(
+            area,
+            false,
+            false,
+            MascotStyle::Sprite
+        ));
+    }
+
+    #[test]
+    fn dashboard_panel_gate_skips_on_dashboard_mode() {
+        let area = Rect::new(0, 0, 80, 40);
+        assert!(!should_show_dashboard_mascot_panel(
+            area,
+            true,
+            true,
+            MascotStyle::Sprite
+        ));
+    }
+
+    #[test]
+    fn dashboard_panel_gate_ascii_passes_at_current_threshold() {
+        let area = Rect::new(0, 0, 25, 8);
+        assert!(should_show_dashboard_mascot_panel(
+            area,
+            true,
+            false,
+            MascotStyle::Ascii
+        ));
     }
 }

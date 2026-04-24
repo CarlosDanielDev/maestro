@@ -1,5 +1,5 @@
 use super::MascotStyle;
-use super::frames::{MASCOT_ROWS, MascotFrames};
+use super::frames::{AsciiMascotFrames, MASCOT_ROWS_ASCII};
 use super::sprites::{SPRITE_H, SPRITE_W, pixel, sprite};
 use super::state::MascotState;
 use ratatui::buffer::Buffer;
@@ -60,9 +60,9 @@ fn render_ascii(
     buf: &mut Buffer,
 ) {
     let style = Style::default().fg(color);
-    let max_rows = MASCOT_ROWS.min(area.height as usize);
+    let max_rows = MASCOT_ROWS_ASCII.min(area.height as usize);
     for row in 0..max_rows {
-        let pair = MascotFrames::frames(state, row);
+        let pair = AsciiMascotFrames::frames(state, row);
         let text = if frame_index == 0 { pair[0] } else { pair[1] };
         let y = area.y + row as u16;
         buf.set_string(area.x, y, text, style);

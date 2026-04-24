@@ -108,6 +108,7 @@ pub struct HomeScreen {
     mascot_visible: bool,
     mascot_state: crate::mascot::MascotState,
     mascot_frame: usize,
+    mascot_style: crate::mascot::MascotStyle,
     /// Marquee animation state for the stats bar when it overflows.
     pub(super) stats_bar_marquee: MarqueeState,
     /// Snapshot of the stats-bar identity fields last rendered. Used to reset
@@ -151,6 +152,7 @@ impl HomeScreen {
             mascot_visible: false,
             mascot_state: crate::mascot::MascotState::Idle,
             mascot_frame: 0,
+            mascot_style: crate::mascot::MascotStyle::default(),
             stats_bar_marquee: MarqueeState::new(),
             stats_bar_identity: None,
         }
@@ -160,10 +162,22 @@ impl HomeScreen {
         self.stats = stats;
     }
 
-    pub fn set_mascot(&mut self, visible: bool, state: crate::mascot::MascotState, frame: usize) {
+    pub fn set_mascot(
+        &mut self,
+        visible: bool,
+        state: crate::mascot::MascotState,
+        frame: usize,
+        style: crate::mascot::MascotStyle,
+    ) {
         self.mascot_visible = visible;
         self.mascot_state = state;
         self.mascot_frame = frame;
+        self.mascot_style = style;
+    }
+
+    #[cfg(test)]
+    pub(super) fn mascot_style_for_test(&self) -> crate::mascot::MascotStyle {
+        self.mascot_style
     }
 
     fn is_quick_actions_focused(&self) -> bool {
@@ -1054,5 +1068,17 @@ mod tests {
             .flat_map(|g| g.bindings.iter().map(|b| b.key))
             .collect();
         assert!(all_bindings.contains(&"n"));
+    }
+
+    #[test]
+    fn home_screen_set_mascot_propagates_style() {
+        use crate::mascot::{MascotState, MascotStyle};
+
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        screen.set_mascot(true, MascotState::Idle, 0, MascotStyle::Sprite);
+        assert_eq!(screen.mascot_style_for_test(), MascotStyle::Sprite);
+
+        screen.set_mascot(true, MascotState::Idle, 0, MascotStyle::Ascii);
+        assert_eq!(screen.mascot_style_for_test(), MascotStyle::Ascii);
     }
 }

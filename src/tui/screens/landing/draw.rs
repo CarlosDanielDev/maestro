@@ -1,6 +1,7 @@
 use super::LandingScreen;
 use super::types::MENU_ITEMS;
-use crate::mascot::frames::{MASCOT_ROWS, MASCOT_WIDTH as MASCOT_WIDTH_USIZE};
+use crate::mascot::MascotStyle;
+use crate::mascot::frames::{MASCOT_ROWS_ASCII, MASCOT_WIDTH_ASCII};
 use crate::mascot::widget::MascotWidget;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::header_brand::LOGO;
@@ -12,27 +13,38 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-const MASCOT_HEIGHT: u16 = MASCOT_ROWS as u16;
-const MASCOT_WIDTH: u16 = MASCOT_WIDTH_USIZE as u16;
+const ASCII_MASCOT_HEIGHT: u16 = MASCOT_ROWS_ASCII as u16;
+const ASCII_MASCOT_WIDTH: u16 = MASCOT_WIDTH_ASCII as u16;
+const SPRITE_MASCOT_HEIGHT: u16 = 16;
+const SPRITE_MASCOT_WIDTH: u16 = 32;
 const LOGO_HEIGHT: u16 = 8;
 const SPLASH_COLOR: Color = Color::Rgb(0, 255, 65);
 
+fn mascot_dims(style: MascotStyle) -> (u16, u16) {
+    match style {
+        MascotStyle::Ascii => (ASCII_MASCOT_WIDTH, ASCII_MASCOT_HEIGHT),
+        MascotStyle::Sprite => (SPRITE_MASCOT_WIDTH, SPRITE_MASCOT_HEIGHT),
+    }
+}
+
 impl LandingScreen {
     pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, _theme: &Theme) {
+        let (mascot_width, mascot_height) = mascot_dims(self.mascot_style);
         let menu_height = MENU_ITEMS.len() as u16;
-        let total_height = MASCOT_HEIGHT + 1 + LOGO_HEIGHT + 1 + 1 + 2 + menu_height;
+        let total_height = mascot_height + 1 + LOGO_HEIGHT + 1 + 1 + 2 + menu_height;
         let y_start = area.y + area.height.saturating_sub(total_height) / 2;
 
-        let x_mascot = area.x + area.width.saturating_sub(MASCOT_WIDTH) / 2;
-        if y_start + MASCOT_HEIGHT <= area.y + area.height
-            && x_mascot + MASCOT_WIDTH <= area.x + area.width
+        let x_mascot = area.x + area.width.saturating_sub(mascot_width) / 2;
+        if y_start + mascot_height <= area.y + area.height
+            && x_mascot + mascot_width <= area.x + area.width
         {
-            let mascot_rect = Rect::new(x_mascot, y_start, MASCOT_WIDTH, MASCOT_HEIGHT);
-            let widget = MascotWidget::new(self.mascot_state, self.mascot_frame, SPLASH_COLOR);
+            let mascot_rect = Rect::new(x_mascot, y_start, mascot_width, mascot_height);
+            let widget = MascotWidget::new(self.mascot_state, self.mascot_frame, SPLASH_COLOR)
+                .with_style(self.mascot_style);
             f.render_widget(widget, mascot_rect);
         }
 
-        let logo_y = y_start + MASCOT_HEIGHT + 1;
+        let logo_y = y_start + mascot_height + 1;
         if logo_y + LOGO_HEIGHT <= area.y + area.height {
             let logo_rect = Rect::new(area.x, logo_y, area.width, LOGO_HEIGHT);
             let logo = Paragraph::new(LOGO)

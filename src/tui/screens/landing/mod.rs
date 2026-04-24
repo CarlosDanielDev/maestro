@@ -4,7 +4,7 @@ pub mod types;
 pub use types::{LandingTarget, MENU_ITEMS};
 
 use super::{Screen, ScreenAction};
-use crate::mascot::MascotState;
+use crate::mascot::{MascotState, MascotStyle};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -18,6 +18,7 @@ pub struct LandingScreen {
     pub selected: usize,
     pub(super) mascot_state: MascotState,
     pub(super) mascot_frame: usize,
+    pub(super) mascot_style: MascotStyle,
 }
 
 impl LandingScreen {
@@ -26,12 +27,14 @@ impl LandingScreen {
             selected: 0,
             mascot_state: MascotState::Idle,
             mascot_frame: 0,
+            mascot_style: MascotStyle::default(),
         }
     }
 
-    pub fn set_mascot(&mut self, state: MascotState, frame: usize) {
+    pub fn set_mascot(&mut self, state: MascotState, frame: usize, style: MascotStyle) {
         self.mascot_state = state;
         self.mascot_frame = frame;
+        self.mascot_style = style;
     }
 
     fn dispatch_index(&self, idx: usize) -> ScreenAction {
@@ -230,5 +233,14 @@ mod tests {
     fn desired_input_mode_is_normal() {
         let s = LandingScreen::new();
         assert_eq!(s.desired_input_mode(), Some(InputMode::Normal));
+    }
+
+    #[test]
+    fn landing_screen_set_mascot_propagates_style() {
+        let mut s = LandingScreen::new();
+        s.set_mascot(MascotState::Idle, 0, MascotStyle::Sprite);
+        assert_eq!(s.mascot_style, MascotStyle::Sprite);
+        s.set_mascot(MascotState::Idle, 0, MascotStyle::Ascii);
+        assert_eq!(s.mascot_style, MascotStyle::Ascii);
     }
 }

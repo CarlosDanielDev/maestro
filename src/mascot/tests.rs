@@ -7,7 +7,7 @@ use ratatui::widgets::Widget;
 
 use crate::mascot::animator::{Clock, MascotAnimator};
 use crate::mascot::derive_dashboard_mascot_state;
-use crate::mascot::frames::MascotFrames;
+use crate::mascot::frames::AsciiMascotFrames;
 use crate::mascot::state::MascotState;
 use crate::mascot::widget::{CLAWD_ORANGE, MascotWidget};
 use crate::session::types::SessionStatus;
@@ -118,7 +118,7 @@ fn mascot_state_copy_and_partial_eq() {
 fn mascot_frames_each_string_is_exactly_11_chars_wide() {
     for state in all_states() {
         for row in 0..6usize {
-            let pair = MascotFrames::frames(state, row);
+            let pair = AsciiMascotFrames::frames(state, row);
             assert_eq!(
                 pair[0].chars().count(),
                 11,
@@ -143,7 +143,7 @@ fn mascot_frames_each_string_is_exactly_11_chars_wide() {
 fn mascot_frames_all_36_pairs_are_non_empty() {
     for state in all_states() {
         for row in 0..6usize {
-            let pair = MascotFrames::frames(state, row);
+            let pair = AsciiMascotFrames::frames(state, row);
             assert!(
                 !pair[0].is_empty(),
                 "state={:?} row={} frame=0 empty",
@@ -164,7 +164,7 @@ fn mascot_frames_all_36_pairs_are_non_empty() {
 fn mascot_frames_out_of_range_row_returns_blank() {
     for state in all_states() {
         for row in [6usize, 7, 100] {
-            let pair = MascotFrames::frames(state, row);
+            let pair = AsciiMascotFrames::frames(state, row);
             assert_eq!(
                 pair[0], pair[1],
                 "Blank frames should be identical: state={:?} row={}",
@@ -185,7 +185,7 @@ fn mascot_frames_out_of_range_row_returns_blank() {
 fn mascot_frames_at_least_one_row_animates_per_state() {
     for state in all_states() {
         let has_animation = (0..6usize)
-            .map(|row| MascotFrames::frames(state, row))
+            .map(|row| AsciiMascotFrames::frames(state, row))
             .any(|pair| pair[0] != pair[1]);
         assert!(has_animation, "State {:?} has no animating rows", state);
     }
@@ -321,7 +321,7 @@ fn widget_content_matches_frames_data() {
             let buf = render_to_buffer(MascotWidget::new(state, frame_index, CLAWD_ORANGE), 11, 6);
             for row in 0..6u16 {
                 let rendered = buffer_row_string(&buf, row);
-                let expected = MascotFrames::frames(state, row as usize)[frame_index];
+                let expected = AsciiMascotFrames::frames(state, row as usize)[frame_index];
                 assert_eq!(
                     rendered, expected,
                     "state={:?} frame={} row={}",
