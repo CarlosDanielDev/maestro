@@ -278,11 +278,46 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     let materializer = GhMaterializer::new(github);
     let result = materializer.materialize(&plan, &report, false).await?;
 
-    eprintln!(
-        "  Created {} milestones, {} issues",
-        result.milestones_created.len(),
-        result.issues_created.len()
-    );
+    let ms_created = result
+        .milestones_created
+        .iter()
+        .filter(|m| !m.reused)
+        .count();
+    let ms_reused = result
+        .milestones_created
+        .iter()
+        .filter(|m| m.reused)
+        .count();
+    eprintln!("  Milestones: {} created, {} reused", ms_created, ms_reused);
+
+    let skipped = result.issues_skipped.len();
+    if skipped == 0 {
+        eprintln!("  Issues:     {} created", result.issues_created.len());
+    } else {
+        let numbers: Vec<String> = if skipped <= 10 {
+            result
+                .issues_skipped
+                .iter()
+                .map(|s| format!("#{}", s.number))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if numbers.is_empty() {
+            eprintln!(
+                "  Issues:     {} created, {} skipped (duplicate titles)",
+                result.issues_created.len(),
+                skipped
+            );
+        } else {
+            eprintln!(
+                "  Issues:     {} created, {} skipped (duplicate titles: {})",
+                result.issues_created.len(),
+                skipped,
+                numbers.join(", ")
+            );
+        }
+    }
     if let Some(ref td) = result.tech_debt_issue {
         eprintln!("  Tech debt catalog: #{}", td.number);
     }

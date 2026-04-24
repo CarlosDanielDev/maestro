@@ -149,6 +149,8 @@ pub struct PlannedIssue {
 pub struct MaterializeResult {
     pub milestones_created: Vec<CreatedMilestone>,
     pub issues_created: Vec<CreatedIssue>,
+    #[serde(default)]
+    pub issues_skipped: Vec<SkippedIssue>,
     pub tech_debt_issue: Option<CreatedIssue>,
     pub dry_run: bool,
 }
@@ -157,6 +159,10 @@ pub struct MaterializeResult {
 pub struct CreatedMilestone {
     pub number: u64,
     pub title: String,
+    /// `true` when `create_milestone` matched a pre-existing milestone
+    /// instead of POSTing a new one.
+    #[serde(default)]
+    pub reused: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,6 +170,20 @@ pub struct CreatedIssue {
     pub number: u64,
     pub title: String,
     pub milestone_number: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkipReason {
+    DuplicateTitle,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkippedIssue {
+    /// Number of the existing issue that matched.
+    pub number: u64,
+    pub title: String,
+    pub reason: SkipReason,
 }
 
 /// Status of a single scaffolded file.
@@ -375,12 +395,14 @@ mod tests {
             milestones_created: vec![CreatedMilestone {
                 number: 1,
                 title: "M0".into(),
+                reused: false,
             }],
             issues_created: vec![CreatedIssue {
                 number: 10,
                 title: "feat: thing".into(),
                 milestone_number: Some(1),
             }],
+            issues_skipped: vec![],
             tech_debt_issue: None,
             dry_run: false,
         };
@@ -390,5 +412,18 @@ mod tests {
         assert_eq!(rt.milestones_created.len(), 1);
         assert_eq!(rt.issues_created.len(), 1);
         assert!(!rt.dry_run);
+    }
+
+    #[test]
+    fn skipped_issue_round_trips_through_json() {
+        let skipped = SkippedIssue {
+            number: 42,
+            title: "feat: already exists".into(),
+            reason: SkipReason::DuplicateTitle,
+        };
+        let json = serde_json::to_string(&skipped).unwrap();
+        let rt: SkippedIssue = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.number, 42);
+        assert_eq!(rt.reason, SkipReason::DuplicateTitle);
     }
 }
