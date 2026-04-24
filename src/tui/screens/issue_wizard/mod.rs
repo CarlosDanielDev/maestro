@@ -898,15 +898,15 @@ impl Screen for IssueWizardScreen {
                 KeyCode::Char('R') if self.review_error.is_some() => {
                     self.begin_ai_review();
                 }
-                KeyCode::Enter => {
+                KeyCode::Enter
                     if !self.review_loading
                         && self.review_error.is_none()
-                        && !self.improve_sub_state_active()
-                    {
-                        self.try_advance();
-                    }
-                    // else: block advance; use 'R'/'r'/'a'/'d' to resolve.
+                        && !self.improve_sub_state_active() =>
+                {
+                    self.try_advance();
                 }
+                // else: Enter is blocked while loading / error / improve sub-state;
+                // use 'R'/'r'/'a'/'d' to resolve.
                 _ => {}
             },
             IssueWizardStep::Preview => match code {
