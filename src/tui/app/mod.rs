@@ -118,6 +118,7 @@ pub struct App {
     pub tool_start_times: std::collections::HashMap<uuid::Uuid, (String, Instant)>,
     pub no_splash: bool,
     pub show_mascot: bool,
+    pub mascot_style: crate::mascot::MascotStyle,
     pub mascot_animator: MascotAnimator,
     pub session_ui_state: std::collections::HashMap<uuid::Uuid, SessionUiState>,
     pub log_viewer_scroll: u16,
@@ -217,6 +218,7 @@ impl App {
             ),
             no_splash: false,
             show_mascot: true,
+            mascot_style: crate::mascot::MascotStyle::default(),
             mascot_animator: MascotAnimator::new(&SystemClock),
             session_switcher: None,
             adapt_screen: None,
@@ -282,6 +284,7 @@ impl App {
         }
         crate::icon_mode::init_from_config(config.tui.ascii_icons);
         self.show_mascot = config.tui.show_mascot;
+        self.mascot_style = config.tui.mascot_style;
         // Sync TurboQuant flag from [turboquant] config section
         if config.turboquant.enabled {
             self.flags.set_enabled(crate::flags::Flag::TurboQuant, true);

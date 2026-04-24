@@ -1,18 +1,18 @@
 use super::state::MascotState;
 
-/// Number of rows in the mascot ASCII art.
-pub const MASCOT_ROWS: usize = 6;
-/// Width of each mascot frame in terminal cells.
-pub const MASCOT_WIDTH: usize = 11;
+/// Number of rows in the legacy ASCII-block mascot art.
+pub const MASCOT_ROWS_ASCII: usize = 6;
+/// Width of each legacy ASCII-block mascot frame in terminal cells.
+pub const MASCOT_WIDTH_ASCII: usize = 11;
 
 const BLANK: [&str; 2] = ["           ", "           "];
 
-/// Static frame data lookup. Returns frame A and frame B for a given (state, row).
-/// Each frame string is exactly 11 chars / 11 terminal cells wide.
-/// Uses Unicode block drawing characters for the Clawd mascot design.
-pub struct MascotFrames;
+/// Static frame data lookup for the legacy ASCII-block mascot. Returns frame A
+/// and frame B for a given (state, row). Each frame string is exactly 11
+/// chars / 11 terminal cells wide.
+pub struct AsciiMascotFrames;
 
-impl MascotFrames {
+impl AsciiMascotFrames {
     pub fn frames(state: MascotState, row: usize) -> [&'static str; 2] {
         let table: &[[&str; 2]; 6] = match state {
             MascotState::Idle => &IDLE_FRAMES,

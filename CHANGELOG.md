@@ -7,6 +7,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+Milestone "Pixel-art mascot sprites" (v0.15.2) — adds a `[tui].mascot_style` config key (`"sprite"` | `"ascii"`, default `"sprite"`); ships six 128×128 pixel-art sprites (conducting, error, happy, idle, sleeping, thinking) embedded as compile-time byte arrays; `MascotWidget` gains sprite and ascii render paths; `AsciiMascotFrames` replaces `MascotFrames`; landing and home screens are style-aware. Closes #473, #474, #475, #476.
+
+### Added
+
+- `[tui].mascot_style = "sprite" | "ascii"` config key (default `"sprite"`) controls which mascot renderer is active (#473)
+- Six 128×128 pixel-art sprite `.bin` files (`conducting`, `error`, `happy`, `idle`, `sleeping`, `thinking`) embedded via `include_bytes!` in `src/mascot/sprites.rs` (#474)
+- `MascotStyle` enum (`Sprite` | `Ascii`) in `src/mascot/mod.rs`; `sprite()` / `pixel()` accessors in `src/mascot/sprites.rs` (#474)
+- `MascotWidget::with_style()` builder, `render_sprite()` (32×16 terminal canvas), and `render_ascii()` paths (#473)
+- `should_show_dashboard_mascot_panel()` / `dashboard_mascot_panel_width()` style-aware panel gates in `src/tui/ui.rs` (#473)
+
+### Changed
+
+- `MascotFrames` renamed to `AsciiMascotFrames`; constants `MASCOT_ROWS` / `MASCOT_WIDTH` replaced by `MASCOT_ROWS_ASCII` / `MASCOT_WIDTH_ASCII` (#476)
+- `HomeScreen::set_mascot()` and `LandingScreen::set_mascot()` now accept a `MascotStyle` parameter (#473)
+- `App` struct gains `mascot_style: MascotStyle` field, hydrated in `apply_config()` (#473)
+
 ## [0.15.1] - 2026-04-24
 
 Milestone "Wizard text-editing follow-ups" — closes two usability gaps that emerged during manual testing of the v0.15.0 wizards: the Issue Wizard's AI Review step now offers a one-key "improve with AI" action, and every wizard text field is now a `tui-textarea` widget with full cursor/selection/undo support.

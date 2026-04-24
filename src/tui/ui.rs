@@ -1,6 +1,7 @@
 use crate::continuous::ContinuousModeState;
+use crate::mascot::MascotStyle;
 use crate::mascot::animator::SystemClock;
-use crate::mascot::frames::{MASCOT_ROWS, MASCOT_WIDTH};
+use crate::mascot::frames::{MASCOT_ROWS_ASCII, MASCOT_WIDTH_ASCII};
 use crate::mascot::widget::MascotWidget;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
@@ -156,6 +157,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     app.show_mascot,
                     app.mascot_animator.state(),
                     app.mascot_animator.frame_index(),
+                    app.mascot_style,
                 );
                 screen.draw(f, chunks[1], &app.theme);
             }
@@ -165,6 +167,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.set_mascot(
                     app.mascot_animator.state(),
                     app.mascot_animator.frame_index(),
+                    app.mascot_style,
                 );
                 screen.draw(f, chunks[1], &app.theme);
             }
@@ -480,23 +483,23 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         } else {
             let is_dashboard = matches!(app.tui_mode, TuiMode::Dashboard);
             let log_area = chunks[2];
-            if app.show_mascot
-                && !is_dashboard
-                && log_area.width >= 25
-                && log_area.height >= MASCOT_ROWS as u16 + 2
-            {
+            if should_show_dashboard_mascot_panel(
+                log_area,
+                app.show_mascot,
+                is_dashboard,
+                app.mascot_style,
+            ) {
+                let panel_width = dashboard_mascot_layout(app.mascot_style).panel_width;
                 let h_split = Layout::default()
                     .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Min(10),
-                        Constraint::Length(MASCOT_WIDTH as u16 + 2),
-                    ])
+                    .constraints([Constraint::Min(10), Constraint::Length(panel_width)])
                     .split(log_area);
                 app.activity_log.draw(f, h_split[0], &app.theme);
                 draw_mascot_block(
                     f,
                     app.mascot_animator.state(),
                     app.mascot_animator.frame_index(),
+                    app.mascot_style,
                     h_split[1],
                     &theme,
                 );
@@ -580,10 +583,57 @@ pub(super) fn active_screen_input_mode(app: &App) -> crate::tui::navigation::Inp
         .unwrap_or(crate::tui::navigation::InputMode::Normal)
 }
 
+/// Layout knobs for the dashboard's side-panel mascot. The outer thresholds
+/// gate whether the panel is drawn; `panel_width` sizes the horizontal split;
+/// the inner thresholds guard the widget render inside the bordered block.
+struct DashboardMascotLayout {
+    outer_min_width: u16,
+    outer_min_height: u16,
+    panel_width: u16,
+    inner_min_width: u16,
+    inner_min_height: u16,
+}
+
+fn dashboard_mascot_layout(style: MascotStyle) -> DashboardMascotLayout {
+    match style {
+        MascotStyle::Ascii => DashboardMascotLayout {
+            outer_min_width: 25,
+            outer_min_height: MASCOT_ROWS_ASCII as u16 + 2,
+            panel_width: MASCOT_WIDTH_ASCII as u16 + 2,
+            inner_min_width: MASCOT_WIDTH_ASCII as u16,
+            inner_min_height: MASCOT_ROWS_ASCII as u16,
+        },
+        MascotStyle::Sprite => DashboardMascotLayout {
+            // Inner needs 32×16 for a full-aspect render; + 2 for the block border
+            // on each axis → outer 34×18. Width pads to 44 so the activity log
+            // keeps its Min(10) alongside the 32-wide panel.
+            outer_min_width: 44,
+            outer_min_height: 18,
+            panel_width: 32,
+            inner_min_width: 32,
+            inner_min_height: 16,
+        },
+    }
+}
+
+fn should_show_dashboard_mascot_panel(
+    log_area: Rect,
+    show_mascot: bool,
+    is_dashboard: bool,
+    style: MascotStyle,
+) -> bool {
+    if !show_mascot || is_dashboard {
+        return false;
+    }
+    let layout = dashboard_mascot_layout(style);
+    log_area.width >= layout.outer_min_width && log_area.height >= layout.outer_min_height
+}
+
 fn draw_mascot_block(
     f: &mut Frame,
     state: crate::mascot::MascotState,
     frame_index: usize,
+    style: MascotStyle,
     area: Rect,
     theme: &crate::tui::theme::Theme,
 ) {
@@ -600,8 +650,12 @@ fn draw_mascot_block(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if inner.height >= MASCOT_ROWS as u16 && inner.width >= MASCOT_WIDTH as u16 {
-        f.render_widget(MascotWidget::new(state, frame_index, color), inner);
+    let layout = dashboard_mascot_layout(style);
+    if inner.height >= layout.inner_min_height && inner.width >= layout.inner_min_width {
+        f.render_widget(
+            MascotWidget::new(state, frame_index, color).with_style(style),
+            inner,
+        );
     }
 }
 
@@ -1445,5 +1499,66 @@ pub(crate) fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str>
     } else {
         let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
         std::borrow::Cow::Owned(format!("{}...", truncated))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashboard_panel_gate_sprite_style_requires_room_for_full_canvas() {
+        // Sprite panel hides unless the log area is ≥ 44×18 so the mascot can
+        // render at its full 32×16 aspect-preserved canvas (landing-splash size).
+        let too_short = Rect::new(0, 0, 60, 12);
+        assert!(
+            !should_show_dashboard_mascot_panel(too_short, true, false, MascotStyle::Sprite),
+            "Sprite should hide when the log area is shorter than 18 rows"
+        );
+        let too_narrow = Rect::new(0, 0, 40, 20);
+        assert!(
+            !should_show_dashboard_mascot_panel(too_narrow, true, false, MascotStyle::Sprite),
+            "Sprite should hide when the log area is narrower than 44 columns"
+        );
+        let big_enough = Rect::new(0, 0, 60, 20);
+        assert!(should_show_dashboard_mascot_panel(
+            big_enough,
+            true,
+            false,
+            MascotStyle::Sprite
+        ));
+    }
+
+    #[test]
+    fn dashboard_panel_gate_respects_show_mascot_false() {
+        let area = Rect::new(0, 0, 80, 40);
+        assert!(!should_show_dashboard_mascot_panel(
+            area,
+            false,
+            false,
+            MascotStyle::Sprite
+        ));
+    }
+
+    #[test]
+    fn dashboard_panel_gate_skips_on_dashboard_mode() {
+        let area = Rect::new(0, 0, 80, 40);
+        assert!(!should_show_dashboard_mascot_panel(
+            area,
+            true,
+            true,
+            MascotStyle::Sprite
+        ));
+    }
+
+    #[test]
+    fn dashboard_panel_gate_ascii_passes_at_current_threshold() {
+        let area = Rect::new(0, 0, 25, 8);
+        assert!(should_show_dashboard_mascot_panel(
+            area,
+            true,
+            false,
+            MascotStyle::Ascii
+        ));
     }
 }

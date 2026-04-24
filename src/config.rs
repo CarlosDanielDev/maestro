@@ -132,7 +132,7 @@ impl Default for TurboQuantConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TuiConfig {
     #[serde(default)]
     pub theme: ThemeConfig,
@@ -143,6 +143,22 @@ pub struct TuiConfig {
     /// Show the Clawd mascot companion in the TUI.
     #[serde(default = "default_show_mascot")]
     pub show_mascot: bool,
+    /// Visual style for the mascot: `"sprite"` (pixel art, default) or
+    /// `"ascii"` (legacy Unicode block-character art).
+    #[serde(default)]
+    pub mascot_style: crate::mascot::MascotStyle,
+}
+
+impl Default for TuiConfig {
+    fn default() -> Self {
+        Self {
+            theme: ThemeConfig::default(),
+            layout: LayoutConfig::default(),
+            ascii_icons: false,
+            show_mascot: default_show_mascot(),
+            mascot_style: crate::mascot::MascotStyle::default(),
+        }
+    }
 }
 
 fn default_show_mascot() -> bool {
@@ -1962,5 +1978,54 @@ max_cost_total = 10.0
     fn find_and_load_shim_still_returns_config_only() {
         // Regression guard: the legacy API must keep returning Result<Config>, not LoadedConfig.
         let _: fn() -> anyhow::Result<Config> = Config::find_and_load;
+    }
+
+    #[test]
+    fn tui_mascot_style_serde_roundtrip() {
+        use crate::mascot::MascotStyle;
+
+        for variant in [MascotStyle::Sprite, MascotStyle::Ascii] {
+            let cfg = TuiConfig {
+                mascot_style: variant,
+                ..Default::default()
+            };
+            let serialized = toml::to_string(&cfg).expect("serialize");
+            let back: TuiConfig = toml::from_str(&serialized).expect("deserialize");
+            assert_eq!(back.mascot_style, variant);
+        }
+    }
+
+    #[test]
+    fn tui_mascot_style_emits_lowercase_on_disk() {
+        use crate::mascot::MascotStyle;
+        let cfg = TuiConfig {
+            mascot_style: MascotStyle::Sprite,
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&cfg).unwrap();
+        assert!(
+            serialized.contains(r#"mascot_style = "sprite""#),
+            "on-disk spelling must stay lowercase for human-edited TOML: {serialized}"
+        );
+    }
+
+    #[test]
+    fn tui_mascot_style_defaults_to_sprite_when_absent() {
+        use crate::mascot::MascotStyle;
+        let parsed: TuiConfig = toml::from_str("").expect("empty TuiConfig parses");
+        assert_eq!(parsed.mascot_style, MascotStyle::Sprite);
+    }
+
+    #[test]
+    fn mascot_style_rejects_unknown_value() {
+        let err = toml::from_str::<TuiConfig>(r#"mascot_style = "foo""#)
+            .expect_err("unknown variant must fail");
+        let msg = format!("{err}");
+        assert!(
+            msg.to_lowercase().contains("unknown")
+                || msg.to_lowercase().contains("expected")
+                || msg.contains("foo"),
+            "error should reference the unknown value, got: {msg}"
+        );
     }
 }
