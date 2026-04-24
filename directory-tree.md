@@ -110,6 +110,21 @@ maestro/
 │   │   ├── labels.rs                      # LabelManager: ready→in-progress→done/failed lifecycle transitions
 │   │   ├── merge.rs                       # PrMergeCheck trait (mockable); PrMergeChecker impl using `gh pr view` + `git diff`; MergeState enum (Clean, Conflicting, Blocked, Unknown); PrConflictStatus struct; parse_merge_json(); parse_conflicting_files(); build_conflict_fix_prompt()
 │   │   └── pr.rs                          # PrCreator: build_pr_body, create_for_issue auto-PR creation; PrRetryPolicy (max_attempts, base_delay_secs, multiplier) with exponential back-off via delay_for_attempt(); OrphanBranch struct with from_branch_name() — parses issue number from maestro/issue-N branch names  [Issue #159]
+│   ├── mascot/                            # Pixel-art and ASCII mascot rendering subsystem  [Issue #473-476]
+│   │   ├── mod.rs                         # Module facade; MascotStyle enum (Sprite | Ascii) re-exported; pub mod sprites
+│   │   ├── animator.rs                    # Frame-advance animation timer for mascot sequences
+│   │   ├── frames.rs                      # AsciiMascotFrames (renamed from MascotFrames); MASCOT_ROWS_ASCII / MASCOT_WIDTH_ASCII constants (old MASCOT_ROWS / MASCOT_WIDTH aliases removed)  [Issue #476]
+│   │   ├── state.rs                       # MascotState: tracks current animation state and frame index
+│   │   ├── tests.rs                       # Unit tests for mascot module
+│   │   ├── widget.rs                      # MascotWidget; style: MascotStyle field; with_style() builder; render_sprite() path (128×128 pixel grid) and render_ascii() path  [Issue #473]
+│   │   ├── sprites.rs                     # sprite() / pixel() accessors; embeds 128×128 RGBA byte arrays from sprites/ at compile time  [Issue #474]
+│   │   └── sprites/                       # Compiled pixel-art sprite data (128×128 px each)  [Issue #474]
+│   │       ├── conducting.bin
+│   │       ├── error.bin
+│   │       ├── happy.bin
+│   │       ├── idle.bin
+│   │       ├── sleeping.bin
+│   │       └── thinking.bin
 │   ├── modes/                             # Session mode definitions and resolution  [Phase 3]
 │   │   └── mod.rs                         # builtin_modes, resolve_mode, mode_from_labels
 │   ├── notifications/                     # Interruption and notification system  [Phase 3]

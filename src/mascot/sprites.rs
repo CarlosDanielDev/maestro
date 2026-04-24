@@ -27,6 +27,25 @@ pub const SPRITE_CONDUCTING_B: &[u8] = SPRITE_CONDUCTING_A;
 pub const SPRITE_IDLE_A: &[u8] = include_bytes!("sprites/idle.bin");
 pub const SPRITE_IDLE_B: &[u8] = SPRITE_IDLE_A;
 
+const _: () = {
+    let expected = (SPRITE_H as usize) * (SPRITE_W as usize).div_ceil(8);
+    assert!(SPRITE_ERROR_A.len() == expected, "error.bin wrong size");
+    assert!(
+        SPRITE_SLEEPING_A.len() == expected,
+        "sleeping.bin wrong size"
+    );
+    assert!(SPRITE_HAPPY_A.len() == expected, "happy.bin wrong size");
+    assert!(
+        SPRITE_THINKING_A.len() == expected,
+        "thinking.bin wrong size"
+    );
+    assert!(
+        SPRITE_CONDUCTING_A.len() == expected,
+        "conducting.bin wrong size"
+    );
+    assert!(SPRITE_IDLE_A.len() == expected, "idle.bin wrong size");
+};
+
 /// Returns the sprite bitmap for a `(state, frame)` pair. `frame` is either
 /// `0` (A frame) or any other value (B frame). B currently aliases A for
 /// every state — the same `&'static [u8]` is returned either way.
