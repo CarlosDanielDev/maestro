@@ -76,10 +76,22 @@ fn render_sprite(
     if area.width == 0 || area.height == 0 {
         return;
     }
+    // Half-block cells encode 2 source rows per terminal row, so the source
+    // sprite's 128:128 aspect maps to `render_w = 2 * render_h` cells in the
+    // terminal. Fit the largest such rect inside `area` and center it; the
+    // caller's extra cells stay as background (pillar- / letterbox).
+    let render_w = area.width.min(area.height.saturating_mul(2));
+    let render_h = area.height.min(area.width / 2);
+    if render_w == 0 || render_h == 0 {
+        return;
+    }
+    let x0 = area.x + (area.width - render_w) / 2;
+    let y0 = area.y + (area.height - render_h) / 2;
+
     let bm = sprite(state, frame_index);
     let style = Style::default().fg(color);
-    let w = area.width as u32;
-    let h = area.height as u32;
+    let w = render_w as u32;
+    let h = render_h as u32;
     let sprite_w = SPRITE_W as u32;
     let sprite_h = SPRITE_H as u32;
     let stride = (sprite_w as usize).div_ceil(8);
@@ -105,7 +117,7 @@ fn render_sprite(
                 (false, true) => "\u{2584}", // ▄
                 (true, true) => "\u{2588}",  // █
             };
-            if let Some(cell) = buf.cell_mut((area.x + x as u16, area.y + y_cell as u16)) {
+            if let Some(cell) = buf.cell_mut((x0 + x as u16, y0 + y_cell as u16)) {
                 cell.set_symbol(ch).set_style(style);
             }
         }
@@ -215,6 +227,51 @@ mod tests {
                     b.cell((x, y)).map(|c| c.symbol().to_string()),
                     "non-deterministic render at ({x},{y})"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn widget_sprite_path_preserves_aspect_in_wide_short_area() {
+        // 40×4 area: aspect-preserving render pillarboxes to 8×4 (2*4=8 wide).
+        // Non-space cells must live inside that centered band [16..24) × [0..4).
+        let area = Rect::new(0, 0, 40, 4);
+        let mut buf = Buffer::empty(area);
+        let widget =
+            MascotWidget::new(MascotState::Idle, 0, CLAWD_ORANGE).with_style(MascotStyle::Sprite);
+        widget.render(area, &mut buf);
+        for y in 0..4 {
+            for x in 0..40 {
+                let sym = buf.cell((x, y)).map_or(" ", |c| c.symbol());
+                if sym != " " {
+                    assert!(
+                        (16..24).contains(&x),
+                        "non-space cell at x={x} outside pillarbox band [16,24)"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn widget_sprite_path_preserves_aspect_in_tall_narrow_area() {
+        // 6×20 area: render fits 6×3 (width/2). Letterboxed vertically.
+        let area = Rect::new(0, 0, 6, 20);
+        let mut buf = Buffer::empty(area);
+        let widget =
+            MascotWidget::new(MascotState::Idle, 0, CLAWD_ORANGE).with_style(MascotStyle::Sprite);
+        widget.render(area, &mut buf);
+        let band_start = (20 - 3) / 2;
+        let band_end = band_start + 3;
+        for y in 0..20 {
+            for x in 0..6 {
+                let sym = buf.cell((x, y)).map_or(" ", |c| c.symbol());
+                if sym != " " {
+                    assert!(
+                        (band_start..band_end).contains(&y),
+                        "non-space cell at y={y} outside letterbox band [{band_start},{band_end})"
+                    );
+                }
             }
         }
     }
