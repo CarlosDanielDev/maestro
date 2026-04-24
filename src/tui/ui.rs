@@ -604,9 +604,9 @@ fn dashboard_mascot_layout(style: MascotStyle) -> DashboardMascotLayout {
             inner_min_height: MASCOT_ROWS_ASCII as u16,
         },
         MascotStyle::Sprite => DashboardMascotLayout {
-            outer_min_width: 14,
-            outer_min_height: 6,
-            panel_width: 14,
+            outer_min_width: 42,
+            outer_min_height: 10,
+            panel_width: 32,
             inner_min_width: 6,
             inner_min_height: 4,
         },
@@ -1504,18 +1504,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dashboard_panel_gate_allows_small_area_for_sprite_style() {
-        let area = Rect::new(0, 0, 14, 6);
+    fn dashboard_panel_gate_sprite_style_needs_wider_area_for_quality() {
+        // The 128×128 sprite downscales poorly into a narrow panel; Sprite
+        // style gates on width 42 / height 10 so the panel renders at ~32
+        // cells wide (matches the landing splash canvas).
+        let narrow = Rect::new(0, 0, 30, 10);
+        assert!(
+            !should_show_dashboard_mascot_panel(narrow, true, false, MascotStyle::Sprite),
+            "Sprite should skip on a narrow log area"
+        );
+        let wide = Rect::new(0, 0, 50, 12);
         assert!(should_show_dashboard_mascot_panel(
-            area,
+            wide,
             true,
             false,
             MascotStyle::Sprite
         ));
-        assert!(
-            !should_show_dashboard_mascot_panel(area, true, false, MascotStyle::Ascii),
-            "ASCII style needs >= 25 wide, so 14 should NOT pass"
-        );
     }
 
     #[test]
