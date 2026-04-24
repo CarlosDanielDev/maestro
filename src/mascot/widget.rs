@@ -96,40 +96,19 @@ fn render_sprite(
     let sprite_h = SPRITE_H as u32;
     let stride = (sprite_w as usize).div_ceil(8);
 
-    // Box-filter: for each cell half, count lit source pixels in the region it
-    // covers. Emit the half as "on" when ≥50% of sampled pixels are lit. Heavier
-    // than nearest-neighbor but keeps fine features visible at strong downscale
-    // ratios (e.g. 128×128 → 12×6 cells ≈ 10 source pixels per axis per cell).
-    let region_on = |sx0: u32, sx1: u32, sy0: u32, sy1: u32| -> bool {
-        let total = (sx1 - sx0) * (sy1 - sy0);
-        if total == 0 {
-            return false;
-        }
-        let mut on = 0u32;
-        for sy in sy0..sy1 {
-            let row_base = (sy as usize) * stride;
-            for sx in sx0..sx1 {
-                let byte_idx = row_base + (sx as usize >> 3);
-                if bm
-                    .get(byte_idx)
-                    .is_some_and(|b| (b >> (7 - (sx & 7))) & 1 == 1)
-                {
-                    on += 1;
-                }
-            }
-        }
-        on * 2 >= total
+    let sample = |src_x: u32, src_y: u32| -> bool {
+        let byte_idx = (src_y as usize) * stride + (src_x as usize >> 3);
+        bm.get(byte_idx)
+            .is_some_and(|b| (b >> (7 - (src_x & 7))) & 1 == 1)
     };
 
     for y_cell in 0..h {
-        let sy_top_start = (2 * y_cell * sprite_h) / (2 * h);
-        let sy_mid = ((2 * y_cell + 1) * sprite_h) / (2 * h);
-        let sy_bot_end = ((2 * y_cell + 2) * sprite_h) / (2 * h);
+        let src_y_top = (2 * y_cell * sprite_h) / (2 * h);
+        let src_y_bot = ((2 * y_cell + 1) * sprite_h) / (2 * h);
         for x in 0..w {
-            let sx_start = (x * sprite_w) / w;
-            let sx_end = ((x + 1) * sprite_w) / w;
-            let top = region_on(sx_start, sx_end, sy_top_start, sy_mid);
-            let bot = region_on(sx_start, sx_end, sy_mid, sy_bot_end);
+            let src_x = (x * sprite_w) / w;
+            let top = sample(src_x, src_y_top);
+            let bot = sample(src_x, src_y_bot);
             let ch = match (top, bot) {
                 (false, false) => continue,
                 (true, false) => "\u{2580}", // ▀
