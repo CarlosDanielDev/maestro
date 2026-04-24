@@ -7,6 +7,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-04-24
+
+Milestone "Wizard text-editing follow-ups" — closes two usability gaps that emerged during manual testing of the v0.15.0 wizards: the Issue Wizard's AI Review step now offers a one-key "improve with AI" action, and every wizard text field is now a `tui-textarea` widget with full cursor/selection/undo support.
+
+### Added
+
+- Issue Wizard `AiReview` step gains an `i: improve with AI` keybinding that launches a second `claude --print` call using the just-generated critique as guidance, then shows a before/after diff the user can accept or discard atomically; turns the critique into a lift instead of a wall of text (#450)
+
+### Changed
+
+- Both wizards (Issue, Milestone) migrated from hand-rolled `String` buffers to `tui-textarea` widgets — full cursor movement (arrows/Home/End), word-wise jumps (Ctrl+Left/Right), selection (Shift+arrows), word-wise delete (Ctrl+W), and undo/redo (Ctrl+Z/Ctrl+Y) out of the box; single-line `Title` field configured to strip `\n` on input; ~300 LOC of duplicated buffer/paste/sanitization code deleted (#447)
+
+### Fixed
+
+- CI: collapsed a `KeyCode::Enter` if-chain into a match guard to satisfy clippy's `collapsible_if` lint
+
 ## [0.15.0] - 2026-04-23
 
 Milestone "Guided Creation Flows" — transforms the startup experience into a persistent landing screen and ships two AI-assisted wizards for structured issue and milestone creation, plus a read-only project stats dashboard, a tabbed compact milestone view, and a marquee-scrolled header. Twelve issues closed via PR #446 on the bundled milestone branch.
