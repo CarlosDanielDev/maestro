@@ -45,7 +45,7 @@ pub fn build_planning_prompt(payload: &MilestonePlanPayload) -> String {
 /// Parse the AI's JSON response into an `AiGeneratedPlan`. Tolerates a
 /// trailing markdown fence the model may emit despite instructions.
 pub fn parse_planning_response(raw: &str) -> Result<AiGeneratedPlan, String> {
-    let trimmed = strip_fences(raw.trim());
+    let trimmed = crate::tui::screens::strip_fences(raw.trim());
     let value: serde_json::Value =
         serde_json::from_str(trimmed).map_err(|e| format!("invalid JSON: {e}"))?;
 
@@ -95,19 +95,6 @@ pub fn parse_planning_response(raw: &str) -> Result<AiGeneratedPlan, String> {
         milestone_description: description,
         issues,
     })
-}
-
-fn strip_fences(s: &str) -> &str {
-    let mut t = s.trim();
-    if let Some(stripped) = t.strip_prefix("```json") {
-        t = stripped;
-    } else if let Some(stripped) = t.strip_prefix("```") {
-        t = stripped;
-    }
-    if let Some(stripped) = t.strip_suffix("```") {
-        t = stripped;
-    }
-    t.trim()
 }
 
 #[cfg(test)]

@@ -1,7 +1,12 @@
+pub mod ai_improve;
 pub mod ai_review;
 mod draw;
+mod draw_ai_review;
+mod draw_diff;
+mod prompt_common;
 pub mod types;
 
+pub use ai_improve::{build_improve_prompt, parse_improve_response};
 pub use ai_review::build_review_prompt;
 pub use types::{IssueCreationPayload, IssueType, IssueWizardStep};
 
@@ -95,6 +100,19 @@ pub struct IssueWizardScreen {
     pub(super) review_loading: bool,
     pub(super) review_text: Option<String>,
     pub(super) review_error: Option<String>,
+    /// #450 AI Improve sub-state (layered on top of AiReview). When a
+    /// candidate is present the draw layer swaps the review-text view
+    /// for the diff view; when loading, the spinner renders; when
+    /// error, the error banner renders. All exclusive with each other.
+    pub(super) improve_loading: bool,
+    pub(super) improve_candidate: Option<IssueCreationPayload>,
+    pub(super) improve_error: Option<String>,
+    /// Guards against `tick_wizard_step_hooks` dispatching a second
+    /// `LaunchAiImprove` before the first one's result lands. Cleared
+    /// when `apply_improve_result` fires.
+    pub(super) improve_enqueued: bool,
+    /// Vertical scroll offset for the improve diff view.
+    pub(super) diff_scroll: u16,
     /// Clipboard provider for Ctrl+V. Injected as a trait object so
     /// tests can supply a deterministic fake.
     clipboard: Box<dyn ClipboardProvider>,
@@ -126,6 +144,11 @@ impl IssueWizardScreen {
             review_loading: false,
             review_text: None,
             review_error: None,
+            improve_loading: false,
+            improve_candidate: None,
+            improve_error: None,
+            improve_enqueued: false,
+            diff_scroll: 0,
             clipboard,
             create_in_flight: false,
             create_enqueued: false,
@@ -264,6 +287,118 @@ impl IssueWizardScreen {
             && self.review_text.is_none()
             && !self.review_loading
             && self.review_error.is_none()
+    }
+
+    // ---- #450 AI Improve ----
+
+    /// True when the user could legally press `i` to start the improve
+    /// flow: review text is loaded without error, no improve call is
+    /// already in flight, and no candidate/error modal is showing. Used
+    /// by both `begin_improve` and the `i` key handler so the two can't
+    /// drift apart.
+    pub fn can_begin_improve(&self) -> bool {
+        self.review_text.is_some()
+            && !self.review_loading
+            && self.review_error.is_none()
+            && !self.improve_loading
+            && self.improve_candidate.is_none()
+            && self.improve_error.is_none()
+    }
+
+    /// True when ANY improve sub-state is active (loading, candidate
+    /// diff, or error banner). Used to block `Enter`-advance and to
+    /// route `Esc` to the sub-state's dismissal instead of the normal
+    /// retreat-to-Dependencies.
+    pub fn improve_sub_state_active(&self) -> bool {
+        self.improve_loading || self.improve_candidate.is_some() || self.improve_error.is_some()
+    }
+
+    /// Launch the improve flow if the state machine allows it. Silently
+    /// no-ops when `can_begin_improve` fails.
+    pub fn begin_improve(&mut self) {
+        if !self.can_begin_improve() {
+            return;
+        }
+        self.sync_fields_into_payload();
+        self.improve_loading = true;
+        self.improve_candidate = None;
+        self.improve_error = None;
+        self.diff_scroll = 0;
+    }
+
+    /// Apply a result coming back from the background tokio task.
+    /// `Ok(candidate)` shows the diff view; `Err(msg)` shows the error
+    /// banner with retry/Esc affordances.
+    pub fn apply_improve_result(&mut self, result: Result<IssueCreationPayload, String>) {
+        self.improve_loading = false;
+        self.improve_enqueued = false;
+        match result {
+            Ok(candidate) => {
+                self.improve_candidate = Some(candidate);
+                self.improve_error = None;
+            }
+            Err(e) => {
+                self.improve_candidate = None;
+                self.improve_error = Some(e);
+            }
+        }
+    }
+
+    /// Replace the wizard's payload with the improved candidate and
+    /// drop the candidate. Keeps `review_text` visible so the user sees
+    /// the original critique beside the new draft.
+    pub fn accept_improve(&mut self) {
+        if let Some(cand) = self.improve_candidate.take() {
+            self.payload = cand;
+            self.diff_scroll = 0;
+        }
+    }
+
+    /// Drop the candidate and any error. The wizard's payload is unchanged.
+    pub fn discard_improve(&mut self) {
+        self.improve_candidate = None;
+        self.improve_error = None;
+        self.diff_scroll = 0;
+    }
+
+    /// True when `tick_wizard_step_hooks` should enqueue a new
+    /// `LaunchAiImprove`. Flips to false after `mark_improve_enqueued`
+    /// so the hook doesn't dispatch twice for the same request.
+    pub fn improve_requested(&self) -> bool {
+        self.improve_loading
+            && self.improve_candidate.is_none()
+            && self.improve_error.is_none()
+            && !self.improve_enqueued
+    }
+
+    /// Latch set by the dispatch hook so subsequent ticks skip re-dispatch.
+    pub fn mark_improve_enqueued(&mut self) {
+        self.improve_enqueued = true;
+    }
+
+    pub fn improve_loading(&self) -> bool {
+        self.improve_loading
+    }
+
+    pub fn improve_candidate(&self) -> Option<&IssueCreationPayload> {
+        self.improve_candidate.as_ref()
+    }
+
+    pub fn improve_error(&self) -> Option<&str> {
+        self.improve_error.as_deref()
+    }
+
+    pub fn diff_scroll(&self) -> u16 {
+        self.diff_scroll
+    }
+
+    /// Test helper — lets unit tests short-circuit to `AiReview` (or any
+    /// other step) without walking the form's validation. Not exposed
+    /// outside test builds.
+    #[cfg(test)]
+    pub fn set_step_for_tests(&mut self, step: IssueWizardStep) {
+        self.step = step;
+        self.rebuild_fields_for_step();
     }
 
     fn jump_to(&mut self, target: IssueWizardStep) {
@@ -722,29 +857,56 @@ impl Screen for IssueWizardScreen {
                 }
             },
             IssueWizardStep::AiReview => match code {
+                KeyCode::Esc if self.improve_error.is_some() => {
+                    self.improve_error = None;
+                }
+                KeyCode::Esc if self.improve_candidate.is_some() => {
+                    self.discard_improve();
+                }
                 KeyCode::Esc => {
                     self.retreat();
+                }
+                KeyCode::Char('i') if self.can_begin_improve() => {
+                    self.begin_improve();
+                }
+                KeyCode::Char('a') if self.improve_candidate.is_some() => {
+                    self.accept_improve();
+                }
+                KeyCode::Char('d') if self.improve_candidate.is_some() => {
+                    self.discard_improve();
+                }
+                KeyCode::Char('r')
+                    if self.improve_candidate.is_some() || self.improve_error.is_some() =>
+                {
+                    self.improve_candidate = None;
+                    self.improve_error = None;
+                    self.begin_improve();
                 }
                 KeyCode::Char('r') => {
                     // "Revise" — jump back to BasicInfo so the user can edit.
                     self.jump_to(IssueWizardStep::BasicInfo);
                 }
+                KeyCode::Char('j') | KeyCode::Down if self.improve_candidate.is_some() => {
+                    self.diff_scroll = self.diff_scroll.saturating_add(1);
+                }
+                KeyCode::Char('k') | KeyCode::Up if self.improve_candidate.is_some() => {
+                    self.diff_scroll = self.diff_scroll.saturating_sub(1);
+                }
                 KeyCode::Char('s') => {
-                    // Skip the review and head straight to Preview.
                     self.jump_to(IssueWizardStep::Preview);
                 }
                 KeyCode::Char('R') if self.review_error.is_some() => {
-                    // Retry on error.
                     self.begin_ai_review();
                 }
-                KeyCode::Enter => {
-                    if self.review_loading || self.review_error.is_some() {
-                        // Block advance while loading or after an error
-                        // (use 'R' to retry, 's' to skip).
-                    } else {
-                        self.try_advance();
-                    }
+                KeyCode::Enter
+                    if !self.review_loading
+                        && self.review_error.is_none()
+                        && !self.improve_sub_state_active() =>
+                {
+                    self.try_advance();
                 }
+                // else: Enter is blocked while loading / error / improve sub-state;
+                // use 'R'/'r'/'a'/'d' to resolve.
                 _ => {}
             },
             IssueWizardStep::Preview => match code {
@@ -1510,5 +1672,196 @@ mod tests {
         s.apply_dep_issues(vec![make_open_issue(10), make_open_issue(11)]);
         assert!(s.dep_is_checked(11));
         assert!(!s.dep_is_checked(10));
+    }
+
+    // ---- #450 AI Improve companion ----
+
+    fn at_ai_review_with_critique() -> IssueWizardScreen {
+        let mut s = IssueWizardScreen::new();
+        s.payload_mut().issue_type = IssueType::Feature;
+        s.payload_mut().title = "Original title".into();
+        s.payload_mut().overview = "original".into();
+        s.payload_mut().expected_behavior = "orig".into();
+        s.payload_mut().acceptance_criteria = "orig ac".into();
+        s.payload_mut().files_to_modify = "orig".into();
+        s.payload_mut().test_hints = "orig".into();
+        s.payload_mut().blocked_by = vec![10];
+        s.payload_mut().milestone = Some(42);
+        s.set_step_for_tests(IssueWizardStep::AiReview);
+        s.begin_ai_review();
+        s.apply_ai_review(Ok("critique text".into()));
+        s
+    }
+
+    fn sample_improved() -> IssueCreationPayload {
+        IssueCreationPayload {
+            issue_type: IssueType::Feature,
+            title: "Improved title".into(),
+            overview: "improved".into(),
+            expected_behavior: "improved".into(),
+            current_behavior: String::new(),
+            steps_to_reproduce: String::new(),
+            acceptance_criteria: "improved ac".into(),
+            files_to_modify: "improved".into(),
+            test_hints: "improved".into(),
+            blocked_by: vec![10],
+            milestone: Some(42),
+            image_paths: vec![],
+        }
+    }
+
+    #[test]
+    fn begin_improve_sets_loading_clears_candidate_and_error() {
+        let mut s = at_ai_review_with_critique();
+        s.begin_improve();
+        assert!(s.improve_loading());
+        assert!(s.improve_candidate().is_none());
+        assert!(s.improve_error().is_none());
+    }
+
+    #[test]
+    fn begin_improve_is_noop_while_review_still_loading() {
+        let mut s = IssueWizardScreen::new();
+        s.set_step_for_tests(IssueWizardStep::AiReview);
+        s.begin_ai_review(); // review_loading=true, review_text=None
+        s.begin_improve();
+        assert!(
+            !s.improve_loading(),
+            "begin_improve should be a no-op while review is loading"
+        );
+    }
+
+    #[test]
+    fn begin_improve_is_noop_when_review_has_error() {
+        let mut s = IssueWizardScreen::new();
+        s.set_step_for_tests(IssueWizardStep::AiReview);
+        s.begin_ai_review();
+        s.apply_ai_review(Err("review failed".into()));
+        s.begin_improve();
+        assert!(!s.improve_loading());
+    }
+
+    #[test]
+    fn begin_improve_is_noop_when_candidate_already_present() {
+        let mut s = at_ai_review_with_critique();
+        s.apply_improve_result(Ok(sample_improved()));
+        assert!(s.improve_candidate().is_some());
+        s.begin_improve();
+        assert!(
+            !s.improve_loading(),
+            "begin_improve must not re-fire while a candidate is on screen"
+        );
+    }
+
+    #[test]
+    fn apply_improve_result_ok_populates_candidate() {
+        let mut s = at_ai_review_with_critique();
+        s.begin_improve();
+        s.apply_improve_result(Ok(sample_improved()));
+        assert!(!s.improve_loading());
+        assert!(s.improve_candidate().is_some());
+        assert!(s.improve_error().is_none());
+    }
+
+    #[test]
+    fn apply_improve_result_err_populates_error() {
+        let mut s = at_ai_review_with_critique();
+        s.begin_improve();
+        s.apply_improve_result(Err("bad JSON".into()));
+        assert!(!s.improve_loading());
+        assert!(s.improve_candidate().is_none());
+        assert_eq!(s.improve_error(), Some("bad JSON"));
+    }
+
+    #[test]
+    fn accept_improve_replaces_payload_and_drops_candidate() {
+        let mut s = at_ai_review_with_critique();
+        s.apply_improve_result(Ok(sample_improved()));
+        s.accept_improve();
+        assert_eq!(s.payload().title, "Improved title");
+        assert!(s.improve_candidate().is_none());
+        assert_eq!(
+            s.review_text(),
+            Some("critique text"),
+            "critique stays visible after accept"
+        );
+    }
+
+    #[test]
+    fn discard_improve_drops_candidate_leaves_payload_intact() {
+        let mut s = at_ai_review_with_critique();
+        let original_title = s.payload().title.clone();
+        s.apply_improve_result(Ok(sample_improved()));
+        s.discard_improve();
+        assert_eq!(s.payload().title, original_title);
+        assert!(s.improve_candidate().is_none());
+        assert!(s.improve_error().is_none());
+    }
+
+    #[test]
+    fn improve_requested_returns_true_exactly_once_per_begin() {
+        let mut s = at_ai_review_with_critique();
+        s.begin_improve();
+        assert!(s.improve_requested());
+        s.mark_improve_enqueued();
+        assert!(
+            !s.improve_requested(),
+            "after marking enqueued, the tick hook must not re-dispatch"
+        );
+    }
+
+    #[test]
+    fn i_key_calls_begin_improve_when_guard_passes() {
+        let mut s = at_ai_review_with_critique();
+        s.handle_input(&key_event(KeyCode::Char('i')), InputMode::Normal);
+        assert!(s.improve_loading());
+    }
+
+    #[test]
+    fn i_key_is_ignored_while_review_loading() {
+        let mut s = IssueWizardScreen::new();
+        s.set_step_for_tests(IssueWizardStep::AiReview);
+        s.begin_ai_review(); // review_loading=true
+        s.handle_input(&key_event(KeyCode::Char('i')), InputMode::Normal);
+        assert!(!s.improve_loading());
+    }
+
+    #[test]
+    fn a_and_d_keys_are_silently_ignored_without_candidate() {
+        let mut s = at_ai_review_with_critique();
+        let original_title = s.payload().title.clone();
+        s.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
+        s.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
+        assert_eq!(s.payload().title, original_title);
+        assert!(s.improve_candidate().is_none());
+    }
+
+    #[test]
+    fn a_key_accepts_candidate_when_present() {
+        let mut s = at_ai_review_with_critique();
+        s.apply_improve_result(Ok(sample_improved()));
+        s.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
+        assert_eq!(s.payload().title, "Improved title");
+        assert!(s.improve_candidate().is_none());
+    }
+
+    #[test]
+    fn d_key_discards_candidate_when_present() {
+        let mut s = at_ai_review_with_critique();
+        let original_title = s.payload().title.clone();
+        s.apply_improve_result(Ok(sample_improved()));
+        s.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
+        assert_eq!(s.payload().title, original_title);
+        assert!(s.improve_candidate().is_none());
+    }
+
+    #[test]
+    fn esc_with_improve_error_clears_error() {
+        let mut s = at_ai_review_with_critique();
+        s.begin_improve();
+        s.apply_improve_result(Err("boom".into()));
+        assert!(s.improve_error().is_some());
+        s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert!(s.improve_error().is_none());
     }
 }

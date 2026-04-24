@@ -382,6 +382,11 @@ impl App {
                     screen.apply_ai_review(result);
                 }
             }
+            TuiDataEvent::AiImproveResult(result) => {
+                if let Some(ref mut screen) = self.issue_wizard_screen {
+                    screen.apply_improve_result(result);
+                }
+            }
             TuiDataEvent::MilestonePlanCreated(result) => {
                 if let Some(ref mut screen) = self.milestone_wizard_screen {
                     screen.finish_materialization(result);
