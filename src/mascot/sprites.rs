@@ -46,10 +46,11 @@ pub fn sprite(state: MascotState, _frame: usize) -> &'static [u8] {
     }
 }
 
-/// Unpacks a single pixel from a 1-bpp MSB-first bitmap. `w` is the bitmap
-/// width in pixels (must be a multiple of 8). Out-of-range `(x, y)` are
-/// clamped so callers don't have to guard the edges when downscaling.
-pub fn pixel(bm: &[u8], w: u16, x: u16, y: u16) -> bool {
+/// Unpacks a single pixel from a 1-bpp MSB-first bitmap. Test-only helper
+/// that pins the canonical bit layout consumed by `render_sprite`'s inlined
+/// sampler — if that sampler diverges, `pixel_unpack_msb_first` fails.
+#[cfg(test)]
+fn pixel(bm: &[u8], w: u16, x: u16, y: u16) -> bool {
     let w = w.max(1) as usize;
     let stride = w.div_ceil(8);
     let total_rows = bm.len() / stride;
