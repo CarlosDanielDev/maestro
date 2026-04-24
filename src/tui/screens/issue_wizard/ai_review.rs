@@ -2,6 +2,7 @@
 //! Pure string helpers, no I/O — keeps the prompt logic unit-testable.
 
 use super::IssueCreationPayload;
+use super::prompt_common::format_payload_for_prompt;
 
 /// Build the structured prompt sent to `claude --print` for the AI
 /// review step. The model is asked to critique completeness, testability,
@@ -17,36 +18,20 @@ pub fn build_review_prompt(payload: &IssueCreationPayload) -> String {
     s.push_str("--- DRAFT ISSUE ---\n");
     s.push_str(&format!("Type: {:?}\n", payload.issue_type));
     s.push_str(&format!("Title: {}\n", payload.title));
-    push_section(&mut s, "Overview", &payload.overview);
-    push_section(&mut s, "Expected Behavior", &payload.expected_behavior);
-    if !payload.current_behavior.trim().is_empty() {
-        push_section(&mut s, "Current Behavior", &payload.current_behavior);
-    }
-    if !payload.steps_to_reproduce.trim().is_empty() {
-        push_section(&mut s, "Steps to Reproduce", &payload.steps_to_reproduce);
-    }
-    push_section(&mut s, "Acceptance Criteria", &payload.acceptance_criteria);
-    push_section(&mut s, "Files to Modify", &payload.files_to_modify);
-    push_section(&mut s, "Test Hints", &payload.test_hints);
+    s.push_str(&format_payload_for_prompt(payload));
     if !payload.blocked_by.is_empty() {
         let refs: Vec<String> = payload
             .blocked_by
             .iter()
             .map(|n| format!("#{}", n))
             .collect();
-        push_section(&mut s, "Blocked By", &refs.join(", "));
+        s.push('\n');
+        s.push_str("## Blocked By\n");
+        s.push_str(&refs.join(", "));
+        s.push('\n');
     }
     s.push_str("\n--- END DRAFT ---\n");
     s
-}
-
-fn push_section(out: &mut String, title: &str, body: &str) {
-    out.push('\n');
-    out.push_str("## ");
-    out.push_str(title);
-    out.push('\n');
-    out.push_str(body.trim());
-    out.push('\n');
 }
 
 #[cfg(test)]

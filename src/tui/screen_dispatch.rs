@@ -11,9 +11,13 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
     if app.tui_mode != app::TuiMode::IssueWizard {
         return;
     }
-    let (start_dep_fetch, start_review) = match app.issue_wizard_screen.as_ref() {
-        Some(s) => (s.entered_dependencies_step(), s.entered_ai_review_step()),
-        None => (false, false),
+    let (start_dep_fetch, start_review, start_improve) = match app.issue_wizard_screen.as_ref() {
+        Some(s) => (
+            s.entered_dependencies_step(),
+            s.entered_ai_review_step(),
+            s.improve_requested(),
+        ),
+        None => (false, false, false),
     };
     if start_dep_fetch {
         if let Some(ref mut s) = app.issue_wizard_screen {
@@ -33,6 +37,21 @@ pub(super) fn tick_wizard_step_hooks(app: &mut app::App) {
             }
             app.pending_commands
                 .push(app::TuiCommand::LaunchAiReview(payload));
+        }
+    }
+    if start_improve {
+        let pair = app.issue_wizard_screen.as_ref().map(|s| {
+            (
+                s.payload().clone(),
+                s.review_text().unwrap_or("").to_string(),
+            )
+        });
+        if let Some((payload, critique)) = pair {
+            if let Some(ref mut s) = app.issue_wizard_screen {
+                s.mark_improve_enqueued();
+            }
+            app.pending_commands
+                .push(app::TuiCommand::LaunchAiImprove(payload, critique));
         }
     }
 

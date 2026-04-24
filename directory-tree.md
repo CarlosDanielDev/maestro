@@ -226,10 +226,14 @@ maestro/
 │   │       │   ├── mod.rs                 # IssueBrowserScreen: navigable issue list, multi-select, label/milestone filters, preview pane; set_issues() for async data delivery; reapply_filters() honours active filters on new data  [Issue #32, #46, #117]
 │   │       │   └── draw.rs                # ratatui rendering for issue browser layout and panels
 │   │       ├── issue_wizard/              # Issue creation wizard screen components  [Issue #447]
-│   │       │   ├── mod.rs                 # IssueWizardScreen: multi-step wizard using WizardFields; sync_fields_into_payload(), rebuild_fields_for_step(), field_text(), refresh_field_blocks()  [Issue #447]
+│   │       │   ├── mod.rs                 # IssueWizardScreen: multi-step wizard using WizardFields; sync_fields_into_payload(), rebuild_fields_for_step(), field_text(), refresh_field_blocks(); improve state fields and lifecycle methods  [Issue #447, #450]
 │   │       │   ├── types.rs               # IssueWizardStep state machine and form payload types
+│   │       │   ├── ai_improve.rs          # Improve prompt builder + JSON parser for AI-rewrite flow; pure logic, no I/O  [Issue #450]
 │   │       │   ├── ai_review.rs           # AI-assisted review step: calls LLM to review draft issue fields before submission
-│   │       │   └── draw.rs                # ratatui rendering; renders TextArea widgets via refresh_field_blocks() mutable draw entry point  [Issue #447]
+│   │       │   ├── draw.rs                # ratatui rendering; renders TextArea widgets via refresh_field_blocks() mutable draw entry point  [Issue #447]
+│   │       │   ├── draw_ai_review.rs      # Renders AiReview step and its improve sub-states (loading / error / diff / default review)  [Issue #450]
+│   │       │   ├── draw_diff.rs           # 8-field red/green before-after diff renderer  [Issue #450]
+│   │       │   └── prompt_common.rs       # Shared format_payload_for_prompt used by both review and improve flows  [Issue #450]
 │   │       ├── landing/                   # Landing screen components
 │   │       │   ├── mod.rs                 # LandingScreen struct with Screen trait impl
 │   │       │   ├── types.rs               # Landing screen type definitions
@@ -440,11 +444,15 @@ maestro/
 | `src/tui/screens/home/mod.rs` | `HomeScreen`: idle dashboard with 3-column layout (Quick Actions 30% / Suggestions 35% / Recent Activity 35%); `SuggestionKind` enum (`ReadyIssues`, `MilestoneProgress`, `IdleSessions`, `FailedIssues`); `Suggestion` struct with `build_suggestions()` factory; `HomeSection` enum for Tab-based focus toggle; `draw_suggestions()` renderer; `@username` display in project info bar (Issues #31, #34, #35, #49) |
 | `src/tui/screens/issue_browser/` | Issue browser screen: navigable issue list with multi-select, label/milestone filters, and preview pane |
 | `src/tui/screens/issue_browser/mod.rs` | `IssueBrowserScreen`: multi-select list with label/milestone filters; `set_issues()` delivers async data; `reapply_filters()` honours active filters when new data arrives (Issues #32, #46, #117) |
-| `src/tui/screens/issue_wizard/` | Issue creation wizard screen: multi-step TUI wizard for authoring GitHub issues (Issue #447) |
-| `src/tui/screens/issue_wizard/mod.rs` | `IssueWizardScreen`: replaced hand-rolled `String` buffer with `WizardFields`; adds `sync_fields_into_payload()`, `rebuild_fields_for_step()`, `field_text()`, `refresh_field_blocks()`; paste path via `insert_sanitized()` (Issue #447) |
+| `src/tui/screens/issue_wizard/` | Issue creation wizard screen: multi-step TUI wizard for authoring GitHub issues (Issues #447, #450) |
+| `src/tui/screens/issue_wizard/mod.rs` | `IssueWizardScreen`: `WizardFields`-backed wizard; `sync_fields_into_payload()`, `rebuild_fields_for_step()`, `field_text()`, `refresh_field_blocks()`; improve state fields (`improve_loading`, `improve_candidate`, `improve_error`, `improve_enqueued`, `diff_scroll`) and lifecycle methods (`begin_improve`, `apply_improve_result`, `accept_improve`, `discard_improve`); `AiReview` step key handler (`i`/`a`/`d`/`r`/`Esc`/`j`/`k`) (Issues #447, #450) |
 | `src/tui/screens/issue_wizard/types.rs` | `IssueWizardStep` state machine and form payload types |
-| `src/tui/screens/issue_wizard/ai_review.rs` | AI-assisted review step: calls LLM to review draft issue fields before submission |
+| `src/tui/screens/issue_wizard/ai_improve.rs` | Improve prompt builder (`build_improve_prompt`) and JSON parser (`parse_improve_response`); pure logic, no I/O; 13 unit tests (Issue #450) |
+| `src/tui/screens/issue_wizard/ai_review.rs` | AI-assisted review step: calls LLM to review draft issue fields; refactored to use shared `format_payload_for_prompt` |
 | `src/tui/screens/issue_wizard/draw.rs` | ratatui rendering; renders `TextArea` widget directly; blocks set via `refresh_field_blocks()` on mutable draw entry point (Issue #447) |
+| `src/tui/screens/issue_wizard/draw_ai_review.rs` | Renders `AiReview` step and its improve sub-states: loading spinner, error view, before/after diff, and default review display (Issue #450) |
+| `src/tui/screens/issue_wizard/draw_diff.rs` | 8-field red/green before-after diff renderer; 3 unit tests (Issue #450) |
+| `src/tui/screens/issue_wizard/prompt_common.rs` | Shared `format_payload_for_prompt` helper used by both review and improve flows; 3 unit tests (Issue #450) |
 | `src/tui/screens/landing/` | Landing screen components |
 | `src/tui/screens/landing/mod.rs` | `LandingScreen` struct with `Screen` trait impl |
 | `src/tui/screens/landing/types.rs` | Landing screen type definitions |

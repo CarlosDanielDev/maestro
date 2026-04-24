@@ -67,6 +67,22 @@ pub fn sanitize_for_terminal(s: &str) -> String {
         .collect()
 }
 
+/// Strip markdown code fences (```json, ```, trailing ```) from a Claude
+/// response before JSON parsing. Shared by the Milestone Wizard planning
+/// flow and the Issue Wizard improve flow (#450).
+pub(crate) fn strip_fences(s: &str) -> &str {
+    let mut t = s.trim();
+    if let Some(stripped) = t.strip_prefix("```json") {
+        t = stripped;
+    } else if let Some(stripped) = t.strip_prefix("```") {
+        t = stripped;
+    }
+    if let Some(stripped) = t.strip_suffix("```") {
+        t = stripped;
+    }
+    t.trim()
+}
+
 /// Render a keybindings help bar at the bottom of a screen.
 pub fn draw_keybinds_bar(f: &mut Frame, area: Rect, bindings: &[(&str, &str)], theme: &Theme) {
     let spans: Vec<Span> = bindings
