@@ -489,7 +489,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 is_dashboard,
                 app.mascot_style,
             ) {
-                let panel_width = dashboard_mascot_panel_width(app.mascot_style);
+                let panel_width = dashboard_mascot_layout(app.mascot_style).panel_width;
                 let h_split = Layout::default()
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Min(10), Constraint::Length(panel_width)])
@@ -583,10 +583,36 @@ pub(super) fn active_screen_input_mode(app: &App) -> crate::tui::navigation::Inp
         .unwrap_or(crate::tui::navigation::InputMode::Normal)
 }
 
-/// Gate for the dashboard's side-panel mascot. Returns `true` when the panel
-/// should be drawn for the given area + style. Extracted from [`draw`] so it
-/// can be unit-tested — the full draw path needs a ratatui `Frame` and is
-/// therefore painful to drive from a test.
+/// Layout knobs for the dashboard's side-panel mascot. The outer thresholds
+/// gate whether the panel is drawn; `panel_width` sizes the horizontal split;
+/// the inner thresholds guard the widget render inside the bordered block.
+struct DashboardMascotLayout {
+    outer_min_width: u16,
+    outer_min_height: u16,
+    panel_width: u16,
+    inner_min_width: u16,
+    inner_min_height: u16,
+}
+
+fn dashboard_mascot_layout(style: MascotStyle) -> DashboardMascotLayout {
+    match style {
+        MascotStyle::Ascii => DashboardMascotLayout {
+            outer_min_width: 25,
+            outer_min_height: MASCOT_ROWS_ASCII as u16 + 2,
+            panel_width: MASCOT_WIDTH_ASCII as u16 + 2,
+            inner_min_width: MASCOT_WIDTH_ASCII as u16,
+            inner_min_height: MASCOT_ROWS_ASCII as u16,
+        },
+        MascotStyle::Sprite => DashboardMascotLayout {
+            outer_min_width: 14,
+            outer_min_height: 6,
+            panel_width: 14,
+            inner_min_width: 6,
+            inner_min_height: 4,
+        },
+    }
+}
+
 fn should_show_dashboard_mascot_panel(
     log_area: Rect,
     show_mascot: bool,
@@ -596,20 +622,8 @@ fn should_show_dashboard_mascot_panel(
     if !show_mascot || is_dashboard {
         return false;
     }
-    match style {
-        MascotStyle::Ascii => {
-            log_area.width >= 25 && log_area.height >= MASCOT_ROWS_ASCII as u16 + 2
-        }
-        MascotStyle::Sprite => log_area.width >= 14 && log_area.height >= 6,
-    }
-}
-
-/// Width reserved for the dashboard mascot side-panel for a given style.
-fn dashboard_mascot_panel_width(style: MascotStyle) -> u16 {
-    match style {
-        MascotStyle::Ascii => MASCOT_WIDTH_ASCII as u16 + 2,
-        MascotStyle::Sprite => 14,
-    }
+    let layout = dashboard_mascot_layout(style);
+    log_area.width >= layout.outer_min_width && log_area.height >= layout.outer_min_height
 }
 
 fn draw_mascot_block(
@@ -633,11 +647,8 @@ fn draw_mascot_block(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let (min_w, min_h) = match style {
-        MascotStyle::Ascii => (MASCOT_WIDTH_ASCII as u16, MASCOT_ROWS_ASCII as u16),
-        MascotStyle::Sprite => (6u16, 4u16),
-    };
-    if inner.height >= min_h && inner.width >= min_w {
+    let layout = dashboard_mascot_layout(style);
+    if inner.height >= layout.inner_min_height && inner.width >= layout.inner_min_width {
         f.render_widget(
             MascotWidget::new(state, frame_index, color).with_style(style),
             inner,

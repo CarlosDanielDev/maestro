@@ -1,6 +1,6 @@
 use super::MascotStyle;
 use super::frames::{AsciiMascotFrames, MASCOT_ROWS_ASCII};
-use super::sprites::{SPRITE_H, SPRITE_W, pixel, sprite};
+use super::sprites::{SPRITE_H, SPRITE_W, sprite};
 use super::state::MascotState;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -22,8 +22,6 @@ pub struct MascotWidget {
 }
 
 impl MascotWidget {
-    /// Creates a new widget with the default render style (`Ascii`). Use
-    /// [`MascotWidget::with_style`] to switch to the sprite path.
     pub fn new(state: MascotState, frame_index: usize, color: Color) -> Self {
         Self {
             state,
@@ -33,8 +31,7 @@ impl MascotWidget {
         }
     }
 
-    /// Sets the render style. Builder-style so existing 3-arg `new(...)` call
-    /// sites can opt into sprites without churning their signature.
+    /// Overrides the render style.
     pub fn with_style(mut self, style: MascotStyle) -> Self {
         self.style = style;
         self
@@ -85,21 +82,32 @@ fn render_sprite(
     let h = area.height as u32;
     let sprite_w = SPRITE_W as u32;
     let sprite_h = SPRITE_H as u32;
+    let stride = (sprite_w as usize).div_ceil(8);
+
+    // Sample `bm` MSB-first; caller guarantees `src_x < sprite_w` and
+    // `src_y < sprite_h`, so no clamping here.
+    let sample = |src_x: u32, src_y: u32| -> bool {
+        let byte_idx = (src_y as usize) * stride + (src_x as usize >> 3);
+        bm.get(byte_idx)
+            .is_some_and(|b| (b >> (7 - (src_x & 7))) & 1 == 1)
+    };
 
     for y_cell in 0..h {
         let src_y_top = (2 * y_cell * sprite_h) / (2 * h);
         let src_y_bot = ((2 * y_cell + 1) * sprite_h) / (2 * h);
         for x in 0..w {
             let src_x = (x * sprite_w) / w;
-            let top = pixel(bm, SPRITE_W, src_x as u16, src_y_top as u16);
-            let bot = pixel(bm, SPRITE_W, src_x as u16, src_y_bot as u16);
+            let top = sample(src_x, src_y_top);
+            let bot = sample(src_x, src_y_bot);
             let ch = match (top, bot) {
                 (false, false) => continue,
                 (true, false) => "\u{2580}", // ▀
                 (false, true) => "\u{2584}", // ▄
                 (true, true) => "\u{2588}",  // █
             };
-            buf.set_string(area.x + x as u16, area.y + y_cell as u16, ch, style);
+            if let Some(cell) = buf.cell_mut((area.x + x as u16, area.y + y_cell as u16)) {
+                cell.set_symbol(ch).set_style(style);
+            }
         }
     }
 }

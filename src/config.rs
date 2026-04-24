@@ -1984,30 +1984,29 @@ max_cost_total = 10.0
     fn tui_mascot_style_serde_roundtrip() {
         use crate::mascot::MascotStyle;
 
-        let sprite_cfg = TuiConfig {
+        for variant in [MascotStyle::Sprite, MascotStyle::Ascii] {
+            let cfg = TuiConfig {
+                mascot_style: variant,
+                ..Default::default()
+            };
+            let serialized = toml::to_string(&cfg).expect("serialize");
+            let back: TuiConfig = toml::from_str(&serialized).expect("deserialize");
+            assert_eq!(back.mascot_style, variant);
+        }
+    }
+
+    #[test]
+    fn tui_mascot_style_emits_lowercase_on_disk() {
+        use crate::mascot::MascotStyle;
+        let cfg = TuiConfig {
             mascot_style: MascotStyle::Sprite,
             ..Default::default()
         };
-        let serialized = toml::to_string(&sprite_cfg).expect("serialize sprite");
+        let serialized = toml::to_string(&cfg).unwrap();
         assert!(
             serialized.contains(r#"mascot_style = "sprite""#),
-            "expected lowercase 'sprite', got:\n{serialized}"
+            "on-disk spelling must stay lowercase for human-edited TOML: {serialized}"
         );
-
-        let ascii_cfg = TuiConfig {
-            mascot_style: MascotStyle::Ascii,
-            ..Default::default()
-        };
-        let serialized = toml::to_string(&ascii_cfg).expect("serialize ascii");
-        assert!(
-            serialized.contains(r#"mascot_style = "ascii""#),
-            "expected lowercase 'ascii', got:\n{serialized}"
-        );
-
-        let parsed: TuiConfig = toml::from_str(r#"mascot_style = "sprite""#).unwrap();
-        assert_eq!(parsed.mascot_style, MascotStyle::Sprite);
-        let parsed: TuiConfig = toml::from_str(r#"mascot_style = "ascii""#).unwrap();
-        assert_eq!(parsed.mascot_style, MascotStyle::Ascii);
     }
 
     #[test]

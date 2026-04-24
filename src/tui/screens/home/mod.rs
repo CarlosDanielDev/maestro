@@ -108,7 +108,7 @@ pub struct HomeScreen {
     mascot_visible: bool,
     mascot_state: crate::mascot::MascotState,
     mascot_frame: usize,
-    mascot_style: crate::mascot::MascotStyle,
+    pub(super) mascot_style: crate::mascot::MascotStyle,
     /// Marquee animation state for the stats bar when it overflows.
     pub(super) stats_bar_marquee: MarqueeState,
     /// Snapshot of the stats-bar identity fields last rendered. Used to reset
@@ -173,11 +173,6 @@ impl HomeScreen {
         self.mascot_state = state;
         self.mascot_frame = frame;
         self.mascot_style = style;
-    }
-
-    #[cfg(test)]
-    pub(super) fn mascot_style_for_test(&self) -> crate::mascot::MascotStyle {
-        self.mascot_style
     }
 
     fn is_quick_actions_focused(&self) -> bool {
@@ -1076,9 +1071,9 @@ mod tests {
 
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         screen.set_mascot(true, MascotState::Idle, 0, MascotStyle::Sprite);
-        assert_eq!(screen.mascot_style_for_test(), MascotStyle::Sprite);
+        assert_eq!(screen.mascot_style, MascotStyle::Sprite);
 
         screen.set_mascot(true, MascotState::Idle, 0, MascotStyle::Ascii);
-        assert_eq!(screen.mascot_style_for_test(), MascotStyle::Ascii);
+        assert_eq!(screen.mascot_style, MascotStyle::Ascii);
     }
 }
