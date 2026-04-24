@@ -1,5 +1,6 @@
 pub mod animator;
 pub mod frames;
+pub mod sprites;
 pub mod state;
 pub mod widget;
 
