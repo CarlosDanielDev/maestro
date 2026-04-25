@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-24 12:00 (UTC)
+> Last updated: 2026-04-25 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -40,6 +40,8 @@ maestro/
 │       ├── README.md                      # Skills system documentation
 │       ├── api-contract-validation/
 │       │   └── SKILL.md                   # API contract enforcement patterns
+│       ├── caveman/
+│       │   └── SKILL.md                   # Compressed-prose response style (opt-in via behavior.caveman_mode)
 │       ├── example-backend-patterns/
 │       │   └── SKILL.md                   # Example backend skill template
 │       ├── example-frontend-patterns/
@@ -48,6 +50,8 @@ maestro/
 │       │   └── SKILL.md                   # Example mobile skill template
 │       ├── project-patterns/
 │       │   └── SKILL.md                   # Maestro-specific patterns and conventions
+│       ├── provider-resilience/
+│       │   └── SKILL.md                   # Defensive gh/az CLI patterns, error handling, idempotency
 │       ├── security-patterns/
 │       │   └── SKILL.md                   # OWASP Top 10 and security best practices
 │       └── video-frame-extractor/
