@@ -13,8 +13,12 @@ permission_mode = "bypassPermissions"
 allowed_tools = []
 max_retries = 2
 retry_cooldown_secs = 60
-hollow_max_retries = 1
 max_prompt_history = 100
+
+[sessions.hollow_retry]
+policy = "intent-aware"
+work_max_retries = 1
+consultation_max_retries = 0
 
 [sessions.context_overflow]
 overflow_threshold_pct = 70
@@ -54,7 +58,7 @@ issue_filter_labels = ["maestro:ready"]
 auto_pr = true
 cache_ttl_secs = 300
 auto_merge = false
-merge_method = "squash"
+merge_method = "merge"
 
 [notifications]
 desktop = true
@@ -88,7 +92,7 @@ reviewers = []
 
 [concurrency]
 heavy_task_labels = []
-heavy_task_limit = 2
+heavy_task_limit = 3
 
 [monitoring]
 work_tick_interval_secs = 10
@@ -98,6 +102,7 @@ work_tick_interval_secs = 10
 [tui]
 ascii_icons = false
 show_mascot = true
+mascot_style = "sprite"
 
 [tui.theme]
 preset = "retro"
@@ -113,8 +118,14 @@ activity_log_height = 20
 [flags]
 
 [turboquant]
-enabled = false
+enabled = true
 bit_width = 4
 strategy = "turboquant"
 apply_to = "both"
 auto_on_overflow = false
+fork_handoff_budget = 4096
+system_prompt_budget = 2048
+knowledge_budget = 4096
+
+[adapt]
+milestone_naming = "ai"
