@@ -7,17 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-v0.16.0 foundation bundle — branch `maestro/unified-321-329-327-328`. Lays the groundwork for PRD management, interactive roadmap, and the review-council bypass flow.
+## [0.16.0] - 2026-04-25
+
+Milestone "PR Review Automation & Interactive PRD" — automated PR review flow with slash command integration, dangerously-skip-permissions bypass mode for power users, interactive PRD management, milestone roadmap visualization, and the opt-in caveman compressed-prose skill. Closes #321, #322, #327, #328, #329, #481, #490 across PRs #488, #489, #491.
 
 ### Added
 
 - `src/settings/` — `SettingsStore` trait, `FsSettingsStore` atomic writer, and `CavemanModeState` enum; surfaces caveman mode as a Space-toggleable row in the TUI Settings screen with four visual states (ExplicitTrue, ExplicitFalse, Default, Error) and a title-bar status flash on save (#490)
 - `src/tui/screens/settings/caveman_row.rs` — render helper for the caveman-mode row; `tests/settings_caveman.rs` integration tests and five insta snapshot tests in `src/tui/snapshot_tests/caveman_row.rs` (#490)
-- `src/prd/` — `Prd` model, `PrdStore` JSON persistence, and `PrdExporter` markdown export (#321)
+- `.claude/skills/caveman/SKILL.md` — opt-in compressed-prose skill that drops articles, fillers, and transitional prose while preserving code, paths, JSON/TOML, identifiers, and quoted text verbatim; gated by `behavior.caveman_mode` in `.claude/settings.json` (#481)
+- `behavior.*` namespace in `.claude/settings.json` reserved for non-security style/UX toggles; documented in `.claude/CLAUDE.md` (#481)
+- `src/prd/` — `Prd` model, `PrdStore` JSON persistence, and `PrdExporter` markdown export for the interactive PRD flow (#321)
 - `src/review/types.rs`, `parse.rs`, `audit.rs`, `apply.rs`, `bypass.rs` — review pipeline types, PR-comment parser, audit log, patch applicator, and bypass guard (#327, #328)
 - `src/session/pr_capture.rs` — `PrCapture`: intercepts stream-json to detect `/review` PR comments (#327)
 - `src/commands/slash.rs` — `SlashCommandRunner`: executes slash commands against a PR and feeds results to the review pipeline (#327)
-- `src/tui/screens/roadmap/` (`mod.rs`, `dep_levels.rs`) — roadmap screen foundation with dependency-level grouping (#329)
+- `src/tui/screens/roadmap/` (`mod.rs`, `dep_levels.rs`) — roadmap screen foundation with dependency-level grouping and sequence visualization (#329)
 - `src/tui/screens/bypass_warning.rs` — confirmation overlay displayed when `--bypass-review` is active (#328)
 - `src/tui/widgets/bypass_indicator.rs` — F-key bar badge warning that the review council is disabled (#328)
 - `docs/api-contracts/review-comment.json` — JSON Schema (Draft 2020-12) for the `maestro-review` block embedded in `/review` PR comments (#327)
