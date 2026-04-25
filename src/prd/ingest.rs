@@ -55,10 +55,11 @@ pub fn parse_markdown(body: &str) -> IngestedPrd {
 
     for section in &sections {
         match classify_heading(&section.heading) {
+            Some(SectionKind::Vision) if out.vision.is_none() => {
+                out.vision = first_paragraph(&section.body);
+            }
             Some(SectionKind::Vision) => {
-                if out.vision.is_none() {
-                    out.vision = first_paragraph(&section.body);
-                }
+                // Already populated — first matching Vision section wins.
             }
             Some(SectionKind::Goals) => {
                 let items = extract_list_items(&section.body);

@@ -209,15 +209,15 @@ impl PrdScreen {
 
     pub fn cursor_down_in_focus(&mut self, prd: &Prd) {
         match self.focus {
-            PrdSection::Goals => {
-                if !prd.goals.is_empty() && self.goal_cursor < prd.goals.len() - 1 {
-                    self.goal_cursor += 1;
-                }
+            PrdSection::Goals
+                if !prd.goals.is_empty() && self.goal_cursor < prd.goals.len() - 1 =>
+            {
+                self.goal_cursor += 1;
             }
-            PrdSection::NonGoals => {
-                if !prd.non_goals.is_empty() && self.non_goal_cursor < prd.non_goals.len() - 1 {
-                    self.non_goal_cursor += 1;
-                }
+            PrdSection::NonGoals
+                if !prd.non_goals.is_empty() && self.non_goal_cursor < prd.non_goals.len() - 1 =>
+            {
+                self.non_goal_cursor += 1;
             }
             _ => {}
         }

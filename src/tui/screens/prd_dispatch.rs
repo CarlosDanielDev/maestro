@@ -62,10 +62,10 @@ fn handle_explore_key(app: &mut App, code: crossterm::event::KeyCode) -> ScreenA
         KeyCode::Esc | KeyCode::Char('o') | KeyCode::Char('q') => {
             app.prd_show_explore = false;
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.prd_explore_cursor + 1 < app.prd_candidates.len() {
-                app.prd_explore_cursor += 1;
-            }
+        KeyCode::Down | KeyCode::Char('j')
+            if app.prd_explore_cursor + 1 < app.prd_candidates.len() =>
+        {
+            app.prd_explore_cursor += 1;
         }
         KeyCode::Up | KeyCode::Char('k') => {
             app.prd_explore_cursor = app.prd_explore_cursor.saturating_sub(1);
