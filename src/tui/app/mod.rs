@@ -1,9 +1,10 @@
 mod budget;
+mod bypass;
 mod ci_polling;
 mod completion_pipeline;
 mod completion_summary;
 mod context_overflow;
-mod data_handler;
+pub(crate) mod data_handler;
 mod event_handler;
 pub(crate) mod helpers;
 mod issue_completion;
@@ -133,6 +134,34 @@ pub struct App {
     /// depth, agent count, TQ toggle, …).
     pub status_bar_marquee_fingerprint: usize,
     pub resource_monitor: Box<dyn crate::system::monitor::ResourceMonitor>,
+    /// Bypass mode (#328): when true, the session pool runs Claude with
+    /// `bypassPermissions` and review corrections auto-apply. Source-of-truth
+    /// for the indicator widget and the CONFIRM-typing warning gate.
+    pub bypass_active: bool,
+    /// One-shot per session: have we already shown the full-screen warning?
+    pub bypass_warning_acknowledged: bool,
+    /// Live PRD (#321) loaded from `.maestro/prd.toml`; lazily populated by
+    /// the PRD screen on first entry.
+    pub prd: Option<crate::prd::model::Prd>,
+    pub prd_screen: Option<crate::tui::screens::prd::PrdScreen>,
+    pub bypass_warning_screen: Option<crate::tui::screens::bypass_warning::BypassWarningState>,
+    pub roadmap_screen: Option<crate::tui::screens::roadmap::RoadmapScreen>,
+    /// Last completed `/review` cycle (#327). Populated by data_handler;
+    /// consumed by the PR-review screen on next render.
+    pub pending_review_report: Option<crate::review::types::ReviewReport>,
+    /// Cursor into `pending_review_report.concerns` for the panel UI.
+    pub concerns_cursor: usize,
+    /// PRD sources discovered during the last sync. Surfaced via the
+    /// `[o]` Explore key on the PRD screen.
+    pub prd_candidates: Vec<crate::prd::discover::DiscoveredPrd>,
+    /// Pre-parsed `IngestedPrd` for each candidate (1:1 with
+    /// `prd_candidates`). Populated once when candidates land so the
+    /// explore renderer doesn't re-parse the markdown on every frame.
+    pub prd_candidate_parsed: Vec<crate::prd::ingest::IngestedPrd>,
+    /// Whether the PRD screen is currently showing the explore panel.
+    pub prd_show_explore: bool,
+    /// Cursor into `prd_candidates` while the explore panel is open.
+    pub prd_explore_cursor: usize,
 }
 
 impl App {
@@ -233,6 +262,18 @@ impl App {
             resource_monitor: Box::new(crate::system::SysInfoMonitor::new(1000)),
             status_bar_marquee: crate::tui::marquee::MarqueeState::new(),
             status_bar_marquee_fingerprint: 0,
+            bypass_active: false,
+            bypass_warning_acknowledged: false,
+            prd: None,
+            prd_screen: None,
+            bypass_warning_screen: None,
+            roadmap_screen: None,
+            pending_review_report: None,
+            concerns_cursor: 0,
+            prd_candidates: Vec::new(),
+            prd_candidate_parsed: Vec::new(),
+            prd_show_explore: false,
+            prd_explore_cursor: 0,
         }
     }
 

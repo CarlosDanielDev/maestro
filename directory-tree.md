@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-24 00:00 (UTC)
+> Last updated: 2026-04-24 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -66,7 +66,22 @@ maestro/
 │   ├── icon_mode.rs                       # Shared icon mode detection: AtomicBool global flag, init_from_config() reads tui.ascii_icons from Config and MAESTRO_ASCII_ICONS env var, use_nerd_font() returns current mode; extracted from tui/icons.rs so non-TUI crates can query the mode without pulling in the full TUI tree  [Issue #307]
 │   ├── icons.rs                           # Shared icon registry: IconId enum (38 variants across Navigation, Status, UI Chrome, Indicators categories, plus NeedsReview variant added in #308), IconPair struct (nerd: &'static str, ascii: &'static str), icon_pair() const fn compiles to a zero-allocation jump table, get(IconId) returns the correct variant based on global mode, get_for_mode(id, nerd_font) pure testable variant; extracted from tui/icons.rs; CheckboxOn codepoint U+F14A (nf-fa-check_square) and CheckboxOff codepoint U+F0C8 (nf-fa-square) — universally present FA-core glyphs replacing the legacy nf-oct variants  [Issue #308, #433]
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; propagates once_mode from parsed CLI flag into App; forces max_concurrent=1 when --continuous is set; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests; declares mod updater; declares mod flags; propagates startup gh auth check result into App.gh_auth_ok; declares #[cfg(feature = "experimental-sanitizer")] mod sanitizer; constructs FeatureFlags from --enable-flag / --disable-flag CLI args merged with [flags] config  [Issue #15, #29, #49, #34, #36, #35, #52, #83, #85, #118, #141, #142, #143, #158]
-│   ├── cli.rs                             # CLI definition extracted from main.rs; Cli struct and Commands enum (clap derive); --once flag on Run subcommand (exits after all sessions complete, for CI/scripting); --continuous / -C flag on Run subcommand (auto-advance through issues, pause on failure); --enable-flag / --disable-flag repeatable args on Run subcommand for runtime feature flag overrides; generate_completions() and cmd_completions() for shell tab-completion output; cmd_mangen() for roff man page generation; Completions and Mangen subcommands  [Issue #18, #83, #85, #143]
+│   ├── cli.rs                             # CLI definition extracted from main.rs; Cli struct and Commands enum (clap derive); --once flag on Run subcommand (exits after all sessions complete, for CI/scripting); --continuous / -C flag on Run subcommand (auto-advance through issues, pause on failure); --enable-flag / --disable-flag repeatable args on Run subcommand for runtime feature flag overrides; --bypass-review global flag (session-only, skips review council); generate_completions() and cmd_completions() for shell tab-completion output; cmd_mangen() for roff man page generation; Completions and Mangen subcommands  [Issue #18, #83, #85, #143, #328]
+│   ├── commands/                          # Command handler modules (one per CLI subcommand)
+│   │   ├── mod.rs                         # Module re-exports
+│   │   ├── clean.rs                       # cmd_clean(): prune orphaned worktrees and stale log files
+│   │   ├── dashboard.rs                   # cmd_dashboard(): launch the TUI dashboard
+│   │   ├── doctor.rs                      # cmd_doctor(): run preflight checks and print report
+│   │   ├── init.rs                        # cmd_init(): scaffold maestro.toml in the project root
+│   │   ├── logs.rs                        # cmd_logs(): stream or tail session log files
+│   │   ├── queue.rs                       # cmd_queue(): interactive work-queue management
+│   │   ├── resume.rs                      # cmd_resume(): re-attach to a paused session
+│   │   ├── run.rs                         # cmd_run(): validate preflight then launch a session
+│   │   ├── setup.rs                       # cmd_setup(): guided first-run configuration wizard
+│   │   ├── slack.rs                       # cmd_slack(): test Slack webhook notification delivery
+│   │   ├── slash.rs                       # SlashCommandRunner: executes /review and other slash commands against a PR; integrates with review::parse to extract the maestro-review JSON block  [Issue #327]
+│   │   ├── status.rs                      # cmd_status(): print current session and queue state
+│   │   └── turboquant.rs                  # cmd_turboquant(): run TurboQuant compression diagnostics
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix; TuiConfig struct with optional theme field and mascot_style field ("sprite" | "ascii", default "sprite"); Config gains tui field; FlagsConfig (flattened HashMap<String, bool>) loaded from [flags] table; Config gains flags field; HollowRetryPolicy enum (Always/IntentAware/Never), HollowRetryConfig struct (policy, work_max_retries, consultation_max_retries), merge_legacy_hollow() for backward-compat TOML parsing, SessionsConfigRaw shadow struct for custom Deserialize; LoadedConfig { config: Config, path: PathBuf } struct returned by find_and_load_with_path() and find_and_load_in_with_path() so callers have the resolved file path; legacy find_and_load() and find_and_load_in() kept as thin shims  [Issue #29, #40, #41, #43, #38, #143, #275, #437, #473]
 │   ├── continuous.rs                      # ContinuousModeState and ContinuousFailure structs; state machine for --continuous / -C flag: auto-advances to next ready issue, pauses loop on failure waiting for user decision (skip / retry / quit)  [Issue #85]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
@@ -136,15 +151,26 @@ maestro/
 │   │   ├── mod.rs                         # Module exports
 │   │   ├── hooks.rs                       # HookPoint enum: SessionStarted, SessionCompleted, TestsPassed, ContextOverflow, etc.  [Issue #12]
 │   │   └── runner.rs                      # PluginRunner: executes external plugin commands per hook point
-│   ├── review/                            # Review pipeline  [Phase 3]
+│   ├── prd/                               # PRD model, persistence, and markdown export  [Issue #321]
+│   │   ├── mod.rs                         # Module facade; re-exports Prd, PrdStore, PrdExporter
+│   │   ├── model.rs                       # Prd struct and field types; serde Serialize/Deserialize
+│   │   ├── store.rs                       # PrdStore: JSON persistence under .maestro/prd/
+│   │   └── export.rs                      # PrdExporter: renders a Prd to a markdown document
+│   ├── review/                            # Review pipeline  [Phase 3, Issue #327, #328]
 │   │   ├── mod.rs                         # Module exports; re-exports ReviewConfig, ReviewDispatcher
+│   │   ├── apply.rs                       # apply_review(): applies accepted concern patches to the worktree  [Issue #327]
+│   │   ├── audit.rs                       # ReviewAudit: records accept/reject decisions and writes audit log  [Issue #327]
+│   │   ├── bypass.rs                      # BypassGuard: enforces --bypass-review policy; logs bypass events  [Issue #328]
 │   │   ├── council.rs                     # ReviewCouncil: parallel multi-reviewer orchestration
-│   │   └── dispatch.rs                    # ReviewDispatcher: single reviewer execution and config
+│   │   ├── dispatch.rs                    # ReviewDispatcher: single reviewer execution and config
+│   │   ├── parse.rs                       # parse_review_comment(): extracts maestro-review JSON block from PR comment body  [Issue #327]
+│   │   └── types.rs                       # ReviewReport, Concern, ConcernSeverity, ReviewOutcome types; schema mirrors docs/api-contracts/review-comment.json  [Issue #327]
 │   ├── session/
 │   │   ├── mod.rs                         # Module exports (includes pool, worktree, health, retry, context_monitor, fork)
 │   │   ├── manager.rs                     # Claude CLI process management; handles ContextUpdate events; thinking_start field tracks Thinking block duration; handle_event() emits rich activity messages with file paths, elapsed times for tool calls, and thinking duration on block end; current_activity reflects "Thinking..." while a thinking block is active; emits "STATUS: OLD → NEW" activity log entries when session state changes  [Phase 3, Issue #102, #202]
 │   │   ├── parser.rs                      # stream-json output parser; parses system events for context usage; parses "thinking" message type into StreamEvent::Thinking; extracts command field from Bash tool input as command_preview (truncated to 60 chars)  [Phase 3, Issue #102]
 │   │   ├── pool.rs                        # Session pool: max_concurrent, queue, auto-promote; branch tracking; guardrail_prompt field; set_guardrail_prompt(); merged into system prompt in try_promote(); find_by_issue_mut(); decrements flash_counter on each session per render tick and emits STATUS activity log entries on state transitions  [Phase 3, Issue #40, #43, #202]
+│   │   ├── pr_capture.rs                  # PrCapture: intercepts stream-json output to detect when a session posts a /review PR comment and stores the raw comment body for the review pipeline  [Issue #327]
 │   │   ├── types.rs                       # Session state machine; fork fields (parent_session_id, child_session_ids, fork_depth); ContextUpdate StreamEvent; GatesRunning and NeedsReview status variants; CiFix variant; CiFixContext struct (pr_number, issue_number, branch, attempt); ci_fix_context field on Session; StreamEvent::Thinking { text } variant; command_preview: Option<String> field on StreamEvent::ToolUse; GateResultEntry struct (gate, passed, message); gate_results: Vec<GateResultEntry> field on Session; NeedsPr variant — non-terminal status indicating PR creation failed and is queued for retry; flash_counter: u8 field on Session — decremented each render tick to drive border-flash effect on state transition  [Phase 3, Issue #40, #41, #102, #104, #159, #202]
 │   │   ├── worktree.rs                    # Git worktree isolation: WorktreeManager trait, GitWorktreeManager, MockWorktreeManager  [Phase 1]
 │   │   ├── health.rs                      # HealthMonitor: stall detection, HealthCheck trait  [Phase 3]
@@ -222,6 +248,7 @@ maestro/
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen; pub mod wizard_fields (added #447); wizard_paste removed  [Issue #31-33, #86, #447]
 │   │       ├── adapt_follow_up.rs         # AdaptFollowUp: post-scaffold follow-up prompt screen
+│   │       ├── bypass_warning.rs          # BypassWarningScreen: confirmation overlay shown when --bypass-review is active; displays policy summary and requires explicit acknowledgement before proceeding  [Issue #328]
 │   │       ├── hollow_retry.rs            # HollowRetryScreen: minimal retry prompt overlay shown when a session stalls and user confirmation is required
 │   │       ├── milestone.rs               # MilestoneScreen: milestone list, progress gauge, issue detail pane, run-all action; selected row uses SLOW_BLINK modifier for visibility; border color derived from selection state; progress gauge fill color uses milestone_gauge_color() (green=high completion, red=low); gauge empty portion dimmed; status counts (open/closed/in-progress) rendered BOLD; issue list uses visual hierarchy to distinguish selected vs unselected items  [Issue #33, #299]
 │   │       ├── prompt_input.rs            # PromptInputScreen: free-text prompt entry; Enter submits, Shift+Enter/Alt+Enter inserts newline via insert_newline() (not input()), Ctrl+V pastes from clipboard (image or text), Esc cancels; Up/Down arrows navigate prompt history (injected at construction); image attachment list with [a]/[d]; keybinds bar always visible; uses wrap::soft_wrap_lines() for word-wrapped rendering  [Issue #101, #232, #263]
@@ -269,11 +296,15 @@ maestro/
 │   │       ├── release_notes/             # Release notes screen components
 │   │       │   ├── mod.rs                 # ReleaseNotesScreen struct with Screen trait impl
 │   │       │   └── draw.rs                # ratatui rendering for release notes display
+│   │       ├── roadmap/                   # Roadmap screen (v0.16.0 foundation)  [Issue #329]
+│   │       │   ├── mod.rs                 # RoadmapScreen struct with Screen trait impl; renders milestones as a swimlane timeline
+│   │       │   └── dep_levels.rs          # DepLevels: groups milestones and issues by dependency level for the roadmap layout
 │   │       └── settings/                  # Settings screen components  [Issue #124, #146]
 │   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent; Sessions tab gains hollow-retry widgets: [policy] dropdown (always/intent-aware/never), [work_max_retries] stepper, [consultation_max_retries] stepper; footer built from focused widget's edit_hint() so edit keys (Space/Enter/←→) are always advertised; KeymapProvider::keybindings() gains a third "Edit" group for consistent ? help overlay; save_config returns Err via let-else when config_path is None; Ctrl+S surfaces failures as a 5-second title-bar flash (save_error_flash: Option<(String, Instant)> field) rendered as "Settings [Save failed: <msg>]" in accent_error  [Issue #275, #432, #437]
 │   │           └── validation.rs          # Settings field validation helpers
 │   │   └── widgets/                       # Reusable TUI widget components  [Issue #124]
 │   │       ├── mod.rs                     # Module re-exports for all widgets; WidgetKind::edit_hint() returns a contextual (key, label) tuple per variant used by SettingsScreen to build the footer  [Issue #432]
+│   │       ├── bypass_indicator.rs        # BypassIndicatorWidget: small status badge rendered in the F-key bar when --bypass-review is active, warning the user that the review council is disabled  [Issue #328]
 │   │       ├── ci_monitor.rs              # CiMonitorWidget: compact bordered box rendering live CI check-run status for a PR; status icons, check names, elapsed times, and a summary footer
 │   │       ├── dropdown.rs                # Dropdown selection widget with keyboard navigation
 │   │       ├── list_editor.rs             # Editable list widget for adding and removing string items
@@ -305,6 +336,9 @@ maestro/
 │       ├── executor.rs                    # QueueExecutor state machine for sequential queue execution; ExecutorPhase enum (Idle, Running, AwaitingDecision, Finished); ExecutorItem struct; QueueItemState enum; FailureAction enum (Retry, Skip, Abort); advance(), mark_success(), mark_failure(), apply_decision(), set_session_id()
 │       └── queue.rs                       # WorkQueue, QueuedItem, QueueValidationError; validate_selection()  [Issue #65]
 ├── docs/
+│   ├── api-contracts/                     # JSON Schema (Draft 2020-12) for every external payload that crosses a process boundary; one file per payload type; referenced by /validate-contracts and subagent-gatekeeper
+│   │   ├── README.md                      # Convention guide: naming, additionalProperties policy, gatekeeper integration  [Issue #327]
+│   │   └── review-comment.json            # Schema for the maestro-review JSON block in /review PR comments; parsed by review::parse and TUI pr_review screen  [Issue #327]
 │   ├── ci-smoke-check.md                  # CI smoke-check test harness guide
 │   ├── FOLLOW-UPS.md                      # Pending hardening and security follow-up items (non-blocking, filed as issues before next release)
 │   ├── harness-acceptance.md              # Acceptance criteria for the test harness

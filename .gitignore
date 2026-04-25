@@ -10,6 +10,7 @@ maestro-prompt-history.json
 .maestro/worktrees/
 .maestro/logs/
 .maestro/adapt-cache.json
+.maestro/prd.toml
 # OS
 .DS_Store
 *.swp

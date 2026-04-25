@@ -8,6 +8,7 @@ pub mod logger;
 pub mod manager;
 pub mod parser;
 pub mod pool;
+pub mod pr_capture;
 pub mod retry;
 pub mod transition;
 pub mod types;

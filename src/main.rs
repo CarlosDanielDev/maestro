@@ -33,6 +33,7 @@ mod work;
 
 mod adapt;
 mod mascot;
+mod prd;
 mod sanitize;
 mod system;
 mod turboquant;
@@ -208,6 +209,7 @@ async fn main() -> anyhow::Result<()> {
                 enable_flags,
                 disable_flags,
                 no_splash,
+                cli.bypass_review,
             )
             .await
         }
@@ -368,7 +370,10 @@ mod tests {
     }
 
     #[test]
-    fn default_permission_mode_is_bypass_permissions() {
+    fn default_permission_mode_is_default_off() {
+        // Bypass mode is opt-in (Settings toggle, --bypass-review CLI flag,
+        // or explicit `permission_mode = "bypassPermissions"`). A minimal
+        // config that doesn't set the field must NOT auto-enable bypass.
         let app = setup_app_from_config(
             loaded(minimal_config()),
             make_store(),
@@ -377,7 +382,7 @@ mod tests {
         );
         assert_eq!(
             app.config.as_ref().unwrap().sessions.permission_mode,
-            "bypassPermissions"
+            "default"
         );
     }
 

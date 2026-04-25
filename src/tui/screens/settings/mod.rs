@@ -305,6 +305,10 @@ impl SettingsScreen {
                 "default_mode",
                 &s.default_mode,
             ))),
+            Self::field(WidgetKind::Toggle(Toggle::new(
+                "bypass_review_corrections (DANGER: auto-accepts all review fixes)",
+                s.permission_mode == "bypassPermissions",
+            ))),
             Self::field(WidgetKind::Dropdown(Dropdown::new(
                 "permission_mode",
                 permission_options,
@@ -705,6 +709,21 @@ impl SettingsScreen {
             }
             if let Some(WidgetKind::TextInput(w)) = widget_by_label(fields, "default_mode") {
                 s.default_mode = w.value.clone();
+            }
+            // Apply the bypass toggle FIRST so the permission_mode dropdown
+            // can override it if the user explicitly picked a non-bypass
+            // value (e.g. "acceptEdits"). Toggle ON → bypassPermissions;
+            // toggle OFF → "default" only if currently bypass (so users
+            // who picked "acceptEdits" via the dropdown aren't reset).
+            if let Some(WidgetKind::Toggle(w)) = widget_by_label(
+                fields,
+                "bypass_review_corrections (DANGER: auto-accepts all review fixes)",
+            ) {
+                if w.value {
+                    s.permission_mode = "bypassPermissions".to_string();
+                } else if s.permission_mode == "bypassPermissions" {
+                    s.permission_mode = "default".to_string();
+                }
             }
             if let Some(WidgetKind::Dropdown(w)) = widget_by_label(fields, "permission_mode") {
                 s.permission_mode = w.selected_value().to_string();
@@ -2143,24 +2162,25 @@ alert_threshold_pct = 80
     fn sessions_tab_contains_hollow_retry_widgets() {
         let screen = SettingsScreen::new(make_config(), make_flags());
         let fields = &screen.fields_per_tab[1];
-        // Fields 7, 8, 9 are the three new widgets (after max_concurrent,
-        // stall_timeout_secs, default_model, default_mode, permission_mode,
-        // max_retries, retry_cooldown_secs).
-        match &fields[7].widget {
-            WidgetKind::Dropdown(d) => assert_eq!(d.label, "hollow_retry.policy"),
-            _ => panic!("expected Dropdown at field 7 (hollow_retry.policy)"),
-        }
+        // Fields 8, 9, 10 are the three hollow_retry widgets (after
+        // max_concurrent, stall_timeout_secs, default_model, default_mode,
+        // bypass_review_corrections, permission_mode, max_retries,
+        // retry_cooldown_secs).
         match &fields[8].widget {
-            WidgetKind::NumberStepper(s) => {
-                assert_eq!(s.label, "hollow_retry.work_max_retries")
-            }
-            _ => panic!("expected NumberStepper at field 8 (work_max_retries)"),
+            WidgetKind::Dropdown(d) => assert_eq!(d.label, "hollow_retry.policy"),
+            _ => panic!("expected Dropdown at field 8 (hollow_retry.policy)"),
         }
         match &fields[9].widget {
             WidgetKind::NumberStepper(s) => {
+                assert_eq!(s.label, "hollow_retry.work_max_retries")
+            }
+            _ => panic!("expected NumberStepper at field 9 (work_max_retries)"),
+        }
+        match &fields[10].widget {
+            WidgetKind::NumberStepper(s) => {
                 assert_eq!(s.label, "hollow_retry.consultation_max_retries")
             }
-            _ => panic!("expected NumberStepper at field 9 (consultation_max_retries)"),
+            _ => panic!("expected NumberStepper at field 10 (consultation_max_retries)"),
         }
     }
 
@@ -2168,8 +2188,8 @@ alert_threshold_pct = 80
     fn sessions_tab_hollow_retry_policy_defaults_to_intent_aware() {
         let screen = SettingsScreen::new(make_config(), make_flags());
         let fields = &screen.fields_per_tab[1];
-        let WidgetKind::Dropdown(d) = &fields[7].widget else {
-            panic!("field 7 must be Dropdown");
+        let WidgetKind::Dropdown(d) = &fields[8].widget else {
+            panic!("field 8 must be Dropdown");
         };
         // Options order: [always, intent-aware, never] → default index 1.
         assert_eq!(d.selected, 1);
@@ -2183,7 +2203,7 @@ alert_threshold_pct = 80
         if let Some(WidgetKind::Dropdown(d)) = screen
             .fields_per_tab
             .get_mut(1)
-            .and_then(|fs| fs.get_mut(7))
+            .and_then(|fs| fs.get_mut(8))
             .map(|f| &mut f.widget)
         {
             d.selected = 2;
@@ -2201,7 +2221,7 @@ alert_threshold_pct = 80
         if let Some(WidgetKind::NumberStepper(s)) = screen
             .fields_per_tab
             .get_mut(1)
-            .and_then(|fs| fs.get_mut(8))
+            .and_then(|fs| fs.get_mut(9))
             .map(|f| &mut f.widget)
         {
             s.value = 5;
@@ -2209,7 +2229,7 @@ alert_threshold_pct = 80
         if let Some(WidgetKind::NumberStepper(s)) = screen
             .fields_per_tab
             .get_mut(1)
-            .and_then(|fs| fs.get_mut(9))
+            .and_then(|fs| fs.get_mut(10))
             .map(|f| &mut f.widget)
         {
             s.value = 3;

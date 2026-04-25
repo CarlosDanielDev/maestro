@@ -78,6 +78,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let mode_km = app.cached_mode_km.as_ref().unwrap().clone();
 
     draw_status_bar(f, app, mode_km.clone(), chunks[0]);
+    if app.bypass_active {
+        // Overlay the bypass banner on the top row of the status bar so
+        // the indicator is impossible to miss without disturbing layout.
+        let banner_area = Rect::new(chunks[0].x, chunks[0].y, chunks[0].width, 1);
+        crate::tui::widgets::bypass_indicator::draw(
+            f,
+            banner_area,
+            crate::tui::widgets::bypass_indicator::BypassIndicatorState::Active,
+        );
+    }
 
     // Render main content based on TUI mode
     let spinner_tick = app.spinner_tick;
@@ -296,7 +306,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::PrReview => {
-            if let Some(ref mut screen) = app.pr_review_screen {
+            // If an auto-review concerns report is pending, render it in
+            // place of the PR list/detail flow so the user can act on the
+            // findings (#327 AC: TUI panel renders review concerns).
+            if let Some(report) = app.pending_review_report.as_ref() {
+                crate::tui::screens::pr_review::concerns::draw(
+                    f,
+                    chunks[1],
+                    report,
+                    app.concerns_cursor,
+                    &theme,
+                );
+            } else if let Some(ref mut screen) = app.pr_review_screen {
                 screen.tick();
                 screen.draw(f, chunks[1], &theme);
             }
@@ -336,6 +357,26 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 Some(&TuiMode::Dashboard) => {
                     if let Some(ref mut screen) = app.home_screen {
                         screen.draw(f, chunks[1], &theme);
+                    }
+                }
+                Some(&TuiMode::Landing) => {
+                    if let Some(ref mut screen) = app.landing_screen {
+                        screen.set_mascot(
+                            app.mascot_animator.state(),
+                            app.mascot_animator.frame_index(),
+                            app.mascot_style,
+                        );
+                        screen.draw(f, chunks[1], &app.theme);
+                    }
+                }
+                Some(&TuiMode::Prd) => {
+                    if let (Some(prd), Some(screen)) = (app.prd.as_ref(), app.prd_screen.as_ref()) {
+                        crate::tui::screens::prd::draw::draw(f, chunks[1], screen, prd, &theme);
+                    }
+                }
+                Some(&TuiMode::Roadmap) => {
+                    if let Some(screen) = app.roadmap_screen.as_ref() {
+                        crate::tui::screens::roadmap::draw(f, chunks[1], screen, &theme);
                     }
                 }
                 Some(&TuiMode::CostDashboard) => {
@@ -438,6 +479,42 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             if let Some(ref mut screen) = app.adapt_follow_up_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
+        }
+        TuiMode::Prd => {
+            // Lazy-init on first render: the dispatch shim only fires on key
+            // input, so without this the screen is blank until the user
+            // presses a key.
+            crate::tui::screens::prd_dispatch::ensure_loaded(app);
+            if app.prd_show_explore {
+                // Explore panel takes the whole content area when open.
+                crate::tui::screens::prd::explore::draw(
+                    f,
+                    chunks[1],
+                    &app.prd_candidates,
+                    &app.prd_candidate_parsed,
+                    app.prd_explore_cursor,
+                    &theme,
+                );
+            } else if let (Some(prd), Some(screen)) = (app.prd.as_ref(), app.prd_screen.as_ref()) {
+                crate::tui::screens::prd::draw::draw(f, chunks[1], screen, prd, &theme);
+            }
+        }
+        TuiMode::Roadmap => {
+            crate::tui::screens::roadmap_dispatch::ensure_loaded(app);
+            if let Some(screen) = app.roadmap_screen.as_ref() {
+                crate::tui::screens::roadmap::draw(f, chunks[1], screen, &theme);
+            }
+        }
+        TuiMode::BypassWarning => {
+            // Center the warning text in the main content area.
+            let para =
+                ratatui::widgets::Paragraph::new(crate::tui::screens::bypass_warning::WARNING_TEXT)
+                    .style(
+                        ratatui::style::Style::default()
+                            .fg(ratatui::style::Color::Red)
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    );
+            f.render_widget(para, chunks[1]);
         }
     }
 

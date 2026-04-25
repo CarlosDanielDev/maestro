@@ -40,6 +40,13 @@ pub enum SanitizeSeverityFilter {
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
+
+    /// Auto-accept review corrections without confirmation.
+    /// Session-only; cannot be persisted as a default. ⚠ DANGER:
+    /// edits, commits, and pushes are applied without per-suggestion review.
+    /// See issue #328 for the full safety rails.
+    #[arg(long = "bypass-review", global = true)]
+    pub bypass_review: bool,
 }
 
 #[derive(Subcommand)]
