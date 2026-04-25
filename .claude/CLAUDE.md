@@ -356,6 +356,13 @@ Skills are reusable knowledge bases that subagents consult for best practices an
 | `api-contract-validation` | 1.0.0 | API contract enforcement | Orchestrator (via `/validate-contracts`) |
 | `security-patterns` | 1.0.0 | OWASP Top 10, security best practices | `subagent-security-analyst` |
 | `provider-resilience` | 1.0.0 | Defensive `gh`/`az` CLI patterns, error handling, idempotency | `subagent-architect`, `subagent-qa` |
+| `caveman` | 1.0.0 | Compressed orchestrator prose (opt-in) | Orchestrator (instruction) |
+
+### Caveman Mode
+
+At session start, read `.claude/settings.json`. If `behavior.caveman_mode === true`, apply `.claude/skills/caveman/SKILL.md` for the rest of the session. Default is `false`; the flag is read once per session. See SKILL.md for the full compress/preserve rules and non-goals. Reviewers touching CLAUDE.md or settings.json should confirm both this section and the `behavior.caveman_mode` key still exist — drift is detected only by review.
+
+**`behavior.*` namespace policy:** keys under `behavior` in `.claude/settings.json` are reserved for non-security-relevant style and UX toggles only (e.g. response formatting, verbosity, tone). Anything that gates a security control — auth bypass, permission grants, security-review skips, hook disabling — MUST be enforced in code or in a runtime hook, never by an instruction-only flag the orchestrator reads from a JSON file.
 
 ---
 
