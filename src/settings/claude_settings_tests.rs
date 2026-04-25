@@ -84,26 +84,6 @@ fn error_when_input_is_not_valid_json() {
 }
 
 #[test]
-fn next_value_explicit_true_returns_false() {
-    assert_eq!(CavemanModeState::ExplicitTrue.next_value(), Some(false));
-}
-
-#[test]
-fn next_value_explicit_false_returns_true() {
-    assert_eq!(CavemanModeState::ExplicitFalse.next_value(), Some(true));
-}
-
-#[test]
-fn next_value_default_returns_true() {
-    assert_eq!(CavemanModeState::Default.next_value(), Some(true));
-}
-
-#[test]
-fn next_value_error_returns_none() {
-    assert_eq!(CavemanModeState::Error("oops".into()).next_value(), None);
-}
-
-#[test]
 fn label_explicit_true_is_true_string() {
     assert_eq!(CavemanModeState::ExplicitTrue.label(), "true");
 }

@@ -32,14 +32,6 @@ impl CavemanModeState {
         !matches!(self, Self::Error(_))
     }
 
-    pub fn next_value(&self) -> Option<bool> {
-        match self {
-            Self::ExplicitTrue => Some(false),
-            Self::ExplicitFalse | Self::Default => Some(true),
-            Self::Error(_) => None,
-        }
-    }
-
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Self::ExplicitTrue => Some(true),
@@ -84,10 +76,6 @@ pub struct FsSettingsStore {
 impl FsSettingsStore {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 }
 
