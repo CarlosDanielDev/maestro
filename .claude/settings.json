@@ -1,32 +1,32 @@
 {
-  "mcpServers": {
-    "figma-remote-mcp": {
-      "type": "url",
-      "url": "https://mcp.figma.com/mcp"
-    },
-    "context7": {
-      "type": "url",
-      "url": "https://mcp.context7.com/mcp"
-    }
+  "alwaysThinkingEnabled": true,
+  "behavior": {
+    "caveman_mode": true
   },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
-  "alwaysThinkingEnabled": true,
-  "behavior": {
-    "caveman_mode": false
-  },
   "hooks": {
     "Notification": [
       {
-        "matcher": "",
         "hooks": [
           {
-            "type": "command",
-            "command": ".claude/hooks/notify.sh"
+            "command": ".claude/hooks/notify.sh",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": ""
       }
     ]
+  },
+  "mcpServers": {
+    "context7": {
+      "type": "url",
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "figma-remote-mcp": {
+      "type": "url",
+      "url": "https://mcp.figma.com/mcp"
+    }
   }
 }
