@@ -293,12 +293,40 @@ impl MilestoneWizardScreen {
         f.render_widget(block, area);
         let mut lines: Vec<Line> = Vec::new();
         if let Some(num) = self.created_milestone_number() {
-            lines.push(Line::from(Span::styled(
-                format!("Milestone #{} created", num),
-                Style::default()
-                    .fg(Color::LightGreen)
-                    .add_modifier(Modifier::BOLD),
-            )));
+            let created_count = self.created_issue_numbers().len();
+            let skipped_count = self.skipped_issue_numbers().len();
+            if self.milestone_was_reused() {
+                let mut summary = format!(
+                    "Reused existing milestone #{}; created {} issues",
+                    num, created_count
+                );
+                if skipped_count > 0 {
+                    let nums: Vec<String> = self
+                        .skipped_issue_numbers()
+                        .iter()
+                        .map(|n| format!("#{}", n))
+                        .collect();
+                    summary.push_str(&format!(
+                        ", skipped {} duplicate{} ({})",
+                        skipped_count,
+                        if skipped_count == 1 { "" } else { "s" },
+                        nums.join(", ")
+                    ));
+                }
+                lines.push(Line::from(Span::styled(
+                    summary,
+                    Style::default()
+                        .fg(Color::LightYellow)
+                        .add_modifier(Modifier::BOLD),
+                )));
+            } else {
+                lines.push(Line::from(Span::styled(
+                    format!("Milestone #{} created", num),
+                    Style::default()
+                        .fg(Color::LightGreen)
+                        .add_modifier(Modifier::BOLD),
+                )));
+            }
         }
         for n in self.created_issue_numbers() {
             lines.push(Line::from(format!("  • #{}", n)));

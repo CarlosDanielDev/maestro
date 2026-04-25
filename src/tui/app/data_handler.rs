@@ -350,6 +350,15 @@ impl App {
                     screen.finish_create(result);
                 }
             }
+            TuiDataEvent::IssueAlreadyExists {
+                number,
+                state,
+                title,
+            } => {
+                if let Some(ref mut screen) = self.issue_wizard_screen {
+                    screen.finish_create_already_exists(number, state, title);
+                }
+            }
             TuiDataEvent::ProjectStats(data) => {
                 if let Some(ref mut screen) = self.project_stats_screen {
                     screen.set_data(data);

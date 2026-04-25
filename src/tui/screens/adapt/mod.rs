@@ -451,6 +451,7 @@ mod tests {
         MaterializeResult {
             milestones_created: vec![],
             issues_created: vec![],
+            issues_skipped: vec![],
             tech_debt_issue: None,
             dry_run: false,
         }

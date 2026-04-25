@@ -223,7 +223,16 @@ pub enum TuiCommand {
 pub enum TuiDataEvent {
     Issues(anyhow::Result<Vec<GhIssue>>),
     /// Result of creating a GitHub issue via the Issue Wizard (#291+#298).
+    /// Only emitted for `CreateOutcome::Created` — `Existed` surfaces as
+    /// `IssueAlreadyExists` so the wizard can show a blocking modal (#455).
     IssueCreated(anyhow::Result<u64>),
+    /// A dupe-title pre-check matched an existing issue. The wizard is
+    /// expected to show a blocking modal with Edit/Cancel choices (#455).
+    IssueAlreadyExists {
+        number: u64,
+        state: String,
+        title: String,
+    },
     /// Aggregated stats for the Project Stats screen (#292).
     ProjectStats(crate::tui::screens::project_stats::ProjectStatsData),
     /// AI planning result for the Milestone Wizard (#294). `Err(s)` is the
