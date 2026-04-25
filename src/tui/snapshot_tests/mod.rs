@@ -1,3 +1,4 @@
+mod caveman_row;
 mod cost_dashboard;
 mod dashboard;
 mod detail;

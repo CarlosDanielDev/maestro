@@ -25,6 +25,7 @@ mod prompts;
 mod provider;
 mod review;
 mod session;
+mod settings;
 mod state;
 mod tui;
 mod updater;
