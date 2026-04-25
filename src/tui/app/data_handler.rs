@@ -1,8 +1,51 @@
 use super::App;
 use super::types::TuiDataEvent;
+use crate::prd::model::{MergeReport, Prd};
+use crate::prd::sync::PrdSyncResult;
 use crate::session::types::Session;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::milestone::MilestoneEntry;
+
+/// Render a `MergeReport` as a one-line activity-log suffix, prefixed
+/// with the source identifier. Returns `None` when nothing was added so
+/// the caller can omit the noise.
+pub(crate) fn format_merge_summary(
+    report: &MergeReport,
+    source_id: &str,
+    source_label: &str,
+) -> Option<String> {
+    if report.is_no_op() {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if report.filled_vision {
+        parts.push("vision".to_string());
+    }
+    if report.added_goals > 0 {
+        parts.push(format!("{} goal(s)", report.added_goals));
+    }
+    if report.added_non_goals > 0 {
+        parts.push(format!("{} non-goal(s)", report.added_non_goals));
+    }
+    if report.added_stakeholders > 0 {
+        parts.push(format!("{} stakeholder(s)", report.added_stakeholders));
+    }
+    Some(format!(
+        "ingested from {source_id} ({source_label}): {}",
+        parts.join(", ")
+    ))
+}
+
+fn fold_ingest_into_prd(prd_slot: &mut Option<Prd>, sync: &PrdSyncResult) -> Option<String> {
+    let report = sync.ingested.as_ref()?;
+    let prd = prd_slot.as_mut()?;
+    let merge = prd.merge_ingested(&report.ingested);
+    format_merge_summary(
+        &merge,
+        &format!("#{}", report.issue_number),
+        report.source_label,
+    )
+}
 
 impl App {
     /// Resolve model and mode from config and issue labels.
@@ -401,6 +444,97 @@ impl App {
                     screen.finish_materialization(result);
                 }
             }
+            TuiDataEvent::PrdSyncResult(result) => match result {
+                Ok(sync) => {
+                    let milestone_count = sync.timeline.len();
+                    let candidate_count = sync.candidates.len();
+                    self.prd_candidates = sync.candidates.clone();
+                    // Pre-parse so the explore renderer doesn't re-parse
+                    // markdown bodies on every frame.
+                    self.prd_candidate_parsed = self
+                        .prd_candidates
+                        .iter()
+                        .map(|c| crate::prd::ingest::parse_markdown(&c.body))
+                        .collect();
+                    let ingest_summary = fold_ingest_into_prd(&mut self.prd, &sync);
+                    if let Some(prd) = self.prd.as_mut() {
+                        prd.current_state = sync.current_state.clone();
+                        prd.timeline = sync.timeline.clone();
+                        if let Some(s) = self.prd_screen.as_mut() {
+                            s.dirty = true;
+                            s.sync_status = crate::tui::screens::prd::PrdSyncStatus::SyncedAt(
+                                std::time::Instant::now(),
+                            );
+                        }
+                        let suffix = ingest_summary
+                            .map(|s| format!(" • {s}"))
+                            .unwrap_or_default();
+                        let explore_hint = if candidate_count > 1 {
+                            format!(" • {candidate_count} sources found, press [o] to explore")
+                        } else {
+                            String::new()
+                        };
+                        self.activity_log.push_simple(
+                            "PRD".into(),
+                            format!(
+                                "PRD synced — {milestone_count} milestone(s){suffix}{explore_hint}"
+                            ),
+                            LogLevel::Info,
+                        );
+                    }
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    if let Some(s) = self.prd_screen.as_mut() {
+                        s.sync_status = crate::tui::screens::prd::PrdSyncStatus::Failed {
+                            at: std::time::Instant::now(),
+                            message: msg.clone(),
+                        };
+                    }
+                    self.activity_log.push_simple(
+                        "PRD".into(),
+                        format!("PRD sync failed: {msg}"),
+                        LogLevel::Error,
+                    );
+                }
+            },
+            TuiDataEvent::RoadmapResult(result) => match result {
+                Ok(entries) => {
+                    if let Some(s) = self.roadmap_screen.as_mut() {
+                        s.set_entries(entries);
+                    }
+                }
+                Err(e) => self.activity_log.push_simple(
+                    "Roadmap".into(),
+                    format!("Roadmap fetch failed: {e}"),
+                    LogLevel::Error,
+                ),
+            },
+            TuiDataEvent::ReviewCycleResult { pr_number, result } => match result {
+                Ok(report) => {
+                    let count = report.concerns.len();
+                    self.pending_review_report = Some(report);
+                    self.concerns_cursor = 0;
+                    self.activity_log.push_simple(
+                        "Review".into(),
+                        format!(
+                            "Review for PR #{pr_number}: {count} concern(s) — press [C] to view"
+                        ),
+                        LogLevel::Info,
+                    );
+                    // Bypass auto-disable hook (#328 AC). Auto-disable
+                    // also fires when concerns exist but bypass is on so
+                    // accepted-and-applied → cycle complete.
+                    if self.bypass_active && count == 0 {
+                        self.deactivate_bypass("review-cycle-complete");
+                    }
+                }
+                Err(e) => self.activity_log.push_simple(
+                    "Review".into(),
+                    format!("Auto-review failed for PR #{pr_number}: {e}"),
+                    LogLevel::Error,
+                ),
+            },
         }
     }
 }

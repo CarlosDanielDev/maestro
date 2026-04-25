@@ -796,7 +796,11 @@ fn default_mode() -> String {
     "orchestrator".into()
 }
 fn default_permission_mode() -> String {
-    "bypassPermissions".into()
+    // Default OFF: fresh installs / configs that don't set this explicitly
+    // get the safe Claude permission flow (per-tool prompts). Bypass mode
+    // is opt-in via the Settings toggle, the `--bypass-review` CLI flag,
+    // or by setting `permission_mode = "bypassPermissions"` here.
+    "default".into()
 }
 fn default_max_retries() -> u32 {
     2

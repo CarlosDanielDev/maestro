@@ -508,6 +508,58 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
+    // Shift+C opens the auto-review concerns panel when one is pending (#327).
+    if key.code == KeyCode::Char('C')
+        && app.pending_review_report.is_some()
+        && !is_text_input_mode(app)
+    {
+        app.navigate_to(app::TuiMode::PrReview);
+        return true;
+    }
+
+    // Ctrl+B toggles bypass mode from any screen (#328 AC: TUI toggle).
+    if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        let pushed = app.request_bypass_toggle();
+        if pushed {
+            app.navigate_to(app::TuiMode::BypassWarning);
+        }
+        return true;
+    }
+
+    // 'A'/'R' on the concerns panel accept/reject the focused concern (#327).
+    if matches!(app.tui_mode, app::TuiMode::PrReview)
+        && app.pending_review_report.is_some()
+        && matches!(key.code, KeyCode::Char('a') | KeyCode::Char('r'))
+        && !is_text_input_mode(app)
+    {
+        let action = crate::tui::screens::pr_review::actions::handle_key(*key);
+        let cursor = app.concerns_cursor;
+        if let Some(report) = app.pending_review_report.as_mut() {
+            let (next_cursor, _mutated) = crate::tui::screens::pr_review::actions::apply(
+                &mut report.concerns,
+                cursor,
+                action,
+            );
+            app.concerns_cursor = next_cursor;
+        }
+        // Auto-disable bypass when every concern is decided (Accepted or
+        // Rejected) — the review cycle is functionally complete (#328 AC).
+        if app.bypass_active
+            && app
+                .pending_review_report
+                .as_ref()
+                .map(|r| {
+                    r.concerns
+                        .iter()
+                        .all(|c| !matches!(c.status, crate::review::types::ConcernStatus::Pending))
+                })
+                .unwrap_or(false)
+        {
+            app.deactivate_bypass("review-cycle-complete");
+        }
+        return true;
+    }
+
     // Help overlay toggle
     let is_text_input_mode = matches!(
         app.tui_mode,

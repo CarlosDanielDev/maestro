@@ -7,6 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+v0.16.0 foundation bundle — branch `maestro/unified-321-329-327-328`. Lays the groundwork for PRD management, interactive roadmap, and the review-council bypass flow.
+
+### Added
+
+- `src/prd/` — `Prd` model, `PrdStore` JSON persistence, and `PrdExporter` markdown export (#321)
+- `src/review/types.rs`, `parse.rs`, `audit.rs`, `apply.rs`, `bypass.rs` — review pipeline types, PR-comment parser, audit log, patch applicator, and bypass guard (#327, #328)
+- `src/session/pr_capture.rs` — `PrCapture`: intercepts stream-json to detect `/review` PR comments (#327)
+- `src/commands/slash.rs` — `SlashCommandRunner`: executes slash commands against a PR and feeds results to the review pipeline (#327)
+- `src/tui/screens/roadmap/` (`mod.rs`, `dep_levels.rs`) — roadmap screen foundation with dependency-level grouping (#329)
+- `src/tui/screens/bypass_warning.rs` — confirmation overlay displayed when `--bypass-review` is active (#328)
+- `src/tui/widgets/bypass_indicator.rs` — F-key bar badge warning that the review council is disabled (#328)
+- `docs/api-contracts/review-comment.json` — JSON Schema (Draft 2020-12) for the `maestro-review` block embedded in `/review` PR comments (#327)
+- `docs/api-contracts/README.md` — convention guide for the contracts directory
+- `--bypass-review` global CLI flag (session-only) in `src/cli.rs` (#328)
+
 ## [0.15.2] - 2026-04-24
 
 Milestone "Pixel-art mascot sprites" — replaces the hand-authored Unicode block-character mascot with 1-bit pixel-art sprites rendered via half-block (`▀ ▄ █`) encoding. Adds a `[tui].mascot_style` config key so the legacy ASCII block art stays available as a fallback. Closes #473, #474, #475, #476.

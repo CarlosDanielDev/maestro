@@ -535,6 +535,38 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::ProjectStats(data));
                     });
                 }
+                app::TuiCommand::SyncPrd => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result = crate::prd::sync::GitHubPrdSyncer::new(Box::new(client))
+                            .fetch_current_state()
+                            .await;
+                        let _ = tx.send(app::TuiDataEvent::PrdSyncResult(result));
+                    });
+                }
+                app::TuiCommand::SyncRoadmap => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result =
+                            crate::tui::screens::roadmap::loader::load_roadmap(&client).await;
+                        let _ = tx.send(app::TuiDataEvent::RoadmapResult(result));
+                    });
+                }
+                app::TuiCommand::PrCreated {
+                    pr_number,
+                    owner,
+                    repo,
+                } => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let result =
+                            crate::review::auto_review::run_review_cycle(pr_number, &owner, &repo)
+                                .await;
+                        let _ = tx.send(app::TuiDataEvent::ReviewCycleResult { pr_number, result });
+                    });
+                }
             }
         }
 

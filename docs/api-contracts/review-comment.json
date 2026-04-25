@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Maestro Review Report (v1)",
+  "description": "Schema for the structured JSON block embedded in a `/review` slash-command PR comment. The block is fenced with ```json maestro-review ... ```. The maestro TUI parses this to render the concerns panel and drive the accept/reject flow (#327, #328).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "pr_number", "reviewer", "concerns"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Bumped on breaking changes."
+    },
+    "pr_number": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "GitHub PR number this report applies to."
+    },
+    "reviewer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier for the reviewer (e.g. `claude`, `codex`, or a council role)."
+    },
+    "concerns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "file", "message"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "warning", "suggestion"]
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Repo-relative path."
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional 1-based line number."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "suggested_diff": {
+            "type": "string",
+            "description": "Optional unified-diff fragment to apply on accept."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "accepted", "rejected", "applied"],
+            "default": "pending"
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "version": 1,
+      "pr_number": 42,
+      "reviewer": "claude",
+      "concerns": [
+        {
+          "id": "9c5a0f3e-2aab-4b61-9f14-4bc5e3e10e21",
+          "severity": "critical",
+          "file": "src/auth/token.rs",
+          "line": 84,
+          "message": "Token comparison is non-constant-time and is vulnerable to timing attacks.",
+          "suggested_diff": "@@ -84,1 +84,1 @@\n-if token == expected {\n+if subtle::ConstantTimeEq::ct_eq(token.as_bytes(), expected.as_bytes()).into() {",
+          "status": "pending"
+        }
+      ]
+    }
+  ]
+}

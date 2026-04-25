@@ -1,4 +1,4 @@
-use crate::commands::setup::{setup_app_from_config, startup_cleanup};
+use crate::commands::setup::{setup_app_from_config_with_bypass, startup_cleanup};
 use crate::config::Config;
 use crate::provider::github::client::{GhCliClient, GitHubClient};
 use crate::session::types::Session;
@@ -24,6 +24,7 @@ pub async fn cmd_run(
     enable_flags: Vec<String>,
     disable_flags: Vec<String>,
     no_splash: bool,
+    bypass_review: bool,
 ) -> anyhow::Result<()> {
     let loaded = Config::find_and_load_with_path()?;
     let config = loaded.config.clone();
@@ -72,7 +73,13 @@ pub async fn cmd_run(
         max_concurrent_override
     };
 
-    let mut app = setup_app_from_config(loaded, store, worktree_mgr, effective_max_concurrent);
+    let mut app = setup_app_from_config_with_bypass(
+        loaded,
+        store,
+        worktree_mgr,
+        effective_max_concurrent,
+        bypass_review,
+    );
     app.flags = feature_flags;
 
     if resume {

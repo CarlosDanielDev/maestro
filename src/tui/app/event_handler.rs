@@ -170,6 +170,27 @@ impl App {
                 StreamEvent::AssistantMessage { text } => {
                     let progress = self.progress_tracker.get_or_create(session_id);
                     progress.on_message(text);
+                    // PR auto-detect (#327): scan each line of assistant
+                    // output for a GitHub PR URL. On hit, queue
+                    // `TuiCommand::PrCreated` which triggers /review.
+                    use crate::session::pr_capture::{GitHubPrUrlExtractor, PrUrlExtractor as _};
+                    let extractor = GitHubPrUrlExtractor::new();
+                    for line in text.lines() {
+                        if let Some(evt) = extractor.extract(line) {
+                            self.activity_log.push_simple(
+                                "PR".into(),
+                                format!("Detected PR #{}; triggering /review", evt.pr_number.0),
+                                LogLevel::Info,
+                            );
+                            self.pending_commands
+                                .push(crate::tui::app::TuiCommand::PrCreated {
+                                    pr_number: evt.pr_number.0,
+                                    owner: evt.owner,
+                                    repo: evt.repo,
+                                });
+                            break;
+                        }
+                    }
                 }
                 StreamEvent::Thinking { .. } => {}
                 StreamEvent::TokenUpdate { .. } => {}

@@ -27,11 +27,13 @@ impl LandingMenuItem {
     }
 }
 
-/// The five entries shown on the Landing screen. Order is the visible order.
+/// The entries shown on the Landing screen. Order is the visible order.
 pub const MENU_ITEMS: &[LandingMenuItem] = &[
     LandingMenuItem::push("Dashboard", 'd', TuiMode::Dashboard),
     LandingMenuItem::push("Create Issue", 'i', TuiMode::IssueWizard),
     LandingMenuItem::push("Create Milestone", 'm', TuiMode::MilestoneWizard),
     LandingMenuItem::push("Project Stats", 's', TuiMode::ProjectStats),
+    LandingMenuItem::push("PRD", 'p', TuiMode::Prd),
+    LandingMenuItem::push("Roadmap", 'r', TuiMode::Roadmap),
     LandingMenuItem::push("Quit", 'q', TuiMode::ConfirmExit),
 ];

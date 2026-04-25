@@ -15,16 +15,47 @@ pub fn setup_app_from_config(
     worktree_mgr: Box<dyn crate::session::worktree::WorktreeManager + Send>,
     max_concurrent_override: Option<usize>,
 ) -> App {
+    setup_app_from_config_with_bypass(loaded, store, worktree_mgr, max_concurrent_override, false)
+}
+
+/// Variant of `setup_app_from_config` that also threads the bypass-review
+/// CLI flag (#328). When `bypass_review` is true the session pool is
+/// constructed with `bypassPermissions`, the App's `bypass_active` flag is
+/// set, and an audit-log entry is recorded.
+pub fn setup_app_from_config_with_bypass(
+    loaded: LoadedConfig,
+    store: StateStore,
+    worktree_mgr: Box<dyn crate::session::worktree::WorktreeManager + Send>,
+    max_concurrent_override: Option<usize>,
+    bypass_review: bool,
+) -> App {
     let LoadedConfig { config, path } = loaded;
     let max_concurrent = max_concurrent_override.unwrap_or(config.sessions.max_concurrent);
+
+    // Bypass overrides the configured permission mode for this session only.
+    let permission_mode = if bypass_review {
+        "bypassPermissions".to_string()
+    } else {
+        config.sessions.permission_mode.clone()
+    };
+
+    let permission_mode_for_app = permission_mode.clone();
 
     let mut app = App::new(
         store,
         max_concurrent,
         worktree_mgr,
-        config.sessions.permission_mode.clone(),
+        permission_mode_for_app,
         config.sessions.allowed_tools.clone(),
     );
+
+    // Bypass mode is activatable via three paths (#328 AC):
+    //   - CLI flag (`--bypass-review`)
+    //   - Config (`[sessions].permission_mode = "bypassPermissions"`)
+    //   - TUI toggle (Ctrl+B at runtime)
+    if bypass_review || permission_mode == "bypassPermissions" {
+        app.activate_bypass_from_cli();
+    }
 
     app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
         config.budget.per_session_usd,
