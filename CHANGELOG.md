@@ -11,6 +11,8 @@ v0.16.0 foundation bundle — branch `maestro/unified-321-329-327-328`. Lays the
 
 ### Added
 
+- `src/settings/` — `SettingsStore` trait, `FsSettingsStore` atomic writer, and `CavemanModeState` enum; surfaces caveman mode as a Space-toggleable row in the TUI Settings screen with four visual states (ExplicitTrue, ExplicitFalse, Default, Error) and a title-bar status flash on save (#490)
+- `src/tui/screens/settings/caveman_row.rs` — render helper for the caveman-mode row; `tests/settings_caveman.rs` integration tests and five insta snapshot tests in `src/tui/snapshot_tests/caveman_row.rs` (#490)
 - `src/prd/` — `Prd` model, `PrdStore` JSON persistence, and `PrdExporter` markdown export (#321)
 - `src/review/types.rs`, `parse.rs`, `audit.rs`, `apply.rs`, `bypass.rs` — review pipeline types, PR-comment parser, audit log, patch applicator, and bypass guard (#327, #328)
 - `src/session/pr_capture.rs` — `PrCapture`: intercepts stream-json to detect `/review` PR comments (#327)

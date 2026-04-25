@@ -128,6 +128,9 @@ pub(super) fn dispatch_to_active_screen_then_hook(
 ) -> Option<ScreenAction> {
     let action = dispatch_to_active_screen(app, event);
     tick_wizard_step_hooks(app);
+    if matches!(app.tui_mode, app::TuiMode::Settings) {
+        app.process_pending_caveman_toggle();
+    }
     action
 }
 
@@ -258,9 +261,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     app.pending_commands.push(app::TuiCommand::FetchMilestones);
                 }
                 app::TuiMode::Settings => {
-                    if let Some(ref config) = app.config {
-                        let mut screen =
-                            screens::SettingsScreen::new(config.clone(), app.flags.clone());
+                    // Re-read settings.json on entry so external edits are reflected.
+                    let caveman = app.caveman_mode();
+                    let config_clone = app.config.clone();
+                    if let Some(config) = config_clone {
+                        let mut screen = screens::SettingsScreen::new(config, app.flags.clone())
+                            .with_caveman_mode(caveman);
                         if let Some(ref path) = app.config_path {
                             screen = screen.with_config_path(path.clone());
                         } else {

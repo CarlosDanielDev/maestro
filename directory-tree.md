@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-25 00:00 (UTC)
+> Last updated: 2026-04-25 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -95,6 +95,10 @@ maestro/
 │   ├── prompts.rs                         # PromptBuilder: structured issue prompts with task-type detection; ProjectLanguage enum; detect_project_language(); default_guardrail(); resolve_guardrail()  [Phase 3, Issue #43]
 │   ├── util.rs                            # Shared utilities (truncate, etc.)
 │   ├── sanitizer.rs                       # Placeholder sanitizer module; compiled only when `--features experimental-sanitizer` is set  [Issue #142]
+│   ├── settings/                          # Settings persistence layer: reads/writes .claude/settings.json  [Issue #490]
+│   │   ├── mod.rs                         # Module facade; re-exports SettingsStore, FsSettingsStore, CavemanModeState
+│   │   ├── claude_settings.rs             # CavemanModeState enum (ExplicitTrue/ExplicitFalse/Default/Error); SettingsStore trait; FsSettingsStore impl with atomic writer for .claude/settings.json; toggle_caveman_mode()
+│   │   └── claude_settings_tests.rs       # Sibling test module (attached via #[path]); unit tests for CavemanModeState parse/round-trip and FsSettingsStore read/write/toggle
 │   ├── flags/                             # Feature flag registry and runtime store  [Issue #141, #146]
 │   │   ├── mod.rs                         # Flag enum (6 variants); FlagSource enum (Default, Config, Cli); serde serialization; default_enabled(), description(), name(), all() helpers
 │   │   └── store.rs                       # FeatureFlags store; source tracking per flag; HashMap-based resolution: CLI override > config file > compile-time defaults; source(), all_with_source() methods
@@ -237,7 +241,7 @@ maestro/
 │   │   ├── summary.rs                     # Compact per-session summary row widget used in panel and list views
 │   │   ├── token_dashboard.rs             # Token usage dashboard widget: per-session and aggregate token counts; TQ Ratio column removed (#346)
 │   │   ├── turboquant_dashboard.rs        # TurboQuant savings dashboard: classify_savings(), aggregate_savings(), AggregateSavings; renders "Estimated Savings (projection)" header when no real handoff data exists, "Actual Savings" when at least one session has fork-handoff compression metrics; ACTUAL / proj. kind markers per row  [Issue #346]
-│   │   ├── snapshot_tests/                # TUI snapshot tests using insta (36 tests, 8 views)  [Issue #16]
+│   │   ├── snapshot_tests/                # TUI snapshot tests using insta (41 tests, 9 views)  [Issue #16, #490]
 │   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules
 │   │   │   ├── overview.rs                # 6 snapshot tests for PanelView (empty, single, multiple, selected, context overflow, forked)
 │   │   │   ├── detail.rs                  # 6 snapshot tests for DetailView (basic, progress, activity log, no files, retries, markdown)
@@ -247,7 +251,8 @@ maestro/
 │   │   │   ├── milestone.rs               # 4 snapshot tests for MilestoneScreen (with milestones, empty, loading, detail pane); snapshots updated to reflect color hierarchy and selection visibility changes  [Issue #299]
 │   │   │   ├── cost_dashboard.rs          # 5 snapshot tests for CostDashboard (no budget, under threshold, over 90%, empty, sorted)
 │   │   │   ├── turboquant_dashboard.rs    # 3 snapshot tests for TurboQuantDashboard (projections-only, mixed actual+projections, empty sessions)  [Issue #346]
-│   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files)
+│   │   │   ├── caveman_row.rs             # 5 snapshot tests for caveman_row in SettingsScreen (explicit_true, explicit_false, default, error, focused_explicit_true)  [Issue #490]
+│   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files); includes caveman_row renders (default, error, explicit_false, explicit_true, focused_explicit_true)  [Issue #490]
 │   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen; ScreenAction::Push delegates to navigate_to(), ScreenAction::Pop delegates to navigate_back(); Scaffolding case in StartAdaptPipeline dispatch; reads app.config_path directly for settings save (removed relative-path probe at TuiMode::Settings); tracing::warn! when config_path is absent  [Issue #146, #232, #342, #371, #437]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen; pub mod wizard_fields (added #447); wizard_paste removed  [Issue #31-33, #86, #447]
@@ -304,7 +309,8 @@ maestro/
 │   │       │   ├── mod.rs                 # RoadmapScreen struct with Screen trait impl; renders milestones as a swimlane timeline
 │   │       │   └── dep_levels.rs          # DepLevels: groups milestones and issues by dependency level for the roadmap layout
 │   │       └── settings/                  # Settings screen components  [Issue #124, #146]
-│   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent; Sessions tab gains hollow-retry widgets: [policy] dropdown (always/intent-aware/never), [work_max_retries] stepper, [consultation_max_retries] stepper; footer built from focused widget's edit_hint() so edit keys (Space/Enter/←→) are always advertised; KeymapProvider::keybindings() gains a third "Edit" group for consistent ? help overlay; save_config returns Err via let-else when config_path is None; Ctrl+S surfaces failures as a 5-second title-bar flash (save_error_flash: Option<(String, Instant)> field) rendered as "Settings [Save failed: <msg>]" in accent_error  [Issue #275, #432, #437]
+│   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent; Sessions tab gains hollow-retry widgets: [policy] dropdown (always/intent-aware/never), [work_max_retries] stepper, [consultation_max_retries] stepper; footer built from focused widget's edit_hint() so edit keys (Space/Enter/←→) are always advertised; KeymapProvider::keybindings() gains a third "Edit" group for consistent ? help overlay; save_config returns Err via let-else when config_path is None; Ctrl+S surfaces failures as a 5-second title-bar flash (save_error_flash: Option<(String, Instant)> field) rendered as "Settings [Save failed: <msg>]" in accent_error; with_caveman_mode() builder, sync hook for Space-toggling caveman mode, status flash in the title bar, Space → caveman binding in the help overlay  [Issue #275, #432, #437, #490]
+│   │           ├── caveman_row.rs         # TUI render helper for the caveman-mode settings row; four visual states: ExplicitTrue (green checkbox + label), ExplicitFalse (dim checkbox), Default (grey "inherits settings.json"), Error (red warning); consumed by SettingsScreen  [Issue #490]
 │   │           └── validation.rs          # Settings field validation helpers
 │   │   └── widgets/                       # Reusable TUI widget components  [Issue #124]
 │   │       ├── mod.rs                     # Module re-exports for all widgets; WidgetKind::edit_hint() returns a contextual (key, label) tuple per variant used by SettingsScreen to build the footer  [Issue #432]
@@ -371,6 +377,12 @@ maestro/
 │           ├── api-contract-validation/
 │           ├── project-patterns/
 │           └── security-patterns/
+├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
+│   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
+│   ├── gatekeeper/                        # Gatekeeper harness fixtures and tests
+│   ├── hooks/                             # Hook script tests
+│   ├── manifests/                         # Test manifest fixtures
+│   └── scripts/                           # Test script fixtures
 ├── .gitignore                             # Includes .maestro/worktrees/ and runtime artifacts; .maestro/knowledge.md (written by maestro adapt, auto-loaded as system-prompt component by SessionPool::try_promote) is also excluded
 ├── Cargo.lock                             # Dependency lock file
 ├── Cargo.toml                             # Rust package manifest; tempfile and insta dev-dependencies; optimized release profile; [features] section with experimental-sanitizer = []; flate2 and tar dependencies added for tar.gz archive extraction in self-updater  [Issue #142, #233]
@@ -539,7 +551,11 @@ maestro/
 | `src/tui/screens/pr_review/draw.rs` | ratatui rendering logic with markdown integration |
 | `src/tui/screen_dispatch.rs` | `ScreenDispatch`: routes key events and render calls to the active screen; constructor accepts `FeatureFlags` to supply the settings screen; always injects prompt history when constructing `PromptInputScreen`; `ScreenAction::Push` delegates to `navigate_to()`, `ScreenAction::Pop` delegates to `navigate_back()`; `Scaffolding` case wired in `StartAdaptPipeline` dispatch; reads `app.config_path` directly for settings save (removed relative-path probe); `tracing::warn!` when `config_path` is absent (Issues #146, #232, #342, #371, #437) |
 | `src/tui/spinner.rs` | Braille spinner helpers: `spinner_frame()`, `format_thinking_elapsed()`, full spinner activity string builder |
-| `src/tui/snapshot_tests/` | TUI snapshot test suite; 36 tests across 8 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issue #16) |
+| `src/settings/` | Settings persistence layer: reads/writes `.claude/settings.json`; exposes `SettingsStore` trait, `FsSettingsStore` impl, `CavemanModeState` enum (Issue #490) |
+| `src/settings/claude_settings.rs` | `CavemanModeState` (ExplicitTrue/ExplicitFalse/Default/Error); `SettingsStore` trait; `FsSettingsStore` atomic writer; `toggle_caveman_mode()` (Issue #490) |
+| `src/tui/screens/settings/caveman_row.rs` | Render helper for the caveman-mode row in SettingsScreen; four visual states driven by `CavemanModeState` (Issue #490) |
+| `src/tui/snapshot_tests/caveman_row.rs` | 5 insta snapshot tests for caveman row rendering (Issue #490) |
+| `src/tui/snapshot_tests/` | TUI snapshot test suite; 41 tests across 9 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issues #16, #490) |
 | `src/tui/snapshot_tests/overview.rs` | 6 snapshot tests for `PanelView`: empty, single running, multiple, selected, context overflow, forked |
 | `src/tui/snapshot_tests/detail.rs` | 6 snapshot tests for `DetailView`: basic, progress, activity log, no files touched, files + retries, markdown content |
 | `src/tui/snapshot_tests/fullscreen.rs` | 4 snapshot tests for `FullscreenView`: markdown last message, plain text, empty placeholder, auto-scroll to bottom |
@@ -569,6 +585,7 @@ maestro/
 | `src/work/conflicts.rs` | Conflict detection for concurrent work items |
 | `src/work/dependencies.rs` | Dependency graph, topological sort |
 | `src/work/executor.rs` | `QueueExecutor` state machine: `ExecutorPhase` (Idle, Running, AwaitingDecision, Finished); `ExecutorItem`; `QueueItemState`; `FailureAction` (Retry, Skip, Abort); `advance()`, `mark_success()`, `mark_failure()`, `apply_decision()`, `set_session_id()` |
+| `tests/settings_caveman.rs` | Integration tests for `FsSettingsStore`: real-tempfile read/write/toggle round-trips, missing-key defaults, malformed JSON handling (Issue #490) |
 | `template/` | Reproducible project template |
 | `CHANGELOG.md` | Release history |
 | `ROADMAP.md` | Project milestones and implementation order |

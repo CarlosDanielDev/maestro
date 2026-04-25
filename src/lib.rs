@@ -27,3 +27,11 @@ pub mod session {
     pub mod transition;
     pub mod types;
 }
+
+#[path = "settings"]
+pub mod settings {
+    pub mod claude_settings;
+    pub use claude_settings::{
+        CavemanModeState, CavemanWriteError, FsSettingsStore, SettingsStore,
+    };
+}

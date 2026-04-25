@@ -79,6 +79,9 @@ pub fn setup_app_from_config_with_bypass(
 
     app.configure(config);
     app.set_config_path(path);
+    app = app.with_settings_store(Box::new(crate::settings::FsSettingsStore::new(
+        std::path::PathBuf::from(".claude/settings.json"),
+    )));
     app
 }
 

@@ -1,0 +1,5 @@
+---
+source: src/tui/snapshot_tests/caveman_row.rs
+expression: t.backend()
+---
+"○ caveman_mode  false (default)                                                 "
