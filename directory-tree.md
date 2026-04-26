@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-25 12:00 (UTC)
+> Last updated: 2026-04-26 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -15,6 +15,8 @@ maestro/
 │   ├── agents/
 │   │   ├── subagent-architect.md          # Architecture design subagent
 │   │   ├── subagent-docs-analyst.md       # Documentation management subagent
+│   │   ├── subagent-gatekeeper.md         # DOR, blockers, and API-contract gatekeeper for /implement
+│   │   ├── subagent-idea-triager.md       # Idea inbox triage subagent
 │   │   ├── subagent-master-planner.md     # System-level planning subagent
 │   │   ├── subagent-qa.md                 # QA and test design subagent
 │   │   └── subagent-security-analyst.md   # Security review subagent
@@ -59,8 +61,9 @@ maestro/
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── config.yml                     # Template chooser config (blank issues disabled)
+│   │   ├── bug.yml                        # Bug report issue form with DOR; Blocked By required
 │   │   ├── feature.yml                    # Feature request issue form with DOR; Blocked By required; Dependency Graph field
-│   │   └── bug.yml                        # Bug report issue form with DOR; Blocked By required
+│   │   └── idea.yml                       # Idea inbox issue form — 5 required textareas (itch + Q1-Q4) + Q5 vision-alignment dropdown
 │   └── workflows/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       └── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
@@ -401,8 +404,9 @@ maestro/
 | Path | Description |
 |------|-------------|
 | `.github/ISSUE_TEMPLATE/config.yml` | Template chooser config — blank issues disabled |
-| `.github/ISSUE_TEMPLATE/feature.yml` | Feature request issue form with DOR fields; `Blocked By` required; `Dependency Graph` textarea for epic/multi-issue ordering |
 | `.github/ISSUE_TEMPLATE/bug.yml` | Bug report issue form with DOR fields; `Blocked By` required |
+| `.github/ISSUE_TEMPLATE/feature.yml` | Feature request issue form with DOR fields; `Blocked By` required; `Dependency Graph` textarea for epic/multi-issue ordering |
+| `.github/ISSUE_TEMPLATE/idea.yml` | Idea inbox issue form — 5 required textareas (the itch + Q1-Q4 honesty checks) + Q5 vision-alignment dropdown; auto-applies labels `idea` and `needs-triage` |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline |
 | `.github/workflows/release.yml` | Release automation: cross-platform builds, GitHub Release with SHA256 checksums, Homebrew tap update |
 | `.claude/` | Claude Code agent configuration |

@@ -1,0 +1,81 @@
+name: Idea
+description: Drop a raw idea into the inbox. The triager will run the 5-question honesty check.
+title: "[Idea]: "
+labels: ["idea", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Idea Inbox
+
+        This template is the front door of the idea inbox. Be honest, be brief.
+        The triager subagent will read your answers and recommend **promote**,
+        **park**, or **archive**. Half-baked is fine — performative is not.
+
+        Required fields below mirror the 5-question honesty check. Skipping
+        them guarantees the idea gets parked or archived.
+
+  - type: textarea
+    id: the-itch
+    attributes:
+      label: The itch
+      description: The raw idea or problem statement, before you talk yourself into or out of it.
+      placeholder: |
+        What pinched? What did you wish maestro did? Write it the way you'd
+        say it to a friend — no need to make it sound like a feature spec.
+    validations:
+      required: true
+
+  - type: textarea
+    id: whose-problem
+    attributes:
+      label: Q1 — Whose problem, how often?
+      description: Name a specific person, role, or recurring scenario, AND a frequency. "Users in general" is a fail.
+      placeholder: |
+        Example: "Me, every time I run `maestro run` on a repo with >20 open
+        issues — happens ~3x/week."
+    validations:
+      required: true
+
+  - type: textarea
+    id: smallest-proof
+    attributes:
+      label: Q2 — Smallest proof
+      description: The smallest version that would tell us this is real. Should be time-boxable to ≤2 days. If it requires a rewrite, it's a fail.
+      placeholder: |
+        Example: "Add a debug log line measuring issue-list load time; if p95 > 500ms, the idea has legs."
+    validations:
+      required: true
+
+  - type: textarea
+    id: success-signal
+    attributes:
+      label: Q3 — Success signal
+      description: A number, threshold, or observable outcome that tells us it worked. "Feels faster" is a weak; nothing measurable is a fail.
+      placeholder: |
+        Example: "p95 issue-list load < 500ms" or "users stop reporting the slow-startup symptom in #channel".
+    validations:
+      required: true
+
+  - type: textarea
+    id: cost-of-skipping
+    attributes:
+      label: Q4 — Cost of skipping
+      description: What happens if we don't do this? "Nothing today, revisit at <trigger>" is a valid honest answer.
+      placeholder: |
+        Example: "Nothing today. Revisit when we hit 20+ concurrent sessions or someone files a bug about it."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: vision-alignment
+    attributes:
+      label: Q5 — Vision alignment
+      description: How does this relate to maestro's direction? Be honest — "Sideways" and "Unsure" are valid answers, not failures.
+      options:
+        - Pulls toward the vision
+        - Adjacent
+        - Sideways
+        - Unsure
+    validations:
+      required: true
