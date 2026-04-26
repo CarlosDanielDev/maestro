@@ -4,7 +4,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 
 use super::types::*;
-use crate::provider::github::client::GitHubClient;
+use crate::provider::github::client::{CreateOutcome, GitHubClient};
 
 const DEFAULT_LABEL_COLOR: &str = "EDEDED";
 
@@ -109,34 +109,52 @@ impl<G: GitHubClient> PlanMaterializer for GhMaterializer<G> {
 
         let mut milestones_created = Vec::new();
         let mut issues_created = Vec::new();
+        let mut issues_skipped: Vec<SkippedIssue> = Vec::new();
         let mut title_to_number: HashMap<String, u64> = HashMap::new();
 
         for milestone in &plan.milestones {
-            let ms_number = self
+            let ms_outcome = self
                 .github
                 .create_milestone(&milestone.title, &milestone.description)
                 .await?;
+            let ms_number = ms_outcome.number();
+            let ms_reused = ms_outcome.is_existed();
 
             milestones_created.push(CreatedMilestone {
                 number: ms_number,
                 title: milestone.title.clone(),
+                reused: ms_reused,
             });
 
             for issue in &milestone.issues {
                 let body =
                     resolve_blocked_by(&issue.body, &issue.blocked_by_titles, &title_to_number);
 
-                let issue_number = self
+                let outcome = self
                     .github
                     .create_issue(&issue.title, &body, &issue.labels, Some(ms_number))
                     .await?;
-
+                let issue_number = outcome.number();
+                // Keep the mapping populated for downstream blocked_by
+                // resolution even when the issue already existed.
                 title_to_number.insert(issue.title.clone(), issue_number);
-                issues_created.push(CreatedIssue {
-                    number: issue_number,
-                    title: issue.title.clone(),
-                    milestone_number: Some(ms_number),
-                });
+
+                match outcome {
+                    CreateOutcome::Created(_) => {
+                        issues_created.push(CreatedIssue {
+                            number: issue_number,
+                            title: issue.title.clone(),
+                            milestone_number: Some(ms_number),
+                        });
+                    }
+                    CreateOutcome::Existed { .. } => {
+                        issues_skipped.push(SkippedIssue {
+                            number: issue_number,
+                            title: issue.title.clone(),
+                            reason: SkipReason::DuplicateTitle,
+                        });
+                    }
+                }
             }
         }
 
@@ -144,7 +162,7 @@ impl<G: GitHubClient> PlanMaterializer for GhMaterializer<G> {
         let tech_debt_issue = if !report.tech_debt_items.is_empty() {
             let body = build_tech_debt_catalog_body(&report.tech_debt_items);
             let first_ms = milestones_created.first().map(|m| m.number);
-            let number = self
+            let outcome = self
                 .github
                 .create_issue(
                     "chore: Tech debt catalog",
@@ -153,11 +171,21 @@ impl<G: GitHubClient> PlanMaterializer for GhMaterializer<G> {
                     first_ms,
                 )
                 .await?;
-            Some(CreatedIssue {
-                number,
-                title: "chore: Tech debt catalog".into(),
-                milestone_number: first_ms,
-            })
+            match outcome {
+                CreateOutcome::Created(number) => Some(CreatedIssue {
+                    number,
+                    title: "chore: Tech debt catalog".into(),
+                    milestone_number: first_ms,
+                }),
+                CreateOutcome::Existed { number, .. } => {
+                    issues_skipped.push(SkippedIssue {
+                        number,
+                        title: "chore: Tech debt catalog".into(),
+                        reason: SkipReason::DuplicateTitle,
+                    });
+                    None
+                }
+            }
         } else {
             None
         };
@@ -165,6 +193,7 @@ impl<G: GitHubClient> PlanMaterializer for GhMaterializer<G> {
         Ok(MaterializeResult {
             milestones_created,
             issues_created,
+            issues_skipped,
             tech_debt_issue,
             dry_run: false,
         })
@@ -182,6 +211,7 @@ fn build_dry_run_result(plan: &AdaptPlan) -> MaterializeResult {
         milestones.push(CreatedMilestone {
             number: ms_num,
             title: milestone.title.clone(),
+            reused: false,
         });
         for issue in &milestone.issues {
             counter += 1;
@@ -196,6 +226,7 @@ fn build_dry_run_result(plan: &AdaptPlan) -> MaterializeResult {
     MaterializeResult {
         milestones_created: milestones,
         issues_created: issues,
+        issues_skipped: Vec::new(),
         tech_debt_issue: None,
         dry_run: true,
     }
@@ -748,5 +779,187 @@ mod tests {
             client.create_issue_calls().is_empty(),
             "no issues should be created when ensure_labels fails"
         );
+    }
+
+    // ── Issue #454: reused/skipped outcomes ────────────────────────────
+
+    fn make_milestone(
+        number: u64,
+        title: &str,
+        state: &str,
+    ) -> crate::provider::github::types::GhMilestone {
+        crate::provider::github::types::GhMilestone {
+            number,
+            title: title.to_string(),
+            description: String::new(),
+            state: state.to_string(),
+            open_issues: 0,
+            closed_issues: 0,
+        }
+    }
+
+    fn make_seeded_issue(
+        number: u64,
+        title: &str,
+        state: &str,
+    ) -> crate::provider::github::types::GhIssue {
+        crate::provider::github::types::GhIssue {
+            number,
+            title: title.to_string(),
+            body: String::new(),
+            labels: Vec::new(),
+            state: state.to_string(),
+            html_url: format!("https://github.com/owner/repo/issues/{}", number),
+            milestone: None,
+            assignees: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn materialize_reuses_existing_milestone_instead_of_creating_duplicate() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec!["enhancement".into(), "testing".into()]);
+        client.set_existing_milestones(vec![make_milestone(42, "M0: Foundation", "open")]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = sample_plan();
+        let report = sample_report();
+
+        let result = materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        assert_eq!(result.milestones_created.len(), 1);
+        assert!(
+            result.milestones_created[0].reused,
+            "reused flag must be true for pre-existing milestone"
+        );
+        assert_eq!(result.milestones_created[0].number, 42);
+        assert!(
+            client.create_milestone_calls().is_empty(),
+            "no POST should have occurred for the existing milestone"
+        );
+        // Child issues are still created against the reused milestone number.
+        assert_eq!(result.issues_created.len(), 2);
+        for issue in &result.issues_created {
+            assert_eq!(issue.milestone_number, Some(42));
+        }
+    }
+
+    #[tokio::test]
+    async fn materialize_skips_duplicate_issue_and_continues_batch() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec!["enhancement".into(), "testing".into()]);
+        // Seed one of the three planned issues (sample_plan has 2; simulate
+        // first one already existing).
+        client.set_existing_issues(vec![make_seeded_issue(101, "feat: setup", "open")]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = sample_plan();
+        let report = sample_report();
+
+        let result = materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        assert_eq!(result.issues_skipped.len(), 1);
+        assert_eq!(result.issues_skipped[0].number, 101);
+        assert_eq!(result.issues_skipped[0].reason, SkipReason::DuplicateTitle);
+        // The other one still created.
+        assert_eq!(result.issues_created.len(), 1);
+        assert_eq!(result.issues_created[0].title, "test: add tests");
+    }
+
+    #[tokio::test]
+    async fn materialize_resolves_blocked_by_for_skipped_issues() {
+        // The test: a later issue's blocked_by references a skipped (pre-existing)
+        // earlier issue; the resolved body must contain the existing issue number.
+        let client = MockGitHubClient::new();
+        client.set_labels(vec!["enhancement".into(), "testing".into()]);
+        client.set_existing_issues(vec![make_seeded_issue(500, "feat: setup", "open")]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = sample_plan();
+        let report = sample_report();
+
+        materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        // The mock records create_issue_calls for non-dupes only. The second
+        // issue ("test: add tests") is the one that references the skipped one.
+        let calls = client.create_issue_calls();
+        let Some(test_call) = calls.iter().find(|c| c.title == "test: add tests") else {
+            panic!(
+                "test issue should have been created, got calls: {:?}",
+                calls
+            );
+        };
+        assert!(
+            test_call.body.contains("#500"),
+            "body must reference existing issue number 500, got: {}",
+            test_call.body
+        );
+    }
+
+    #[tokio::test]
+    async fn materialize_is_fully_idempotent_on_second_run() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec!["enhancement".into(), "testing".into()]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = sample_plan();
+        let report = sample_report();
+
+        let first = materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+        let second = materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            first
+                .milestones_created
+                .iter()
+                .filter(|m| !m.reused)
+                .count(),
+            1
+        );
+        assert_eq!(
+            second
+                .milestones_created
+                .iter()
+                .filter(|m| !m.reused)
+                .count(),
+            0,
+            "second run must reuse milestone"
+        );
+        assert_eq!(second.issues_created.len(), 0);
+        assert_eq!(second.issues_skipped.len(), first.issues_created.len());
+    }
+
+    #[tokio::test]
+    async fn materialize_records_reused_milestone_title() {
+        let client = MockGitHubClient::new();
+        client.set_labels(vec!["enhancement".into(), "testing".into()]);
+        client.set_existing_milestones(vec![make_milestone(7, "M0: Foundation", "closed")]);
+
+        let materializer = GhMaterializer::new(client.clone());
+        let plan = sample_plan();
+        let report = sample_report();
+
+        let result = materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        assert_eq!(result.milestones_created[0].number, 7);
+        assert!(result.milestones_created[0].reused);
     }
 }

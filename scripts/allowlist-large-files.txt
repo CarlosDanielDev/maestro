@@ -100,3 +100,9 @@ src/tui/screens/milestone_wizard/mod.rs # deadline: 2026-07-22, owner: @carlos, 
 src/tui/screens/issue_wizard/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split dep_* state + ai_review state + create_* state into submodules (the #447 tui-textarea migration added sync/rebuild helpers; further reduction comes from the submodule split)
 # issue_wizard/draw.rs dropped from 378 → 356 LOC after #447 (under the 400-LOC cap).
 # milestone_wizard/draw.rs dropped from 352 → 345 LOC after #447 (under the 400-LOC cap).
+
+# --- Milestone v0.15.3 dupe-prevention additions (#454/#455) ---
+src/tui/app/data_handler.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: extract the AdaptScan/Analyze/Consolidate/Plan/Scaffold arms into a dedicated handler module (handle_adapt_event); the dupe-prevention work in #455 added the IssueAlreadyExists arm, pushing the file 6 lines over
+src/tui/app/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #321/#327/#328/#329, plan: extract App field initializers and screen-Option declarations into app/state.rs; bypass methods already moved to app/bypass.rs in v0.16.0
+src/prd/ingest.rs # deadline: 2026-07-22, owner: @carlos, ticket: #321, plan: split heuristic parser from tests — move parser into prd/ingest/{sections,extract,classify}.rs and convert ingest.rs to ingest/mod.rs once the contract stabilizes; ~250 of the 521 LOC are the markdown-parser test corpus that we want to keep co-located while the heuristics evolve
+src/prd/discover.rs # deadline: 2026-07-22, owner: @carlos, ticket: #321, plan: split into prd/discover/{github,local,azure,dedup}.rs once the source set stabilizes; currently 411 LOC because the per-source helpers + dedup + tests live together while we iterate on the explore UX

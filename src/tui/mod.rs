@@ -428,6 +428,7 @@ async fn event_loop(
                 app::TuiCommand::CreateIssue(payload) => {
                     let tx = app.data_tx.clone();
                     tokio::spawn(async move {
+                        use crate::provider::github::client::CreateOutcome;
                         let body =
                             crate::tui::screens::issue_wizard::render_body_markdown(&payload);
                         let labels = crate::tui::screens::issue_wizard::render_labels(&payload);
@@ -435,7 +436,18 @@ async fn event_loop(
                         let result = client
                             .create_issue(&payload.title, &body, &labels, payload.milestone)
                             .await;
-                        let _ = tx.send(app::TuiDataEvent::IssueCreated(result));
+                        let evt = match result {
+                            Ok(CreateOutcome::Created(n)) => app::TuiDataEvent::IssueCreated(Ok(n)),
+                            Ok(CreateOutcome::Existed { number, state }) => {
+                                app::TuiDataEvent::IssueAlreadyExists {
+                                    number,
+                                    state,
+                                    title: payload.title.clone(),
+                                }
+                            }
+                            Err(e) => app::TuiDataEvent::IssueCreated(Err(e)),
+                        };
+                        let _ = tx.send(evt);
                     });
                 }
                 app::TuiCommand::FetchWizardDependencies => {
@@ -521,6 +533,38 @@ async fn event_loop(
                             &local_sessions,
                         );
                         let _ = tx.send(app::TuiDataEvent::ProjectStats(data));
+                    });
+                }
+                app::TuiCommand::SyncPrd => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result = crate::prd::sync::GitHubPrdSyncer::new(Box::new(client))
+                            .fetch_current_state()
+                            .await;
+                        let _ = tx.send(app::TuiDataEvent::PrdSyncResult(result));
+                    });
+                }
+                app::TuiCommand::SyncRoadmap => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result =
+                            crate::tui::screens::roadmap::loader::load_roadmap(&client).await;
+                        let _ = tx.send(app::TuiDataEvent::RoadmapResult(result));
+                    });
+                }
+                app::TuiCommand::PrCreated {
+                    pr_number,
+                    owner,
+                    repo,
+                } => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let result =
+                            crate::review::auto_review::run_review_cycle(pr_number, &owner, &repo)
+                                .await;
+                        let _ = tx.send(app::TuiDataEvent::ReviewCycleResult { pr_number, result });
                     });
                 }
             }

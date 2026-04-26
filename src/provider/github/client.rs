@@ -2,6 +2,34 @@ use super::types::{GhIssue, GhMilestone};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
+/// Outcome of a `create_milestone` / `create_issue` call. Tells callers
+/// whether a new artifact was freshly created or an existing one was
+/// matched (by equivalent title, open or closed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreateOutcome {
+    /// A new milestone/issue was created. The `u64` is its number.
+    Created(u64),
+    /// An existing milestone/issue with an equivalent title was found.
+    /// `state` is the current state (`"open"` or `"closed"`).
+    Existed { number: u64, state: String },
+}
+
+impl CreateOutcome {
+    /// Convenience: the number regardless of whether it was newly created
+    /// or matched an existing record.
+    pub fn number(&self) -> u64 {
+        match self {
+            Self::Created(n) => *n,
+            Self::Existed { number, .. } => *number,
+        }
+    }
+
+    /// Whether this outcome reused an existing record.
+    pub fn is_existed(&self) -> bool {
+        matches!(self, Self::Existed { .. })
+    }
+}
+
 /// Trait for GitHub API operations. Mockable for testing.
 #[async_trait]
 pub trait GitHubClient: Send + Sync {
@@ -23,17 +51,21 @@ pub trait GitHubClient: Send + Sync {
     #[allow(dead_code)] // Reason: orphan branch detection feature
     async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>>;
 
-    /// Create a GitHub milestone and return its number.
-    async fn create_milestone(&self, title: &str, description: &str) -> Result<u64>;
+    /// Create a GitHub milestone. Returns `CreateOutcome::Created(n)` on
+    /// success or `CreateOutcome::Existed { .. }` if an existing milestone
+    /// with an equivalent title (normalized + case-insensitive) was found.
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome>;
 
-    /// Create a GitHub issue and return its number.
+    /// Create a GitHub issue. Returns `CreateOutcome::Created(n)` on
+    /// success or `CreateOutcome::Existed { .. }` if an existing issue
+    /// with an equivalent title (normalized + case-insensitive) was found.
     async fn create_issue(
         &self,
         title: &str,
         body: &str,
         labels: &[String],
         milestone: Option<u64>,
-    ) -> Result<u64>;
+    ) -> Result<CreateOutcome>;
 
     /// List open pull requests for the current repository.
     async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>>;
@@ -260,7 +292,7 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
         (**self).list_prs_for_branch(head_branch).await
     }
-    async fn create_milestone(&self, title: &str, description: &str) -> Result<u64> {
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
         (**self).create_milestone(title, description).await
     }
     async fn create_issue(
@@ -269,7 +301,7 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
         body: &str,
         labels: &[String],
         milestone: Option<u64>,
-    ) -> Result<u64> {
+    ) -> Result<CreateOutcome> {
         (**self).create_issue(title, body, labels, milestone).await
     }
     async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
@@ -317,7 +349,7 @@ pub fn is_gh_auth_error(err: &anyhow::Error) -> bool {
     err.to_string().contains(GH_AUTH_ERROR_SENTINEL)
 }
 
-use crate::util::validate_gh_arg;
+use crate::util::{titles_equivalent, validate_gh_arg, validate_title};
 
 /// Implementation that shells out to `gh` CLI.
 pub struct GhCliClient;
@@ -534,8 +566,28 @@ impl GitHubClient for GhCliClient {
             .collect())
     }
 
-    async fn create_milestone(&self, title: &str, description: &str) -> Result<u64> {
-        validate_gh_arg(title, "milestone title")?;
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
+        let normalized = validate_title(title, "milestone title")?;
+
+        let mut open = self.list_milestones("open").await?;
+        let closed = self.list_milestones("closed").await?;
+        open.extend(closed);
+        if let Some(existing) = open
+            .iter()
+            .find(|m| titles_equivalent(&m.title, &normalized))
+        {
+            tracing::info!(
+                milestone = %normalized,
+                number = existing.number,
+                state = %existing.state,
+                "create_milestone proactive hit — reusing existing milestone"
+            );
+            return Ok(CreateOutcome::Existed {
+                number: existing.number,
+                state: existing.state.clone(),
+            });
+        }
+
         let result = self
             .run_gh(&[
                 "api",
@@ -543,7 +595,7 @@ impl GitHubClient for GhCliClient {
                 "--method",
                 "POST",
                 "-f",
-                &format!("title={}", title),
+                &format!("title={}", normalized),
                 "-f",
                 &format!("description={}", description),
             ])
@@ -553,25 +605,39 @@ impl GitHubClient for GhCliClient {
             Ok(json_str) => {
                 let v: serde_json::Value = serde_json::from_str(&json_str)
                     .context("Failed to parse milestone response")?;
-                v.get("number")
+                let number = v
+                    .get("number")
                     .and_then(|n| n.as_u64())
-                    .ok_or_else(|| anyhow::anyhow!("Missing 'number' in milestone response"))
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'number' in milestone response"))?;
+                Ok(CreateOutcome::Created(number))
             }
             Err(e) => {
                 let msg = e.to_string();
-                // 422 = duplicate milestone — find-or-reuse the existing one
+                // 422 = duplicate milestone race — re-fetch open + closed
+                // and resolve via titles_equivalent.
                 if msg.contains("422") || msg.contains("Validation Failed") {
-                    let milestones = self.list_milestones("open").await?;
-                    milestones
+                    let mut all = self.list_milestones("open").await?;
+                    let closed = self.list_milestones("closed").await?;
+                    all.extend(closed);
+                    if let Some(existing) = all
                         .iter()
-                        .find(|m| m.title == title)
-                        .map(|m| m.number)
-                        .ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Milestone '{}' caused 422 but not found in open milestones",
-                                title
-                            )
-                        })
+                        .find(|m| titles_equivalent(&m.title, &normalized))
+                    {
+                        tracing::info!(
+                            milestone = %normalized,
+                            number = existing.number,
+                            state = %existing.state,
+                            "create_milestone 422 recovery — matched existing milestone"
+                        );
+                        return Ok(CreateOutcome::Existed {
+                            number: existing.number,
+                            state: existing.state.clone(),
+                        });
+                    }
+                    Err(anyhow::anyhow!(
+                        "Milestone '{}' caused 422 but not found in open or closed milestones",
+                        normalized
+                    ))
                 } else {
                     Err(e)
                 }
@@ -585,12 +651,47 @@ impl GitHubClient for GhCliClient {
         body: &str,
         labels: &[String],
         milestone: Option<u64>,
-    ) -> Result<u64> {
-        validate_gh_arg(title, "issue title")?;
+    ) -> Result<CreateOutcome> {
+        let normalized = validate_title(title, "issue title")?;
+
+        // Proactive pre-check: scan open + closed issues for an equivalent title.
+        let all_json = self
+            .run_gh(&[
+                "issue",
+                "list",
+                "--state",
+                "all",
+                "--limit",
+                "1000",
+                "--json",
+                "number,title,state",
+            ])
+            .await?;
+        let all_issues: Vec<serde_json::Value> = serde_json::from_str(&all_json)
+            .context("Failed to parse issue list JSON for dupe pre-check")?;
+        for v in &all_issues {
+            let existing_title = v.get("title").and_then(|t| t.as_str()).unwrap_or("");
+            if titles_equivalent(existing_title, &normalized) {
+                let number = v.get("number").and_then(|n| n.as_u64()).unwrap_or(0);
+                let state = v
+                    .get("state")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("open")
+                    .to_lowercase();
+                tracing::info!(
+                    issue = %normalized,
+                    number,
+                    state = %state,
+                    "create_issue proactive hit — reusing existing issue"
+                );
+                return Ok(CreateOutcome::Existed { number, state });
+            }
+        }
+
         // Use REST API via stdin because `gh issue create --milestone`
         // expects a title string, but we only have the milestone number.
         let mut payload = serde_json::json!({
-            "title": title,
+            "title": normalized,
             "body": body,
         });
         if !labels.is_empty() {
@@ -617,9 +718,11 @@ impl GitHubClient for GhCliClient {
 
         let v: serde_json::Value =
             serde_json::from_str(&json_str).context("Failed to parse issue creation response")?;
-        v.get("number")
+        let number = v
+            .get("number")
             .and_then(|n| n.as_u64())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'number' in issue creation response"))
+            .ok_or_else(|| anyhow::anyhow!("Missing 'number' in issue creation response"))?;
+        Ok(CreateOutcome::Created(number))
     }
 
     async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
@@ -776,11 +879,27 @@ pub mod mock {
         }
 
         pub fn set_issues(&self, issues: Vec<GhIssue>) {
-            self.inner.lock().unwrap().issues = issues;
+            let mut guard = self.inner.lock().unwrap();
+            let max = issues.iter().map(|i| i.number).max().unwrap_or(0);
+            guard.create_issue_counter = guard.create_issue_counter.max(max);
+            guard.issues = issues;
         }
 
         pub fn set_milestones(&self, milestones: Vec<GhMilestone>) {
-            self.inner.lock().unwrap().milestones = milestones;
+            let mut guard = self.inner.lock().unwrap();
+            let max = milestones.iter().map(|m| m.number).max().unwrap_or(0);
+            guard.create_milestone_counter = guard.create_milestone_counter.max(max);
+            guard.milestones = milestones;
+        }
+
+        /// Alias of `set_milestones` matching the naming requested in #453.
+        pub fn set_existing_milestones(&self, milestones: Vec<GhMilestone>) {
+            self.set_milestones(milestones);
+        }
+
+        /// Alias of `set_issues` matching the naming requested in #453.
+        pub fn set_existing_issues(&self, issues: Vec<GhIssue>) {
+            self.set_issues(issues);
         }
 
         pub fn set_get_issue_error(&self, number: u64, msg: &str) {
@@ -968,13 +1087,38 @@ pub mod mock {
                 .unwrap_or_default())
         }
 
-        async fn create_milestone(&self, title: &str, description: &str) -> Result<u64> {
+        async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
+            use crate::util::{titles_equivalent, validate_title};
+            let normalized = validate_title(title, "milestone title")?;
+
             let mut state = self.inner.lock().unwrap();
-            state.create_milestone_counter += 1;
-            state
-                .create_milestone_calls
-                .push((title.to_string(), description.to_string()));
-            Ok(state.create_milestone_counter)
+            let outcome = if let Some(existing) = state
+                .milestones
+                .iter()
+                .find(|m| titles_equivalent(&m.title, &normalized))
+            {
+                CreateOutcome::Existed {
+                    number: existing.number,
+                    state: existing.state.clone(),
+                }
+            } else {
+                state.create_milestone_counter += 1;
+                let number = state.create_milestone_counter;
+                state
+                    .create_milestone_calls
+                    .push((normalized.clone(), description.to_string()));
+                state.milestones.push(GhMilestone {
+                    number,
+                    title: normalized,
+                    description: description.to_string(),
+                    state: "open".to_string(),
+                    open_issues: 0,
+                    closed_issues: 0,
+                });
+                CreateOutcome::Created(number)
+            };
+            drop(state);
+            Ok(outcome)
         }
 
         async fn create_issue(
@@ -983,16 +1127,43 @@ pub mod mock {
             body: &str,
             labels: &[String],
             milestone: Option<u64>,
-        ) -> Result<u64> {
+        ) -> Result<CreateOutcome> {
+            use crate::util::{titles_equivalent, validate_title};
+            let normalized = validate_title(title, "issue title")?;
+
             let mut state = self.inner.lock().unwrap();
-            state.create_issue_counter += 1;
-            state.create_issue_calls.push(CreateIssueCallRecord {
-                title: title.to_string(),
-                body: body.to_string(),
-                labels: labels.to_vec(),
-                milestone,
-            });
-            Ok(state.create_issue_counter)
+            let outcome = if let Some(existing) = state
+                .issues
+                .iter()
+                .find(|i| titles_equivalent(&i.title, &normalized))
+            {
+                CreateOutcome::Existed {
+                    number: existing.number,
+                    state: existing.state.clone(),
+                }
+            } else {
+                state.create_issue_counter += 1;
+                let number = state.create_issue_counter;
+                state.create_issue_calls.push(CreateIssueCallRecord {
+                    title: normalized.clone(),
+                    body: body.to_string(),
+                    labels: labels.to_vec(),
+                    milestone,
+                });
+                state.issues.push(GhIssue {
+                    number,
+                    title: normalized,
+                    body: body.to_string(),
+                    labels: labels.to_vec(),
+                    state: "open".to_string(),
+                    html_url: format!("https://github.com/mock/repo/issues/{}", number),
+                    milestone,
+                    assignees: Vec::new(),
+                });
+                CreateOutcome::Created(number)
+            };
+            drop(state);
+            Ok(outcome)
         }
 
         async fn list_open_prs(
@@ -1418,16 +1589,16 @@ mod tests {
     #[tokio::test]
     async fn mock_create_milestone_records_call_and_returns_number() {
         let client = MockGitHubClient::new();
-        let n1 = client
+        let o1 = client
             .create_milestone("M0", "First milestone")
             .await
             .unwrap();
-        let n2 = client
+        let o2 = client
             .create_milestone("M1", "Second milestone")
             .await
             .unwrap();
-        assert_eq!(n1, 1);
-        assert_eq!(n2, 2);
+        assert_eq!(o1, CreateOutcome::Created(1));
+        assert_eq!(o2, CreateOutcome::Created(2));
         let calls = client.create_milestone_calls();
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].0, "M0");
@@ -1437,11 +1608,11 @@ mod tests {
     #[tokio::test]
     async fn mock_create_issue_records_call_and_returns_number() {
         let client = MockGitHubClient::new();
-        let n = client
+        let o = client
             .create_issue("feat: thing", "body", &["enhancement".into()], Some(1))
             .await
             .unwrap();
-        assert_eq!(n, 1);
+        assert_eq!(o, CreateOutcome::Created(1));
         let calls = client.create_issue_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].title, "feat: thing");
@@ -1452,12 +1623,196 @@ mod tests {
     #[tokio::test]
     async fn mock_create_issue_increments_counter() {
         let client = MockGitHubClient::new();
-        let n1 = client.create_issue("a", "", &[], None).await.unwrap();
-        let n2 = client.create_issue("b", "", &[], None).await.unwrap();
-        let n3 = client.create_issue("c", "", &[], None).await.unwrap();
-        assert_eq!(n1, 1);
-        assert_eq!(n2, 2);
-        assert_eq!(n3, 3);
+        let o1 = client.create_issue("a", "", &[], None).await.unwrap();
+        let o2 = client.create_issue("b", "", &[], None).await.unwrap();
+        let o3 = client.create_issue("c", "", &[], None).await.unwrap();
+        assert_eq!(o1.number(), 1);
+        assert_eq!(o2.number(), 2);
+        assert_eq!(o3.number(), 3);
+        assert!(!o1.is_existed());
+        assert!(!o2.is_existed());
+        assert!(!o3.is_existed());
+    }
+
+    // -- Issue #453: CreateOutcome proactive pre-check --
+
+    fn gh_issue(number: u64, title: &str, state: &str) -> GhIssue {
+        GhIssue {
+            number,
+            title: title.to_string(),
+            body: String::new(),
+            labels: Vec::new(),
+            state: state.to_string(),
+            html_url: format!("https://github.com/owner/repo/issues/{}", number),
+            milestone: None,
+            assignees: Vec::new(),
+        }
+    }
+
+    fn gh_milestone(number: u64, title: &str, state: &str) -> GhMilestone {
+        GhMilestone {
+            number,
+            title: title.to_string(),
+            description: String::new(),
+            state: state.to_string(),
+            open_issues: 0,
+            closed_issues: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn create_milestone_proactive_hit_returns_existed_without_call() {
+        let client = MockGitHubClient::new();
+        client.set_existing_milestones(vec![gh_milestone(42, "M0: Foundation", "open")]);
+
+        let outcome = client
+            .create_milestone("M0: Foundation", "desc")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            CreateOutcome::Existed {
+                number: 42,
+                state: "open".into()
+            }
+        );
+        assert!(
+            client.create_milestone_calls().is_empty(),
+            "no POST should have been recorded"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_milestone_proactive_hit_tolerates_whitespace_and_case() {
+        let client = MockGitHubClient::new();
+        client.set_existing_milestones(vec![gh_milestone(42, "M0: Foundation", "open")]);
+
+        let outcome = client
+            .create_milestone("  m0:   foundation  ", "desc")
+            .await
+            .unwrap();
+
+        assert!(matches!(outcome, CreateOutcome::Existed { number: 42, .. }));
+        assert!(client.create_milestone_calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn create_milestone_finds_closed_milestone_and_returns_state() {
+        let client = MockGitHubClient::new();
+        client.set_existing_milestones(vec![gh_milestone(9, "M0: Done", "closed")]);
+
+        let outcome = client.create_milestone("M0: Done", "desc").await.unwrap();
+
+        assert_eq!(
+            outcome,
+            CreateOutcome::Existed {
+                number: 9,
+                state: "closed".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn create_milestone_creates_new_when_no_match() {
+        let client = MockGitHubClient::new();
+        client.set_existing_milestones(vec![gh_milestone(1, "M0", "open")]);
+
+        let outcome = client.create_milestone("M1", "desc").await.unwrap();
+
+        assert!(matches!(outcome, CreateOutcome::Created(_)));
+        assert_eq!(client.create_milestone_calls().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn create_issue_proactive_hit_returns_existed_without_call() {
+        let client = MockGitHubClient::new();
+        client.set_existing_issues(vec![gh_issue(100, "feat: login page", "open")]);
+
+        let outcome = client
+            .create_issue("feat: login page", "body", &[], None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            CreateOutcome::Existed {
+                number: 100,
+                state: "open".into()
+            }
+        );
+        assert!(
+            client.create_issue_calls().is_empty(),
+            "no POST should have been recorded"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_issue_finds_closed_issue() {
+        let client = MockGitHubClient::new();
+        client.set_existing_issues(vec![gh_issue(77, "feat: done", "closed")]);
+
+        let outcome = client
+            .create_issue("feat: done", "body", &[], None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            CreateOutcome::Existed {
+                number: 77,
+                state: "closed".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn create_issue_rejects_empty_title_before_list_call() {
+        let client = MockGitHubClient::new();
+        let result = client.create_issue("", "body", &[], None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_issue_rejects_whitespace_only_title() {
+        let client = MockGitHubClient::new();
+        let result = client.create_issue("   ", "body", &[], None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_issue_rejects_leading_dash_title() {
+        let client = MockGitHubClient::new();
+        let result = client.create_issue("-evil", "body", &[], None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_issue_rejects_oversize_title() {
+        let client = MockGitHubClient::new();
+        let huge = "x".repeat(300);
+        let result = client.create_issue(&huge, "body", &[], None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_milestone_rejects_empty_title() {
+        let client = MockGitHubClient::new();
+        let result = client.create_milestone("", "desc").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_outcome_number_helper() {
+        assert_eq!(CreateOutcome::Created(42).number(), 42);
+        assert_eq!(
+            CreateOutcome::Existed {
+                number: 7,
+                state: "open".into(),
+            }
+            .number(),
+            7
+        );
     }
 
     // -- PR review mock tests --

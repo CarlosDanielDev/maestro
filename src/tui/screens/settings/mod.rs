@@ -1,3 +1,4 @@
+pub mod caveman_row;
 pub mod validation;
 
 use std::collections::HashMap;
@@ -7,6 +8,7 @@ use anyhow::Context;
 use crate::config::Config;
 use crate::flags::FlagSource;
 use crate::flags::store::FeatureFlags;
+use crate::settings::CavemanModeState;
 use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -102,7 +104,12 @@ pub struct SettingsScreen {
     flags_selected: usize,
     validators: HashMap<FieldKey, ValidatorFn>,
     validation_results: HashMap<FieldKey, ValidationFeedback>,
+    caveman_state: CavemanModeState,
+    pending_caveman_toggle: Option<bool>,
+    caveman_status_flash: Option<(String, std::time::Instant)>,
 }
+
+const CAVEMAN_LABEL: &str = "caveman_mode";
 
 /// Find a widget in a tab's field slice by its label. Returns the first
 /// match. Used by `sync_widgets_to_config` so reordering widgets in
@@ -112,6 +119,17 @@ fn widget_by_label<'a>(fields: &'a [SettingsField], label: &str) -> Option<&'a W
         .iter()
         .find(|f| f.widget.label() == label)
         .map(|f| &f.widget)
+}
+
+/// Returns the formatted single-line message for a flash slot if the slot is
+/// non-empty and within the 5-second visibility window.
+fn active_flash_message(slot: &Option<(String, std::time::Instant)>) -> Option<String> {
+    slot.as_ref()
+        .filter(|(_, t)| t.elapsed().as_secs() < 5)
+        .map(|(m, _)| {
+            let first = m.lines().next().unwrap_or(m);
+            crate::tui::ui::truncate_str(&sanitize_for_terminal(first), 80).into_owned()
+        })
 }
 
 impl SettingsScreen {
@@ -134,6 +152,9 @@ impl SettingsScreen {
             flags_selected: 0,
             validators,
             validation_results: HashMap::new(),
+            caveman_state: CavemanModeState::Default,
+            pending_caveman_toggle: None,
+            caveman_status_flash: None,
         };
         screen.run_all_validations();
         screen
@@ -142,6 +163,32 @@ impl SettingsScreen {
     pub fn with_config_path(mut self, path: std::path::PathBuf) -> Self {
         self.config_path = Some(path);
         self
+    }
+
+    pub fn with_caveman_mode(mut self, state: CavemanModeState) -> Self {
+        self.set_caveman_state(state);
+        self
+    }
+
+    pub fn set_caveman_state(&mut self, state: CavemanModeState) {
+        let bool_value = state.as_bool().unwrap_or(false);
+        self.caveman_state = state;
+        if let Some(fields) = self.fields_per_tab.get_mut(11)
+            && let Some(field) = fields
+                .iter_mut()
+                .find(|f| f.widget.label() == CAVEMAN_LABEL)
+            && let WidgetKind::Toggle(ref mut toggle) = field.widget
+        {
+            toggle.value = bool_value;
+        }
+    }
+
+    pub fn take_pending_caveman_toggle(&mut self) -> Option<bool> {
+        self.pending_caveman_toggle.take()
+    }
+
+    pub fn show_caveman_status(&mut self, message: impl Into<String>) {
+        self.caveman_status_flash = Some((message.into(), std::time::Instant::now()));
     }
 
     /// Sync the TurboQuant enabled toggle from an external flag change (Ctrl+Q).
@@ -304,6 +351,10 @@ impl SettingsScreen {
             Self::field(WidgetKind::TextInput(TextInput::new(
                 "default_mode",
                 &s.default_mode,
+            ))),
+            Self::field(WidgetKind::Toggle(Toggle::new(
+                "bypass_review_corrections (DANGER: auto-accepts all review fixes)",
+                s.permission_mode == "bypassPermissions",
             ))),
             Self::field(WidgetKind::Dropdown(Dropdown::new(
                 "permission_mode",
@@ -631,6 +682,8 @@ impl SettingsScreen {
                 "heavy_task_labels",
                 config.concurrency.heavy_task_labels.clone(),
             ))),
+            // Toggle here only receives Space; rendering is overlaid by caveman_row.
+            Self::field(WidgetKind::Toggle(Toggle::new(CAVEMAN_LABEL, false))),
         ]
     }
 
@@ -705,6 +758,21 @@ impl SettingsScreen {
             }
             if let Some(WidgetKind::TextInput(w)) = widget_by_label(fields, "default_mode") {
                 s.default_mode = w.value.clone();
+            }
+            // Apply the bypass toggle FIRST so the permission_mode dropdown
+            // can override it if the user explicitly picked a non-bypass
+            // value (e.g. "acceptEdits"). Toggle ON → bypassPermissions;
+            // toggle OFF → "default" only if currently bypass (so users
+            // who picked "acceptEdits" via the dropdown aren't reset).
+            if let Some(WidgetKind::Toggle(w)) = widget_by_label(
+                fields,
+                "bypass_review_corrections (DANGER: auto-accepts all review fixes)",
+            ) {
+                if w.value {
+                    s.permission_mode = "bypassPermissions".to_string();
+                } else if s.permission_mode == "bypassPermissions" {
+                    s.permission_mode = "default".to_string();
+                }
             }
             if let Some(WidgetKind::Dropdown(w)) = widget_by_label(fields, "permission_mode") {
                 s.permission_mode = w.selected_value().to_string();
@@ -923,6 +991,7 @@ impl SettingsScreen {
         }
 
         // Advanced (tab 11 — after TurboQuant)
+        let mut caveman_change: Option<bool> = None;
         if let Some(fields) = self.fields_per_tab.get(11) {
             if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
                 self.config.concurrency.heavy_task_limit = w.value as usize;
@@ -932,6 +1001,25 @@ impl SettingsScreen {
             }
             if let Some(WidgetKind::ListEditor(w)) = fields.get(2).map(|f| &f.widget) {
                 self.config.concurrency.heavy_task_labels = w.items.clone();
+            }
+            let prev = self.caveman_state.as_bool().unwrap_or(false);
+            if let Some(WidgetKind::Toggle(w)) = widget_by_label(fields, CAVEMAN_LABEL)
+                && w.value != prev
+            {
+                caveman_change = Some(w.value);
+            }
+        }
+        if let Some(new_value) = caveman_change {
+            if self.caveman_state.is_toggleable() {
+                self.pending_caveman_toggle = Some(new_value);
+            } else {
+                let label = self.caveman_state.label().into_owned();
+                let state = self.caveman_state.clone();
+                self.set_caveman_state(state);
+                self.show_caveman_status(format!(
+                    "caveman_mode is unreadable ({}); fix the file before toggling.",
+                    label
+                ));
             }
         }
     }
@@ -997,6 +1085,8 @@ impl SettingsScreen {
         }
 
         let scroll_offset = self.scroll_offset;
+        let active_tab = self.active_tab();
+        let caveman_state = &self.caveman_state;
         let fields = &self.fields_per_tab[tab];
         let mut y_offset: u16 = 0;
         for (field_idx, field) in fields.iter().enumerate().skip(scroll_offset) {
@@ -1011,10 +1101,14 @@ impl SettingsScreen {
                 width: area.width,
                 height: h,
             };
-            let validation = self.feedback_for(tab, field_idx).cloned();
-            field
-                .widget
-                .draw(f, field_area, theme, focused, validation.as_ref());
+            if active_tab == SettingsTab::Advanced && field.widget.label() == CAVEMAN_LABEL {
+                caveman_row::render_caveman_row(f, field_area, caveman_state, focused, theme);
+            } else {
+                let validation = self.feedback_for(tab, field_idx).cloned();
+                field
+                    .widget
+                    .draw(f, field_area, theme, focused, validation.as_ref());
+            }
             y_offset += h;
         }
     }
@@ -1217,22 +1311,16 @@ impl Screen for SettingsScreen {
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let save_error_active = self
-            .save_error_flash
-            .as_ref()
-            .is_some_and(|(_, t)| t.elapsed().as_secs() < 5);
+        let error_msg = active_flash_message(&self.save_error_flash);
+        let caveman_msg = active_flash_message(&self.caveman_status_flash);
         let error_title;
-        let (title, title_color) = if save_error_active {
-            let msg: String = self
-                .save_error_flash
-                .as_ref()
-                .map(|(m, _)| {
-                    let first = m.lines().next().unwrap_or(m);
-                    crate::tui::ui::truncate_str(&sanitize_for_terminal(first), 80).into_owned()
-                })
-                .unwrap_or_default();
+        let caveman_title;
+        let (title, title_color) = if let Some(msg) = error_msg {
             error_title = format!(" Settings [Save failed: {}] ", msg);
             (error_title.as_str(), theme.accent_error)
+        } else if let Some(msg) = caveman_msg {
+            caveman_title = format!(" Settings [{}] ", msg);
+            (caveman_title.as_str(), theme.accent_success)
         } else if self.has_validation_errors() {
             (" Settings [Errors] ", theme.accent_error)
         } else if self.is_dirty() {
@@ -1360,6 +1448,10 @@ impl KeymapProvider for SettingsScreen {
                     KeyBinding {
                         key: "Enter",
                         description: "Edit text / list field",
+                    },
+                    KeyBinding {
+                        key: "Space",
+                        description: "Toggle caveman_mode (effective on next Claude session)",
                     },
                 ],
             },
@@ -2143,24 +2235,25 @@ alert_threshold_pct = 80
     fn sessions_tab_contains_hollow_retry_widgets() {
         let screen = SettingsScreen::new(make_config(), make_flags());
         let fields = &screen.fields_per_tab[1];
-        // Fields 7, 8, 9 are the three new widgets (after max_concurrent,
-        // stall_timeout_secs, default_model, default_mode, permission_mode,
-        // max_retries, retry_cooldown_secs).
-        match &fields[7].widget {
-            WidgetKind::Dropdown(d) => assert_eq!(d.label, "hollow_retry.policy"),
-            _ => panic!("expected Dropdown at field 7 (hollow_retry.policy)"),
-        }
+        // Fields 8, 9, 10 are the three hollow_retry widgets (after
+        // max_concurrent, stall_timeout_secs, default_model, default_mode,
+        // bypass_review_corrections, permission_mode, max_retries,
+        // retry_cooldown_secs).
         match &fields[8].widget {
-            WidgetKind::NumberStepper(s) => {
-                assert_eq!(s.label, "hollow_retry.work_max_retries")
-            }
-            _ => panic!("expected NumberStepper at field 8 (work_max_retries)"),
+            WidgetKind::Dropdown(d) => assert_eq!(d.label, "hollow_retry.policy"),
+            _ => panic!("expected Dropdown at field 8 (hollow_retry.policy)"),
         }
         match &fields[9].widget {
             WidgetKind::NumberStepper(s) => {
+                assert_eq!(s.label, "hollow_retry.work_max_retries")
+            }
+            _ => panic!("expected NumberStepper at field 9 (work_max_retries)"),
+        }
+        match &fields[10].widget {
+            WidgetKind::NumberStepper(s) => {
                 assert_eq!(s.label, "hollow_retry.consultation_max_retries")
             }
-            _ => panic!("expected NumberStepper at field 9 (consultation_max_retries)"),
+            _ => panic!("expected NumberStepper at field 10 (consultation_max_retries)"),
         }
     }
 
@@ -2168,8 +2261,8 @@ alert_threshold_pct = 80
     fn sessions_tab_hollow_retry_policy_defaults_to_intent_aware() {
         let screen = SettingsScreen::new(make_config(), make_flags());
         let fields = &screen.fields_per_tab[1];
-        let WidgetKind::Dropdown(d) = &fields[7].widget else {
-            panic!("field 7 must be Dropdown");
+        let WidgetKind::Dropdown(d) = &fields[8].widget else {
+            panic!("field 8 must be Dropdown");
         };
         // Options order: [always, intent-aware, never] → default index 1.
         assert_eq!(d.selected, 1);
@@ -2183,7 +2276,7 @@ alert_threshold_pct = 80
         if let Some(WidgetKind::Dropdown(d)) = screen
             .fields_per_tab
             .get_mut(1)
-            .and_then(|fs| fs.get_mut(7))
+            .and_then(|fs| fs.get_mut(8))
             .map(|f| &mut f.widget)
         {
             d.selected = 2;
@@ -2201,7 +2294,7 @@ alert_threshold_pct = 80
         if let Some(WidgetKind::NumberStepper(s)) = screen
             .fields_per_tab
             .get_mut(1)
-            .and_then(|fs| fs.get_mut(8))
+            .and_then(|fs| fs.get_mut(9))
             .map(|f| &mut f.widget)
         {
             s.value = 5;
@@ -2209,7 +2302,7 @@ alert_threshold_pct = 80
         if let Some(WidgetKind::NumberStepper(s)) = screen
             .fields_per_tab
             .get_mut(1)
-            .and_then(|fs| fs.get_mut(9))
+            .and_then(|fs| fs.get_mut(10))
             .map(|f| &mut f.widget)
         {
             s.value = 3;
@@ -2476,5 +2569,111 @@ alert_threshold_pct = 80
             !first_row.contains("Save failed"),
             "expired flash must NOT appear in title, got: {first_row:?}"
         );
+    }
+
+    // --- Issue #490: caveman_mode toggle on Advanced tab ---
+
+    fn screen_with_caveman(state: CavemanModeState) -> SettingsScreen {
+        SettingsScreen::new(make_config(), make_flags()).with_caveman_mode(state)
+    }
+
+    fn navigate_to_advanced_caveman_row(screen: &mut SettingsScreen) {
+        for _ in 0..11 {
+            screen.handle_input(
+                &crate::tui::screens::test_helpers::key_event(KeyCode::Tab),
+                InputMode::Normal,
+            );
+        }
+        assert_eq!(screen.active_tab(), SettingsTab::Advanced);
+        for _ in 0..3 {
+            screen.handle_input(
+                &crate::tui::screens::test_helpers::key_event(KeyCode::Down),
+                InputMode::Normal,
+            );
+        }
+        assert_eq!(screen.field_index, 3, "cursor must be on caveman row");
+    }
+
+    #[test]
+    fn caveman_keybinding_appears_in_help_overlay() {
+        let screen = SettingsScreen::new(make_config(), make_flags());
+        let groups = screen.keybindings();
+        let descriptions: Vec<&str> = groups
+            .iter()
+            .flat_map(|g| g.bindings.iter().map(|b| b.description))
+            .collect();
+        assert!(
+            descriptions
+                .iter()
+                .any(|d| d.to_lowercase().contains("caveman_mode")),
+            "expected a caveman_mode binding, got: {descriptions:?}"
+        );
+    }
+
+    #[test]
+    fn space_on_advanced_caveman_row_sets_pending_toggle() {
+        let mut screen = screen_with_caveman(CavemanModeState::ExplicitFalse);
+        navigate_to_advanced_caveman_row(&mut screen);
+        screen.handle_input(
+            &crate::tui::screens::test_helpers::key_event(KeyCode::Char(' ')),
+            InputMode::Normal,
+        );
+        assert_eq!(screen.take_pending_caveman_toggle(), Some(true));
+    }
+
+    #[test]
+    fn space_on_explicit_true_sets_pending_to_false() {
+        let mut screen = screen_with_caveman(CavemanModeState::ExplicitTrue);
+        navigate_to_advanced_caveman_row(&mut screen);
+        screen.handle_input(
+            &crate::tui::screens::test_helpers::key_event(KeyCode::Char(' ')),
+            InputMode::Normal,
+        );
+        assert_eq!(screen.take_pending_caveman_toggle(), Some(false));
+    }
+
+    #[test]
+    fn space_when_state_is_error_does_not_enqueue_pending_toggle() {
+        let mut screen = screen_with_caveman(CavemanModeState::Error("read fail".into()));
+        navigate_to_advanced_caveman_row(&mut screen);
+        screen.handle_input(
+            &crate::tui::screens::test_helpers::key_event(KeyCode::Char(' ')),
+            InputMode::Normal,
+        );
+        assert_eq!(screen.take_pending_caveman_toggle(), None);
+    }
+
+    #[test]
+    fn space_when_state_is_error_shows_status_explanation() {
+        let mut screen = screen_with_caveman(CavemanModeState::Error("read fail".into()));
+        navigate_to_advanced_caveman_row(&mut screen);
+        screen.handle_input(
+            &crate::tui::screens::test_helpers::key_event(KeyCode::Char(' ')),
+            InputMode::Normal,
+        );
+        let flash = screen
+            .caveman_status_flash
+            .as_ref()
+            .expect("status flash should be set when toggling on Error");
+        assert!(
+            flash.0.to_lowercase().contains("unreadable"),
+            "expected explanation to mention 'unreadable', got: {:?}",
+            flash.0
+        );
+    }
+
+    #[test]
+    fn set_caveman_state_updates_underlying_widget_value() {
+        let mut screen = screen_with_caveman(CavemanModeState::ExplicitFalse);
+        screen.set_caveman_state(CavemanModeState::ExplicitTrue);
+        let advanced = &screen.fields_per_tab[11];
+        let toggle = advanced
+            .iter()
+            .find_map(|f| match &f.widget {
+                WidgetKind::Toggle(t) if t.label == "caveman_mode" => Some(t),
+                _ => None,
+            })
+            .expect("caveman toggle exists in Advanced tab");
+        assert!(toggle.value);
     }
 }

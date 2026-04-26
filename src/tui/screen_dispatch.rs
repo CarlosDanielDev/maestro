@@ -128,11 +128,32 @@ pub(super) fn dispatch_to_active_screen_then_hook(
 ) -> Option<ScreenAction> {
     let action = dispatch_to_active_screen(app, event);
     tick_wizard_step_hooks(app);
+    if matches!(app.tui_mode, app::TuiMode::Settings) {
+        app.process_pending_caveman_toggle();
+    }
     action
 }
 
 pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Option<ScreenAction> {
     use crate::tui::navigation::InputMode;
+
+    // Special-case the screens that don't fit the Screen trait shape (they
+    // need access to App-owned data alongside their own state).
+    if matches!(app.tui_mode, app::TuiMode::Prd) {
+        return Some(crate::tui::screens::prd_dispatch::dispatch_input(
+            app, event,
+        ));
+    }
+    if matches!(app.tui_mode, app::TuiMode::BypassWarning) {
+        return Some(crate::tui::screens::bypass_dispatch::dispatch_input(
+            app, event,
+        ));
+    }
+    if matches!(app.tui_mode, app::TuiMode::Roadmap) {
+        return Some(crate::tui::screens::roadmap_dispatch::dispatch_input(
+            app, event,
+        ));
+    }
 
     let screen: &mut dyn Screen = match app.tui_mode {
         app::TuiMode::Dashboard => app.home_screen.as_mut()?,
@@ -240,9 +261,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     app.pending_commands.push(app::TuiCommand::FetchMilestones);
                 }
                 app::TuiMode::Settings => {
-                    if let Some(ref config) = app.config {
-                        let mut screen =
-                            screens::SettingsScreen::new(config.clone(), app.flags.clone());
+                    // Re-read settings.json on entry so external edits are reflected.
+                    let caveman = app.caveman_mode();
+                    let config_clone = app.config.clone();
+                    if let Some(config) = config_clone {
+                        let mut screen = screens::SettingsScreen::new(config, app.flags.clone())
+                            .with_caveman_mode(caveman);
                         if let Some(ref path) = app.config_path {
                             screen = screen.with_config_path(path.clone());
                         } else {
@@ -345,9 +369,115 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             crate::tui::background_tasks::spawn_version_check(app.data_tx.clone());
         }
         ScreenAction::UpdateConfig(config) => {
+            // Detect the one field that genuinely cannot live-apply:
+            // `max_concurrent` is the SessionPool's fixed capacity, set
+            // at App::new time. Everything else is rebuildable.
+            let max_concurrent_changed = app
+                .config
+                .as_ref()
+                .map(|c| c.sessions.max_concurrent != config.sessions.max_concurrent)
+                .unwrap_or(false);
+
+            // 1. Visual + flags (cheap, always safe).
             crate::icon_mode::init_from_config(config.tui.ascii_icons);
             app.flags
                 .set_enabled(crate::flags::Flag::TurboQuant, config.turboquant.enabled);
+            let mut theme = crate::tui::theme::Theme::from_config(&config.tui.theme);
+            theme.apply_capability(crate::tui::theme::ColorCapability::detect());
+            app.theme = theme;
+            app.preview_theme = None;
+            app.show_mascot = config.tui.show_mascot;
+            app.mascot_style = config.tui.mascot_style;
+
+            // 2. Pool-level session config. Affects the next-launched
+            // session; already-running sessions keep their spawn-time
+            // values (Claude reads its flags once at process start).
+            let new_permission_mode = config.sessions.permission_mode.clone();
+            app.pool.set_permission_mode(new_permission_mode.clone());
+            app.pool
+                .set_allowed_tools(config.sessions.allowed_tools.clone());
+            let guardrail = crate::prompts::resolve_guardrail(
+                config.sessions.guardrail_prompt.as_deref(),
+                &std::path::PathBuf::from("."),
+            );
+            app.pool.set_guardrail_prompt(guardrail);
+            app.pool
+                .set_knowledge_appendix(crate::adapt::knowledge::load_appendix());
+
+            // 3. TurboQuant adapter rebuild (fork policy + pool wiring).
+            let tq_adapter = if config.turboquant.enabled {
+                Some(std::sync::Arc::new(
+                    crate::turboquant::adapter::TurboQuantAdapter::new(config.turboquant.bit_width),
+                ))
+            } else {
+                None
+            };
+            let mut fp = crate::session::fork::ForkPolicy::new(
+                config.sessions.context_overflow.max_fork_depth,
+            );
+            if let Some(ref adapter) = tq_adapter {
+                fp = fp.with_turboquant(
+                    std::sync::Arc::clone(adapter),
+                    config.turboquant.fork_handoff_budget,
+                );
+                app.pool.set_turboquant_adapter(
+                    std::sync::Arc::clone(adapter),
+                    config.turboquant.system_prompt_budget,
+                );
+            }
+            app.fork_policy = Some(fp);
+            app.turboquant_adapter = tq_adapter;
+
+            // 4. Long-lived collaborators rebuilt from the new config.
+            app.budget_enforcer = Some(crate::budget::BudgetEnforcer::new(
+                config.budget.per_session_usd,
+                config.budget.total_usd,
+                config.budget.alert_threshold_pct,
+            ));
+            app.model_router = Some(crate::models::ModelRouter::new(
+                config.models.routing.clone(),
+                config.sessions.default_model.clone(),
+            ));
+            app.notifications =
+                crate::commands::setup::build_notification_dispatcher(&config.notifications);
+            app.plugin_runner = if config.plugins.is_empty() {
+                None
+            } else {
+                Some(crate::plugins::runner::PluginRunner::new(
+                    config.plugins.clone(),
+                    crate::commands::setup::DEFAULT_PLUGIN_TIMEOUT_SECS,
+                ))
+            };
+            app.prompt_history
+                .set_max_entries(config.sessions.max_prompt_history);
+
+            // 5. Bypass flag follows permission_mode.
+            let should_bypass = new_permission_mode == "bypassPermissions";
+            if should_bypass && !app.bypass_active {
+                app.confirm_bypass_activation("settings");
+            } else if !should_bypass && app.bypass_active {
+                app.deactivate_bypass("settings");
+            }
+
+            // 6. Activity-log feedback. Tells the user what happened and
+            // — critically — calls out the one field that needs restart.
+            app.activity_log.push_simple(
+                "SETTINGS".into(),
+                "Settings saved and applied (theme, sessions, budget, notifications, plugins)."
+                    .into(),
+                crate::tui::activity_log::LogLevel::Info,
+            );
+            if max_concurrent_changed {
+                app.activity_log.push_simple(
+                    "SETTINGS".into(),
+                    format!(
+                        "max_concurrent changed to {} — RESTART required (pool capacity is fixed at startup).",
+                        config.sessions.max_concurrent
+                    ),
+                    crate::tui::activity_log::LogLevel::Warn,
+                );
+            }
+
             app.config = Some(*config);
         }
         ScreenAction::PreviewTheme(theme_config) => {

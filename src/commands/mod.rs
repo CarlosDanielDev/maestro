@@ -8,6 +8,7 @@ mod resume;
 mod run;
 pub(crate) mod setup;
 mod slack;
+pub mod slash;
 mod status;
 pub mod turboquant;
 

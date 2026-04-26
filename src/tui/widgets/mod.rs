@@ -1,3 +1,4 @@
+pub mod bypass_indicator;
 mod ci_monitor;
 mod dropdown;
 pub mod header_brand;

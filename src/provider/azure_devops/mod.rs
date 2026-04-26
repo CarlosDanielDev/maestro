@@ -350,7 +350,11 @@ impl GitHubClient for AzDevOpsClient {
             .collect())
     }
 
-    async fn create_milestone(&self, _title: &str, _description: &str) -> Result<u64> {
+    async fn create_milestone(
+        &self,
+        _title: &str,
+        _description: &str,
+    ) -> Result<crate::provider::github::client::CreateOutcome> {
         anyhow::bail!("create_milestone is not supported for Azure DevOps")
     }
 
@@ -360,7 +364,7 @@ impl GitHubClient for AzDevOpsClient {
         _body: &str,
         _labels: &[String],
         _milestone: Option<u64>,
-    ) -> Result<u64> {
+    ) -> Result<crate::provider::github::client::CreateOutcome> {
         anyhow::bail!("create_issue is not supported for Azure DevOps")
     }
 

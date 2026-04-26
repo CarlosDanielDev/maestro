@@ -50,6 +50,15 @@ pub enum TuiMode {
     /// Overlay shown after an adapt-flavored session completes, presenting the
     /// parsed next-iteration paths for one-key selection.
     AdaptFollowUp,
+    /// Interactive PRD screen (#321). Renders Vision/Goals/Non-Goals/
+    /// Current-State/Stakeholders/Timeline; goals + non-goals are editable.
+    Prd,
+    /// Roadmap-by-milestone screen (#329). Semver-sorted milestones with
+    /// dependency-level issue ordering, progress bars, filters.
+    Roadmap,
+    /// First-time bypass-mode warning screen (#328). User must type
+    /// CONFIRM to activate.
+    BypassWarning,
 }
 
 impl TuiMode {
@@ -87,6 +96,9 @@ impl TuiMode {
             Self::SessionSummary => "Sessions",
             Self::TurboquantDashboard => "TQ Dashboard",
             Self::AdaptFollowUp => "Next Steps",
+            Self::Prd => "PRD",
+            Self::Roadmap => "Roadmap",
+            Self::BypassWarning => "Bypass Warning",
         }
     }
 }
@@ -217,13 +229,32 @@ pub enum TuiCommand {
         event: crate::provider::github::types::PrReviewEvent,
         body: String,
     },
+    /// Sync the live PRD's `current_state` from GitHub (#321).
+    SyncPrd,
+    /// Fetch milestones + issues for the Roadmap screen (#329).
+    SyncRoadmap,
+    /// PR auto-detected from session output (#327). Triggers /review.
+    PrCreated {
+        pr_number: u64,
+        owner: String,
+        repo: String,
+    },
 }
 
 /// Data events delivered from background fetch tasks.
 pub enum TuiDataEvent {
     Issues(anyhow::Result<Vec<GhIssue>>),
     /// Result of creating a GitHub issue via the Issue Wizard (#291+#298).
+    /// Only emitted for `CreateOutcome::Created` — `Existed` surfaces as
+    /// `IssueAlreadyExists` so the wizard can show a blocking modal (#455).
     IssueCreated(anyhow::Result<u64>),
+    /// A dupe-title pre-check matched an existing issue. The wizard is
+    /// expected to show a blocking modal with Edit/Cancel choices (#455).
+    IssueAlreadyExists {
+        number: u64,
+        state: String,
+        title: String,
+    },
     /// Aggregated stats for the Project Stats screen (#292).
     ProjectStats(crate::tui::screens::project_stats::ProjectStatsData),
     /// AI planning result for the Milestone Wizard (#294). `Err(s)` is the
@@ -256,6 +287,15 @@ pub enum TuiDataEvent {
     UnifiedIssues(anyhow::Result<Vec<GhIssue>>, Option<String>),
     PullRequests(anyhow::Result<Vec<crate::provider::github::types::GhPullRequest>>),
     PrReviewSubmitted(anyhow::Result<()>),
+    /// Result of `SyncPrd` (#321) — fold into the live PRD's current_state.
+    PrdSyncResult(anyhow::Result<crate::prd::sync::PrdSyncResult>),
+    /// Result of `SyncRoadmap` (#329) — populate the roadmap screen.
+    RoadmapResult(anyhow::Result<Vec<crate::tui::screens::roadmap::RoadmapEntry>>),
+    /// Result of an auto-review cycle (#327) — populate the concerns panel.
+    ReviewCycleResult {
+        pr_number: u64,
+        result: anyhow::Result<crate::review::types::ReviewReport>,
+    },
 }
 
 /// A merge conflict suggestion shown in the completion overlay.

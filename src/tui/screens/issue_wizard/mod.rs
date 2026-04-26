@@ -125,6 +125,19 @@ pub struct IssueWizardScreen {
     pub(super) create_enqueued: bool,
     pub(super) created_issue_number: Option<u64>,
     pub(super) create_error: Option<String>,
+    /// #455 Blocking modal surfaced when `create_issue` returns
+    /// `CreateOutcome::Existed` — user must pick Edit or Cancel.
+    pub(super) already_exists_modal: Option<AlreadyExistsModal>,
+}
+
+/// #455 Info needed to render the "issue already exists" blocking modal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlreadyExistsModal {
+    pub number: u64,
+    pub state: String,
+    pub title: String,
+    /// 0 = Edit title (returns to BasicInfo), 1 = Cancel (closes wizard).
+    pub focus: u8,
 }
 
 impl IssueWizardScreen {
@@ -154,6 +167,7 @@ impl IssueWizardScreen {
             create_enqueued: false,
             created_issue_number: None,
             create_error: None,
+            already_exists_modal: None,
         }
     }
 
@@ -239,6 +253,46 @@ impl IssueWizardScreen {
                 self.step = IssueWizardStep::Failed;
             }
         }
+    }
+
+    /// #455 — surface the "already exists" blocking modal and clear
+    /// the in-flight create flag. Leaves the wizard on the Creating step
+    /// so the modal renders on top of the spinner frame.
+    pub fn finish_create_already_exists(&mut self, number: u64, state: String, title: String) {
+        self.create_in_flight = false;
+        self.create_enqueued = false;
+        self.already_exists_modal = Some(AlreadyExistsModal {
+            number,
+            state,
+            title,
+            focus: 0,
+        });
+    }
+
+    pub fn already_exists_modal(&self) -> Option<&AlreadyExistsModal> {
+        self.already_exists_modal.as_ref()
+    }
+
+    /// Cycle focus between Edit (0) and Cancel (1) in the already-exists modal.
+    pub fn already_exists_modal_toggle_focus(&mut self) {
+        if let Some(ref mut m) = self.already_exists_modal {
+            m.focus = if m.focus == 0 { 1 } else { 0 };
+        }
+    }
+
+    /// Commit the Edit action: dismiss the modal and return the user to
+    /// the title step with their input preserved. The previous title is
+    /// preloaded so the user can tweak it rather than retype.
+    pub fn already_exists_modal_edit(&mut self) {
+        self.already_exists_modal = None;
+        self.step = IssueWizardStep::BasicInfo;
+        self.create_error = None;
+        self.rebuild_fields_for_step();
+    }
+
+    /// Commit the Cancel action: dismiss the modal. Caller closes wizard.
+    pub fn already_exists_modal_cancel(&mut self) {
+        self.already_exists_modal = None;
     }
 
     /// Reset to Context with a fresh payload — used by the Complete
@@ -681,12 +735,21 @@ impl IssueWizardScreen {
     pub fn validation_error(&self) -> Option<&'static str> {
         match self.step {
             IssueWizardStep::BasicInfo => {
-                if self.field_text(FieldId::Title).trim().is_empty() {
-                    Some("Title is required")
-                } else if self.field_text(FieldId::Overview).trim().is_empty() {
-                    Some("Overview is required")
-                } else {
-                    None
+                let title = self.field_text(FieldId::Title);
+                // Delegates to the canonical validator from #452. We only
+                // surface a coarse reason here because the footer expects a
+                // &'static str; the granular anyhow error from
+                // validate_title fires again at dispatch time.
+                match crate::util::validate_title(&title, "title") {
+                    Err(_) if title.trim().is_empty() => Some("Title is required"),
+                    Err(_) => Some("Title is invalid (too long or leading '-')"),
+                    Ok(_) => {
+                        if self.field_text(FieldId::Overview).trim().is_empty() {
+                            Some("Overview is required")
+                        } else {
+                            None
+                        }
+                    }
                 }
             }
             IssueWizardStep::DorFields => {
@@ -803,6 +866,35 @@ impl Screen for IssueWizardScreen {
         else {
             return ScreenAction::None;
         };
+
+        // #455 — when the "already exists" modal is up, it swallows
+        // all input until the user picks Edit or Cancel.
+        if self.already_exists_modal.is_some() {
+            match code {
+                KeyCode::Left | KeyCode::Right | KeyCode::Tab | KeyCode::BackTab => {
+                    self.already_exists_modal_toggle_focus();
+                }
+                KeyCode::Enter => {
+                    let focus = self
+                        .already_exists_modal
+                        .as_ref()
+                        .map(|m| m.focus)
+                        .unwrap_or(0);
+                    if focus == 0 {
+                        self.already_exists_modal_edit();
+                    } else {
+                        self.already_exists_modal_cancel();
+                        return ScreenAction::Pop;
+                    }
+                }
+                KeyCode::Esc => {
+                    self.already_exists_modal_cancel();
+                    return ScreenAction::Pop;
+                }
+                _ => {}
+            }
+            return ScreenAction::None;
+        }
 
         // Ctrl+V: explicit clipboard read (covers images on the clipboard,
         // which bracketed paste can't carry).
@@ -1863,5 +1955,96 @@ mod tests {
         assert!(s.improve_error().is_some());
         s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert!(s.improve_error().is_none());
+    }
+
+    // ---- #455 already-exists modal ----
+
+    #[test]
+    fn finish_create_already_exists_sets_modal() {
+        let mut s = IssueWizardScreen::new();
+        s.finish_create_already_exists(42, "open".into(), "feat: login".into());
+        let Some(modal) = s.already_exists_modal() else {
+            panic!("modal must be set");
+        };
+        assert_eq!(modal.number, 42);
+        assert_eq!(modal.state, "open");
+        assert_eq!(modal.title, "feat: login");
+        assert_eq!(modal.focus, 0);
+    }
+
+    #[test]
+    fn already_exists_modal_edit_returns_to_basic_info() {
+        let mut s = IssueWizardScreen::new();
+        // Move to Creating step first to simulate mid-flight failure.
+        s.jump_to(IssueWizardStep::Creating);
+        s.finish_create_already_exists(42, "open".into(), "feat: login".into());
+        // Enter on focus=0 (Edit) should dismiss modal + go to BasicInfo.
+        let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        assert!(s.already_exists_modal().is_none());
+        assert_eq!(s.step(), IssueWizardStep::BasicInfo);
+    }
+
+    #[test]
+    fn already_exists_modal_cancel_pops_wizard() {
+        let mut s = IssueWizardScreen::new();
+        s.finish_create_already_exists(42, "open".into(), "feat: login".into());
+        // Toggle focus to Cancel (focus=1).
+        s.handle_input(&key_event(KeyCode::Right), InputMode::Normal);
+        let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Pop);
+        assert!(s.already_exists_modal().is_none());
+    }
+
+    #[test]
+    fn already_exists_modal_esc_cancels_and_pops() {
+        let mut s = IssueWizardScreen::new();
+        s.finish_create_already_exists(42, "open".into(), "feat: login".into());
+        let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Pop);
+        assert!(s.already_exists_modal().is_none());
+    }
+
+    #[test]
+    fn already_exists_modal_swallows_other_keys() {
+        let mut s = IssueWizardScreen::new();
+        s.finish_create_already_exists(42, "open".into(), "feat: login".into());
+        // Modal swallows — payload title should not accumulate random char input.
+        let before = s.payload().title.clone();
+        s.handle_input(&key_event(KeyCode::Char('x')), InputMode::Normal);
+        assert_eq!(s.payload().title, before);
+        // Modal is still present.
+        assert!(s.already_exists_modal().is_some());
+    }
+
+    #[test]
+    fn already_exists_modal_toggle_focus() {
+        let mut s = IssueWizardScreen::new();
+        s.finish_create_already_exists(42, "open".into(), "feat: login".into());
+        assert_eq!(s.already_exists_modal().unwrap().focus, 0);
+        s.already_exists_modal_toggle_focus();
+        assert_eq!(s.already_exists_modal().unwrap().focus, 1);
+        s.already_exists_modal_toggle_focus();
+        assert_eq!(s.already_exists_modal().unwrap().focus, 0);
+    }
+
+    #[test]
+    fn basic_info_validation_rejects_whitespace_only_title() {
+        let mut s = IssueWizardScreen::new();
+        s.jump_to(IssueWizardStep::BasicInfo);
+        // Type whitespace only
+        s.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Insert);
+        s.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Insert);
+        assert!(s.validation_error().is_some());
+    }
+
+    #[test]
+    fn basic_info_validation_rejects_leading_dash_title() {
+        let mut s = IssueWizardScreen::new();
+        s.jump_to(IssueWizardStep::BasicInfo);
+        for c in "-evil".chars() {
+            s.handle_input(&key_event(KeyCode::Char(c)), InputMode::Insert);
+        }
+        assert!(s.validation_error().is_some());
     }
 }

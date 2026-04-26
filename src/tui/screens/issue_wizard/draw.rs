@@ -33,6 +33,91 @@ impl IssueWizardScreen {
             _ => self.draw_stub(f, chunks[1]),
         }
         self.draw_footer(f, chunks[2]);
+
+        // #455 — already-exists modal overlays everything else.
+        if self.already_exists_modal().is_some() {
+            self.draw_already_exists_modal(f, area);
+        }
+    }
+
+    /// #455 — blocking modal rendered on top of the wizard when a
+    /// duplicate-title pre-check matched an existing issue.
+    fn draw_already_exists_modal(&self, f: &mut Frame, area: Rect) {
+        let Some(modal) = self.already_exists_modal() else {
+            return;
+        };
+        // Center a small modal rect inside `area`.
+        let w = area.width.min(66);
+        let h = 9u16;
+        let x = area.x + (area.width.saturating_sub(w)) / 2;
+        let y = area.y + (area.height.saturating_sub(h)) / 2;
+        let rect = Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        };
+        f.render_widget(ratatui::widgets::Clear, rect);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Issue already exists")
+            .border_style(Style::default().fg(Color::LightYellow));
+        let inner = block.inner(rect);
+        f.render_widget(block, rect);
+
+        let header = Line::from(vec![
+            Span::raw("An issue with this title already exists: "),
+            Span::styled(
+                format!("#{} ({})", modal.number, modal.state),
+                Style::default()
+                    .fg(Color::LightYellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]);
+        let title_line = Line::from(vec![
+            Span::raw("Title: "),
+            Span::styled(&modal.title, Style::default().add_modifier(Modifier::BOLD)),
+        ]);
+
+        let (edit_style, cancel_style) = if modal.focus == 0 {
+            (
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::LightYellow)
+                    .add_modifier(Modifier::BOLD),
+                Style::default().add_modifier(Modifier::DIM),
+            )
+        } else {
+            (
+                Style::default().add_modifier(Modifier::DIM),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::LightYellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        };
+
+        let buttons = Line::from(vec![
+            Span::styled(" [Edit title] ", edit_style),
+            Span::raw("   "),
+            Span::styled(" [Cancel] ", cancel_style),
+        ]);
+
+        let lines = vec![
+            header,
+            Line::from(""),
+            title_line,
+            Line::from(""),
+            buttons,
+            Line::from(""),
+            Line::from(Span::styled(
+                "← → to switch, Enter to confirm, Esc to cancel",
+                Style::default().add_modifier(Modifier::DIM),
+            )),
+        ];
+
+        f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
     fn draw_header(&self, f: &mut Frame, area: Rect) {

@@ -83,6 +83,38 @@ pub fn validate_gh_arg(value: &str, field_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Trim leading/trailing whitespace and collapse internal whitespace runs
+/// into single ASCII spaces. Preserves case.
+pub fn normalize_title(raw: &str) -> String {
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Validate a user-supplied title (milestone or issue). Returns the
+/// normalized form on success; callers MUST use the returned value.
+pub fn validate_title(raw: &str, field: &str) -> Result<String> {
+    if raw.contains('\0') {
+        bail!("{} must not contain null bytes", field);
+    }
+    let normalized = normalize_title(raw);
+    if normalized.is_empty() {
+        bail!("{} must not be empty", field);
+    }
+    if normalized.len() > 256 {
+        bail!("{} too long: {} bytes (max 256)", field, normalized.len());
+    }
+    if normalized.starts_with('-') {
+        bail!("{} must not start with '-' (got {:?})", field, normalized);
+    }
+    Ok(normalized)
+}
+
+/// Canonical "same title" check. Normalizes both sides and compares
+/// case-insensitively in ASCII. The single source of truth for
+/// duplicate-title detection across the project.
+pub fn titles_equivalent(a: &str, b: &str) -> bool {
+    normalize_title(a).eq_ignore_ascii_case(&normalize_title(b))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,5 +259,86 @@ mod tests {
     #[test]
     fn gh_arg_rejects_null_bytes() {
         assert!(validate_gh_arg("val\0ue", "arg").is_err());
+    }
+
+    // --- normalize_title ---
+
+    #[test]
+    fn normalize_title_trims_and_collapses_whitespace() {
+        assert_eq!(normalize_title("  Foo   Bar  "), "Foo Bar");
+        assert_eq!(normalize_title("A\t\tB"), "A B");
+        assert_eq!(normalize_title("A\n\nB"), "A B");
+        assert_eq!(normalize_title("Foo"), "Foo");
+    }
+
+    #[test]
+    fn normalize_title_preserves_case() {
+        assert_eq!(normalize_title("Foo Bar"), "Foo Bar");
+        assert_eq!(normalize_title("  M0: Foundation  "), "M0: Foundation");
+    }
+
+    #[test]
+    fn normalize_title_handles_empty_and_all_whitespace() {
+        assert_eq!(normalize_title(""), "");
+        assert_eq!(normalize_title("   "), "");
+        assert_eq!(normalize_title("\t\n"), "");
+    }
+
+    // --- validate_title ---
+
+    #[test]
+    fn validate_title_accepts_normal_title() {
+        let got = validate_title("  M0: Foundation  ", "milestone title").unwrap();
+        assert_eq!(got, "M0: Foundation");
+    }
+
+    #[test]
+    fn validate_title_rejects_empty() {
+        assert!(validate_title("", "t").is_err());
+    }
+
+    #[test]
+    fn validate_title_rejects_whitespace_only() {
+        assert!(validate_title("   ", "t").is_err());
+        assert!(validate_title("\t\n", "t").is_err());
+    }
+
+    #[test]
+    fn validate_title_rejects_leading_dash() {
+        assert!(validate_title("-foo", "t").is_err());
+        assert!(validate_title("  -foo", "t").is_err());
+    }
+
+    #[test]
+    fn validate_title_rejects_null_byte() {
+        assert!(validate_title("a\0b", "t").is_err());
+    }
+
+    #[test]
+    fn validate_title_rejects_over_256_bytes() {
+        let too_long = "x".repeat(257);
+        assert!(validate_title(&too_long, "t").is_err());
+    }
+
+    #[test]
+    fn validate_title_accepts_exactly_256_bytes() {
+        let exact = "x".repeat(256);
+        assert!(validate_title(&exact, "t").is_ok());
+    }
+
+    // --- titles_equivalent ---
+
+    #[test]
+    fn titles_equivalent_is_normalized_and_case_insensitive() {
+        assert!(titles_equivalent("  Foo  ", "foo"));
+        assert!(titles_equivalent("a  b", "a b"));
+        assert!(titles_equivalent("M0: Core", " m0: core "));
+        assert!(!titles_equivalent("foo", "bar"));
+    }
+
+    #[test]
+    fn titles_equivalent_distinguishes_different_titles() {
+        assert!(!titles_equivalent("foo", "foo bar"));
+        assert!(!titles_equivalent("M0: Core", "M1: Core"));
     }
 }
