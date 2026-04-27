@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-27 12:00 (UTC)
+> Last updated: 2026-04-27 15:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -25,6 +25,7 @@ maestro/
 │   │   ├── implement.md                   # Slash command: run full TDD implementation flow
 │   │   ├── plan-feature.md                # Slash command: invoke master planner
 │   │   ├── pushup.md                      # Slash command: git push workflow
+│   │   ├── release.md                     # Slash command: semantic version release — bump version, update changelog, tag, push, and create GitHub Release
 │   │   ├── setup-notifications.md         # Slash command: configure hook notifications
 │   │   ├── setup-project.md               # Slash command: initialize project config
 │   │   ├── triage-idea.md                 # Slash command: non-mutating idea triage loop (fetch idea issue → dispatch subagent-idea-triager → validate report → render digest)  [Issue #485]
