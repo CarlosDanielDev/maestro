@@ -14,7 +14,6 @@ use ratatui::{
     widgets::Paragraph,
 };
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use tui_textarea::TextArea;
 
 /// Result of reading the system clipboard.
@@ -34,10 +33,6 @@ pub trait ClipboardProvider: Send {
     fn read(&self) -> ClipboardContent;
 }
 
-/// Caches whether the clipboard backend is available. Once a failure is
-/// recorded, subsequent paste attempts skip `arboard::Clipboard::new()`.
-static CLIPBOARD_AVAILABLE: OnceLock<bool> = OnceLock::new();
-
 /// Production clipboard using arboard.
 ///
 /// Wraps clipboard access in `catch_unwind` because `arboard::Clipboard::new()`
@@ -46,14 +41,7 @@ pub struct SystemClipboard;
 
 impl ClipboardProvider for SystemClipboard {
     fn read(&self) -> ClipboardContent {
-        let available = CLIPBOARD_AVAILABLE.get_or_init(|| {
-            std::panic::catch_unwind(arboard::Clipboard::new)
-                .ok()
-                .and_then(|r| r.ok())
-                .is_some()
-        });
-
-        if !available {
+        if !crate::tui::clipboard::backend_available() {
             return ClipboardContent::Unavailable;
         }
 

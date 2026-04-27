@@ -1,6 +1,8 @@
 pub mod activity_log;
 pub mod app;
 mod background_tasks;
+pub mod clipboard;
+pub mod clipboard_toast;
 pub mod cost_dashboard;
 pub mod dep_graph;
 pub mod detail;
@@ -9,6 +11,7 @@ pub mod help;
 pub mod icons;
 mod input_handler;
 pub mod issue_refs;
+pub mod keybinding_hints;
 pub mod log_viewer;
 pub mod markdown;
 pub mod marquee;
@@ -676,7 +679,7 @@ async fn event_loop(
 }
 
 #[cfg(test)]
-fn make_test_app(name: &str) -> app::App {
+pub(crate) fn make_test_app(name: &str) -> app::App {
     use crate::session::worktree::MockWorktreeManager;
     use crate::state::store::StateStore;
 

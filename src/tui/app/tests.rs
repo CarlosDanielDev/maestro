@@ -2,23 +2,10 @@ use super::helpers::{build_gate_fix_prompt, session_label};
 use super::*;
 use crate::flags::Flag;
 use crate::session::types::GateResultEntry;
-use crate::session::worktree::MockWorktreeManager;
-use crate::state::store::StateStore;
 use std::time::Duration;
 
 fn make_app() -> App {
-    let tmp = std::env::temp_dir().join(format!(
-        "maestro-tui-app-test-{}.json",
-        uuid::Uuid::new_v4()
-    ));
-    let store = StateStore::new(tmp);
-    App::new(
-        store,
-        3,
-        Box::new(MockWorktreeManager::new()),
-        "bypassPermissions".into(),
-        vec![],
-    )
+    crate::tui::make_test_app("maestro-tui-app-test")
 }
 
 #[test]

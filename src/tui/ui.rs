@@ -60,11 +60,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Use preview theme if active, otherwise base theme
     let theme = app.active_theme().clone();
 
-    let selected_status = {
-        let sessions = app.pool.all_sessions();
-        let idx = app.panel_view.selected_index();
-        sessions.get(idx).map(|s| s.status)
-    };
+    let selected_status = app
+        .pool
+        .session_at_index(app.panel_view.selected_index())
+        .map(|s| s.status);
     let cache_key = (app.tui_mode, selected_status);
     if app.cached_mode_km.is_none() || app.cached_mode_km_key != cache_key {
         let screen_bindings = active_screen_bindings(app);
@@ -86,6 +85,19 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             f,
             banner_area,
             crate::tui::widgets::bypass_indicator::BypassIndicatorState::Active,
+        );
+    }
+
+    // Aged out before render so the empty-toast frame draws cleanly.
+    app.tick_copy_toast(std::time::Instant::now());
+    if let Some(toast) = app.copy_toast.as_ref() {
+        let banner_area = Rect::new(chunks[0].x, chunks[0].y, chunks[0].width, 1);
+        crate::tui::clipboard_toast::draw_copy_toast(
+            f,
+            banner_area,
+            toast.kind,
+            &toast.message,
+            &app.theme,
         );
     }
 
@@ -899,22 +911,11 @@ fn draw_status_bar_inner(
     if remaining > 10 && !mode_km.hints.is_empty() {
         let fitted = keymap::fit_hints_to_width(mode_km.hints, remaining.saturating_sub(4));
         if !fitted.is_empty() {
+            let copy_enabled = app.copy_focused_response_enabled();
+            let hint_spans =
+                crate::tui::keybinding_hints::keybinding_hints_spans(&fitted, copy_enabled, theme);
             spans.push(sep.clone());
-            for (i, (key, action)) in fitted.iter().enumerate() {
-                if i > 0 {
-                    spans.push(Span::raw("  "));
-                }
-                spans.push(Span::styled(
-                    format!("[{}]", key),
-                    Style::default().fg(theme.accent_success),
-                ));
-                spans.push(Span::styled(
-                    format!(" {}", action),
-                    Style::default().fg(theme.text_secondary),
-                ));
-                // Account for the appended hint width incrementally so we
-                // don't re-walk the whole vec for the marquee check.
-            }
+            spans.extend(hint_spans);
         }
     }
 

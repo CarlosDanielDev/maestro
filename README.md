@@ -408,6 +408,7 @@ Dependencies can also be declared in the issue body as `blocked-by: #N` (case-in
 | `p` | Pause all running sessions (SIGSTOP) |
 | `r` | Resume all paused sessions (SIGCONT) |
 | `k` | Kill all sessions |
+| `c` | Copy focused agent's last response to clipboard (dimmed when no response or session is streaming) |
 
 ### Home Screen
 

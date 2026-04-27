@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-27 15:00 (UTC)
+> Last updated: 2026-04-27 18:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -214,6 +214,7 @@ maestro/
 │   │   │   ├── types.rs                   # TuiMode enum (+ CompletionSummary, ContinuousPause variants) with breadcrumb_label() method; NavigationStack struct (push/pop/peek/clear/breadcrumbs, cap 32); TuiCommand enum (+ RunAdaptScaffold); TuiDataEvent enum (+ AdaptScaffoldResult); SuggestionDataPayload; CompletionSummaryData; CompletionSessionLine; GateFailureInfo  [Issue #342, #371]
 │   │   │   ├── budget.rs                  # Budget enforcement helpers within App
 │   │   │   ├── ci_polling.rs              # poll_ci_status() CI auto-fix loop using CiCheck trait; decide_ci_action(); spawn_ci_fix_session()  [Issue #41, #123]
+│   │   │   ├── clipboard_action.rs        # App::copy_focused_response() + App::copy_focused_response_enabled() predicate; CopyOutcome enum (Success, NoContent, NotEnded, Failed); set_copy_toast() / tick_copy_toast() with COPY_TOAST_TTL_MS = 2_000  [Issue #482]
 │   │   │   ├── completion_pipeline.rs     # check_completions() config-driven gate evaluation with per-gate logging  [Issue #40, #104]
 │   │   │   ├── completion_summary.rs      # build_completion_summary(); transition_to_dashboard() calls navigate_to_root() to clear nav stack  [Issue #342]
 │   │   │   ├── context_overflow.rs        # Context overflow detection and fork triggering
@@ -226,17 +227,21 @@ maestro/
 │   │   │   ├── review.rs                  # ReviewCouncil integration and gate-fix session spawning
 │   │   │   ├── session_lifecycle.rs       # Session promotion, state transitions, activity log forwarding
 │   │   │   ├── session_spawners.rs        # spawn_gate_fix_session(); build_gate_fix_prompt(); launch_session_from_config()
+│   │   │   ├── settings_actions.rs        # SettingsStore-backed App methods extracted from app/mod.rs to keep it under the file-size cap: with_settings_store(), caveman_mode(), process_pending_caveman_toggle()  [Issue #482]
 │   │   │   ├── tests.rs                   # App-level unit tests
 │   │   │   └── work_assigner.rs           # WorkAssigner integration: topo-sort, issue queueing
 │   │   ├── theme.rs                       # Theme module: Theme struct (resolved color fields), ThemeConfig (preset + overrides), ThemePreset (Dark, Light), ThemeOverrides (per-field optional color overrides), SerializableColor (named/hex/indexed), ColorCapability; fkey_badge_bg and fkey_badge_fg optional override fields for F-key bar badge styling; milestone_gauge_color() derives a completion-aware color (green=high, yellow=mid, red=low) with inverted semantics relative to budget gauges; builds ratatui Color values from maestro.toml [tui.theme] block  [Issue #38, #218, #299]
 │   │   ├── activity_log.rs                # Scrollable activity log widget with LogLevel color coding; LogLevel::Thinking variant (green / accent_success color, distinct from Error)  [Phase 1, Issue #102]
+│   │   ├── clipboard.rs                   # Clipboard trait + SystemClipboard impl (arboard); strip_ansi() helper strips ANSI escape sequences from response text before copy  [Issue #482]
+│   │   ├── clipboard_toast.rs             # Toast renderer: 2-second status-bar overlay confirming clipboard copy success or failure  [Issue #482]
 │   │   ├── cost_dashboard.rs              # Cost dashboard widget: per-session and aggregate cost display  [Phase 3]
 │   │   ├── dep_graph.rs                   # ASCII dependency graph visualization  [Phase 3]
 │   │   ├── detail.rs                      # Session detail view  [Phase 3]
 │   │   ├── fullscreen.rs                  # Fullscreen session view with phase progress overlay  [Phase 3]
 │   │   ├── help.rs                        # Help overlay widget with keybinding reference  [Phase 3]
 │   │   ├── icons.rs                       # Thin re-export shim: re-exports IconId, IconPair, icon_pair(), get(), get_for_mode() from src/icons.rs and init_from_config(), use_nerd_font() from src/icon_mode.rs so existing tui:: import paths remain valid after the registry was extracted  [Issue #307, #308]
-│   │   ├── input_handler.rs               # Top-level key event dispatcher extracted from mod.rs; KeyAction enum (Consumed, Quit); handle_key() dispatches to overlay handlers, mode-specific input, global shortcuts, and screen dispatch in priority order; all Esc handlers use navigate_back_or_dashboard() via NavigationStack  [Issue #342]
+│   │   ├── input_handler.rs               # Top-level key event dispatcher extracted from mod.rs; KeyAction enum (Consumed, Quit); handle_key() dispatches to overlay handlers, mode-specific input, global shortcuts, and screen dispatch in priority order; all Esc handlers use navigate_back_or_dashboard() via NavigationStack; 'c' key arm in handle_overview_keys() triggers copy_focused_response()  [Issue #342, #482]
+│   │   ├── keybinding_hints.rs            # Dim-aware hint bar span builder; keybinding_hints_spans() emits '[c] Copy' dimmed when no response is available or session is still streaming  [Issue #482]
 │   │   ├── log_viewer.rs                  # Full-screen scrollable log viewer widget
 │   │   ├── markdown.rs                    # markdown-to-ratatui rendering module; convert Markdown content to terminal-friendly widgets; wrap_and_push_text() performs width-aware word wrapping when appending text spans to a line buffer
 │   │   ├── marquee.rs                     # Horizontally scrolling marquee text widget
@@ -246,7 +251,7 @@ maestro/
 │   │   │   ├── mod.rs                     # Module exports for navigation subsystem
 │   │   │   ├── focus.rs                   # Focus management: FocusManager, focus ring, widget focus state
 │   │   │   ├── keymap.rs                  # Keymap definitions: action-to-key bindings, context-sensitive keymaps; F-key bar actions registered (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit); KeyBindingGroup, InlineHint, FKeyRelevance, ModeKeyMap, global_keybindings() LazyLock  [Issue #218]
-│   │   │   └── mode_hints.rs              # mode_keymap() builds ModeKeyMap for a given TuiMode + optional session status; maps TuiMode variants to mode labels, F-key visibility rules, and context-sensitive inline hints; consumes screen_bindings from KeymapProvider::keybindings()
+│   │   │   └── mode_hints.rs              # mode_keymap() builds ModeKeyMap for a given TuiMode + optional session status; maps TuiMode variants to mode labels, F-key visibility rules, and context-sensitive inline hints; consumes screen_bindings from KeymapProvider::keybindings(); 'c Copy' hint added to Overview mode  [Issue #482]
 │   │   ├── session_summary.rs             # Session summary widget rendered in the completion overlay and detail pane
 │   │   ├── session_switcher.rs            # Session switcher overlay for jumping between active sessions
 │   │   ├── splash.rs                      # Startup splash screen rendered before the TUI loop begins
@@ -265,7 +270,8 @@ maestro/
 │   │   │   ├── cost_dashboard.rs          # 5 snapshot tests for CostDashboard (no budget, under threshold, over 90%, empty, sorted)
 │   │   │   ├── turboquant_dashboard.rs    # 3 snapshot tests for TurboQuantDashboard (projections-only, mixed actual+projections, empty sessions)  [Issue #346]
 │   │   │   ├── caveman_row.rs             # 5 snapshot tests for caveman_row in SettingsScreen (explicit_true, explicit_false, default, error, focused_explicit_true)  [Issue #490]
-│   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files); includes caveman_row renders (default, error, explicit_false, explicit_true, focused_explicit_true)  [Issue #490]
+│   │   │   ├── copy_keybinding_hint.rs    # Insta snapshot tests for keybinding hint bar: copy_keybinding_hint_enabled and copy_keybinding_hint_disabled  [Issue #482]
+│   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files); includes caveman_row renders (default, error, explicit_false, explicit_true, focused_explicit_true); copy_keybinding_hint_enabled and copy_keybinding_hint_disabled  [Issue #490, #482]
 │   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen; ScreenAction::Push delegates to navigate_to(), ScreenAction::Pop delegates to navigate_back(); Scaffolding case in StartAdaptPipeline dispatch; reads app.config_path directly for settings save (removed relative-path probe at TuiMode::Settings); tracing::warn! when config_path is absent  [Issue #146, #232, #342, #371, #437]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen; pub mod wizard_fields (added #447); wizard_paste removed  [Issue #31-33, #86, #447]
@@ -406,7 +412,7 @@ maestro/
 │   └── scripts/                           # Test script fixtures
 ├── .gitignore                             # Includes .maestro/worktrees/ and runtime artifacts; .maestro/knowledge.md (written by maestro adapt, auto-loaded as system-prompt component by SessionPool::try_promote) is also excluded
 ├── Cargo.lock                             # Dependency lock file
-├── Cargo.toml                             # Rust package manifest; tempfile and insta dev-dependencies; optimized release profile; [features] section with experimental-sanitizer = []; flate2 and tar dependencies added for tar.gz archive extraction in self-updater  [Issue #142, #233]
+├── Cargo.toml                             # Rust package manifest; tempfile and insta dev-dependencies; optimized release profile; [features] section with experimental-sanitizer = []; flate2 and tar dependencies added for tar.gz archive extraction in self-updater; strip-ansi-escapes = "0.2" added for ANSI stripping in clipboard copy  [Issue #142, #233, #482]
 ├── CHANGELOG.md                           # Release history following Keep a Changelog format
 ├── LICENSE
 ├── README.md                              # Project front door
@@ -509,8 +515,13 @@ maestro/
 | `src/tui/app/` | App state module split into focused sub-files; `App` struct with `nav_stack: NavigationStack` field (replaces `confirm_exit_return_mode`); `navigate_to()`, `navigate_back()`, `navigate_back_or_dashboard()`, `navigate_to_root()` navigation methods; `theme: Theme`; `gh_auth_ok: bool`; `upgrade_state: UpgradeState`; `pending_prs: Vec<PendingPr>`; `config_path: Option<PathBuf>` propagated from `LoadedConfig` for settings save (Issues #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52, #83, #84, #85, #118, #158, #342, #437) |
 | `src/tui/app/types.rs` | `TuiMode` enum with `breadcrumb_label()` for human-readable mode names; `NavigationStack` struct — push/pop/peek/clear/breadcrumbs with a cap of 32 entries; `TuiCommand` (+ `RunAdaptScaffold`), `TuiDataEvent` (+ `AdaptScaffoldResult`), `SuggestionDataPayload`, `CompletionSummaryData`, `CompletionSessionLine`, `GateFailureInfo` (Issues #342, #371) |
 | `src/tui/app/completion_summary.rs` | `build_completion_summary()`; `transition_to_dashboard()` now calls `navigate_to_root()` to fully clear the nav stack on dashboard return (Issue #342) |
+| `src/tui/app/clipboard_action.rs` | `App::copy_focused_response()` + `App::copy_focused_response_enabled()` predicate; `CopyOutcome` enum (`Success`, `NoContent`, `NotEnded`, `Failed`); `set_copy_toast()` / `tick_copy_toast()` with `COPY_TOAST_TTL_MS = 2_000` (Issue #482) |
+| `src/tui/app/settings_actions.rs` | `SettingsStore`-backed `App` methods extracted from `app/mod.rs` to keep it under the file-size cap: `with_settings_store()`, `caveman_mode()`, `process_pending_caveman_toggle()` (Issue #482) |
 | `src/tui/theme.rs` | `Theme` (resolved ratatui `Color` fields); `ThemeConfig` (`preset` + `overrides`); `ThemePreset` (`Dark`, `Light`); `ThemeOverrides` (per-field optional overrides); `SerializableColor` (named string / `#rrggbb` hex / 256-color index); `ColorCapability`; all 14 TUI rendering files consume theme fields instead of hardcoded `Color::` constants (Issue #38) |
 | `src/tui/activity_log.rs` | Scrollable log widget |
+| `src/tui/clipboard.rs` | `Clipboard` trait + `SystemClipboard` impl (arboard); `strip_ansi()` helper strips ANSI escape sequences before clipboard write (Issue #482) |
+| `src/tui/clipboard_toast.rs` | Toast renderer: 2-second status-bar overlay confirming clipboard copy success or failure (Issue #482) |
+| `src/tui/keybinding_hints.rs` | Dim-aware hint bar span builder; `keybinding_hints_spans()` emits `[c] Copy` dimmed when no response or session is streaming (Issue #482) |
 | `src/tui/cost_dashboard.rs` | Per-session and aggregate cost display (Phase 3) |
 | `src/tui/turboquant_dashboard.rs` | TurboQuant savings dashboard; `draw_turboquant_dashboard()`; `classify_savings()` → `(Vec<SessionSavings>, bool)`; `aggregate_savings()` → `AggregateSavings`; renders "Estimated Savings (projection)" (italic, rounded border) when no fork-handoff data, "Actual Savings" (bold, plain border) when real handoff metrics exist; per-session rows show `ACTUAL` or `proj.` kind markers (Issue #346) |
 | `src/tui/dep_graph.rs` | ASCII dependency graph visualization (Phase 3) |
@@ -523,7 +534,7 @@ maestro/
 | `src/tui/navigation/focus.rs` | `FocusManager`: focus ring, widget focus state tracking |
 | `src/tui/navigation/keymap.rs` | Keymap definitions: action-to-key bindings, context-sensitive keymaps |
 | `src/tui/panels.rs` | Split-pane multi-session view; `panel_border_type()` returns thick borders for the focused grid panel; `▸` indicator on the selected panel title; `GatesRunning` (Cyan), `NeedsReview` (LightYellow), and `CiFix` (LightMagenta) status colors (Issues #40, #41) |
-| `src/tui/ui.rs` | `draw_upgrade_banner()`: top-of-screen banner that renders all `UpgradeState` variants; `draw_gh_auth_warning()`: persistent top-of-screen banner shown when gh CLI is not authenticated, blocks gh-dependent actions until resolved; `draw_completion_overlay()`: centred overlay rendering PR links (underlined, full GitHub URL or `#N`), per-session error summaries in error color, and a keybindings bar with `[i]` Browse issues, `[r]` New prompt, `[l]` View logs, `[q]` Quit, `[Esc]` Dashboard; `ContinuousPause` render branch with pause overlay and status bar indicator; `HelpBarContext` struct drives context-aware keybinding dimming in the help bar; breadcrumb trail rendered in status bar from `nav_stack.breadcrumbs()` using `TuiMode::breadcrumb_label()`; `should_show_dashboard_mascot_panel()` / `dashboard_mascot_panel_width()` style-aware panel gate; passes `MascotStyle` through `draw_mascot_block()`, `HomeScreen::set_mascot()`, `LandingScreen::set_mascot()` (Issues #83, #84, #85, #118, #158, #342, #473) |
+| `src/tui/ui.rs` | `draw_upgrade_banner()`: top-of-screen banner that renders all `UpgradeState` variants; `draw_gh_auth_warning()`: persistent top-of-screen banner shown when gh CLI is not authenticated, blocks gh-dependent actions until resolved; `draw_completion_overlay()`: centred overlay rendering PR links (underlined, full GitHub URL or `#N`), per-session error summaries in error color, and a keybindings bar with `[i]` Browse issues, `[r]` New prompt, `[l]` View logs, `[q]` Quit, `[Esc]` Dashboard; `ContinuousPause` render branch with pause overlay and status bar indicator; `HelpBarContext` struct drives context-aware keybinding dimming in the help bar; breadcrumb trail rendered in status bar from `nav_stack.breadcrumbs()` using `TuiMode::breadcrumb_label()`; `should_show_dashboard_mascot_panel()` / `dashboard_mascot_panel_width()` style-aware panel gate; passes `MascotStyle` through `draw_mascot_block()`, `HomeScreen::set_mascot()`, `LandingScreen::set_mascot()`; uses `keybinding_hints_spans()` for hint bar; ticks and renders clipboard toast overlay (Issues #83, #84, #85, #118, #158, #218, #342, #473, #482) |
 | `src/tui/screens/` | Interactive TUI screen components (Issues #31-33) |
 | `src/tui/screens/mod.rs` | `ScreenAction` enum, `SessionConfig`; re-exports all screen types including `PromptInputScreen`; adds `pub mod wizard_fields`; removes `wizard_paste` (sanitizer moved into `TextAreaField::insert_sanitized`) (Issues #31-33, #86, #447) |
 | `src/tui/screens/adapt_follow_up.rs` | `AdaptFollowUp`: post-scaffold follow-up prompt screen |
@@ -577,6 +588,7 @@ maestro/
 | `src/settings/claude_settings.rs` | `CavemanModeState` (ExplicitTrue/ExplicitFalse/Default/Error); `SettingsStore` trait; `FsSettingsStore` atomic writer; `toggle_caveman_mode()` (Issue #490) |
 | `src/tui/screens/settings/caveman_row.rs` | Render helper for the caveman-mode row in SettingsScreen; four visual states driven by `CavemanModeState` (Issue #490) |
 | `src/tui/snapshot_tests/caveman_row.rs` | 5 insta snapshot tests for caveman row rendering (Issue #490) |
+| `src/tui/snapshot_tests/copy_keybinding_hint.rs` | Insta snapshot tests for hint bar: `copy_keybinding_hint_enabled` and `copy_keybinding_hint_disabled` (Issue #482) |
 | `src/tui/snapshot_tests/` | TUI snapshot test suite; 41 tests across 9 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issues #16, #490) |
 | `src/tui/snapshot_tests/overview.rs` | 6 snapshot tests for `PanelView`: empty, single running, multiple, selected, context overflow, forked |
 | `src/tui/snapshot_tests/detail.rs` | 6 snapshot tests for `DetailView`: basic, progress, activity log, no files touched, files + retries, markdown content |
