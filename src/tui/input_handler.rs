@@ -748,14 +748,14 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             app.session_switcher = Some(crate::tui::session_switcher::SessionSwitcher::default());
             app.navigate_to(app::TuiMode::SessionSwitcher);
         }
-        (KeyCode::Char('c'), KeyModifiers::NONE) => {
-            // Ctrl+C is short-circuited at the top of handle_key, so
-            // reaching this arm always means plain `c`.
-            if app.copy_focused_response_enabled() {
-                let outcome = app.copy_focused_response();
-                if let Some((kind, msg)) = outcome.toast() {
-                    app.set_copy_toast(kind, msg);
-                }
+        // Ctrl+C is short-circuited at the top of handle_key, so reaching
+        // this arm always means plain `c`. A disabled `c` falls through to
+        // the trailing `_ => {}` and becomes a no-op — the dimmed hint
+        // already advertises the disabled state.
+        (KeyCode::Char('c'), KeyModifiers::NONE) if app.copy_focused_response_enabled() => {
+            let outcome = app.copy_focused_response();
+            if let Some((kind, msg)) = outcome.toast() {
+                app.set_copy_toast(kind, msg);
             }
         }
         (KeyCode::Char('d'), _) => {
