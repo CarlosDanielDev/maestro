@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-27 00:00 (UTC)
+> Last updated: 2026-04-27 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -27,6 +27,7 @@ maestro/
 │   │   ├── pushup.md                      # Slash command: git push workflow
 │   │   ├── setup-notifications.md         # Slash command: configure hook notifications
 │   │   ├── setup-project.md               # Slash command: initialize project config
+│   │   ├── triage-idea.md                 # Slash command: non-mutating idea triage loop (fetch idea issue → dispatch subagent-idea-triager → validate report → render digest)  [Issue #485]
 │   │   ├── update-from-template.md        # Slash command: sync from template directory
 │   │   ├── validate-contracts.md          # Slash command: validate API contracts
 │   │   └── video-frames.md                # Slash command: extract video frames
@@ -388,6 +389,14 @@ maestro/
 │           ├── api-contract-validation/
 │           ├── project-patterns/
 │           └── security-patterns/
+├── scripts/                               # Project-level shell scripts for architecture checks, coverage, and verification gates
+│   ├── allowlist-large-files.txt          # Allowlist for large files exempted from size checks
+│   ├── architecture-layers.yml            # Layer dependency rules for check-layers.sh
+│   ├── check-coverage-tiers.sh            # Validate test-coverage tier thresholds
+│   ├── check-file-size.sh                 # Enforce per-file LOC limits (500-line rule)
+│   ├── check-layers.sh                    # Enforce architecture layer boundaries
+│   ├── coverage-tiers.yml                 # Coverage tier definitions
+│   └── verify-issue-485.sh                # TDD verification harness: 27 grep/awk assertions for /triage-idea command + CLAUDE.md registry entries  [Issue #485]
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
 │   ├── gatekeeper/                        # Gatekeeper harness fixtures and tests

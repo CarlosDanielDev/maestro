@@ -306,6 +306,7 @@ Immediately after language selection, ask:
 | Security review, OWASP | `subagent-security-analyst` |
 | Documentation (CAN WRITE .md) | `subagent-docs-analyst` |
 | Complex architecture & design planning | `subagent-master-planner` |
+| Idea triage (pre-DOR funnel) | `subagent-idea-triager` |
 
 ### Subagent Registry
 
@@ -317,6 +318,7 @@ Immediately after language selection, ask:
 | `subagent-security-analyst` | Security review, OWASP, vulnerability analysis | **Ready** |
 | `subagent-docs-analyst` | Documentation management (CAN WRITE .md) | **Ready** |
 | `subagent-master-planner` | System architecture planning, ADRs | **Ready** |
+| `subagent-idea-triager` | Idea-inbox triage gate (5-question honesty check, promote/park/archive) | **Ready** |
 
 ---
 
