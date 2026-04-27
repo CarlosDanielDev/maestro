@@ -1,0 +1,40 @@
+Triager findings for idea #999:
+
+Q1 names me as the user, daily during sprint pushes — passes.
+Q2 proposes adding tracing spans only — passes.
+Q3 has a measurable threshold — passes.
+Q4 honestly says "nothing today, revisit at 20+ sessions" — passes.
+Q5 picks "Adjacent" — passes.
+
+```json idea-triager
+{
+  "report_version": 1,
+  "recommendation": "promote",
+  "checks": {
+    "whose_problem": { "verdict": "pass", "note": "named user, daily frequency" },
+    "smallest_proof": { "verdict": "pass", "note": "tracing spans, ≤1 day" },
+    "success_signal": { "verdict": "pass", "note": "p95 latency threshold" },
+    "cost_of_skipping": { "verdict": "pass", "note": "honest 'nothing today' with revisit" },
+    "vision_alignment": { "verdict": "pass", "note": "Adjacent" }
+  },
+  "score": { "pass": 5, "weak": 0, "fail": 0 },
+  "spike_proposal": {
+    "scope": "add tracing spans around Command::spawn and first-event-received; log to .maestro/metrics/",
+    "time_box_days": 1,
+    "exit_criteria": [
+      "spans visible in tracing output",
+      "metrics file written for ≥1 session",
+      "p50/p95 spawn latency reported"
+    ]
+  },
+  "remediation": {
+    "comment_body": "",
+    "labels_to_add": ["spike", "ready"],
+    "labels_to_remove": ["needs-triage"]
+  },
+  "reasons": [
+    "all 5 checks passed",
+    "spike scope fits within 1 day"
+  ]
+}
+```

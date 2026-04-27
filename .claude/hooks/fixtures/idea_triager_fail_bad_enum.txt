@@ -1,0 +1,16 @@
+```json idea-triager
+{
+  "report_version": 1,
+  "recommendation": "maybe",
+  "checks": {
+    "whose_problem": { "verdict": "pass", "note": "" },
+    "smallest_proof": { "verdict": "pass", "note": "" },
+    "success_signal": { "verdict": "pass", "note": "" },
+    "cost_of_skipping": { "verdict": "pass", "note": "" },
+    "vision_alignment": { "verdict": "pass", "note": "" }
+  },
+  "score": { "pass": 5, "weak": 0, "fail": 0 },
+  "remediation": { "comment_body": "", "labels_to_add": [], "labels_to_remove": [] },
+  "reasons": []
+}
+```
