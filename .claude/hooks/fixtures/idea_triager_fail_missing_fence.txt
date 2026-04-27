@@ -1,0 +1,2 @@
+The triager forgot to emit a fenced block.
+This is plain prose with no JSON anywhere.

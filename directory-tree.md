@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-26 00:00 (UTC)
+> Last updated: 2026-04-27 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -32,8 +32,16 @@ maestro/
 │   │   └── video-frames.md                # Slash command: extract video frames
 │   ├── hooks/
 │   │   ├── README.md                      # Hook usage documentation
+│   │   ├── fixtures/                      # Fixture inputs for smoke-testing parser hooks
+│   │   │   ├── idea_triager_fail_bad_enum.txt     # Negative fixture: valid JSON but unsupported recommendation enum value
+│   │   │   ├── idea_triager_fail_missing_fence.txt # Negative fixture: plain prose with no fenced block
+│   │   │   └── idea_triager_pass.txt              # Golden-path fixture: full valid idea-triager report
+│   │   ├── implement-gates.sh             # Pre-implementation gate: DOR / blocker / contract checks
 │   │   ├── notify.ps1                     # Windows notification hook
-│   │   └── notify.sh                      # Unix notification hook
+│   │   ├── notify.sh                      # Unix notification hook
+│   │   ├── parse_gatekeeper_report.py     # Validates and re-emits gatekeeper JSON reports (exit 1 on contract violation)
+│   │   ├── parse_idea_triager_report.py   # Validates and re-emits idea-triager JSON reports; enforces fence, version, enums (exit 1 on violation)  [Issue #484]
+│   │   └── preflight.sh                   # Preflight environment checks run before session launch
 │   ├── settings.json                      # Claude Code project settings
 │   ├── settings.local.json                # Local overrides (not committed)
 │   ├── worktrees/

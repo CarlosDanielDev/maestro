@@ -39,7 +39,7 @@ The parser is the only piece with real logic. Everything else is config/markdown
 - Create: `.claude/hooks/fixtures/idea_triager_pass.txt`
 - Test: invoked via shell — no Python test framework exists in this Rust project, so we use fixture-driven smoke tests (same pattern as the gatekeeper parser, which has no Python tests today).
 
-- [ ] **Step 1: Create the golden-path fixture**
+- [x] **Step 1: Create the golden-path fixture**
 
 Write `.claude/hooks/fixtures/idea_triager_pass.txt`:
 
@@ -86,7 +86,7 @@ Q5 picks "Adjacent" — passes.
 ```
 ````
 
-- [ ] **Step 2: Run the parser to verify it fails (RED)**
+- [x] **Step 2: Run the parser to verify it fails (RED)**
 
 Run:
 ```bash
@@ -100,7 +100,7 @@ Expected: `python3: can't open file '...parse_idea_triager_report.py': [Errno 2]
 **Files:**
 - Create: `.claude/hooks/parse_idea_triager_report.py`
 
-- [ ] **Step 1: Create the parser**
+- [x] **Step 1: Create the parser**
 
 Write `.claude/hooks/parse_idea_triager_report.py`:
 
@@ -213,13 +213,13 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 2: Make it executable**
+- [x] **Step 2: Make it executable**
 
 ```bash
 chmod +x .claude/hooks/parse_idea_triager_report.py
 ```
 
-- [ ] **Step 3: Run the golden-path fixture and verify it passes (GREEN)**
+- [x] **Step 3: Run the golden-path fixture and verify it passes (GREEN)**
 
 ```bash
 cat .claude/hooks/fixtures/idea_triager_pass.txt | python3 .claude/hooks/parse_idea_triager_report.py; echo "exit=$?"
@@ -227,7 +227,7 @@ cat .claude/hooks/fixtures/idea_triager_pass.txt | python3 .claude/hooks/parse_i
 
 Expected: a single line of compact JSON on stdout (the report), then `exit=0`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .claude/hooks/parse_idea_triager_report.py .claude/hooks/fixtures/idea_triager_pass.txt
@@ -236,7 +236,7 @@ git commit -m "feat(hooks): add parse_idea_triager_report hook with golden fixtu
 
 ### Task 3: Negative-path fixtures (RED→GREEN)
 
-- [ ] **Step 1: Create missing-fence fixture**
+- [x] **Step 1: Create missing-fence fixture**
 
 Write `.claude/hooks/fixtures/idea_triager_fail_missing_fence.txt`:
 
@@ -245,7 +245,7 @@ The triager forgot to emit a fenced block.
 This is plain prose with no JSON anywhere.
 ```
 
-- [ ] **Step 2: Verify parser rejects it**
+- [x] **Step 2: Verify parser rejects it**
 
 ```bash
 cat .claude/hooks/fixtures/idea_triager_fail_missing_fence.txt | python3 .claude/hooks/parse_idea_triager_report.py 2>&1; echo "exit=$?"
@@ -253,7 +253,7 @@ cat .claude/hooks/fixtures/idea_triager_fail_missing_fence.txt | python3 .claude
 
 Expected: stderr line `parse-idea-triager-report: no \`\`\`json idea-triager fenced block found in input`, `exit=1`.
 
-- [ ] **Step 3: Create bad-enum fixture**
+- [x] **Step 3: Create bad-enum fixture**
 
 Write `.claude/hooks/fixtures/idea_triager_fail_bad_enum.txt`:
 
@@ -276,7 +276,7 @@ Write `.claude/hooks/fixtures/idea_triager_fail_bad_enum.txt`:
 ```
 ````
 
-- [ ] **Step 4: Verify parser rejects it**
+- [x] **Step 4: Verify parser rejects it**
 
 ```bash
 cat .claude/hooks/fixtures/idea_triager_fail_bad_enum.txt | python3 .claude/hooks/parse_idea_triager_report.py 2>&1; echo "exit=$?"
@@ -284,7 +284,7 @@ cat .claude/hooks/fixtures/idea_triager_fail_bad_enum.txt | python3 .claude/hook
 
 Expected: stderr line `parse-idea-triager-report: recommendation must be one of ['archive', 'park', 'promote'], got 'maybe'`, `exit=1`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .claude/hooks/fixtures/idea_triager_fail_missing_fence.txt .claude/hooks/fixtures/idea_triager_fail_bad_enum.txt
@@ -601,7 +601,7 @@ These are intentionally **not** in this plan. Each becomes its own plan after Fo
 
 ## Definition of Done
 
-- [ ] Parser hook exists, executable, all 3 fixtures behave per expectations.
+- [x] Parser hook exists, executable, all 3 fixtures behave per expectations.
 - [ ] Subagent moved from `drafts/` to `.claude/agents/`, history preserved via `git mv`.
 - [ ] `/triage-idea` slash command spec exists and references parser correctly.
 - [ ] CLAUDE.md registry and delegation tables updated.
