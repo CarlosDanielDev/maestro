@@ -28,25 +28,33 @@ pub fn mode_keymap(
                     action: "Detail",
                     priority: 0,
                 },
+                // `c` is given priority 1 so it survives narrow widths —
+                // the dimmed-when-disabled state means the hint is the
+                // user's only signal that copy exists.
+                InlineHint {
+                    key: "c",
+                    action: "Copy",
+                    priority: 1,
+                },
                 InlineHint {
                     key: "d",
                     action: "Log",
-                    priority: 1,
+                    priority: 2,
                 },
                 InlineHint {
                     key: "f",
                     action: "Full",
-                    priority: 2,
+                    priority: 3,
                 },
                 InlineHint {
                     key: "w",
                     action: "Switcher",
-                    priority: 3,
+                    priority: 4,
                 },
                 InlineHint {
                     key: "Tab",
                     action: "Cycle Views",
-                    priority: 4,
+                    priority: 5,
                 },
             ],
         ),

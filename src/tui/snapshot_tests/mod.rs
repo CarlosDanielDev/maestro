@@ -1,4 +1,5 @@
 mod caveman_row;
+mod copy_keybinding_hint;
 mod cost_dashboard;
 mod dashboard;
 mod detail;

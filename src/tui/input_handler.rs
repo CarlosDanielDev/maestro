@@ -748,6 +748,16 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             app.session_switcher = Some(crate::tui::session_switcher::SessionSwitcher::default());
             app.navigate_to(app::TuiMode::SessionSwitcher);
         }
+        (KeyCode::Char('c'), KeyModifiers::NONE) => {
+            // Ctrl+C is short-circuited at the top of handle_key, so
+            // reaching this arm always means plain `c`.
+            if app.copy_focused_response_enabled() {
+                let outcome = app.copy_focused_response();
+                if let Some((kind, msg)) = outcome.toast() {
+                    app.set_copy_toast(kind, msg);
+                }
+            }
+        }
         (KeyCode::Char('d'), _) => {
             app.show_activity_log = !app.show_activity_log;
         }
@@ -812,8 +822,6 @@ fn handle_grid_navigation(app: &mut App, key: &KeyEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::worktree::MockWorktreeManager;
-    use crate::state::store::StateStore;
     use crate::tui::app::{App, TuiMode};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -830,18 +838,7 @@ mod tests {
     }
 
     fn make_app() -> App {
-        let tmp = std::env::temp_dir().join(format!(
-            "maestro-input-handler-test-{}.json",
-            uuid::Uuid::new_v4()
-        ));
-        let store = StateStore::new(tmp);
-        App::new(
-            store,
-            3,
-            Box::new(MockWorktreeManager::new()),
-            "bypassPermissions".into(),
-            vec![],
-        )
+        crate::tui::make_test_app("maestro-input-handler-test")
     }
 
     // ── Group 1: TuiMode variant and field defaults ───────────────────
@@ -1300,5 +1297,96 @@ mod tests {
             "expected F4/F5/F6 to be verified, got {}",
             checked
         );
+    }
+
+    // ── copy-focused-response keybinding ─────────────────────────────────
+
+    use crate::session::types::{Session, SessionStatus};
+    use crate::tui::clipboard::testing::MockClipboard;
+    use crate::tui::clipboard_toast::CopyToastKind;
+
+    fn make_clipboard_app(mock: MockClipboard) -> App {
+        crate::tui::make_test_app("maestro-copy-key-test").with_clipboard(Box::new(mock))
+    }
+
+    fn completed_session(last_message: &str) -> Session {
+        let mut s = Session::new(
+            "task".into(),
+            "claude-opus-4-5".into(),
+            "orchestrator".into(),
+            None,
+        );
+        s.status = SessionStatus::Completed;
+        s.last_message = last_message.to_string();
+        s
+    }
+
+    #[tokio::test]
+    async fn c_key_with_enabled_state_writes_clipboard_and_sets_toast() {
+        let mock = MockClipboard::new();
+        let mut app = make_clipboard_app(mock.clone());
+        app.pool.enqueue(completed_session("result text"));
+        app.panel_view.selected = Some(0);
+        app.tui_mode = TuiMode::Overview;
+
+        let _ = handle_key(&mut app, key('c')).await;
+
+        assert_eq!(mock.recorded_writes(), vec!["result text"]);
+        let toast = app.copy_toast.as_ref().expect("toast must be set");
+        assert!(matches!(toast.kind, CopyToastKind::Success));
+        assert_eq!(toast.message, "Response copied to clipboard");
+    }
+
+    #[tokio::test]
+    async fn c_key_with_disabled_state_does_not_write_clipboard() {
+        let mock = MockClipboard::new();
+        let mut app = make_clipboard_app(mock.clone());
+        let mut s = Session::new(
+            "task".into(),
+            "claude-opus-4-5".into(),
+            "orchestrator".into(),
+            None,
+        );
+        s.status = SessionStatus::Running;
+        s.last_message = "in progress".to_string();
+        app.pool.enqueue(s);
+        app.panel_view.selected = Some(0);
+        app.tui_mode = TuiMode::Overview;
+
+        let _ = handle_key(&mut app, key('c')).await;
+
+        assert_eq!(mock.write_count(), 0);
+        assert!(app.copy_toast.is_none());
+    }
+
+    #[tokio::test]
+    async fn c_key_with_clipboard_failure_sets_error_toast_without_panic() {
+        let mock = MockClipboard::will_fail("backend exposed: /run/user/1000/wayland-0");
+        let mut app = make_clipboard_app(mock.clone());
+        app.pool.enqueue(completed_session("payload"));
+        app.panel_view.selected = Some(0);
+        app.tui_mode = TuiMode::Overview;
+
+        let _ = handle_key(&mut app, key('c')).await;
+
+        assert_eq!(mock.write_count(), 0);
+        let toast = app.copy_toast.as_ref().expect("toast must be set");
+        assert!(matches!(toast.kind, CopyToastKind::Error));
+        assert_eq!(toast.message, "Copy failed: clipboard unavailable");
+    }
+
+    #[tokio::test]
+    async fn ctrl_c_does_not_trigger_copy_path() {
+        let mock = MockClipboard::new();
+        let mut app = make_clipboard_app(mock.clone());
+        app.pool.enqueue(completed_session("done"));
+        app.panel_view.selected = Some(0);
+        app.tui_mode = TuiMode::Overview;
+
+        let _ = handle_key(&mut app, ctrl_c_event()).await;
+
+        assert!(!app.running);
+        assert_eq!(mock.write_count(), 0);
+        assert!(app.copy_toast.is_none());
     }
 }

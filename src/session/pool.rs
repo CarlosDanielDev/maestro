@@ -216,7 +216,19 @@ impl SessionPool {
 
     /// Get session UUID at a given display index (from all_sessions ordering).
     pub fn session_id_at_index(&self, index: usize) -> Option<Uuid> {
-        self.all_sessions().get(index).map(|s| s.id)
+        self.session_at_index(index).map(|s| s.id)
+    }
+
+    /// Borrow the session at a given display index without allocating —
+    /// mirrors `all_statuses` for the on-render hot path. Active → finished
+    /// → queue ordering matches `all_sessions`.
+    pub fn session_at_index(&self, index: usize) -> Option<&Session> {
+        self.active
+            .iter()
+            .map(|m| &m.session)
+            .chain(self.finished.iter().map(|m| &m.session))
+            .chain(self.queue.iter())
+            .nth(index)
     }
 
     /// Find a session by UUID from any bucket.
