@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-27 20:00 (UTC)
+> Last updated: 2026-04-28 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -126,9 +126,13 @@ maestro/
 │   │   ├── prompts.rs                     # Claude prompt builders for analyzer, planner, and scaffold phases  [Issue #371]
 │   │   └── knowledge.rs                   # Knowledge-base compression (Phase 2.6): consumes AdaptReport + ProjectProfile; produces KnowledgeBase (six token-budgeted sections); write_knowledge_file() writes .maestro/knowledge.md; auto-loaded by SessionPool::try_promote as a system-prompt component; 1 MiB size cap, symlink rejection, TOCTOU-safe load, envelope-wrapped injection  [Issue #347]
 │   ├── updater/                           # Self-upgrade subsystem  [Issue #118]
-│   │   ├── mod.rs                         # UpgradeState state machine (Idle, Checking, UpdateAvailable, Downloading, Installing, Done, Failed); ReleaseInfo type (tag_name, download_url, body)
+│   │   ├── mod.rs                         # UpgradeState state machine (Idle, Checking, UpdateAvailable, Downloading, Installing, Done, Failed); ReleaseInfo type (tag_name, download_url, body); pub mod declarations for error/lock/replace  [Issue #499]
 │   │   ├── checker.rs                     # UpdateChecker trait; GitHubReleaseChecker (hits GitHub Releases API); version parsing via semver comparison; asset names use Rust target triples (e.g. aarch64-apple-darwin); checksum file resolves to sha256sums.txt; check_for_update() async entry point  [Issue #118, #233]
-│   │   ├── installer.rs                   # Binary replacement with pre-install backup; atomic swap via temp file; tar.gz archives extracted via flate2 + tar pipeline; restart_with_same_args() re-execs the process with original argv after upgrade completes  [Issue #118, #233]
+│   │   ├── error.rs                       # Typed UpdateError enum (thiserror); variants: Io, TempFile, Rename, CurrentExe, Download, NoAsset, Checksum, Lock  [Issue #499]
+│   │   ├── installer.rs                   # Installer holds Arc<dyn BinaryReplacer>; install_with_backup delegates replacement via spawn_blocking; download_and_install returns typed UpdateError; tar.gz extracted via flate2 + tar pipeline  [Issue #118, #233, #499]
+│   │   ├── installer_tests.rs             # Split test module loaded via #[path] from installer.rs; unit tests for Installer using MockBinaryReplacer  [Issue #499]
+│   │   ├── lock.rs                        # UpdateLock RAII guard; lock file acquired with O_NOFOLLOW + O_CLOEXEC flags to prevent symlink attacks and fd leaks  [Issue #499]
+│   │   ├── replace.rs                     # BinaryReplacer trait; AtomicBinaryReplacer impl using NamedTempFile + atomic rename for safe in-place binary replacement  [Issue #499]
 │   │   └── restart.rs                     # RestartBuilder and RestartCommand: pure, testable command construction for post-upgrade re-exec; no side effects until .execute() is called
 │   ├── gates/                             # Completion gates framework  [Phase 3, Issue #40]
 │   │   ├── mod.rs                         # Module exports
@@ -443,7 +447,7 @@ maestro/
 │   └── scripts/                           # Test script fixtures
 ├── .gitignore                             # Includes .maestro/worktrees/ and runtime artifacts; .maestro/knowledge.md (written by maestro adapt, auto-loaded as system-prompt component by SessionPool::try_promote) is also excluded
 ├── Cargo.lock                             # Dependency lock file
-├── Cargo.toml                             # Rust package manifest; tempfile and insta dev-dependencies; optimized release profile; [features] section with experimental-sanitizer = []; flate2 and tar dependencies added for tar.gz archive extraction in self-updater; strip-ansi-escapes = "0.2" added for ANSI stripping in clipboard copy  [Issue #142, #233, #482]
+├── Cargo.toml                             # Rust package manifest; tempfile promoted to runtime dependency; thiserror = "1" added; insta dev-dependency; optimized release profile; [features] section with experimental-sanitizer = []; flate2 and tar dependencies for tar.gz extraction in self-updater; strip-ansi-escapes = "0.2" for ANSI stripping in clipboard copy  [Issue #142, #233, #482, #499]
 ├── CHANGELOG.md                           # Release history following Keep a Changelog format
 ├── LICENSE
 ├── README.md                              # Project front door
@@ -506,9 +510,13 @@ maestro/
 | `src/adapt/knowledge.rs` | Knowledge-base compression (Phase 2.6 of `cmd_adapt`); `KnowledgeBase` struct (six `KnowledgeSection` fields); `write_knowledge_file()` writes `.maestro/knowledge.md`; auto-loaded by `SessionPool::try_promote` as a system-prompt component; 1 MiB size cap, symlink rejection, TOCTOU-safe load, envelope-wrapped injection (Issue #347) |
 | `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated, Command (Phase 3, Issue #40) |
 | `src/updater/` | Self-upgrade subsystem: version check, binary installation, and restart (Issue #118) |
-| `src/updater/mod.rs` | `UpgradeState` state machine (`Idle` → `Checking` → `UpdateAvailable` → `Downloading` → `Installing` → `Done` / `Failed`); `ReleaseInfo` type |
+| `src/updater/mod.rs` | `UpgradeState` state machine (`Idle` → `Checking` → `UpdateAvailable` → `Downloading` → `Installing` → `Done` / `Failed`); `ReleaseInfo` type; `pub mod` declarations for `error`, `lock`, `replace` (Issue #499) |
 | `src/updater/checker.rs` | `UpdateChecker` trait; `GitHubReleaseChecker` hits GitHub Releases API; semver version comparison; asset names use Rust target triples (e.g. `aarch64-apple-darwin`); checksum file resolves to `sha256sums.txt`; `check_for_update()` async entry point (Issues #118, #233) |
-| `src/updater/installer.rs` | Binary replacement with pre-install backup; atomic swap via temp file; `.tar.gz` archives extracted via `flate2` + `tar` pipeline; `restart_with_same_args()` re-execs the upgraded binary with original argv (Issues #118, #233) |
+| `src/updater/error.rs` | `UpdateError` enum (thiserror); variants: `Io`, `TempFile`, `Rename`, `CurrentExe`, `Download`, `NoAsset`, `Checksum`, `Lock` (Issue #499) |
+| `src/updater/installer.rs` | `Installer` holds `Arc<dyn BinaryReplacer>`; `install_with_backup` delegates via `spawn_blocking`; `download_and_install` returns typed `UpdateError`; `.tar.gz` archives extracted via `flate2` + `tar` pipeline (Issues #118, #233, #499) |
+| `src/updater/installer_tests.rs` | Split test module loaded via `#[path]` from `installer.rs`; unit tests for `Installer` using `MockBinaryReplacer` (Issue #499) |
+| `src/updater/lock.rs` | `UpdateLock` RAII guard; lock file acquired with `O_NOFOLLOW` + `O_CLOEXEC` to prevent symlink attacks and fd leaks (Issue #499) |
+| `src/updater/replace.rs` | `BinaryReplacer` trait; `AtomicBinaryReplacer` impl using `NamedTempFile` + atomic rename for safe in-place binary replacement (Issue #499) |
 | `src/updater/restart.rs` | `RestartBuilder` and `RestartCommand`: pure, testable post-upgrade re-exec command construction; no side effects until `.execute()` is called |
 | `src/provider/` | Multi-provider abstraction layer (Issue #29) |
 | `src/provider/mod.rs` | create_provider factory; detect_provider_from_remote |

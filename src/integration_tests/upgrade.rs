@@ -26,8 +26,11 @@ async fn upgrade_flow_check_to_trigger_full_pipeline() {
     let state = UpgradeState::Available(info);
     assert!(state.is_visible());
 
-    let new_bytes = b"new binary v0.6.0";
-    installer.install_with_backup(new_bytes).await.unwrap();
+    let new_bytes = b"new binary v0.6.0".to_vec();
+    installer
+        .install_with_backup(new_bytes.clone())
+        .await
+        .unwrap();
     let installed = fs::read(&dest).await.unwrap();
     assert_eq!(installed, new_bytes);
 

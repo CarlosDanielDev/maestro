@@ -1,6 +1,9 @@
+use crate::updater::error::UpdateError;
+use crate::updater::replace::{AtomicBinaryReplacer, BinaryReplacer};
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::fs;
 
 /// Extract the maestro binary from a tar.gz archive.
@@ -27,25 +30,29 @@ pub(crate) fn extract_binary_from_tar_gz(archive_bytes: &[u8]) -> Result<Vec<u8>
 
 pub struct Installer {
     pub dest_path: PathBuf,
+    // Arc<dyn> so the replacer can move into spawn_blocking ('static + Send + Sync).
+    replacer: Arc<dyn BinaryReplacer>,
 }
 
 impl Installer {
     pub fn new(dest_path: PathBuf) -> Self {
-        Self { dest_path }
+        Self {
+            dest_path,
+            replacer: Arc::new(AtomicBinaryReplacer::new()),
+        }
     }
 
-    fn backup_path(&self) -> PathBuf {
-        let mut p = self.dest_path.clone();
-        let name = p
-            .file_name()
-            .map(|n| format!("{}.bak", n.to_string_lossy()))
-            .unwrap_or_else(|| "maestro.bak".to_string());
-        p.set_file_name(name);
-        p
+    /// Test-only constructor that injects a custom `BinaryReplacer`.
+    #[cfg(test)]
+    pub(crate) fn with_replacer(dest_path: PathBuf, replacer: Arc<dyn BinaryReplacer>) -> Self {
+        Self {
+            dest_path,
+            replacer,
+        }
     }
 
     /// Write bytes to a staging area (same dir, `.tmp` suffix).
-    #[allow(dead_code)] // Reason: staging step for two-phase install
+    #[allow(dead_code)] // Reason: staging step retained for two-phase callers.
     pub async fn write_to_staging(&self, bytes: &[u8]) -> Result<PathBuf> {
         let staging = self.dest_path.with_extension("tmp");
         fs::write(&staging, bytes)
@@ -54,58 +61,23 @@ impl Installer {
         Ok(staging)
     }
 
-    /// Backup the current binary and replace with new bytes. Rolls back on failure.
-    pub async fn install_with_backup(&self, new_bytes: &[u8]) -> Result<()> {
-        let backup = self.backup_path();
+    /// Replace the binary at `dest_path` with `new_bytes`, delegating to the
+    /// injected `BinaryReplacer`. Returns the path of the backup of the
+    /// original binary on success.
+    pub async fn install_with_backup(&self, new_bytes: Vec<u8>) -> Result<PathBuf, UpdateError> {
+        let target = self.dest_path.clone();
+        let replacer = self.replacer.clone();
 
-        // Read original for backup
-        let original = fs::read(&self.dest_path)
+        let outcome = tokio::task::spawn_blocking(move || replacer.replace(&target, &new_bytes))
             .await
-            .context("Failed to read current binary for backup")?;
-
-        // Write backup
-        fs::write(&backup, &original)
-            .await
-            .context("Failed to write backup")?;
-
-        // Attempt to write new binary
-        match fs::write(&self.dest_path, new_bytes).await {
-            Ok(_) => {
-                // Set executable permissions on Unix
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let perms = std::fs::Permissions::from_mode(0o755);
-                    fs::set_permissions(&self.dest_path, perms).await?;
-                }
-                Ok(())
-            }
-            Err(e) => {
-                // Rollback: restore original
-                if let Err(rollback_err) = fs::write(&self.dest_path, &original).await {
-                    tracing::error!(
-                        "CRITICAL: rollback also failed after write error: {}",
-                        rollback_err
-                    );
-                }
-                Err(e).context("Failed to replace binary; attempted rollback")
-            }
-        }
+            .map_err(|e| UpdateError::Internal(format!("replace task panicked: {e}")))??;
+        Ok(outcome.backup_path)
     }
 
-    /// Verify SHA-256 checksum of downloaded bytes against expected hex hash.
-    pub fn verify_checksum(bytes: &[u8], expected_hex: &str) -> Result<()> {
+    fn compute_sha256_hex(bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
-        let actual = format!("{:x}", hasher.finalize());
-        if actual != expected_hex.to_lowercase() {
-            anyhow::bail!(
-                "Checksum mismatch: expected {}, got {}",
-                expected_hex,
-                actual
-            );
-        }
-        Ok(())
+        format!("{:x}", hasher.finalize())
     }
 
     /// Fetch the SHA256SUMS file from the same release directory and extract
@@ -144,57 +116,83 @@ impl Installer {
     ///
     /// Validates the URL against trusted domains, enforces a size limit,
     /// verifies SHA-256 checksum, and uses a 120-second download timeout.
-    pub async fn download_and_install(&self, download_url: &str) -> Result<String> {
+    /// Returns the backup path on success.
+    pub async fn download_and_install(&self, download_url: &str) -> Result<PathBuf, UpdateError> {
         if !crate::updater::is_trusted_download_url(download_url) {
-            anyhow::bail!("Untrusted download URL: only HTTPS from github.com is allowed");
+            return Err(UpdateError::NetworkInterrupted {
+                message: "untrusted download URL: only HTTPS from github.com is allowed"
+                    .to_string(),
+            });
         }
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
-            .build()?;
+            .build()
+            .map_err(|e| UpdateError::Internal(format!("building reqwest client: {e}")))?;
 
         let resp = client
             .get(download_url)
             .header("User-Agent", concat!("maestro/", env!("CARGO_PKG_VERSION")))
             .send()
-            .await?;
+            .await
+            .map_err(|e| UpdateError::NetworkInterrupted {
+                message: format!("HTTP request failed: {e}"),
+            })?;
 
         if !resp.status().is_success() {
-            anyhow::bail!("Download failed: HTTP {}", resp.status());
+            return Err(UpdateError::NetworkInterrupted {
+                message: format!("HTTP {}", resp.status()),
+            });
         }
 
         if let Some(len) = resp.content_length()
             && len > crate::updater::MAX_DOWNLOAD_SIZE
         {
-            anyhow::bail!(
-                "Binary too large: {} bytes (max {} bytes)",
-                len,
-                crate::updater::MAX_DOWNLOAD_SIZE
-            );
+            return Err(UpdateError::NetworkInterrupted {
+                message: format!(
+                    "binary too large: {} bytes (max {} bytes)",
+                    len,
+                    crate::updater::MAX_DOWNLOAD_SIZE
+                ),
+            });
         }
 
-        let bytes = resp.bytes().await?;
-
-        // Verify SHA-256 checksum before installing
         let asset_name = download_url
             .rsplit_once('/')
             .map(|(_, name)| name)
             .unwrap_or("maestro");
 
-        let expected_hash =
-            Self::fetch_expected_checksum(&client, download_url, asset_name).await?;
-        Self::verify_checksum(&bytes, &expected_hash)?;
+        let download_fut = async {
+            resp.bytes()
+                .await
+                .map_err(|e| UpdateError::NetworkInterrupted {
+                    message: format!("download interrupted: {e}"),
+                })
+        };
+        let checksum_fut = async {
+            Self::fetch_expected_checksum(&client, download_url, asset_name)
+                .await
+                .map_err(|e| UpdateError::NetworkInterrupted {
+                    message: format!("fetching SHA256SUMS: {e}"),
+                })
+        };
+        let (bytes, expected_hash) = tokio::try_join!(download_fut, checksum_fut)?;
 
-        // Extract binary from tar.gz if applicable
+        let actual = Self::compute_sha256_hex(&bytes);
+        if actual != expected_hash.to_lowercase() {
+            return Err(UpdateError::ChecksumMismatch {
+                expected: expected_hash,
+                actual,
+            });
+        }
+
         let binary_bytes = if asset_name.ends_with(".tar.gz") {
-            extract_binary_from_tar_gz(&bytes)?
+            extract_binary_from_tar_gz(&bytes).map_err(|e| UpdateError::Internal(e.to_string()))?
         } else {
             bytes.to_vec()
         };
 
-        self.install_with_backup(&binary_bytes).await?;
-
-        Ok(self.backup_path().to_string_lossy().to_string())
+        self.install_with_backup(binary_bytes).await
     }
 }
 
@@ -224,173 +222,5 @@ pub fn restart_with_same_args() -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[tokio::test]
-    async fn installer_writes_downloaded_bytes_to_staging() {
-        let dir = tempdir().unwrap();
-        let dest = dir.path().join("maestro");
-        fs::write(&dest, b"old binary").await.unwrap();
-
-        let installer = Installer::new(dest);
-        let fake_bytes = b"new binary content";
-        let staging = installer.write_to_staging(fake_bytes).await.unwrap();
-
-        assert!(staging.exists());
-        let written = fs::read(&staging).await.unwrap();
-        assert_eq!(written, fake_bytes);
-    }
-
-    #[tokio::test]
-    async fn installer_creates_backup_before_replacement() {
-        let dir = tempdir().unwrap();
-        let dest = dir.path().join("maestro");
-        let original_content = b"original binary";
-        fs::write(&dest, original_content).await.unwrap();
-
-        let installer = Installer::new(dest);
-        installer.install_with_backup(b"new binary").await.unwrap();
-
-        let backup_path = dir.path().join("maestro.bak");
-        assert!(backup_path.exists(), "backup file must exist");
-        let backup_content = fs::read(&backup_path).await.unwrap();
-        assert_eq!(backup_content, original_content);
-    }
-
-    #[tokio::test]
-    async fn installer_replaces_binary_with_new_content() {
-        let dir = tempdir().unwrap();
-        let dest = dir.path().join("maestro");
-        fs::write(&dest, b"old binary").await.unwrap();
-
-        let installer = Installer::new(dest.clone());
-        let new_bytes = b"upgraded binary content";
-        installer.install_with_backup(new_bytes).await.unwrap();
-
-        let written = fs::read(&dest).await.unwrap();
-        assert_eq!(written, new_bytes);
-    }
-
-    #[tokio::test]
-    async fn installer_returns_error_when_dest_does_not_exist() {
-        let dir = tempdir().unwrap();
-        let dest = dir.path().join("nonexistent_maestro");
-        let installer = Installer::new(dest);
-        let result = installer.install_with_backup(b"new bytes").await;
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn verify_checksum_matches() {
-        let data = b"hello world";
-        // SHA-256 of "hello world"
-        let expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
-        assert!(Installer::verify_checksum(data, expected).is_ok());
-    }
-
-    #[test]
-    fn verify_checksum_mismatch_fails() {
-        let data = b"hello world";
-        let wrong = "0000000000000000000000000000000000000000000000000000000000000000";
-        let err = Installer::verify_checksum(data, wrong).unwrap_err();
-        assert!(err.to_string().contains("Checksum mismatch"));
-    }
-
-    #[test]
-    fn verify_checksum_case_insensitive() {
-        let data = b"hello world";
-        let expected = "B94D27B9934D3E08A52E52D7DA7DABFAC484EFE37A5380EE9088F7ACE2EFCDE9";
-        assert!(Installer::verify_checksum(data, expected).is_ok());
-    }
-
-    #[test]
-    fn checksum_url_uses_sha256sums_txt_filename() {
-        // The SHA256SUMS URL should use "sha256sums.txt", not "SHA256SUMS"
-        let download_url = "https://github.com/CarlosDanielDev/maestro/releases/download/v0.10.0/maestro-v0.10.0-aarch64-apple-darwin.tar.gz";
-        let expected_base = "https://github.com/CarlosDanielDev/maestro/releases/download/v0.10.0";
-        let sums_url = download_url
-            .rsplit_once('/')
-            .map(|(base, _)| format!("{}/sha256sums.txt", base))
-            .unwrap();
-        assert_eq!(sums_url, format!("{}/sha256sums.txt", expected_base));
-    }
-
-    #[test]
-    fn extract_binary_from_tar_gz_finds_maestro_binary() {
-        use flate2::Compression;
-        use flate2::write::GzEncoder;
-
-        // Create a tar.gz archive containing a "maestro" binary
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        {
-            let mut builder = tar::Builder::new(&mut encoder);
-            let binary_content = b"fake maestro binary";
-            let mut header = tar::Header::new_gnu();
-            header.set_size(binary_content.len() as u64);
-            header.set_mode(0o755);
-            header.set_cksum();
-            builder
-                .append_data(&mut header, "maestro", &binary_content[..])
-                .unwrap();
-            builder.finish().unwrap();
-        }
-        let archive_bytes = encoder.finish().unwrap();
-
-        let result = extract_binary_from_tar_gz(&archive_bytes);
-        assert!(result.is_ok(), "Should extract binary: {:?}", result.err());
-        assert_eq!(result.unwrap(), b"fake maestro binary");
-    }
-
-    #[test]
-    fn extract_binary_from_tar_gz_fails_when_no_maestro_binary() {
-        use flate2::Compression;
-        use flate2::write::GzEncoder;
-
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        {
-            let mut builder = tar::Builder::new(&mut encoder);
-            let content = b"some other file";
-            let mut header = tar::Header::new_gnu();
-            header.set_size(content.len() as u64);
-            header.set_mode(0o644);
-            header.set_cksum();
-            builder
-                .append_data(&mut header, "not-maestro", &content[..])
-                .unwrap();
-            builder.finish().unwrap();
-        }
-        let archive_bytes = encoder.finish().unwrap();
-
-        let result = extract_binary_from_tar_gz(&archive_bytes);
-        assert!(
-            result.is_err(),
-            "Should fail when no maestro binary in archive"
-        );
-    }
-
-    #[tokio::test]
-    async fn installer_only_writes_expected_files() {
-        let dir = tempdir().unwrap();
-        let dest = dir.path().join("maestro");
-        fs::write(&dest, b"original").await.unwrap();
-
-        let installer = Installer::new(dest);
-        installer.install_with_backup(b"new").await.unwrap();
-
-        let entries: Vec<_> = std::fs::read_dir(dir.path())
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .collect();
-        for entry in &entries {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            assert!(
-                name_str == "maestro" || name_str == "maestro.bak",
-                "Unexpected file: {}",
-                name_str
-            );
-        }
-    }
-}
+#[path = "installer_tests.rs"]
+mod tests;

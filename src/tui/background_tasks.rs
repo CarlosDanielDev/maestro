@@ -47,12 +47,22 @@ pub(super) fn spawn_upgrade_download(
     tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>,
     info: crate::updater::ReleaseInfo,
 ) {
-    let dest = std::env::current_exe().unwrap_or_default();
+    let dest = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = tx.send(app::TuiDataEvent::UpgradeResult(Err(format!(
+                "cannot resolve current executable path: {e}"
+            ))));
+            return;
+        }
+    };
     tokio::spawn(async move {
         let installer = crate::updater::installer::Installer::new(dest);
         match installer.download_and_install(&info.download_url).await {
             Ok(backup) => {
-                let _ = tx.send(app::TuiDataEvent::UpgradeResult(Ok(backup)));
+                let _ = tx.send(app::TuiDataEvent::UpgradeResult(Ok(backup
+                    .to_string_lossy()
+                    .to_string())));
             }
             Err(e) => {
                 let _ = tx.send(app::TuiDataEvent::UpgradeResult(Err(e.to_string())));
