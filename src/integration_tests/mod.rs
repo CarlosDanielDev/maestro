@@ -10,6 +10,8 @@ mod completion_pipeline;
 #[cfg(test)]
 mod concurrent_sessions;
 #[cfg(test)]
+mod init;
+#[cfg(test)]
 mod milestone_health_wizard;
 #[cfg(test)]
 mod session_lifecycle;

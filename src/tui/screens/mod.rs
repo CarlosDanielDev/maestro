@@ -137,6 +137,11 @@ pub enum ScreenAction {
     CheckForUpdate,
     /// Update the live app config (e.g., after Settings save).
     UpdateConfig(Box<crate::config::Config>),
+    /// Re-run project-stack detection from disk and merge results into
+    /// the existing `maestro.toml` without overwriting user-customized
+    /// keys. Triggered by the "Reset Settings" action on Settings →
+    /// Project (#505).
+    ResetSettingsFromDetection,
     /// Preview a theme temporarily (reverted on discard).
     PreviewTheme(Option<crate::tui::theme::ThemeConfig>),
     /// Start the adapt pipeline from the wizard screen.

@@ -218,6 +218,22 @@ pub struct ProjectConfig {
     pub repo: String,
     #[serde(default = "default_base_branch")]
     pub base_branch: String,
+    /// Primary detected language id ("rust", "node", "python", "go").
+    /// Populated by `maestro init` auto-detection (#505).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// All detected language ids when the project is polyglot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub languages: Option<Vec<String>>,
+    /// Stack-appropriate build command (e.g. "cargo build", "npm run build").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_command: Option<String>,
+    /// Stack-appropriate test command (e.g. "cargo test", "npm test").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_command: Option<String>,
+    /// Stack-appropriate run command (e.g. "cargo run", "npm start").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_command: Option<String>,
 }
 
 /// Policy variant for retrying hollow-completion sessions (#275).
@@ -925,6 +941,55 @@ pub struct LoadedConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ------------------------------------------------------------------
+    // ProjectConfig auto-detection fields (#505)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn project_config_parses_pre_505_toml_unchanged() {
+        let toml_str = "[project]\n\
+                        repo = \"owner/repo\"\n\
+                        [sessions]\n\
+                        [budget]\n\
+                        per_session_usd = 5.0\n\
+                        total_usd = 50.0\n\
+                        alert_threshold_pct = 80\n\
+                        [github]\n\
+                        [notifications]\n";
+        let cfg: Config = toml::from_str(toml_str).expect("legacy toml must still parse");
+        assert!(cfg.project.language.is_none());
+        assert!(cfg.project.languages.is_none());
+        assert!(cfg.project.build_command.is_none());
+        assert!(cfg.project.test_command.is_none());
+        assert!(cfg.project.run_command.is_none());
+    }
+
+    #[test]
+    fn project_config_parses_new_fields() {
+        let toml_str = "[project]\n\
+                        repo = \"owner/repo\"\n\
+                        language = \"node\"\n\
+                        languages = [\"node\", \"python\"]\n\
+                        build_command = \"npm run build\"\n\
+                        test_command = \"npm test\"\n\
+                        run_command = \"npm start\"\n\
+                        [sessions]\n\
+                        [budget]\n\
+                        per_session_usd = 5.0\n\
+                        total_usd = 50.0\n\
+                        alert_threshold_pct = 80\n\
+                        [notifications]\n";
+        let cfg: Config = toml::from_str(toml_str).expect("new fields must parse");
+        assert_eq!(cfg.project.language.as_deref(), Some("node"));
+        assert_eq!(
+            cfg.project.languages,
+            Some(vec!["node".to_string(), "python".to_string()])
+        );
+        assert_eq!(cfg.project.build_command.as_deref(), Some("npm run build"));
+        assert_eq!(cfg.project.test_command.as_deref(), Some("npm test"));
+        assert_eq!(cfg.project.run_command.as_deref(), Some("npm start"));
+    }
 
     #[test]
     fn context_overflow_config_defaults_are_correct() {

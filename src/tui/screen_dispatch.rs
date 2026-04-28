@@ -221,6 +221,108 @@ fn milestone_issues_if_applicable(app: &app::App) -> Option<Vec<GhIssue>> {
     })
 }
 
+/// Re-run project-stack detection from disk, merge into the existing
+/// `maestro.toml`, reload the config, and re-seed the Settings screen.
+fn handle_reset_settings_from_detection(app: &mut app::App) {
+    use crate::init::{FsProjectDetector, RenderOutcome, render_or_merge, walk};
+    use crate::tui::activity_log::LogLevel;
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let target = match app.config_path.clone() {
+        Some(p) => p,
+        None => walk::find_project_root(&cwd).join("maestro.toml"),
+    };
+
+    if !target.exists() {
+        app.activity_log.push_simple(
+            "Settings".into(),
+            format!(
+                "Reset failed: no maestro.toml at {} — run `maestro init` first.",
+                target.display()
+            ),
+            LogLevel::Warn,
+        );
+        return;
+    }
+
+    let project_root = target.parent().unwrap_or(&cwd).to_path_buf();
+    let existing = match std::fs::read_to_string(&target) {
+        Ok(s) => s,
+        Err(e) => {
+            app.activity_log.push_simple(
+                "Settings".into(),
+                format!("Reset failed reading {}: {}", target.display(), e),
+                LogLevel::Error,
+            );
+            return;
+        }
+    };
+
+    let detector = FsProjectDetector::new();
+    let outcome = match render_or_merge(&detector, &project_root, Some(&existing)) {
+        Ok(o) => o,
+        Err(e) => {
+            app.activity_log.push_simple(
+                "Settings".into(),
+                format!("Reset failed: {e}"),
+                LogLevel::Error,
+            );
+            return;
+        }
+    };
+
+    let RenderOutcome::Merged { stacks, report } = outcome else {
+        tracing::warn!("render_or_merge returned Fresh on reset path");
+        return;
+    };
+
+    if let Err(e) = std::fs::write(&target, &report.merged_toml) {
+        app.activity_log.push_simple(
+            "Settings".into(),
+            format!("Reset failed writing {}: {}", target.display(), e),
+            LogLevel::Error,
+        );
+        return;
+    }
+
+    let cfg = match crate::config::Config::load(&target) {
+        Ok(c) => c,
+        Err(e) => {
+            app.activity_log.push_simple(
+                "Settings".into(),
+                format!("Reset wrote file but reload failed: {e}"),
+                LogLevel::Error,
+            );
+            return;
+        }
+    };
+
+    let stack_names = if stacks.is_empty() {
+        "no stacks".to_string()
+    } else {
+        stacks.iter().map(|s| s.id()).collect::<Vec<_>>().join(", ")
+    };
+    let added = report.keys_added.len();
+    let preserved = report.keys_preserved.len();
+
+    if let Some(s) = app.settings_screen.as_mut() {
+        *s = crate::tui::screens::SettingsScreen::new(cfg.clone(), app.flags.clone())
+            .with_config_path(target.clone());
+        s.show_caveman_status(format!(
+            "Detected {stack_names}; +{added} key(s), preserved {preserved} customized."
+        ));
+    }
+    app.config = Some(cfg);
+    app.activity_log.push_simple(
+        "Settings".into(),
+        format!(
+            "Reset complete at {}: detected {stack_names}, +{added} key(s), preserved {preserved} customized.",
+            target.display()
+        ),
+        LogLevel::Info,
+    );
+}
+
 /// Process a ScreenAction returned by a screen's input handler.
 pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
     match action {
@@ -496,6 +598,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             }
 
             app.config = Some(*config);
+        }
+        ScreenAction::ResetSettingsFromDetection => {
+            handle_reset_settings_from_detection(app);
         }
         ScreenAction::PreviewTheme(theme_config) => {
             if let Some(tc) = theme_config {
