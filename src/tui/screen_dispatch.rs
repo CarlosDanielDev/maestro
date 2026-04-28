@@ -172,10 +172,19 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::AdaptWizard => app.adapt_screen.as_mut()?,
         app::TuiMode::PrReview => app.pr_review_screen.as_mut()?,
         app::TuiMode::ReleaseNotes => app.release_notes_screen.as_mut()?,
+        app::TuiMode::MilestoneHealth => app.milestone_health_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
-    Some(screen.handle_input(event, mode))
+    let action = screen.handle_input(event, mode);
+    // Drain any pending TuiCommand the milestone-health reducer enqueued.
+    if matches!(app.tui_mode, app::TuiMode::MilestoneHealth)
+        && let Some(s) = app.milestone_health_screen.as_mut()
+        && let Some(cmd) = s.take_pending_command()
+    {
+        app.pending_commands.push(cmd);
+    }
+    Some(action)
 }
 
 /// Dispatch a bracketed-paste payload to the currently focused screen.
@@ -293,6 +302,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         &app.prompt_history,
                     ));
                 }
+                app::TuiMode::MilestoneHealth => {
+                    app.milestone_health_screen =
+                        Some(crate::tui::screens::milestone_health::MilestoneHealthScreen::new());
+                    app.pending_commands.push(app::TuiCommand::FetchMilestones);
+                }
                 _ => {}
             }
             app.navigate_to(mode);
@@ -342,6 +356,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::ReleaseNotes => {
                     app.release_notes_screen = None;
+                }
+                app::TuiMode::MilestoneHealth => {
+                    app.milestone_health_screen = None;
                 }
                 _ => {}
             }

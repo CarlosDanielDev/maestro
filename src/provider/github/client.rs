@@ -87,6 +87,14 @@ pub trait GitHubClient: Send + Sync {
 
     /// Create a label on the current repository. Uses --force to be idempotent.
     async fn create_label(&self, name: &str, color: &str) -> Result<()>;
+
+    /// Patch a milestone's description on GitHub. Used by the milestone
+    /// health-check wizard (#500) to write the corrected dependency graph.
+    async fn patch_milestone_description(
+        &self,
+        milestone_number: u64,
+        description: &str,
+    ) -> Result<()>;
 }
 
 /// Extract label names from a JSON value containing `{"labels": [{"name": "..."}, ...]}`.
@@ -323,6 +331,15 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     }
     async fn create_label(&self, name: &str, color: &str) -> Result<()> {
         (**self).create_label(name, color).await
+    }
+    async fn patch_milestone_description(
+        &self,
+        milestone_number: u64,
+        description: &str,
+    ) -> Result<()> {
+        (**self)
+            .patch_milestone_description(milestone_number, description)
+            .await
     }
 }
 
@@ -802,6 +819,23 @@ impl GitHubClient for GhCliClient {
         .await?;
         Ok(())
     }
+
+    async fn patch_milestone_description(
+        &self,
+        milestone_number: u64,
+        description: &str,
+    ) -> Result<()> {
+        let endpoint = format!("repos/{{owner}}/{{repo}}/milestones/{}", milestone_number);
+        let payload = serde_json::json!({ "description": description });
+        let json_body = serde_json::to_string(&payload)?;
+        self.run_gh_with_stdin(
+            &["api", &endpoint, "--method", "PATCH", "--input", "-"],
+            Some(json_body.as_bytes()),
+        )
+        .await
+        .with_context(|| format!("patching milestone #{} description", milestone_number))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -847,6 +881,11 @@ pub mod mock {
         get_pr_errors: std::collections::HashMap<u64, String>,
         submit_pr_review_error: Option<String>,
         submit_pr_review_calls: Vec<SubmitPrReviewCallRecord>,
+
+        // Milestone health-check fields (#500)
+        list_issues_by_milestone_error: Option<String>,
+        patch_milestone_error: Option<String>,
+        patch_milestone_calls: Vec<(u64, String)>,
     }
 
     #[derive(Debug, Clone)]
@@ -997,6 +1036,24 @@ pub mod mock {
         pub fn submit_pr_review_calls(&self) -> Vec<SubmitPrReviewCallRecord> {
             self.inner.lock().unwrap().submit_pr_review_calls.clone()
         }
+
+        // Milestone health-check helpers (#500)
+
+        pub fn set_list_issues_by_milestone_error(&self, msg: &str) {
+            self.inner.lock().unwrap().list_issues_by_milestone_error = Some(msg.to_string());
+        }
+
+        pub fn set_patch_milestone_error(&self, msg: &str) {
+            self.inner.lock().unwrap().patch_milestone_error = Some(msg.to_string());
+        }
+
+        pub fn clear_patch_milestone_error(&self) {
+            self.inner.lock().unwrap().patch_milestone_error = None;
+        }
+
+        pub fn patch_milestone_calls(&self) -> Vec<(u64, String)> {
+            self.inner.lock().unwrap().patch_milestone_calls.clone()
+        }
     }
 
     #[async_trait]
@@ -1017,6 +1074,9 @@ pub mod mock {
 
         async fn list_issues_by_milestone(&self, _milestone: &str) -> Result<Vec<GhIssue>> {
             let state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.list_issues_by_milestone_error {
+                anyhow::bail!("{}", err);
+            }
             Ok(state.issues.clone())
         }
 
@@ -1229,6 +1289,30 @@ pub mod mock {
                 .push((name.to_string(), color.to_string()));
             if !state.labels.contains(&name.to_string()) {
                 state.labels.push(name.to_string());
+            }
+            Ok(())
+        }
+
+        async fn patch_milestone_description(
+            &self,
+            milestone_number: u64,
+            description: &str,
+        ) -> Result<()> {
+            let mut state = self.inner.lock().unwrap();
+            state
+                .patch_milestone_calls
+                .push((milestone_number, description.to_string()));
+            if let Some(ref err) = state.patch_milestone_error {
+                anyhow::bail!("{}", err);
+            }
+            // Mirror the production write into the in-memory milestone, so
+            // follow-up `list_milestones` calls see the new description.
+            if let Some(m) = state
+                .milestones
+                .iter_mut()
+                .find(|m| m.number == milestone_number)
+            {
+                m.description = description.to_string();
             }
             Ok(())
         }
@@ -1973,5 +2057,43 @@ mod tests {
     #[test]
     fn parse_prs_json_invalid_json_returns_err() {
         assert!(parse_prs_json("{not json}").is_err());
+    }
+
+    // E-1: patch_milestone_description success path (#500).
+    #[tokio::test]
+    async fn mock_patch_milestone_description_success_records_call() {
+        let mock = MockGitHubClient::new();
+        let result = mock
+            .patch_milestone_description(42, "new description")
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(
+            mock.patch_milestone_calls(),
+            vec![(42u64, "new description".to_string())]
+        );
+    }
+
+    // E-2: error injection still records the call (#500).
+    #[tokio::test]
+    async fn mock_patch_milestone_description_error_returns_err_records_call() {
+        let mock = MockGitHubClient::new();
+        mock.set_patch_milestone_error("conflict: description was modified externally");
+        let result = mock.patch_milestone_description(7, "desc").await;
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("conflict"), "msg = {msg}");
+        assert_eq!(mock.patch_milestone_calls().len(), 1);
+    }
+
+    // E-3: multiple calls accumulate in order (#500).
+    #[tokio::test]
+    async fn mock_patch_milestone_multiple_calls_accumulate_in_order() {
+        let mock = MockGitHubClient::new();
+        let _ = mock.patch_milestone_description(1, "first").await;
+        let _ = mock.patch_milestone_description(2, "second").await;
+        assert_eq!(
+            mock.patch_milestone_calls(),
+            vec![(1u64, "first".to_string()), (2u64, "second".to_string()),]
+        );
     }
 }

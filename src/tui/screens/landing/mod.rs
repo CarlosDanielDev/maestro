@@ -215,6 +215,24 @@ mod tests {
         assert_eq!(action, ScreenAction::Push(TuiMode::ConfirmExit));
     }
 
+    // I-1: milestone health entry point (#500).
+    #[test]
+    fn shortcut_h_pushes_milestone_health() {
+        let mut s = LandingScreen::new();
+        let action = s.handle_input(&key_event(KeyCode::Char('h')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Push(TuiMode::MilestoneHealth));
+    }
+
+    // I-2: menu contains the milestone-health entry (#500).
+    #[test]
+    fn landing_menu_contains_milestone_health_entry() {
+        let item = MENU_ITEMS.iter().find(|m| m.shortcut == 'h');
+        assert!(item.is_some());
+        let item = item.unwrap();
+        assert_eq!(item.label, "Milestone Review");
+        assert_eq!(item.target, LandingTarget::Push(TuiMode::MilestoneHealth));
+    }
+
     #[test]
     fn unknown_letter_returns_none() {
         let mut s = LandingScreen::new();

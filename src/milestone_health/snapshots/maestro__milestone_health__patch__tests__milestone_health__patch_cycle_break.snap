@@ -1,0 +1,15 @@
+---
+source: src/milestone_health/patch.rs
+expression: out
+---
+Header.
+
+## Dependency Graph (Implementation Order)
+
+Cycle members (resolve before assigning levels):
+• #4 a
+• #5 b
+
+Sequence: (empty)
+
+> Note: cycles were detected and listed above; resolve them before merging.

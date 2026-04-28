@@ -9,6 +9,7 @@ pub mod issue_browser;
 pub mod issue_wizard;
 pub mod landing;
 pub mod milestone;
+pub mod milestone_health;
 pub mod milestone_wizard;
 pub mod pr_review;
 pub mod prd;

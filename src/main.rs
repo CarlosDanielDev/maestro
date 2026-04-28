@@ -34,6 +34,7 @@ mod work;
 
 mod adapt;
 mod mascot;
+mod milestone_health;
 mod prd;
 mod sanitize;
 mod system;

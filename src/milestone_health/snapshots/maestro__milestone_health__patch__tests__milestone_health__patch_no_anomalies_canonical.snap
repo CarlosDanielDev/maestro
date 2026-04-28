@@ -1,0 +1,18 @@
+---
+source: src/milestone_health/patch.rs
+expression: out
+---
+Header.
+
+## Dependency Graph (Implementation Order)
+
+Level 0 — no dependencies:
+• #1 a
+
+Level 1 — depends on Level 0:
+• #2 b
+
+Level 2 — depends on Level 1:
+• #3 c
+
+Sequence: #1 → #2 → #3

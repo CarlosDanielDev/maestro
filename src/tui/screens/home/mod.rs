@@ -56,6 +56,11 @@ const QUICK_ACTIONS: &[(&str, char, QuickActionDispatch)] = &[
         QuickActionDispatch::Push(TuiMode::MilestoneView),
     ),
     (
+        "Review Milestone",
+        'M',
+        QuickActionDispatch::Push(TuiMode::MilestoneHealth),
+    ),
+    (
         "Run Prompt",
         'r',
         QuickActionDispatch::Push(TuiMode::PromptInput),
@@ -452,6 +457,27 @@ mod tests {
         let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
         let action = screen.handle_input(&key_event(KeyCode::Char('m')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::MilestoneView));
+    }
+
+    // I-3: capital M opens milestone health wizard (#500).
+    #[test]
+    fn home_key_capital_m_returns_push_milestone_health() {
+        let mut screen = HomeScreen::new(make_project_info(), vec![], vec![]);
+        let action = screen.handle_input(&key_event(KeyCode::Char('M')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Push(TuiMode::MilestoneHealth));
+    }
+
+    // I-4: quick actions array contains milestone-health entry (#500).
+    #[test]
+    fn quick_actions_contains_milestone_health_entry() {
+        let entry = QUICK_ACTIONS.iter().find(|(_, k, _)| *k == 'M');
+        assert!(entry.is_some(), "expected 'M' key in QUICK_ACTIONS");
+        let (label, _, dispatch) = entry.unwrap();
+        assert_eq!(*label, "Review Milestone");
+        assert!(matches!(
+            dispatch,
+            QuickActionDispatch::Push(TuiMode::MilestoneHealth)
+        ));
     }
 
     #[test]

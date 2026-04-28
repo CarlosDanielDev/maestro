@@ -59,6 +59,8 @@ pub enum TuiMode {
     /// First-time bypass-mode warning screen (#328). User must type
     /// CONFIRM to activate.
     BypassWarning,
+    /// Milestone health-check wizard: DOR + dep-graph review (#500).
+    MilestoneHealth,
 }
 
 impl TuiMode {
@@ -99,6 +101,7 @@ impl TuiMode {
             Self::Prd => "PRD",
             Self::Roadmap => "Roadmap",
             Self::BypassWarning => "Bypass Warning",
+            Self::MilestoneHealth => "Milestone Health",
         }
     }
 }
@@ -239,6 +242,18 @@ pub enum TuiCommand {
         owner: String,
         repo: String,
     },
+    /// Fetch open issues for a selected milestone (#500). The full
+    /// `GhMilestone` is passed through so the background task does not need
+    /// to re-fetch the milestone list to find it by number.
+    FetchMilestoneHealthIssues {
+        milestone: GhMilestone,
+    },
+    /// Patch a milestone description via gh api PATCH (#500). The wizard
+    /// dispatches this only after explicit user confirmation.
+    PatchMilestoneDescription {
+        milestone_number: u64,
+        description: String,
+    },
 }
 
 /// Data events delivered from background fetch tasks.
@@ -296,6 +311,10 @@ pub enum TuiDataEvent {
         pr_number: u64,
         result: anyhow::Result<crate::review::types::ReviewReport>,
     },
+    /// Result of `FetchMilestoneHealthIssues` (#500).
+    MilestoneHealthIssuesFetched(anyhow::Result<(GhMilestone, Vec<GhIssue>)>),
+    /// Result of `PatchMilestoneDescription` (#500).
+    MilestoneHealthPatched(anyhow::Result<()>),
 }
 
 /// A merge conflict suggestion shown in the completion overlay.

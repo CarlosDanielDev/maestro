@@ -1,0 +1,13 @@
+---
+source: src/milestone_health/patch.rs
+expression: out
+---
+Header.
+
+## Dependency Graph (Implementation Order)
+
+Level 0 — no dependencies:
+• #1 a
+• #7 g
+
+Sequence: #1 ∥ #7

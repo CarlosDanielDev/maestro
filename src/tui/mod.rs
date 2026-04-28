@@ -570,6 +570,30 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::ReviewCycleResult { pr_number, result });
                     });
                 }
+                app::TuiCommand::FetchMilestoneHealthIssues { milestone } => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result = client
+                            .list_issues_by_milestone(&milestone.title)
+                            .await
+                            .map(|issues| (milestone, issues));
+                        let _ = tx.send(app::TuiDataEvent::MilestoneHealthIssuesFetched(result));
+                    });
+                }
+                app::TuiCommand::PatchMilestoneDescription {
+                    milestone_number,
+                    description,
+                } => {
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        let client = GhCliClient::new();
+                        let result = client
+                            .patch_milestone_description(milestone_number, &description)
+                            .await;
+                        let _ = tx.send(app::TuiDataEvent::MilestoneHealthPatched(result));
+                    });
+                }
             }
         }
 

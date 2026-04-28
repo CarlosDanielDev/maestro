@@ -149,6 +149,9 @@ pub struct App {
     pub prd_screen: Option<crate::tui::screens::prd::PrdScreen>,
     pub bypass_warning_screen: Option<crate::tui::screens::bypass_warning::BypassWarningState>,
     pub roadmap_screen: Option<crate::tui::screens::roadmap::RoadmapScreen>,
+    /// Milestone health-check wizard (#500).
+    pub milestone_health_screen:
+        Option<crate::tui::screens::milestone_health::MilestoneHealthScreen>,
     /// Last completed `/review` cycle (#327). Populated by data_handler;
     /// consumed by the PR-review screen on next render.
     pub pending_review_report: Option<crate::review::types::ReviewReport>,
@@ -282,6 +285,7 @@ impl App {
             prd_screen: None,
             bypass_warning_screen: None,
             roadmap_screen: None,
+            milestone_health_screen: None,
             pending_review_report: None,
             concerns_cursor: 0,
             prd_candidates: Vec::new(),
