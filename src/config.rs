@@ -2032,4 +2032,28 @@ max_cost_total = 10.0
             "error should reference the unknown value, got: {msg}"
         );
     }
+
+    #[test]
+    fn notifications_config_desktop_false_survives_toml_round_trip() {
+        let original = NotificationsConfig {
+            desktop: false,
+            slack: false,
+            slack_webhook_url: None,
+            slack_rate_limit_per_min: 10,
+        };
+
+        let serialized = toml::to_string(&original).expect("serialize");
+        let deserialized: NotificationsConfig = toml::from_str(&serialized).expect("deserialize");
+
+        assert!(!deserialized.desktop);
+    }
+
+    #[test]
+    fn notifications_config_missing_desktop_field_defaults_to_true() {
+        let toml_str = r#"slack = false"#;
+
+        let cfg: NotificationsConfig = toml::from_str(toml_str).expect("deserialize");
+
+        assert!(cfg.desktop, "missing `desktop` key must default to true");
+    }
 }

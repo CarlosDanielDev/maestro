@@ -10,6 +10,13 @@ use crate::session::types::{SessionStatus, StreamEvent};
 use crate::state::file_claims::{ClaimResult, FILE_CONFLICT_SENTINEL};
 use crate::tui::activity_log::LogLevel;
 
+fn format_session_notify_title(prefix: &str, issue: Option<u64>, label: &str) -> String {
+    match issue {
+        Some(n) => format!("{}: #{} {}", prefix, n, label),
+        None => format!("{}: {}", prefix, label),
+    }
+}
+
 impl App {
     /// Process a stream event from a session.
     pub fn handle_session_event(&mut self, evt: SessionEvent) {
@@ -195,6 +202,7 @@ impl App {
                 StreamEvent::Thinking { .. } => {}
                 StreamEvent::TokenUpdate { .. } => {}
                 StreamEvent::Completed { cost_usd } => {
+                    let desktop_label = label.clone();
                     self.activity_log.push_simple(
                         label.clone(),
                         format!("Completed (${:.2})", cost_usd),
@@ -208,6 +216,17 @@ impl App {
                             LogLevel::Warn,
                         );
                     }
+                    let title = format_session_notify_title(
+                        "Session complete",
+                        managed.session.issue_number,
+                        &desktop_label,
+                    );
+                    let body = format!(
+                        "Cost ${:.2} — {} files changed",
+                        cost_usd,
+                        managed.session.files_touched.len()
+                    );
+                    self.desktop_notifier.notify(&title, &body);
                     self.notifications
                         .notify_slack(SlackEvent::SessionCompleted {
                             session_id: managed.session.id.to_string(),
@@ -248,6 +267,7 @@ impl App {
                     }
                 }
                 StreamEvent::Error { message } => {
+                    let desktop_label = label.clone();
                     self.activity_log.push_simple(
                         label,
                         format!("ERROR: {}", message),
@@ -257,6 +277,12 @@ impl App {
                         managed.session.id,
                         crate::state::prompt_history::PromptOutcome::Errored,
                     );
+                    let title = format_session_notify_title(
+                        "Session errored",
+                        managed.session.issue_number,
+                        &desktop_label,
+                    );
+                    self.desktop_notifier.notify(&title, message);
                     self.notifications.notify_slack(SlackEvent::SessionErrored {
                         session_id: managed.session.id.to_string(),
                         issue_number: managed.session.issue_number,
@@ -302,3 +328,7 @@ impl App {
         crate::tui::screen_dispatch::dispatch_paste_to_active_screen(self, text);
     }
 }
+
+#[cfg(test)]
+#[path = "event_handler_tests.rs"]
+mod tests;

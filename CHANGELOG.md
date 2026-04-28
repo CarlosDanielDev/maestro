@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(notifications): desktop notifications now fire when a session completes or errors (#487)
+
 ## [0.16.0] - 2026-04-25
 
 Milestone "PR Review Automation & Interactive PRD" — automated PR review flow with slash command integration, dangerously-skip-permissions bypass mode for power users, interactive PRD management, milestone roadmap visualization, and the opt-in caveman compressed-prose skill. Closes #321, #322, #327, #328, #329, #481, #490 across PRs #488, #489, #491.

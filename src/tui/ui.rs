@@ -90,6 +90,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Aged out before render so the empty-toast frame draws cleanly.
     app.tick_copy_toast(std::time::Instant::now());
+    app.tick_notify_error();
     if let Some(toast) = app.copy_toast.as_ref() {
         let banner_area = Rect::new(chunks[0].x, chunks[0].y, chunks[0].width, 1);
         crate::tui::clipboard_toast::draw_copy_toast(
