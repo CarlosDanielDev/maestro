@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-28 00:00 (UTC)
+> Last updated: 2026-04-28 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -89,7 +89,7 @@ maestro/
 │   │   ├── clean.rs                       # cmd_clean(): prune orphaned worktrees and stale log files
 │   │   ├── dashboard.rs                   # cmd_dashboard(): launch the TUI dashboard
 │   │   ├── doctor.rs                      # cmd_doctor(): run preflight checks and print report
-│   │   ├── init.rs                        # cmd_init(): scaffold maestro.toml in the project root
+│   │   ├── init.rs                        # cmd_init(): scaffold maestro.toml; delegates to src/init/; accepts --reset flag  [Issue #505]
 │   │   ├── logs.rs                        # cmd_logs(): stream or tail session log files
 │   │   ├── queue.rs                       # cmd_queue(): interactive work-queue management
 │   │   ├── resume.rs                      # cmd_resume(): re-attach to a paused session
@@ -125,6 +125,12 @@ maestro/
 │   │   ├── scaffolder.rs                  # Scaffold phase: ProjectScaffolder trait, ClaudeScaffolder impl, write_scaffold_files(); generates project files from adapt plan  [Issue #371]
 │   │   ├── prompts.rs                     # Claude prompt builders for analyzer, planner, and scaffold phases  [Issue #371]
 │   │   └── knowledge.rs                   # Knowledge-base compression (Phase 2.6): consumes AdaptReport + ProjectProfile; produces KnowledgeBase (six token-budgeted sections); write_knowledge_file() writes .maestro/knowledge.md; auto-loaded by SessionPool::try_promote as a system-prompt component; 1 MiB size cap, symlink rejection, TOCTOU-safe load, envelope-wrapped injection  [Issue #347]
+│   ├── init/                              # Project tech-stack auto-detection used by `maestro init --reset` and the Settings TUI action  [Issue #505]
+│   │   ├── mod.rs                         # Module facade; RenderOutcome enum (Fresh | Merged); render_or_merge() top-level orchestration used by CLI and TUI
+│   │   ├── detector.rs                    # DetectedStack enum (Rust, Node, Python, Go); ProjectDetector trait; FsProjectDetector probes marker files (Cargo.toml, package.json, pyproject.toml/requirements.txt/setup.py, go.mod); FakeProjectDetector for tests
+│   │   ├── walk.rs                        # find_project_root(): walks ancestors looking for known marker files
+│   │   ├── template.rs                    # StackDefaults per stack (language, build_command, test_command, run_command); render_template() produces a complete maestro.toml string
+│   │   └── merge.rs                       # MergeReport; merge_toml() merges detected defaults into an existing TOML string — adds missing keys, never overwrites user-set keys
 │   ├── updater/                           # Self-upgrade subsystem  [Issue #118]
 │   │   ├── mod.rs                         # UpgradeState state machine (Idle, Checking, UpdateAvailable, Downloading, Installing, Done, Failed); ReleaseInfo type (tag_name, download_url, body); pub mod declarations for error/lock/replace  [Issue #499]
 │   │   ├── checker.rs                     # UpdateChecker trait; GitHubReleaseChecker (hits GitHub Releases API); version parsing via semver comparison; asset names use Rust target triples (e.g. aarch64-apple-darwin); checksum file resolves to sha256sums.txt; check_for_update() async entry point  [Issue #118, #233]
@@ -382,7 +388,8 @@ maestro/
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
 │   │   ├── worktree_lifecycle.rs          # 8 tests: worktree create/cleanup and health monitoring
 │   │   ├── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
-│   │   └── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
+│   │   ├── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
+│   │   └── init.rs                        # Integration tests for `maestro init` and `maestro init --reset`: fresh write, idempotent guard, merge-preserves-user-keys, polyglot detection  [Issue #505]
 │   ├── turboquant/                         # TurboQuant — vector quantization for context compression  [Issue #242-253, #343-345, #347]
 │   │   ├── mod.rs                         # Module facade; combines PolarQuant + QJL into a unified API
 │   │   ├── types.rs                       # QuantStrategy enum (TurboQuant, PolarQuant, QJL); TurboQuantConfig (+ fork_handoff_budget, system_prompt_budget, knowledge_budget); QuantResult; CompressionMetrics
@@ -455,7 +462,7 @@ maestro/
 ├── SECURITY.md                            # Security policy: supported versions, vulnerability reporting, and disclosure process
 ├── directory-tree.md                      # This file — SINGLE SOURCE OF TRUTH for structure
 ├── maestro-state.json                     # Runtime state persistence file
-└── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section; guardrail_prompt option (commented); [sessions.completion_gates] with fmt, clippy, test defaults; [sessions.hollow_retry] section (policy, work_max_retries, consultation_max_retries)  [Issue #12, #40, #43, #275]
+└── maestro.toml                           # Runtime configuration; [sessions.context_overflow] section; guardrail_prompt option (commented); [sessions.completion_gates] with fmt, clippy, test defaults; [sessions.hollow_retry] section (policy, work_max_retries, consultation_max_retries); [project] gains optional language/languages/build_command/test_command/run_command fields (written by `maestro init --reset`)  [Issue #12, #40, #43, #275, #505]
 ```
 
 ## Quick Reference

@@ -312,6 +312,10 @@ impl SettingsScreen {
                 "base_branch",
                 &config.project.base_branch,
             ))),
+            Self::field(WidgetKind::Toggle(Toggle::new(
+                "Reset Settings (re-detect project stack)",
+                false,
+            ))),
         ]
     }
 
@@ -1290,6 +1294,21 @@ impl Screen for SettingsScreen {
                 if self.active_tab() == SettingsTab::Flags {
                     return ScreenAction::None;
                 }
+                // Special-case the "Reset Settings" row on the Project tab
+                // — Enter/Space triggers re-detection rather than the
+                // toggle's normal behaviour.
+                if self.active_tab() == SettingsTab::Project
+                    && matches!(*code, KeyCode::Enter | KeyCode::Char(' '))
+                {
+                    let label = self
+                        .current_fields()
+                        .get(self.field_index)
+                        .map(|f| f.widget.label())
+                        .unwrap_or("");
+                    if label.starts_with("Reset Settings") {
+                        return ScreenAction::ResetSettingsFromDetection;
+                    }
+                }
                 // Delegate to active widget for non-navigation keys
                 let idx = self.field_index;
                 let tab = self.active_tab;
@@ -1543,6 +1562,34 @@ mod tests {
         assert_eq!(screen.field_index, 1);
         screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
         assert_eq!(screen.field_index, 0);
+    }
+
+    // --- #505: Reset Settings (re-detect project stack) ---
+
+    #[test]
+    fn project_tab_contains_reset_settings_label() {
+        let screen = SettingsScreen::new(make_config(), make_flags());
+        let labels: Vec<&str> = screen.fields_per_tab[0]
+            .iter()
+            .map(|f| f.widget.label())
+            .collect();
+        assert!(
+            labels.iter().any(|l| l.starts_with("Reset Settings")),
+            "Project tab must include a 'Reset Settings' action; got {:?}",
+            labels
+        );
+    }
+
+    #[test]
+    fn reset_settings_row_returns_action_on_enter() {
+        let mut screen = SettingsScreen::new(make_config(), make_flags());
+        let reset_idx = screen.fields_per_tab[0]
+            .iter()
+            .position(|f| f.widget.label().starts_with("Reset Settings"))
+            .expect("Reset Settings row exists");
+        screen.field_index = reset_idx;
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        assert_eq!(action, ScreenAction::ResetSettingsFromDetection);
     }
 
     #[test]

@@ -1,86 +1,114 @@
-pub fn cmd_init() -> anyhow::Result<()> {
-    let path = std::path::PathBuf::from("maestro.toml");
-    if path.exists() {
-        println!("maestro.toml already exists.");
-        return Ok(());
+use anyhow::{Context, Result};
+use std::io::Write;
+use std::path::Path;
+
+use crate::init::{
+    FsProjectDetector, ProjectDetector, RenderOutcome, render_or_merge, walk::find_project_root,
+};
+
+/// Public entry point used by the CLI. Forwards to [`cmd_init_inner`]
+/// against the real filesystem and converts the logical exit code into
+/// either `Ok(())` (success) or a process-exit (failure).
+pub fn cmd_init(reset: bool) -> Result<()> {
+    let cwd = std::env::current_dir().context("reading current working directory")?;
+    let root = find_project_root(&cwd);
+    let detector = FsProjectDetector::new();
+    let code = cmd_init_inner(reset, &root, &detector)?;
+    if code != 0 {
+        std::process::exit(code);
+    }
+    Ok(())
+}
+
+/// Pure orchestration helper: writes (or merges) `maestro.toml` and
+/// returns the logical exit code. Tests drive this directly with a
+/// `FakeProjectDetector` and a `tempfile::TempDir`.
+///
+/// Exit codes:
+/// - 0 — wrote/merged successfully
+/// - 2 — `maestro.toml` already exists and `reset` is `false`
+pub fn cmd_init_inner(
+    reset: bool,
+    project_root: &Path,
+    detector: &dyn ProjectDetector,
+) -> Result<i32> {
+    let target = project_root.join("maestro.toml");
+
+    if target.exists() && !reset {
+        eprintln!(
+            "maestro.toml already exists at {}. Use --reset to refresh detection.",
+            target.display()
+        );
+        return Ok(2);
     }
 
-    let content = r#"[project]
-repo = ""
-base_branch = "main"
+    let existing = if reset && target.exists() {
+        Some(
+            std::fs::read_to_string(&target)
+                .with_context(|| format!("reading existing {}", target.display()))?,
+        )
+    } else {
+        None
+    };
 
-[sessions]
-max_concurrent = 3
-stall_timeout_secs = 300
-default_model = "opus"
-default_mode = "orchestrator"
-permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
-allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
+    let outcome = render_or_merge(detector, project_root, existing.as_deref())?;
 
-[budget]
-per_session_usd = 5.0
-total_usd = 50.0
-alert_threshold_pct = 80
+    match outcome {
+        RenderOutcome::Fresh { stacks, content } => {
+            // create_new: atomically reject if the file appeared after
+            // our pre-check, instead of silently clobbering.
+            match std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&target)
+            {
+                Ok(mut f) => f
+                    .write_all(content.as_bytes())
+                    .with_context(|| format!("writing {}", target.display()))?,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    eprintln!(
+                        "maestro.toml already exists at {}. Use --reset to refresh detection.",
+                        target.display()
+                    );
+                    return Ok(2);
+                }
+                Err(e) => {
+                    return Err(
+                        anyhow::Error::from(e).context(format!("writing {}", target.display()))
+                    );
+                }
+            }
+            if stacks.is_empty() {
+                eprintln!(
+                    "Warning: no project markers detected. Wrote a generic template at {}; \
+                     fill in build/test/run commands manually.",
+                    target.display()
+                );
+            } else {
+                let names: Vec<&str> = stacks.iter().map(|s| s.id()).collect();
+                println!(
+                    "Detected: {}. Created {}",
+                    names.join(", "),
+                    target.display()
+                );
+            }
+        }
+        RenderOutcome::Merged { stacks, report } => {
+            std::fs::write(&target, &report.merged_toml)
+                .with_context(|| format!("writing {}", target.display()))?;
+            let names: Vec<&str> = if stacks.is_empty() {
+                vec!["none"]
+            } else {
+                stacks.iter().map(|s| s.id()).collect()
+            };
+            println!(
+                "Reset complete: detected {}, added {} key(s), preserved {} customized key(s).",
+                names.join(", "),
+                report.keys_added.len(),
+                report.keys_preserved.len()
+            );
+        }
+    }
 
-[github]
-issue_filter_labels = ["maestro:ready"]
-auto_pr = true
-auto_merge = false                      # Set to true to auto-merge PRs after CI + review pass
-merge_method = "squash"                 # Options: merge, squash, rebase
-cache_ttl_secs = 300
-
-[gates]
-enabled = true
-test_command = "cargo test"
-ci_poll_interval_secs = 30
-ci_max_wait_secs = 1800
-
-[notifications]
-desktop = true
-slack = false
-# slack_webhook_url = "https://hooks.slack.com/services/T.../B.../xxx"
-# slack_rate_limit_per_min = 10
-
-[review]
-enabled = false
-command = "gh pr review {pr_number} --comment --body 'Automated review by Maestro'"
-# reviewers = [
-#   { name = "claude", command = "claude --print 'review PR #{pr_number}'", required = true },
-#   { name = "codex", command = "codex review {pr_number}", required = false },
-# ]
-
-[concurrency]
-heavy_task_labels = []                  # Labels that mark a task as resource-intensive
-heavy_task_limit = 2                    # Max concurrent heavy tasks
-
-[monitoring]
-work_tick_interval_secs = 10
-
-# Plugin hooks — shell commands triggered on lifecycle events
-# [[plugins]]
-# name = "notify-team"
-# on = "session_completed"             # Hook points: session_started, session_completed, tests_passed,
-#                                      #   tests_failed, budget_threshold, file_conflict, pr_created
-# run = "curl -X POST https://slack.webhook/..."
-# timeout_secs = 30                    # Optional per-plugin timeout
-
-# Feature flag overrides
-[flags]
-# continuous_mode = true   # default: true
-# auto_fork = true         # default: true
-# ci_auto_fix = false      # default: false
-# review_council = false   # experimental — disabled by default
-# model_routing = false    # experimental — disabled by default
-# context_overflow = false # default: false
-
-# Custom modes — define system prompt and allowed tools
-# [modes.review]
-# system_prompt = "You are a code reviewer. Review the PR and leave comments."
-# allowed_tools = ["Read", "Grep", "Glob"]
-# permission_mode = "plan"
-"#;
-
-    std::fs::write(&path, content)?;
-    println!("Created maestro.toml");
-    Ok(())
+    Ok(0)
 }

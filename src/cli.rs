@@ -121,7 +121,12 @@ pub enum Commands {
     /// Show spending report
     Cost,
     /// Initialize maestro.toml in current directory
-    Init,
+    Init {
+        /// Re-run technology detection on an existing maestro.toml,
+        /// merging detected defaults without overwriting customized keys.
+        #[arg(long)]
+        reset: bool,
+    },
     /// Clean orphaned worktrees left by crashed sessions
     Clean {
         /// Show what would be cleaned without actually doing it
@@ -298,6 +303,22 @@ mod tests {
     #[test]
     fn cli_debug_assert() {
         <Cli as clap::CommandFactory>::command().debug_assert();
+    }
+
+    // ------------------------------------------------------------------
+    // Init subcommand parsing (#505)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn init_subcommand_no_flag_parses_reset_false() {
+        let cli = Cli::try_parse_from(["maestro", "init"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Init { reset: false })));
+    }
+
+    #[test]
+    fn init_subcommand_reset_flag_parses_reset_true() {
+        let cli = Cli::try_parse_from(["maestro", "init", "--reset"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Init { reset: true })));
     }
 
     // ------------------------------------------------------------------

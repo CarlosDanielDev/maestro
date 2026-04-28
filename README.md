@@ -223,8 +223,11 @@ man ./man/maestro.1
 ## Quick Start
 
 ```bash
-# Initialize config
+# Initialize config (auto-detects project stack)
 maestro init
+
+# Re-run detection and merge results into an existing maestro.toml
+maestro init --reset
 
 # Run a single session with a prompt
 maestro run --prompt "Refactor the auth module to use async/await"
@@ -262,12 +265,22 @@ maestro run --issue 42 --skip-doctor
 
 ## Configuration
 
-Maestro reads `maestro.toml` from the project root:
+Maestro reads `maestro.toml` from the project root. Run `maestro init` to generate it; the command auto-detects your project's tech stack and fills in sensible defaults for `build_command`, `test_command`, and `run_command`. Supported stacks: **Rust** (`Cargo.toml`), **Node** (`package.json`), **Python** (`pyproject.toml`, `requirements.txt`, `setup.py`), **Go** (`go.mod`). Polyglot repos record all detected stacks under `languages`; the first stack in the order above drives the active command defaults.
+
+Run `maestro init --reset` to re-detect and merge results into an existing file. Keys you have already customized are never overwritten; missing keys are added.
+
+The same re-detection is available in the TUI under **Settings → Project → Reset Settings (re-detect project stack)**.
 
 ```toml
 [project]
 repo = "owner/repo"
 base_branch = "main"
+# Written by `maestro init` / `--reset` — edit freely:
+# language = "rust"            # primary stack
+# languages = ["rust", "node"] # polyglot: all detected stacks
+# build_command = "cargo build"
+# test_command  = "cargo test"
+# run_command   = "cargo run"
 
 [sessions]
 max_concurrent = 3        # Max parallel Claude sessions
@@ -336,6 +349,11 @@ maestro (Rust binary)
 ├── src/
 │   ├── main.rs              # CLI entry point (clap); Run/Queue/Add/Status/Cost/Init
 │   ├── config.rs            # maestro.toml parsing; ProviderConfig; guardrail_prompt in SessionsConfig
+│   ├── init/                # Tech-stack auto-detection (maestro init / --reset)
+│   │   ├── detector.rs      # DetectedStack (Rust/Node/Python/Go); FsProjectDetector
+│   │   ├── walk.rs          # find_project_root()
+│   │   ├── template.rs      # Per-stack command defaults; render_template()
+│   │   └── merge.rs         # merge_toml(): add missing keys, preserve existing ones
 │   ├── provider/            # Multi-provider abstraction [Issue #29]
 │   │   ├── mod.rs           # create_provider factory; detect_provider_from_remote
 │   │   ├── types.rs         # ProviderKind (Github, AzureDevops); type re-exports

@@ -9,6 +9,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- feat(init): auto-detect project tech stack on `maestro init` and `maestro init --reset` (#505)
+  - `src/init/` — detection layer: `DetectedStack` enum (Rust, Node, Python, Go), `ProjectDetector` trait, `FsProjectDetector` probes marker files (`Cargo.toml`, `package.json`, `pyproject.toml`/`requirements.txt`/`setup.py`, `go.mod`)
+  - `src/init/template.rs` — per-stack command defaults (`build_command`, `test_command`, `run_command`); `render_template()` writes a complete `maestro.toml`
+  - `src/init/merge.rs` — `merge_toml()` adds detected keys that are absent from an existing file without touching user-set values; TOML comments are not preserved (library limitation)
+  - `src/init/walk.rs` — `find_project_root()` walks ancestors for a known marker file
+  - `--reset` flag on `maestro init`: re-runs detection and merges results into the existing `maestro.toml`
+  - Settings → Project tab gains a **Reset Settings (re-detect project stack)** row that triggers the same detection and merge flow from the TUI
+  - `[project]` in `maestro.toml` gains optional `language`, `languages`, `build_command`, `test_command`, `run_command` fields written by detection; polyglot repos record all stacks under `languages`, with the first in canonical order (Rust → Node → Python → Go) driving the active commands
+  - `src/integration_tests/init.rs` — integration tests covering fresh write, idempotent guard (exit 2 when file exists and `--reset` is absent), merge-preserves-user-keys, and polyglot detection
+
 - feat(tui): Milestone Review wizard (`h` on landing, `M` on dashboard) — selects a GitHub milestone, checks every open issue for DOR readiness and dependency-graph coherence, shows an inline diff of the proposed corrected milestone description, and writes the patch to GitHub on user confirmation (#500)
   - `src/milestone_health/` — pure analysis layer: DOR checker (`dor.rs`), dependency-graph parser / level-computer / cycle-detector (`graph.rs`), deterministic patch generator (`patch.rs`), aggregated report type (`report.rs`)
   - `src/tui/screens/milestone_health/` — TUI wizard: state-machine reducer (`state.rs`), per-step rendering (`draw.rs`), line-pair diff view (`diff.rs`), anomaly and missing-field formatters (`format.rs`)

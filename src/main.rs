@@ -17,6 +17,7 @@ mod gates;
 mod git;
 mod icon_mode;
 mod icons;
+mod init;
 mod models;
 mod modes;
 mod notifications;
@@ -102,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Init) => cmd_init(),
+        Some(Commands::Init { reset }) => cmd_init(reset),
         Some(Commands::Clean { dry_run }) => cmd_clean(dry_run),
         Some(Commands::Logs { session, export }) => cmd_logs(session, export),
         Some(Commands::Resume { session }) => cmd_resume(session).await,

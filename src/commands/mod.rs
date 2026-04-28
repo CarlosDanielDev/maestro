@@ -16,6 +16,8 @@ pub use clean::cmd_clean;
 pub use dashboard::cmd_dashboard;
 pub use doctor::cmd_doctor;
 pub use init::cmd_init;
+#[cfg(test)]
+pub use init::cmd_init_inner;
 pub use logs::cmd_logs;
 pub use queue::{cmd_add, cmd_queue};
 pub use resume::cmd_resume;
