@@ -46,7 +46,7 @@ walkdir = "2"
 flate2 = "1"
 tar = "0.4"
 tempfile = "3"
-thiserror = "1"
+thiserror = "2"
 
 [build-dependencies]
 clap = { version = "4", features = ["derive"] }
