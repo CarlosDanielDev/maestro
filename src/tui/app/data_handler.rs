@@ -186,13 +186,24 @@ impl App {
                 );
                 self.upgrade_state = crate::updater::UpgradeState::Available(info);
             }
-            TuiDataEvent::VersionCheckResult(None) => {}
+            TuiDataEvent::VersionCheckResult(None) => {
+                self.activity_log.push_simple(
+                    "UPDATE".into(),
+                    "Already on the latest version.".into(),
+                    LogLevel::Info,
+                );
+            }
             TuiDataEvent::UpgradeResult(Ok(backup_path)) => {
                 if let crate::updater::UpgradeState::Downloading { version } = &self.upgrade_state {
                     self.upgrade_state = crate::updater::UpgradeState::ReadyToRestart {
                         version: version.clone(),
                         backup_path,
                     };
+                    self.activity_log.push_simple(
+                        "UPDATE".into(),
+                        "Update successful — please restart maestro to apply changes.".into(),
+                        LogLevel::Info,
+                    );
                 }
             }
             TuiDataEvent::UpgradeResult(Err(msg)) => {

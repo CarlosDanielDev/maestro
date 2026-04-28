@@ -1,5 +1,8 @@
 pub mod checker;
+pub mod error;
 pub mod installer;
+pub mod lock;
+pub mod replace;
 pub mod restart;
 
 /// GitHub repository for version checks and binary downloads.
