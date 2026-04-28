@@ -26,6 +26,7 @@ use crate::continuous::ContinuousModeState;
 use crate::mascot::MascotAnimator;
 use crate::mascot::animator::SystemClock;
 use crate::models::ModelRouter;
+use crate::notifications::desktop::{DesktopNotifier, OsascriptNotifier};
 use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::plugins::runner::PluginRunner;
 use crate::provider::github::client::GitHubClient;
@@ -172,6 +173,9 @@ pub struct App {
     pub(crate) clipboard: Box<dyn crate::tui::clipboard::Clipboard>,
     /// Transient (~2 s) banner shown after a copy action.
     pub(crate) copy_toast: Option<crate::tui::app::clipboard_action::CopyToast>,
+    /// Desktop notification dispatcher. Production wires `OsascriptNotifier`;
+    /// tests inject `FakeNotifier` via `with_desktop_notifier`.
+    pub(crate) desktop_notifier: std::sync::Arc<dyn DesktopNotifier>,
 }
 
 impl App {
@@ -287,6 +291,7 @@ impl App {
             settings_store: None,
             clipboard: Box::new(crate::tui::clipboard::SystemClipboard),
             copy_toast: None,
+            desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
         }
     }
 
@@ -298,6 +303,38 @@ impl App {
     ) -> Self {
         self.clipboard = clipboard;
         self
+    }
+
+    /// Builder for tests: swap the desktop notifier for a fake.
+    #[cfg(test)]
+    pub(crate) fn with_desktop_notifier(
+        mut self,
+        notifier: std::sync::Arc<dyn DesktopNotifier>,
+    ) -> Self {
+        self.desktop_notifier = notifier;
+        self
+    }
+
+    /// Drain any pending desktop-notifier error into the activity log.
+    /// Called once per render frame from `tui::ui::draw`.
+    pub fn tick_notify_error(&mut self) {
+        let Some(err) = self.desktop_notifier.take_last_error() else {
+            return;
+        };
+        let msg = match err {
+            crate::notifications::desktop::NotifyError::PermissionDenied => {
+                "Desktop notifications blocked. Grant access in System Settings → Notifications."
+                    .to_string()
+            }
+            crate::notifications::desktop::NotifyError::DispatchFailed(m) => {
+                format!("Desktop notification failed: {}", m)
+            }
+            crate::notifications::desktop::NotifyError::Internal(m) => {
+                format!("Desktop notification internal error: {}", m)
+            }
+        };
+        self.activity_log
+            .push_simple("NOTIFICATIONS".into(), msg, LogLevel::Warn);
     }
 
     pub fn configure(&mut self, config: Config) {
@@ -349,6 +386,8 @@ impl App {
         crate::icon_mode::init_from_config(config.tui.ascii_icons);
         self.show_mascot = config.tui.show_mascot;
         self.mascot_style = config.tui.mascot_style;
+        self.desktop_notifier =
+            std::sync::Arc::new(OsascriptNotifier::new(config.notifications.desktop));
         // Sync TurboQuant flag from [turboquant] config section
         if config.turboquant.enabled {
             self.flags.set_enabled(crate::flags::Flag::TurboQuant, true);

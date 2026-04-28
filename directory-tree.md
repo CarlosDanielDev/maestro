@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-27 18:00 (UTC)
+> Last updated: 2026-04-27 19:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -164,9 +164,10 @@ maestro/
 │   ├── modes/                             # Session mode definitions and resolution  [Phase 3]
 │   │   └── mod.rs                         # builtin_modes, resolve_mode, mode_from_labels
 │   ├── notifications/                     # Interruption and notification system  [Phase 3]
-│   │   ├── mod.rs                         # Module exports
+│   │   ├── mod.rs                         # Module exports; pub mod desktop added  [Issue #487]
 │   │   ├── types.rs                       # Notification levels: Info, Warning, Critical, Blocker
 │   │   ├── dispatcher.rs                  # Notification dispatcher
+│   │   ├── desktop.rs                     # DesktopNotifier trait; NotifyError enum; OsascriptNotifier (macOS, /usr/bin/osascript via spawn_blocking); sanitize_applescript() (escapes \, ", \n, \r, \t; drops C0 controls); truncate() (title ≤128, body ≤256 chars); FakeNotifier (#[cfg(test)])  [Issue #487]
 │   │   └── slack.rs                       # Slack webhook notification sender
 │   ├── plugins/                           # Plugin and hook execution system  [Phase 3]
 │   │   ├── mod.rs                         # Module exports
@@ -210,7 +211,7 @@ maestro/
 │   ├── tui/
 │   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress; spawns async version check on startup via check_for_update() — result delivered as VersionCheckResult data event; key handlers for upgrade flow (confirm/decline banner); CompletionSummary key-intercept branch: [f] collects NeedsReview sessions and calls spawn_gate_fix_session() for each then transitions to Overview, [i] opens issue browser, [r] opens prompt input, [l] switches to Overview (activity log view), [Enter]/[Esc] returns to dashboard via transition_to_dashboard(), [q] quits; ContinuousPause key-intercept overlay: [s] skip, [r] retry, [q] quit continuous loop; RefreshSuggestions branch sets loading_suggestions=true and queues FetchSuggestionData; exit path checks once_mode — exits immediately when true, otherwise shows CompletionSummary overlay; "All Issues" navigation always creates a fresh IssueBrowserScreen to prevent stale milestone filters leaking across navigation contexts; PromptInputScreen always created with injected history so Up/Down arrow recall works correctly; F-key bar actions wired (F1–F10, Alt-X); per-tick flash_counter decrement dispatched to session pool; pub mod theme; pub mod widgets; RunAdaptScaffold command dispatch  [Phase 3, Issue #31-33, #46-48, #35, #38, #83, #84, #85, #86, #104, #117, #118, #124, #202, #218, #232, #371]
 │   │   ├── app/                           # App state module (split across multiple files)
-│   │   │   ├── mod.rs                     # App struct; nav_stack: NavigationStack field (replaces confirm_exit_return_mode); navigate_to(), navigate_back(), navigate_back_or_dashboard(), navigate_to_root() navigation methods; gh_auth_ok: bool; theme: Theme; pending_prs: Vec<PendingPr>; config_path: Option<PathBuf> field carries the resolved maestro.toml path for settings save; set_config_path() setter; process_pending_pr_retries(); trigger_manual_pr_retry(); mascot_style: MascotStyle field hydrated in apply_config()  [Issue #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52, #83, #84, #85, #86, #102, #104, #118, #123, #158, #159, #342, #437, #473]
+│   │   │   ├── mod.rs                     # App struct; nav_stack: NavigationStack field (replaces confirm_exit_return_mode); navigate_to(), navigate_back(), navigate_back_or_dashboard(), navigate_to_root() navigation methods; gh_auth_ok: bool; theme: Theme; pending_prs: Vec<PendingPr>; config_path: Option<PathBuf> field carries the resolved maestro.toml path for settings save; set_config_path() setter; process_pending_pr_retries(); trigger_manual_pr_retry(); mascot_style: MascotStyle field hydrated in apply_config(); desktop_notifier: Arc<dyn DesktopNotifier>; notify_error_flash: Option<(String, Instant)>; with_desktop_notifier() test builder; tick_notify_error() drains take_last_error() and surfaces status-bar flash + LogLevel::Warn activity-log entry; OsascriptNotifier::new() wired in App::configure()  [Issue #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52, #83, #84, #85, #86, #102, #104, #118, #123, #158, #159, #342, #437, #473, #487]
 │   │   │   ├── types.rs                   # TuiMode enum (+ CompletionSummary, ContinuousPause variants) with breadcrumb_label() method; NavigationStack struct (push/pop/peek/clear/breadcrumbs, cap 32); TuiCommand enum (+ RunAdaptScaffold); TuiDataEvent enum (+ AdaptScaffoldResult); SuggestionDataPayload; CompletionSummaryData; CompletionSessionLine; GateFailureInfo  [Issue #342, #371]
 │   │   │   ├── budget.rs                  # Budget enforcement helpers within App
 │   │   │   ├── ci_polling.rs              # poll_ci_status() CI auto-fix loop using CiCheck trait; decide_ci_action(); spawn_ci_fix_session()  [Issue #41, #123]
@@ -219,7 +220,8 @@ maestro/
 │   │   │   ├── completion_summary.rs      # build_completion_summary(); transition_to_dashboard() calls navigate_to_root() to clear nav stack  [Issue #342]
 │   │   │   ├── context_overflow.rs        # Context overflow detection and fork triggering
 │   │   │   ├── data_handler.rs            # handle_data_event(); data_tx/data_rx channel; SuggestionData, VersionCheckResult, UpgradeResult, AdaptScaffoldResult handlers  [Issue #371]
-│   │   │   ├── event_handler.rs           # Top-level event dispatch and tick handling
+│   │   │   ├── event_handler.rs           # Top-level event dispatch and tick handling; dispatches desktop notification on StreamEvent::Completed (title: "Session complete: #N <label>", body: "Cost $X.XX — N files changed") and StreamEvent::Error (title/body from error message)  [Issue #487]
+│   │   │   ├── event_handler_tests.rs     # 4 integration tests for desktop notification dispatch using FakeNotifier  [Issue #487]
 │   │   │   ├── helpers.rs                 # Shared App helper utilities
 │   │   │   ├── issue_completion.rs        # on_issue_session_completed(); skips PR creation for CI-fix sessions
 │   │   │   ├── plugins.rs                 # Hook point invocation via PluginRunner
@@ -491,7 +493,7 @@ maestro/
 | `src/github/merge.rs` | `PrMergeCheck` trait (mockable); `PrMergeChecker` impl (`gh pr view` + `git diff`); `MergeState` enum; `PrConflictStatus` struct; `parse_merge_json()`; `parse_conflicting_files()`; `build_conflict_fix_prompt()` |
 | `src/github/pr.rs` | Automated PR creation |
 | `src/modes/` | Session mode definitions: orchestrator, vibe, review (Phase 3) |
-| `src/notifications/` | Interruption system with Info/Warning/Critical/Blocker levels (Phase 3) |
+| `src/notifications/` | Interruption system with Info/Warning/Critical/Blocker levels (Phase 3); `desktop.rs` adds `DesktopNotifier` trait + macOS `OsascriptNotifier` that fires on session Completed/Error events (Issue #487) |
 | `src/plugins/` | Plugin and hook execution system (Phase 3) |
 | `src/plugins/hooks.rs` | HookPoint enum for plugin attachment points |
 | `src/plugins/runner.rs` | External plugin command execution per hook point |
@@ -512,7 +514,7 @@ maestro/
 | `src/state/progress.rs` | Session phase tracking (Phase 3) |
 | `src/tui/` | Terminal UI (ratatui) |
 | `src/tui/mod.rs` | Event loop; `handle_screen_action()`; command processing; `launch_session_from_config()`; `FetchSuggestionData` async handler for GitHub ready/failed counts and milestone progress; spawns async version check on startup via `check_for_update()` — result delivered as `VersionCheckResult` data event; key handlers for upgrade confirmation banner (`[y]` confirm / `[n]` decline); `CompletionSummary` key-intercept branch with `[i]` issue browser, `[r]` new prompt, `[l]` activity log view, `[Enter]`/`[Esc]` dashboard; `ContinuousPause` key-intercept overlay: `[s]` skip, `[r]` retry, `[q]` quit continuous loop; exit path respects `once_mode`; `PromptInputScreen` always constructed with injected history for correct Up/Down recall; `pub mod theme`; `RunAdaptScaffold` command dispatch (Issues #31-33, #35, #38, #46-48, #83, #84, #85, #118, #232, #371) |
-| `src/tui/app/` | App state module split into focused sub-files; `App` struct with `nav_stack: NavigationStack` field (replaces `confirm_exit_return_mode`); `navigate_to()`, `navigate_back()`, `navigate_back_or_dashboard()`, `navigate_to_root()` navigation methods; `theme: Theme`; `gh_auth_ok: bool`; `upgrade_state: UpgradeState`; `pending_prs: Vec<PendingPr>`; `config_path: Option<PathBuf>` propagated from `LoadedConfig` for settings save (Issues #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52, #83, #84, #85, #118, #158, #342, #437) |
+| `src/tui/app/` | App state module split into focused sub-files; `App` struct with `nav_stack: NavigationStack` field (replaces `confirm_exit_return_mode`); `navigate_to()`, `navigate_back()`, `navigate_back_or_dashboard()`, `navigate_to_root()` navigation methods; `theme: Theme`; `gh_auth_ok: bool`; `upgrade_state: UpgradeState`; `pending_prs: Vec<PendingPr>`; `config_path: Option<PathBuf>` propagated from `LoadedConfig` for settings save; `desktop_notifier: Arc<dyn DesktopNotifier>`; `notify_error_flash: Option<(String, Instant)>`; `tick_notify_error()` per-frame error drain (Issues #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52, #83, #84, #85, #118, #158, #342, #437, #487) |
 | `src/tui/app/types.rs` | `TuiMode` enum with `breadcrumb_label()` for human-readable mode names; `NavigationStack` struct — push/pop/peek/clear/breadcrumbs with a cap of 32 entries; `TuiCommand` (+ `RunAdaptScaffold`), `TuiDataEvent` (+ `AdaptScaffoldResult`), `SuggestionDataPayload`, `CompletionSummaryData`, `CompletionSessionLine`, `GateFailureInfo` (Issues #342, #371) |
 | `src/tui/app/completion_summary.rs` | `build_completion_summary()`; `transition_to_dashboard()` now calls `navigate_to_root()` to fully clear the nav stack on dashboard return (Issue #342) |
 | `src/tui/app/clipboard_action.rs` | `App::copy_focused_response()` + `App::copy_focused_response_enabled()` predicate; `CopyOutcome` enum (`Success`, `NoContent`, `NotEnded`, `Failed`); `set_copy_toast()` / `tick_copy_toast()` with `COPY_TOAST_TTL_MS = 2_000` (Issue #482) |
