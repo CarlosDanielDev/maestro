@@ -529,6 +529,17 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     );
             f.render_widget(para, chunks[1]);
         }
+        TuiMode::MilestoneHealth => {
+            if let Some(ref screen) = app.milestone_health_screen {
+                crate::tui::screens::milestone_health::draw::draw(
+                    f,
+                    chunks[1],
+                    &theme,
+                    screen,
+                    spinner_tick,
+                );
+            }
+        }
     }
 
     // Only render activity log area when visible

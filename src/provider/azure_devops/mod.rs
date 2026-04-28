@@ -392,6 +392,14 @@ impl GitHubClient for AzDevOpsClient {
     async fn create_label(&self, _name: &str, _color: &str) -> Result<()> {
         anyhow::bail!("create_label is not supported for Azure DevOps")
     }
+
+    async fn patch_milestone_description(
+        &self,
+        _milestone_number: u64,
+        _description: &str,
+    ) -> Result<()> {
+        anyhow::bail!("patch_milestone_description is not supported for Azure DevOps")
+    }
 }
 
 #[cfg(test)]

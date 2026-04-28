@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-27 19:00 (UTC)
+> Last updated: 2026-04-27 20:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -137,11 +137,11 @@ maestro/
 │   ├── provider/                          # Multi-provider abstraction layer  [Issue #29]
 │   │   ├── mod.rs                         # create_provider factory, detect_provider_from_remote
 │   │   ├── types.rs                       # ProviderKind enum (Github, AzureDevops); re-exports Issue/Priority/MaestroLabel/SessionMode/Milestone  [Issue #31-33]
-│   │   └── azure_devops.rs               # AzDevOpsClient implementing GitHubClient trait; parse_work_items_json; stub list_milestones(); stub list_labels() and create_label() to satisfy GitHubClient trait  [Issue #31-33, #47, #348]
+│   │   └── azure_devops.rs               # AzDevOpsClient implementing GitHubClient trait; parse_work_items_json; stub list_milestones(); stub list_labels() and create_label() to satisfy GitHubClient trait; stub patch_milestone_description() returns bail!  [Issue #31-33, #47, #348, #500]
 │   ├── github/                            # GitHub API integration  [Phase 2]
 │   │   ├── mod.rs                         # Module exports
 │   │   ├── types.rs                       # GhIssue (+ milestone/assignees fields), GhMilestone, Priority, MaestroLabel, SessionMode; label/body blocker parsing; PendingPr struct (issue_number, branch, attempt, last_error, status, retry_after); PendingPrStatus enum (RetryScheduled, Retrying, AwaitingManualRetry)  [Issue #31-33, #159]
-│   │   ├── client.rs                      # GitHubClient trait + list_milestones(); GhCliClient; MockGitHubClient (set_milestones()); parse_issues_json; parse_milestones_json; is_auth_error(); is_gh_auth_error(); auth error detection in run_gh() surfaces gh CLI authentication failures; list_prs_for_branch() on GitHubClient trait — returns open PR numbers for a given head branch; MockGitHubClient gains set_list_prs_for_branch() helper; list_labels() and create_label() on GitHubClient trait — enumerate and create repo labels; MockGitHubClient gains set_list_labels_error(), set_create_label_error(), list_labels_call_count(), create_label_calls() helpers  [Issue #31-33, #46-48, #158, #159, #348]
+│   │   ├── client.rs                      # GitHubClient trait + list_milestones(); GhCliClient; MockGitHubClient (set_milestones()); parse_issues_json; parse_milestones_json; is_auth_error(); is_gh_auth_error(); auth error detection in run_gh() surfaces gh CLI authentication failures; list_prs_for_branch() on GitHubClient trait — returns open PR numbers for a given head branch; MockGitHubClient gains set_list_prs_for_branch() helper; list_labels() and create_label() on GitHubClient trait — enumerate and create repo labels; MockGitHubClient gains set_list_labels_error(), set_create_label_error(), list_labels_call_count(), create_label_calls() helpers; patch_milestone_description() on GitHubClient trait and GhCliClient impl (gh api ... --method PATCH); MockGitHubClient extended with new fields/setters/recorders; 3 round-trip tests  [Issue #31-33, #46-48, #158, #159, #348, #500]
 │   │   ├── ci.rs                          # CiCheck trait (check_pr_status, check_pr_details, fetch_failure_log); CiChecker impl; CiStatus enum (Pending, Passed, Failed, NoneConfigured); CheckStatus enum (Queued, InProgress, Completed, Waiting, Pending, Requested, Unknown) with serde aliases; CheckConclusion enum (Success, Failure, Neutral, Cancelled, TimedOut, ActionRequired, Skipped, Stale, StartupFailure, None) with serde aliases; CheckRunDetail struct (name, status, conclusion, started_at, elapsed_secs); CiPollAction enum (Wait, SpawnFix, Abandon); PendingPrCheck (fix_attempt, awaiting_fix_ci); build_ci_fix_prompt(); truncate_log(); parse_ci_json(); parse_check_details(); decide_ci_action()  [Phase 3, Issue #41, #123]
 │   │   ├── labels.rs                      # LabelManager: ready→in-progress→done/failed lifecycle transitions
 │   │   ├── merge.rs                       # PrMergeCheck trait (mockable); PrMergeChecker impl using `gh pr view` + `git diff`; MergeState enum (Clean, Conflicting, Blocked, Unknown); PrConflictStatus struct; parse_merge_json(); parse_conflicting_files(); build_conflict_fix_prompt()
@@ -161,6 +161,25 @@ maestro/
 │   │       ├── idle.bin
 │   │       ├── sleeping.bin
 │   │       └── thinking.bin
+│   ├── milestone_health/                  # Milestone dependency-graph health-check analysis layer  [Issue #500]
+│   │   ├── mod.rs                         # Module facade; re-exports public analysis types
+│   │   ├── types.rs                       # Shared types: DorField, DorIssueReport, GraphAnomaly, HealthReport
+│   │   ├── dor.rs                         # DOR checker: validates required issue sections (Overview, Acceptance Criteria, Blocked By, etc.) per DOR spec
+│   │   ├── dor/
+│   │   │   └── tests.rs                   # Unit tests for DOR checker
+│   │   ├── graph.rs                       # Dependency-graph parser, level-computer, and cycle-detector; reads "Blocked By" sections from issue bodies
+│   │   ├── graph/
+│   │   │   └── tests.rs                   # Unit tests for graph parser and cycle detection
+│   │   ├── patch.rs                       # Deterministic patch generator: produces a corrected milestone description from a HealthReport; 7 insta snapshot tests
+│   │   ├── report.rs                      # HealthReport aggregation: combines DOR results and graph anomalies into a single report struct
+│   │   └── snapshots/                     # Insta snapshot files for patch generator tests  [Issue #500]
+│   │       ├── maestro__milestone_health__patch__tests__milestone_health__patch_add_missing_issue.snap
+│   │       ├── maestro__milestone_health__patch__tests__milestone_health__patch_cycle_break.snap
+│   │       ├── maestro__milestone_health__patch__tests__milestone_health__patch_no_anomalies_canonical.snap
+│   │       ├── maestro__milestone_health__patch__tests__milestone_health__patch_preserves_completed.snap
+│   │       ├── maestro__milestone_health__patch__tests__milestone_health__patch_sequence_parallel.snap
+│   │       ├── maestro__milestone_health__patch__tests__milestone_health__patch_sequence_sequential.snap
+│   │       └── maestro__milestone_health__patch__tests__milestone_health__patch_wrong_level_fix.snap
 │   ├── modes/                             # Session mode definitions and resolution  [Phase 3]
 │   │   └── mod.rs                         # builtin_modes, resolve_mode, mode_from_labels
 │   ├── notifications/                     # Interruption and notification system  [Phase 3]
@@ -209,17 +228,17 @@ maestro/
 │   │   ├── store.rs                       # JSON state persistence
 │   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods; pending_prs: Vec<PendingPr> field on MaestroState — persisted to JSON state for PR retry recovery  [Issue #12, #159]
 │   ├── tui/
-│   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress; spawns async version check on startup via check_for_update() — result delivered as VersionCheckResult data event; key handlers for upgrade flow (confirm/decline banner); CompletionSummary key-intercept branch: [f] collects NeedsReview sessions and calls spawn_gate_fix_session() for each then transitions to Overview, [i] opens issue browser, [r] opens prompt input, [l] switches to Overview (activity log view), [Enter]/[Esc] returns to dashboard via transition_to_dashboard(), [q] quits; ContinuousPause key-intercept overlay: [s] skip, [r] retry, [q] quit continuous loop; RefreshSuggestions branch sets loading_suggestions=true and queues FetchSuggestionData; exit path checks once_mode — exits immediately when true, otherwise shows CompletionSummary overlay; "All Issues" navigation always creates a fresh IssueBrowserScreen to prevent stale milestone filters leaking across navigation contexts; PromptInputScreen always created with injected history so Up/Down arrow recall works correctly; F-key bar actions wired (F1–F10, Alt-X); per-tick flash_counter decrement dispatched to session pool; pub mod theme; pub mod widgets; RunAdaptScaffold command dispatch  [Phase 3, Issue #31-33, #46-48, #35, #38, #83, #84, #85, #86, #104, #117, #118, #124, #202, #218, #232, #371]
+│   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress; spawns async version check on startup via check_for_update() — result delivered as VersionCheckResult data event; key handlers for upgrade flow (confirm/decline banner); CompletionSummary key-intercept branch: [f] collects NeedsReview sessions and calls spawn_gate_fix_session() for each then transitions to Overview, [i] opens issue browser, [r] opens prompt input, [l] switches to Overview (activity log view), [Enter]/[Esc] returns to dashboard via transition_to_dashboard(), [q] quits; ContinuousPause key-intercept overlay: [s] skip, [r] retry, [q] quit continuous loop; RefreshSuggestions branch sets loading_suggestions=true and queues FetchSuggestionData; exit path checks once_mode — exits immediately when true, otherwise shows CompletionSummary overlay; "All Issues" navigation always creates a fresh IssueBrowserScreen to prevent stale milestone filters leaking across navigation contexts; PromptInputScreen always created with injected history so Up/Down arrow recall works correctly; F-key bar actions wired (F1–F10, Alt-X); per-tick flash_counter decrement dispatched to session pool; pub mod theme; pub mod widgets; RunAdaptScaffold command dispatch; background task handlers for FetchMilestoneHealthIssues and PatchMilestoneDescription  [Phase 3, Issue #31-33, #46-48, #35, #38, #83, #84, #85, #86, #104, #117, #118, #124, #202, #218, #232, #371, #500]
 │   │   ├── app/                           # App state module (split across multiple files)
-│   │   │   ├── mod.rs                     # App struct; nav_stack: NavigationStack field (replaces confirm_exit_return_mode); navigate_to(), navigate_back(), navigate_back_or_dashboard(), navigate_to_root() navigation methods; gh_auth_ok: bool; theme: Theme; pending_prs: Vec<PendingPr>; config_path: Option<PathBuf> field carries the resolved maestro.toml path for settings save; set_config_path() setter; process_pending_pr_retries(); trigger_manual_pr_retry(); mascot_style: MascotStyle field hydrated in apply_config(); desktop_notifier: Arc<dyn DesktopNotifier>; notify_error_flash: Option<(String, Instant)>; with_desktop_notifier() test builder; tick_notify_error() drains take_last_error() and surfaces status-bar flash + LogLevel::Warn activity-log entry; OsascriptNotifier::new() wired in App::configure()  [Issue #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52, #83, #84, #85, #86, #102, #104, #118, #123, #158, #159, #342, #437, #473, #487]
-│   │   │   ├── types.rs                   # TuiMode enum (+ CompletionSummary, ContinuousPause variants) with breadcrumb_label() method; NavigationStack struct (push/pop/peek/clear/breadcrumbs, cap 32); TuiCommand enum (+ RunAdaptScaffold); TuiDataEvent enum (+ AdaptScaffoldResult); SuggestionDataPayload; CompletionSummaryData; CompletionSessionLine; GateFailureInfo  [Issue #342, #371]
+│   │   │   ├── mod.rs                     # App struct; nav_stack: NavigationStack field (replaces confirm_exit_return_mode); navigate_to(), navigate_back(), navigate_back_or_dashboard(), navigate_to_root() navigation methods; gh_auth_ok: bool; theme: Theme; pending_prs: Vec<PendingPr>; config_path: Option<PathBuf> field carries the resolved maestro.toml path for settings save; set_config_path() setter; process_pending_pr_retries(); trigger_manual_pr_retry(); mascot_style: MascotStyle field hydrated in apply_config(); desktop_notifier: Arc<dyn DesktopNotifier>; notify_error_flash: Option<(String, Instant)>; with_desktop_notifier() test builder; tick_notify_error() drains take_last_error() and surfaces status-bar flash + LogLevel::Warn activity-log entry; OsascriptNotifier::new() wired in App::configure(); milestone_health_screen: Option<MilestoneHealthScreen> field + None init  [Issue #12, #31-33, #35, #38, #40, #41, #43, #46-48, #52, #83, #84, #85, #86, #102, #104, #118, #123, #158, #159, #342, #437, #473, #487, #500]
+│   │   │   ├── types.rs                   # TuiMode enum (+ CompletionSummary, ContinuousPause, MilestoneHealth variants) with breadcrumb_label() method; NavigationStack struct (push/pop/peek/clear/breadcrumbs, cap 32); TuiCommand enum (+ RunAdaptScaffold, FetchMilestoneHealthIssues, PatchMilestoneDescription); TuiDataEvent enum (+ AdaptScaffoldResult, MilestoneHealthIssuesFetched, MilestoneHealthPatched); SuggestionDataPayload; CompletionSummaryData; CompletionSessionLine; GateFailureInfo  [Issue #342, #371, #500]
 │   │   │   ├── budget.rs                  # Budget enforcement helpers within App
 │   │   │   ├── ci_polling.rs              # poll_ci_status() CI auto-fix loop using CiCheck trait; decide_ci_action(); spawn_ci_fix_session()  [Issue #41, #123]
 │   │   │   ├── clipboard_action.rs        # App::copy_focused_response() + App::copy_focused_response_enabled() predicate; CopyOutcome enum (Success, NoContent, NotEnded, Failed); set_copy_toast() / tick_copy_toast() with COPY_TOAST_TTL_MS = 2_000  [Issue #482]
 │   │   │   ├── completion_pipeline.rs     # check_completions() config-driven gate evaluation with per-gate logging  [Issue #40, #104]
 │   │   │   ├── completion_summary.rs      # build_completion_summary(); transition_to_dashboard() calls navigate_to_root() to clear nav stack  [Issue #342]
 │   │   │   ├── context_overflow.rs        # Context overflow detection and fork triggering
-│   │   │   ├── data_handler.rs            # handle_data_event(); data_tx/data_rx channel; SuggestionData, VersionCheckResult, UpgradeResult, AdaptScaffoldResult handlers  [Issue #371]
+│   │   │   ├── data_handler.rs            # handle_data_event(); data_tx/data_rx channel; SuggestionData, VersionCheckResult, UpgradeResult, AdaptScaffoldResult handlers; Milestones event routed to milestone_health_screen (in addition to milestone_screen); MilestoneHealthIssuesFetched and MilestoneHealthPatched event handlers  [Issue #371, #500]
 │   │   │   ├── event_handler.rs           # Top-level event dispatch and tick handling; dispatches desktop notification on StreamEvent::Completed (title: "Session complete: #N <label>", body: "Cost $X.XX — N files changed") and StreamEvent::Error (title/body from error message)  [Issue #487]
 │   │   │   ├── event_handler_tests.rs     # 4 integration tests for desktop notification dispatch using FakeNotifier  [Issue #487]
 │   │   │   ├── helpers.rs                 # Shared App helper utilities
@@ -248,12 +267,12 @@ maestro/
 │   │   ├── markdown.rs                    # markdown-to-ratatui rendering module; convert Markdown content to terminal-friendly widgets; wrap_and_push_text() performs width-aware word wrapping when appending text spans to a line buffer
 │   │   ├── marquee.rs                     # Horizontally scrolling marquee text widget
 │   │   ├── panels.rs                      # Split-pane panel view; fork depth indicator in title; overflow warning in context gauge; GatesRunning (Cyan), NeedsReview (LightYellow), and CiFix (LightMagenta) status colors; panel_border_type() returns thick borders for the focused grid panel; ▸ indicator rendered on the selected panel title; border flashes (amber) for 4 render ticks when flash_counter > 0 on state transition  [Issue #12, #40, #41, #202]
-│   │   ├── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners, screen rendering branches; draw_upgrade_banner() renders upgrade notification states (available, downloading, installing, done, failed) as a top-of-screen banner with version info and [y]/[n] confirmation prompts; draw_gh_auth_warning() renders a persistent top-of-screen banner when gh CLI is not authenticated; CompletionSummary render branch and draw_completion_overlay() centred overlay with per-session outcome rows, PR links (underlined), error summaries, per-gate failure lines (✗ gate_name message in warning/error colors), and keybindings bar ([f] Fix when has_needs_review(), [i] [r] [l] [q] [Esc]); ContinuousPause render branch and continuous pause overlay; bottom bar split into info bar (agent count, cost, elapsed) and DOS-style F-key legend bar; draw_fkey_bar() renders amber-badged key names (F1–F10, Alt-X) with responsive width truncation; HelpBarContext struct drives context-aware keybinding dimming in the help bar; breadcrumb trail rendered in status bar from nav_stack.breadcrumbs() using TuiMode::breadcrumb_label(); should_show_dashboard_mascot_panel() / dashboard_mascot_panel_width() style-aware panel gate; passes MascotStyle through draw_mascot_block(), HomeScreen::set_mascot(), LandingScreen::set_mascot()  [Phase 3, Issue #31-33, #83, #84, #85, #104, #118, #158, #218, #342, #473]
+│   │   ├── ui.rs                          # ratatui rendering; budget display, TUI mode switching, notification banners, screen rendering branches; draw_upgrade_banner() renders upgrade notification states (available, downloading, installing, done, failed) as a top-of-screen banner with version info and [y]/[n] confirmation prompts; draw_gh_auth_warning() renders a persistent top-of-screen banner when gh CLI is not authenticated; CompletionSummary render branch and draw_completion_overlay() centred overlay with per-session outcome rows, PR links (underlined), error summaries, per-gate failure lines (✗ gate_name message in warning/error colors), and keybindings bar ([f] Fix when has_needs_review(), [i] [r] [l] [q] [Esc]); ContinuousPause render branch and continuous pause overlay; bottom bar split into info bar (agent count, cost, elapsed) and DOS-style F-key legend bar; draw_fkey_bar() renders amber-badged key names (F1–F10, Alt-X) with responsive width truncation; HelpBarContext struct drives context-aware keybinding dimming in the help bar; breadcrumb trail rendered in status bar from nav_stack.breadcrumbs() using TuiMode::breadcrumb_label(); should_show_dashboard_mascot_panel() / dashboard_mascot_panel_width() style-aware panel gate; passes MascotStyle through draw_mascot_block(), HomeScreen::set_mascot(), LandingScreen::set_mascot(); rendering arm for TuiMode::MilestoneHealth  [Phase 3, Issue #31-33, #83, #84, #85, #104, #118, #158, #218, #342, #473, #500]
 │   │   ├── navigation/                    # Keyboard navigation and focus management  [Issue #37]
 │   │   │   ├── mod.rs                     # Module exports for navigation subsystem
 │   │   │   ├── focus.rs                   # Focus management: FocusManager, focus ring, widget focus state
 │   │   │   ├── keymap.rs                  # Keymap definitions: action-to-key bindings, context-sensitive keymaps; F-key bar actions registered (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit); KeyBindingGroup, InlineHint, FKeyRelevance, ModeKeyMap, global_keybindings() LazyLock  [Issue #218]
-│   │   │   └── mode_hints.rs              # mode_keymap() builds ModeKeyMap for a given TuiMode + optional session status; maps TuiMode variants to mode labels, F-key visibility rules, and context-sensitive inline hints; consumes screen_bindings from KeymapProvider::keybindings(); 'c Copy' hint added to Overview mode  [Issue #482]
+│   │   │   └── mode_hints.rs              # mode_keymap() builds ModeKeyMap for a given TuiMode + optional session status; maps TuiMode variants to mode labels, F-key visibility rules, and context-sensitive inline hints; consumes screen_bindings from KeymapProvider::keybindings(); 'c Copy' hint added to Overview mode; MilestoneHealth mode-hint entry added  [Issue #482, #500]
 │   │   ├── session_summary.rs             # Session summary widget rendered in the completion overlay and detail pane
 │   │   ├── session_switcher.rs            # Session switcher overlay for jumping between active sessions
 │   │   ├── splash.rs                      # Startup splash screen rendered before the TUI loop begins
@@ -266,7 +285,7 @@ maestro/
 │   │   │   ├── overview.rs                # 6 snapshot tests for PanelView (empty, single, multiple, selected, context overflow, forked)
 │   │   │   ├── detail.rs                  # 6 snapshot tests for DetailView (basic, progress, activity log, no files, retries, markdown)
 │   │   │   ├── fullscreen.rs              # 4 snapshot tests for FullscreenView (markdown, plain text, empty placeholder, auto-scroll)
-│   │   │   ├── dashboard.rs               # 4 snapshot tests for HomeScreen (baseline, warnings, suggestions, selected action)
+│   │   │   ├── dashboard.rs               # 4 snapshot tests for HomeScreen (baseline, warnings, suggestions, selected action); snapshots regenerated to include "Review Milestone" quick action  [Issue #500]
 │   │   │   ├── issue_browser.rs           # 7 snapshot tests for IssueBrowserScreen (with issues, empty, loading, multi-select, filter, prompt overlays)
 │   │   │   ├── milestone.rs               # 4 snapshot tests for MilestoneScreen (with milestones, empty, loading, detail pane); snapshots updated to reflect color hierarchy and selection visibility changes  [Issue #299]
 │   │   │   ├── cost_dashboard.rs          # 5 snapshot tests for CostDashboard (no budget, under threshold, over 90%, empty, sorted)
@@ -274,9 +293,9 @@ maestro/
 │   │   │   ├── caveman_row.rs             # 5 snapshot tests for caveman_row in SettingsScreen (explicit_true, explicit_false, default, error, focused_explicit_true)  [Issue #490]
 │   │   │   ├── copy_keybinding_hint.rs    # Insta snapshot tests for keybinding hint bar: copy_keybinding_hint_enabled and copy_keybinding_hint_disabled  [Issue #482]
 │   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files); includes caveman_row renders (default, error, explicit_false, explicit_true, focused_explicit_true); copy_keybinding_hint_enabled and copy_keybinding_hint_disabled  [Issue #490, #482]
-│   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen; ScreenAction::Push delegates to navigate_to(), ScreenAction::Pop delegates to navigate_back(); Scaffolding case in StartAdaptPipeline dispatch; reads app.config_path directly for settings save (removed relative-path probe at TuiMode::Settings); tracing::warn! when config_path is absent  [Issue #146, #232, #342, #371, #437]
+│   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen; ScreenAction::Push delegates to navigate_to(), ScreenAction::Pop delegates to navigate_back(); Scaffolding case in StartAdaptPipeline dispatch; reads app.config_path directly for settings save (removed relative-path probe at TuiMode::Settings); tracing::warn! when config_path is absent; MilestoneHealth Push/Pop arms added; drains milestone_health_screen pending command channel after each input  [Issue #146, #232, #342, #371, #437, #500]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
-│   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen; pub mod wizard_fields (added #447); wizard_paste removed  [Issue #31-33, #86, #447]
+│   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen; pub mod wizard_fields (added #447); pub mod milestone_health (added #500); wizard_paste removed  [Issue #31-33, #86, #447, #500]
 │   │       ├── adapt_follow_up.rs         # AdaptFollowUp: post-scaffold follow-up prompt screen
 │   │       ├── bypass_warning.rs          # BypassWarningScreen: confirmation overlay shown when --bypass-review is active; displays policy summary and requires explicit acknowledgement before proceeding  [Issue #328]
 │   │       ├── hollow_retry.rs            # HollowRetryScreen: minimal retry prompt overlay shown when a session stalls and user confirmation is required
@@ -291,7 +310,7 @@ maestro/
 │   │       │   ├── types.rs               # AdaptStep (+ Scaffolding variant), AdaptWizardConfig, AdaptResults (+ scaffold field), AdaptError  [Issue #371]
 │   │       │   └── draw.rs                # ratatui rendering for adapt wizard steps and layout; scaffold phase rendering  [Issue #371]
 │   │       ├── home/                      # Home screen components
-│   │       │   ├── mod.rs                 # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; loading_suggestions bool field; R key emits RefreshSuggestions; Tab-based focus navigation; set_mascot() takes MascotStyle param  [Issue #31, #49, #34, #35, #86, #473]
+│   │       │   ├── mod.rs                 # HomeScreen: idle dashboard, logo, quick-actions menu, suggestions panel, recent activity panel; SuggestionKind enum, Suggestion struct, HomeSection enum; build_suggestions() derives contextual hints from GitHub data; loading_suggestions bool field; R key emits RefreshSuggestions; Tab-based focus navigation; set_mascot() takes MascotStyle param; quick action ("Review Milestone", 'M', QuickActionDispatch::Push(TuiMode::MilestoneHealth)) added; 2 wiring tests  [Issue #31, #49, #34, #35, #86, #473, #500]
 │   │       │   ├── draw.rs                # ratatui rendering for home screen layout and panels; draw_suggestions() renders Suggestions panel with "Loading..." placeholder
 │   │       │   └── types.rs               # HomeSection, SuggestionKind, Suggestion, ProjectInfo types (username field)
 │   │       ├── issue_browser/             # Issue browser screen components
@@ -307,14 +326,23 @@ maestro/
 │   │       │   ├── draw_diff.rs           # 8-field red/green before-after diff renderer  [Issue #450]
 │   │       │   └── prompt_common.rs       # Shared format_payload_for_prompt used by both review and improve flows  [Issue #450]
 │   │       ├── landing/                   # Landing screen components
-│   │       │   ├── mod.rs                 # LandingScreen struct with Screen trait impl; set_mascot() takes MascotStyle param  [Issue #473]
-│   │       │   ├── types.rs               # Landing screen type definitions
+│   │       │   ├── mod.rs                 # LandingScreen struct with Screen trait impl; set_mascot() takes MascotStyle param; 2 wiring tests for Milestone Review menu entry  [Issue #473, #500]
+│   │       │   ├── types.rs               # Landing screen type definitions; LandingMenuItem::push("Milestone Review", 'h', TuiMode::MilestoneHealth) added  [Issue #500]
 │   │       │   └── draw.rs                # ratatui rendering for landing screen; picks MascotWidget style (sprite 32×16 vs ascii 11×6 canvas) based on MascotStyle  [Issue #473]
 │   │       ├── milestone_wizard/          # Milestone creation wizard screen components  [Issue #447]
 │   │       │   ├── mod.rs                 # MilestoneWizardScreen: three persistent TextAreaFields (goal_field, non_goals_field, doc_buffer_field)  [Issue #447]
 │   │       │   ├── types.rs               # MilestoneWizardStep state machine and form payload types
 │   │       │   ├── ai_planning.rs         # AI-assisted planning step: calls LLM to generate milestone dependency graph
 │   │       │   └── draw.rs                # ratatui rendering; doc-refs step splits committed list / in-progress buffer / help hint  [Issue #447]
+│   │       ├── milestone_health/          # Milestone Review wizard screen components  [Issue #500]
+│   │       │   ├── mod.rs                 # MilestoneHealthScreen struct with Screen trait impl; owns a command channel drained by screen_dispatch after each input
+│   │       │   ├── state.rs               # State-machine reducer: wizard steps (SelectMilestone → FetchingIssues → Review → Confirm → Patching → Done / Error)
+│   │       │   ├── state/
+│   │       │   │   └── tests/
+│   │       │   │       └── mod.rs         # State-machine unit tests (large file; allowlisted until at(step) helper is introduced — deadline 2026-07-22)
+│   │       │   ├── draw.rs                # Per-step ratatui rendering for the wizard
+│   │       │   ├── diff.rs                # Line-pair diff view: renders old vs proposed milestone description side-by-side with +/- coloring
+│   │       │   └── format.rs             # Anomaly and missing-field formatters used by the Review step
 │   │       ├── pr_review/                 # PR review screen components
 │   │       │   ├── mod.rs                 # PrReviewScreen struct with Screen trait impl
 │   │       │   ├── types.rs               # PrReviewStep state machine, ReviewForm types
@@ -343,13 +371,14 @@ maestro/
 │   │       ├── text_input.rs              # Single-line text input widget with cursor support
 │   │       └── toggle.rs                 # Boolean toggle widget for settings and forms; draw() routes through icons::get(IconId::CheckboxOn/Off) instead of hardcoded literals, eliminating the DRY drift that caused blank indicators on iTerm2 + some Nerd Font installs  [Issue #433]
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
-│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue()
+│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard added  [Issue #500]
 │   │   ├── session_lifecycle.rs           # 11 tests: enqueue/promote/complete lifecycle via handle_event()
 │   │   ├── stream_parsing.rs              # 22 tests: stream event parsing and parser round-trips
 │   │   ├── completion_pipeline.rs         # 9 tests: label transitions and PR creation
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
 │   │   ├── worktree_lifecycle.rs          # 8 tests: worktree create/cleanup and health monitoring
-│   │   └── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
+│   │   ├── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
+│   │   └── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
 │   ├── turboquant/                         # TurboQuant — vector quantization for context compression  [Issue #242-253, #343-345, #347]
 │   │   ├── mod.rs                         # Module facade; combines PolarQuant + QJL into a unified API
 │   │   ├── types.rs                       # QuantStrategy enum (TurboQuant, PolarQuant, QJL); TurboQuantConfig (+ fork_handoff_budget, system_prompt_budget, knowledge_budget); QuantResult; CompressionMetrics
@@ -399,7 +428,7 @@ maestro/
 │           ├── project-patterns/
 │           └── security-patterns/
 ├── scripts/                               # Project-level shell scripts for architecture checks, coverage, and verification gates
-│   ├── allowlist-large-files.txt          # Allowlist for large files exempted from size checks
+│   ├── allowlist-large-files.txt          # Allowlist for large files exempted from size checks; src/tui/screens/milestone_health/state/tests/mod.rs added (deadline 2026-07-22, pending at(step) helper)  [Issue #500]
 │   ├── architecture-layers.yml            # Layer dependency rules for check-layers.sh
 │   ├── check-coverage-tiers.sh            # Validate test-coverage tier thresholds
 │   ├── check-file-size.sh                 # Enforce per-file LOC limits (500-line rule)

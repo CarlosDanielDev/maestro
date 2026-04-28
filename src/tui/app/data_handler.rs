@@ -103,6 +103,14 @@ impl App {
                 }
             }
             TuiDataEvent::Milestones(Ok(entries)) => {
+                if matches!(self.tui_mode, crate::tui::app::TuiMode::MilestoneHealth)
+                    && let Some(ref mut screen) = self.milestone_health_screen
+                {
+                    let milestones: Vec<_> = entries.iter().map(|(m, _)| m.clone()).collect();
+                    if let Some(cmd) = screen.apply_milestones_loaded(Ok(milestones)) {
+                        self.pending_commands.push(cmd);
+                    }
+                }
                 if let Some(ref mut screen) = self.milestone_screen {
                     screen.milestones = entries.into_iter().map(MilestoneEntry::from).collect();
                     screen.loading = false;
@@ -115,6 +123,12 @@ impl App {
                     format!("Failed to fetch milestones: {}", e),
                     LogLevel::Error,
                 );
+                if matches!(self.tui_mode, crate::tui::app::TuiMode::MilestoneHealth)
+                    && let Some(ref mut screen) = self.milestone_health_screen
+                {
+                    let _ = screen
+                        .apply_milestones_loaded(Err(anyhow::anyhow!("milestones fetch failed")));
+                }
                 if let Some(ref mut screen) = self.milestone_screen {
                     screen.loading = false;
                 }
@@ -535,6 +549,19 @@ impl App {
                     LogLevel::Error,
                 ),
             },
+            TuiDataEvent::MilestoneHealthIssuesFetched(result) => {
+                if let Some(ref mut screen) = self.milestone_health_screen {
+                    let cmd = screen.apply_issues_fetched(result);
+                    if let Some(cmd) = cmd {
+                        self.pending_commands.push(cmd);
+                    }
+                }
+            }
+            TuiDataEvent::MilestoneHealthPatched(result) => {
+                if let Some(ref mut screen) = self.milestone_health_screen {
+                    screen.apply_patch_result(result);
+                }
+            }
         }
     }
 }

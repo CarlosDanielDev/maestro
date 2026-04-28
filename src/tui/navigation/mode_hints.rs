@@ -577,6 +577,7 @@ pub fn mode_keymap(
         TuiMode::Prd => ("PRD", FKeyVis::Minimal, &[]),
         TuiMode::Roadmap => ("Roadmap", FKeyVis::Minimal, &[]),
         TuiMode::BypassWarning => ("Bypass Warning", FKeyVis::Minimal, &[]),
+        TuiMode::MilestoneHealth => ("Milestone Health", FKeyVis::Minimal, &[]),
     };
 
     let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);

@@ -106,3 +106,11 @@ src/tui/app/data_handler.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD
 src/tui/app/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #321/#327/#328/#329, plan: extract App field initializers and screen-Option declarations into app/state.rs; bypass methods already moved to app/bypass.rs in v0.16.0
 src/prd/ingest.rs # deadline: 2026-07-22, owner: @carlos, ticket: #321, plan: split heuristic parser from tests — move parser into prd/ingest/{sections,extract,classify}.rs and convert ingest.rs to ingest/mod.rs once the contract stabilizes; ~250 of the 521 LOC are the markdown-parser test corpus that we want to keep co-located while the heuristics evolve
 src/prd/discover.rs # deadline: 2026-07-22, owner: @carlos, ticket: #321, plan: split into prd/discover/{github,local,azure,dedup}.rs once the source set stabilizes; currently 411 LOC because the per-source helpers + dedup + tests live together while we iterate on the explore UX
+
+# --- Milestone v0.16.1 milestone-health wizard (#500) ---
+# State-machine reducer test file holds 23 tests for every transition arrow.
+# Each test arranges a HealthScreenState literal then asserts on the
+# post-transition step + side effect. A future cleanup will introduce an
+# `at(step)` helper to compress the arrange phase; deferred to keep the RED→GREEN
+# diff minimal.
+src/tui/screens/milestone_health/state/tests/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #500, plan: introduce at(step) helper to compress HealthScreenState literal in 16 tests, drop 426 → ~360 LOC

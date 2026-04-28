@@ -7,6 +7,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- feat(tui): Milestone Review wizard (`h` on landing, `M` on dashboard) — selects a GitHub milestone, checks every open issue for DOR readiness and dependency-graph coherence, shows an inline diff of the proposed corrected milestone description, and writes the patch to GitHub on user confirmation (#500)
+  - `src/milestone_health/` — pure analysis layer: DOR checker (`dor.rs`), dependency-graph parser / level-computer / cycle-detector (`graph.rs`), deterministic patch generator (`patch.rs`), aggregated report type (`report.rs`)
+  - `src/tui/screens/milestone_health/` — TUI wizard: state-machine reducer (`state.rs`), per-step rendering (`draw.rs`), line-pair diff view (`diff.rs`), anomaly and missing-field formatters (`format.rs`)
+  - `src/integration_tests/milestone_health_wizard.rs` — 9 end-to-end tests against `MockGitHubClient`
+  - `GitHubClient` trait extended with `patch_milestone_description`; `GhCliClient` impl uses `gh api ... --method PATCH`; Azure DevOps stub returns `bail!`
+
 ### Fixed
 
 - fix(notifications): desktop notifications now fire when a session completes or errors (#487)
