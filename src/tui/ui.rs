@@ -65,13 +65,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .pool
         .session_at_index(app.panel_view.selected_index())
         .map(|s| s.status);
-    let cache_key = (app.tui_mode, selected_status);
+    let agent_graph_enabled = app.is_agent_graph_enabled();
+    let cache_key = (app.tui_mode, selected_status, agent_graph_enabled);
     if app.cached_mode_km.is_none() || app.cached_mode_km_key != cache_key {
         let screen_bindings = active_screen_bindings(app);
         app.cached_mode_km = Some(keymap::mode_keymap(
             app.tui_mode,
             selected_status,
             &screen_bindings,
+            agent_graph_enabled,
         ));
         app.cached_mode_km_key = cache_key;
     }
@@ -1321,7 +1323,7 @@ fn draw_completion_overlay(
     // Hint bar: single source of truth is `mode_hints.rs`. The conditional
     // `[f] Fix` is prepended here because it only applies when the summary
     // actually has suggestions — static hint tables can't encode that.
-    let km = keymap::mode_keymap(TuiMode::CompletionSummary, None, &[]);
+    let km = keymap::mode_keymap(TuiMode::CompletionSummary, None, &[], false);
     let mut keybind_spans = vec![Span::raw("  ")];
     if summary.has_needs_review() || summary.has_conflict_suggestions() {
         keybind_spans.push(Span::styled("[f]", Style::default().fg(theme.keybind_key)));
@@ -1427,7 +1429,7 @@ fn draw_queue_execution_overlay(
             Span::raw("  "),
         ]);
     }
-    let km = keymap::mode_keymap(TuiMode::QueueExecution, None, &[]);
+    let km = keymap::mode_keymap(TuiMode::QueueExecution, None, &[], false);
     keybind_spans.extend(keymap::hint_bar_spans(
         km.hints,
         theme.keybind_key,
@@ -1504,7 +1506,7 @@ fn draw_continuous_pause_overlay(
     ]));
 
     lines.push(Line::from(""));
-    let km = keymap::mode_keymap(TuiMode::ContinuousPause, None, &[]);
+    let km = keymap::mode_keymap(TuiMode::ContinuousPause, None, &[], false);
     let mut keybind_spans = vec![Span::raw("  ")];
     keybind_spans.extend(keymap::hint_bar_spans(
         km.hints,

@@ -761,6 +761,9 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('d'), _) => {
             app.show_activity_log = !app.show_activity_log;
         }
+        (KeyCode::Char('g'), KeyModifiers::NONE) if app.is_agent_graph_enabled() => {
+            app.toggle_agent_graph();
+        }
         (KeyCode::Char('D'), _) => {
             app.dismiss_all_completed();
         }
@@ -1197,7 +1200,7 @@ mod tests {
     fn completion_summary_hints_dispatch_to_advertised_mode() {
         use crate::tui::navigation::keymap::mode_keymap;
 
-        let km = mode_keymap(TuiMode::CompletionSummary, None, &[]);
+        let km = mode_keymap(TuiMode::CompletionSummary, None, &[], false);
         let mut checked = 0;
 
         for hint in km.hints {
@@ -1273,7 +1276,7 @@ mod tests {
     #[test]
     fn fkey_dashboard_mode_advertises_f4_f5_f6_and_each_dispatches() {
         use crate::tui::navigation::keymap::mode_keymap;
-        let km = mode_keymap(TuiMode::Dashboard, None, &[]);
+        let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         let mut checked = 0;
         for fkey in &km.fkeys {
             let Some(expected) = fkey_action_target_mode(fkey.action) else {
@@ -1388,5 +1391,85 @@ mod tests {
         assert!(!app.running);
         assert_eq!(mock.write_count(), 0);
         assert!(app.copy_toast.is_none());
+    }
+
+    // ── Issue #528: agent-graph toggle keybinding (`g`) ──────────────────
+
+    fn agent_graph_app(enabled: bool) -> App {
+        let mut app = make_app();
+        let toml = format!(
+            "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\n\
+             per_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+             [github]\n[notifications]\n[views]\nagent_graph_enabled = {enabled}\n"
+        );
+        app.config = Some(toml::from_str(&toml).expect("test config parse"));
+        app
+    }
+
+    #[tokio::test]
+    async fn g_key_with_flag_on_overview_to_agent_graph() {
+        let mut app = agent_graph_app(true);
+        app.tui_mode = TuiMode::Overview;
+        let _ = handle_key(&mut app, key('g')).await;
+        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
+    }
+
+    #[tokio::test]
+    async fn g_key_with_flag_off_is_noop() {
+        let mut app = agent_graph_app(false);
+        app.tui_mode = TuiMode::Overview;
+        let _ = handle_key(&mut app, key('g')).await;
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+    }
+
+    #[tokio::test]
+    async fn g_key_round_trips_overview_graph_overview() {
+        let mut app = agent_graph_app(true);
+        app.tui_mode = TuiMode::Overview;
+        let _ = handle_key(&mut app, key('g')).await;
+        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
+        let _ = handle_key(&mut app, key('g')).await;
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+    }
+
+    /// Regression guard: LogViewer also binds `g` (scroll to top). The
+    /// secondary-mode dispatch fires before `handle_overview_keys`, so the
+    /// LogViewer `g` must NOT cross over into the agent-graph toggle.
+    #[tokio::test]
+    async fn g_key_in_log_viewer_scrolls_to_top_not_toggle() {
+        let mut app = agent_graph_app(true);
+        let id = uuid::Uuid::new_v4();
+        app.tui_mode = TuiMode::LogViewer(id);
+        app.log_viewer_scroll = 42;
+        let _ = handle_key(&mut app, key('g')).await;
+        assert!(
+            matches!(app.tui_mode, TuiMode::LogViewer(_)),
+            "g in LogViewer must stay in LogViewer, got {:?}",
+            app.tui_mode
+        );
+        assert_eq!(app.log_viewer_scroll, 0, "g in LogViewer scrolls to top");
+    }
+
+    /// AC: "Switching does not interrupt running sessions."
+    #[tokio::test]
+    async fn g_key_does_not_modify_session_pool() {
+        let mut app = agent_graph_app(true);
+        app.tui_mode = TuiMode::Overview;
+        let mut s = Session::new(
+            "running task".into(),
+            "claude-opus-4-5".into(),
+            "orchestrator".into(),
+            Some(42),
+        );
+        s.status = SessionStatus::Running;
+        app.pool.enqueue(s);
+        let count_before = app.pool.total_count();
+
+        let _ = handle_key(&mut app, key('g')).await;
+
+        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
+        assert_eq!(app.pool.total_count(), count_before);
+        let sessions = app.pool.all_sessions();
+        assert_eq!(sessions[0].status, SessionStatus::Running);
     }
 }

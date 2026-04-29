@@ -1404,6 +1404,77 @@ fn navigate_to_agent_graph_with_no_config_redirects_to_overview() {
     );
 }
 
+// -- Issue #528: App::toggle_agent_graph ---------------------------------
+
+#[test]
+fn toggle_agent_graph_with_flag_off_is_noop() {
+    let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = false\n");
+    app.tui_mode = TuiMode::Overview;
+    app.toggle_agent_graph();
+    assert_eq!(app.tui_mode, TuiMode::Overview);
+    assert!(app.nav_stack.is_empty());
+}
+
+#[test]
+fn toggle_agent_graph_with_no_config_is_noop() {
+    let mut app = make_app();
+    app.tui_mode = TuiMode::Overview;
+    app.toggle_agent_graph();
+    assert_eq!(app.tui_mode, TuiMode::Overview);
+}
+
+#[test]
+fn toggle_agent_graph_overview_to_graph_when_enabled() {
+    let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+    app.tui_mode = TuiMode::Overview;
+    app.toggle_agent_graph();
+    assert_eq!(app.tui_mode, TuiMode::AgentGraph);
+}
+
+#[test]
+fn toggle_agent_graph_graph_to_overview_when_enabled() {
+    let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+    app.tui_mode = TuiMode::AgentGraph;
+    app.toggle_agent_graph();
+    assert_eq!(app.tui_mode, TuiMode::Overview);
+}
+
+#[test]
+fn toggle_agent_graph_round_trip_returns_to_overview() {
+    let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+    app.tui_mode = TuiMode::Overview;
+    app.toggle_agent_graph();
+    assert_eq!(app.tui_mode, TuiMode::AgentGraph);
+    app.toggle_agent_graph();
+    assert_eq!(app.tui_mode, TuiMode::Overview);
+}
+
+#[test]
+fn toggle_agent_graph_from_unrelated_mode_is_noop() {
+    let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+    app.tui_mode = TuiMode::Settings;
+    app.toggle_agent_graph();
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Settings,
+        "toggle must only act on Overview/AgentGraph"
+    );
+}
+
+#[test]
+fn toggle_agent_graph_does_not_push_nav_stack() {
+    let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+    app.tui_mode = TuiMode::Overview;
+    let depth_before = app.nav_stack.depth();
+    app.toggle_agent_graph();
+    app.toggle_agent_graph();
+    assert_eq!(
+        app.nav_stack.depth(),
+        depth_before,
+        "toggle must not grow nav_stack — Esc should not pop back through toggle history"
+    );
+}
+
 // -- Adapt pipeline data chaining integration tests --
 
 mod adapt_chaining {

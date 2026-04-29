@@ -82,7 +82,7 @@ pub struct App {
     pub plugin_runner: Option<PluginRunner>,
     pub help_state: Option<crate::tui::help::HelpOverlayState>,
     pub cached_mode_km: Option<crate::tui::navigation::keymap::ModeKeyMap>,
-    pub cached_mode_km_key: (TuiMode, Option<crate::session::types::SessionStatus>),
+    pub cached_mode_km_key: (TuiMode, Option<crate::session::types::SessionStatus>, bool),
     pub context_monitor: Box<dyn ContextMonitor>,
     pub fork_policy: Option<ForkPolicy>,
     pub home_screen: Option<crate::tui::screens::HomeScreen>,
@@ -248,7 +248,7 @@ impl App {
             plugin_runner: None,
             help_state: None,
             cached_mode_km: None,
-            cached_mode_km_key: (TuiMode::Overview, None),
+            cached_mode_km_key: (TuiMode::Overview, None, false),
             context_monitor: Box::new(ProductionContextMonitor::new()),
             fork_policy: None,
             home_screen: None,
@@ -465,6 +465,19 @@ impl App {
             .as_ref()
             .map(|c| c.views.agent_graph_enabled)
             .unwrap_or(false)
+    }
+
+    /// Bypasses `navigate_to` deliberately so `Esc` does not pop back through
+    /// every toggle press — this is a flat view-switch, not navigation.
+    pub fn toggle_agent_graph(&mut self) {
+        if !self.is_agent_graph_enabled() {
+            return;
+        }
+        self.tui_mode = match self.tui_mode {
+            TuiMode::Overview => TuiMode::AgentGraph,
+            TuiMode::AgentGraph => TuiMode::Overview,
+            _ => return,
+        };
     }
 
     /// Navigate to a new mode, pushing the current mode onto the back-stack.

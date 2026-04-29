@@ -1,0 +1,23 @@
+---
+source: src/tui/snapshot_tests/agent_graph_keybinding_hint.rs
+expression: spans
+---
+[
+    Span::from("[Enter]").green(),
+    Span::from(" Detail").dark_gray(),
+    Span::from("  "),
+    Span::from("[c]").dark_gray().dim(),
+    Span::from(" Copy").dark_gray().dim(),
+    Span::from("  "),
+    Span::from("[d]").green(),
+    Span::from(" Log").dark_gray(),
+    Span::from("  "),
+    Span::from("[f]").green(),
+    Span::from(" Full").dark_gray(),
+    Span::from("  "),
+    Span::from("[w]").green(),
+    Span::from(" Switcher").dark_gray(),
+    Span::from("  "),
+    Span::from("[Tab]").green(),
+    Span::from(" Cycle Views").dark_gray(),
+]

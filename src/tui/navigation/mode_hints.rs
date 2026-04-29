@@ -5,14 +5,89 @@ use super::keymap::{
     FKeyAction, FKeyRelevance, InlineHint, KeyBindingGroup, ModeKeyMap, global_keybindings,
 };
 
+// `c` keeps priority 1 so it survives narrow widths — the dimmed-when-disabled
+// state means the hint is the user's only signal that copy exists.
+const HINT_OV_DETAIL: InlineHint = InlineHint {
+    key: "Enter",
+    action: "Detail",
+    priority: 0,
+};
+const HINT_OV_COPY: InlineHint = InlineHint {
+    key: "c",
+    action: "Copy",
+    priority: 1,
+};
+const HINT_OV_LOG: InlineHint = InlineHint {
+    key: "d",
+    action: "Log",
+    priority: 2,
+};
+const HINT_OV_FULL: InlineHint = InlineHint {
+    key: "f",
+    action: "Full",
+    priority: 3,
+};
+const HINT_OV_GRAPH: InlineHint = InlineHint {
+    key: "g",
+    action: "Graph",
+    priority: 4,
+};
+const HINT_OV_SWITCHER: InlineHint = InlineHint {
+    key: "w",
+    action: "Switcher",
+    priority: 4,
+};
+const HINT_OV_CYCLE: InlineHint = InlineHint {
+    key: "Tab",
+    action: "Cycle Views",
+    priority: 5,
+};
+
+const OVERVIEW_HINTS_BASE: &[InlineHint] = &[
+    HINT_OV_DETAIL,
+    HINT_OV_COPY,
+    HINT_OV_LOG,
+    HINT_OV_FULL,
+    HINT_OV_SWITCHER,
+    HINT_OV_CYCLE,
+];
+
+const OVERVIEW_HINTS_WITH_GRAPH: &[InlineHint] = &[
+    HINT_OV_DETAIL,
+    HINT_OV_COPY,
+    HINT_OV_LOG,
+    HINT_OV_FULL,
+    HINT_OV_GRAPH,
+    HINT_OV_SWITCHER,
+    HINT_OV_CYCLE,
+];
+
+const AGENT_GRAPH_HINTS: &[InlineHint] = &[
+    InlineHint {
+        key: "Esc",
+        action: "Back",
+        priority: 0,
+    },
+    InlineHint {
+        key: "g",
+        action: "Panels",
+        priority: 1,
+    },
+];
+
 /// Build the `ModeKeyMap` for a given `TuiMode`.
 ///
 /// `screen_bindings` should come from the active screen's `KeymapProvider::keybindings()`
 /// (empty slice for modes that don't implement `Screen`).
+///
+/// `agent_graph_enabled` controls the visibility of the `[g] Graph` entry in
+/// the Overview hint bar (#528). When `false`, the hint is absent so the
+/// keybinding is invisible; when `true`, the entry advertises the toggle.
 pub fn mode_keymap(
     mode: TuiMode,
     session_status: Option<SessionStatus>,
     screen_bindings: &[KeyBindingGroup],
+    agent_graph_enabled: bool,
 ) -> ModeKeyMap {
     let has_session = session_status.is_some();
     let is_terminal = session_status.is_some_and(|s| s.is_terminal());
@@ -22,41 +97,11 @@ pub fn mode_keymap(
         TuiMode::Overview => (
             "Overview",
             FKeyVis::SessionAware,
-            &[
-                InlineHint {
-                    key: "Enter",
-                    action: "Detail",
-                    priority: 0,
-                },
-                // `c` is given priority 1 so it survives narrow widths —
-                // the dimmed-when-disabled state means the hint is the
-                // user's only signal that copy exists.
-                InlineHint {
-                    key: "c",
-                    action: "Copy",
-                    priority: 1,
-                },
-                InlineHint {
-                    key: "d",
-                    action: "Log",
-                    priority: 2,
-                },
-                InlineHint {
-                    key: "f",
-                    action: "Full",
-                    priority: 3,
-                },
-                InlineHint {
-                    key: "w",
-                    action: "Switcher",
-                    priority: 4,
-                },
-                InlineHint {
-                    key: "Tab",
-                    action: "Cycle Views",
-                    priority: 5,
-                },
-            ],
+            if agent_graph_enabled {
+                OVERVIEW_HINTS_WITH_GRAPH
+            } else {
+                OVERVIEW_HINTS_BASE
+            },
         ),
         TuiMode::Detail(_) => (
             "Detail",
@@ -273,15 +318,7 @@ pub fn mode_keymap(
                 },
             ],
         ),
-        TuiMode::AgentGraph => (
-            "Agent Graph",
-            FKeyVis::DashboardLike,
-            &[InlineHint {
-                key: "Esc",
-                action: "Back",
-                priority: 0,
-            }],
-        ),
+        TuiMode::AgentGraph => ("Agent Graph", FKeyVis::DashboardLike, AGENT_GRAPH_HINTS),
         TuiMode::CompletionSummary => (
             "Completion Summary",
             FKeyVis::Minimal,
