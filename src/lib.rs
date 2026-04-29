@@ -14,6 +14,12 @@ pub mod icon_mode;
 pub mod icons;
 pub mod turboquant;
 
+// Spike-only module (issue #513, ADR 001). Never landed on `main`.
+// Cleanup: `git rm -r src/agent_graph_spike examples/agent_graph_spike.rs` and
+// remove the `[features] spike` block in Cargo.toml plus this declaration.
+#[cfg(feature = "spike")]
+pub mod agent_graph_spike;
+
 #[path = "util"]
 pub mod util {
     pub mod formatting;
