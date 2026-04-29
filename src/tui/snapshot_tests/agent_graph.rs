@@ -69,7 +69,8 @@ fn single_agent_session() -> Vec<Session> {
 }
 
 fn render_graph(sessions: &[Session], width: u16, height: u16) -> Terminal<TestBackend> {
-    let (nodes, edges) = build_graph(sessions);
+    let refs: Vec<&Session> = sessions.iter().collect();
+    let (nodes, edges) = build_graph(&refs);
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
         .draw(|f| {

@@ -3,6 +3,7 @@ use crate::mascot::MascotStyle;
 use crate::mascot::animator::SystemClock;
 use crate::mascot::frames::{MASCOT_ROWS_ASCII, MASCOT_WIDTH_ASCII};
 use crate::mascot::widget::MascotWidget;
+use crate::tui::agent_graph;
 use crate::tui::app::{App, TuiMode};
 use crate::tui::cost_dashboard;
 use crate::tui::dep_graph;
@@ -145,6 +146,25 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 chunks[1],
                 &app.theme,
             );
+        }
+        TuiMode::AgentGraph => {
+            // Canonical render-time gate; see TuiMode::AgentGraph docs.
+            let sessions = app.pool.all_sessions();
+            if app.is_agent_graph_enabled() {
+                let (nodes, edges) = agent_graph::model::build_graph(&sessions);
+                agent_graph::render::draw_agent_graph(
+                    f, chunks[1], &nodes, &edges, /* use_braille = */ false,
+                );
+            } else {
+                app.panel_view.draw_with_claims(
+                    f,
+                    &sessions,
+                    Some(&app.pool.file_claims),
+                    chunks[1],
+                    &theme,
+                    spinner_tick,
+                );
+            }
         }
         TuiMode::Fullscreen(id) => {
             if let Some(session) = app.pool.get_session(id) {

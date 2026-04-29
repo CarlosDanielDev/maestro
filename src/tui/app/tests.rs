@@ -1355,6 +1355,55 @@ fn tui_mode_session_summary_variant_exists() {
     ));
 }
 
+// -- navigate_to defense-in-depth gate for AgentGraph (#527) --
+
+fn make_app_with_views_toml(extra: &str) -> App {
+    let mut app = make_app();
+    let toml = format!(
+        "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\n\
+         per_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+         [github]\n[notifications]\n{extra}"
+    );
+    app.config = Some(toml::from_str(&toml).expect("test config parse"));
+    app
+}
+
+#[test]
+fn navigate_to_agent_graph_with_toggle_off_redirects_to_overview() {
+    let mut app = make_app_with_views_toml("");
+    app.tui_mode = TuiMode::Overview;
+    app.navigate_to(TuiMode::AgentGraph);
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Overview,
+        "navigate_to(AgentGraph) with toggle OFF must redirect to Overview"
+    );
+}
+
+#[test]
+fn navigate_to_agent_graph_with_toggle_on_succeeds() {
+    let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+    app.tui_mode = TuiMode::Overview;
+    app.navigate_to(TuiMode::AgentGraph);
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::AgentGraph,
+        "navigate_to(AgentGraph) with toggle ON must land on AgentGraph"
+    );
+}
+
+#[test]
+fn navigate_to_agent_graph_with_no_config_redirects_to_overview() {
+    let mut app = make_app();
+    app.tui_mode = TuiMode::Overview;
+    app.navigate_to(TuiMode::AgentGraph);
+    assert_eq!(
+        app.tui_mode,
+        TuiMode::Overview,
+        "navigate_to(AgentGraph) with no config (None) must redirect to Overview"
+    );
+}
+
 // -- Adapt pipeline data chaining integration tests --
 
 mod adapt_chaining {

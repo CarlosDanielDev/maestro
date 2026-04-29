@@ -96,7 +96,7 @@ pub(crate) struct Positioned {
 }
 ```
 
-**Adapter:** `pub(crate) fn build_graph(sessions: &[Session]) -> (Vec<GraphNode>, Vec<GraphEdge>)`.
+**Adapter:** `pub(crate) fn build_graph(sessions: &[&Session]) -> (Vec<GraphNode>, Vec<GraphEdge>)` — signature updated in #527 to accept a slice of references, avoiding a copy of each `Session` at the call site.
 
 - One `GraphNode::Agent` per `Session`.
 - One `GraphNode::File` per **unique** path across all `Session::files_touched` values (deduplicated by full path).
@@ -255,7 +255,7 @@ If a future spike re-evaluation flips any signal to ❌, this ADR's `Status` fie
 - Force-directed layout
 - Wall-clock-based finished-agent dim window (spike uses a tick counter)
 - Runtime terminal-capability detection beyond the existing `icon_mode` flag
-- Integration with `TuiMode` enum and the main render dispatcher (`src/tui/ui.rs`)
+- Integration with `TuiMode` enum and the main render dispatcher (`src/tui/ui.rs`) — **delivered in #527** (`TuiMode::AgentGraph`, render-time gate in `draw()`, defense-in-depth gate in `App::navigate_to`, `mode_hints` arm)
 - Tool-call nodes / fork edges (require parser changes — see Data Gap)
 
 ---

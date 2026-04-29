@@ -459,6 +459,14 @@ impl App {
         );
     }
 
+    /// Agent-graph view toggle. Fails closed when no config is loaded.
+    pub fn is_agent_graph_enabled(&self) -> bool {
+        self.config
+            .as_ref()
+            .map(|c| c.views.agent_graph_enabled)
+            .unwrap_or(false)
+    }
+
     /// Navigate to a new mode, pushing the current mode onto the back-stack.
     /// Navigate to `target`, maintaining a back-stack invariant that
     /// disallows duplicates at the top and collapses cycles.
@@ -471,6 +479,13 @@ impl App {
     ///   rather than [A, B, A], so `Esc` takes the user back one real
     ///   step, not one keypress).
     pub fn navigate_to(&mut self, target: TuiMode) {
+        // Defense-in-depth; canonical gate is in tui::ui::draw.
+        let target = if target == TuiMode::AgentGraph && !self.is_agent_graph_enabled() {
+            TuiMode::Overview
+        } else {
+            target
+        };
+
         if self.tui_mode == target {
             return;
         }
