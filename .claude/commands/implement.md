@@ -216,6 +216,21 @@ Orchestrator mode only. Invoke `subagent-qa` with the architect's blueprint. If 
 
 You (the orchestrator) write tests. No subagent.
 
+#### 6d-bis. Binding-gate selection (CI / non-Rust tasks)
+
+For most tasks `cargo test` is the binding RED/GREEN gate. For tasks where the artifact under test isn't Rust source — workflow YAML, shell scripts, slash-command spec edits, pure deletions — `cargo test` is a regression guard and the binding gate is the tool that actually validates the changed artifact.
+
+| Artifact under test | Binding RED/GREEN gate | Regression guard |
+|---|---|---|
+| Rust source (`src/**`, `tests/**`) | `cargo test --quiet` | — |
+| Workflow YAML (`.github/workflows/**`) | `actionlint` (wired into `ci.yml`) | `cargo test --quiet` |
+| Shell scripts (`scripts/**`) | `bash -n` + `shellcheck` on changed files | `cargo test --quiet` |
+| Docs (`*.md`, `directory-tree.md`) | none (skipped) | `cargo test --quiet` |
+
+For CI / non-Rust tasks the orchestrator runs the binding gate before and after implementation, and `cargo test` as a regression-only check. The 6e/6g `cargo test` blocks below remain the default; substitute the appropriate gate when the gatekeeper's advisory or the issue body indicates a non-Rust binding gate. The gatekeeper's report explicitly flags this — look for an "advisory" / "binding gate" note in the PASS branch.
+
+**Note (post-#510):** the per-issue `scripts/verify-issue-NNN.sh` convention from #485 and #507 is retired. CI-only changes are gated by tool-specific binding gates (`actionlint`, `shellcheck`, etc.) wired into `.github/workflows/ci.yml`. Do not introduce new `verify-issue-*.sh` scripts.
+
 #### 6e. RED checkpoint (GATE)
 
 Skipped if `TASK_TYPE` is `docs` or `refactor`.

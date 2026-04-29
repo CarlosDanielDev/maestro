@@ -130,3 +130,69 @@ jobs:
           yq --version
       - name: Check architecture layers
         run: bash scripts/check-layers.sh
+
+  actionlint:
+    # Static analysis on every workflow YAML in .github/workflows/.
+    # Replaces the per-issue scripts/verify-issue-NNN.sh files (#485, #507) with
+    # a single generic gate. Strict severity (default) so we keep catching
+    # shellcheck `info` findings like the SC2035 from #507.
+    name: Actionlint
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Lint job needs no GitHub API access; don't leave the token in
+          # .git/config for the runner's lifetime. Defense in depth.
+          persist-credentials: false
+
+      - name: Install actionlint (pinned binary + sha256 verify)
+        id: actionlint
+        shell: bash
+        # Direct download + sha256 verify. We do NOT fetch the bootstrap script
+        # at runtime: v1.7.12 is a lightweight tag (mutable by anyone with push
+        # access), so URL tag-pinning ≠ SHA-pinning. Bump VERSION + EXPECTED_SHA256
+        # together.
+        run: |
+          set -euo pipefail
+          VERSION="1.7.12"
+          ARCHIVE="actionlint_${VERSION}_linux_amd64.tar.gz"
+          EXPECTED_SHA256="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          curl --fail --silent --show-error --location \
+               --output "${ARCHIVE}" \
+               "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/${ARCHIVE}"
+          echo "${EXPECTED_SHA256}  ${ARCHIVE}" | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${ARCHIVE}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          rm "${ARCHIVE}"
+          echo "executable=${RUNNER_TEMP}/actionlint/actionlint" >> "$GITHUB_OUTPUT"
+
+      - name: Lint workflows
+        shell: bash
+        # Strict: default severity (surfaces shellcheck `info` findings).
+        run: ${{ steps.actionlint.outputs.executable }} -color
+
+      - name: Assert no secrets interpolated outside env/with keys
+        shell: bash
+        # Cross-cutting structural invariant. Every ${{ secrets.* }} reference
+        # MUST appear on a line where the entire value after the colon is exactly
+        # the secrets expression (env: / with: key assignments). Anything else —
+        # interpolation in a run: shell, an if: condition, etc. — is CWE-78
+        # (shell injection) and was the core mitigation for #507.
+        # Note: GitHub interpolates secrets-context expressions everywhere they
+        # appear in workflow YAML before the runner sees them; this grep is
+        # therefore an exhaustive structural check, not a heuristic.
+        run: |
+          set -euo pipefail
+          violations=$(
+            grep -rn -E '\$\{\{[[:space:]]*secrets\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\}\}' \
+              .github/workflows/ \
+              | grep -vE '^[^:]+:[0-9]+:[[:space:]]+[A-Za-z_][A-Za-z0-9_-]*:[[:space:]]+\$\{\{[[:space:]]*secrets\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\}\}[[:space:]]*$' \
+              || true
+          )
+          if [ -n "${violations}" ]; then
+            echo "::error::secrets.* interpolation outside env/with key (CWE-78):"
+            printf '%s\n' "${violations}"
+            exit 1
+          fi
+          echo "ok: no secrets.* interpolated outside env/with keys"

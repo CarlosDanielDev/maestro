@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-28 18:00 (UTC)
+> Last updated: 2026-04-29 01:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -438,15 +438,13 @@ maestro/
 │           ├── api-contract-validation/
 │           ├── project-patterns/
 │           └── security-patterns/
-├── scripts/                               # Project-level shell scripts for architecture checks, coverage, and verification gates
+├── scripts/                               # Project-level shell scripts and config for architecture, file-size, and coverage checks
 │   ├── allowlist-large-files.txt          # Allowlist for large files exempted from size checks; src/tui/screens/milestone_health/state/tests/mod.rs added (deadline 2026-07-22, pending at(step) helper)  [Issue #500]
 │   ├── architecture-layers.yml            # Layer dependency rules for check-layers.sh
 │   ├── check-coverage-tiers.sh            # Validate test-coverage tier thresholds
 │   ├── check-file-size.sh                 # Enforce per-file LOC limits (500-line rule)
 │   ├── check-layers.sh                    # Enforce architecture layer boundaries
-│   ├── coverage-tiers.yml                 # Coverage tier definitions
-│   ├── verify-issue-485.sh                # TDD verification harness: 27 grep/awk assertions for /triage-idea command + CLAUDE.md registry entries  [Issue #485]
-│   └── verify-issue-507.sh                # TDD verification harness: 17 assertions for Discord release-notification job in release.yml (notify-discord job, workflow_dispatch inputs, pre-release tag suppression)  [Issue #507]
+│   └── coverage-tiers.yml                 # Coverage tier definitions
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
 │   ├── gatekeeper/                        # Gatekeeper harness fixtures and tests
@@ -474,7 +472,7 @@ maestro/
 | `.github/ISSUE_TEMPLATE/bug.yml` | Bug report issue form with DOR fields; `Blocked By` required |
 | `.github/ISSUE_TEMPLATE/feature.yml` | Feature request issue form with DOR fields; `Blocked By` required; `Dependency Graph` textarea for epic/multi-issue ordering |
 | `.github/ISSUE_TEMPLATE/idea.yml` | Idea inbox issue form — 5 required textareas (the itch + Q1-Q4 honesty checks) + Q5 vision-alignment dropdown; auto-applies labels `idea` and `needs-triage` |
-| `.github/workflows/ci.yml` | GitHub Actions CI pipeline |
+| `.github/workflows/ci.yml` | GitHub Actions CI pipeline (test, clippy, fmt, file-size, deny, audit, coverage, layers, **actionlint**) |
 | `.github/workflows/release.yml` | Release automation: cross-platform builds, GitHub Release with SHA256 checksums, Homebrew tap update, Discord `#releases` notification (`notify-discord` job; requires `DISCORD_WEBHOOK_URL` secret) |
 | `.claude/` | Claude Code agent configuration |
 | `.claude/agents/` | Subagent definitions |
