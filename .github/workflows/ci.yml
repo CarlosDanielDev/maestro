@@ -179,9 +179,9 @@ jobs:
         # the secrets expression (env: / with: key assignments). Anything else —
         # interpolation in a run: shell, an if: condition, etc. — is CWE-78
         # (shell injection) and was the core mitigation for #507.
-        # Note: GitHub interpolates ${{ secrets.X }} everywhere it appears in
-        # workflow YAML before the runner sees it; this grep is therefore an
-        # exhaustive structural check, not a heuristic.
+        # Note: GitHub interpolates secrets-context expressions everywhere they
+        # appear in workflow YAML before the runner sees them; this grep is
+        # therefore an exhaustive structural check, not a heuristic.
         run: |
           set -euo pipefail
           violations=$(
