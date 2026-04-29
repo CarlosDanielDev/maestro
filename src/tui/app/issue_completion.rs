@@ -1,14 +1,7 @@
 use super::App;
 use super::types::TuiMode;
-use crate::plugins::hooks::{HookContext, HookPoint};
-use crate::provider::github::ci::PendingPrCheck;
 use crate::provider::github::labels::LabelManager;
-use crate::provider::github::pr::{PrCreator, PrRetryPolicy};
-use crate::provider::github::types::{PendingPr, PendingPrStatus};
-use crate::session::transition::TransitionReason;
-use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;
-use std::time::Instant;
 
 impl App {
     #[allow(clippy::too_many_arguments)]
@@ -147,165 +140,21 @@ impl App {
             if success {
                 self.log_gh_auth_skip(issue_number, "PR creation");
             }
-        } else if success {
-            // Extract config values before entering async/mutable code
-            let auto_pr = self
-                .config
-                .as_ref()
-                .map(|c| c.github.auto_pr)
-                .unwrap_or(false);
-            let base_branch = self
-                .config
-                .as_ref()
-                .map(|c| c.project.base_branch.clone())
-                .unwrap_or_else(|| "main".to_string());
-
-            if auto_pr
-                && self.github_client.is_some()
-                && let Some(ref branch) = worktree_branch
-            {
-                // Resolve the primary issue: cache first, then fall back to a
-                // GitHub fetch. A miss on both paths used to silently skip PR
-                // creation — the dashboard would say COMPLETED with no PR and
-                // no log entry. Now the failure is loud.
-                let cached_issue = self.state.issue_cache.get(&issue_number).cloned();
-                let primary_issue: Option<crate::provider::github::types::GhIssue> =
-                    match cached_issue {
-                        Some(cached) => Some(cached),
-                        None => match self
-                            .github_client
-                            .as_ref()
-                            .unwrap()
-                            .get_issue(issue_number)
-                            .await
-                        {
-                            Ok(fetched) => Some(fetched),
-                            Err(e) => {
-                                self.check_gh_auth_error(&e);
-                                self.activity_log.push_simple(
-                                    format!("#{}", issue_number),
-                                    format!(
-                                        "PR creation skipped — could not fetch issue from GitHub: {}",
-                                        e
-                                    ),
-                                    LogLevel::Error,
-                                );
-                                self.notifications.notify(
-                                    crate::notifications::types::InterruptLevel::Critical,
-                                    &format!("#{} — PR not opened", issue_number),
-                                    &format!(
-                                        "Maestro could not draft the PR because the issue is not in cache and the GitHub fetch failed: {}",
-                                        e
-                                    ),
-                                );
-                                None
-                            }
-                        },
-                    };
-
-                if let Some(issue) = primary_issue {
-                    let client = self.github_client.as_ref().unwrap();
-                    let file_refs: Vec<&str> = files_touched.iter().map(|s| s.as_str()).collect();
-                    let pr_creator = PrCreator::new(client.as_ref(), base_branch.clone());
-
-                    let pr_result = if is_unified {
-                        let unified_issues: Vec<&crate::provider::github::types::GhIssue> =
-                            issue_numbers
-                                .iter()
-                                .filter_map(|n| self.state.issue_cache.get(n))
-                                .collect();
-                        if unified_issues.is_empty() {
-                            pr_creator
-                                .create_for_issue(&issue, branch, &file_refs, cost_usd)
-                                .await
-                        } else {
-                            let body = crate::provider::github::pr::build_unified_pr_body(
-                                &unified_issues,
-                                &file_refs,
-                                cost_usd,
-                            );
-                            let refs: Vec<String> =
-                                issue_numbers.iter().map(|n| format!("#{}", n)).collect();
-                            let title = format!("[Maestro] Unified: {}", refs.join(", "));
-                            client
-                                .create_pr(issue_number, &title, &body, branch, &base_branch)
-                                .await
-                        }
-                    } else {
-                        pr_creator
-                            .create_for_issue(&issue, branch, &file_refs, cost_usd)
-                            .await
-                    };
-
-                    match pr_result {
-                        Ok(pr_num) => {
-                            self.activity_log.push_simple(
-                                format!("#{}", issue_number),
-                                format!("PR #{} created", pr_num),
-                                LogLevel::Info,
-                            );
-                            // Track PR for CI polling
-                            if let Some(ref branch_name) = worktree_branch {
-                                self.ci_poller.add_check(PendingPrCheck {
-                                    pr_number: pr_num,
-                                    issue_number,
-                                    branch: branch_name.clone(),
-                                    created_at: Instant::now(),
-                                    check_count: 0,
-                                    fix_attempt: 0,
-                                    awaiting_fix_ci: false,
-                                });
-                            }
-                            self.dispatch_review(pr_num, branch, issue_number);
-                            // Fire pr_created hook
-                            let ctx = HookContext::new()
-                                .with_session("", Some(issue_number))
-                                .with_pr(pr_num)
-                                .with_branch(branch)
-                                .with_cost(cost_usd);
-                            self.fire_plugin_hook(HookPoint::PrCreated, ctx).await;
-                        }
-                        Err(e) => {
-                            self.check_gh_auth_error(&e);
-                            let policy = PrRetryPolicy::default();
-                            let now = chrono::Utc::now();
-                            let pending = PendingPr {
-                                issue_number,
-                                issue_numbers: issue_numbers.clone(),
-                                branch: branch.clone(),
-                                base_branch: base_branch.clone(),
-                                files_touched: files_touched.clone(),
-                                cost_usd,
-                                attempt: 0,
-                                max_attempts: policy.max_attempts,
-                                last_error: e.to_string(),
-                                last_attempt_at: now,
-                                next_retry_at: policy.delay_for_attempt(0).map(|d| {
-                                    now + chrono::Duration::from_std(d)
-                                        .unwrap_or(chrono::Duration::seconds(5))
-                                }),
-                                status: PendingPrStatus::RetryScheduled,
-                            };
-                            self.pending_prs.push(pending);
-
-                            // Update session status to NeedsPr
-                            if let Some(managed) = self.pool.find_by_issue_mut(issue_number) {
-                                let _ = managed.session.transition_to(
-                                    SessionStatus::NeedsPr,
-                                    TransitionReason::PrNeeded,
-                                );
-                            }
-
-                            self.activity_log.push_simple(
-                                format!("#{}", issue_number),
-                                format!("PR creation failed (will retry): {}", e),
-                                LogLevel::Warn,
-                            );
-                        }
-                    }
-                }
-            }
+            return;
         }
+        if !success {
+            return;
+        }
+
+        self.run_auto_pr(
+            issue_number,
+            issue_numbers,
+            cost_usd,
+            files_touched,
+            worktree_branch,
+            is_unified,
+        )
+        .await;
     }
 }
 

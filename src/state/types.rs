@@ -19,6 +19,12 @@ pub struct MaestroState {
     /// PRs that failed creation and are queued for retry or manual action.
     #[serde(default)]
     pub pending_prs: Vec<PendingPr>,
+    /// Session-end events awaiting auto-PR processing. Persisted across
+    /// restarts so a maestro shutdown between session-completion and the
+    /// next `check_completions` tick does not orphan the worktree (#514).
+    /// Backward compatible — older state files default to an empty vec.
+    #[serde(default)]
+    pub pending_completions: Vec<crate::tui::app::types::PendingIssueCompletion>,
 }
 
 impl MaestroState {
@@ -207,6 +213,56 @@ mod tests {
         let rt: MaestroState = serde_json::from_str(&stripped).unwrap();
         assert!(
             rt.pending_prs.is_empty(),
+            "must default to empty vec for backward compatibility"
+        );
+    }
+
+    // --- Issue #514: MaestroState::pending_completions persistence ---
+    // pending_issue_completions are in-memory in App today; if maestro
+    // shuts down between session-end and the next check_completions tick,
+    // the auto-PR work is lost (orphan worktree, no PR). Persisting them
+    // closes that gap.
+
+    #[test]
+    fn maestro_state_pending_completions_defaults_to_empty_vec() {
+        let state = MaestroState::default();
+        assert!(state.pending_completions.is_empty());
+    }
+
+    #[test]
+    fn maestro_state_pending_completions_round_trips_via_serde() {
+        use crate::tui::app::types::PendingIssueCompletion;
+
+        let mut state = MaestroState::default();
+        state.pending_completions.push(PendingIssueCompletion {
+            issue_number: 42,
+            issue_numbers: vec![42, 99],
+            success: true,
+            cost_usd: 1.5,
+            files_touched: vec!["src/foo.rs".into()],
+            worktree_branch: Some("maestro/unified-42-99".into()),
+            worktree_path: Some(std::path::PathBuf::from("/tmp/wt")),
+            is_ci_fix: false,
+        });
+
+        let json = serde_json::to_string(&state).unwrap();
+        let rt: MaestroState = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.pending_completions.len(), 1);
+        assert_eq!(rt.pending_completions[0].issue_number, 42);
+        assert_eq!(rt.pending_completions[0].issue_numbers, vec![42, 99]);
+        assert_eq!(
+            rt.pending_completions[0].worktree_branch.as_deref(),
+            Some("maestro/unified-42-99")
+        );
+    }
+
+    #[test]
+    fn maestro_state_pending_completions_deserializes_with_default_when_absent() {
+        // Legacy state JSON without the new field should still load.
+        let json = r#"{"sessions":[],"total_cost_usd":0.0,"file_claims":{},"last_updated":null}"#;
+        let state: MaestroState = serde_json::from_str(json).unwrap();
+        assert!(
+            state.pending_completions.is_empty(),
             "must default to empty vec for backward compatibility"
         );
     }

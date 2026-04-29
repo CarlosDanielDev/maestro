@@ -1,3 +1,4 @@
+mod auto_pr;
 mod budget;
 mod bypass;
 mod ci_polling;
@@ -179,6 +180,23 @@ pub struct App {
     /// Desktop notification dispatcher. Production wires `OsascriptNotifier`;
     /// tests inject `FakeNotifier` via `with_desktop_notifier`.
     pub(crate) desktop_notifier: std::sync::Arc<dyn DesktopNotifier>,
+    /// Issue numbers for which auto-PR creation has already been attempted
+    /// in this process. Closes the in-process double-fire path of #514's
+    /// AC7.
+    ///
+    /// Idempotency is dual-layer:
+    /// - **In-process** (this set): blocks the same App tick / duplicate
+    ///   `Completed` event from firing `create_pr` twice in one run.
+    /// - **Cross-restart** (the `list_prs_for_branch` preflight in
+    ///   `auto_pr::run_auto_pr`): blocks a second run from creating a
+    ///   duplicate after a crash that lost the in-memory state.
+    ///
+    /// Both windows are needed; neither alone closes the gap. The set is
+    /// not persisted because the preflight covers the cross-restart case
+    /// at the GitHub layer (the only authority that ultimately matters).
+    /// Memory growth is bounded by `usize` issue numbers per maestro run
+    /// (8 bytes each); single-user, dozens-of-sessions threat model.
+    pub(crate) attempted_pr_issue_numbers: std::collections::HashSet<u64>,
 }
 
 impl App {
@@ -195,6 +213,11 @@ impl App {
         let mut pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx);
         pool.set_permission_mode(permission_mode);
         pool.set_allowed_tools(allowed_tools);
+        // Recover any pending completions persisted from a prior run so the
+        // auto-PR work is retried on next tick (#514). The AC4 preflight
+        // (PR-already-exists check) prevents double-firing when the prior
+        // run actually succeeded but crashed before clearing the entry.
+        let recovered_completions = state.pending_completions.clone();
         Self {
             pool,
             activity_log: ActivityLog::new(500),
@@ -210,7 +233,7 @@ impl App {
             github_client: None,
             config: None,
             config_path: None,
-            pending_issue_completions: Vec::new(),
+            pending_issue_completions: recovered_completions,
             pending_hooks: Vec::new(),
             health_monitor: Box::new(HealthMonitor::new()),
             budget_enforcer: None,
@@ -296,6 +319,7 @@ impl App {
             clipboard: Box::new(crate::tui::clipboard::SystemClipboard),
             copy_toast: None,
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
+            attempted_pr_issue_numbers: std::collections::HashSet::new(),
         }
     }
 
@@ -496,6 +520,10 @@ impl App {
         self.state.update_total_cost();
         self.total_cost = self.state.total_cost_usd;
         self.state.last_updated = Some(Utc::now());
+        // Mirror in-memory pending completions to persisted state so a
+        // shutdown between session-end and the next check_completions tick
+        // does not orphan the worktree (#514).
+        self.state.pending_completions = self.pending_issue_completions.clone();
         let _ = self.store.save(&self.state);
     }
 }

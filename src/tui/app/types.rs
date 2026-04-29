@@ -400,7 +400,8 @@ pub(crate) struct PendingHook {
     pub ctx: HookContext,
 }
 
-pub(crate) struct PendingIssueCompletion {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PendingIssueCompletion {
     pub issue_number: u64,
     /// Additional issue numbers for unified PR sessions.
     pub issue_numbers: Vec<u64>,
