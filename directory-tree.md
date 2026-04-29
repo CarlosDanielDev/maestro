@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-29 01:00 (UTC)
+> Last updated: 2026-04-29 03:30 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -82,7 +82,7 @@ maestro/
 │   ├── lib.rs                             # Library facade; exposes session::parser and session::types for benchmark crates; pub mod icon_mode and pub mod icons added so shared icon modules are accessible as library crate items  [Issue #307, #308]
 │   ├── icon_mode.rs                       # Shared icon mode detection: AtomicBool global flag, init_from_config() reads tui.ascii_icons from Config and MAESTRO_ASCII_ICONS env var, use_nerd_font() returns current mode; extracted from tui/icons.rs so non-TUI crates can query the mode without pulling in the full TUI tree  [Issue #307]
 │   ├── icons.rs                           # Shared icon registry: IconId enum (38 variants across Navigation, Status, UI Chrome, Indicators categories, plus NeedsReview variant added in #308), IconPair struct (nerd: &'static str, ascii: &'static str), icon_pair() const fn compiles to a zero-allocation jump table, get(IconId) returns the correct variant based on global mode, get_for_mode(id, nerd_font) pure testable variant; extracted from tui/icons.rs; CheckboxOn codepoint U+F14A (nf-fa-check_square) and CheckboxOff codepoint U+F0C8 (nf-fa-square) — universally present FA-core glyphs replacing the legacy nf-oct variants  [Issue #308, #433]
-│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; propagates once_mode from parsed CLI flag into App; forces max_concurrent=1 when --continuous is set; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests; declares mod updater; declares mod flags; propagates startup gh auth check result into App.gh_auth_ok; declares #[cfg(feature = "experimental-sanitizer")] mod sanitizer; constructs FeatureFlags from --enable-flag / --disable-flag CLI args merged with [flags] config  [Issue #15, #29, #49, #34, #36, #35, #52, #83, #85, #118, #141, #142, #143, #158]
+│   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; propagates once_mode from parsed CLI flag into App; forces max_concurrent=1 when --continuous is set; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests; declares mod updater; declares mod flags; propagates startup gh auth check result into App.gh_auth_ok; declares mod sanitize; constructs FeatureFlags from --enable-flag / --disable-flag CLI args merged with [flags] config  [Issue #15, #29, #49, #34, #36, #35, #52, #83, #85, #118, #141, #142, #143, #158]
 │   ├── cli.rs                             # CLI definition extracted from main.rs; Cli struct and Commands enum (clap derive); --once flag on Run subcommand (exits after all sessions complete, for CI/scripting); --continuous / -C flag on Run subcommand (auto-advance through issues, pause on failure); --enable-flag / --disable-flag repeatable args on Run subcommand for runtime feature flag overrides; --bypass-review global flag (session-only, skips review council); generate_completions() and cmd_completions() for shell tab-completion output; cmd_mangen() for roff man page generation; Completions and Mangen subcommands  [Issue #18, #83, #85, #143, #328]
 │   ├── commands/                          # Command handler modules (one per CLI subcommand)
 │   │   ├── mod.rs                         # Module re-exports
@@ -106,8 +106,18 @@ maestro/
 │   ├── git.rs                             # GitOps trait, CliGitOps: commit and push operations; list_remote_branches() on GitOps trait and CliGitOps impl — filters remote refs by prefix for orphan branch detection  [Phase 3, Issue #159]
 │   ├── models.rs                          # ModelRouter: label-based model routing  [Phase 3]
 │   ├── prompts.rs                         # PromptBuilder: structured issue prompts with task-type detection; ProjectLanguage enum; detect_project_language(); default_guardrail(); resolve_guardrail()  [Phase 3, Issue #43]
-│   ├── util.rs                            # Shared utilities (truncate, etc.)
-│   ├── sanitizer.rs                       # Placeholder sanitizer module; compiled only when `--features experimental-sanitizer` is set  [Issue #142]
+│   ├── util/                              # Shared utility helpers
+│   │   ├── mod.rs                         # Module facade; re-exports formatting and validation helpers
+│   │   ├── formatting.rs                  # String formatting utilities (truncate, etc.)
+│   │   └── validation.rs                  # Input validation helpers
+│   ├── sanitize/                          # Output-sanitization pipeline; compiled unconditionally  [Issue #142]
+│   │   ├── mod.rs                         # Module facade
+│   │   ├── analyzer.rs                    # Sanitization analysis logic
+│   │   ├── config.rs                      # Sanitization configuration types
+│   │   ├── reporter.rs                    # Sanitization report builder
+│   │   ├── scanner.rs                     # Content scanner
+│   │   ├── screen.rs                      # TUI screen for sanitize results
+│   │   └── types.rs                       # Shared sanitize types
 │   ├── settings/                          # Settings persistence layer: reads/writes .claude/settings.json  [Issue #490]
 │   │   ├── mod.rs                         # Module facade; re-exports SettingsStore, FsSettingsStore, CavemanModeState
 │   │   ├── claude_settings.rs             # CavemanModeState enum (ExplicitTrue/ExplicitFalse/Default/Error); SettingsStore trait; FsSettingsStore impl with atomic writer for .claude/settings.json; toggle_caveman_mode()
@@ -206,7 +216,10 @@ maestro/
 │   │   ├── mod.rs                         # Module facade; re-exports Prd, PrdStore, PrdExporter
 │   │   ├── model.rs                       # Prd struct and field types; serde Serialize/Deserialize
 │   │   ├── store.rs                       # PrdStore: JSON persistence under .maestro/prd/
-│   │   └── export.rs                      # PrdExporter: renders a Prd to a markdown document
+│   │   ├── export.rs                      # PrdExporter: renders a Prd to a markdown document
+│   │   ├── ingest.rs                      # PRD ingestion: parses and normalizes incoming PRD content
+│   │   ├── discover.rs                    # PRD discovery: locates PRD documents in the project tree
+│   │   └── sync.rs                        # PRD sync: keeps persisted PRD store in sync with discovered sources
 │   ├── review/                            # Review pipeline  [Phase 3, Issue #327, #328]
 │   │   ├── mod.rs                         # Module exports; re-exports ReviewConfig, ReviewDispatcher
 │   │   ├── apply.rs                       # apply_review(): applies accepted concern patches to the worktree  [Issue #327]
@@ -253,6 +266,7 @@ maestro/
 │   │   │   ├── event_handler_tests.rs     # 4 integration tests for desktop notification dispatch using FakeNotifier  [Issue #487]
 │   │   │   ├── helpers.rs                 # Shared App helper utilities
 │   │   │   ├── issue_completion.rs        # on_issue_session_completed(); skips PR creation for CI-fix sessions
+│   │   │   ├── issue_completion_tests.rs  # Unit tests for issue_completion.rs (split sibling module)
 │   │   │   ├── plugins.rs                 # Hook point invocation via PluginRunner
 │   │   │   ├── pr_retry.rs                # process_pending_pr_retries() exponential back-off; trigger_manual_pr_retry()  [Issue #159]
 │   │   │   ├── review.rs                  # ReviewCouncil integration and gate-fix session spawning
@@ -283,9 +297,10 @@ maestro/
 │   │   │   ├── focus.rs                   # Focus management: FocusManager, focus ring, widget focus state
 │   │   │   ├── keymap.rs                  # Keymap definitions: action-to-key bindings, context-sensitive keymaps; F-key bar actions registered (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit); KeyBindingGroup, InlineHint, FKeyRelevance, ModeKeyMap, global_keybindings() LazyLock  [Issue #218]
 │   │   │   └── mode_hints.rs              # mode_keymap() builds ModeKeyMap for a given TuiMode + optional session status; maps TuiMode variants to mode labels, F-key visibility rules, and context-sensitive inline hints; consumes screen_bindings from KeymapProvider::keybindings(); 'c Copy' hint added to Overview mode; MilestoneHealth mode-hint entry added  [Issue #482, #500]
+│   │   ├── background_tasks.rs            # Background task spawners and async data-event producers for the TUI event loop
+│   │   ├── issue_refs.rs                  # Issue reference helpers: parses and formats #N issue references for display
 │   │   ├── session_summary.rs             # Session summary widget rendered in the completion overlay and detail pane
 │   │   ├── session_switcher.rs            # Session switcher overlay for jumping between active sessions
-│   │   ├── splash.rs                      # Startup splash screen rendered before the TUI loop begins
 │   │   ├── spinner.rs                     # Braille spinner animation helpers: spinner_frame(), format_thinking_elapsed(), spinner activity string builder
 │   │   ├── summary.rs                     # Compact per-session summary row widget used in panel and list views
 │   │   ├── token_dashboard.rs             # Token usage dashboard widget: per-session and aggregate token counts; TQ Ratio column removed (#346)
@@ -390,6 +405,12 @@ maestro/
 │   │   ├── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
 │   │   ├── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
 │   │   └── init.rs                        # Integration tests for `maestro init` and `maestro init --reset`: fresh write, idempotent guard, merge-preserves-user-keys, polyglot detection  [Issue #505]
+│   ├── changelog/                         # CHANGELOG.md parser and model
+│   │   ├── mod.rs                         # Module facade; re-exports ChangelogParser and related types
+│   │   └── parser.rs                      # ChangelogParser: parses Keep a Changelog formatted CHANGELOG.md; used by release notes screen
+│   ├── system/                            # System resource monitoring
+│   │   ├── mod.rs                         # Module facade; re-exports SystemMonitor
+│   │   └── monitor.rs                     # SystemMonitor: tracks CPU, memory, and I/O usage for session health heuristics
 │   ├── turboquant/                         # TurboQuant — vector quantization for context compression  [Issue #242-253, #343-345, #347]
 │   │   ├── mod.rs                         # Module facade; combines PolarQuant + QJL into a unified API
 │   │   ├── types.rs                       # QuantStrategy enum (TurboQuant, PolarQuant, QJL); TurboQuantConfig (+ fork_handoff_budget, system_prompt_budget, knowledge_budget); QuantResult; CompressionMetrics
@@ -445,6 +466,9 @@ maestro/
 │   ├── check-file-size.sh                 # Enforce per-file LOC limits (500-line rule)
 │   ├── check-layers.sh                    # Enforce architecture layer boundaries
 │   └── coverage-tiers.yml                 # Coverage tier definitions
+├── benches/                               # Criterion benchmark crates
+│   ├── parser.rs                          # Benchmark: stream-json parser throughput  [Issue #19]
+│   └── turboquant.rs                      # Benchmark: TurboQuant quantization pipeline throughput
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
 │   ├── gatekeeper/                        # Gatekeeper harness fixtures and tests
@@ -486,11 +510,11 @@ maestro/
 | `docs/RUST-GUARDRAILS.md` | Rust coding policy — single source of truth; amend via PR |
 | `docs/tech-debt-catalog.md` | Tech-debt catalog generated by `maestro adapt` |
 | `src/` | Rust source code |
-| `src/main.rs` | CLI entry point; `--skip-doctor` flag on `run` subcommand; `cmd_run()` calls `validate_preflight()` before launch and uses `PromptBuilder::build_issue_prompt()` for issue sessions; `setup_app_from_config()` propagates `once_mode` into `App`; forces `max_concurrent=1` when `--continuous` is set; `cmd_dashboard()` with startup cleanup, config-driven wiring, and `FetchSuggestionData` queued on startup; declares `mod updater`; declares `mod flags`; propagates startup gh auth check result into `App.gh_auth_ok`; declares `#[cfg(feature = "experimental-sanitizer")] mod sanitizer` (Issues #29, #34, #35, #36, #49, #52, #83, #85, #118, #141, #142, #158) |
+| `src/main.rs` | CLI entry point; `--skip-doctor` flag on `run` subcommand; `cmd_run()` calls `validate_preflight()` before launch and uses `PromptBuilder::build_issue_prompt()` for issue sessions; `setup_app_from_config()` propagates `once_mode` into `App`; forces `max_concurrent=1` when `--continuous` is set; `cmd_dashboard()` with startup cleanup, config-driven wiring, and `FetchSuggestionData` queued on startup; declares `mod updater`; declares `mod flags`; propagates startup gh auth check result into `App.gh_auth_ok`; declares `mod sanitize` (Issues #29, #34, #35, #36, #49, #52, #83, #85, #118, #141, #142, #158) |
 | `src/cli.rs` | CLI struct and subcommand definitions; `--once` flag on `run` subcommand exits after all sessions complete (CI/scripting mode); `--continuous` / `-C` flag auto-advances through ready issues; `generate_completions()`, `cmd_completions()`, `cmd_mangen()`; `Completions` and `Mangen` subcommands (Issues #18, #83, #85) |
 | `src/continuous.rs` | `ContinuousModeState` and `ContinuousFailure` structs; state machine tracking current issue, completed/skipped counts, and accumulated failures for `--continuous` mode (Issue #85) |
 | `src/budget.rs` | Per-session and global budget enforcement (Phase 3) |
-| `src/sanitizer.rs` | Compile-time gated placeholder module; only included when `--features experimental-sanitizer` is passed to cargo (Issue #142) |
+| `src/sanitize/` | Output-sanitization pipeline (Issue #142) |
 | `src/flags/` | Feature flag registry and runtime resolution (Issues #141, #146) |
 | `src/flags/mod.rs` | `Flag` enum with 6 variants; `FlagSource` enum (`Default`, `Config`, `Cli`); `serde` derive; `default_enabled()`, `description()`, `name()`, `all()` helpers |
 | `src/flags/store.rs` | `FeatureFlags` store; per-flag source tracking; `HashMap`-based resolution order: CLI flag > config file > compile-time defaults; `source()` and `all_with_source()` methods |
@@ -528,13 +552,13 @@ maestro/
 | `src/provider/mod.rs` | create_provider factory; detect_provider_from_remote |
 | `src/provider/types.rs` | ProviderKind enum; re-exports Issue/Priority/MaestroLabel/SessionMode/Milestone |
 | `src/provider/azure_devops.rs` | AzDevOpsClient (`az` CLI); parse_work_items_json; stub `list_milestones()`; stub `list_labels()` and `create_label()` to satisfy `GitHubClient` trait (Issue #348) |
-| `src/github/` | GitHub API integration (Phase 2) |
-| `src/github/types.rs` | GhIssue (milestone, assignees fields added), GhMilestone, Priority, MaestroLabel, SessionMode |
-| `src/github/client.rs` | GitHubClient trait + `list_milestones()`; GhCliClient; MockGitHubClient; `parse_issues_json`; `parse_milestones_json`; `is_auth_error()`, `is_gh_auth_error()`; auth error detection in `run_gh()` (Issue #158); `list_labels()` and `create_label()` on trait and `GhCliClient` impl; `MockGitHubClient` gains `set_list_labels_error()`, `set_create_label_error()`, `list_labels_call_count()`, `create_label_calls()` helpers (Issue #348) |
-| `src/github/ci.rs` | `CiChecker` (`check_pr_status`, `fetch_failure_log`); `CiStatus`; `CiPollAction`; `PendingPrCheck` (with `fix_attempt`, `awaiting_fix_ci`); `build_ci_fix_prompt`; `truncate_log`; `parse_ci_json`; `decide_ci_action` (Issue #41) |
-| `src/github/labels.rs` | Issue label lifecycle transitions |
-| `src/github/merge.rs` | `PrMergeCheck` trait (mockable); `PrMergeChecker` impl (`gh pr view` + `git diff`); `MergeState` enum; `PrConflictStatus` struct; `parse_merge_json()`; `parse_conflicting_files()`; `build_conflict_fix_prompt()` |
-| `src/github/pr.rs` | Automated PR creation |
+| `src/provider/github/` | GitHub API integration (Phase 2) |
+| `src/provider/github/types.rs` | GhIssue (milestone, assignees fields added), GhMilestone, Priority, MaestroLabel, SessionMode |
+| `src/provider/github/client.rs` | GitHubClient trait + `list_milestones()`; GhCliClient; MockGitHubClient; `parse_issues_json`; `parse_milestones_json`; `is_auth_error()`, `is_gh_auth_error()`; auth error detection in `run_gh()` (Issue #158); `list_labels()` and `create_label()` on trait and `GhCliClient` impl; `MockGitHubClient` gains helpers (Issue #348) |
+| `src/provider/github/ci.rs` | `CiChecker` (`check_pr_status`, `fetch_failure_log`); `CiStatus`; `CiPollAction`; `PendingPrCheck`; `build_ci_fix_prompt`; `truncate_log`; `parse_ci_json`; `decide_ci_action` (Issue #41) |
+| `src/provider/github/labels.rs` | Issue label lifecycle transitions |
+| `src/provider/github/merge.rs` | `PrMergeCheck` trait (mockable); `PrMergeChecker` impl (`gh pr view` + `git diff`); `MergeState` enum; `PrConflictStatus` struct; conflict fix prompt builder |
+| `src/provider/github/pr.rs` | Automated PR creation |
 | `src/modes/` | Session mode definitions: orchestrator, vibe, review (Phase 3) |
 | `src/notifications/` | Interruption system with Info/Warning/Critical/Blocker levels (Phase 3); `desktop.rs` adds `DesktopNotifier` trait + macOS `OsascriptNotifier` that fires on session Completed/Error events (Issue #487) |
 | `src/plugins/` | Plugin and hook execution system (Phase 3) |
