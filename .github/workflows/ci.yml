@@ -72,8 +72,14 @@ jobs:
     #
     # Cargo.lock is .gitignored (binary-crate convention in this repo), so we
     # generate it on the runner before the audit-check action runs.
+    #
+    # RUSTSEC-2026-0002 (lru "unsound") is gated by ratatui 0.29 → 0.30 bump;
+    # see deny.toml for the per-advisory rationale.
     name: Cargo Audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -81,7 +87,7 @@ jobs:
       - uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          ignore: RUSTSEC-2025-0141,RUSTSEC-2024-0436,RUSTSEC-2024-0320,RUSTSEC-2026-0097,RUSTSEC-2026-0098,RUSTSEC-2026-0099,RUSTSEC-2026-0104
+          ignore: RUSTSEC-2025-0141,RUSTSEC-2024-0436,RUSTSEC-2024-0320,RUSTSEC-2026-0097,RUSTSEC-2026-0098,RUSTSEC-2026-0099,RUSTSEC-2026-0104,RUSTSEC-2026-0002
 
   coverage:
     # Wave 2.1 — report mode during baseline phase.

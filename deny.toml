@@ -49,6 +49,13 @@ ignore = [
     # (same chain). Maestro does not configure custom CRL handling; stock
     # rustls defaults are not exercised in the vulnerable code path.
     "RUSTSEC-2026-0104",
+    # Transitive via `ratatui` 0.29 → `lru` 0.12.5 — IterMut Stacked Borrows
+    # unsoundness, not a known vulnerability. Fixed in lru 0.16.3+. Reachable
+    # only after ratatui 0.30 migration (separate issue: TUI breaking changes
+    # in 0.30 — Alignment rename, List::highlight_symbol signature, layout-cache
+    # feature flag).
+    # RUSTSEC-2026-0002: https://rustsec.org/advisories/RUSTSEC-2026-0002
+    "RUSTSEC-2026-0002",
 ]
 
 [licenses]
