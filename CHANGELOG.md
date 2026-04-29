@@ -7,6 +7,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(tui): auto-PR pipeline reliability and observability (#514)
+  - **Root cause**: `pending_issue_completions` was held only in memory; `App::sync_state()` did not persist it. A maestro shutdown between session-end and the next `check_completions` tick silently dropped the auto-PR work, leaving branches on origin without a corresponding PR.
+  - `MaestroState` gains `pending_completions: Vec<PendingIssueCompletion>` with `#[serde(default)]` so the field round-trips through `maestro-state.json` without breaking existing state files. `App::new()` rehydrates in-flight completions from persisted state; `sync_state()` mirrors them back on every tick.
+  - PR URL is now printed to the activity log on success: `"PR #N created: https://github.com/owner/repo/pull/N"`.
+  - Existing-PR detection: `list_prs_for_branch()` is called before attempting creation; when an open PR already exists the existing URL is surfaced and creation is skipped.
+  - General-error path appends a manual recovery hint (`gh pr create --base <base> --head <branch>`) to the activity log.
+  - In-process idempotency via `App::attempted_pr_issue_numbers: HashSet<u64>` prevents duplicate attempts within a single maestro run.
+  - Every previously-silent gate (`auto_pr=false`, `github_client=None`, `worktree_branch=None`) now emits an explicit activity-log entry at the appropriate log level.
+  - `GitOps` trait gains `has_commits_ahead(branch, base)` with `CliGitOps` impl and `MockGitOps` extension; all git CLI calls hardened with a `--` flag-prefix guard.
+  - New module `src/tui/app/auto_pr.rs` owns the pipeline; `issue_completion.rs` is now a thin entry point (~150 LOC). 8 behavior tests in `src/tui/app/auto_pr_tests.rs` cover the new acceptance criteria.
+  - Deferred to a follow-up: explicit zero-commit detection at session-end (AC3).
+
 ## [0.16.1] - 2026-04-29
 
 Milestone "v0.16.1" — Idea Triage Foundation (idea-inbox funnel with the consultive `subagent-idea-triager`, `/triage-idea` slash command, parse hook, and Idea issue template) plus v0.16.0 carry-overs: tech-stack auto-detection in `maestro init`, milestone-health wizard, Discord release notifications, atomic auto-updater rewrite, desktop-notification fix, and an actionlint workflow-lint CI gate. Closes #482, #483, #484, #485, #486, #487, #499, #500, #505, #507, #510.

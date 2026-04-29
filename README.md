@@ -42,7 +42,7 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 - Issue/Milestone wizards for guided launches
 - Label lifecycle: `maestro:ready` → `maestro:in-progress` → `maestro:done` / `maestro:failed`
 - Dependency scheduling via `blocked-by:#N` labels and body references; priority ordering via `priority:P0/P1/P2`
-- Automated PR creation on session completion with cost report and file list
+- Automated PR creation on session completion with cost report and file list; PR URL logged to the activity log on success; existing-PR detection skips duplicate creation and surfaces the existing URL
 - PR Review automation with optional bypass mode
 
 → [Wiki › Multi-Provider (GitHub & Azure)](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Multi-Provider-GitHub-Azure) · [PR Review Automation](https://github.com/CarlosDanielDev/maestro/wiki/Feature-PR-Review-Automation) · [Issue and Milestone Wizards](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Issue-and-Milestone-Wizards)
