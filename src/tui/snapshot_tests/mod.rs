@@ -1,5 +1,6 @@
 mod agent_graph;
 mod agent_graph_dispatcher;
+mod agent_graph_keybinding_hint;
 mod caveman_row;
 mod copy_keybinding_hint;
 mod cost_dashboard;

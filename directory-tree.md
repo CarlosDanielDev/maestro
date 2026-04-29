@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-29 23:00 (UTC)
+> Last updated: 2026-04-29 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -303,7 +303,7 @@ maestro/
 │   │   │   ├── mod.rs                     # Module exports for navigation subsystem
 │   │   │   ├── focus.rs                   # Focus management: FocusManager, focus ring, widget focus state
 │   │   │   ├── keymap.rs                  # Keymap definitions: action-to-key bindings, context-sensitive keymaps; F-key bar actions registered (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit); KeyBindingGroup, InlineHint, FKeyRelevance, ModeKeyMap, global_keybindings() LazyLock  [Issue #218]
-│   │   │   └── mode_hints.rs              # mode_keymap() builds ModeKeyMap for a given TuiMode + optional session status; maps TuiMode variants to mode labels, F-key visibility rules, and context-sensitive inline hints; consumes screen_bindings from KeymapProvider::keybindings(); 'c Copy' hint added to Overview mode; MilestoneHealth mode-hint entry added; AgentGraph mode-hint arm added  [Issue #482, #500, #527]
+│   │   │   └── mode_hints.rs              # mode_keymap() builds ModeKeyMap for a given TuiMode + optional session status; maps TuiMode variants to mode labels, F-key visibility rules, and context-sensitive inline hints; consumes screen_bindings from KeymapProvider::keybindings(); 'c Copy' hint added to Overview mode; MilestoneHealth mode-hint entry added; AgentGraph mode-hint arm added; Overview hint bar gains '[g] Graph' when views.agent_graph_enabled = true; AgentGraph hint bar advertises '[Esc] Back  [g] Panels'  [Issue #482, #500, #527, #528]
 │   │   ├── background_tasks.rs            # Background task spawners and async data-event producers for the TUI event loop
 │   │   ├── issue_refs.rs                  # Issue reference helpers: parses and formats #N issue references for display
 │   │   ├── session_summary.rs             # Session summary widget rendered in the completion overlay and detail pane
@@ -312,8 +312,8 @@ maestro/
 │   │   ├── summary.rs                     # Compact per-session summary row widget used in panel and list views
 │   │   ├── token_dashboard.rs             # Token usage dashboard widget: per-session and aggregate token counts; TQ Ratio column removed (#346)
 │   │   ├── turboquant_dashboard.rs        # TurboQuant savings dashboard: classify_savings(), aggregate_savings(), AggregateSavings; renders "Estimated Savings (projection)" header when no real handoff data exists, "Actual Savings" when at least one session has fork-handoff compression metrics; ACTUAL / proj. kind markers per row  [Issue #346]
-│   │   ├── snapshot_tests/                # TUI snapshot tests using insta (48 tests, 11 views)  [Issue #16, #490, #526, #527]
-│   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules; mod agent_graph and mod agent_graph_dispatcher wired  [Issue #526, #527]
+│   │   ├── snapshot_tests/                # TUI snapshot tests using insta (51 tests, 12 views)  [Issue #16, #490, #526, #527, #528]
+│   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules; mod agent_graph, mod agent_graph_dispatcher, and mod agent_graph_keybinding_hint wired  [Issue #526, #527, #528]
 │   │   │   ├── overview.rs                # 6 snapshot tests for PanelView (empty, single, multiple, selected, context overflow, forked)
 │   │   │   ├── detail.rs                  # 6 snapshot tests for DetailView (basic, progress, activity log, no files, retries, markdown)
 │   │   │   ├── fullscreen.rs              # 4 snapshot tests for FullscreenView (markdown, plain text, empty placeholder, auto-scroll)
@@ -326,7 +326,8 @@ maestro/
 │   │   │   ├── copy_keybinding_hint.rs    # Insta snapshot tests for keybinding hint bar: copy_keybinding_hint_enabled and copy_keybinding_hint_disabled  [Issue #482]
 │   │   │   ├── agent_graph.rs             # 4 snapshot tests for agent graph: renders_at_80x24, renders_at_100x30, renders_at_120x40, single_agent_card  [Issue #526]
 │   │   │   ├── agent_graph_dispatcher.rs  # 3 snapshot tests for render dispatcher: toggle_on_renders_graph, toggle_off_renders_panels, toggle_disabled_by_default  [Issue #527]
-│   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files); includes caveman_row renders (default, error, explicit_false, explicit_true, focused_explicit_true); copy_keybinding_hint_enabled and copy_keybinding_hint_disabled; agent_graph renders at 80x24, 100x30, 120x40, and single_agent_card; agent_graph_dispatcher toggle_on and toggle_off baselines  [Issue #490, #482, #526, #527]
+│   │   │   ├── agent_graph_keybinding_hint.rs  # 3 snapshot tests for keybinding hint bar: overview_hints_with_agent_graph_flag_on_includes_g_entry, overview_hints_with_agent_graph_flag_off_excludes_g_entry, agent_graph_mode_hints_include_esc_back_and_g_panels  [Issue #528]
+│   │   │   └── snapshots/                 # Committed insta snapshot files (.snap files); includes caveman_row renders (default, error, explicit_false, explicit_true, focused_explicit_true); copy_keybinding_hint_enabled and copy_keybinding_hint_disabled; agent_graph renders at 80x24, 100x30, 120x40, and single_agent_card; agent_graph_dispatcher toggle_on and toggle_off baselines; agent_graph_keybinding_hint snapshots for flag-on/flag-off overview hints and agent_graph mode hints  [Issue #490, #482, #526, #527, #528]
 │   │   ├── screen_dispatch.rs             # ScreenDispatch: routes key events and render calls to the active screen; constructor receives FeatureFlags for settings screen injection; always injects prompt history when constructing PromptInputScreen; ScreenAction::Push delegates to navigate_to(), ScreenAction::Pop delegates to navigate_back(); Scaffolding case in StartAdaptPipeline dispatch; reads app.config_path directly for settings save (removed relative-path probe at TuiMode::Settings); tracing::warn! when config_path is absent; MilestoneHealth Push/Pop arms added; drains milestone_health_screen pending command channel after each input  [Issue #146, #232, #342, #371, #437, #500]
 │   │   └── screens/                       # Interactive screen components  [Issue #31-33]
 │   │       ├── mod.rs                     # Screen types: ScreenAction enum (+ RefreshSuggestions variant), SessionConfig; re-exports HomeScreen, IssueBrowserScreen, MilestoneScreen; pub mod wizard_fields (added #447); pub mod milestone_health (added #500); wizard_paste removed  [Issue #31-33, #86, #447, #500]

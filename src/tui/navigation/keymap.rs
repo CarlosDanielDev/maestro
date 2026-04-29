@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn mode_keymap_overview_shows_all_fkeys() {
-        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Running), &[]);
+        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Running), &[], false);
         assert_eq!(km.mode_label, "Overview");
         assert_eq!(km.fkeys.len(), 9);
         assert!(km.fkeys.iter().all(|f| f.visible));
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn mode_keymap_overview_running_session_activates_pause_kill() {
-        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Running), &[]);
+        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Running), &[], false);
         let f9 = km.fkeys.iter().find(|f| f.key == "F9").unwrap();
         assert!(f9.active, "F9 Pause should be active when running");
         let f10 = km.fkeys.iter().find(|f| f.key == "F10").unwrap();
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn mode_keymap_overview_no_session_dims_session_keys() {
-        let km = mode_keymap(TuiMode::Overview, None, &[]);
+        let km = mode_keymap(TuiMode::Overview, None, &[], false);
         let f3 = km.fkeys.iter().find(|f| f.key == "F3").unwrap();
         assert!(!f3.active);
         let f9 = km.fkeys.iter().find(|f| f.key == "F9").unwrap();
@@ -392,7 +392,12 @@ mod tests {
 
     #[test]
     fn mode_keymap_overview_completed_session_dims_pause_kill() {
-        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Completed), &[]);
+        let km = mode_keymap(
+            TuiMode::Overview,
+            Some(SessionStatus::Completed),
+            &[],
+            false,
+        );
         let f9 = km.fkeys.iter().find(|f| f.key == "F9").unwrap();
         assert!(!f9.active);
         let f10 = km.fkeys.iter().find(|f| f.key == "F10").unwrap();
@@ -401,7 +406,7 @@ mod tests {
 
     #[test]
     fn mode_keymap_dashboard_shows_reduced_fkeys() {
-        let km = mode_keymap(TuiMode::Dashboard, None, &[]);
+        let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         assert_eq!(km.mode_label, "Dashboard");
         assert_eq!(km.fkeys.len(), 5);
         let keys: Vec<&str> = km.fkeys.iter().map(|f| f.key).collect();
@@ -412,7 +417,7 @@ mod tests {
 
     #[test]
     fn mode_keymap_settings_shows_minimal_fkeys() {
-        let km = mode_keymap(TuiMode::Settings, None, &[]);
+        let km = mode_keymap(TuiMode::Settings, None, &[], false);
         assert_eq!(km.fkeys.len(), 2);
         assert_eq!(km.fkeys[0].key, "F1");
         assert_eq!(km.fkeys[1].key, "^X");
@@ -420,7 +425,7 @@ mod tests {
 
     #[test]
     fn mode_keymap_prompt_input_shows_minimal_fkeys() {
-        let km = mode_keymap(TuiMode::PromptInput, None, &[]);
+        let km = mode_keymap(TuiMode::PromptInput, None, &[], false);
         assert_eq!(km.fkeys.len(), 2);
     }
 
@@ -433,14 +438,14 @@ mod tests {
                 description: "Do X",
             }],
         }];
-        let km = mode_keymap(TuiMode::Dashboard, None, &screen_bindings);
+        let km = mode_keymap(TuiMode::Dashboard, None, &screen_bindings, false);
         assert_eq!(km.help_groups[0].title, "Screen Actions");
         assert!(km.help_groups.len() > 1);
     }
 
     #[test]
     fn mode_keymap_help_groups_include_global_keybindings() {
-        let km = mode_keymap(TuiMode::Overview, None, &[]);
+        let km = mode_keymap(TuiMode::Overview, None, &[], false);
         let global_titles: Vec<&str> = global_keybindings().iter().map(|g| g.title).collect();
         let km_titles: Vec<&str> = km.help_groups.iter().map(|g| g.title).collect();
         for title in &global_titles {
@@ -450,7 +455,7 @@ mod tests {
 
     #[test]
     fn mode_keymap_overview_has_hints() {
-        let km = mode_keymap(TuiMode::Overview, None, &[]);
+        let km = mode_keymap(TuiMode::Overview, None, &[], false);
         assert!(!km.hints.is_empty());
         assert_eq!(km.hints[0].key, "Enter");
         assert_eq!(km.hints[0].action, "Detail");
@@ -458,7 +463,7 @@ mod tests {
 
     #[test]
     fn mode_keymap_dashboard_has_hints() {
-        let km = mode_keymap(TuiMode::Dashboard, None, &[]);
+        let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         let keys: Vec<&str> = km.hints.iter().map(|h| h.key).collect();
         assert!(keys.contains(&"i"));
         assert!(keys.contains(&"r"));
@@ -466,7 +471,7 @@ mod tests {
 
     #[test]
     fn fit_fkeys_full_width_includes_all() {
-        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Running), &[]);
+        let km = mode_keymap(TuiMode::Overview, Some(SessionStatus::Running), &[], false);
         let fitted = fit_fkeys_to_width(&km.fkeys, 120);
         assert_eq!(fitted.len(), 9);
         for (_, label, _) in &fitted {
@@ -476,7 +481,7 @@ mod tests {
 
     #[test]
     fn fit_fkeys_narrow_drops_labels() {
-        let km = mode_keymap(TuiMode::Overview, None, &[]);
+        let km = mode_keymap(TuiMode::Overview, None, &[], false);
         let fitted = fit_fkeys_to_width(&km.fkeys, 35);
         for (_, label, _) in &fitted {
             assert!(label.is_none());
@@ -485,7 +490,7 @@ mod tests {
 
     #[test]
     fn fit_fkeys_very_narrow_truncates() {
-        let km = mode_keymap(TuiMode::Overview, None, &[]);
+        let km = mode_keymap(TuiMode::Overview, None, &[], false);
         let fitted = fit_fkeys_to_width(&km.fkeys, 20);
         assert!(!fitted.is_empty());
         assert!(fitted.len() < 9);
@@ -493,28 +498,28 @@ mod tests {
 
     #[test]
     fn fit_fkeys_dashboard_fewer_entries() {
-        let km = mode_keymap(TuiMode::Dashboard, None, &[]);
+        let km = mode_keymap(TuiMode::Dashboard, None, &[], false);
         let fitted = fit_fkeys_to_width(&km.fkeys, 120);
         assert_eq!(fitted.len(), 5);
     }
 
     #[test]
     fn fit_fkeys_settings_only_two_entries() {
-        let km = mode_keymap(TuiMode::Settings, None, &[]);
+        let km = mode_keymap(TuiMode::Settings, None, &[], false);
         let fitted = fit_fkeys_to_width(&km.fkeys, 120);
         assert_eq!(fitted.len(), 2);
     }
 
     #[test]
     fn fit_hints_wide_includes_all() {
-        let km = mode_keymap(TuiMode::Overview, None, &[]);
+        let km = mode_keymap(TuiMode::Overview, None, &[], false);
         let fitted = fit_hints_to_width(km.hints, 120);
         assert_eq!(fitted.len(), km.hints.len());
     }
 
     #[test]
     fn fit_hints_narrow_truncates_gracefully() {
-        let km = mode_keymap(TuiMode::Overview, None, &[]);
+        let km = mode_keymap(TuiMode::Overview, None, &[], false);
         let fitted = fit_hints_to_width(km.hints, 30);
         assert!(!fitted.is_empty());
         assert!(fitted.len() < km.hints.len());
@@ -522,14 +527,14 @@ mod tests {
 
     #[test]
     fn fit_hints_sorted_by_priority() {
-        let km = mode_keymap(TuiMode::Overview, None, &[]);
+        let km = mode_keymap(TuiMode::Overview, None, &[], false);
         let fitted = fit_hints_to_width(km.hints, 120);
         assert_eq!(fitted[0].0, "Enter");
     }
 
     #[test]
     fn fit_hints_empty_at_zero_width() {
-        let km = mode_keymap(TuiMode::Overview, None, &[]);
+        let km = mode_keymap(TuiMode::Overview, None, &[], false);
         let fitted = fit_hints_to_width(km.hints, 0);
         assert!(fitted.is_empty());
     }
