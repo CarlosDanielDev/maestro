@@ -1,5 +1,8 @@
-//! Spike-only renderer for the agent graph.
-//! See `docs/adr/001-agent-graph-viz.md`.
+//! Renderer for the agent-graph view.
+//!
+//! Consumes positions from `super::layout` and paints nodes + edges onto a
+//! ratatui `Canvas`. See `docs/adr/001-agent-graph-viz.md` for the design
+//! constraints (deterministic, no animation, ≥ 80×24 viewport).
 
 use ratatui::{
     Frame,
@@ -13,14 +16,14 @@ use ratatui::{
     },
 };
 
-use super::layout::{ConcentricLayout, Layout, Viewport};
+use super::layout::{ConcentricLayout, Layout};
 use super::model::{GraphEdge, GraphNode, NodeKind};
 use crate::session::types::SessionStatus;
 
 const MIN_WIDTH: u16 = 80;
 const MIN_HEIGHT: u16 = 24;
 
-pub fn draw_agent_graph(
+pub(crate) fn draw_agent_graph(
     f: &mut Frame,
     area: Rect,
     nodes: &[GraphNode],
@@ -42,14 +45,7 @@ pub fn draw_agent_graph(
     }
 
     let layout = ConcentricLayout;
-    let positions = layout.position(
-        nodes,
-        edges,
-        Viewport {
-            width: area.width,
-            height: area.height,
-        },
-    );
+    let positions = layout.position(nodes, edges);
 
     let marker = if use_braille {
         Marker::Braille
@@ -65,7 +61,7 @@ pub fn draw_agent_graph(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" agent graph (spike) "),
+                .title(" agent graph "),
         )
         .marker(marker)
         .x_bounds([-1.0, 1.0])
@@ -142,7 +138,7 @@ fn draw_single_agent_card(f: &mut Frame, area: Rect, nodes: &[GraphNode]) {
     let para = Paragraph::new(body).alignment(Alignment::Center).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" agent graph (spike) "),
+            .title(" agent graph "),
     );
     f.render_widget(para, area);
 }
@@ -180,5 +176,19 @@ mod tests {
     fn file_style_is_neutral_color() {
         let (color, _) = node_style(&NodeKind::File);
         assert_eq!(color, Color::Cyan);
+    }
+
+    #[test]
+    fn too_small_message_contains_dimensions() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut terminal = Terminal::new(TestBackend::new(79, 23)).unwrap();
+        terminal
+            .draw(|f| {
+                draw_agent_graph(f, f.area(), &[], &[], false);
+            })
+            .unwrap();
+        let rendered = format!("{:?}", terminal.backend().buffer());
+        assert!(rendered.contains("79"), "width not in message");
+        assert!(rendered.contains("23"), "height not in message");
     }
 }

@@ -1,6 +1,6 @@
 # ADR 001 — Agent Graph Visualization in ratatui Canvas
 
-- **Status:** Proposed (spike)
+- **Status:** Accepted (productionized in #526)
 - **Date:** 2026-04-29
 - **Tracking issue:** [#513](https://github.com/CarlosDanielDev/maestro/issues/513)
 - **Spike branch:** `spike/explore-ratatui-canvas` (prototype is throwaway — never merged to main)
@@ -286,6 +286,8 @@ git rm -r src/tui/agent_graph/
 ```
 
 The cleanup is a single commit with no `main`-line code touched outside `Cargo.toml` and `src/tui/mod.rs` — both delete-only changes.
+
+> Cleanup executed in #526. Spike code lifted to `src/tui/agent_graph/` with phase-offset and aspect-ratio bug fixes; `[features] spike` and `examples/agent_graph_spike.rs` removed.
 
 **Fake data:** 3 agents + 3 unique files, hand-built `Session` structs (skipping `Session::new` to avoid `intent::classify_intent`). One file is shared between two `Running` agents to exercise the barycenter sort, and one agent is `Completed` to exercise the dim-and-remove policy.
 
