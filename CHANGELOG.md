@@ -25,6 +25,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `src/integration_tests/milestone_health_wizard.rs` — 9 end-to-end tests against `MockGitHubClient`
   - `GitHubClient` trait extended with `patch_milestone_description`; `GhCliClient` impl uses `gh api ... --method PATCH`; Azure DevOps stub returns `bail!`
 
+- feat(ci): Discord `#releases` notification on new version tag (#507)
+  - `.github/workflows/release.yml` gains a `notify-discord` job that POSTs a message to the channel webhook after a successful release build
+  - Pre-release tags (alpha, beta, rc, pre, dev, canary, smoketest) are suppressed and do not trigger a notification
+  - `workflow_dispatch` dry-run mode (`dry_run: true`) prints the payload to the Actions log instead of POSTing; use `target_tag` to simulate any tag
+  - Requires `DISCORD_WEBHOOK_URL` repo secret; optional `DISCORD_WEBHOOK_URL_TEST` for staging smoke tests
+
 ### Fixed
 
 - fix(notifications): desktop notifications now fire when a session completes or errors (#487)

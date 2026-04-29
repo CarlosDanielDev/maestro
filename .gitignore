@@ -31,3 +31,8 @@ __pycache__/
 
 # Claude Code local state
 .claude/scheduled_tasks.lock
+
+# Environment files (may contain secrets)
+.env
+.env.*
+!.env.example
