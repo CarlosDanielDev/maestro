@@ -1,100 +1,74 @@
 # Maestro
 
-> Multi-session Claude Code orchestrator with a Matrix-style terminal control center.
+[![CI](https://github.com/CarlosDanielDev/maestro/actions/workflows/ci.yml/badge.svg)](https://github.com/CarlosDanielDev/maestro/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/CarlosDanielDev/maestro)](https://github.com/CarlosDanielDev/maestro/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![MSRV](https://img.shields.io/badge/rustc-1.89%2B-orange.svg)](Cargo.toml)
 
-Maestro spawns and monitors multiple [Claude Code](https://claude.ai/claude-code) sessions working on the same project simultaneously. It provides real-time visibility into what each agent is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.
+> Multi-session [Claude Code](https://claude.ai/claude-code) orchestrator with a Matrix-style terminal control center.
 
-<img  width="800" height="600" alt="Screenshot 2026-04-14 at 12 20 07" src="https://github.com/user-attachments/assets/a8cec4e8-1225-4396-b3b8-0c6d8ff0f5ea" />
+Maestro spawns and monitors multiple Claude Code sessions working on the same project simultaneously. It provides real-time visibility into what each session is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.
 
+<!-- TODO(carlos): replace with an up-to-date capture showing the landing screen, F-key bar, and active session pool. -->
+<img width="800" height="600" alt="Maestro TUI dashboard" src="https://github.com/user-attachments/assets/a8cec4e8-1225-4396-b3b8-0c6d8ff0f5ea" />
+
+Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/maestro/wiki). This README is the on-ramp.
 
 ## Features
 
-- **Single-session TUI** — spawn a Claude Code session and watch it work in real-time
-- **Live stream parsing** — parses Claude CLI `stream-json` output for tool usage, messages, and costs
-- **Session lifecycle** — QUEUED → SPAWNING → RUNNING → GATES_RUNNING → COMPLETED/NEEDS_REVIEW/ERRORED/PAUSED/KILLED
-- **Keyboard controls** — pause (SIGSTOP), resume, kill sessions from the dashboard
-- **State persistence** — session history and costs saved to `maestro-state.json`
-- **Cost tracking** — per-session and total spending displayed in real-time
-- **Multi-session pool** — run up to N concurrent Claude sessions with automatic queue promotion
-- **Git worktree isolation** — each session works in its own worktree to prevent file conflicts
-- **File claim system** — registry prevents two sessions from editing the same file simultaneously
-- **GitHub issue queue** — fetch `maestro:ready`-labeled issues and run them as sessions
-- **Milestone mode** — `--milestone <name>` runs all open issues in a milestone
-- **Label lifecycle** — issues are automatically transitioned: `ready` → `in-progress` → `done`/`failed`
-- **Automated PR creation** — on session completion, a PR is opened with cost report and file list
-- **Dependency scheduling** — `blocked-by:#N` labels and body references create an ordered work graph
-- **Priority ordering** — `priority:P0/P1/P2` labels determine scheduling order within the queue
-- **Context overflow detection** — monitors context window usage per session; automatically forks into a continuation session at a configurable threshold with a structured handoff prompt
-- **Fork depth limiting** — configurable maximum fork chain depth prevents runaway continuation loops
-- **Multi-provider support** — works with GitHub (via `gh` CLI) or Azure DevOps (via `az` CLI); provider is auto-detected from the git remote or set explicitly in config
-- **Session prompt guardrails** — a language-specific pre-completion checklist (format, lint, test) is automatically detected from the project root and appended to every session's system prompt; can be overridden with a custom prompt via `guardrail_prompt` in `maestro.toml`
-- **Config-driven completion gates** — after a session finishes, maestro runs a configurable list of shell commands (fmt, clippy, test, or any custom command) before accepting the result; required gate failures transition the session to `NEEDS_REVIEW` and block PR creation; optional gates log warnings only; configured via `[sessions.completion_gates]` in `maestro.toml`
-- **Completion summary overlay** — when all sessions finish, a centred overlay shows a per-session outcome summary (status, cost, elapsed time, PR link, and error snippet for failed sessions); `[i]` opens the issue browser, `[r]` opens a new prompt, `[l]` views the activity log, `[Esc]` returns to the dashboard; use `--once` to skip the overlay and exit immediately (suited for CI/scripting)
-- **Continuous work mode** — `--continuous` / `-C` flag on `maestro run` auto-advances through all ready issues one at a time; on failure a pause overlay prompts the user to `[s]` skip, `[r]` retry, or `[q]` quit; the status bar shows current issue, completed, and skipped counts throughout the run
-- **Interactive home screen** — launching `maestro` opens an idle dashboard with a quick-actions menu, contextual work suggestions, repo/branch info, and a recent activity panel; navigate with `j`/`k` or direct shortcut keys; suggestions auto-refresh when returning from a completed session and can be refreshed on demand with `R`; a loading indicator is shown while a refresh is in progress
-- **Interactive issue browser** — browse, filter, and launch GitHub issues directly from the TUI; supports single-launch (`Enter`) and multi-select batch-launch (`Space` + `Enter`); filter by text (`/`) or milestone (`m`)
-- **Milestone overview** — inspect milestone progress with real-time completion gauges; drill into issues or run all open issues in a milestone with a single key (`r`)
-- **Automatic preflight checks** — `maestro run` validates that `claude`, `gh`/`az`, and `git` are correctly installed and authenticated before spending any API credits; use `--skip-doctor` to bypass when needed
-- **Rich real-time activity feedback** — the activity log shows detailed, human-readable messages for every tool call: file-touching tools display the file path, Bash tool calls show the command preview (`$ cargo test`), and tool results include elapsed time; when Claude uses extended thinking, the activity log shows `"Thinking..."` while the block runs and `"Thought for Xs"` when it finishes; text chunks are suppressed from the global log to prevent flooding
-- **Self-upgrade** — async version check on startup notifies you when a new release is available; press `[u]` to download and install the update with automatic backup and restart confirmation
-- **Visual status transition effects** — panel borders flash briefly (4 frames) when a session changes state; the activity log records a `STATUS: OLD → NEW` entry for every transition, giving an at-a-glance audit trail without leaving the dashboard
-- **DOS-style F-key status bar** — the bottom bar is split into an info strip (agent count, total cost, elapsed time) and an F-key legend (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit) with amber badge styling and responsive width truncation; badge colors are configurable via `fkey_badge_bg` / `fkey_badge_fg` in `maestro.toml`
+### Session orchestration
+- Multi-session pool — run up to N concurrent Claude sessions with automatic queue promotion
+- Git worktree isolation per session prevents file conflicts
+- File claim registry blocks two sessions from editing the same file simultaneously
+- Full session state machine (QUEUED → SPAWNING → RUNNING → GATES_RUNNING → COMPLETED / NEEDS_REVIEW / ERRORED / PAUSED / KILLED)
+- State and costs persisted to `maestro-state.json` for recovery and reporting
 
-### TurboQuant Compression
+→ [Wiki › Sessions and Pool](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Sessions-and-Pool)
 
-TurboQuant is an experimental context compression feature that reduces effective token consumption during long sessions. It uses PolarQuant (angle-based vector quantization) combined with QJL (Johnson-Lindenstrauss) residual compression.
+### TUI dashboard
+- Interactive landing screen with quick-actions menu, contextual work suggestions, and recent activity
+- DOS-style F-key status bar (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit)
+- Rich activity log — file paths, command previews, tool durations, extended-thinking markers
+- Status-transition flash on session state changes
+- Completion-summary overlay when all sessions finish
+- Nerd-font icons throughout
 
-**Configuration** (`maestro.toml`):
-```toml
-[turboquant]
-enabled = false        # Master switch
-bit_width = 4          # Quantization bits (2-8, lower = more compression)
-strategy = "turboquant" # "turboquant" | "polarquant" | "qjl"
-apply_to = "both"      # "keys" | "values" | "both"
-auto_on_overflow = false # Auto-enable when context approaches overflow threshold
-fork_handoff_budget = 2048   # Max tokens in a compressed fork-handoff prompt (0 = no limit)
-system_prompt_budget = 4096  # Max tokens in the compacted system prompt sent on session promote (0 = no limit)
-knowledge_budget = 1024      # Max tokens in the .maestro/knowledge.md snippet injected per session (0 = no limit)
+→ [Wiki › TUI Dashboard](https://github.com/CarlosDanielDev/maestro/wiki/Feature-TUI-Dashboard) · [Home and Landing Screens](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Home-and-Landing-Screens)
 
-[flags]
-turboquant = true      # Runtime feature flag (also toggleable via Ctrl+q)
-```
+### GitHub & Azure DevOps integration
+- Multi-provider — auto-detected from the git remote, or set explicitly in `[provider]`
+- Issue browser and milestone overview directly inside the TUI
+- Issue/Milestone wizards for guided launches
+- Label lifecycle: `maestro:ready` → `maestro:in-progress` → `maestro:done` / `maestro:failed`
+- Dependency scheduling via `blocked-by:#N` labels and body references; priority ordering via `priority:P0/P1/P2`
+- Automated PR creation on session completion with cost report and file list
+- PR Review automation with optional bypass mode
 
-**Runtime toggle**: Press `Ctrl+q` from any screen to enable/disable TurboQuant. The status bar shows a `TQ` badge (green when active, dim when off).
+→ [Wiki › Multi-Provider (GitHub & Azure)](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Multi-Provider-GitHub-Azure) · [PR Review Automation](https://github.com/CarlosDanielDev/maestro/wiki/Feature-PR-Review-Automation) · [Issue and Milestone Wizards](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Issue-and-Milestone-Wizards)
 
-**Strategy comparison**:
+### Quality & autonomy
+- `maestro doctor` preflight checks — verifies `claude`, `gh`/`az`, `git` are installed and authenticated before spending API credits
+- Configurable completion gates (fmt / clippy / test or any custom command) run after every session; failures of required gates block PR creation
+- Language-aware session prompt guardrails (Rust / TS / Python / Go) auto-injected, overridable via `guardrail_prompt`
+- Continuous mode (`--continuous` / `-C`) auto-advances through ready issues with a pause overlay on failure
+- Context-overflow auto-fork with structured handoff prompts and configurable fork-depth limit
+- Smart retry policies on transient errors
 
-| Strategy | Compression | Quality | Best For |
-|----------|-------------|---------|----------|
-| TurboQuant | Highest (3-4x at 4-bit) | Best (PolarQuant + QJL residual) | Default, most workloads |
-| PolarQuant | Medium (2-3x) | Good (angle-only) | When quality matters most |
-| QJL | Fast (2x) | Lower (sign-bit only) | Quick compression, tolerant workloads |
+→ [Wiki › Doctor and Preflight](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Doctor-and-Preflight) · [Completion Gates](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Completion-Gates) · [Context Overflow and Forking](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Context-Overflow-and-Forking) · [Milestone Mode and Continuous](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Milestone-Mode-and-Continuous)
 
-**Dashboards**: View token usage in the Token Dashboard (`t`/`F5`) or estimated and actual savings in the dedicated TurboQuant Savings Dashboard (`Shift+Q`).
+### Power features
+- TurboQuant context compression (PolarQuant + QJL residual) with a runtime toggle via `Ctrl+q`
+- Cost and token dashboards with per-session and total spend tracking
+- Self-upgrade with automatic backup and restart confirmation
+- Shell completions (bash / zsh / fish) and a man page in every release
+- Desktop and Slack notifications
 
-**Troubleshooting**:
-- If compressed sessions show degraded output quality, increase `bit_width` (e.g., 6 or 8)
-- Switch to `polarquant` strategy for higher fidelity at lower compression ratios
-- Set `auto_on_overflow = true` to only activate compression when approaching context limits
-
-**Benchmarking**: Run `maestro turboquant benchmark --dim 768 --bits 4` to test compression performance on your hardware.
-
-### Roadmap
-
-| Phase | What | Status |
-|-------|------|--------|
-| **0** | Single-session TUI, stream parser, state persistence | Done |
-| **1** | Multi-session pool, split-pane TUI, file claim system, git worktrees | Done |
-| **2** | GitHub integration — issue fetching, auto-PR, label lifecycle, dependency graph | Done |
-| **3** | Intelligence — context overflow detection, budget enforcement, stall detection | Done |
-| **4** | Plugin system, mode system, cost dashboard, session resumption | Done |
-| **5** | Multi-provider support — GitHub and Azure DevOps | Done |
-| **6** | TurboQuant — vector quantization for context compression | Done |
+→ [Wiki › TurboQuant Compression](https://github.com/CarlosDanielDev/maestro/wiki/Feature-TurboQuant-Compression) · [Cost and Token Dashboards](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Cost-and-Token-Dashboards) · [Self-Upgrade](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Self-Upgrade) · [Notifications](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Notifications-Desktop-and-Slack)
 
 ## Requirements
 
-- **Rust 1.75+** (tested on 1.94)
-- **Claude Code CLI** (`claude`) installed and on your PATH
+- **Rust 1.89+** (edition 2024)
+- **Claude Code CLI** (`claude`) installed and on your `PATH`
 - **GitHub CLI** (`gh`) — required when using the GitHub provider (default)
 - **Azure CLI** (`az`) — required when using the Azure DevOps provider; run `az login` to authenticate
 - macOS, Linux, or WSL
@@ -114,15 +88,13 @@ brew install carlosdanieldev/tap/maestro --formula
 
 Download the tarball for your platform from the [latest GitHub Release](https://github.com/CarlosDanielDev/maestro/releases/latest), extract it, and place the `maestro` binary on your `PATH`.
 
-Supported targets:
-
 | Platform | Archive |
 |----------|---------|
 | macOS (Apple Silicon) | `maestro-<version>-aarch64-apple-darwin.tar.gz` |
 | macOS (Intel) | `maestro-<version>-x86_64-apple-darwin.tar.gz` |
 | Linux (x86_64) | `maestro-<version>-x86_64-unknown-linux-gnu.tar.gz` |
 
-A `sha256sums.txt` file is included in each release for checksum verification.
+A `sha256sums.txt` file is included for checksum verification.
 
 ### From source
 
@@ -133,358 +105,106 @@ cargo build --release
 # Binary at target/release/maestro
 ```
 
-## Updating
+### Updating
 
-Maestro checks for new versions automatically on startup. When an update is available, a banner appears at the bottom of the TUI:
+Maestro checks for new versions on startup and shows an in-TUI banner — press `[u]` to upgrade with automatic backup and restart confirmation. You can also run `brew upgrade carlosdanieldev/tap/maestro --formula` (Homebrew) or `git pull && cargo build --release` (source).
 
-```
- UPDATE  New version v0.5.1 available  [u]pgrade  [Esc] dismiss
-```
-
-Press `u` to download and install the new version. Maestro backs up the current binary before replacing it and asks for restart confirmation:
-
-```
- READY  v0.5.1 installed!  Restart now? [y]es  [n]o
-```
-
-If you decline, the upgrade takes effect on the next launch.
-
-You can also update through your original install method:
-
-```bash
-# Homebrew
-brew upgrade carlosdanieldev/tap/maestro --formula
-
-# From source
-git pull && cargo build --release
-```
-
-## Shell Completions
-
-Maestro supports tab-completion for bash, zsh, and fish. Completions are pre-generated in every release tarball and installed automatically by Homebrew.
-
-### Generate on demand
-
-```bash
-maestro completions bash   # print bash completion script
-maestro completions zsh    # print zsh completion script
-maestro completions fish   # print fish completion script
-```
-
-### Bash
-
-```bash
-maestro completions bash > ~/.local/share/bash-completion/completions/maestro
-```
-
-Restart your shell or run `source ~/.bashrc` to activate.
-
-### Zsh
-
-```bash
-mkdir -p ~/.zfunc
-maestro completions zsh > ~/.zfunc/_maestro
-```
-
-Add the following line to your `~/.zshrc` **before** `compinit` is called:
-
-```zsh
-fpath+=~/.zfunc
-```
-
-Then reload:
-
-```zsh
-source ~/.zshrc
-```
-
-### Fish
-
-```bash
-maestro completions fish > ~/.config/fish/completions/maestro.fish
-```
-
-Fish picks up completions in that directory automatically — no shell restart required.
-
-### Homebrew
-
-Homebrew installs the man page and shell completions automatically when you run `brew install`. No manual steps are needed.
-
-### Pre-built releases
-
-Each release tarball on the [GitHub Releases page](https://github.com/CarlosDanielDev/maestro/releases) includes a `completions/` directory (containing `maestro.bash`, `_maestro` for zsh, and `maestro.fish`) and a `man/maestro.1` man page. Copy the files to the appropriate paths listed above.
-
-To read the man page from the tarball:
-
-```bash
-man ./man/maestro.1
-```
+→ [Wiki › Self-Upgrade](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Self-Upgrade)
 
 ## Quick Start
 
 ```bash
-# Initialize config (auto-detects project stack)
-maestro init
-
-# Re-run detection and merge results into an existing maestro.toml
-maestro init --reset
-
-# Run a single session with a prompt
-maestro run --prompt "Refactor the auth module to use async/await"
-
-# Run a session and exit immediately when done (CI / scripting mode)
-maestro run --issue 42 --once
-
-# Run a session for a GitHub issue
-maestro run --issue 42
-
-# Run all open issues in a milestone (respects priority and dependencies)
-maestro run --milestone "v1.0"
-
-# Show all queued issues labelled maestro:ready
-maestro queue
-
-# Add a single issue to the work queue manually
-maestro add 42
-
-# Open the dashboard (empty, for monitoring)
-maestro
-
-# Check session status (no TUI)
-maestro status
-
-# View spending report
-maestro cost
-
-# Run preflight environment checks manually
-maestro doctor
-
-# Skip preflight checks (use when environment is already known-good)
-maestro run --issue 42 --skip-doctor
+maestro init                                              # generate maestro.toml
+maestro doctor                                            # verify gh/az/claude/git
+maestro run --prompt "Refactor the auth module to async"  # ad-hoc session
+maestro run --issue 42                                    # session for a GitHub issue
+maestro run --milestone "v1.0"                            # all open issues in a milestone
+maestro                                                   # open the TUI dashboard
 ```
+
+For the full command catalogue see [Wiki › CLI Reference](https://github.com/CarlosDanielDev/maestro/wiki/CLI-Reference) or run `maestro --help`.
 
 ## Configuration
 
-Maestro reads `maestro.toml` from the project root. Run `maestro init` to generate it; the command auto-detects your project's tech stack and fills in sensible defaults for `build_command`, `test_command`, and `run_command`. Supported stacks: **Rust** (`Cargo.toml`), **Node** (`package.json`), **Python** (`pyproject.toml`, `requirements.txt`, `setup.py`), **Go** (`go.mod`). Polyglot repos record all detected stacks under `languages`; the first stack in the order above drives the active command defaults.
+Maestro reads `maestro.toml` from the project root. Run `maestro init` to generate it — the command auto-detects your project's tech stack (Rust, Node, Python, Go, or polyglot) and fills in sensible defaults for `build_command`, `test_command`, and `run_command`. Run `maestro init --reset` to re-detect and merge results into an existing file (existing keys are preserved).
 
-Run `maestro init --reset` to re-detect and merge results into an existing file. Keys you have already customized are never overwritten; missing keys are added.
-
-The same re-detection is available in the TUI under **Settings → Project → Reset Settings (re-detect project stack)**.
+A minimal `maestro.toml`:
 
 ```toml
 [project]
-repo = "owner/repo"
+repo        = "owner/repo"
 base_branch = "main"
-# Written by `maestro init` / `--reset` — edit freely:
-# language = "rust"            # primary stack
-# languages = ["rust", "node"] # polyglot: all detected stacks
-# build_command = "cargo build"
-# test_command  = "cargo test"
-# run_command   = "cargo run"
 
 [sessions]
-max_concurrent = 3        # Max parallel Claude sessions
-stall_timeout_secs = 300  # Kill stalled sessions after 5 min
-default_model = "opus"    # opus, sonnet, haiku
-default_mode = "orchestrator"
-# guardrail_prompt = "..."  # Custom pre-completion checklist injected into every session prompt
-                            # Omit to auto-detect from project language (Rust/TS/Python/Go)
+max_concurrent = 3            # parallel Claude sessions
+default_model  = "opus"       # opus | sonnet | haiku
+default_mode   = "orchestrator"
 
 [budget]
-per_session_usd = 5.0     # Max spend per session
-total_usd = 50.0          # Global budget cap
-alert_threshold_pct = 80  # Warn at 80% of budget
+per_session_usd     = 5.0
+total_usd           = 50.0
+alert_threshold_pct = 80      # warn at 80% of budget
 
 [github]
-issue_filter_labels = ["maestro:ready"]
 auto_pr = true
-cache_ttl_secs = 300        # How long issue data is cached (default: 5 min)
-
-[notifications]
-desktop = true
-slack = false
-
-[sessions.context_overflow]
-overflow_threshold_pct = 70  # Auto-fork when context reaches this % (default: 70)
-auto_fork = true             # Spawn a continuation session on overflow
-commit_prompt_pct = 50       # Prompt an intermediate commit at this % (default: 50)
-max_fork_depth = 5           # Max chained forks before overflow is ignored
-
-# Completion gates — run after every session before PR creation
-[sessions.completion_gates]
-enabled = true               # Set to false to skip all gates
-
-[[sessions.completion_gates.commands]]
-name = "fmt"
-run = "cargo fmt --check"
-required = true              # true = failure blocks PR; false = warning only
-
-[[sessions.completion_gates.commands]]
-name = "clippy"
-run = "cargo clippy -- -D warnings"
-required = true
-
-[[sessions.completion_gates.commands]]
-name = "test"
-run = "cargo test"
-required = true
-
-# Optional: explicit provider configuration (auto-detected from git remote by default)
-[provider]
-kind = "github"              # "github" (default) or "azure_devops"
-
-# Azure DevOps example:
-# [provider]
-# kind = "azure_devops"
-# organization = "https://dev.azure.com/MyOrg"
-# az_project = "MyProject"
 ```
+
+The full schema — completion gates, context-overflow tuning, TurboQuant, provider/Azure DevOps configuration, notifications, and feature flags — is documented in [Wiki › Configuration Reference](https://github.com/CarlosDanielDev/maestro/wiki/Configuration-Reference).
 
 ## Architecture
 
-See [directory-tree.md](directory-tree.md) for the complete project structure.
+See [`directory-tree.md`](directory-tree.md) for the full source layout. At a high level:
 
-```
-maestro (Rust binary)
-├── src/
-│   ├── main.rs              # CLI entry point (clap); Run/Queue/Add/Status/Cost/Init
-│   ├── config.rs            # maestro.toml parsing; ProviderConfig; guardrail_prompt in SessionsConfig
-│   ├── init/                # Tech-stack auto-detection (maestro init / --reset)
-│   │   ├── detector.rs      # DetectedStack (Rust/Node/Python/Go); FsProjectDetector
-│   │   ├── walk.rs          # find_project_root()
-│   │   ├── template.rs      # Per-stack command defaults; render_template()
-│   │   └── merge.rs         # merge_toml(): add missing keys, preserve existing ones
-│   ├── provider/            # Multi-provider abstraction [Issue #29]
-│   │   ├── mod.rs           # create_provider factory; detect_provider_from_remote
-│   │   ├── types.rs         # ProviderKind (Github, AzureDevops); type re-exports
-│   │   └── azure_devops.rs  # AzDevOpsClient (shells out to `az`)
-│   ├── github/              # GitHub API integration [Phase 2]
-│   │   ├── types.rs         # GhIssue, Priority, MaestroLabel, SessionMode
-│   │   ├── client.rs        # GitHubClient trait + GhCliClient (shells out to `gh`)
-│   │   ├── labels.rs        # Label lifecycle: ready→in-progress→done/failed
-│   │   └── pr.rs            # Auto PR creation with cost report
-│   ├── session/
-│   │   ├── types.rs         # Session state machine, StreamEvent, issue_title
-│   │   ├── parser.rs        # Claude stream-json line parser
-│   │   ├── manager.rs       # Process spawn, stdin/stdout, lifecycle
-│   │   ├── pool.rs          # Concurrent session pool; guardrail injected into system prompt [Phase 1, #43]
-│   │   └── worktree.rs      # Git worktree isolation [Phase 1]
-│   ├── state/
-│   │   ├── types.rs         # MaestroState, file claims, issue_cache
-│   │   └── store.rs         # JSON persistence (atomic writes)
-│   ├── work/                # Work queue and scheduling [Phase 2]
-│   │   ├── types.rs         # WorkItem, WorkStatus
-│   │   ├── dependencies.rs  # DAG: topological sort, cycle detection
-│   │   └── assigner.rs      # Priority-ordered queue assignment
-│   └── tui/
-│       ├── app.rs           # App state, WorkAssigner, GitHubClient integration
-│       ├── ui.rs            # ratatui rendering (panels, gauges, logs)
-│       └── mod.rs           # Terminal setup, async event loop
-├── Cargo.toml
-└── maestro.toml             # Default config
-```
+1. `src/cli.rs` parses the command and dispatches to a handler.
+2. The session pool spawns `claude` subprocesses, each in an isolated git worktree, parsing their `stream-json` output.
+3. The ratatui TUI renders the pool state, activity log, and dashboards from a shared in-memory store persisted to `maestro-state.json`.
+
+→ [Wiki › Architecture](https://github.com/CarlosDanielDev/maestro/wiki/Architecture)
 
 ## GitHub Label System
 
-Maestro reads and writes GitHub labels to coordinate work. All label names are defined in `src/github/types.rs`.
+Maestro reads and writes a small set of GitHub labels to coordinate work. All names are defined in `src/provider/github/types.rs`.
 
-### Status Labels (managed by Maestro)
-
-| Label | Meaning |
+| Label | Purpose |
 |-------|---------|
-| `maestro:ready` | Issue is queued and ready for a session to pick up |
-| `maestro:in-progress` | A session is currently working on this issue |
-| `maestro:done` | Session completed successfully; PR was opened |
-| `maestro:failed` | Session ended with an error |
-
-### Scheduling Labels (set by you)
-
-| Label | Meaning |
-|-------|---------|
-| `priority:P0` | Highest priority — scheduled first |
-| `priority:P1` | Medium priority |
-| `priority:P2` | Default priority |
-| `mode:orchestrator` | Run session in Orchestrator mode |
-| `mode:vibe` | Run session in Vibe Coding mode |
-| `blocked-by:#N` | This issue cannot start until issue #N is done |
-
-Dependencies can also be declared in the issue body as `blocked-by: #N` (case-insensitive).
+| `maestro:ready` | Queued and ready for a session to pick up (managed) |
+| `maestro:in-progress` | A session is currently working on this issue (managed) |
+| `maestro:done` | Session completed successfully and PR was opened (managed) |
+| `maestro:failed` | Session ended with an error (managed) |
+| `priority:P0` / `P1` / `P2` | Scheduling priority — P0 first (set by you) |
+| `mode:orchestrator` / `mode:vibe` | Run session in the named mode (set by you) |
+| `blocked-by:#N` | Issue cannot start until #N closes (also accepted in body) |
 
 ## Keyboard Shortcuts
 
-### Global
+The full key map (global, overview, home screen, issue browser, milestone overview, prompt input) is at [Wiki › Keyboard Shortcuts](https://github.com/CarlosDanielDev/maestro/wiki/Keyboard-Shortcuts).
 
-| Key | Action |
-|-----|--------|
-| `q` | Quit maestro (kills all sessions) |
-| `Ctrl+C` | Emergency exit |
+## Shell Completions
 
-### Overview / Session Panel
-
-| Key | Action |
-|-----|--------|
-| `p` | Pause all running sessions (SIGSTOP) |
-| `r` | Resume all paused sessions (SIGCONT) |
-| `k` | Kill all sessions |
-| `c` | Copy focused agent's last response to clipboard (dimmed when no response or session is streaming) |
-
-### Home Screen
-
-| Key | Action |
-|-----|--------|
-| `i` | Open issue browser |
-| `m` | Open milestone overview |
-| `c` | Open cost dashboard |
-| `R` | Refresh work suggestions |
-| `j` / `Down` | Move selection down |
-| `k` / `Up` | Move selection up |
-| `Enter` | Execute selected action |
-
-### Issue Browser
-
-| Key | Action |
-|-----|--------|
-| `j` / `Down` | Move cursor down |
-| `k` / `Up` | Move cursor up |
-| `Space` | Toggle multi-select on current issue |
-| `Enter` | Launch session(s) for selected issue(s) |
-| `/` | Enter label text filter mode |
-| `m` | Enter milestone filter mode |
-| `Esc` | Exit filter mode / go back |
-
-### Milestone Overview
-
-| Key | Action |
-|-----|--------|
-| `j` / `Down` | Move cursor down |
-| `k` / `Up` | Move cursor up |
-| `Enter` | Browse issues in selected milestone |
-| `r` | Run all open issues in selected milestone |
-| `Esc` | Go back |
-
-### Prompt Input
-
-| Key | Action |
-|-----|--------|
-| `Enter` | Submit prompt and launch session |
-| `Shift+Enter` | Insert newline |
-| `Ctrl+V` | Paste from clipboard (text or image) |
-| `Tab` / `Shift+Tab` | Move focus between fields |
-| `a` | Add image attachment (in attachment list) |
-| `d` | Remove selected attachment (in attachment list) |
-| `Esc` | Cancel and return to previous screen |
-
-## How It Works
-
-1. Maestro spawns `claude --print --output-format stream-json --model <model> "<prompt>"`
-2. Parses the JSON stream line-by-line to extract tool usage, messages, costs
-3. Renders real-time state in a ratatui TUI with agent panels and activity log
-4. Persists session state to `maestro-state.json` for recovery and reporting
+Maestro ships pre-generated bash, zsh, and fish completions plus a `maestro.1` man page in every release tarball; Homebrew installs them automatically. To regenerate on demand: `maestro completions <bash|zsh|fish>`. Per-shell installation paths and zsh `fpath` configuration are covered in [Wiki › Installation](https://github.com/CarlosDanielDev/maestro/wiki/Installation).
 
 ## Integration with `.claude/`
 
 Maestro wraps — not replaces — your existing `.claude/` agent system. Each spawned Claude session inherits your project's `CLAUDE.md`, agents, skills, and commands. Maestro adds coordination context (file claims, peer awareness) via `--append-system-prompt`.
 
+## Roadmap
+
+[`ROADMAP.md`](ROADMAP.md) is the single source of truth for milestones and implementation order; [`CHANGELOG.md`](CHANGELOG.md) has detailed release notes. The active milestone is **[v0.17.0 – Documentation & Community](https://github.com/CarlosDanielDev/maestro/milestone/28)**; browse all open milestones at [github.com/CarlosDanielDev/maestro/milestones](https://github.com/CarlosDanielDev/maestro/milestones), and the latest released version is always at [releases/latest](https://github.com/CarlosDanielDev/maestro/releases/latest).
+
+## Contributing
+
+Contributions are welcome. The full developer guide lives in [Wiki › Contributing](https://github.com/CarlosDanielDev/maestro/wiki/Contributing).
+
+Quick orientation:
+
+```bash
+cargo build           # debug build
+cargo test            # run tests
+cargo clippy && cargo fmt    # lint and format
+```
+
+The Rust coding policy — error handling, async discipline, `unsafe`, testing, dependencies, style — is in [`docs/RUST-GUARDRAILS.md`](docs/RUST-GUARDRAILS.md). The `.claude/` directory hosts the orchestrator-mode agent system; see [`.claude/CLAUDE.md`](.claude/CLAUDE.md) for the workflow rules.
+
 ## License
 
-MIT
+[MIT](LICENSE)
