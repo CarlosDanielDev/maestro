@@ -400,18 +400,12 @@ pub(crate) struct PendingHook {
     pub ctx: HookContext,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PendingIssueCompletion {
-    pub issue_number: u64,
-    /// Additional issue numbers for unified PR sessions.
-    pub issue_numbers: Vec<u64>,
-    pub success: bool,
-    pub cost_usd: f64,
-    pub files_touched: Vec<String>,
-    pub worktree_branch: Option<String>,
-    pub worktree_path: Option<std::path::PathBuf>,
-    pub is_ci_fix: bool,
-}
+// `PendingIssueCompletion` lives in the state layer (`state/types.rs`)
+// because it is persisted in `MaestroState`. The architecture-layer rule
+// forbids `state` from depending on `tui`, so the canonical home is the
+// state layer; we re-export it here so existing TUI call sites keep
+// using the `super::types::PendingIssueCompletion` path.
+pub use crate::state::types::PendingIssueCompletion;
 
 #[cfg(test)]
 mod tests {

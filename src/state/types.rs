@@ -3,6 +3,29 @@ use crate::session::types::Session;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
+
+/// A session-end event awaiting auto-PR processing. Persisted in
+/// `MaestroState::pending_completions` so a maestro shutdown between
+/// session-completion and the next `check_completions` tick does not
+/// orphan the worktree (#514).
+///
+/// Lives in the state layer (not the TUI layer) so the architecture
+/// rule that forbids `state -> tui` imports is respected. The TUI layer
+/// re-exports this type via `crate::tui::app::types::PendingIssueCompletion`
+/// for backward compatibility with existing call sites.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingIssueCompletion {
+    pub issue_number: u64,
+    /// Additional issue numbers for unified PR sessions.
+    pub issue_numbers: Vec<u64>,
+    pub success: bool,
+    pub cost_usd: f64,
+    pub files_touched: Vec<String>,
+    pub worktree_branch: Option<String>,
+    pub worktree_path: Option<PathBuf>,
+    pub is_ci_fix: bool,
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MaestroState {
@@ -24,7 +47,7 @@ pub struct MaestroState {
     /// next `check_completions` tick does not orphan the worktree (#514).
     /// Backward compatible — older state files default to an empty vec.
     #[serde(default)]
-    pub pending_completions: Vec<crate::tui::app::types::PendingIssueCompletion>,
+    pub pending_completions: Vec<PendingIssueCompletion>,
 }
 
 impl MaestroState {
@@ -231,8 +254,6 @@ mod tests {
 
     #[test]
     fn maestro_state_pending_completions_round_trips_via_serde() {
-        use crate::tui::app::types::PendingIssueCompletion;
-
         let mut state = MaestroState::default();
         state.pending_completions.push(PendingIssueCompletion {
             issue_number: 42,
