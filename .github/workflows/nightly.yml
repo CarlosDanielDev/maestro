@@ -13,21 +13,31 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # `taiki-e/install-action` fetches the prebuilt cargo-mutants binary
+      # from its GitHub release and caches it across runs, replacing the
+      # previous `cargo install cargo-mutants --locked` step that re-built
+      # the binary on every nightly (~5–10 min/shard).
       - name: Install cargo-mutants
-        run: cargo install cargo-mutants --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
       # --baseline=skip is mandatory when sharding.
       # The baseline-green assumption is enforced by the regular `test`
       # job in ci.yml (per-PR, blocking); mutation only runs nightly
       # after main's test suite is known-green.
-      - name: Run mutation tests (shard ${{ matrix.shard }}/4)
-        run: cargo mutants --shard ${{ matrix.shard }}/4 --no-shuffle --baseline=skip
+      #
+      # Shard count was raised from 4 to 8 so each shard handles half the
+      # mutation surface and lands well inside the 180-minute job budget.
+      # The matrix length above and the `--shard X/N` arg below must match.
+      - name: Run mutation tests (shard ${{ matrix.shard }}/8)
+        run: cargo mutants --shard ${{ matrix.shard }}/8 --no-shuffle --baseline=skip
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
