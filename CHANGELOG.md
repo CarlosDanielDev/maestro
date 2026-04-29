@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-04-29
+
+Milestone "v0.16.1" — Idea Triage Foundation (idea-inbox funnel with the consultive `subagent-idea-triager`, `/triage-idea` slash command, parse hook, and Idea issue template) plus v0.16.0 carry-overs: tech-stack auto-detection in `maestro init`, milestone-health wizard, Discord release notifications, atomic auto-updater rewrite, desktop-notification fix, and an actionlint workflow-lint CI gate. Closes #482, #483, #484, #485, #486, #487, #499, #500, #505, #507, #510.
+
 ### Added
 
 - feat(init): auto-detect project tech stack on `maestro init` and `maestro init --reset` (#505)
@@ -31,9 +35,32 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `workflow_dispatch` dry-run mode (`dry_run: true`) prints the payload to the Actions log instead of POSTing; use `target_tag` to simulate any tag
   - Requires `DISCORD_WEBHOOK_URL` repo secret; optional `DISCORD_WEBHOOK_URL_TEST` for staging smoke tests
 
+- feat(tui): copy focused agent-tab response to clipboard via keybinding in session overview (#482)
+
+- feat: Idea Triage Foundation — upstream idea-inbox funnel (#483, #484, #485, #486)
+  - `.github/ISSUE_TEMPLATE/idea.yml` — 5 required textareas (the itch + Q1-Q4 honesty checks) + Q5 vision-alignment dropdown; auto-applies labels `idea` and `needs-triage`
+  - `.claude/agents/subagent-idea-triager.md` — consultive triage subagent (no auto-mutation; emits structured JSON report)
+  - `.claude/commands/triage-idea.md` — slash command wiring with confirmation prompts before any GitHub mutation
+  - `.claude/hooks/parse_idea_triager_report.py` — output-contract parser hook with fixtures
+  - End-to-end smoke-tested with a throwaway issue
+
 ### Fixed
 
 - fix(notifications): desktop notifications now fire when a session completes or errors (#487)
+
+- fix(updater): atomic binary replace via `BinaryReplacer` trait (#499)
+  - Tempfile + atomic rename + `.bak` rollback; `flock`-based `UpdateLock` with `O_NOFOLLOW` + `O_CLOEXEC` rejects symlinked locks
+  - Typed `UpdateError` variants surface in the TUI banner verbatim
+  - `download_and_install` parallelizes binary fetch + `SHA256SUMS` via `try_join!`
+  - 18 new tests; existing tests migrated to typed-error signatures
+
+### Changed
+
+- chore(ci): actionlint workflow-lint gate; retire per-issue `verify-issue-NNN.sh` convention (#510)
+  - `.github/workflows/ci.yml` gains an `actionlint` job that lints every workflow YAML on push/PR (strict severity, surfaces shellcheck `info` findings)
+  - Pinned-version binary download + sha256 verify (no bootstrap-via-curl); `permissions: {}`, `persist-credentials: false`
+  - Cross-cutting CWE-78 invariant step: no `secrets.*` interpolation outside `KEY: ${{ secrets.NAME }}` env/with assignments
+  - `scripts/verify-issue-{485,507}.sh` deleted; `/implement` spec gains a "Binding-gate selection" subsection — future CI-only changes use tool-specific binding gates wired into `ci.yml` instead of per-issue verify scripts
 
 ## [0.16.0] - 2026-04-25
 
