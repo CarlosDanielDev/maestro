@@ -273,6 +273,15 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::AgentGraph => (
+            "Agent Graph",
+            FKeyVis::DashboardLike,
+            &[InlineHint {
+                key: "Esc",
+                action: "Back",
+                priority: 0,
+            }],
+        ),
         TuiMode::CompletionSummary => (
             "Completion Summary",
             FKeyVis::Minimal,

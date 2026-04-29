@@ -13,6 +13,10 @@ pub enum TuiMode {
     Overview,
     Detail(uuid::Uuid),
     DependencyGraph,
+    /// Bipartite agent/file graph view (#525/#526/#527). Only reachable
+    /// when `views.agent_graph_enabled == true`. The dispatcher in
+    /// `tui::ui::draw` is the single source of truth for the toggle.
+    AgentGraph,
     Fullscreen(uuid::Uuid),
     CostDashboard,
     Dashboard,
@@ -70,6 +74,7 @@ impl TuiMode {
             Self::Overview => "Overview",
             Self::Detail(_) => "Detail",
             Self::DependencyGraph => "Dependencies",
+            Self::AgentGraph => "Agent Graph",
             Self::Fullscreen(_) => "Fullscreen",
             Self::CostDashboard => "Cost",
             Self::Dashboard => "Dashboard",
@@ -502,6 +507,7 @@ mod tests {
             TuiMode::IssueBrowser,
             TuiMode::MilestoneView,
             TuiMode::DependencyGraph,
+            TuiMode::AgentGraph,
             TuiMode::CostDashboard,
             TuiMode::TokenDashboard,
             TuiMode::TurboquantDashboard,
@@ -532,5 +538,12 @@ mod tests {
                 mode
             );
         }
+    }
+
+    #[test]
+    fn agent_graph_breadcrumb_label_is_non_empty() {
+        let label = TuiMode::AgentGraph.breadcrumb_label();
+        assert!(!label.is_empty());
+        assert_eq!(label, "Agent Graph");
     }
 }

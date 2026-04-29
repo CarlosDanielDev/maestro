@@ -39,11 +39,11 @@ pub(crate) struct GraphEdge {
 /// One `GraphNode::Agent` per session. One `GraphNode::File` per unique path
 /// across all `Session::files_touched`. One edge per (agent, file) pair the
 /// agent has touched.
-pub(crate) fn build_graph(sessions: &[Session]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+pub(crate) fn build_graph(sessions: &[&Session]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let mut nodes: Vec<GraphNode> = Vec::with_capacity(sessions.len() * 2);
     let mut edges: Vec<GraphEdge> = Vec::new();
 
-    for s in sessions {
+    for &s in sessions {
         let agent_id = NodeId::Agent(s.id);
         nodes.push(GraphNode {
             id: agent_id.clone(),
@@ -105,7 +105,7 @@ mod tests {
     fn build_graph_dedupes_files_across_sessions() {
         let s1 = fake(SessionStatus::Running, &["src/main.rs", "src/config.rs"]);
         let s2 = fake(SessionStatus::Running, &["src/config.rs", "Cargo.toml"]);
-        let (nodes, edges) = build_graph(&[s1, s2]);
+        let (nodes, edges) = build_graph(&[&s1, &s2]);
 
         let agent_count = nodes
             .iter()
