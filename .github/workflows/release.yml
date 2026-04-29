@@ -4,6 +4,18 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the Discord payload to the log instead of POSTing"
+        type: boolean
+        required: false
+        default: true
+      target_tag:
+        description: "Tag to simulate (workflow_dispatch only; default v0.0.0-test is a smoke-test placeholder)"
+        type: string
+        required: true
+        default: "v0.0.0-test"
 
 concurrency:
   group: release-${{ github.ref }}
@@ -80,7 +92,7 @@ jobs:
         id: checksums
         run: |
           cd artifacts
-          sha256sum *.tar.gz > sha256sums.txt
+          sha256sum ./*.tar.gz > sha256sums.txt
           cat sha256sums.txt
 
       - name: Create GitHub Release
@@ -190,3 +202,88 @@ jobs:
           git diff --cached --quiet && echo "No changes to formula" && exit 0
           git commit -m "feat: update maestro to ${VERSION}"
           git push
+
+  notify-discord:
+    name: Notify Discord
+    needs: release
+    runs-on: ubuntu-latest
+    permissions: {}
+    # Pre-release suffix blocklist: alpha, beta, rc, pre, dev, canary, smoketest.
+    # contains() is case-sensitive — project tag convention is lowercase semver
+    # (v1.2.3, v1.2.3-rc.1). Extend this list if uppercase suffixes (-RC, -BETA)
+    # ever ship.
+    # Idempotency: manual re-runs WILL post a duplicate message. Accepted per #507
+    # to keep the workflow simple.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (startsWith(github.ref, 'refs/tags/v') &&
+       !contains(github.ref, '-alpha') &&
+       !contains(github.ref, '-beta') &&
+       !contains(github.ref, '-rc') &&
+       !contains(github.ref, '-pre') &&
+       !contains(github.ref, '-dev') &&
+       !contains(github.ref, '-canary') &&
+       !contains(github.ref, '-smoketest'))
+    steps:
+      - name: Resolve tag
+        id: resolve
+        env:
+          DISPATCH_TAG: ${{ inputs.target_tag }}
+          PUSH_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${DISPATCH_TAG}"
+          else
+            TAG="${PUSH_REF#refs/tags/}"
+          fi
+          # Defense in depth: env: indirection already neutralizes shell injection,
+          # but rejecting non-semver shapes early gives a clearer error than letting
+          # a malformed tag flow into the URL and payload.
+          if ! [[ "${TAG}" =~ ^v[0-9A-Za-z._+-]+$ ]]; then
+            echo "::error::Invalid tag format: '${TAG}' (expected v<semver>)" >&2
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build payload
+        id: payload
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
+          MESSAGE="**maestro ${TAG}** released. Upgrade: \`cargo install --force maestro\` or \`brew upgrade carlosdanieldev/tap/maestro\`. Release notes: ${RELEASE_URL} — see the release page for the full changelog."
+          PAYLOAD=$(jq -n --arg content "${MESSAGE}" '{content: $content}')
+          {
+            echo "payload<<EOF"
+            echo "${PAYLOAD}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Dry run — print payload
+        if: ${{ inputs.dry_run == true }}
+        env:
+          PAYLOAD: ${{ steps.payload.outputs.payload }}
+        run: |
+          echo "[DRY RUN] Would POST the following payload to Discord:"
+          # Re-parse via jq to close the log-injection surface (control chars /
+          # ANSI / GitHub workflow commands embedded in any field).
+          printf '%s\n' "${PAYLOAD}" | jq .
+
+      - name: Post to Discord
+        if: ${{ inputs.dry_run != true }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PAYLOAD: ${{ steps.payload.outputs.payload }}
+        run: |
+          [ -n "${DISCORD_WEBHOOK_URL}" ] || {
+            echo "::error::DISCORD_WEBHOOK_URL secret is empty — set it in repo Settings → Secrets" >&2
+            exit 1
+          }
+          # Discord webhooks do not redirect; default curl retry covers transient
+          # network errors, 5xx, 408, 429.
+          curl -fsS --retry 3 --retry-delay 5 \
+               -H 'Content-Type: application/json' \
+               --data "${PAYLOAD}" \
+               "${DISCORD_WEBHOOK_URL}"
