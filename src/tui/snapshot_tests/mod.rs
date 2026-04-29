@@ -1,3 +1,4 @@
+mod agent_graph;
 mod caveman_row;
 mod copy_keybinding_hint;
 mod cost_dashboard;

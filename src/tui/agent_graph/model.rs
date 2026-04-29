@@ -1,4 +1,4 @@
-//! Spike-only data model. See `docs/adr/001-agent-graph-viz.md`.
+//! Data model for the agent-graph view. See `docs/adr/001-agent-graph-viz.md`.
 
 use std::path::{Path, PathBuf};
 
@@ -7,13 +7,13 @@ use uuid::Uuid;
 use crate::session::types::{Session, SessionStatus};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub enum NodeId {
+pub(crate) enum NodeId {
     Agent(Uuid),
     File(PathBuf),
 }
 
 #[derive(Clone)]
-pub enum NodeKind {
+pub(crate) enum NodeKind {
     Agent {
         status: SessionStatus,
         issue_number: Option<u64>,
@@ -22,17 +22,16 @@ pub enum NodeKind {
 }
 
 #[derive(Clone)]
-pub struct GraphNode {
-    pub id: NodeId,
-    pub kind: NodeKind,
-    pub label: String,
+pub(crate) struct GraphNode {
+    pub(crate) id: NodeId,
+    pub(crate) kind: NodeKind,
+    pub(crate) label: String,
 }
 
 #[derive(Clone)]
-pub struct GraphEdge {
-    pub from: NodeId,
-    pub to: NodeId,
-    // No edge label or kind in the spike — only Agent → File "touches" exists.
+pub(crate) struct GraphEdge {
+    pub(crate) from: NodeId,
+    pub(crate) to: NodeId,
 }
 
 /// Build a bipartite graph of agents and the files they touch.
@@ -40,7 +39,7 @@ pub struct GraphEdge {
 /// One `GraphNode::Agent` per session. One `GraphNode::File` per unique path
 /// across all `Session::files_touched`. One edge per (agent, file) pair the
 /// agent has touched.
-pub fn build_graph(sessions: &[Session]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+pub(crate) fn build_graph(sessions: &[Session]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let mut nodes: Vec<GraphNode> = Vec::with_capacity(sessions.len() * 2);
     let mut edges: Vec<GraphEdge> = Vec::new();
 

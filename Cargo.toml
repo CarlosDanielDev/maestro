@@ -10,15 +10,6 @@ license = "MIT"
 name = "maestro"
 path = "src/main.rs"
 
-[features]
-# Spike-only feature gate (issue #513, ADR 001). Never set on `main`.
-# See `docs/adr/001-agent-graph-viz.md` for cleanup instructions.
-spike = []
-
-[[example]]
-name = "agent_graph_spike"
-required-features = ["spike"]
-
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"

@@ -1,4 +1,5 @@
 pub mod activity_log;
+pub(crate) mod agent_graph;
 pub mod app;
 mod background_tasks;
 pub mod clipboard;
