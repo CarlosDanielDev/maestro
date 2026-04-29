@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/CarlosDanielDev/maestro)](https://github.com/CarlosDanielDev/maestro/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rustc-1.89%2B-orange.svg)](Cargo.toml)
+[![Discord](https://img.shields.io/discord/1498709440465998038?logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/vUTuhRmq)
 
 > Multi-session [Claude Code](https://claude.ai/claude-code) orchestrator with a Matrix-style terminal control center.
 
