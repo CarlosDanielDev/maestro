@@ -54,5 +54,6 @@ jobs:
           fi
           TSAN_SUMMARY=$(tail -n 40 tsan.log | head -c 10000)
           RUN_STAMP=$(date -u +%Y-%m-%d-%H:%M-UTC)
+          # shellcheck disable=SC2016 # printf interprets \n in single-quoted format string
           printf 'Run %s:\n\n```\n%s\n```\n' "$RUN_STAMP" "$TSAN_SUMMARY" > /tmp/tsan-comment.md
           gh issue comment "$issue_number" --body-file /tmp/tsan-comment.md
