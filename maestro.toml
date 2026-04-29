@@ -129,3 +129,6 @@ knowledge_budget = 4096
 
 [adapt]
 milestone_naming = "ai"
+
+[views]
+agent_graph_enabled = false

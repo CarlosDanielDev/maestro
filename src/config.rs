@@ -37,6 +37,8 @@ pub struct Config {
     pub turboquant: TurboQuantConfig,
     #[serde(default)]
     pub adapt: AdaptSettings,
+    #[serde(default)]
+    pub views: ViewsConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -68,6 +70,15 @@ pub struct AdaptSettings {
     /// Supports `{n}` (index) and `{title}` (description) placeholders.
     #[serde(default)]
     pub milestone_template: Option<String>,
+}
+
+/// Toggles for opt-in TUI views. Views default to disabled so adding a new
+/// view never changes existing user behavior.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ViewsConfig {
+    /// Enable the experimental agent-graph render path.
+    #[serde(default)]
+    pub agent_graph_enabled: bool,
 }
 
 pub use crate::turboquant::types::{ApplyTarget, QuantStrategy};
@@ -2120,5 +2131,66 @@ max_cost_total = 10.0
         let cfg: NotificationsConfig = toml::from_str(toml_str).expect("deserialize");
 
         assert!(cfg.desktop, "missing `desktop` key must default to true");
+    }
+
+    // --- Issue #525: ViewsConfig tests ---
+
+    #[test]
+    fn views_config_defaults_when_section_absent() {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(f.path(), MINIMAL_TOML).unwrap();
+        let cfg = Config::load(f.path()).expect("load failed");
+        assert!(!cfg.views.agent_graph_enabled);
+    }
+
+    #[test]
+    fn views_config_parses_agent_graph_enabled_true() {
+        let cfg: ViewsConfig =
+            toml::from_str(r#"agent_graph_enabled = true"#).expect("parse failed");
+        assert!(cfg.agent_graph_enabled);
+    }
+
+    #[test]
+    fn views_config_parses_agent_graph_enabled_false() {
+        let cfg: ViewsConfig =
+            toml::from_str(r#"agent_graph_enabled = false"#).expect("parse failed");
+        assert!(!cfg.agent_graph_enabled);
+    }
+
+    #[test]
+    fn views_config_rejects_non_bool_agent_graph_enabled() {
+        let err = toml::from_str::<ViewsConfig>(r#"agent_graph_enabled = "yes""#)
+            .expect_err("string value must fail to parse as bool");
+        let msg = format!("{err}");
+        assert!(
+            msg.to_lowercase().contains("boolean")
+                || msg.to_lowercase().contains("expected")
+                || msg.contains("yes"),
+            "error should reference the invalid value, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn views_config_round_trips_through_toml() {
+        let original = ViewsConfig {
+            agent_graph_enabled: true,
+        };
+        let serialized = toml::to_string(&original).expect("serialize");
+        let deserialized: ViewsConfig = toml::from_str(&serialized).expect("deserialize");
+        assert_eq!(original, deserialized);
+    }
+
+    #[test]
+    fn config_load_propagates_views_parse_error_with_file_path() {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let toml = format!("{MINIMAL_TOML}[views]\nagent_graph_enabled = \"yes\"\n");
+        std::fs::write(f.path(), toml).unwrap();
+        let err = Config::load(f.path()).expect_err("malformed views value must fail");
+        let chain = format!("{err:#}");
+        let path_str = f.path().to_string_lossy();
+        assert!(
+            chain.contains(path_str.as_ref()),
+            "error chain must include the file path for debuggability, got: {chain}"
+        );
     }
 }
