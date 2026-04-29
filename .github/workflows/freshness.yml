@@ -1,13 +1,15 @@
 name: Nightly Freshness
 
-# Runs on every PR to main. Verifies the most recent scheduled nightly
-# workflow on main succeeded within the last 3 days. Status check
-# named `nightly-freshness` is required by branch protection (once
-# Wave 3 warmup completes).
+# Runs on a weekly schedule (Mondays 04:00 UTC) and on manual dispatch.
+# Verifies the most recent scheduled `nightly.yml` workflow run on main
+# succeeded within the last 3 days. Originally a per-PR gate; moved to
+# a weekly cadence because every PR was paying the cost of a check that
+# describes the health of `nightly.yml`, not the PR itself.
 
 on:
-  pull_request:
-    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
 
 jobs:
   freshness:
