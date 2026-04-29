@@ -10,7 +10,7 @@
 Maestro spawns and monitors multiple Claude Code sessions working on the same project simultaneously. It provides real-time visibility into what each session is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.
 
 <!-- TODO(carlos): replace with an up-to-date capture showing the landing screen, F-key bar, and active session pool. -->
-<img width="800" height="600" alt="Maestro TUI dashboard" src="https://github.com/user-attachments/assets/a8cec4e8-1225-4396-b3b8-0c6d8ff0f5ea" />
+<img width="800" height="600" alt="Maestro TUI dashboard" src="https://github.com/user-attachments/assets/0f552553-43f5-4104-9533-975f92b9c71f" />
 
 Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/maestro/wiki). This README is the on-ramp.
 
