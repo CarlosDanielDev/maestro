@@ -197,6 +197,7 @@ fn compute_levels_with(
 /// strongly connected component (size ≥ 2, or self-loop). Determinism:
 /// SCCs are sorted by minimum issue number; within an SCC, members are
 /// sorted ascending.
+#[allow(dead_code)] // Reason: public ergonomic wrapper; production uses detect_cycles_with_blockers, tests call this directly
 pub fn detect_cycles(issues: &[GhIssue]) -> Vec<Vec<u64>> {
     let blockers_map = build_blockers_map(issues);
     detect_cycles_with_blockers(issues, &blockers_map)

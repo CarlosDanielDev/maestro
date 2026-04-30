@@ -139,7 +139,6 @@ mod tests {
             id: NodeId::Agent(Uuid::new_v4()),
             kind: NodeKind::Agent {
                 status: crate::session::types::SessionStatus::Running,
-                issue_number: None,
             },
             label: label.into(),
         }

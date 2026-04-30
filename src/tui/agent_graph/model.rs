@@ -14,10 +14,7 @@ pub(crate) enum NodeId {
 
 #[derive(Clone)]
 pub(crate) enum NodeKind {
-    Agent {
-        status: SessionStatus,
-        issue_number: Option<u64>,
-    },
+    Agent { status: SessionStatus },
     File,
 }
 
@@ -47,10 +44,7 @@ pub(crate) fn build_graph(sessions: &[&Session]) -> (Vec<GraphNode>, Vec<GraphEd
         let agent_id = NodeId::Agent(s.id);
         nodes.push(GraphNode {
             id: agent_id.clone(),
-            kind: NodeKind::Agent {
-                status: s.status,
-                issue_number: s.issue_number,
-            },
+            kind: NodeKind::Agent { status: s.status },
             label: agent_label(s),
         });
 

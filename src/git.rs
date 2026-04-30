@@ -12,6 +12,7 @@ pub trait GitOps: Send + Sync {
     /// Whether `branch` has any commits beyond `base_branch`. Returns
     /// `false` when the branch tip equals base, which is the zero-commit
     /// session case for #514.
+    #[allow(dead_code)] // Reason: zero-commit detection wired in #520; awaiting consumer
     fn has_commits_ahead(&self, worktree_path: &Path, branch: &str, base: &str) -> Result<bool>;
 }
 

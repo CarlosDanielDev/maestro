@@ -79,11 +79,9 @@ fn has_reversed_for_color(buffer: &ratatui::buffer::Buffer, fg: Color) -> bool {
 fn node_style_distinguishes_running_vs_completed() {
     let running = super::node_style(&NodeKind::Agent {
         status: SessionStatus::Running,
-        issue_number: None,
     });
     let completed = super::node_style(&NodeKind::Agent {
         status: SessionStatus::Completed,
-        issue_number: None,
     });
     assert_ne!(running.0, completed.0);
 }
