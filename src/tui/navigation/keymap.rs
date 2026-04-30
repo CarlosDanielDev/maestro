@@ -88,6 +88,10 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
                         description: "Kill selected session",
                     },
                     KeyBinding {
+                        key: "Shift+P",
+                        description: "Manually retry PR creation for selected session",
+                    },
+                    KeyBinding {
                         key: "d",
                         description: "Toggle activity log",
                     },

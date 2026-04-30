@@ -7,6 +7,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- feat(tui): `Shift+P` keybinding to manually trigger PR creation when auto-PR was skipped (#521)
+  - Recovery path for sessions whose auto-PR didn't fire — GitHub auth was missing then restored, retries exhausted, AC4 detection saw a stale PR, or `pending_completions` were rehydrated after a crash.
+  - Wired into `handle_global_shortcuts` in `src/tui/input_handler.rs`; eligibility is `app.pending_prs` membership for the selected session's `issue_number` (the codebase's encoding of "session needs PR"). Gated by `is_text_input_mode` to avoid colliding with prompt input.
+  - Calls `App::trigger_manual_pr_retry`, which mutates the matching `PendingPr` (status → `RetryScheduled`, `attempt` → 0, `next_retry_at` → now) so the next `process_pending_pr_retries` tick picks it up. The AC4 preflight from #514 still runs inside that cycle, so manual triggers cannot create a duplicate PR.
+  - Help overlay updated in `src/tui/navigation/keymap.rs` (Session Control group).
+  - 6 new tests: 3 in `src/tui/app/pr_retry.rs` cover the state mutation + log entry + isolation between unrelated `PendingPr`s; 3 in `src/tui/input_handler.rs` cover the keypress path (eligible → fires; no pending → noop; text-input mode → noop).
+
 ### Fixed
 
 - fix(tui): auto-PR pipeline reliability and observability (#514)
