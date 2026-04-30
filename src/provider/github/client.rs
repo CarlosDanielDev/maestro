@@ -358,12 +358,85 @@ pub fn is_auth_error(stderr: &str) -> bool {
 /// Sentinel prefix used to tag gh auth errors in anyhow messages.
 const GH_AUTH_ERROR_SENTINEL: &str = "[gh-auth-error]";
 
+/// Extract the PR number from `gh pr create` stdout.
+///
+/// `gh pr create` does not accept `--json`; it prints the new PR's URL
+/// (e.g. `https://github.com/owner/repo/pull/123`) on stdout, possibly
+/// preceded by progress lines. We grab the last `/pull/<digits>` token.
+pub(crate) fn parse_pr_number_from_create_output(stdout: &str) -> Result<u64> {
+    let after_pull = stdout
+        .lines()
+        .filter_map(|line| line.trim().rsplit_once("/pull/").map(|(_, rest)| rest))
+        .next_back()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "gh pr create did not return a /pull/ URL. stdout was: {:?}",
+                stdout
+            )
+        })?;
+    let digits: String = after_pull
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits
+        .parse::<u64>()
+        .with_context(|| format!("Could not parse PR number from `{}`", after_pull))
+}
+
 /// JSON fields requested from `gh pr list/view`.
 const PR_JSON_FIELDS: &str = "number,title,body,state,url,headRefName,baseRefName,author,labels,isDraft,mergeable,additions,deletions,changedFiles";
 
 /// Check if an anyhow error is a gh CLI auth error (by sentinel prefix).
 pub fn is_gh_auth_error(err: &anyhow::Error) -> bool {
     err.to_string().contains(GH_AUTH_ERROR_SENTINEL)
+}
+
+#[cfg(test)]
+mod parser_tests {
+    use super::parse_pr_number_from_create_output;
+
+    #[test]
+    fn extracts_number_from_url_only() {
+        let out = "https://github.com/owner/repo/pull/123\n";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 123);
+    }
+
+    #[test]
+    fn extracts_number_with_preceding_progress_lines() {
+        let out = "Creating pull request for foo into main in owner/repo\n\
+                   \n\
+                   https://github.com/owner/repo/pull/4242\n";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 4242);
+    }
+
+    #[test]
+    fn extracts_number_with_trailing_whitespace() {
+        let out = "  https://github.com/owner/repo/pull/9  ";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 9);
+    }
+
+    #[test]
+    fn ignores_query_string_and_fragment_after_number() {
+        let out = "https://github.com/owner/repo/pull/77?foo=bar#anchor";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 77);
+    }
+
+    #[test]
+    fn errors_on_empty_stdout() {
+        assert!(parse_pr_number_from_create_output("").is_err());
+    }
+
+    #[test]
+    fn errors_when_no_pull_url_present() {
+        let out = "Some unrelated diagnostic text\nNo URL here\n";
+        assert!(parse_pr_number_from_create_output(out).is_err());
+    }
+
+    #[test]
+    fn picks_last_pull_url_when_multiple_present() {
+        let out = "previous: https://github.com/o/r/pull/1\nfinal: https://github.com/o/r/pull/2\n";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 2);
+    }
 }
 
 use crate::util::{titles_equivalent, validate_gh_arg, validate_title};
@@ -542,7 +615,7 @@ impl GitHubClient for GhCliClient {
     ) -> Result<u64> {
         validate_gh_arg(head_branch, "head_branch")?;
         validate_gh_arg(base_branch, "base_branch")?;
-        let json_str = self
+        let stdout = self
             .run_gh(&[
                 "pr",
                 "create",
@@ -554,12 +627,9 @@ impl GitHubClient for GhCliClient {
                 title,
                 "--body",
                 body,
-                "--json",
-                "number",
             ])
             .await?;
-        let v: serde_json::Value = serde_json::from_str(&json_str)?;
-        Ok(v.get("number").and_then(|n| n.as_u64()).unwrap_or(0))
+        parse_pr_number_from_create_output(&stdout)
     }
 
     async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {

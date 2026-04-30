@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/agent_graph_keybinding_hint.rs
+assertion_line: 30
 expression: spans
 ---
 [
@@ -23,4 +24,7 @@ expression: spans
     Span::from("  "),
     Span::from("[Tab]").green(),
     Span::from(" Cycle Views").dark_gray(),
+    Span::from("  "),
+    Span::from("[Shift+P]").green(),
+    Span::from(" Retry PR").dark_gray(),
 ]

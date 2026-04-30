@@ -1,6 +1,6 @@
 ---
 source: src/tui/snapshot_tests/copy_keybinding_hint.rs
-assertion_line: 19
+assertion_line: 23
 expression: render_spans(true)
 ---
 [
@@ -21,4 +21,7 @@ expression: render_spans(true)
     Span::from("  "),
     Span::from("[Tab]").green(),
     Span::from(" Cycle Views").dark_gray(),
+    Span::from("  "),
+    Span::from("[Shift+P]").green(),
+    Span::from(" Retry PR").dark_gray(),
 ]
