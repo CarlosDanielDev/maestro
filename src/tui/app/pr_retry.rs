@@ -120,7 +120,6 @@ impl App {
     }
 
     /// Trigger a manual PR retry for a specific issue. Called from TUI key handler.
-    #[allow(dead_code)] // Reason: manual PR retry from TUI — to be wired into key handler
     pub fn trigger_manual_pr_retry(&mut self, issue_number: u64) {
         if let Some(pending) = self
             .pending_prs
@@ -136,5 +135,90 @@ impl App {
                 LogLevel::Info,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::provider::github::types::{PendingPr, PendingPrStatus};
+    use crate::tui::activity_log::LogLevel;
+
+    fn make_pending_pr(issue_number: u64) -> PendingPr {
+        PendingPr {
+            issue_number,
+            issue_numbers: vec![],
+            branch: format!("maestro/issue-{}", issue_number),
+            base_branch: "main".into(),
+            files_touched: vec![],
+            cost_usd: 0.0,
+            attempt: 3,
+            max_attempts: 3,
+            last_error: String::new(),
+            last_attempt_at: chrono::Utc::now(),
+            next_retry_at: None,
+            status: PendingPrStatus::AwaitingManualRetry,
+        }
+    }
+
+    #[test]
+    fn trigger_manual_pr_retry_matching_issue_resets_attempt_and_logs() {
+        let mut app = crate::tui::make_test_app("pr-retry-match");
+        app.pending_prs.push(make_pending_pr(42));
+
+        app.trigger_manual_pr_retry(42);
+
+        let p = &app.pending_prs[0];
+        assert_eq!(p.status, PendingPrStatus::RetryScheduled);
+        assert!(p.next_retry_at.is_some(), "next_retry_at must be set");
+        assert_eq!(p.attempt, 0, "attempt counter must reset to 0");
+
+        let last = app
+            .activity_log
+            .entries()
+            .last()
+            .expect("log must not be empty");
+        assert_eq!(last.session_label, "#42");
+        assert_eq!(last.level, LogLevel::Info);
+        assert!(
+            last.message.contains("Manual PR retry queued"),
+            "got: {}",
+            last.message
+        );
+    }
+
+    #[test]
+    fn trigger_manual_pr_retry_no_match_is_noop() {
+        let mut app = crate::tui::make_test_app("pr-retry-noop");
+        app.pending_prs.push(make_pending_pr(99));
+        let log_len_before = app.activity_log.entries().len();
+
+        app.trigger_manual_pr_retry(42);
+
+        assert_eq!(
+            app.pending_prs[0].status,
+            PendingPrStatus::AwaitingManualRetry,
+            "unrelated entry must be untouched"
+        );
+        assert_eq!(
+            app.activity_log.entries().len(),
+            log_len_before,
+            "no log entry for a no-op call"
+        );
+    }
+
+    #[test]
+    fn trigger_manual_pr_retry_only_matching_issue_mutated() {
+        let mut app = crate::tui::make_test_app("pr-retry-isolation");
+        app.pending_prs.push(make_pending_pr(10));
+        app.pending_prs.push(make_pending_pr(20));
+
+        app.trigger_manual_pr_retry(10);
+
+        assert_eq!(app.pending_prs[0].status, PendingPrStatus::RetryScheduled);
+        assert_eq!(
+            app.pending_prs[1].status,
+            PendingPrStatus::AwaitingManualRetry,
+            "issue 20 must be untouched"
+        );
     }
 }

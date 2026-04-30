@@ -517,6 +517,19 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
+    // Shift+P manually triggers PR creation for the selected session
+    // when a PendingPr entry awaits retry (#521).
+    if key.code == KeyCode::Char('P') && !is_text_input_mode(app) {
+        if let Some(issue_number) = app
+            .pool
+            .session_at_index(app.panel_view.selected_index())
+            .and_then(|s| s.issue_number)
+        {
+            app.trigger_manual_pr_retry(issue_number);
+        }
+        return true;
+    }
+
     // Ctrl+B toggles bypass mode from any screen (#328 AC: TUI toggle).
     if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
         let pushed = app.request_bypass_toggle();
@@ -1471,5 +1484,86 @@ mod tests {
         assert_eq!(app.pool.total_count(), count_before);
         let sessions = app.pool.all_sessions();
         assert_eq!(sessions[0].status, SessionStatus::Running);
+    }
+
+    // ── Issue #521: Shift+P manual PR retry keybinding ──────────────────
+
+    fn make_awaiting_pending_pr(issue_number: u64) -> crate::provider::github::types::PendingPr {
+        use crate::provider::github::types::{PendingPr, PendingPrStatus};
+        PendingPr {
+            issue_number,
+            issue_numbers: vec![],
+            branch: format!("maestro/issue-{}", issue_number),
+            base_branch: "main".into(),
+            files_touched: vec![],
+            cost_usd: 0.0,
+            attempt: 3,
+            max_attempts: 3,
+            last_error: String::new(),
+            last_attempt_at: chrono::Utc::now(),
+            next_retry_at: None,
+            status: PendingPrStatus::AwaitingManualRetry,
+        }
+    }
+
+    #[tokio::test]
+    async fn shift_p_with_pending_pr_queues_retry() {
+        use crate::provider::github::types::PendingPrStatus;
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        let s = Session::new(
+            "task".into(),
+            "claude-opus-4-5".into(),
+            "orchestrator".into(),
+            Some(42),
+        );
+        app.pool.enqueue(s);
+        app.panel_view.selected = Some(0);
+        app.pending_prs.push(make_awaiting_pending_pr(42));
+
+        let _ = handle_key(&mut app, key('P')).await;
+
+        assert_eq!(
+            app.pending_prs[0].status,
+            PendingPrStatus::RetryScheduled,
+            "Shift+P must queue the pending PR for retry"
+        );
+    }
+
+    #[tokio::test]
+    async fn shift_p_without_pending_pr_is_noop() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        let s = Session::new(
+            "task".into(),
+            "claude-opus-4-5".into(),
+            "orchestrator".into(),
+            Some(42),
+        );
+        app.pool.enqueue(s);
+        app.panel_view.selected = Some(0);
+
+        let log_len_before = app.activity_log.entries().len();
+
+        let _ = handle_key(&mut app, key('P')).await;
+
+        assert!(app.pending_prs.is_empty());
+        assert_eq!(app.activity_log.entries().len(), log_len_before);
+    }
+
+    #[tokio::test]
+    async fn shift_p_in_text_input_mode_is_noop() {
+        use crate::provider::github::types::PendingPrStatus;
+        let mut app = make_app();
+        app.tui_mode = TuiMode::PromptInput;
+        app.pending_prs.push(make_awaiting_pending_pr(42));
+
+        let _ = handle_key(&mut app, key('P')).await;
+
+        assert_eq!(
+            app.pending_prs[0].status,
+            PendingPrStatus::AwaitingManualRetry,
+            "text-input mode must block Shift+P"
+        );
     }
 }
