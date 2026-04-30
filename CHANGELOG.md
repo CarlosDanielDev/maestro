@@ -21,6 +21,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - New module `src/tui/app/auto_pr.rs` owns the pipeline; `issue_completion.rs` is now a thin entry point (~150 LOC). 8 behavior tests in `src/tui/app/auto_pr_tests.rs` cover the new acceptance criteria.
   - Deferred to a follow-up: explicit zero-commit detection at session-end (AC3).
 
+- fix(tui): detect zero-commit sessions and skip empty-PR creation (#520)
+  - Closes the AC3 deferral from #514: `auto_pr::run_auto_pr` now calls `git_ops.has_commits_ahead(worktree_path, branch, base_branch)` between the AC4 PR-already-exists preflight and the issue-resolution step.
+  - On `Ok(false)`: logs a Warn-level "No commits found — skipping PR creation. Branch: <branch>" entry, queues a Critical desktop notification, and returns without calling `create_pr` or pushing to `pending_prs`.
+  - On `Err(_)`: emits a `tracing::warn!` and proceeds optimistically with the existing `create_pr` flow (the existing error-handling path takes over).
+  - `App` gains a `git_ops: Box<dyn GitOps>` field (production wires `CliGitOps`; tests inject `MockGitOps` via `with_git_ops`). `on_issue_session_completed` and `run_auto_pr` gain a `worktree_path: Option<PathBuf>` arg threaded from `PendingIssueCompletion`.
+  - Two new behavior tests: `auto_pr_zero_commits_skips_pr_with_visible_message` and `auto_pr_git_check_error_falls_through_to_create_pr` (the latter pins the AC3 fallthrough contract).
+
 ## [0.16.1] - 2026-04-29
 
 Milestone "v0.16.1" — Idea Triage Foundation (idea-inbox funnel with the consultive `subagent-idea-triager`, `/triage-idea` slash command, parse hook, and Idea issue template) plus v0.16.0 carry-overs: tech-stack auto-detection in `maestro init`, milestone-health wizard, Discord release notifications, atomic auto-updater rewrite, desktop-notification fix, and an actionlint workflow-lint CI gate. Closes #482, #483, #484, #485, #486, #487, #499, #500, #505, #507, #510.

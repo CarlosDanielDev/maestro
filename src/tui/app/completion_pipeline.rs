@@ -177,6 +177,7 @@ impl App {
                 completion.cost_usd,
                 completion.files_touched,
                 completion.worktree_branch,
+                completion.worktree_path,
                 completion.is_ci_fix,
             )
             .await;

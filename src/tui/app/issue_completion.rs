@@ -2,6 +2,7 @@ use super::App;
 use super::types::TuiMode;
 use crate::provider::github::labels::LabelManager;
 use crate::tui::activity_log::LogLevel;
+use std::path::PathBuf;
 
 impl App {
     #[allow(clippy::too_many_arguments)]
@@ -13,6 +14,7 @@ impl App {
         cost_usd: f64,
         files_touched: Vec<String>,
         worktree_branch: Option<String>,
+        worktree_path: Option<PathBuf>,
         is_ci_fix: bool,
     ) {
         let is_unified = issue_numbers.len() >= 2;
@@ -152,6 +154,7 @@ impl App {
             cost_usd,
             files_touched,
             worktree_branch,
+            worktree_path,
             is_unified,
         )
         .await;

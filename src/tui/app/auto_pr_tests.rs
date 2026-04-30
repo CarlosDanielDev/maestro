@@ -93,6 +93,7 @@ async fn auto_pr_logs_url_in_activity_log_on_success() {
         1.23,
         vec!["src/foo.rs".into()],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;
@@ -132,6 +133,7 @@ async fn auto_pr_skips_creation_when_pr_already_exists_for_branch() {
         0.5,
         vec![],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;
@@ -167,6 +169,7 @@ async fn auto_pr_does_not_double_fire_within_one_process() {
         0.5,
         vec![],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;
@@ -178,6 +181,7 @@ async fn auto_pr_does_not_double_fire_within_one_process() {
         0.5,
         vec![],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;
@@ -203,6 +207,7 @@ async fn auto_pr_general_error_logs_branch_and_manual_command() {
         0.5,
         vec![],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;
@@ -252,6 +257,7 @@ auto_pr = false
         0.5,
         vec![],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;
@@ -285,6 +291,7 @@ async fn auto_pr_no_github_client_logs_error_not_silent() {
         0.5,
         vec![],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;
@@ -313,6 +320,7 @@ async fn auto_pr_no_worktree_branch_logs_error_not_silent() {
         0.5,
         vec![],
         None, // no worktree branch
+        None,
         false,
     )
     .await;
@@ -325,5 +333,93 @@ async fn auto_pr_no_worktree_branch_logs_error_not_silent() {
     assert!(
         has_no_branch_log,
         "must log error when worktree_branch is None (closing the silent-skip gap)"
+    );
+}
+
+// --- Issue #520: zero-commit detection ---
+
+#[tokio::test]
+async fn auto_pr_zero_commits_skips_pr_with_visible_message() {
+    let mock = MockGitHubClient::new();
+    mock.set_create_pr_response(999); // would be visible if (wrongly) called
+    let mock_handle = mock.clone();
+
+    let mut app = make_app_with_mock(mock);
+    app = app.with_git_ops(Box::new(
+        crate::git::MockGitOps::new().with_commits_ahead(false),
+    ));
+    app.state.issue_cache.insert(42, make_issue(42));
+
+    app.on_issue_session_completed(
+        42,
+        vec![42],
+        true,
+        0.5,
+        vec!["src/foo.rs".into()],
+        Some("maestro/issue-42".into()),
+        Some(std::path::PathBuf::from("/tmp/wt-42")),
+        false,
+    )
+    .await;
+
+    assert!(
+        mock_handle.create_pr_calls().is_empty(),
+        "create_pr must NOT be called when branch has no commits ahead (#520 AC2)"
+    );
+    assert!(
+        app.pending_prs.is_empty(),
+        "no retry must be queued for zero-commit sessions (#520 AC5)"
+    );
+
+    let has_zero_commits_log = app.activity_log.entries().iter().any(|e| {
+        e.session_label == "#42"
+            && e.message.contains("No commits found")
+            && e.message.contains("maestro/issue-42")
+            && matches!(e.level, LogLevel::Warn)
+    });
+    assert!(
+        has_zero_commits_log,
+        "must log Warn-level zero-commit message with branch name (#520 AC2)"
+    );
+
+    let has_critical_notification = app.notifications.all().iter().any(|n| {
+        matches!(
+            n.level,
+            crate::notifications::types::InterruptLevel::Critical
+        )
+    });
+    assert!(
+        has_critical_notification,
+        "must queue a Critical desktop notification for zero-commit sessions (#520 AC2)"
+    );
+}
+
+#[tokio::test]
+async fn auto_pr_git_check_error_falls_through_to_create_pr() {
+    let mock = MockGitHubClient::new();
+    mock.set_create_pr_response(101);
+    let mock_handle = mock.clone();
+
+    let mut app = make_app_with_mock(mock);
+    app = app.with_git_ops(Box::new(crate::git::MockGitOps::new().with_failure()));
+    app.state.issue_cache.insert(42, make_issue(42));
+
+    app.on_issue_session_completed(
+        42,
+        vec![42],
+        true,
+        0.5,
+        vec![],
+        Some("maestro/issue-42".into()),
+        Some(std::path::PathBuf::from("/tmp/wt-42")),
+        false,
+    )
+    .await;
+
+    assert_eq!(
+        mock_handle.create_pr_calls().len(),
+        1,
+        "create_pr MUST still be called when has_commits_ahead errors — \
+         AC3 fallthrough contract (#520)"
     );
 }
