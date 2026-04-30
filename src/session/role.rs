@@ -115,6 +115,31 @@ pub fn derive_role(prompt: &str) -> Role {
     role
 }
 
+/// Look up the [`Role`] for a known maestro subagent name.
+///
+/// The 7-entry registry mirrors `.claude/CLAUDE.md` § Subagent Registry.
+/// Returns `None` for any name outside that registry so callers can fall
+/// through to [`derive_role`] on the prompt.
+///
+/// `subagent-architect` is the most contestable mapping. We classify it as
+/// [`Role::Orchestrator`] because planning-and-blueprint work sits "above"
+/// implementation in the dispatch graph: the architect coordinates the shape
+/// of work that other roles execute. The other six mappings are obvious from
+/// the registry table (gatekeeper/qa/security-analyst/idea-triager all
+/// review; docs-analyst writes docs; master-planner plans).
+#[allow(dead_code)] // Reason: consumed by #543 (role-colored chip on subagent dispatches in activity log)
+pub fn role_for_subagent_name(name: &str) -> Option<Role> {
+    match name {
+        "subagent-architect" | "subagent-master-planner" => Some(Role::Orchestrator),
+        "subagent-gatekeeper"
+        | "subagent-qa"
+        | "subagent-security-analyst"
+        | "subagent-idea-triager" => Some(Role::Reviewer),
+        "subagent-docs-analyst" => Some(Role::Docs),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,5 +446,70 @@ mod tests {
             total,
             correct
         );
+    }
+
+    // --- Issue #542: Subagent name → role lookup ---
+
+    #[test]
+    fn role_for_subagent_name_architect_is_orchestrator() {
+        assert_eq!(
+            role_for_subagent_name("subagent-architect"),
+            Some(Role::Orchestrator)
+        );
+    }
+
+    #[test]
+    fn role_for_subagent_name_master_planner_is_orchestrator() {
+        assert_eq!(
+            role_for_subagent_name("subagent-master-planner"),
+            Some(Role::Orchestrator)
+        );
+    }
+
+    #[test]
+    fn role_for_subagent_name_gatekeeper_is_reviewer() {
+        assert_eq!(
+            role_for_subagent_name("subagent-gatekeeper"),
+            Some(Role::Reviewer)
+        );
+    }
+
+    #[test]
+    fn role_for_subagent_name_qa_is_reviewer() {
+        assert_eq!(role_for_subagent_name("subagent-qa"), Some(Role::Reviewer));
+    }
+
+    #[test]
+    fn role_for_subagent_name_security_analyst_is_reviewer() {
+        assert_eq!(
+            role_for_subagent_name("subagent-security-analyst"),
+            Some(Role::Reviewer)
+        );
+    }
+
+    #[test]
+    fn role_for_subagent_name_idea_triager_is_reviewer() {
+        assert_eq!(
+            role_for_subagent_name("subagent-idea-triager"),
+            Some(Role::Reviewer)
+        );
+    }
+
+    #[test]
+    fn role_for_subagent_name_docs_analyst_is_docs() {
+        assert_eq!(
+            role_for_subagent_name("subagent-docs-analyst"),
+            Some(Role::Docs)
+        );
+    }
+
+    #[test]
+    fn unknown_subagent_returns_none() {
+        assert_eq!(role_for_subagent_name("subagent-unknown"), None);
+        assert_eq!(role_for_subagent_name(""), None);
+        // Tool name itself is not a subagent name.
+        assert_eq!(role_for_subagent_name("Agent"), None);
+        // Skill identifiers are not in the subagent registry.
+        assert_eq!(role_for_subagent_name("superpowers:brainstorming"), None);
     }
 }

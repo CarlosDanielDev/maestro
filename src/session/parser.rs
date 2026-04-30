@@ -22,6 +22,37 @@ fn model_max_input_tokens(model: &str) -> f64 {
     }
 }
 
+/// Extract the subagent or skill name from a tool-use `input` payload.
+///
+/// `Agent` and `Task` carry the dispatched subagent in `input.subagent_type`;
+/// `Skill` carries the invoked skill in `input.skill`. Any other tool — and any
+/// missing or empty value — returns `None`. See issue #542.
+///
+/// The returned string is sanitized: control characters are stripped (so a
+/// rogue `\n`/ANSI escape in the JSON cannot corrupt the activity-log render)
+/// and the value is truncated to 80 chars at a UTF-8 boundary. Real subagent
+/// names are well under that cap (`superpowers:brainstorming` is 25 chars).
+fn extract_subagent_name(tool: &str, input: Option<&Value>) -> Option<String> {
+    const MAX_NAME_LEN: usize = 80;
+    let input = input?;
+    let key = match tool {
+        "Agent" | "Task" => "subagent_type",
+        "Skill" => "skill",
+        _ => return None,
+    };
+    let raw = input.get(key).and_then(|v| v.as_str())?;
+    let sanitized: String = raw.chars().filter(|c| !c.is_control()).collect();
+    if sanitized.is_empty() {
+        return None;
+    }
+    if sanitized.len() <= MAX_NAME_LEN {
+        Some(sanitized)
+    } else {
+        let boundary = char_boundary(&sanitized, MAX_NAME_LEN);
+        Some(sanitized[..boundary].to_string())
+    }
+}
+
 /// Parse a single line of Claude CLI `--output-format stream-json` output.
 ///
 /// The stream-json format emits one JSON object per line. Key event types:
@@ -139,10 +170,12 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
                     }
                 })
             });
+            let subagent_name = extract_subagent_name(&tool, input);
             StreamEvent::ToolUse {
                 tool,
                 file_path,
                 command_preview,
+                subagent_name,
             }
         }
         "text" => {
@@ -176,16 +209,19 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
                             .and_then(|n| n.as_str())
                             .unwrap_or("unknown")
                             .to_string();
-                        let file_path = block.get("input").and_then(|inp| {
+                        let input = block.get("input");
+                        let file_path = input.and_then(|inp| {
                             inp.get("file_path")
                                 .or_else(|| inp.get("path"))
                                 .and_then(|p| p.as_str())
                                 .map(|s| s.to_string())
                         });
+                        let subagent_name = extract_subagent_name(&tool, input);
                         return StreamEvent::ToolUse {
                             tool,
                             file_path,
                             command_preview: None,
+                            subagent_name,
                         };
                     }
                 }
@@ -728,5 +764,139 @@ mod tests {
     fn model_max_tokens_unknown_defaults_200k() {
         assert_eq!(model_max_input_tokens("some-future-model"), 200_000.0);
         assert_eq!(model_max_input_tokens(""), 200_000.0);
+    }
+
+    // --- Issue #542: subagent_name extraction on dispatcher tools ---
+
+    #[test]
+    fn parse_tool_use_agent_with_subagent_type_extracts_name() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Agent","input":{"subagent_type":"subagent-architect"}}}"#;
+        match first_event(line) {
+            StreamEvent::ToolUse {
+                tool,
+                subagent_name,
+                ..
+            } => {
+                assert_eq!(tool, "Agent");
+                assert_eq!(subagent_name, Some("subagent-architect".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_task_with_subagent_type_extracts_name() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Task","input":{"subagent_type":"subagent-qa"}}}"#;
+        match first_event(line) {
+            StreamEvent::ToolUse {
+                tool,
+                subagent_name,
+                ..
+            } => {
+                assert_eq!(tool, "Task");
+                assert_eq!(subagent_name, Some("subagent-qa".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_skill_extracts_name() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Skill","input":{"skill":"superpowers:brainstorming"}}}"#;
+        match first_event(line) {
+            StreamEvent::ToolUse {
+                tool,
+                subagent_name,
+                ..
+            } => {
+                assert_eq!(tool, "Skill");
+                assert_eq!(subagent_name, Some("superpowers:brainstorming".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_agent_without_subagent_type_is_none() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Agent","input":{"prompt":"do something"}}}"#;
+        match first_event(line) {
+            StreamEvent::ToolUse { subagent_name, .. } => {
+                assert_eq!(subagent_name, None);
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+
+        // Empty-string guard: should also be treated as absent.
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Agent","input":{"subagent_type":""}}}"#;
+        match first_event(line) {
+            StreamEvent::ToolUse { subagent_name, .. } => {
+                assert_eq!(subagent_name, None);
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_read_has_no_subagent_name() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Read","input":{"file_path":"/src/main.rs"}}}"#;
+        match first_event(line) {
+            StreamEvent::ToolUse { subagent_name, .. } => {
+                assert_eq!(subagent_name, None);
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_skill_without_skill_field_is_none() {
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Skill","input":{"args":"x"}}}"#;
+        match first_event(line) {
+            StreamEvent::ToolUse { subagent_name, .. } => {
+                assert_eq!(subagent_name, None);
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_agent_subagent_type_strips_control_chars_and_caps_length() {
+        // JSON escapes for newline (\n) and ANSI ESC (\u001b) — both control
+        // chars that would otherwise corrupt the TUI activity-log render.
+        let line = "{\"type\":\"assistant\",\"message\":{\"type\":\"tool_use\",\"name\":\"Agent\",\"input\":{\"subagent_type\":\"subagent-arch\\nitect\\u001b[31m\"}}}";
+        match first_event(line) {
+            StreamEvent::ToolUse { subagent_name, .. } => {
+                let name = subagent_name.expect("control chars must not collapse to None");
+                assert!(
+                    !name.chars().any(char::is_control),
+                    "control chars must be stripped, got {:?}",
+                    name
+                );
+                assert!(
+                    name.starts_with("subagent-architect"),
+                    "stripping must preserve the visible name, got {:?}",
+                    name
+                );
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+
+        // Length cap: input longer than 80 visible chars truncates at a
+        // UTF-8 boundary.
+        let oversized = "subagent-".to_string() + &"x".repeat(200);
+        let line = format!(
+            r#"{{"type":"assistant","message":{{"type":"tool_use","name":"Agent","input":{{"subagent_type":"{}"}}}}}}"#,
+            oversized
+        );
+        match first_event(&line) {
+            StreamEvent::ToolUse { subagent_name, .. } => {
+                let name = subagent_name.expect("oversized name should still produce Some");
+                assert!(
+                    name.len() <= 80,
+                    "name must be capped to 80, got {}",
+                    name.len()
+                );
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
     }
 }

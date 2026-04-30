@@ -510,6 +510,11 @@ pub enum StreamEvent {
         file_path: Option<String>,
         /// Extracted command for Bash tool (first ~60 chars).
         command_preview: Option<String>,
+        /// Subagent or skill name, if this is a known dispatcher tool
+        /// (`Agent`/`Task` carry `input.subagent_type`; `Skill` carries
+        /// `input.skill`). `None` for plain tool calls and for unidentified
+        /// dispatches. See issue #542.
+        subagent_name: Option<String>,
     },
     /// Tool result received
     ToolResult { tool: String, is_error: bool },
@@ -744,6 +749,7 @@ mod tests {
 
             file_path: Some("/src/main.rs".to_string()),
             command_preview: None,
+            subagent_name: None,
         };
         match e {
             StreamEvent::ToolUse {
@@ -760,12 +766,47 @@ mod tests {
 
             file_path: None,
             command_preview: Some("cargo build".to_string()),
+            subagent_name: None,
         };
         match e {
             StreamEvent::ToolUse {
                 command_preview, ..
             } => {
                 assert_eq!(command_preview, Some("cargo build".to_string()))
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    // --- Issue #542: subagent_name on StreamEvent::ToolUse ---
+
+    #[test]
+    fn stream_event_tool_use_subagent_name_holds_value() {
+        let e = StreamEvent::ToolUse {
+            tool: "Agent".to_string(),
+            file_path: None,
+            command_preview: None,
+            subagent_name: Some("subagent-architect".to_string()),
+        };
+        match e {
+            StreamEvent::ToolUse { subagent_name, .. } => {
+                assert_eq!(subagent_name, Some("subagent-architect".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn stream_event_tool_use_subagent_name_defaults_none_for_plain_tool() {
+        let e = StreamEvent::ToolUse {
+            tool: "Read".to_string(),
+            file_path: Some("/src/main.rs".to_string()),
+            command_preview: None,
+            subagent_name: None,
+        };
+        match e {
+            StreamEvent::ToolUse { subagent_name, .. } => {
+                assert_eq!(subagent_name, None);
             }
             other => panic!("Expected ToolUse, got {:?}", other),
         }

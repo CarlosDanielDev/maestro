@@ -55,6 +55,7 @@ fn tool_use_sets_activity_and_logs() {
 
         file_path: Some("src/main.rs".to_string()),
         command_preview: None,
+        subagent_name: None,
     });
 
     assert_eq!(managed.session.current_activity, "Read: main.rs");
@@ -82,6 +83,7 @@ fn tool_use_file_touching_tools_track_files() {
 
             file_path: Some(path.to_string()),
             command_preview: None,
+            subagent_name: None,
         });
         assert!(
             managed.session.files_touched.contains(&path.to_string()),
@@ -100,6 +102,7 @@ fn tool_use_bash_does_not_track_file_path() {
 
         file_path: None,
         command_preview: None,
+        subagent_name: None,
     });
 
     assert!(managed.session.files_touched.is_empty());
@@ -115,6 +118,7 @@ fn tool_use_deduplicates_files_touched() {
 
             file_path: Some("src/main.rs".to_string()),
             command_preview: None,
+            subagent_name: None,
         });
     }
 
@@ -352,6 +356,7 @@ fn tool_use_read_with_file_path_formats_activity_as_read_basename() {
 
         file_path: Some("/src/session/manager.rs".to_string()),
         command_preview: None,
+        subagent_name: None,
     });
 
     assert_eq!(managed.session.current_activity, "Read: manager.rs");
@@ -366,6 +371,7 @@ fn tool_use_write_with_file_path_formats_activity_as_write_basename() {
 
         file_path: Some("/src/new_module.rs".to_string()),
         command_preview: None,
+        subagent_name: None,
     });
 
     assert_eq!(managed.session.current_activity, "Write: new_module.rs");
@@ -380,6 +386,7 @@ fn tool_use_bash_with_command_preview_formats_activity_with_dollar_prefix() {
 
         file_path: None,
         command_preview: Some("cargo test".to_string()),
+        subagent_name: None,
     });
 
     assert_eq!(managed.session.current_activity, "$ cargo test");
@@ -394,6 +401,7 @@ fn tool_use_without_file_path_and_without_command_preview_falls_back() {
 
         file_path: None,
         command_preview: None,
+        subagent_name: None,
     });
 
     assert_eq!(managed.session.current_activity, "Using WebSearch");
@@ -408,6 +416,7 @@ fn tool_result_success_logs_elapsed_time_string() {
 
         file_path: Some("src/main.rs".to_string()),
         command_preview: None,
+        subagent_name: None,
     });
 
     let log_len_before = managed.session.activity_log.len();
@@ -474,6 +483,7 @@ fn non_thinking_event_after_thinking_logs_thought_duration() {
 
         file_path: Some("src/lib.rs".to_string()),
         command_preview: None,
+        subagent_name: None,
     });
 
     assert!(
@@ -501,6 +511,7 @@ fn multiple_thinking_events_produce_single_duration_log_on_transition() {
 
         file_path: None,
         command_preview: Some("cargo fmt".to_string()),
+        subagent_name: None,
     });
 
     let thought_entries = managed
