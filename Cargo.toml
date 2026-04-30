@@ -58,6 +58,16 @@ anyhow = "1"
 insta = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
 
+[features]
+# Throwaway prototype gate for ADR 002 (agent personalities). Code under this
+# feature is on the spike branch only and is removed when the ADR merges.
+# See docs/adr/002-agent-personalities.md § Prototype.
+spike = []
+
+[[example]]
+name = "agent_personalities_spike"
+required-features = ["spike"]
+
 [[bench]]
 name = "parser"
 harness = false
