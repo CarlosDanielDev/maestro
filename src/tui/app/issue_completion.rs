@@ -1,6 +1,8 @@
 use super::App;
 use super::types::TuiMode;
 use crate::provider::github::labels::LabelManager;
+use crate::provider::github::pr::PrRetryPolicy;
+use crate::provider::github::types::{PendingPr, PendingPrStatus};
 use crate::tui::activity_log::LogLevel;
 use std::path::PathBuf;
 
@@ -137,10 +139,17 @@ impl App {
             return;
         }
 
-        // Auto PR creation (skip if auth lost)
+        // Auto PR creation (defer if auth lost — leave a PendingPr so
+        // Shift+P recovers once `gh auth login` restores auth, #521).
         if !self.gh_auth_ok {
             if success {
-                self.log_gh_auth_skip(issue_number, "PR creation");
+                self.defer_pr_for_missing_auth(
+                    issue_number,
+                    &issue_numbers,
+                    cost_usd,
+                    &files_touched,
+                    worktree_branch.as_deref(),
+                );
             }
             return;
         }
@@ -158,6 +167,69 @@ impl App {
             is_unified,
         )
         .await;
+    }
+
+    /// Auth missing at PR-creation time. Log explicitly AND enqueue a
+    /// `PendingPr` in `AwaitingManualRetry` so once the user runs
+    /// `gh auth login`, Shift+P can pick the entry up and drive the
+    /// existing retry machinery. Without this, the auth-restored
+    /// recovery scenario from #521 silently drops the work.
+    fn defer_pr_for_missing_auth(
+        &mut self,
+        issue_number: u64,
+        issue_numbers: &[u64],
+        cost_usd: f64,
+        files_touched: &[String],
+        worktree_branch: Option<&str>,
+    ) {
+        let Some(branch) = worktree_branch else {
+            // No branch = no PR is possible; preserve existing behavior:
+            // explicit auth-skip log, no PendingPr (nothing to retry).
+            self.log_gh_auth_skip(issue_number, "PR creation");
+            return;
+        };
+
+        let base_branch = self
+            .config
+            .as_ref()
+            .map(|c| c.project.base_branch.clone())
+            .unwrap_or_else(|| "main".to_string());
+
+        let already_queued = self
+            .pending_prs
+            .iter()
+            .any(|p| p.issue_number == issue_number);
+        if already_queued {
+            // Don't double-enqueue; the existing entry is fine — Shift+P
+            // will pick it up.
+            self.log_gh_auth_skip(issue_number, "PR creation");
+            return;
+        }
+
+        let pending = PendingPr {
+            issue_number,
+            issue_numbers: issue_numbers.to_vec(),
+            branch: branch.to_string(),
+            base_branch,
+            files_touched: files_touched.to_vec(),
+            cost_usd,
+            attempt: 0,
+            max_attempts: PrRetryPolicy::default().max_attempts,
+            last_error: "GitHub auth missing — run `gh auth login` then press Shift+P".into(),
+            last_attempt_at: chrono::Utc::now(),
+            next_retry_at: None,
+            status: PendingPrStatus::AwaitingManualRetry,
+            last_errors: std::collections::VecDeque::new(),
+            manual_retry_count: 0,
+        };
+        self.pending_prs.push(pending);
+
+        self.activity_log.push_simple(
+            format!("#{}", issue_number),
+            "PR creation deferred — auth missing. Run `gh auth login` then press Shift+P to retry."
+                .into(),
+            LogLevel::Warn,
+        );
     }
 }
 

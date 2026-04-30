@@ -222,7 +222,12 @@ impl App {
         // (PR-already-exists check) prevents double-firing when the prior
         // run actually succeeded but crashed before clearing the entry.
         let recovered_completions = state.pending_completions.clone();
-        Self {
+        // Recover the pending-PR retry queue from prior run so Shift+P
+        // (#521) can resurrect them after a maestro restart. The schema has
+        // always supported this; only the rehydration was missing.
+        let recovered_prs = state.pending_prs.clone();
+        let recovered_prs_count = recovered_prs.len();
+        let mut app = Self {
             pool,
             activity_log: ActivityLog::new(500),
             panel_view: PanelView::new(),
@@ -276,7 +281,7 @@ impl App {
             spinner_tick: 0,
             completion_summary_dismissed: false,
             gh_auth_ok: true,
-            pending_prs: Vec::new(),
+            pending_prs: recovered_prs,
             flags: crate::flags::store::FeatureFlags::default(),
             queue_confirmation_screen: None,
             queue_executor: None,
@@ -325,7 +330,27 @@ impl App {
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
             attempted_pr_issue_numbers: std::collections::HashSet::new(),
             git_ops: Box::new(crate::git::CliGitOps),
+        };
+        if recovered_prs_count > 0 {
+            // List the actual issue numbers so the user knows which panels
+            // to focus before pressing Shift+P, instead of guessing across
+            // the whole pool.
+            let issue_list: Vec<String> = app
+                .pending_prs
+                .iter()
+                .map(|p| format!("#{}", p.issue_number))
+                .collect();
+            app.activity_log.push_simple(
+                "#orphan-prs".into(),
+                format!(
+                    "{} pending PR(s) restored from previous run: {} — focus the matching session and press Shift+P to retry",
+                    recovered_prs_count,
+                    issue_list.join(", ")
+                ),
+                LogLevel::Warn,
+            );
         }
+        app
     }
 
     /// Builder for tests: swap the production git ops adapter for a fake.
@@ -564,6 +589,10 @@ impl App {
         // shutdown between session-end and the next check_completions tick
         // does not orphan the worktree (#514).
         self.state.pending_completions = self.pending_issue_completions.clone();
+        // Mirror the pending-PR retry queue so Shift+P (#521) can resurrect
+        // entries after a restart — without this the in-memory queue is
+        // lost on shutdown.
+        self.state.pending_prs = self.pending_prs.clone();
         let _ = self.store.save(&self.state);
     }
 }

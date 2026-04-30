@@ -119,3 +119,13 @@ src/tui/screens/milestone_health/state/tests/mod.rs # deadline: 2026-07-22, owne
 # Added two #520 zero-commit tests (~100 LOC) to the existing #514 auto-PR
 # behavior suite. Total now 429 LOC, just over the cap.
 src/tui/app/auto_pr_tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #520, plan: extract shared make_issue/make_test_config/make_app_with_mock helpers into auto_pr_test_fixtures.rs and split #514 vs #520 tests into separate files importing those fixtures
+
+# --- 2026-04-30 emergency auto-PR fix batch (PR #544 follow-up) ---
+# pr_retry.rs gained the Shift+P exit path: error correlation, manual-retry
+# lifetime cap, PermanentlyFailed transition + 6 new tests. 439 LOC.
+src/tui/app/pr_retry.rs # deadline: 2026-08-22, owner: @carlos, ticket: #TBD, plan: split retry-policy + correlation logic into pr_retry/policy.rs and keep impl App trigger fns in pr_retry/mod.rs
+# gh_argv.rs is the new argv-snapshot module. ~250 LOC of pure builders +
+# ~280 LOC of snapshot tests. Splitting builder/test pairs would scatter
+# locking; keeping them co-located is the point. Plan to compact tests with
+# a #[macro_rules!] argv_eq! once the surface stops shifting.
+src/provider/github/gh_argv.rs # deadline: 2026-09-30, owner: @carlos, ticket: #TBD, plan: introduce an argv_eq! macro to compress the 18 snapshot tests once the gh subcommand surface stabilizes

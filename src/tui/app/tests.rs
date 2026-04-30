@@ -1829,3 +1829,132 @@ mod adapt_chaining {
         assert_eq!(action, ScreenAction::Push(TuiMode::AdaptWizard));
     }
 }
+
+// -- pending_prs persistence across restart (#521 follow-up) --
+
+mod pending_prs_persistence {
+    use super::*;
+    use crate::provider::github::types::{PendingPr, PendingPrStatus};
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+    use crate::state::types::MaestroState;
+    use crate::tui::activity_log::LogLevel;
+
+    fn make_pending_pr(issue_number: u64) -> PendingPr {
+        PendingPr {
+            issue_number,
+            issue_numbers: vec![],
+            branch: format!("maestro/issue-{}", issue_number),
+            base_branch: "main".into(),
+            files_touched: vec![],
+            cost_usd: 0.0,
+            attempt: 1,
+            max_attempts: 3,
+            last_error: "boom".into(),
+            last_attempt_at: chrono::Utc::now(),
+            next_retry_at: None,
+            status: PendingPrStatus::AwaitingManualRetry,
+            last_errors: std::collections::VecDeque::new(),
+            manual_retry_count: 0,
+        }
+    }
+
+    fn build_app_with_seeded_state(state: MaestroState) -> App {
+        let path = std::env::temp_dir().join(format!(
+            "pending-prs-rehydrate-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let store = StateStore::new(path);
+        store.save(&state).expect("seed save");
+        App::new(
+            store,
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        )
+    }
+
+    #[test]
+    fn app_new_rehydrates_pending_prs_from_persisted_state() {
+        let mut seed = MaestroState::default();
+        seed.pending_prs.push(make_pending_pr(7));
+        seed.pending_prs.push(make_pending_pr(11));
+
+        let app = build_app_with_seeded_state(seed);
+
+        assert_eq!(
+            app.pending_prs.len(),
+            2,
+            "App::new must rehydrate state.pending_prs (was lost previously)"
+        );
+        let issue_numbers: Vec<u64> = app.pending_prs.iter().map(|p| p.issue_number).collect();
+        assert!(issue_numbers.contains(&7));
+        assert!(issue_numbers.contains(&11));
+    }
+
+    #[test]
+    fn app_new_logs_warn_when_pending_prs_recovered() {
+        let mut seed = MaestroState::default();
+        seed.pending_prs.push(make_pending_pr(7));
+        seed.pending_prs.push(make_pending_pr(11));
+
+        let app = build_app_with_seeded_state(seed);
+
+        let warn = app
+            .activity_log
+            .entries()
+            .iter()
+            .find(|e| matches!(e.level, LogLevel::Warn) && e.message.contains("pending PR"));
+        let warn = warn.expect("orphan-PR warn entry must be present");
+        assert!(
+            warn.message.contains("2 pending PR"),
+            "got: {}",
+            warn.message
+        );
+        assert!(
+            warn.message.contains("Shift+P"),
+            "the warn must mention Shift+P so users know how to recover"
+        );
+        assert_eq!(warn.session_label, "#orphan-prs");
+    }
+
+    #[test]
+    fn app_new_emits_no_warn_when_state_has_no_pending_prs() {
+        let app = build_app_with_seeded_state(MaestroState::default());
+
+        let any_orphan_warn = app
+            .activity_log
+            .entries()
+            .iter()
+            .any(|e| e.session_label == "#orphan-prs");
+        assert!(
+            !any_orphan_warn,
+            "no orphan warn should be emitted on a clean restart"
+        );
+    }
+
+    #[test]
+    fn sync_state_mirrors_pending_prs_to_persisted_state() {
+        let mut app = crate::tui::make_test_app("pending-prs-sync");
+        assert!(app.state.pending_prs.is_empty(), "precondition");
+        app.pending_prs.push(make_pending_pr(42));
+        app.pending_prs.push(make_pending_pr(99));
+
+        app.sync_state();
+
+        assert_eq!(
+            app.state.pending_prs.len(),
+            2,
+            "sync_state must mirror in-memory pending_prs to persisted state"
+        );
+        let mirrored: Vec<u64> = app
+            .state
+            .pending_prs
+            .iter()
+            .map(|p| p.issue_number)
+            .collect();
+        assert!(mirrored.contains(&42));
+        assert!(mirrored.contains(&99));
+    }
+}

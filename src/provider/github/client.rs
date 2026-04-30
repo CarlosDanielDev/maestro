@@ -343,6 +343,29 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     }
 }
 
+/// Scrub credentials from `gh` stderr/stdout before it lands in error
+/// messages, activity logs, or `maestro-state.json`.
+///
+/// Catches:
+/// - `Authorization: Bearer <token>` / `Authorization: token <token>`
+///   (gh emits these when the user enables `GH_DEBUG=api`)
+/// - GitHub token prefixes: `ghp_`, `gho_`, `ghs_`, `ghu_`, `ghr_`,
+///   and `github_pat_<v2>`
+///
+/// The redaction substitutes `[REDACTED]` so the rest of the message
+/// stays readable for diagnostics.
+pub fn redact_secrets(s: &str) -> String {
+    use std::sync::OnceLock;
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?i)(?:authorization:\s*(?:bearer|token)\s+\S+|gh[oprsu]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)",
+        )
+        .unwrap()
+    });
+    re.replace_all(s, "[REDACTED]").into_owned()
+}
+
 /// Check if a stderr string indicates a GitHub CLI authentication failure.
 pub fn is_auth_error(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
@@ -358,6 +381,31 @@ pub fn is_auth_error(stderr: &str) -> bool {
 /// Sentinel prefix used to tag gh auth errors in anyhow messages.
 const GH_AUTH_ERROR_SENTINEL: &str = "[gh-auth-error]";
 
+/// Extract the PR number from `gh pr create` stdout.
+///
+/// `gh pr create` does not accept `--json`; it prints the new PR's URL
+/// (e.g. `https://github.com/owner/repo/pull/123`) on stdout, possibly
+/// preceded by progress lines. We grab the last `/pull/<digits>` token.
+pub(crate) fn parse_pr_number_from_create_output(stdout: &str) -> Result<u64> {
+    let after_pull = stdout
+        .lines()
+        .filter_map(|line| line.trim().rsplit_once("/pull/").map(|(_, rest)| rest))
+        .next_back()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "gh pr create did not return a /pull/ URL. stdout was: {:?}",
+                stdout
+            )
+        })?;
+    let digits: String = after_pull
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits
+        .parse::<u64>()
+        .with_context(|| format!("Could not parse PR number from `{}`", after_pull))
+}
+
 /// JSON fields requested from `gh pr list/view`.
 const PR_JSON_FIELDS: &str = "number,title,body,state,url,headRefName,baseRefName,author,labels,isDraft,mergeable,additions,deletions,changedFiles";
 
@@ -366,7 +414,61 @@ pub fn is_gh_auth_error(err: &anyhow::Error) -> bool {
     err.to_string().contains(GH_AUTH_ERROR_SENTINEL)
 }
 
+#[cfg(test)]
+mod parser_tests {
+    use super::parse_pr_number_from_create_output;
+
+    #[test]
+    fn extracts_number_from_url_only() {
+        let out = "https://github.com/owner/repo/pull/123\n";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 123);
+    }
+
+    #[test]
+    fn extracts_number_with_preceding_progress_lines() {
+        let out = "Creating pull request for foo into main in owner/repo\n\
+                   \n\
+                   https://github.com/owner/repo/pull/4242\n";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 4242);
+    }
+
+    #[test]
+    fn extracts_number_with_trailing_whitespace() {
+        let out = "  https://github.com/owner/repo/pull/9  ";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 9);
+    }
+
+    #[test]
+    fn ignores_query_string_and_fragment_after_number() {
+        let out = "https://github.com/owner/repo/pull/77?foo=bar#anchor";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 77);
+    }
+
+    #[test]
+    fn errors_on_empty_stdout() {
+        assert!(parse_pr_number_from_create_output("").is_err());
+    }
+
+    #[test]
+    fn errors_when_no_pull_url_present() {
+        let out = "Some unrelated diagnostic text\nNo URL here\n";
+        assert!(parse_pr_number_from_create_output(out).is_err());
+    }
+
+    #[test]
+    fn picks_last_pull_url_when_multiple_present() {
+        let out = "previous: https://github.com/o/r/pull/1\nfinal: https://github.com/o/r/pull/2\n";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 2);
+    }
+}
+
+use crate::provider::github::gh_argv;
 use crate::util::{titles_equivalent, validate_gh_arg, validate_title};
+
+/// Convert a `Vec<String>` argv into `Vec<&str>` for `run_gh`.
+fn argv_refs(argv: &[String]) -> Vec<&str> {
+    argv.iter().map(String::as_str).collect()
+}
 
 /// Implementation that shells out to `gh` CLI.
 pub struct GhCliClient;
@@ -409,11 +511,12 @@ impl GhCliClient {
             .context("Failed to wait for `gh` CLI")?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr_raw = String::from_utf8_lossy(&output.stderr);
+            let stderr = redact_secrets(stderr_raw.trim());
             if is_auth_error(&stderr) {
-                anyhow::bail!("{} {}", GH_AUTH_ERROR_SENTINEL, stderr.trim());
+                anyhow::bail!("{} {}", GH_AUTH_ERROR_SENTINEL, stderr);
             }
-            anyhow::bail!("gh command failed: {}", stderr.trim());
+            anyhow::bail!("gh command failed: {}", stderr);
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -427,40 +530,20 @@ impl GitHubClient for GhCliClient {
             validate_gh_arg(label, "label")?;
         }
         let label_arg = labels.join(",");
-        let mut args = vec![
-            "issue",
-            "list",
-            "--state",
-            "open",
-            "--limit",
-            "100",
-            "--json",
-            "number,title,body,labels,state,url,milestone",
-        ];
-        if !label_arg.is_empty() {
-            args.push("--label");
-            args.push(&label_arg);
-        }
-        let json_str = self.run_gh(&args).await?;
+        let labels_csv = if label_arg.is_empty() {
+            None
+        } else {
+            Some(label_arg.as_str())
+        };
+        let argv = gh_argv::build_list_issues_argv(labels_csv);
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_issues_json(&json_str)
     }
 
     async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>> {
         validate_gh_arg(milestone, "milestone")?;
-        let json_str = self
-            .run_gh(&[
-                "issue",
-                "list",
-                "--milestone",
-                milestone,
-                "--state",
-                "open",
-                "--limit",
-                "100",
-                "--json",
-                "number,title,body,labels,state,url,milestone",
-            ])
-            .await?;
+        let argv = gh_argv::build_list_issues_by_milestone_argv(milestone);
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_issues_json(&json_str)
     }
 
@@ -472,22 +555,14 @@ impl GitHubClient for GhCliClient {
                 state
             ),
         }
-        let endpoint = format!("repos/{{owner}}/{{repo}}/milestones?state={}", state);
-        let json_str = self.run_gh(&["api", &endpoint, "--paginate"]).await?;
+        let argv = gh_argv::build_list_milestones_argv(state);
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_milestones_json(&json_str)
     }
 
     async fn get_issue(&self, number: u64) -> Result<GhIssue> {
-        let num_str = number.to_string();
-        let json_str = self
-            .run_gh(&[
-                "issue",
-                "view",
-                &num_str,
-                "--json",
-                "number,title,body,labels,state,url",
-            ])
-            .await?;
+        let argv = gh_argv::build_get_issue_argv(number);
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
         // gh issue view returns a single object, wrap it in array for parsing
         let issues = parse_issues_json(&format!("[{}]", json_str))?;
         issues
@@ -498,10 +573,8 @@ impl GitHubClient for GhCliClient {
 
     async fn add_label(&self, issue_number: u64, label: &str) -> Result<()> {
         validate_gh_arg(label, "label")?;
-        let num_str = issue_number.to_string();
-        let result = self
-            .run_gh(&["issue", "edit", &num_str, "--add-label", label])
-            .await;
+        let argv = gh_argv::build_add_label_argv(issue_number, label);
+        let result = self.run_gh(&argv_refs(&argv)).await;
 
         if let Err(ref e) = result {
             let err_msg = e.to_string();
@@ -516,8 +589,7 @@ impl GitHubClient for GhCliClient {
                 };
                 let _ = self.create_label(label, color).await;
                 // Retry adding the label
-                self.run_gh(&["issue", "edit", &num_str, "--add-label", label])
-                    .await?;
+                self.run_gh(&argv_refs(&argv)).await?;
                 return Ok(());
             }
         }
@@ -526,9 +598,8 @@ impl GitHubClient for GhCliClient {
 
     async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()> {
         validate_gh_arg(label, "label")?;
-        let num_str = issue_number.to_string();
-        self.run_gh(&["issue", "edit", &num_str, "--remove-label", label])
-            .await?;
+        let argv = gh_argv::build_remove_label_argv(issue_number, label);
+        self.run_gh(&argv_refs(&argv)).await?;
         Ok(())
     }
 
@@ -542,40 +613,15 @@ impl GitHubClient for GhCliClient {
     ) -> Result<u64> {
         validate_gh_arg(head_branch, "head_branch")?;
         validate_gh_arg(base_branch, "base_branch")?;
-        let json_str = self
-            .run_gh(&[
-                "pr",
-                "create",
-                "--head",
-                head_branch,
-                "--base",
-                base_branch,
-                "--title",
-                title,
-                "--body",
-                body,
-                "--json",
-                "number",
-            ])
-            .await?;
-        let v: serde_json::Value = serde_json::from_str(&json_str)?;
-        Ok(v.get("number").and_then(|n| n.as_u64()).unwrap_or(0))
+        let argv = gh_argv::build_create_pr_argv(head_branch, base_branch, title, body);
+        let stdout = self.run_gh(&argv_refs(&argv)).await?;
+        parse_pr_number_from_create_output(&stdout)
     }
 
     async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
         validate_gh_arg(head_branch, "head_branch")?;
-        let json_str = self
-            .run_gh(&[
-                "pr",
-                "list",
-                "--head",
-                head_branch,
-                "--state",
-                "open",
-                "--json",
-                "number",
-            ])
-            .await?;
+        let argv = gh_argv::build_list_prs_for_branch_argv(head_branch);
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
         let prs: Vec<serde_json::Value> = serde_json::from_str(&json_str)?;
         Ok(prs
             .iter()
@@ -605,18 +651,8 @@ impl GitHubClient for GhCliClient {
             });
         }
 
-        let result = self
-            .run_gh(&[
-                "api",
-                "repos/{owner}/{repo}/milestones",
-                "--method",
-                "POST",
-                "-f",
-                &format!("title={}", normalized),
-                "-f",
-                &format!("description={}", description),
-            ])
-            .await;
+        let argv = gh_argv::build_create_milestone_argv(&normalized, description);
+        let result = self.run_gh(&argv_refs(&argv)).await;
 
         match result {
             Ok(json_str) => {
@@ -672,18 +708,8 @@ impl GitHubClient for GhCliClient {
         let normalized = validate_title(title, "issue title")?;
 
         // Proactive pre-check: scan open + closed issues for an equivalent title.
-        let all_json = self
-            .run_gh(&[
-                "issue",
-                "list",
-                "--state",
-                "all",
-                "--limit",
-                "1000",
-                "--json",
-                "number,title,state",
-            ])
-            .await?;
+        let dupe_argv = gh_argv::build_create_issue_dupe_check_argv();
+        let all_json = self.run_gh(&argv_refs(&dupe_argv)).await?;
         let all_issues: Vec<serde_json::Value> = serde_json::from_str(&all_json)
             .context("Failed to parse issue list JSON for dupe pre-check")?;
         for v in &all_issues {
@@ -719,18 +745,9 @@ impl GitHubClient for GhCliClient {
         }
 
         let json_body = serde_json::to_string(&payload)?;
+        let create_argv = gh_argv::build_create_issue_argv();
         let json_str = self
-            .run_gh_with_stdin(
-                &[
-                    "api",
-                    "repos/{owner}/{repo}/issues",
-                    "--method",
-                    "POST",
-                    "--input",
-                    "-",
-                ],
-                Some(json_body.as_bytes()),
-            )
+            .run_gh_with_stdin(&argv_refs(&create_argv), Some(json_body.as_bytes()))
             .await?;
 
         let v: serde_json::Value =
@@ -743,26 +760,14 @@ impl GitHubClient for GhCliClient {
     }
 
     async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
-        let json_str = self
-            .run_gh(&[
-                "pr",
-                "list",
-                "--state",
-                "open",
-                "--limit",
-                "100",
-                "--json",
-                PR_JSON_FIELDS,
-            ])
-            .await?;
+        let argv = gh_argv::build_list_open_prs_argv(PR_JSON_FIELDS);
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_prs_json(&json_str)
     }
 
     async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
-        let num_str = number.to_string();
-        let json_str = self
-            .run_gh(&["pr", "view", &num_str, "--json", PR_JSON_FIELDS])
-            .await?;
+        let argv = gh_argv::build_get_pr_argv(number, PR_JSON_FIELDS);
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
         let prs = parse_prs_json(&format!("[{}]", json_str))?;
         prs.into_iter()
             .next()
@@ -775,22 +780,14 @@ impl GitHubClient for GhCliClient {
         event: crate::provider::github::types::PrReviewEvent,
         body: &str,
     ) -> Result<()> {
-        let num_str = pr_number.to_string();
-        let mut args = vec!["pr", "review", &num_str];
-        let flag = format!("--{}", event.as_gh_arg());
-        args.push(&flag);
-        if !body.is_empty() {
-            args.push("--body");
-            args.push(body);
-        }
-        self.run_gh(&args).await?;
+        let argv = gh_argv::build_submit_pr_review_argv(pr_number, event, body);
+        self.run_gh(&argv_refs(&argv)).await?;
         Ok(())
     }
 
     async fn list_labels(&self) -> Result<Vec<String>> {
-        let json_str = self
-            .run_gh(&["label", "list", "--json", "name", "--limit", "200"])
-            .await?;
+        let argv = gh_argv::build_list_labels_argv();
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
         let labels: Vec<serde_json::Value> =
             serde_json::from_str(&json_str).context("Failed to parse label list JSON")?;
         Ok(labels
@@ -806,17 +803,8 @@ impl GitHubClient for GhCliClient {
     async fn create_label(&self, name: &str, color: &str) -> Result<()> {
         validate_gh_arg(name, "label name")?;
         validate_gh_arg(color, "label color")?;
-        self.run_gh(&[
-            "label",
-            "create",
-            name,
-            "--color",
-            color,
-            "--description",
-            "Managed by Maestro",
-            "--force",
-        ])
-        .await?;
+        let argv = gh_argv::build_create_label_argv(name, color);
+        self.run_gh(&argv_refs(&argv)).await?;
         Ok(())
     }
 
@@ -825,15 +813,12 @@ impl GitHubClient for GhCliClient {
         milestone_number: u64,
         description: &str,
     ) -> Result<()> {
-        let endpoint = format!("repos/{{owner}}/{{repo}}/milestones/{}", milestone_number);
         let payload = serde_json::json!({ "description": description });
         let json_body = serde_json::to_string(&payload)?;
-        self.run_gh_with_stdin(
-            &["api", &endpoint, "--method", "PATCH", "--input", "-"],
-            Some(json_body.as_bytes()),
-        )
-        .await
-        .with_context(|| format!("patching milestone #{} description", milestone_number))?;
+        let argv = gh_argv::build_patch_milestone_description_argv(milestone_number);
+        self.run_gh_with_stdin(&argv_refs(&argv), Some(json_body.as_bytes()))
+            .await
+            .with_context(|| format!("patching milestone #{} description", milestone_number))?;
         Ok(())
     }
 }

@@ -219,6 +219,8 @@ mod tests {
             last_attempt_at: chrono::Utc::now(),
             next_retry_at: None,
             status: PendingPrStatus::RetryScheduled,
+            last_errors: std::collections::VecDeque::new(),
+            manual_retry_count: 0,
         });
 
         let json = serde_json::to_string(&state).unwrap();
