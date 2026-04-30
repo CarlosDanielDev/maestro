@@ -155,7 +155,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             if app.is_agent_graph_enabled() {
                 let (nodes, edges) = agent_graph::model::build_graph(&sessions);
                 agent_graph::render::draw_agent_graph(
-                    f, chunks[1], &nodes, &edges, /* use_braille = */ false,
+                    f,
+                    chunks[1],
+                    &nodes,
+                    &edges,
+                    crate::icon_mode::use_nerd_font(),
+                    spinner_tick,
+                    &sessions,
                 );
             } else {
                 app.panel_view.draw_with_claims(

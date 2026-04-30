@@ -7,6 +7,7 @@
 //!
 //! See `docs/adr/001-agent-graph-viz.md` for the design rationale.
 
+mod animation;
 pub(crate) mod layout;
 pub(crate) mod model;
 pub(crate) mod render;

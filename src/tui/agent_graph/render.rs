@@ -2,7 +2,8 @@
 //!
 //! Consumes positions from `super::layout` and paints nodes + edges onto a
 //! ratatui `Canvas`. See `docs/adr/001-agent-graph-viz.md` for the design
-//! constraints (deterministic, no animation, ≥ 80×24 viewport).
+//! constraints (≥ 80×24 viewport, deterministic layout) and `super::animation`
+//! for the per-tick animation rules added in #529.
 
 use ratatui::{
     Frame,
@@ -16,9 +17,11 @@ use ratatui::{
     },
 };
 
+use super::animation::{SessionRenderInfo, edge_color, node_animation_style};
 use super::layout::{ConcentricLayout, Layout};
-use super::model::{GraphEdge, GraphNode, NodeKind};
-use crate::session::types::SessionStatus;
+use super::model::{GraphEdge, GraphNode, NodeId, NodeKind};
+use crate::session::types::{Session, SessionStatus};
+use crate::tui::spinner::graph_node_frame;
 
 const MIN_WIDTH: u16 = 80;
 const MIN_HEIGHT: u16 = 24;
@@ -28,7 +31,9 @@ pub(crate) fn draw_agent_graph(
     area: Rect,
     nodes: &[GraphNode],
     edges: &[GraphEdge],
-    use_braille: bool,
+    use_nerd_font: bool,
+    tick: usize,
+    sessions: &[&Session],
 ) {
     if area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
         draw_too_small(f, area);
@@ -47,7 +52,7 @@ pub(crate) fn draw_agent_graph(
     let layout = ConcentricLayout;
     let positions = layout.position(nodes, edges);
 
-    let marker = if use_braille {
+    let marker = if use_nerd_font {
         Marker::Braille
     } else {
         Marker::Block
@@ -56,6 +61,10 @@ pub(crate) fn draw_agent_graph(
     let nodes_for_paint = nodes.to_vec();
     let edges_for_paint = edges.to_vec();
     let positions_for_paint = positions;
+    let session_infos: Vec<SessionRenderInfo> = sessions
+        .iter()
+        .map(|s| SessionRenderInfo::from_session(s))
+        .collect();
 
     let canvas = Canvas::default()
         .block(
@@ -83,13 +92,18 @@ pub(crate) fn draw_agent_graph(
                     y1: p1.y,
                     x2: p2.x,
                     y2: p2.y,
-                    color: Color::DarkGray,
+                    color: edge_color(e, &session_infos, tick),
                 });
             }
 
             for (idx, node) in nodes_for_paint.iter().enumerate() {
                 let p = positions_for_paint[idx];
-                let (color, modifier) = node_style(&node.kind);
+                let (base_color, base_mod) = node_style(&node.kind);
+                let session = find_session(&session_infos, &node.id);
+                let (color, modifier) = match session {
+                    Some(s) => node_animation_style(s, base_color, base_mod),
+                    None => (base_color, base_mod),
+                };
                 ctx.draw(&Rectangle {
                     x: p.x - 0.02,
                     y: p.y - 0.02,
@@ -97,12 +111,38 @@ pub(crate) fn draw_agent_graph(
                     height: 0.04,
                     color,
                 });
+                let label = label_for_node(node, session, tick, use_nerd_font);
                 let style = Style::default().fg(color).add_modifier(modifier);
-                ctx.print(p.x, p.y - 0.08, Line::styled(node.label.clone(), style));
+                ctx.print(p.x, p.y - 0.08, Line::styled(label, style));
             }
         });
 
     f.render_widget(canvas, area);
+}
+
+fn label_for_node(
+    node: &GraphNode,
+    session: Option<&SessionRenderInfo>,
+    tick: usize,
+    use_nerd_font: bool,
+) -> String {
+    let Some(session) = session else {
+        return node.label.clone();
+    };
+    if session.status != SessionStatus::Running {
+        return node.label.clone();
+    }
+    format!("{} {}", graph_node_frame(tick, use_nerd_font), node.label)
+}
+
+fn find_session<'a>(
+    sessions: &'a [SessionRenderInfo],
+    node_id: &NodeId,
+) -> Option<&'a SessionRenderInfo> {
+    let NodeId::Agent(uuid) = node_id else {
+        return None;
+    };
+    sessions.iter().find(|s| s.id == *uuid)
 }
 
 fn draw_too_small(f: &mut Frame, area: Rect) {
@@ -156,39 +196,5 @@ fn node_style(kind: &NodeKind) -> (Color, Modifier) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn node_style_distinguishes_running_vs_completed() {
-        let running = node_style(&NodeKind::Agent {
-            status: SessionStatus::Running,
-            issue_number: None,
-        });
-        let completed = node_style(&NodeKind::Agent {
-            status: SessionStatus::Completed,
-            issue_number: None,
-        });
-        assert_ne!(running.0, completed.0);
-    }
-
-    #[test]
-    fn file_style_is_neutral_color() {
-        let (color, _) = node_style(&NodeKind::File);
-        assert_eq!(color, Color::Cyan);
-    }
-
-    #[test]
-    fn too_small_message_contains_dimensions() {
-        use ratatui::{Terminal, backend::TestBackend};
-        let mut terminal = Terminal::new(TestBackend::new(79, 23)).unwrap();
-        terminal
-            .draw(|f| {
-                draw_agent_graph(f, f.area(), &[], &[], false);
-            })
-            .unwrap();
-        let rendered = format!("{:?}", terminal.backend().buffer());
-        assert!(rendered.contains("79"), "width not in message");
-        assert!(rendered.contains("23"), "height not in message");
-    }
-}
+#[path = "render_tests.rs"]
+mod tests;
