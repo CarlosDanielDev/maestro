@@ -66,6 +66,17 @@ const DEVOPS: Sprite = Sprite([
     ['▼', '█', '▼', '▼', '█', '▼'],
 ]);
 
+/// All five roles in declaration order. Useful for exhaustive iteration in
+/// tests (so adding a `Role` variant fails the build until the new role is
+/// covered) and for cross-module helpers that need to fan out over every role.
+pub(crate) const ALL_ROLES: [Role; 5] = [
+    Role::Implementer,
+    Role::Orchestrator,
+    Role::Reviewer,
+    Role::Docs,
+    Role::DevOps,
+];
+
 /// Lookup the 6×6 sprite for `role`.
 pub(crate) fn glyph_for_role(role: Role) -> Sprite {
     match role {
@@ -103,18 +114,30 @@ pub(crate) fn role_abbrev(role: Role) -> &'static str {
     }
 }
 
+/// 1-cell Unicode glyph for the activity-log role chip (issue #543).
+///
+/// Deliberately distinct from the 6×6 [`glyph_for_role`] sprite: nerd-font
+/// terminals can pack a high-information glyph into a single cell, whereas
+/// the ASCII fallback (`role_abbrev`) needs 3 cells for legibility. This
+/// asymmetry is intentional — see ADR-002 § ASCII Fallback.
+///
+/// `Implementer` and `DevOps` arms exist only for totality over `Role`;
+/// `role_for_subagent_name` (in `src/session/role.rs`) never returns those
+/// variants today, so the chip will not surface in the activity log for them.
+pub(crate) fn chip_glyph_for_role(role: Role) -> &'static str {
+    match role {
+        Role::Orchestrator => "◆",
+        Role::Reviewer => "◉",
+        Role::Docs => "▤",
+        Role::Implementer => "●",
+        Role::DevOps => "▼",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
-
-    const ALL_ROLES: [Role; 5] = [
-        Role::Implementer,
-        Role::Orchestrator,
-        Role::Reviewer,
-        Role::Docs,
-        Role::DevOps,
-    ];
 
     // --- role_color ---
 
@@ -260,5 +283,59 @@ mod tests {
             row0.contains(&'\u{25C6}'),
             "Orchestrator row 0 must contain '◆' (crown)"
         );
+    }
+
+    // --- chip_glyph_for_role (Issue #543) ---
+
+    #[test]
+    fn chip_glyph_orchestrator_is_diamond() {
+        assert_eq!(chip_glyph_for_role(Role::Orchestrator), "◆");
+    }
+
+    #[test]
+    fn chip_glyph_reviewer_is_bullseye() {
+        assert_eq!(chip_glyph_for_role(Role::Reviewer), "◉");
+    }
+
+    #[test]
+    fn chip_glyph_docs_is_document() {
+        assert_eq!(chip_glyph_for_role(Role::Docs), "▤");
+    }
+
+    #[test]
+    fn chip_glyph_implementer_is_circle() {
+        assert_eq!(chip_glyph_for_role(Role::Implementer), "●");
+    }
+
+    #[test]
+    fn chip_glyph_devops_is_triangle() {
+        assert_eq!(chip_glyph_for_role(Role::DevOps), "▼");
+    }
+
+    #[test]
+    fn chip_glyph_width_is_one_cell_for_all_roles() {
+        use unicode_width::UnicodeWidthStr;
+        for role in ALL_ROLES {
+            let glyph = chip_glyph_for_role(role);
+            assert_eq!(
+                UnicodeWidthStr::width(glyph),
+                1,
+                "chip glyph for {:?} must be 1 terminal cell wide, got {:?}",
+                role,
+                glyph
+            );
+        }
+    }
+
+    #[test]
+    fn chip_glyphs_are_unique_across_roles() {
+        let mut seen = HashSet::new();
+        for role in ALL_ROLES {
+            assert!(
+                seen.insert(chip_glyph_for_role(role)),
+                "duplicate chip glyph for {:?}",
+                role
+            );
+        }
     }
 }

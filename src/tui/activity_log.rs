@@ -1,3 +1,5 @@
+use crate::session::role::role_for_subagent_name;
+use crate::tui::agent_graph::personalities::{chip_glyph_for_role, role_abbrev, role_color};
 use crate::tui::theme::Theme;
 use chrono::{DateTime, Utc};
 use ratatui::{
@@ -14,7 +16,6 @@ pub struct ToolMeta {
     /// Dispatched subagent or skill name, when this entry represents a known
     /// dispatcher tool (`Agent`/`Task`/`Skill`). Set by #542; consumed by #543
     /// (role-colored chip on subagent dispatches in activity log).
-    #[allow(dead_code)]
     pub subagent_name: Option<String>,
 }
 
@@ -39,6 +40,26 @@ pub fn tool_icon_ascii(tool_name: &str) -> &'static str {
         "WebFetch" => "[@]",
         _ => "[~]",
     }
+}
+
+/// Issue #543: build the role-colored chip span for a `ToolMeta`, or `None`
+/// when the subagent name is unknown to the registry. Returning `None` (rather
+/// than rendering an `Implementer` fallback) is the deliberate signal that the
+/// dispatcher tool received an unrecognized subagent name.
+fn role_chip_span(meta: &ToolMeta, use_nerd_font: bool) -> Option<Span<'static>> {
+    let role = meta
+        .subagent_name
+        .as_deref()
+        .and_then(role_for_subagent_name)?;
+    let chip_body = if use_nerd_font {
+        chip_glyph_for_role(role)
+    } else {
+        role_abbrev(role)
+    };
+    Some(Span::styled(
+        format!("{} ", chip_body),
+        Style::default().fg(role_color(role)),
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -134,7 +155,7 @@ impl ActivityLog {
         &self.entries
     }
 
-    pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+    pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, use_nerd_font: bool) {
         let block = theme.styled_block("Activity Log", false);
 
         let inner_height = area.height.saturating_sub(2) as usize;
@@ -171,6 +192,9 @@ impl ActivityLog {
                         format!("{} ", tool_icon_ascii(&meta.tool_name)),
                         Style::default().fg(theme.accent_info),
                     ));
+                    if let Some(chip) = role_chip_span(meta, use_nerd_font) {
+                        spans.push(chip);
+                    }
                 }
 
                 spans.push(Span::styled(
@@ -442,5 +466,43 @@ mod tests {
         log.scroll_down(); // offset = 2
         log.push(make_entry("d")); // trims "a", len=3, max=2
         assert!(log.scroll_offset < log.entries().len());
+    }
+
+    // --- Issue #543: role_chip_span helper ---------------------------------
+
+    fn meta(tool: &str, subagent: Option<&str>) -> ToolMeta {
+        ToolMeta {
+            tool_name: tool.to_string(),
+            subagent_name: subagent.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn role_chip_span_returns_none_for_unknown_subagent() {
+        assert!(role_chip_span(&meta("Agent", Some("subagent-mystery")), true).is_none());
+    }
+
+    #[test]
+    fn role_chip_span_returns_none_for_empty_subagent_name() {
+        assert!(role_chip_span(&meta("Agent", Some("")), true).is_none());
+    }
+
+    #[test]
+    fn role_chip_span_returns_none_when_subagent_name_missing() {
+        assert!(role_chip_span(&meta("Agent", None), true).is_none());
+    }
+
+    #[test]
+    fn role_chip_span_uses_glyph_in_nerd_font_mode() {
+        let span = role_chip_span(&meta("Agent", Some("subagent-architect")), true).unwrap();
+        assert_eq!(span.content, "◆ ");
+        assert_eq!(span.style.fg, Some(Color::Yellow));
+    }
+
+    #[test]
+    fn role_chip_span_uses_abbrev_in_ascii_mode() {
+        let span = role_chip_span(&meta("Agent", Some("subagent-qa")), false).unwrap();
+        assert_eq!(span.content, "REV ");
+        assert_eq!(span.style.fg, Some(Color::Magenta));
     }
 }

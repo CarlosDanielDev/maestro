@@ -608,7 +608,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     ratatui::widgets::Widget::render(widget, pr_chunks[i], f.buffer_mut());
                 }
             }
-            app.activity_log.draw(f, activity_chunks[1], &app.theme);
+            app.activity_log.draw(
+                f,
+                activity_chunks[1],
+                &app.theme,
+                crate::icon_mode::use_nerd_font(),
+            );
         } else {
             let is_dashboard = matches!(app.tui_mode, TuiMode::Dashboard);
             let log_area = chunks[2];
@@ -623,7 +628,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Min(10), Constraint::Length(panel_width)])
                     .split(log_area);
-                app.activity_log.draw(f, h_split[0], &app.theme);
+                app.activity_log
+                    .draw(f, h_split[0], &app.theme, crate::icon_mode::use_nerd_font());
                 draw_mascot_block(
                     f,
                     app.mascot_animator.state(),
@@ -633,7 +639,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &theme,
                 );
             } else {
-                app.activity_log.draw(f, log_area, &app.theme);
+                app.activity_log
+                    .draw(f, log_area, &app.theme, crate::icon_mode::use_nerd_font());
             }
         }
     }

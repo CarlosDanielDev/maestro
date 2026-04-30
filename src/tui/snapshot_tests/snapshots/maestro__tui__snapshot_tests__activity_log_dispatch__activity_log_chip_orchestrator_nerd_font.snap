@@ -1,0 +1,12 @@
+---
+source: src/tui/snapshot_tests/activity_log_dispatch.rs
+expression: t.backend()
+---
+"╔═══════════════════════════════[ Activity Log ]═══════════════════════════════╗"
+"║10:00:00 [S-abc123] [~] ◆ Dispatching subagent-architect                      ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"╚══════════════════════════════════════════════════════════════════════════════╝"
