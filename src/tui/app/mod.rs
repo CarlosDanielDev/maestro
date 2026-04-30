@@ -332,11 +332,20 @@ impl App {
             git_ops: Box::new(crate::git::CliGitOps),
         };
         if recovered_prs_count > 0 {
+            // List the actual issue numbers so the user knows which panels
+            // to focus before pressing Shift+P, instead of guessing across
+            // the whole pool.
+            let issue_list: Vec<String> = app
+                .pending_prs
+                .iter()
+                .map(|p| format!("#{}", p.issue_number))
+                .collect();
             app.activity_log.push_simple(
                 "#orphan-prs".into(),
                 format!(
-                    "{} pending PR(s) restored from previous run — press Shift+P on the focused session to retry",
-                    recovered_prs_count
+                    "{} pending PR(s) restored from previous run: {} — focus the matching session and press Shift+P to retry",
+                    recovered_prs_count,
+                    issue_list.join(", ")
                 ),
                 LogLevel::Warn,
             );

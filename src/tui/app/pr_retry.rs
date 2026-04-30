@@ -186,20 +186,68 @@ impl App {
     }
 }
 
+/// Strip volatile substrings (timestamps, UUIDs, GitHub `X-Request-Id`s,
+/// `(attempt N)` substrings) from a `gh` error before storing it for
+/// correlation. Without this, errors that *are* deterministic upstream
+/// (e.g., `gh api 503` always failing identically modulo a request_id)
+/// would never match each other and the user would loop forever.
+///
+/// The normalization is conservative: substitute volatile spans with
+/// `[T]` / `[id]` placeholders. The redacted string still reads clearly
+/// in the activity log — it's not a hash.
+fn normalize_error_for_correlation(err: &str) -> String {
+    use std::sync::OnceLock;
+    static RE_TS: OnceLock<regex::Regex> = OnceLock::new();
+    static RE_UUID: OnceLock<regex::Regex> = OnceLock::new();
+    static RE_REQID: OnceLock<regex::Regex> = OnceLock::new();
+    static RE_ATTEMPT: OnceLock<regex::Regex> = OnceLock::new();
+
+    let re_ts = RE_TS.get_or_init(|| {
+        regex::Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:?\d{2})")
+            .unwrap()
+    });
+    let re_uuid = RE_UUID.get_or_init(|| {
+        regex::Regex::new(
+            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+        )
+        .unwrap()
+    });
+    let re_reqid = RE_REQID.get_or_init(|| {
+        regex::Regex::new(r"(?i)(request[_-]?id|x-github-request-id)[:=]\s*\S+").unwrap()
+    });
+    let re_attempt = RE_ATTEMPT.get_or_init(|| regex::Regex::new(r"\(attempt \d+\)").unwrap());
+
+    let s = re_ts.replace_all(err, "[T]");
+    let s = re_uuid.replace_all(&s, "[id]");
+    let s = re_reqid.replace_all(&s, "[reqid]");
+    let s = re_attempt.replace_all(&s, "(attempt N)");
+    s.into_owned()
+}
+
 /// Push `err` into `pending.last_errors`, evicting the oldest entry once the
 /// cap is reached. Pure helper — separate fn so tests can drive it directly.
+///
+/// Errors are routed through `client::redact_secrets` (defense-in-depth
+/// against credential leaks; `last_errors` is persisted to disk) and then
+/// `normalize_error_for_correlation` so that volatile substrings like
+/// timestamps and request IDs do not defeat the deterministic-failure
+/// detector below.
 fn record_error_for_correlation(
     pending: &mut crate::provider::github::types::PendingPr,
     err: String,
 ) {
+    let safe = crate::provider::github::client::redact_secrets(&err);
+    let normalized = normalize_error_for_correlation(&safe);
     while pending.last_errors.len() >= PENDING_PR_LAST_ERRORS_CAP {
         pending.last_errors.pop_front();
     }
-    pending.last_errors.push_back(err);
+    pending.last_errors.push_back(normalized);
 }
 
 /// True iff `pending.last_errors` contains exactly `PENDING_PR_LAST_ERRORS_CAP`
 /// entries AND every entry is byte-equal — a deterministic-failure signal.
+/// The byte comparison is reliable because `record_error_for_correlation`
+/// normalizes the error string first.
 fn errors_match_threshold(pending: &crate::provider::github::types::PendingPr) -> bool {
     if pending.last_errors.len() < PENDING_PR_LAST_ERRORS_CAP {
         return false;
@@ -214,13 +262,60 @@ fn errors_match_threshold(pending: &crate::provider::github::types::PendingPr) -
 
 #[cfg(test)]
 mod tests {
-    use super::{errors_match_threshold, record_error_for_correlation};
+    use super::{
+        errors_match_threshold, normalize_error_for_correlation, record_error_for_correlation,
+    };
     use crate::provider::github::types::{
         PENDING_PR_LAST_ERRORS_CAP, PENDING_PR_MANUAL_RETRY_LIFETIME_CAP, PendingPr,
         PendingPrStatus,
     };
     use crate::tui::activity_log::LogLevel;
     use std::collections::VecDeque;
+
+    #[test]
+    fn normalize_error_strips_iso_timestamps() {
+        let a = normalize_error_for_correlation(
+            "gh api 503 at 2026-04-30T03:41:24Z: temporarily unavailable",
+        );
+        let b = normalize_error_for_correlation(
+            "gh api 503 at 2026-04-30T03:42:00Z: temporarily unavailable",
+        );
+        assert_eq!(a, b, "timestamps must not defeat correlation");
+    }
+
+    #[test]
+    fn normalize_error_strips_request_ids() {
+        let a = normalize_error_for_correlation(
+            "gh api error: x-github-request-id: ABC:123:DEF body=...",
+        );
+        let b = normalize_error_for_correlation(
+            "gh api error: x-github-request-id: XYZ:999:QQQ body=...",
+        );
+        assert_eq!(a, b, "request ids must not defeat correlation");
+    }
+
+    #[test]
+    fn normalize_error_strips_uuids() {
+        let a =
+            normalize_error_for_correlation("trace 12345678-1234-1234-1234-123456789abc failed");
+        let b =
+            normalize_error_for_correlation("trace 87654321-4321-4321-4321-cba987654321 failed");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn normalize_error_strips_attempt_counter() {
+        let a = normalize_error_for_correlation("gh failed (attempt 1) on push");
+        let b = normalize_error_for_correlation("gh failed (attempt 7) on push");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn normalize_error_preserves_distinct_error_classes() {
+        let a = normalize_error_for_correlation("gh command failed: unknown flag: --json");
+        let b = normalize_error_for_correlation("gh command failed: 503 service unavailable");
+        assert_ne!(a, b, "different errors must remain distinct");
+    }
 
     fn make_pending_pr(issue_number: u64) -> PendingPr {
         PendingPr {

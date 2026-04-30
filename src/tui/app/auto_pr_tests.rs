@@ -455,7 +455,7 @@ async fn auto_pr_when_auth_missing_enqueues_pending_pr_for_manual_retry() {
     let p = &app.pending_prs[0];
     assert_eq!(p.issue_number, 42);
     assert_eq!(p.branch, "maestro/issue-42");
-    assert!(matches!(p.status, PendingPrStatus::AwaitingManualRetry));
+    assert_eq!(p.status, PendingPrStatus::AwaitingManualRetry);
     assert!(p.next_retry_at.is_none(), "manual retry — no auto schedule");
     assert!(
         p.last_error.contains("auth"),

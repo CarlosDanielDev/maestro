@@ -343,6 +343,29 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     }
 }
 
+/// Scrub credentials from `gh` stderr/stdout before it lands in error
+/// messages, activity logs, or `maestro-state.json`.
+///
+/// Catches:
+/// - `Authorization: Bearer <token>` / `Authorization: token <token>`
+///   (gh emits these when the user enables `GH_DEBUG=api`)
+/// - GitHub token prefixes: `ghp_`, `gho_`, `ghs_`, `ghu_`, `ghr_`,
+///   and `github_pat_<v2>`
+///
+/// The redaction substitutes `[REDACTED]` so the rest of the message
+/// stays readable for diagnostics.
+pub fn redact_secrets(s: &str) -> String {
+    use std::sync::OnceLock;
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?i)(?:authorization:\s*(?:bearer|token)\s+\S+|gh[oprsu]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)",
+        )
+        .unwrap()
+    });
+    re.replace_all(s, "[REDACTED]").into_owned()
+}
+
 /// Check if a stderr string indicates a GitHub CLI authentication failure.
 pub fn is_auth_error(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
@@ -488,11 +511,12 @@ impl GhCliClient {
             .context("Failed to wait for `gh` CLI")?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr_raw = String::from_utf8_lossy(&output.stderr);
+            let stderr = redact_secrets(stderr_raw.trim());
             if is_auth_error(&stderr) {
-                anyhow::bail!("{} {}", GH_AUTH_ERROR_SENTINEL, stderr.trim());
+                anyhow::bail!("{} {}", GH_AUTH_ERROR_SENTINEL, stderr);
             }
-            anyhow::bail!("gh command failed: {}", stderr.trim());
+            anyhow::bail!("gh command failed: {}", stderr);
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
