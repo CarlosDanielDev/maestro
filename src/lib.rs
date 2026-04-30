@@ -35,3 +35,17 @@ pub mod settings {
         CavemanModeState, CavemanWriteError, FsSettingsStore, SettingsStore,
     };
 }
+
+// Spike prototype for ADR 002 (agent personalities). Gated behind --features
+// spike so cargo build never includes it. Files live under
+// src/tui/agent_personalities/ but are exposed at the lib facade root so the
+// throwaway examples/agent_personalities_spike.rs binary can reach them.
+// Removed when the ADR-002 cleanup commit lands.
+#[cfg(feature = "spike")]
+#[path = "tui/agent_personalities"]
+pub mod agent_personalities {
+    pub mod palette;
+    pub mod render;
+    pub mod role;
+    pub mod sprite;
+}
