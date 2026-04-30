@@ -83,6 +83,7 @@ fn fifo_ordering_preserved_under_promotion() {
                 "opus".to_string(),
                 "orchestrator".to_string(),
                 Some(100 + i as u64),
+                None,
             )
         })
         .collect();

@@ -137,7 +137,7 @@ impl App {
                 let (model, issue_mode) = self.resolve_model_and_mode(&gh_issue.labels);
                 let prompt = self.build_issue_prompt_with_custom(&gh_issue, &custom_prompt);
                 let issue_number = gh_issue.number;
-                let mut session = Session::new(prompt, model, issue_mode, Some(issue_number));
+                let mut session = Session::new(prompt, model, issue_mode, Some(issue_number), None);
                 session.issue_title = Some(gh_issue.title.clone());
                 self.state.issue_cache.insert(issue_number, gh_issue);
                 self.pending_session_launches.push(session);
@@ -389,7 +389,8 @@ impl App {
                 }
 
                 let primary_issue = issue_numbers.first().copied();
-                let mut session = Session::new(combined_prompt, model, issue_mode, primary_issue);
+                let mut session =
+                    Session::new(combined_prompt, model, issue_mode, primary_issue, None);
                 session.issue_numbers = issue_numbers;
                 session.issue_title = Some(format!(
                     "Unified: {}",

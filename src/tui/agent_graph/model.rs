@@ -89,7 +89,7 @@ mod tests {
     use super::*;
 
     fn fake(status: SessionStatus, files: &[&str]) -> Session {
-        let mut s = Session::new(String::new(), String::new(), String::new(), None);
+        let mut s = Session::new(String::new(), String::new(), String::new(), None, None);
         s.status = status;
         s.files_touched = files.iter().map(|s| (*s).to_string()).collect();
         s

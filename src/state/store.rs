@@ -106,6 +106,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             None,
+            None,
         );
         for _ in 0..5 {
             s.activity_log.push(crate::session::types::ActivityEntry {
@@ -131,6 +132,7 @@ mod tests {
             "p".into(),
             "opus".into(),
             "orchestrator".into(),
+            None,
             None,
         );
         s.status = crate::session::types::SessionStatus::Running;

@@ -37,6 +37,7 @@ pub(crate) fn create_ci_fix_session(
         model.to_string(),
         mode.to_string(),
         Some(issue_number),
+        None,
     );
     let _ = session.transition_to(SessionStatus::CiFix, TransitionReason::CiFixStarted);
     session.issue_title = Some(format!("CI Fix #{} for PR #{}", attempt, pr_number));
@@ -62,6 +63,7 @@ pub(crate) fn create_gate_fix_session(
         model.to_string(),
         mode.to_string(),
         Some(issue_number),
+        None,
     );
     session.issue_title = Some(format!("Gate Fix for #{}", issue_number));
     session
@@ -142,7 +144,7 @@ impl App {
             &config.conflicting_files,
         );
 
-        let mut session = Session::new(prompt, model, mode, Some(config.issue_number));
+        let mut session = Session::new(prompt, model, mode, Some(config.issue_number), None);
         let _ = session.transition_to(
             SessionStatus::ConflictFix,
             TransitionReason::ConflictFixStarted,

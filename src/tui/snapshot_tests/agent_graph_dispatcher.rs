@@ -23,6 +23,7 @@ fn two_agent_sessions() -> (Session, Session) {
         "claude-opus-4-5".to_string(),
         "orchestrator".to_string(),
         Some(101),
+        None,
     );
     s1.id = Uuid::nil();
     s1.status = SessionStatus::Running;
@@ -35,6 +36,7 @@ fn two_agent_sessions() -> (Session, Session) {
         "claude-opus-4-5".to_string(),
         "orchestrator".to_string(),
         Some(102),
+        None,
     );
     s2.id = Uuid::from_u128(1);
     s2.status = SessionStatus::Running;

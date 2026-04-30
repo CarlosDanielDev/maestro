@@ -437,6 +437,7 @@ mod tests {
             tq_handoff_compressed_tokens: None,
             transition_history: vec![],
             intent: crate::session::intent::SessionIntent::default(),
+            role: crate::session::role::Role::default(),
             consultation_skip_logged: false,
             adapt_follow_up_considered: false,
         };

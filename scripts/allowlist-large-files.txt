@@ -129,3 +129,17 @@ src/tui/app/pr_retry.rs # deadline: 2026-08-22, owner: @carlos, ticket: #TBD, pl
 # locking; keeping them co-located is the point. Plan to compact tests with
 # a #[macro_rules!] argv_eq! once the surface stops shifting.
 src/provider/github/gh_argv.rs # deadline: 2026-09-30, owner: @carlos, ticket: #TBD, plan: introduce an argv_eq! macro to compress the 18 snapshot tests once the gh subcommand surface stabilizes
+
+# --- Issue #538 Role enum + derive_role classifier (lifted from ADR 002 spike) ---
+# 5-variant Role enum + 21-test classifier corpus + serde/clap derives.
+# 425 LOC, 25 over the cap. The test corpus is the main bulk; per ADR-002
+# §Data Model the corpus is co-located with the classifier so changes are
+# atomic. A future extraction could split classifier vs tests, but the corpus
+# is what makes the classifier trustworthy and splitting risks drift.
+src/session/role.rs # deadline: 2026-08-22, owner: @carlos, ticket: #538, plan: extract test corpus into src/session/role/tests/ once the keyword set stabilizes; classifier itself stays in role.rs
+
+# state/types.rs is now 401 LOC after #538's Role round-trip test landed on
+# top of #544's PendingPr last_errors/manual_retry_count round-trip tests.
+# Both test additions are deliberate (they prevent silent state-schema
+# regressions). Trimming one would weaken the schema guard.
+src/state/types.rs # deadline: 2026-08-22, owner: @carlos, ticket: #538, plan: split per-resource sub-modules (state/sessions.rs, state/pending.rs) once the schema stops shifting

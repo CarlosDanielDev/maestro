@@ -745,13 +745,13 @@ mod tests {
     }
 
     fn make_running_session() -> Session {
-        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         s.status = SessionStatus::Running;
         s
     }
 
     fn make_terminal_session() -> Session {
-        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         s.status = SessionStatus::Completed;
         s
     }
@@ -1162,7 +1162,7 @@ mod tests {
         compressed: u64,
         cost_usd: f64,
     ) -> Session {
-        let mut s = Session::new("p".into(), "m".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "m".into(), "orchestrator".into(), None, None);
         s.token_usage = usage_with_input(input_tokens);
         s.tq_handoff_original_tokens = Some(original);
         s.tq_handoff_compressed_tokens = Some(compressed);
@@ -1171,7 +1171,7 @@ mod tests {
     }
 
     fn session_no_handoff(input_tokens: u64, cost_usd: f64) -> Session {
-        let mut s = Session::new("p".into(), "m".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "m".into(), "orchestrator".into(), None, None);
         s.token_usage = usage_with_input(input_tokens);
         s.cost_usd = cost_usd;
         s

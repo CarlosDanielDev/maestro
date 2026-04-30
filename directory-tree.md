@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-29 14:00 (UTC)
+> Last updated: 2026-04-30 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -243,7 +243,8 @@ maestro/
 │   │   ├── image.rs                       # Image attachment helpers: VALID_IMAGE_EXTENSIONS constant, path validation, base64 encoding for multimodal session prompts
 │   │   ├── logger.rs                      # SessionLogger: logs ContextUpdate events; logs Thinking events with "THINKING:" prefix; per-session timestamped file logging  [Phase 3, Issue #102]
 │   │   ├── context_monitor.rs             # ContextMonitor trait + ProductionContextMonitor: tracks per-session context usage, overflow and commit-prompt thresholds  [Issue #12]
-│   │   └── fork.rs                        # SessionForker trait + ForkPolicy: auto-fork on overflow, continuation prompt builder, max depth enforcement  [Issue #12]
+│   │   ├── fork.rs                        # SessionForker trait + ForkPolicy: auto-fork on overflow, continuation prompt builder, max depth enforcement  [Issue #12]
+│   │   └── role.rs                        # Role enum (5 variants: Orchestrator, Implementer, Reviewer, QA, Unknown) + derive_role() keyword classifier; Session::role field (O(1) lookup at render time)  [Issue #538]
 │   ├── state/
 │   │   ├── mod.rs                         # Module exports (includes file_claims, progress)
 │   │   ├── file_claims.rs                 # File claim system: FileClaimManager, conflict prevention  [Phase 1]
@@ -601,6 +602,7 @@ maestro/
 | `src/session/logger.rs` | Per-session file logging to .maestro/logs/ (Phase 3) |
 | `src/session/context_monitor.rs` | ContextMonitor trait + ProductionContextMonitor: per-session context tracking (Issue #12) |
 | `src/session/fork.rs` | SessionForker trait + ForkPolicy: auto-fork on overflow, continuation prompt builder (Issue #12) |
+| `src/session/role.rs` | Role enum (5 variants) + derive_role() keyword classifier; Session::role field for O(1) render-time lookup (Issue #538) |
 | `src/state/` | State persistence and file conflict management |
 | `src/state/file_claims.rs` | Per-session file claim registry |
 | `src/state/progress.rs` | Session phase tracking (Phase 3) |

@@ -42,6 +42,7 @@ pub fn make_session(status: SessionStatus, issue_number: Option<u64>) -> Session
         "claude-opus-4-5".to_string(),
         "orchestrator".to_string(),
         issue_number,
+        None,
     );
     s.id = Uuid::nil();
     s.status = status;

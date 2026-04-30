@@ -409,6 +409,7 @@ mod tests {
             "opus".to_string(),
             "orchestrator".to_string(),
             None,
+            None,
         )
     }
 
@@ -418,6 +419,7 @@ mod tests {
             "opus".to_string(),
             "orchestrator".to_string(),
             Some(issue),
+            None,
         )
     }
 

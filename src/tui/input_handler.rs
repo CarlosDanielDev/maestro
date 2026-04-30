@@ -1331,6 +1331,7 @@ mod tests {
             "claude-opus-4-5".into(),
             "orchestrator".into(),
             None,
+            None,
         );
         s.status = SessionStatus::Completed;
         s.last_message = last_message.to_string();
@@ -1361,6 +1362,7 @@ mod tests {
             "task".into(),
             "claude-opus-4-5".into(),
             "orchestrator".into(),
+            None,
             None,
         );
         s.status = SessionStatus::Running;
@@ -1473,6 +1475,7 @@ mod tests {
             "claude-opus-4-5".into(),
             "orchestrator".into(),
             Some(42),
+            None,
         );
         s.status = SessionStatus::Running;
         app.pool.enqueue(s);
@@ -1518,6 +1521,7 @@ mod tests {
             "claude-opus-4-5".into(),
             "orchestrator".into(),
             Some(42),
+            None,
         );
         app.pool.enqueue(s);
         app.panel_view.selected = Some(0);
@@ -1541,6 +1545,7 @@ mod tests {
             "claude-opus-4-5".into(),
             "orchestrator".into(),
             Some(42),
+            None,
         );
         app.pool.enqueue(s);
         app.panel_view.selected = Some(0);

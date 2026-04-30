@@ -15,6 +15,7 @@ fn make_session_with(id: u128, issue: u64, status: SessionStatus, files: &[&str]
         "claude-opus-4-5".to_string(),
         "orchestrator".to_string(),
         Some(issue),
+        None,
     );
     s.id = Uuid::from_u128(id);
     s.status = status;

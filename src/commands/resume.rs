@@ -53,6 +53,7 @@ pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
             s.model.clone(),
             s.mode.clone(),
             s.issue_number,
+            Some(s.role),
         );
         new_session.issue_title = s.issue_title.clone();
         new_session.retry_count = s.retry_count;

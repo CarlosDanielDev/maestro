@@ -23,6 +23,7 @@ pub async fn cmd_run(
     continuous: bool,
     enable_flags: Vec<String>,
     disable_flags: Vec<String>,
+    role_override: Option<crate::session::role::Role>,
     no_splash: bool,
     bypass_review: bool,
 ) -> anyhow::Result<()> {
@@ -103,8 +104,14 @@ pub async fn cmd_run(
     }
 
     if let Some(prompt_text) = prompt {
-        let session = Session::new(prompt_text, model, session_mode.clone(), None)
-            .with_image_paths(images.clone());
+        let session = Session::new(
+            prompt_text,
+            model,
+            session_mode.clone(),
+            None,
+            role_override,
+        )
+        .with_image_paths(images.clone());
         app.add_session(session).await?;
     } else if let Some(milestone_name) = milestone {
         let client = GhCliClient::new();
@@ -143,8 +150,9 @@ pub async fn cmd_run(
             let prompt = crate::prompts::PromptBuilder::build_issue_prompt_with_images(
                 &gh_issue, &config, &images,
             );
-            let mut session = Session::new(prompt, model.clone(), issue_mode, Some(num))
-                .with_image_paths(images.clone());
+            let mut session =
+                Session::new(prompt, model.clone(), issue_mode, Some(num), role_override)
+                    .with_image_paths(images.clone());
             session.issue_title = Some(gh_issue.title.clone());
 
             app.state.issue_cache.insert(num, gh_issue);

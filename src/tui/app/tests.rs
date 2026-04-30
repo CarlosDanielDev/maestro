@@ -80,6 +80,7 @@ fn build_completion_summary_label_uses_issue_number_when_present() {
         "opus".into(),
         "orchestrator".into(),
         Some(99),
+        None,
     );
     app.pool.enqueue(session);
     let summary = app.build_completion_summary();
@@ -97,6 +98,7 @@ fn build_completion_summary_label_uses_short_id_when_no_issue() {
         "do something".into(),
         "opus".into(),
         "orchestrator".into(),
+        None,
         None,
     );
     let short_id = session.id.to_string()[..8].to_string();
@@ -117,6 +119,7 @@ fn build_completion_summary_aggregates_cost() {
         "opus".into(),
         "orchestrator".into(),
         Some(1),
+        None,
     );
     s1.cost_usd = 1.50;
     let mut s2 = crate::session::types::Session::new(
@@ -124,6 +127,7 @@ fn build_completion_summary_aggregates_cost() {
         "opus".into(),
         "orchestrator".into(),
         Some(2),
+        None,
     );
     s2.cost_usd = 2.75;
     app.pool.enqueue(s1);
@@ -283,6 +287,7 @@ fn build_completion_summary_sets_pr_link_when_pending_check_matches() {
         "opus".into(),
         "orchestrator".into(),
         Some(10),
+        None,
     );
     session.status = crate::session::types::SessionStatus::Completed;
     app.pool.enqueue(session);
@@ -313,6 +318,7 @@ fn build_completion_summary_pr_link_empty_when_no_matching_check() {
         "opus".into(),
         "orchestrator".into(),
         Some(99),
+        None,
     );
     app.pool.enqueue(session);
     app.ci_poller.add_check(PendingPrCheck {
@@ -342,6 +348,7 @@ fn build_completion_summary_pr_link_empty_when_no_issue_number() {
         "opus".into(),
         "orchestrator".into(),
         None,
+        None,
     );
     app.pool.enqueue(session);
     app.ci_poller.add_check(PendingPrCheck {
@@ -369,6 +376,7 @@ fn build_completion_summary_error_summary_for_errored_session() {
         "opus".into(),
         "orchestrator".into(),
         Some(5),
+        None,
     );
     session.status = crate::session::types::SessionStatus::Errored;
     session.log_activity("Process started".into());
@@ -390,6 +398,7 @@ fn build_completion_summary_error_summary_empty_for_completed() {
         "opus".into(),
         "orchestrator".into(),
         Some(6),
+        None,
     );
     session.status = crate::session::types::SessionStatus::Completed;
     session.log_activity("Some activity".into());
@@ -410,6 +419,7 @@ fn build_completion_summary_error_summary_empty_when_no_activity() {
         "opus".into(),
         "orchestrator".into(),
         Some(7),
+        None,
     );
     session.status = crate::session::types::SessionStatus::Errored;
     app.pool.enqueue(session);
@@ -429,6 +439,7 @@ fn build_completion_summary_error_summary_truncates_long_messages() {
         "opus".into(),
         "orchestrator".into(),
         Some(8),
+        None,
     );
     session.status = crate::session::types::SessionStatus::Errored;
     session.log_activity(format!("Error: {}", "x".repeat(200)));
@@ -452,6 +463,7 @@ fn build_completion_summary_pr_link_from_ci_fix_context() {
         "opus".into(),
         "orchestrator".into(),
         Some(15),
+        None,
     );
     session.status = crate::session::types::SessionStatus::Completed;
     session.ci_fix_context = Some(crate::session::types::CiFixContext {
@@ -639,6 +651,7 @@ fn build_completion_summary_gate_failures_empty_for_completed_session() {
         "opus".into(),
         "orchestrator".into(),
         Some(10),
+        None,
     );
     session.status = crate::session::types::SessionStatus::Completed;
     session.gate_results = vec![GateResultEntry::pass("tests", "all passed")];
@@ -659,6 +672,7 @@ fn build_completion_summary_gate_failures_populated_for_needs_review() {
         "opus".into(),
         "orchestrator".into(),
         Some(20),
+        None,
     );
     session.status = crate::session::types::SessionStatus::NeedsReview;
     session.gate_results = vec![GateResultEntry::fail("tests", "3 tests failed")];
@@ -682,6 +696,7 @@ fn build_completion_summary_gate_failures_multiple_failed_gates() {
         "opus".into(),
         "orchestrator".into(),
         Some(30),
+        None,
     );
     session.status = crate::session::types::SessionStatus::NeedsReview;
     session.gate_results = vec![
@@ -702,6 +717,7 @@ fn build_completion_summary_gate_failures_skips_passing_gates() {
         "opus".into(),
         "orchestrator".into(),
         Some(40),
+        None,
     );
     session.status = crate::session::types::SessionStatus::NeedsReview;
     session.gate_results = vec![
@@ -723,6 +739,7 @@ fn build_completion_summary_gate_failures_empty_when_needs_review_has_no_gate_re
         "opus".into(),
         "orchestrator".into(),
         Some(50),
+        None,
     );
     session.status = crate::session::types::SessionStatus::NeedsReview;
     app.pool.enqueue(session);
@@ -739,6 +756,7 @@ fn build_completion_summary_populates_issue_number() {
         "opus".into(),
         "orchestrator".into(),
         Some(77),
+        None,
     );
     app.pool.enqueue(session);
 
@@ -753,6 +771,7 @@ fn build_completion_summary_issue_number_is_none_when_session_has_none() {
         "task".into(),
         "opus".into(),
         "orchestrator".into(),
+        None,
         None,
     );
     app.pool.enqueue(session);
@@ -769,6 +788,7 @@ fn build_completion_summary_populates_model() {
         "claude-opus-4".into(),
         "orchestrator".into(),
         Some(88),
+        None,
     );
     app.pool.enqueue(session);
 
@@ -784,6 +804,7 @@ fn build_completion_summary_gate_failure_message_truncated() {
         "opus".into(),
         "orchestrator".into(),
         Some(60),
+        None,
     );
     session.status = crate::session::types::SessionStatus::NeedsReview;
     session.gate_results = vec![GateResultEntry::fail("tests", &"x".repeat(300))];
@@ -927,6 +948,7 @@ async fn add_session_resets_dismissed_flag() {
         "opus".to_string(),
         "orchestrator".to_string(),
         None,
+        None,
     );
     let _ = app.add_session(session).await;
     assert!(
@@ -945,6 +967,7 @@ fn dismissed_flag_prevents_summary_retrigger_scenario() {
         "done".to_string(),
         "opus".to_string(),
         "orchestrator".to_string(),
+        None,
         None,
     );
     app.pool.enqueue(session);

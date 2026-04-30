@@ -159,6 +159,7 @@ impl App {
                 assignment.model,
                 assignment.mode,
                 Some(assignment.issue_number),
+                None,
             );
             session.issue_title = Some(assignment.title);
 
