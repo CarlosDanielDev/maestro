@@ -10,4 +10,5 @@
 mod animation;
 pub(crate) mod layout;
 pub(crate) mod model;
+pub(crate) mod personalities;
 pub(crate) mod render;

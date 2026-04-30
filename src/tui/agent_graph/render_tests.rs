@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::draw_agent_graph;
 use crate::session::types::{Session, SessionStatus};
-use crate::tui::agent_graph::model::{NodeKind, build_graph};
+use crate::tui::agent_graph::model::build_graph;
 
 fn make_session_with(id: u128, issue: u64, status: SessionStatus, files: &[&str]) -> Session {
     let mut s = Session::new(
@@ -77,19 +77,8 @@ fn has_reversed_for_color(buffer: &ratatui::buffer::Buffer, fg: Color) -> bool {
 }
 
 #[test]
-fn node_style_distinguishes_running_vs_completed() {
-    let running = super::node_style(&NodeKind::Agent {
-        status: SessionStatus::Running,
-    });
-    let completed = super::node_style(&NodeKind::Agent {
-        status: SessionStatus::Completed,
-    });
-    assert_ne!(running.0, completed.0);
-}
-
-#[test]
 fn file_style_is_neutral_color() {
-    let (color, _) = super::node_style(&NodeKind::File);
+    let (color, _) = super::file_style();
     assert_eq!(color, Color::Cyan);
 }
 
@@ -338,5 +327,42 @@ fn draw_agent_graph_idempotent_same_tick_and_sessions() {
     assert_eq!(
         b1, b2,
         "identical inputs must produce byte-identical buffers"
+    );
+}
+
+// ── role color survives status overlay ──────────────────────────────────────
+
+#[test]
+fn reviewer_role_color_renders_in_buffer_for_running_status() {
+    use crate::session::role::Role;
+
+    let mut s = make_session_with(0, 539, SessionStatus::Running, &["src/x.rs"]);
+    s.role = Role::Reviewer;
+    let s2 = make_session_with(1, 540, SessionStatus::Queued, &["src/y.rs"]);
+    let buf = render_buffer(&[&s, &s2], 0, true);
+
+    assert!(
+        buffer_has_color(&buf, Color::Magenta),
+        "Reviewer role color (Magenta) must appear somewhere in the rendered \
+         buffer for a Running node — the status overlay must NOT replace the \
+         role color"
+    );
+}
+
+#[test]
+fn devops_role_color_renders_for_completed_status() {
+    use crate::session::role::Role;
+
+    // Even Completed (DIM modifier) must keep the role color (Red for DevOps).
+    // The DIM modifier is layered; the Red foreground survives.
+    let mut s = make_session_with(0, 539, SessionStatus::Completed, &["src/x.rs"]);
+    s.role = Role::DevOps;
+    s.transition_flash_remaining = 0; // Disable the LightRed flash overlay.
+    let s2 = make_session_with(1, 540, SessionStatus::Running, &["src/y.rs"]);
+    let buf = render_buffer(&[&s, &s2], 0, true);
+
+    assert!(
+        buffer_has_color(&buf, Color::Red),
+        "DevOps role color (Red) must survive Completed status overlay"
     );
 }

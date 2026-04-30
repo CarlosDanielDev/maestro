@@ -13,13 +13,14 @@ use ratatui::{
     text::Line,
     widgets::{
         Block, Borders, Paragraph,
-        canvas::{Canvas, Line as CanvasLine, Rectangle},
+        canvas::{Canvas, Context, Line as CanvasLine, Rectangle},
     },
 };
 
 use super::animation::{SessionRenderInfo, edge_color, node_animation_style};
 use super::layout::{ConcentricLayout, Layout};
 use super::model::{GraphEdge, GraphNode, NodeId, NodeKind};
+use super::personalities::{Sprite, glyph_for_role, role_abbrev, role_color};
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::spinner::graph_node_frame;
 
@@ -98,22 +99,48 @@ pub(crate) fn draw_agent_graph(
 
             for (idx, node) in nodes_for_paint.iter().enumerate() {
                 let p = positions_for_paint[idx];
-                let (base_color, base_mod) = node_style(&node.kind);
                 let session = find_session(&session_infos, &node.id);
-                let (color, modifier) = match session {
-                    Some(s) => node_animation_style(s, base_color, base_mod),
-                    None => (base_color, base_mod),
-                };
-                ctx.draw(&Rectangle {
-                    x: p.x - 0.02,
-                    y: p.y - 0.02,
-                    width: 0.04,
-                    height: 0.04,
-                    color,
-                });
                 let label = label_for_node(node, session, tick, use_nerd_font);
-                let style = Style::default().fg(color).add_modifier(modifier);
-                ctx.print(p.x, p.y - 0.08, Line::styled(label, style));
+
+                match &node.kind {
+                    NodeKind::Agent { status } => {
+                        let role = session.map(|s| s.role).unwrap_or_default();
+                        let role_fg = role_color(role);
+                        let status_mod = status_modifier(*status);
+                        let (color, modifier) = match session {
+                            Some(s) => node_animation_style(s, role_fg, status_mod),
+                            None => (role_fg, status_mod),
+                        };
+                        let style = Style::default().fg(color).add_modifier(modifier);
+
+                        if use_nerd_font {
+                            draw_sprite_on_canvas(ctx, p.x, p.y, glyph_for_role(role), style);
+                            ctx.print(p.x, p.y - 0.35, Line::styled(label, style));
+                        } else {
+                            ctx.draw(&Rectangle {
+                                x: p.x - 0.02,
+                                y: p.y - 0.02,
+                                width: 0.04,
+                                height: 0.04,
+                                color,
+                            });
+                            let labeled = format!("[{}] {}", role_abbrev(role), label);
+                            ctx.print(p.x, p.y - 0.08, Line::styled(labeled, style));
+                        }
+                    }
+                    NodeKind::File => {
+                        let (color, modifier) = file_style();
+                        let style = Style::default().fg(color).add_modifier(modifier);
+                        ctx.draw(&Rectangle {
+                            x: p.x - 0.02,
+                            y: p.y - 0.02,
+                            width: 0.04,
+                            height: 0.04,
+                            color,
+                        });
+                        ctx.print(p.x, p.y - 0.08, Line::styled(label, style));
+                    }
+                }
             }
         });
 
@@ -183,18 +210,51 @@ fn draw_single_agent_card(f: &mut Frame, area: Rect, nodes: &[GraphNode]) {
     f.render_widget(para, area);
 }
 
-fn node_style(kind: &NodeKind) -> (Color, Modifier) {
-    match kind {
-        NodeKind::Agent { status, .. } => match status {
-            SessionStatus::Running => (Color::Green, Modifier::BOLD),
-            SessionStatus::Errored | SessionStatus::Killed => (Color::Red, Modifier::BOLD),
-            SessionStatus::Completed => (Color::Gray, Modifier::DIM),
-            _ => (Color::Yellow, Modifier::empty()),
-        },
-        NodeKind::File => (Color::Cyan, Modifier::empty()),
+fn file_style() -> (Color, Modifier) {
+    (Color::Cyan, Modifier::empty())
+}
+
+/// Status modifier layered on top of an agent's role color.
+///
+/// The role color identifies *who* the agent is; this modifier identifies
+/// *what they are doing right now*. Composed via `Style::add_modifier` so the
+/// role color is preserved — see `docs/adr/002-agent-personalities.md`
+/// § Status Modifier Composition.
+pub(super) fn status_modifier(status: SessionStatus) -> Modifier {
+    use SessionStatus::*;
+    match status {
+        Running | GatesRunning | NeedsReview | NeedsPr | CiFix | ConflictFix => Modifier::BOLD,
+        Errored => Modifier::DIM | Modifier::BOLD,
+        Completed | Killed | Paused => Modifier::DIM,
+        Stalled => Modifier::DIM | Modifier::REVERSED,
+        Spawning | Queued | Retrying => Modifier::empty(),
+    }
+}
+
+/// Paint a 6×6 sprite onto the canvas at `(cx, cy)` (canvas units).
+///
+/// `ROW_STEP` must be at least the canvas-cell height in y-units
+/// (`2.0 / inner_rows`) or sprite rows collide on the same buffer cell. At
+/// 80×24 with 22 inner rows the cell height is ≈ 0.091; we round up to `0.1`
+/// so the 6-row sprite occupies ~0.6 units (≈ 6 cells) vertically. `X_OFFSET`
+/// centers the 6-char-wide row around `cx` based on the canvas-cell width
+/// (`2.0 / inner_cols`, ≈ 0.026 at 80 columns) — half of a 6-cell row is
+/// 3 cells ≈ 0.078.
+fn draw_sprite_on_canvas(ctx: &mut Context<'_>, cx: f64, cy: f64, sprite: Sprite, style: Style) {
+    const ROW_STEP: f64 = 0.1;
+    const X_OFFSET: f64 = -0.078;
+
+    for (row_idx, row_chars) in sprite.rows().iter().enumerate() {
+        let y = cy + (2.5 - row_idx as f64) * ROW_STEP;
+        let s: String = row_chars.iter().collect();
+        ctx.print(cx + X_OFFSET, y, Line::styled(s, style));
     }
 }
 
 #[cfg(test)]
 #[path = "render_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "status_modifier_tests.rs"]
+mod status_modifier_tests;
