@@ -22,6 +22,7 @@ use crate::tui::spinner::{AnimationPhase, animation_phase};
 pub(super) struct SessionRenderInfo {
     pub(super) id: Uuid,
     pub(super) status: SessionStatus,
+    pub(super) role: crate::session::role::Role,
     is_thinking: bool,
     current_activity: String,
     files_touched: Vec<String>,
@@ -33,6 +34,7 @@ impl SessionRenderInfo {
         Self {
             id: s.id,
             status: s.status,
+            role: s.role,
             is_thinking: s.is_thinking,
             current_activity: s.current_activity.clone(),
             files_touched: s.files_touched.clone(),
@@ -124,6 +126,7 @@ mod tests {
         SessionRenderInfo {
             id: Uuid::nil(),
             status,
+            role: crate::session::role::Role::default(),
             is_thinking: false,
             current_activity: activity.to_string(),
             files_touched: files.iter().map(|f| (*f).to_string()).collect(),
@@ -213,5 +216,28 @@ mod tests {
         let (color, modifier) = node_animation_style(&s, Color::Green, Modifier::BOLD);
         assert_eq!(color, Color::Green);
         assert_eq!(modifier, Modifier::BOLD);
+    }
+
+    // ── role survives Session → SessionRenderInfo projection ────────────────
+
+    #[test]
+    fn render_info_carries_role_through_from_session() {
+        use crate::session::role::Role;
+
+        let mut session = Session::new(
+            "task".to_string(),
+            "claude-opus-4-5".to_string(),
+            "orchestrator".to_string(),
+            None,
+            Some(Role::Reviewer),
+        );
+        session.id = Uuid::nil();
+        let info = SessionRenderInfo::from_session(&session);
+        assert_eq!(
+            info.role,
+            Role::Reviewer,
+            "SessionRenderInfo must carry the role through from Session so the \
+             render closure can compute role color without holding &Session"
+        );
     }
 }
