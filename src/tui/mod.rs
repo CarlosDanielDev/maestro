@@ -309,7 +309,8 @@ async fn event_loop(
                         format!("{}{}", config.prompt, image_refs)
                     };
 
-                    let session = crate::session::types::Session::new(prompt, model, mode, None);
+                    let session =
+                        crate::session::types::Session::new(prompt, model, mode, None, None);
 
                     // Record in prompt history
                     app.prompt_history

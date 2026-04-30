@@ -134,6 +134,7 @@ mod tests {
             "claude-opus-4-5".to_string(),
             "orchestrator".to_string(),
             None,
+            None,
         );
         s.status = status;
         s.last_message = last_message.to_string();

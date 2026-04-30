@@ -16,6 +16,7 @@ fn session_with_issue(issue: u64) -> Session {
         "claude-opus-4-5".to_string(),
         "orchestrator".to_string(),
         Some(issue),
+        None,
     );
     s.issue_title = Some(format!("Issue #{}", issue));
     s

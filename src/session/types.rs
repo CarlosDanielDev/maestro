@@ -282,6 +282,13 @@ pub struct Session {
     /// Classified intent of the prompt (Work vs. Consultation). Derived at spawn time.
     #[serde(default)]
     pub intent: super::intent::SessionIntent,
+    /// Role classification for the agent. Stored explicitly so the agent-graph
+    /// renderer has an O(1) lookup and so a `--role` override survives across
+    /// resume/restart. Set once at `Session::new` and frozen for the session
+    /// lifetime; `transition_to` does NOT mutate this field. See
+    /// `docs/adr/002-agent-personalities.md` § Data Model.
+    #[serde(default)]
+    pub role: super::role::Role,
     /// Set once after the "consultation satisfied — retry skipped" log line
     /// has been emitted, so the completion pipeline doesn't re-log each tick.
     #[serde(skip)]
@@ -328,8 +335,15 @@ pub struct ActivityEntry {
 }
 
 impl Session {
-    pub fn new(prompt: String, model: String, mode: String, issue_number: Option<u64>) -> Self {
+    pub fn new(
+        prompt: String,
+        model: String,
+        mode: String,
+        issue_number: Option<u64>,
+        role_override: Option<super::role::Role>,
+    ) -> Self {
         let intent = super::intent::classify_intent(&prompt);
+        let role = role_override.unwrap_or_else(|| super::role::derive_role(&prompt));
         Self {
             id: Uuid::new_v4(),
             status: SessionStatus::Queued,
@@ -367,6 +381,7 @@ impl Session {
             tq_handoff_compressed_tokens: None,
             transition_history: Vec::new(),
             intent,
+            role,
             consultation_skip_logged: false,
             adapt_follow_up_considered: false,
         }
@@ -521,7 +536,7 @@ mod tests {
 
     #[test]
     fn session_new_initializes_fork_fields_to_defaults() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         assert_eq!(s.parent_session_id, None);
         assert!(s.child_session_ids.is_empty());
         assert_eq!(s.fork_depth, 0);
@@ -613,6 +628,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             Some(10),
+            None,
         );
         assert!(s.ci_fix_context.is_none());
     }
@@ -621,13 +637,13 @@ mod tests {
 
     #[test]
     fn session_new_initializes_image_paths_as_empty() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         assert!(s.image_paths.is_empty());
     }
 
     #[test]
     fn session_with_image_paths_builder() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None)
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None)
             .with_image_paths(vec![
                 std::path::PathBuf::from("/tmp/a.png"),
                 std::path::PathBuf::from("/tmp/b.jpg"),
@@ -637,7 +653,7 @@ mod tests {
 
     #[test]
     fn session_with_image_paths_round_trips_via_serde() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None)
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None)
             .with_image_paths(vec![
                 std::path::PathBuf::from("img/a.png"),
                 std::path::PathBuf::from("img/b.jpg"),
@@ -649,7 +665,7 @@ mod tests {
 
     #[test]
     fn session_image_paths_deserializes_with_default_when_field_absent() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         let json = serde_json::to_string(&s).unwrap();
         let stripped = json.replace(r#","image_paths":[]"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
@@ -660,14 +676,14 @@ mod tests {
 
     #[test]
     fn session_is_thinking_defaults_to_false() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         assert!(!s.is_thinking);
         assert!(s.thinking_started_at.is_none());
     }
 
     #[test]
     fn session_thinking_fields_skipped_in_serde() {
-        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         s.is_thinking = true;
         s.thinking_started_at = Some(std::time::Instant::now());
 
@@ -762,6 +778,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             Some(1),
+            None,
         );
         s.ci_fix_context = Some(CiFixContext {
             pr_number: 5,
@@ -780,7 +797,7 @@ mod tests {
 
     #[test]
     fn session_gate_results_defaults_to_empty() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         assert!(s.gate_results.is_empty());
     }
 
@@ -791,6 +808,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             Some(1),
+            None,
         );
         s.gate_results = vec![
             GateResultEntry::pass("tests", "all passed"),
@@ -805,7 +823,7 @@ mod tests {
 
     #[test]
     fn session_gate_results_deserializes_with_default_when_field_absent() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         let json = serde_json::to_string(&s).unwrap();
         let stripped = json.replace(r#","gate_results":[]"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
@@ -868,7 +886,7 @@ mod tests {
 
     #[test]
     fn session_conflict_fix_context_defaults_to_none() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         assert!(s.conflict_fix_context.is_none());
     }
 
@@ -879,6 +897,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             Some(1),
+            None,
         );
         s.conflict_fix_context = Some(ConflictFixContext {
             pr_number: 99,
@@ -897,7 +916,7 @@ mod tests {
 
     #[test]
     fn session_conflict_fix_context_deserializes_with_default_when_field_absent() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         let json = serde_json::to_string(&s).unwrap();
         let stripped = json.replace(r#","conflict_fix_context":null"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
@@ -911,6 +930,7 @@ mod tests {
             "test prompt".into(),
             "claude-sonnet-4-6".into(),
             "orchestrator".into(),
+            None,
             None,
         )
     }
@@ -1128,7 +1148,7 @@ mod tests {
 
     #[test]
     fn session_token_usage_defaults_when_absent_in_json() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         let json = serde_json::to_string(&s).unwrap();
         // Strip the token_usage field to simulate old JSON
         let stripped = json.replace(
@@ -1152,14 +1172,14 @@ mod tests {
 
     #[test]
     fn flash_counter_starts_at_zero() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         assert_eq!(s.transition_flash_remaining, 0);
     }
 
     #[test]
     fn transition_to_sets_flash_counter() {
         use crate::session::transition::TransitionReason;
-        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
             .unwrap();
         assert_eq!(s.transition_flash_remaining, 4);
@@ -1168,7 +1188,7 @@ mod tests {
     #[test]
     fn transition_to_resets_flash_counter_on_each_transition() {
         use crate::session::transition::TransitionReason;
-        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
             .unwrap();
         s.transition_flash_remaining = 1; // simulate partial decay
@@ -1179,7 +1199,7 @@ mod tests {
 
     #[test]
     fn failed_transition_does_not_set_flash_counter() {
-        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         // Queued -> Completed is invalid
         let _ = s.transition_to(
             SessionStatus::Completed,
@@ -1191,7 +1211,7 @@ mod tests {
     #[test]
     fn transition_to_logs_status_change_in_activity_log() {
         use crate::session::transition::TransitionReason;
-        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
             .unwrap();
         let last = s
@@ -1224,6 +1244,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             None,
+            None,
         );
         assert_eq!(s.intent, crate::session::intent::SessionIntent::Work);
     }
@@ -1234,6 +1255,7 @@ mod tests {
             "how are you?".into(),
             "opus".into(),
             "orchestrator".into(),
+            None,
             None,
         );
         assert_eq!(
@@ -1249,6 +1271,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             None,
+            None,
         );
         let json = serde_json::to_string(&s).unwrap();
         let rt: Session = serde_json::from_str(&json).unwrap();
@@ -1262,14 +1285,14 @@ mod tests {
 
     #[test]
     fn session_tq_handoff_fields_default_to_none() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         assert!(s.tq_handoff_original_tokens.is_none());
         assert!(s.tq_handoff_compressed_tokens.is_none());
     }
 
     #[test]
     fn session_tq_handoff_fields_round_trip_via_serde() {
-        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         s.tq_handoff_original_tokens = Some(10_000);
         s.tq_handoff_compressed_tokens = Some(2_500);
         let json = serde_json::to_string(&s).unwrap();
@@ -1280,7 +1303,7 @@ mod tests {
 
     #[test]
     fn session_tq_handoff_fields_deserialize_when_absent_in_json() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         let json = serde_json::to_string(&s).unwrap();
         let stripped = json
             .replace(r#","tq_handoff_original_tokens":null"#, "")
@@ -1292,16 +1315,107 @@ mod tests {
 
     #[test]
     fn session_intent_defaults_to_work_when_absent_in_json() {
-        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         let json = serde_json::to_string(&s).unwrap();
         let stripped = json.replace(r#","intent":"work""#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
         assert_eq!(rt.intent, crate::session::intent::SessionIntent::Work);
     }
 
+    // --- Issue #538: Role wiring on Session ---
+
+    #[test]
+    fn session_new_classifies_orchestrator_prompt_as_orchestrator() {
+        use crate::session::role::Role;
+        let s = Session::new(
+            "coordinate the sprint and dispatch tasks".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        assert_eq!(s.role, Role::Orchestrator);
+    }
+
+    #[test]
+    fn session_new_classifies_implementer_prompt_as_implementer_default() {
+        use crate::session::role::Role;
+        let s = Session::new(
+            "fix the bug in session/parser.rs".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        assert_eq!(s.role, Role::Implementer);
+    }
+
+    #[test]
+    fn session_new_with_role_override_uses_override_not_derive() {
+        use crate::session::role::Role;
+        // Prompt would derive Orchestrator, but the explicit override forces Reviewer.
+        let s = Session::new(
+            "coordinate the release milestone".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            Some(Role::Reviewer),
+        );
+        assert_eq!(s.role, Role::Reviewer);
+    }
+
+    #[test]
+    fn role_field_round_trips_via_serde() {
+        use crate::session::role::Role;
+        let s = Session::new(
+            "coordinate the sprint".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        assert_eq!(s.role, Role::Orchestrator);
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.role, Role::Orchestrator);
+    }
+
+    #[test]
+    fn role_defaults_to_implementer_when_absent_in_json() {
+        use crate::session::role::Role;
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json.replace(r#","role":"implementer""#, "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert_eq!(rt.role, Role::Implementer);
+    }
+
+    #[test]
+    fn transition_to_does_not_mutate_role() {
+        use crate::session::role::Role;
+        use crate::session::transition::TransitionReason;
+        let mut s = Session::new(
+            "coordinate the milestone".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        assert_eq!(s.role, Role::Orchestrator);
+        s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        assert_eq!(s.role, Role::Orchestrator);
+        s.transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        assert_eq!(s.role, Role::Orchestrator);
+        s.transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+        assert_eq!(s.role, Role::Orchestrator);
+    }
+
     #[test]
     fn flash_counter_skipped_in_serde() {
-        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         s.transition_flash_remaining = 4;
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("transition_flash_remaining"));

@@ -289,7 +289,13 @@ mod tests {
     }
 
     fn make_session(input_tokens: u64, cost_usd: f64, issue: Option<u64>) -> Session {
-        let mut s = Session::new("prompt".into(), "opus".into(), "orchestrator".into(), issue);
+        let mut s = Session::new(
+            "prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            issue,
+            None,
+        );
         s.status = SessionStatus::Running;
         s.token_usage = TokenUsage {
             input_tokens,

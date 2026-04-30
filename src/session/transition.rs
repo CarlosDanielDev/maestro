@@ -71,6 +71,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             None,
+            None,
         )
     }
 

@@ -24,6 +24,7 @@ pub mod util {
 pub mod session {
     pub mod intent;
     pub mod parser;
+    pub mod role;
     pub mod transition;
     pub mod types;
 }

@@ -19,6 +19,7 @@ fn make_session(
         "claude-opus-4-5".to_string(),
         "orchestrator".to_string(),
         Some(issue),
+        None,
     );
     s.id = Uuid::from_u128(id);
     s.status = status;

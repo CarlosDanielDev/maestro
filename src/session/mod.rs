@@ -10,6 +10,7 @@ pub mod parser;
 pub mod pool;
 pub mod pr_capture;
 pub mod retry;
+pub mod role;
 pub mod transition;
 pub mod types;
 pub mod worktree;

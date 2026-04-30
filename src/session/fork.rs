@@ -108,6 +108,7 @@ impl SessionForker for ForkPolicy {
             parent.model.clone(),
             parent.mode.clone(),
             parent.issue_number,
+            Some(parent.role),
         );
         child.parent_session_id = Some(parent.id);
         child.fork_depth = parent.fork_depth + 1;
@@ -179,6 +180,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             Some(42),
+            None,
         );
         s.status = status;
         s.fork_depth = fork_depth;
@@ -255,6 +257,43 @@ mod tests {
                 assert_eq!(child.parent_session_id, Some(parent.id));
             }
             ForkResult::Denied { reason } => panic!("Fork denied: {}", reason),
+        }
+    }
+
+    #[test]
+    fn fork_inherits_parent_role_not_re_derived() {
+        use crate::session::role::Role;
+
+        // Parent has an explicit Orchestrator override.
+        // Its prompt starts with "implement" — without override it would be Implementer.
+        let mut parent = Session::new(
+            "implement feature X".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(42),
+            Some(Role::Orchestrator),
+        );
+        parent.status = SessionStatus::Running;
+
+        let policy = ForkPolicy::new(5);
+        let result = policy.prepare_fork(
+            &parent,
+            None,
+            ForkReason::ContextOverflow { context_pct: 0.85 },
+        );
+
+        match result {
+            ForkResult::Forked { child, .. } => {
+                // The child prompt includes "--- FORK CONTEXT ---" with text like "review the
+                // files already modified" that would re-classify as Reviewer if we re-derived.
+                // Inheriting parent.role keeps the child's role frozen at Orchestrator.
+                assert_eq!(
+                    child.role,
+                    Role::Orchestrator,
+                    "fork child must inherit parent role, not re-derive"
+                );
+            }
+            ForkResult::Denied { reason } => panic!("Fork denied unexpectedly: {}", reason),
         }
     }
 

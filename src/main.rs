@@ -45,7 +45,7 @@ mod turboquant;
 mod integration_tests;
 
 use clap::Parser;
-use cli::{Cli, Commands, PrdSourceArg};
+use cli::{Cli, Commands, PrdSourceArg, RoleArg};
 use commands::*;
 
 impl From<PrdSourceArg> for adapt::prd_source::PrdSource {
@@ -55,6 +55,18 @@ impl From<PrdSourceArg> for adapt::prd_source::PrdSource {
             PrdSourceArg::Github => Self::Github,
             PrdSourceArg::Azure => Self::Azure,
             PrdSourceArg::Both => Self::Both,
+        }
+    }
+}
+
+impl From<RoleArg> for session::role::Role {
+    fn from(arg: RoleArg) -> Self {
+        match arg {
+            RoleArg::Implementer => Self::Implementer,
+            RoleArg::Orchestrator => Self::Orchestrator,
+            RoleArg::Reviewer => Self::Reviewer,
+            RoleArg::Docs => Self::Docs,
+            RoleArg::DevOps => Self::DevOps,
         }
     }
 }
@@ -195,6 +207,7 @@ async fn main() -> anyhow::Result<()> {
             continuous,
             enable_flags,
             disable_flags,
+            role,
             no_splash,
         }) => {
             cmd_run(
@@ -211,6 +224,7 @@ async fn main() -> anyhow::Result<()> {
                 continuous,
                 enable_flags,
                 disable_flags,
+                role.map(Into::into),
                 no_splash,
                 cli.bypass_review,
             )
@@ -410,6 +424,7 @@ mod tests {
                 "opus".into(),
                 "orchestrator".into(),
                 None,
+                None,
             ));
         }
         app.pool.try_promote();
@@ -426,6 +441,7 @@ mod tests {
                 format!("prompt {i}"),
                 "opus".into(),
                 "orchestrator".into(),
+                None,
                 None,
             ));
         }

@@ -48,6 +48,7 @@ mod helpers {
             "opus".to_string(),
             "orchestrator".to_string(),
             None,
+            None,
         )
     }
 
@@ -65,6 +66,7 @@ mod helpers {
             "opus".to_string(),
             "orchestrator".to_string(),
             Some(issue),
+            None,
         )
     }
 

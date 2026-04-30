@@ -31,6 +31,20 @@ pub enum SanitizeSeverityFilter {
     Info,
 }
 
+/// CLI-local Role argument (converted to `session::role::Role` in main).
+///
+/// Kept in this file because `build.rs` includes `src/cli.rs` directly with
+/// `#[path]` and must not pull in the rest of the crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[clap(rename_all = "snake_case")]
+pub enum RoleArg {
+    Implementer,
+    Orchestrator,
+    Reviewer,
+    Docs,
+    DevOps,
+}
+
 #[derive(Parser)]
 #[command(
     name = "maestro",
@@ -104,6 +118,11 @@ pub enum Commands {
         /// Disable a feature flag (repeatable, e.g. --disable-flag auto_fork)
         #[arg(long = "disable-flag", value_name = "FLAG")]
         disable_flags: Vec<String>,
+
+        /// Override role classification for the spawned session(s).
+        /// If omitted, the role is derived from the prompt text.
+        #[arg(long, value_enum)]
+        role: Option<RoleArg>,
 
         /// Skip the startup splash screen
         #[arg(long)]
@@ -1114,5 +1133,120 @@ mod tests {
         } else {
             panic!("Expected Commands::Adapt");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // --role flag parsing (Issue #538)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn run_role_flag_defaults_to_none() {
+        let cli = Cli::try_parse_from(["maestro", "run", "--prompt", "hello"]).unwrap();
+        if let Some(Commands::Run { role, .. }) = cli.command {
+            assert!(role.is_none(), "--role must default to None");
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_role_flag_accepts_orchestrator() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "run",
+            "--prompt",
+            "hello",
+            "--role",
+            "orchestrator",
+        ])
+        .unwrap();
+        if let Some(Commands::Run { role, .. }) = cli.command {
+            assert_eq!(role, Some(RoleArg::Orchestrator));
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_role_flag_accepts_implementer() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "run",
+            "--prompt",
+            "hello",
+            "--role",
+            "implementer",
+        ])
+        .unwrap();
+        if let Some(Commands::Run { role, .. }) = cli.command {
+            assert_eq!(role, Some(RoleArg::Implementer));
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_role_flag_accepts_reviewer() {
+        let cli =
+            Cli::try_parse_from(["maestro", "run", "--prompt", "x", "--role", "reviewer"]).unwrap();
+        if let Some(Commands::Run { role, .. }) = cli.command {
+            assert_eq!(role, Some(RoleArg::Reviewer));
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_role_flag_accepts_docs() {
+        let cli =
+            Cli::try_parse_from(["maestro", "run", "--prompt", "x", "--role", "docs"]).unwrap();
+        if let Some(Commands::Run { role, .. }) = cli.command {
+            assert_eq!(role, Some(RoleArg::Docs));
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_role_flag_accepts_dev_ops_snake_case() {
+        let cli =
+            Cli::try_parse_from(["maestro", "run", "--prompt", "x", "--role", "dev_ops"]).unwrap();
+        if let Some(Commands::Run { role, .. }) = cli.command {
+            assert_eq!(
+                role,
+                Some(RoleArg::DevOps),
+                "--role dev_ops must parse as DevOps"
+            );
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_role_flag_rejects_invalid_value() {
+        let result =
+            Cli::try_parse_from(["maestro", "run", "--prompt", "hello", "--role", "bogus"]);
+        assert!(result.is_err(), "--role bogus must be rejected by clap");
+    }
+
+    #[test]
+    fn run_role_flag_rejects_devops_without_underscore() {
+        // clap rename_all = "snake_case" exposes "dev_ops" only, not "devops".
+        let result =
+            Cli::try_parse_from(["maestro", "run", "--prompt", "hello", "--role", "devops"]);
+        assert!(
+            result.is_err(),
+            "--role devops (without underscore) must be rejected; only dev_ops is valid"
+        );
+    }
+
+    #[test]
+    fn resume_subcommand_has_no_role_flag() {
+        // Resume inherits the saved session's role; --role on resume is intentionally not exposed.
+        let result = Cli::try_parse_from(["maestro", "resume", "--role", "orchestrator"]);
+        assert!(
+            result.is_err(),
+            "resume must NOT accept --role (saved role is inherited)"
+        );
     }
 }

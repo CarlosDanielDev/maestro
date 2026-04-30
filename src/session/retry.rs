@@ -150,6 +150,7 @@ impl RetryPolicy {
             original.model.clone(),
             original.mode.clone(),
             original.issue_number,
+            Some(original.role),
         );
         new_session.retry_count = original.retry_count + 1;
         new_session.last_retry_at = Some(Utc::now());
@@ -187,7 +188,13 @@ mod tests {
     }
 
     fn hollow_session_with_intent(intent: SessionIntent) -> Session {
-        let mut s = Session::new("prompt".into(), "opus".into(), "orchestrator".into(), None);
+        let mut s = Session::new(
+            "prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
         s.status = SessionStatus::Completed;
         s.is_hollow_completion = true;
         s.intent = intent;
@@ -200,6 +207,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             Some(1),
+            None,
         );
         s.status = status;
         s.retry_count = retry_count;
@@ -211,6 +219,32 @@ mod tests {
         let policy = RetryPolicy::new(2, 0, legacy_hollow(1));
         let session = make_session(SessionStatus::Stalled, 0);
         assert!(policy.should_retry(&session));
+    }
+
+    #[test]
+    fn retry_inherits_original_role_not_re_derived() {
+        use crate::session::role::Role;
+
+        // Original prompt would derive Implementer, but explicit override makes it Orchestrator.
+        let mut original = Session::new(
+            "fix the tests".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+            Some(Role::Orchestrator),
+        );
+        original.status = SessionStatus::Errored;
+
+        let policy = RetryPolicy::new(2, 0, legacy_hollow(1));
+        let retry = policy.prepare_retry(&original, None, None);
+
+        // The retry prompt appends a `--- RETRY CONTEXT ---` block that contains the word
+        // "review" — without inheriting role, this would mis-classify as Reviewer.
+        assert_eq!(
+            retry.role,
+            Role::Orchestrator,
+            "retry must inherit original role, not re-derive from retry-appended text"
+        );
     }
 
     #[test]
@@ -404,6 +438,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             None,
+            None,
         );
         s.status = SessionStatus::Completed;
         s.is_hollow_completion = true;
@@ -417,6 +452,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             Some(1),
+            None,
         );
         s.status = SessionStatus::Completed;
         s.is_hollow_completion = true;

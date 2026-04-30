@@ -166,7 +166,13 @@ mod tests {
     use crate::session::types::Session;
 
     fn make_session(prompt: &str, issue: Option<u64>) -> Session {
-        Session::new(prompt.into(), "opus".into(), "orchestrator".into(), issue)
+        Session::new(
+            prompt.into(),
+            "opus".into(),
+            "orchestrator".into(),
+            issue,
+            None,
+        )
     }
 
     #[test]

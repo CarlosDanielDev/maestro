@@ -177,12 +177,14 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             None,
+            None,
         );
         s1.cost_usd = 1.0;
         let mut s2 = crate::session::types::Session::new(
             "b".into(),
             "opus".into(),
             "orchestrator".into(),
+            None,
             None,
         );
         s2.cost_usd = 1.0;
@@ -321,6 +323,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             None,
+            None,
         );
         for _ in 0..5 {
             s.activity_log.push(ActivityEntry {
@@ -342,6 +345,7 @@ mod tests {
             "opus".into(),
             "orchestrator".into(),
             None,
+            None,
         );
         s1.status = SessionStatus::Running;
         for _ in 0..8 {
@@ -354,6 +358,7 @@ mod tests {
             "b".into(),
             "opus".into(),
             "orchestrator".into(),
+            None,
             None,
         );
         s2.status = SessionStatus::Running;
@@ -374,6 +379,7 @@ mod tests {
             "a".into(),
             "opus".into(),
             "orchestrator".into(),
+            None,
             None,
         );
         s.status = SessionStatus::Running;
