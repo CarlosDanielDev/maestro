@@ -131,4 +131,4 @@ knowledge_budget = 4096
 milestone_naming = "ai"
 
 [views]
-agent_graph_enabled = false
+agent_graph_enabled = true
