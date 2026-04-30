@@ -215,9 +215,9 @@ mod tests {
         let id = Uuid::new_v4();
         let event = StreamEvent::ToolUse {
             tool: "Write".into(),
-
             file_path: Some("src/main.rs".into()),
             command_preview: None,
+            subagent_name: None,
         };
         logger.log_event(id, &event).unwrap();
         let content = logger.read_log(id).unwrap();

@@ -11,6 +11,11 @@ use ratatui::{
 #[derive(Debug, Clone)]
 pub struct ToolMeta {
     pub tool_name: String,
+    /// Dispatched subagent or skill name, when this entry represents a known
+    /// dispatcher tool (`Agent`/`Task`/`Skill`). Set by #542; consumed by #543
+    /// (role-colored chip on subagent dispatches in activity log).
+    #[allow(dead_code)]
+    pub subagent_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -100,13 +105,17 @@ impl ActivityLog {
         message: String,
         level: LogLevel,
         tool_name: String,
+        subagent_name: Option<String>,
     ) {
         self.push(LogEntry {
             timestamp: Utc::now(),
             session_label: label,
             message,
             level,
-            tool_meta: Some(ToolMeta { tool_name }),
+            tool_meta: Some(ToolMeta {
+                tool_name,
+                subagent_name,
+            }),
         });
     }
 
@@ -382,12 +391,45 @@ mod tests {
             "Read: /foo".into(),
             LogLevel::Tool,
             "Read".into(),
+            None,
         );
         assert!(log.entries()[0].tool_meta.is_some());
         assert_eq!(
             log.entries()[0].tool_meta.as_ref().unwrap().tool_name,
             "Read"
         );
+    }
+
+    // --- Issue #542: subagent_name on ToolMeta ---
+
+    #[test]
+    fn push_tool_with_subagent_name_stores_name() {
+        let mut log = ActivityLog::new(100);
+        log.push_tool(
+            "S-1".into(),
+            "Dispatching subagent-qa".into(),
+            LogLevel::Tool,
+            "Agent".into(),
+            Some("subagent-qa".to_string()),
+        );
+        let meta = log.entries()[0].tool_meta.as_ref().unwrap();
+        assert_eq!(meta.tool_name, "Agent");
+        assert_eq!(meta.subagent_name, Some("subagent-qa".to_string()));
+    }
+
+    #[test]
+    fn push_tool_without_subagent_name_stores_none() {
+        let mut log = ActivityLog::new(100);
+        log.push_tool(
+            "S-1".into(),
+            "Read: /src/main.rs".into(),
+            LogLevel::Tool,
+            "Read".into(),
+            None,
+        );
+        let meta = log.entries()[0].tool_meta.as_ref().unwrap();
+        assert_eq!(meta.tool_name, "Read");
+        assert_eq!(meta.subagent_name, None);
     }
 
     #[test]

@@ -140,19 +140,28 @@ impl App {
                     tool,
                     file_path,
                     command_preview,
-                    ..
+                    subagent_name,
                 } => {
-                    let detail = match (
-                        tool.as_str(),
-                        file_path.as_deref(),
-                        command_preview.as_deref(),
-                    ) {
-                        ("Bash", _, Some(cmd)) => format!("$ {}", cmd),
-                        (t, Some(path), _) => format!("{}: {}", t, path),
-                        (t, None, _) => format!("Using {}", t),
+                    let detail = if let Some(name) = subagent_name.as_deref() {
+                        format!("Dispatching {}", name)
+                    } else {
+                        match (
+                            tool.as_str(),
+                            file_path.as_deref(),
+                            command_preview.as_deref(),
+                        ) {
+                            ("Bash", _, Some(cmd)) => format!("$ {}", cmd),
+                            (t, Some(path), _) => format!("{}: {}", t, path),
+                            (t, None, _) => format!("Using {}", t),
+                        }
                     };
-                    self.activity_log
-                        .push_tool(label, detail, LogLevel::Tool, tool.clone());
+                    self.activity_log.push_tool(
+                        label,
+                        detail,
+                        LogLevel::Tool,
+                        tool.clone(),
+                        subagent_name.clone(),
+                    );
                     self.tool_start_times
                         .insert(session_id, (tool.clone(), std::time::Instant::now()));
                     let progress = self.progress_tracker.get_or_create(session_id);
@@ -172,7 +181,7 @@ impl App {
                         LogLevel::Tool
                     };
                     self.activity_log
-                        .push_tool(label, detail, level, tool.clone());
+                        .push_tool(label, detail, level, tool.clone(), None);
                 }
                 StreamEvent::AssistantMessage { text } => {
                     let progress = self.progress_tracker.get_or_create(session_id);

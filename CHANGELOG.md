@@ -7,6 +7,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- feat(session): classify subagent dispatches and surface their Role (#542)
+  - `StreamEvent::ToolUse` gains a `subagent_name: Option<String>` field populated by `extract_subagent_name()` for the three known dispatcher tools (`Agent` / `Task` / `Skill`). Plain tool calls (`Read`, `Edit`, `Bash`, …) leave it as `None`.
+  - `extract_subagent_name()` strips ASCII control characters and caps the captured name at 80 visible chars (security analyst remediation: an unsanitized subagent_type that contains a literal `\x1b` would corrupt the TUI activity-log render).
+  - `role_for_subagent_name(&str) -> Option<Role>` lookup mapping the 7-entry maestro subagent registry: `subagent-architect` and `subagent-master-planner` → Orchestrator; `subagent-gatekeeper`, `subagent-qa`, `subagent-security-analyst`, `subagent-idea-triager` → Reviewer; `subagent-docs-analyst` → Docs. (Gated `#[allow(dead_code)]` until consumed by #543.)
+  - `tui::activity_log::ToolMeta` gains `subagent_name` so the activity log carries the dispatched subagent identity alongside the tool name.
+  - `tui::app::event_handler` formats `Dispatching <name>` for tool-use events with a known subagent name, instead of the bare `Using Agent` label.
+  - 23 new tests: 6 parser tests (extraction + sanitization + length cap), 8 role-lookup tests covering each registry entry, 2 ToolMeta storage tests, 2 stream-event round-trip tests, plus 5 baseline tests for ergonomics. 2 new snapshot tests in `src/tui/snapshot_tests/activity_log_dispatch.rs` pin the `Dispatching <name>` rendering and the unchanged plain-tool path.
+
 ### Fixed (auto-PR + workflow root-cause batch — 2026-04-30)
 
 This batch responds to a multi-audit review of why users were abandoning

@@ -1,3 +1,4 @@
+mod activity_log_dispatch;
 mod agent_graph;
 mod agent_graph_dispatcher;
 mod agent_graph_keybinding_hint;

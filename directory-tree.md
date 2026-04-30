@@ -597,7 +597,7 @@ maestro/
 | `src/session/logger.rs` | Per-session file logging to .maestro/logs/ (Phase 3) |
 | `src/session/context_monitor.rs` | ContextMonitor trait + ProductionContextMonitor: per-session context tracking (Issue #12) |
 | `src/session/fork.rs` | SessionForker trait + ForkPolicy: auto-fork on overflow, continuation prompt builder (Issue #12) |
-| `src/session/role.rs` | Role enum (5 variants) + derive_role() keyword classifier; Session::role field for O(1) render-time lookup (Issue #538) |
+| `src/session/role.rs` | Role enum (5 variants) + derive_role() keyword classifier; Session::role field for O(1) render-time lookup (Issue #538); `role_for_subagent_name()` lookup mapping the 7-entry maestro subagent registry to Roles (gated `#[allow(dead_code)]` until consumed by #543) (Issue #542) |
 | `src/state/` | State persistence and file conflict management |
 | `src/state/file_claims.rs` | Per-session file claim registry |
 | `src/state/progress.rs` | Session phase tracking (Phase 3) |
@@ -615,7 +615,7 @@ maestro/
 | `src/tui/app/clipboard_action.rs` | `App::copy_focused_response()` + `App::copy_focused_response_enabled()` predicate; `CopyOutcome` enum (`Success`, `NoContent`, `NotEnded`, `Failed`); `set_copy_toast()` / `tick_copy_toast()` with `COPY_TOAST_TTL_MS = 2_000` (Issue #482) |
 | `src/tui/app/settings_actions.rs` | `SettingsStore`-backed `App` methods extracted from `app/mod.rs` to keep it under the file-size cap: `with_settings_store()`, `caveman_mode()`, `process_pending_caveman_toggle()` (Issue #482) |
 | `src/tui/theme.rs` | `Theme` (resolved ratatui `Color` fields); `ThemeConfig` (`preset` + `overrides`); `ThemePreset` (`Dark`, `Light`); `ThemeOverrides` (per-field optional overrides); `SerializableColor` (named string / `#rrggbb` hex / 256-color index); `ColorCapability`; all 14 TUI rendering files consume theme fields instead of hardcoded `Color::` constants (Issue #38) |
-| `src/tui/activity_log.rs` | Scrollable log widget |
+| `src/tui/activity_log.rs` | Scrollable log widget; `ToolMeta { tool_name, subagent_name }` carried on dispatch tool entries (`Agent` / `Task` / `Skill`); `push_tool()` accepts subagent_name (Issue #542; subagent_name consumed by #543) |
 | `src/tui/clipboard.rs` | `Clipboard` trait + `SystemClipboard` impl (arboard); `strip_ansi()` helper strips ANSI escape sequences before clipboard write (Issue #482) |
 | `src/tui/clipboard_toast.rs` | Toast renderer: 2-second status-bar overlay confirming clipboard copy success or failure (Issue #482) |
 | `src/tui/keybinding_hints.rs` | Dim-aware hint bar span builder; `keybinding_hints_spans()` emits `[c] Copy` dimmed when no response or session is streaming (Issue #482) |
@@ -689,7 +689,8 @@ maestro/
 | `src/tui/snapshot_tests/agent_graph.rs` | 4 insta snapshot tests for agent graph: `agent_graph_renders_at_80x24`, `agent_graph_renders_at_100x30`, `agent_graph_renders_at_120x40`, `agent_graph_renders_single_agent_card` (Issue #526) |
 | `src/tui/snapshot_tests/agent_graph_dispatcher.rs` | 3 render-dispatcher tests for the agent graph behind `views.agent_graph_enabled`: `agent_graph_dispatcher_toggle_on_renders_graph` (insta snapshot), `agent_graph_dispatcher_toggle_off_renders_panels` (insta snapshot), `agent_graph_dispatcher_no_config_falls_back_to_panels` (assertion-only) (Issue #527) |
 | `src/tui/snapshot_tests/agent_personalities.rs` | 11 snapshot tests covering per-role sprite/abbrev rendering for all 5 roles plus fallback and color paths; validates `personalities::role_color()` and `role_abbrev()` via rendered canvas output (Issue #539) |
-| `src/tui/snapshot_tests/` | TUI snapshot test suite; 62 tests across 13 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issues #16, #490, #526, #527, #539) |
+| `src/tui/snapshot_tests/activity_log_dispatch.rs` | 2 snapshot tests pinning subagent-dispatch rendering in the activity log: `activity_log_dispatch_renders_dispatching_label` (LogEntry with `ToolMeta::subagent_name = Some(...)` renders `Dispatching <name>`) and `activity_log_plain_tool_unchanged` (plain tool entries unaffected) (Issue #542) |
+| `src/tui/snapshot_tests/` | TUI snapshot test suite; 62 tests across 13 views using `insta`; run with `cargo test tui::snapshot_tests`; update with `INSTA_UPDATE=always cargo test` or `cargo insta review` (Issues #16, #490, #526, #527, #539, #542) |
 | `src/tui/snapshot_tests/overview.rs` | 6 snapshot tests for `PanelView`: empty, single running, multiple, selected, context overflow, forked |
 | `src/tui/snapshot_tests/detail.rs` | 6 snapshot tests for `DetailView`: basic, progress, activity log, no files touched, files + retries, markdown content |
 | `src/tui/snapshot_tests/fullscreen.rs` | 4 snapshot tests for `FullscreenView`: markdown last message, plain text, empty placeholder, auto-scroll to bottom |

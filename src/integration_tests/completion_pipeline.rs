@@ -81,6 +81,7 @@ async fn full_pipeline_label_and_pr_for_completed_session() {
 
         file_path: Some("src/github/pr.rs".to_string()),
         command_preview: None,
+        subagent_name: None,
     });
     managed.handle_event(&StreamEvent::Completed { cost_usd: 0.77 });
 
