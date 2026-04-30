@@ -114,3 +114,8 @@ src/prd/discover.rs # deadline: 2026-07-22, owner: @carlos, ticket: #321, plan: 
 # `at(step)` helper to compress the arrange phase; deferred to keep the RED→GREEN
 # diff minimal.
 src/tui/screens/milestone_health/state/tests/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #500, plan: introduce at(step) helper to compress HealthScreenState literal in 16 tests, drop 426 → ~360 LOC
+
+# --- Milestone v0.17.0 zero-commit detection (#520) ---
+# Added two #520 zero-commit tests (~100 LOC) to the existing #514 auto-PR
+# behavior suite. Total now 429 LOC, just over the cap.
+src/tui/app/auto_pr_tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #520, plan: extract shared make_issue/make_test_config/make_app_with_mock helpers into auto_pr_test_fixtures.rs and split #514 vs #520 tests into separate files importing those fixtures

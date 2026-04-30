@@ -147,6 +147,11 @@ impl MockGitOps {
         self.commits_ahead = value;
         self
     }
+
+    pub fn with_failure(mut self) -> Self {
+        self.should_fail = true;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -193,11 +198,7 @@ mod tests {
 
     #[test]
     fn mock_git_ops_fails_when_configured() {
-        let ops = MockGitOps {
-            should_fail: true,
-            remote_branches: Vec::new(),
-            commits_ahead: false,
-        };
+        let ops = MockGitOps::new().with_failure();
         assert!(
             ops.commit_and_push(Path::new("/tmp"), "main", "test")
                 .is_err()
@@ -256,11 +257,7 @@ mod tests {
 
     #[test]
     fn mock_git_ops_has_commits_ahead_propagates_should_fail() {
-        let ops = MockGitOps {
-            should_fail: true,
-            remote_branches: Vec::new(),
-            commits_ahead: false,
-        };
+        let ops = MockGitOps::new().with_failure();
         assert!(
             ops.has_commits_ahead(Path::new("/tmp"), "branch", "main")
                 .is_err()

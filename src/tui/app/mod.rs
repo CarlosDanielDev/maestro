@@ -197,6 +197,10 @@ pub struct App {
     /// Memory growth is bounded by `usize` issue numbers per maestro run
     /// (8 bytes each); single-user, dozens-of-sessions threat model.
     pub(crate) attempted_pr_issue_numbers: std::collections::HashSet<u64>,
+    /// Git operations adapter (#520). Production wires `CliGitOps`;
+    /// tests inject `MockGitOps` via `with_git_ops`. Used by the auto-PR
+    /// pipeline's zero-commit gate.
+    pub(crate) git_ops: Box<dyn crate::git::GitOps>,
 }
 
 impl App {
@@ -320,7 +324,15 @@ impl App {
             copy_toast: None,
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
             attempted_pr_issue_numbers: std::collections::HashSet::new(),
+            git_ops: Box::new(crate::git::CliGitOps),
         }
+    }
+
+    /// Builder for tests: swap the production git ops adapter for a fake.
+    #[cfg(test)]
+    pub(crate) fn with_git_ops(mut self, git_ops: Box<dyn crate::git::GitOps>) -> Self {
+        self.git_ops = git_ops;
+        self
     }
 
     /// Builder for tests: swap the system clipboard for a fake.

@@ -78,6 +78,7 @@ async fn auto_pr_falls_back_to_github_fetch_when_cache_misses() {
         1.23,
         vec!["src/foo.rs".into()],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;
@@ -107,6 +108,7 @@ async fn auto_pr_logs_loudly_when_cache_miss_and_github_fetch_fails() {
         1.0,
         vec![],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;
@@ -141,6 +143,7 @@ async fn auto_pr_uses_cached_issue_without_round_tripping_to_github() {
         0.0,
         vec![],
         Some("maestro/issue-42".into()),
+        None,
         false,
     )
     .await;

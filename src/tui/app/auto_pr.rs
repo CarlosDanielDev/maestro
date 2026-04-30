@@ -14,6 +14,7 @@ use crate::provider::github::types::{PendingPr, PendingPrStatus};
 use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
 use crate::tui::activity_log::LogLevel;
+use std::path::PathBuf;
 use std::time::Instant;
 
 /// Build a canonical GitHub PR URL from a `owner/repo` slug and PR number.
@@ -53,6 +54,7 @@ impl App {
     /// no silent failures. Idempotent within the process via
     /// `attempted_pr_issue_numbers`; cross-restart idempotency relies on
     /// the AC4 PR-already-exists preflight (#514).
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn run_auto_pr(
         &mut self,
         issue_number: u64,
@@ -60,6 +62,7 @@ impl App {
         cost_usd: f64,
         files_touched: Vec<String>,
         worktree_branch: Option<String>,
+        worktree_path: Option<PathBuf>,
         is_unified: bool,
     ) {
         let auto_pr = self
@@ -134,6 +137,43 @@ impl App {
             Ok(_) => {}
             Err(e) => {
                 tracing::warn!(error = %e, "list_prs_for_branch failed; proceeding with create_pr");
+            }
+        }
+
+        // AC3 of #514, wired in #520: short-circuit when the worktree
+        // branch has no commits beyond base — defends against silently
+        // pushing an empty branch and the noisy `gh pr create` 422.
+        if let Some(wt_path) = worktree_path.as_ref() {
+            match self
+                .git_ops
+                .has_commits_ahead(wt_path, branch, &base_branch)
+            {
+                Ok(false) => {
+                    self.activity_log.push_simple(
+                        format!("#{}", issue_number),
+                        format!(
+                            "No commits found — skipping PR creation. Branch: {}",
+                            branch
+                        ),
+                        LogLevel::Warn,
+                    );
+                    self.notifications.notify(
+                        crate::notifications::types::InterruptLevel::Critical,
+                        &format!("#{} — PR not opened", issue_number),
+                        &format!(
+                            "Session ended with zero commits on branch {}; no PR was created.",
+                            branch
+                        ),
+                    );
+                    return;
+                }
+                Ok(true) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "has_commits_ahead failed; proceeding optimistically with create_pr",
+                    );
+                }
             }
         }
 
