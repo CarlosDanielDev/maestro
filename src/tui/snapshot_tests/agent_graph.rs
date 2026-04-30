@@ -7,103 +7,175 @@ use crate::tui::agent_graph::model::build_graph;
 use crate::tui::agent_graph::render::draw_agent_graph;
 use crate::tui::snapshot_tests::{fixed_end, fixed_start};
 
+fn make_session(
+    prompt: &str,
+    id: u128,
+    issue: u64,
+    status: SessionStatus,
+    files: &[&str],
+) -> Session {
+    let mut s = Session::new(
+        prompt.to_string(),
+        "claude-opus-4-5".to_string(),
+        "orchestrator".to_string(),
+        Some(issue),
+    );
+    s.id = Uuid::from_u128(id);
+    s.status = status;
+    s.started_at = Some(fixed_start());
+    s.finished_at = Some(fixed_end());
+    s.files_touched = files.iter().map(|f| (*f).to_string()).collect();
+    s
+}
+
 fn three_agent_sessions() -> Vec<Session> {
-    let mut s1 = Session::new(
-        "Implement login".to_string(),
-        "claude-opus-4-5".to_string(),
-        "orchestrator".to_string(),
-        Some(101),
-    );
-    s1.id = Uuid::nil();
-    s1.status = SessionStatus::Running;
-    s1.started_at = Some(fixed_start());
-    s1.finished_at = Some(fixed_end());
-    s1.files_touched = vec![
-        "src/auth/login.rs".to_string(),
-        "src/auth/token.rs".to_string(),
-    ];
-
-    let mut s2 = Session::new(
-        "Add dashboard".to_string(),
-        "claude-opus-4-5".to_string(),
-        "orchestrator".to_string(),
-        Some(102),
-    );
-    s2.id = Uuid::from_u128(1);
-    s2.status = SessionStatus::Running;
-    s2.started_at = Some(fixed_start());
-    s2.finished_at = Some(fixed_end());
-    s2.files_touched = vec![
-        "src/tui/dashboard.rs".to_string(),
-        "src/auth/token.rs".to_string(),
-    ];
-
-    let mut s3 = Session::new(
-        "Fix config".to_string(),
-        "claude-opus-4-5".to_string(),
-        "orchestrator".to_string(),
-        Some(103),
-    );
-    s3.id = Uuid::from_u128(2);
-    s3.status = SessionStatus::Completed;
-    s3.started_at = Some(fixed_start());
-    s3.finished_at = Some(fixed_end());
-    s3.files_touched = vec!["src/config.rs".to_string()];
-
-    vec![s1, s2, s3]
+    vec![
+        make_session(
+            "Implement login",
+            0,
+            101,
+            SessionStatus::Running,
+            &["src/auth/login.rs", "src/auth/token.rs"],
+        ),
+        make_session(
+            "Add dashboard",
+            1,
+            102,
+            SessionStatus::Running,
+            &["src/tui/dashboard.rs", "src/auth/token.rs"],
+        ),
+        make_session(
+            "Fix config",
+            2,
+            103,
+            SessionStatus::Completed,
+            &["src/config.rs"],
+        ),
+    ]
 }
 
 fn single_agent_session() -> Vec<Session> {
-    let mut s = Session::new(
-        "Solo task".to_string(),
-        "claude-opus-4-5".to_string(),
-        "orchestrator".to_string(),
-        Some(200),
-    );
-    s.id = Uuid::nil();
-    s.status = SessionStatus::Running;
-    s.started_at = Some(fixed_start());
-    s.finished_at = Some(fixed_end());
-    s.files_touched = vec!["src/main.rs".to_string()];
-    vec![s]
+    vec![make_session(
+        "Solo task",
+        0,
+        200,
+        SessionStatus::Running,
+        &["src/main.rs"],
+    )]
 }
 
-fn render_graph(sessions: &[Session], width: u16, height: u16) -> Terminal<TestBackend> {
+fn render_with(
+    sessions: &[Session],
+    width: u16,
+    height: u16,
+    use_nerd_font: bool,
+    tick: usize,
+) -> Terminal<TestBackend> {
     let refs: Vec<&Session> = sessions.iter().collect();
     let (nodes, edges) = build_graph(&refs);
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
         .draw(|f| {
-            draw_agent_graph(f, f.area(), &nodes, &edges, /* use_braille = */ false);
+            draw_agent_graph(f, f.area(), &nodes, &edges, use_nerd_font, tick, &refs);
         })
         .unwrap();
     terminal
 }
 
+fn render_graph(sessions: &[Session], width: u16, height: u16) -> Terminal<TestBackend> {
+    render_with(sessions, width, height, false, 0)
+}
+
+fn pulse_pair_sessions() -> Vec<Session> {
+    let mut s1 = make_session(
+        "Implement login",
+        0,
+        101,
+        SessionStatus::Running,
+        &["src/auth.rs"],
+    );
+    s1.current_activity = "Read: src/auth.rs".to_string();
+    let s2 = make_session(
+        "Add dashboard",
+        1,
+        102,
+        SessionStatus::Running,
+        &["src/dashboard.rs"],
+    );
+    vec![s1, s2]
+}
+
 #[test]
 fn agent_graph_renders_at_80x24() {
-    let sessions = three_agent_sessions();
-    let t = render_graph(&sessions, 80, 24);
+    let t = render_graph(&three_agent_sessions(), 80, 24);
     assert_snapshot!(t.backend());
 }
 
 #[test]
 fn agent_graph_renders_at_100x30() {
-    let sessions = three_agent_sessions();
-    let t = render_graph(&sessions, 100, 30);
+    let t = render_graph(&three_agent_sessions(), 100, 30);
     assert_snapshot!(t.backend());
 }
 
 #[test]
 fn agent_graph_renders_at_120x40() {
-    let sessions = three_agent_sessions();
-    let t = render_graph(&sessions, 120, 40);
+    let t = render_graph(&three_agent_sessions(), 120, 40);
     assert_snapshot!(t.backend());
 }
 
 #[test]
 fn agent_graph_renders_single_agent_card() {
-    let sessions = single_agent_session();
-    let t = render_graph(&sessions, 80, 24);
+    let t = render_graph(&single_agent_session(), 80, 24);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_graph_running_node_braille_spinner_at_tick_0() {
+    let t = render_with(&three_agent_sessions(), 120, 40, true, 0);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_graph_running_node_braille_spinner_at_tick_5() {
+    let t = render_with(&three_agent_sessions(), 120, 40, true, 5);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_graph_completed_flash_tick4_bold_reversed() {
+    let mut s_completed = make_session(
+        "Fix config",
+        0,
+        103,
+        SessionStatus::Completed,
+        &["src/config.rs"],
+    );
+    s_completed.transition_flash_remaining = 4;
+    let s_running = make_session(
+        "Implement login",
+        1,
+        101,
+        SessionStatus::Running,
+        &["src/auth.rs"],
+    );
+    let t = render_with(&[s_completed, s_running], 120, 40, true, 0);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_graph_edge_pulse_tooluse_tick0() {
+    let t = render_with(&pulse_pair_sessions(), 120, 40, true, 0);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_graph_edge_pulse_tooluse_tick5() {
+    let t = render_with(&pulse_pair_sessions(), 120, 40, true, 5);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_graph_ascii_fallback_spinner_running_node() {
+    let t = render_with(&three_agent_sessions(), 120, 40, false, 0);
     assert_snapshot!(t.backend());
 }

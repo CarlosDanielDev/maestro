@@ -131,6 +131,29 @@ pub fn animated_activity(
 #[allow(dead_code)] // Reason: public constant for spinner consumers
 pub const FRAME_COUNT: usize = 4;
 
+/// Total number of braille frames in the agent-graph spinner cycle.
+#[allow(dead_code)] // Reason: public constant for spinner consumers
+pub const NERD_FRAME_COUNT: usize = 10;
+
+/// Braille spinner frames for nerd-font terminals (issue #529).
+const NERD_BRAILLE_FRAMES: &[char] = &[
+    '\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}', '\u{2827}',
+    '\u{2807}', '\u{280F}',
+];
+
+/// Single-glyph spinner frame for the agent-graph node animation.
+///
+/// Picks braille (10-frame cycle) when Nerd Font is active, falling back to
+/// ASCII `spinner_frame` (4-frame cycle) otherwise. Pure: same
+/// `(tick, use_nerd_font)` always returns the same character.
+pub fn graph_node_frame(tick: usize, use_nerd_font: bool) -> char {
+    if use_nerd_font {
+        NERD_BRAILLE_FRAMES[tick % NERD_BRAILLE_FRAMES.len()]
+    } else {
+        spinner_frame(tick)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,3 +389,7 @@ mod tests {
         assert_eq!(result, "Completed");
     }
 }
+
+#[cfg(test)]
+#[path = "spinner_graph_tests.rs"]
+mod graph_tests;
