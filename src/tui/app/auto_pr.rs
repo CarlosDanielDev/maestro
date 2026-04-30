@@ -296,6 +296,8 @@ impl App {
                         now + chrono::Duration::from_std(d).unwrap_or(chrono::Duration::seconds(5))
                     }),
                     status: PendingPrStatus::RetryScheduled,
+                    last_errors: std::collections::VecDeque::new(),
+                    manual_retry_count: 0,
                 };
                 self.pending_prs.push(pending);
 

@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::sync::OnceLock;
 
 static BLOCKED_BY_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -240,6 +241,13 @@ impl PrReviewEvent {
     }
 }
 
+/// Most recent error messages a PendingPr will retain for correlation.
+pub const PENDING_PR_LAST_ERRORS_CAP: usize = 3;
+
+/// Lifetime cap on Shift+P-triggered manual retries before the entry is
+/// transitioned to `PermanentlyFailed`.
+pub const PENDING_PR_MANUAL_RETRY_LIFETIME_CAP: u32 = 5;
+
 /// A PR creation that failed and is queued for retry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingPr {
@@ -256,6 +264,16 @@ pub struct PendingPr {
     pub last_attempt_at: DateTime<Utc>,
     pub next_retry_at: Option<DateTime<Utc>>,
     pub status: PendingPrStatus,
+    /// Most recent errors (oldest evicted at len = `PENDING_PR_LAST_ERRORS_CAP`).
+    /// Used to detect deterministic-failure loops where every retry hits the
+    /// same error and Shift+P would just queue another doomed attempt.
+    #[serde(default)]
+    pub last_errors: VecDeque<String>,
+    /// Lifetime count of Shift+P-triggered manual retries. Capped at
+    /// `PENDING_PR_MANUAL_RETRY_LIFETIME_CAP` to prevent infinite-loop
+    /// abandonment when the underlying failure is deterministic.
+    #[serde(default)]
+    pub manual_retry_count: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -267,6 +285,14 @@ pub enum PendingPrStatus {
     AwaitingManualRetry,
     /// User triggered a manual retry, in progress.
     Retrying,
+    /// Terminal state. Reached when (a) the same error has repeated
+    /// `PENDING_PR_LAST_ERRORS_CAP` times — a deterministic failure that
+    /// further retries cannot fix — or (b) `manual_retry_count` exceeds
+    /// `PENDING_PR_MANUAL_RETRY_LIFETIME_CAP`. Both auto-retry and
+    /// `trigger_manual_pr_retry` skip entries in this state. The user is
+    /// expected to fix the underlying problem (e.g., file a bug, run
+    /// `gh pr create` manually) and dismiss the entry.
+    PermanentlyFailed,
 }
 
 #[cfg(test)]
@@ -296,6 +322,8 @@ mod tests {
         assert_eq!(json, r#""awaiting_manual_retry""#);
         let json = serde_json::to_string(&PendingPrStatus::Retrying).unwrap();
         assert_eq!(json, r#""retrying""#);
+        let json = serde_json::to_string(&PendingPrStatus::PermanentlyFailed).unwrap();
+        assert_eq!(json, r#""permanently_failed""#);
     }
 
     #[test]
@@ -313,6 +341,8 @@ mod tests {
             last_attempt_at: Utc::now(),
             next_retry_at: Some(Utc::now()),
             status: PendingPrStatus::RetryScheduled,
+            last_errors: VecDeque::from(vec!["boom".to_string(), "boom".to_string()]),
+            manual_retry_count: 2,
         };
         let json = serde_json::to_string(&pending).unwrap();
         let rt: PendingPr = serde_json::from_str(&json).unwrap();
@@ -320,6 +350,31 @@ mod tests {
         assert_eq!(rt.branch, "maestro/issue-42");
         assert_eq!(rt.attempt, 1);
         assert_eq!(rt.status, PendingPrStatus::RetryScheduled);
+        assert_eq!(rt.last_errors.len(), 2);
+        assert_eq!(rt.manual_retry_count, 2);
+    }
+
+    #[test]
+    fn pending_pr_deserializes_with_default_for_new_fields() {
+        // Existing on-disk state files do not have last_errors or
+        // manual_retry_count. They MUST round-trip cleanly via #[serde(default)].
+        let legacy_json = r#"{
+            "issue_number": 7,
+            "issue_numbers": [],
+            "branch": "maestro/issue-7",
+            "base_branch": "main",
+            "files_touched": [],
+            "cost_usd": 0.0,
+            "attempt": 0,
+            "max_attempts": 3,
+            "last_error": "",
+            "last_attempt_at": "2026-01-01T00:00:00Z",
+            "next_retry_at": null,
+            "status": "retry_scheduled"
+        }"#;
+        let p: PendingPr = serde_json::from_str(legacy_json).unwrap();
+        assert!(p.last_errors.is_empty());
+        assert_eq!(p.manual_retry_count, 0);
     }
 
     // Priority::from_label

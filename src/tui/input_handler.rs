@@ -1503,6 +1503,8 @@ mod tests {
             last_attempt_at: chrono::Utc::now(),
             next_retry_at: None,
             status: PendingPrStatus::AwaitingManualRetry,
+            last_errors: std::collections::VecDeque::new(),
+            manual_retry_count: 0,
         }
     }
 

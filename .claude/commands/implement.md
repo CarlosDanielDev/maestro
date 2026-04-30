@@ -19,8 +19,13 @@ Fetch a GitHub issue and implement it following the enforced TDD harness.
 | `--spanish` | `-s` | Set language to Español |
 | `--orchestrator` | `-o` | Use Subagents Orchestrator mode |
 | `--vibe-coding` | `-vc` | Use Vibe Coding mode |
+| `--continue` | — | Step 5 idempotency: continue on existing branch (skip prompt) |
+| `--restart` | — | Step 5 idempotency: delete existing branch and start fresh (skip prompt; still requires inner `RESTART` confirmation if interactive) |
+| `--dirty-tree-action=stash\|abort\|ask` | — | Pre-check Gate 6: how to handle a dirty working tree. Pass-through to `implement-gates.sh`. |
 
 `--training` / `-t` is explicitly rejected — Training mode is for `.claude/` configuration, not implementation.
+
+`--continue` and `--restart` are mutually exclusive — passing both is an error.
 
 ---
 
@@ -32,6 +37,8 @@ Extract from `$ARGUMENTS`:
 1. **Issue number**: first `\d+` with optional `#` prefix. Export as `$ISSUE_NUMBER` for downstream steps.
 2. **Language flag** (if present).
 3. **Mode flag** (if present).
+4. **Idempotency flag** (`--continue` or `--restart`, if present). Reject with exit 1 if both are passed.
+5. **Dirty-tree action** (`--dirty-tree-action=...`, if present) — captured for pass-through to the pre-check hook in Step 2.
 
 ```bash
 export ISSUE_NUMBER="<n>"  # substitute the parsed number
@@ -57,13 +64,24 @@ If flags provided, honor them. Otherwise, ask the user.
 
 ### Step 2: Pre-check hook (GATE — MANDATORY)
 
-Run the mechanical pre-check hook. Abort on non-zero exit, printing stderr verbatim.
+Run the mechanical pre-check hook. Abort on non-zero exit, printing stderr verbatim. Pass through `--dirty-tree-action=...` from Step 0 if the user supplied it.
 
 ```bash
-bash .claude/hooks/implement-gates.sh "$ISSUE_NUMBER"
+bash .claude/hooks/implement-gates.sh "$ISSUE_NUMBER" \
+  ${DIRTY_TREE_ACTION:+--dirty-tree-action=$DIRTY_TREE_ACTION}
 ```
 
-The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success; capture this path and `export GATE_LOG_DIR=<path>` for downstream steps.
+The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success AND writes the same path to `/tmp/maestro-current-gate-dir` so subsequent Bash tool calls can recover it without relying on env-var persistence (each Bash call is a fresh shell — `export` does not propagate).
+
+Recovery pattern for any later step:
+
+```bash
+GATE_LOG_DIR=$(cat /tmp/maestro-current-gate-dir)
+```
+
+The sentinel file is overwritten on the next `/implement` run, so it always points at the current gate session.
+
+**Non-TTY behavior of the hook (Bash tool default):** `implement-gates.sh` detects no-TTY (`! -t 0`) and refuses to prompt for the dirty-tree action. If the tree is dirty and `--dirty-tree-action=` is not passed, the hook prints an actionable message and exits 6. Re-run the slash command with `--dirty-tree-action=stash` (auto-stash) or `--dirty-tree-action=abort` (clean fail) to unblock.
 
 Exit codes:
 - `0` — proceed.
@@ -136,20 +154,37 @@ slug=$(jq -r .title "$GATE_LOG_DIR/issue.json" | tr '[:upper:]' '[:lower:]' | tr
 git checkout -b "feat/issue-${ISSUE_NUMBER}-${slug}"
 ```
 
-**If non-empty:** fire the idempotency prompt. Show recent commits:
+**If non-empty:** resolve the idempotency choice using the flags from Step 0, falling back to a TTY prompt when running interactively.
 
 ```
 Branch `<existing>` already exists.
 
 Recent commits on that branch:
 <git log main..HEAD --oneline -5>
-
-  (C)ontinue on this branch
-  (R)estart — delete branch and start over
-  (A)bort
-
-Choice [C/R/A]:
 ```
+
+Resolution rules (in order):
+
+1. If `--continue` was passed → take the **(C)ontinue** path below.
+2. If `--restart` was passed → take the **(R)estart** path below (the inner `RESTART` typed confirmation is also waived under `--restart`, since the user already chose this path explicitly).
+3. If neither flag was passed AND stdin is a TTY → fire the interactive prompt:
+
+   ```
+     (C)ontinue on this branch
+     (R)estart — delete branch and start over
+     (A)bort
+
+   Choice [C/R/A]:
+   ```
+
+4. If neither flag was passed AND stdin is **not** a TTY (the default under the Claude Code Bash tool) → default to **(A)bort** with this message:
+
+   ```
+   Branch `<existing>` already exists and stdin is not interactive.
+   Re-run with `/implement #<N> --continue` (resume) or `/implement #<N> --restart` (start over).
+   ```
+
+   Exit cleanly (no error code; the user's next invocation drives the choice).
 
 Handle each choice:
 
@@ -166,7 +201,7 @@ Handle each choice:
   >
   > Before producing a full blueprint, inspect these commits (via Read / Grep on the branch). If the work described by the issue appears substantially done (architecture scaffolded, tests present, or implementation in place), return a **minimal response** acknowledging the existing state and listing only what remains. Do not duplicate work already in the branch. If the branch diverges from what you would design (e.g., different module layout, different abstractions), flag the divergence and recommend either reconciling or restarting — do not silently layer a conflicting plan on top.
 
-- **Divergence handling (spec §Idempotency UX → Divergence handling):** if the architect or QA subagent flags divergence, the orchestrator presents a secondary prompt:
+- **Divergence handling (spec §Idempotency UX → Divergence handling):** if the architect or QA subagent flags divergence, the orchestrator presents a secondary prompt — but only when stdin is a TTY:
 
   ```
   Architect detected divergence between the existing branch and the
@@ -185,10 +220,12 @@ Handle each choice:
   - **(S)witch to Restart**: fall through to the Restart flow below (typed `RESTART` confirmation, branch deletion).
   - **(A)bort**: exit cleanly, tell the user to inspect manually.
 
+  **Non-TTY default** (Bash tool): emit the divergence summary to the user, default to **(A)bort**, and instruct: `Re-run with /implement #<N> --restart` to take the Switch-to-Restart path explicitly, or fix the divergence manually then re-run with `--continue`. Do not silently reconcile — divergence is exactly the case the human should adjudicate.
+
 **(R)estart:**
-- Require typed `RESTART` confirmation.
+- If reached via the interactive prompt, require typed `RESTART` confirmation. If reached via `--restart`, the flag itself is the confirmation — skip the typed gate.
 - `git checkout main && git branch -D "$existing"`.
-- If the branch was pushed, prompt about remote deletion (default no).
+- If the branch was pushed AND stdin is a TTY, prompt about remote deletion (default no). If non-TTY, skip remote deletion (safer default; user can prune manually).
 - Create fresh branch.
 
 **(A)bort:**

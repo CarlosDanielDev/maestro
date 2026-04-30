@@ -7,6 +7,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed (auto-PR + workflow root-cause batch — 2026-04-30)
+
+This batch responds to a multi-audit review of why users were abandoning
+maestro after auto-PR silently failed for six weeks. Root cause:
+**no test, lint, gate, or CI step exercises the assembled binary against
+the real `gh` CLI.** Every test in `provider/github/` mocks the trait;
+production argv was never asserted against `gh`'s actual flag surface.
+
+- **fix(github): drop invalid `--json number` flag from `gh pr create`** (P0). Live since 2026-03-20; every auto-PR + every Shift+P manual retry failed with `unknown flag: --json` before opening a network connection. Real PRs now parse the `https://.../pull/<N>` URL `gh` prints on stdout via `parse_pr_number_from_create_output`. 7 unit tests cover happy path, edge cases, errors.
+- **feat(github): argv-capture seam (`gh_argv` module)** (P0 root-cause guard). Every `GhCliClient` method now builds its argv via a pure function in `src/provider/github/gh_argv.rs`. 19 snapshot tests lock the wire format. Future flag bugs in `pr create`, `issue view`, `pr review`, `api`, etc. produce a snapshot diff that forces reviewer attention. The whole class of bug that hid for 6 weeks is now caught at unit-test time.
+- **fix(tui): persist `pending_prs` across restart** (P0). `MaestroState.pending_prs` was schema-persisted but `App::new` re-initialized empty and `sync_state` never wrote it. Crash recovery scenario from the #521 issue body silently broken: `App::new` now rehydrates from state and logs a Warn-level activity entry on startup if any orphan retries are pending. `sync_state` mirrors `pending_prs` to disk every tick.
+- **fix(tui): `gh_auth_ok=false` enqueues a `PendingPr`** (P0). The "auth was missing then restored" headline scenario from #521 was silently broken: the auth-skip path returned without leaving anything for Shift+P to recover. New `defer_pr_for_missing_auth` deposits a `PendingPr { status: AwaitingManualRetry, last_error: "GitHub auth missing — run \`gh auth login\` then press Shift+P" }` and logs an action-oriented Warn entry.
+- **feat(tui): Shift+P exit path** (P0). PendingPr gains `last_errors: VecDeque<String>` (cap 3) and `manual_retry_count: u32` (lifetime cap 5). After 3 byte-identical errors, the entry transitions to a new `PendingPrStatus::PermanentlyFailed` and the activity log surfaces "PR retry stuck on identical error 3× — file a bug" with the captured stderr. Manual retries past the lifetime cap also transition to `PermanentlyFailed`. Stops users from infinite-looping on a deterministic failure.
+- **fix(tui): `Shift+P` now appears in the Overview hint bar** (#521 follow-up). The keybinding was wired into the F1 help registry but not the inline hint bar; users had no in-app signal it existed. New `HINT_OV_RETRY_PR` in `OVERVIEW_HINTS_BASE` and `OVERVIEW_HINTS_WITH_GRAPH`.
+- **fix(workflow): `/pushup` step ordering + idempotency**. Reordered: milestone PATCH (was Step 6.5) now runs BEFORE issue close (was Step 6) so a PATCH failure leaves the issue open and `/pushup` can be safely re-run. Milestone bullet replace now anchored to `^• #<N>` (no longer mangles prose like "depends on #521 because…"); detects already-stamped entries (`• ✅ #<N>`) and skips. Sequence-line replace token-bounded; `(COMPLETED ✅)` roll-up idempotent.
+- **fix(workflow): `implement-gates.sh` non-interactive flags**. `read -r` interactive prompts couldn't work under Claude Code's Bash tool — silent abort. Adds `--dirty-tree-action=stash|abort|ask` (default `ask`, but auto-aborts when stdin is not a TTY with an explicit error message). `/implement` gains `--continue` and `--restart` flags so Step 5's idempotency prompt is resolvable headlessly. `$GATE_LOG_DIR` now persisted via `/tmp/maestro-current-gate-dir` sentinel so subsequent Bash tool calls can recover it.
+
 ### Added
 
 - feat(tui): `Shift+P` keybinding to manually trigger PR creation when auto-PR was skipped (#521)

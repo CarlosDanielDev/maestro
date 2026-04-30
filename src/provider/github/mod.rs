@@ -5,6 +5,7 @@
 
 pub mod ci;
 pub mod client;
+pub mod gh_argv;
 pub mod labels;
 pub mod merge;
 pub mod pr;

@@ -1,10 +1,37 @@
 #!/usr/bin/env bash
 # Pre-check hook for /implement.
 # Argument: $1 = issue number.
+#
+# Optional flags (parsed after the issue number):
+#   --dirty-tree-action=<stash|abort|ask>
+#       stash : auto-stash uncommitted changes and continue
+#       abort : exit 6 immediately on dirty tree
+#       ask   : interactive prompt (legacy; only safe with a real TTY)
+#       Default: ask if stdin is a TTY, otherwise abort with a clear message.
 
 set -euo pipefail
 
 issue_number="${1:-}"
+shift || true
+
+dirty_tree_action="auto"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dirty-tree-action=stash) dirty_tree_action="stash" ;;
+    --dirty-tree-action=abort) dirty_tree_action="abort" ;;
+    --dirty-tree-action=ask)   dirty_tree_action="ask" ;;
+    --dirty-tree-action=*)
+      echo "implement-gates: unknown --dirty-tree-action value: ${1#*=}" >&2
+      exit 1
+      ;;
+    *)
+      echo "implement-gates: unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
 
 if [ -z "$issue_number" ]; then
   echo "implement-gates: issue number required as first argument" >&2
@@ -51,21 +78,51 @@ if [ "$issue_state" = "CLOSED" ]; then
   exit 1
 fi
 
-# Gate 6: working tree must be clean, or user must confirm stash.
+# Gate 6: working tree must be clean, or caller must specify how to handle it.
 if [ -n "$(git status --porcelain)" ]; then
   echo "implement-gates: Working tree has uncommitted changes"
   git status --short
   echo ""
-  echo "(S)tash and continue, (A)bort"
-  read -r choice
-  case "$choice" in
-    S|s)
+
+  resolved_action="$dirty_tree_action"
+  if [ "$resolved_action" = "auto" ]; then
+    if [ -t 0 ]; then
+      resolved_action="ask"
+    else
+      echo "implement-gates: Dirty tree detected and stdin is not a TTY." >&2
+      echo "implement-gates: Pass --dirty-tree-action=stash to auto-stash, or" >&2
+      echo "implement-gates: --dirty-tree-action=abort to fail fast." >&2
+      echo "implement-gates: aborting on dirty tree (no TTY, no flag)" >&2
+      exit 6
+    fi
+  fi
+
+  case "$resolved_action" in
+    stash)
       git stash push -m "auto-stash before /implement #${issue_number}"
       echo "implement-gates: stashed as 'auto-stash before /implement #${issue_number}'"
       ;;
-    *)
-      echo "implement-gates: aborting on dirty tree"
+    abort)
+      echo "implement-gates: aborting on dirty tree (--dirty-tree-action=abort)"
       exit 6
+      ;;
+    ask)
+      if [ ! -t 0 ]; then
+        echo "implement-gates: --dirty-tree-action=ask requires a TTY; stdin is not interactive." >&2
+        exit 6
+      fi
+      echo "(S)tash and continue, (A)bort"
+      read -r choice
+      case "$choice" in
+        S|s)
+          git stash push -m "auto-stash before /implement #${issue_number}"
+          echo "implement-gates: stashed as 'auto-stash before /implement #${issue_number}'"
+          ;;
+        *)
+          echo "implement-gates: aborting on dirty tree"
+          exit 6
+          ;;
+      esac
       ;;
   esac
 fi
@@ -89,3 +146,7 @@ if [ -x .claude/hooks/preflight.sh ]; then
     exit $preflight_exit
   fi
 fi
+
+# Sentinel: persist GATE_LOG_DIR so subsequent Bash tool calls can recover it
+# without re-exporting (each Bash call is a fresh shell). Overwritten on next run.
+echo -n "$GATE_LOG_DIR" > /tmp/maestro-current-gate-dir

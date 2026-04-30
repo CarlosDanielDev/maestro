@@ -423,3 +423,120 @@ async fn auto_pr_git_check_error_falls_through_to_create_pr() {
          AC3 fallthrough contract (#520)"
     );
 }
+
+#[tokio::test]
+async fn auto_pr_when_auth_missing_enqueues_pending_pr_for_manual_retry() {
+    use crate::provider::github::types::PendingPrStatus;
+
+    let mock = MockGitHubClient::new();
+    let mut app = make_app_with_mock(mock);
+    // Simulate the documented #521 scenario: GitHub auth was missing
+    // when the session ended. Once the user runs `gh auth login` and
+    // presses Shift+P, the queued PendingPr drives the retry.
+    app.gh_auth_ok = false;
+
+    app.on_issue_session_completed(
+        42,
+        vec![42],
+        true,
+        1.0,
+        vec!["src/foo.rs".into()],
+        Some("maestro/issue-42".into()),
+        None,
+        false,
+    )
+    .await;
+
+    assert_eq!(
+        app.pending_prs.len(),
+        1,
+        "auth-missing path MUST enqueue a PendingPr so Shift+P can recover (#521)",
+    );
+    let p = &app.pending_prs[0];
+    assert_eq!(p.issue_number, 42);
+    assert_eq!(p.branch, "maestro/issue-42");
+    assert!(matches!(p.status, PendingPrStatus::AwaitingManualRetry));
+    assert!(p.next_retry_at.is_none(), "manual retry — no auto schedule");
+    assert!(
+        p.last_error.contains("auth"),
+        "last_error must explain auth missing, got: {}",
+        p.last_error,
+    );
+    assert_eq!(p.attempt, 0);
+
+    // Activity log should explicitly mention the recovery action.
+    let warn_msg = app
+        .activity_log
+        .entries()
+        .iter()
+        .rev()
+        .find(|e| matches!(e.level, LogLevel::Warn) && e.session_label == "#42")
+        .expect("warn entry for #42 must exist");
+    assert!(
+        warn_msg.message.contains("auth missing"),
+        "activity log entry should reference auth-missing, got: {}",
+        warn_msg.message,
+    );
+    assert!(
+        warn_msg.message.contains("Shift+P"),
+        "activity log entry should tell user to press Shift+P, got: {}",
+        warn_msg.message,
+    );
+}
+
+#[tokio::test]
+async fn auto_pr_when_auth_missing_without_branch_skips_pending_pr() {
+    let mock = MockGitHubClient::new();
+    let mut app = make_app_with_mock(mock);
+    app.gh_auth_ok = false;
+
+    // No worktree branch — there is no PR to retry, so the auth-skip
+    // path must NOT enqueue a doomed PendingPr.
+    app.on_issue_session_completed(42, vec![42], true, 0.0, vec![], None, None, false)
+        .await;
+
+    assert!(
+        app.pending_prs.is_empty(),
+        "no branch = nothing to retry; PendingPr must not be created",
+    );
+}
+
+#[tokio::test]
+async fn auto_pr_when_auth_missing_does_not_double_enqueue() {
+    let mock = MockGitHubClient::new();
+    let mut app = make_app_with_mock(mock);
+    app.gh_auth_ok = false;
+
+    // First call enqueues.
+    app.on_issue_session_completed(
+        42,
+        vec![42],
+        true,
+        0.0,
+        vec![],
+        Some("maestro/issue-42".into()),
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(app.pending_prs.len(), 1);
+
+    // Second call (e.g., session re-emitted Completed event) must not
+    // append a duplicate.
+    app.on_issue_session_completed(
+        42,
+        vec![42],
+        true,
+        0.0,
+        vec![],
+        Some("maestro/issue-42".into()),
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(
+        app.pending_prs.len(),
+        1,
+        "auth-missing path must dedupe by issue_number",
+    );
+}
