@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-29 (UTC)
+> Last updated: 2026-04-29 14:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -79,7 +79,7 @@ maestro/
 │       └── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
 ├── build.rs                               # Build script: generates man page (maestro.1) and shell completions (bash, zsh, fish) into OUT_DIR at build time using clap_mangen and clap_complete  [Issue #18]
 ├── src/
-│   ├── lib.rs                             # Library facade; exposes session::parser and session::types for benchmark crates; pub mod icon_mode and pub mod icons added so shared icon modules are accessible as library crate items; agent_graph_spike module removed  [Issue #307, #308, #526]
+│   ├── lib.rs                             # Library facade; exposes session::parser and session::types for benchmark crates; pub mod icon_mode and pub mod icons added so shared icon modules are accessible as library crate items; agent_graph_spike module removed; #[cfg(feature = "spike")] pub mod agent_personalities block added (throwaway, removed in ADR-002 cleanup commit)  [Issue #307, #308, #526, #536]
 │   ├── icon_mode.rs                       # Shared icon mode detection: AtomicBool global flag, init_from_config() reads tui.ascii_icons from Config and MAESTRO_ASCII_ICONS env var, use_nerd_font() returns current mode; extracted from tui/icons.rs so non-TUI crates can query the mode without pulling in the full TUI tree  [Issue #307]
 │   ├── icons.rs                           # Shared icon registry: IconId enum (38 variants across Navigation, Status, UI Chrome, Indicators categories, plus NeedsReview variant added in #308), IconPair struct (nerd: &'static str, ascii: &'static str), icon_pair() const fn compiles to a zero-allocation jump table, get(IconId) returns the correct variant based on global mode, get_for_mode(id, nerd_font) pure testable variant; extracted from tui/icons.rs; CheckboxOn codepoint U+F14A (nf-fa-check_square) and CheckboxOff codepoint U+F0C8 (nf-fa-square) — universally present FA-core glyphs replacing the legacy nf-oct variants  [Issue #308, #433]
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; propagates once_mode from parsed CLI flag into App; forces max_concurrent=1 when --continuous is set; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests; declares mod updater; declares mod flags; propagates startup gh auth check result into App.gh_auth_ok; declares mod sanitize; constructs FeatureFlags from --enable-flag / --disable-flag CLI args merged with [flags] config  [Issue #15, #29, #49, #34, #36, #35, #52, #83, #85, #118, #141, #142, #143, #158]
@@ -252,6 +252,11 @@ maestro/
 │   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods; pending_prs: Vec<PendingPr> field on MaestroState — persisted to JSON state for PR retry recovery; pending_completions: Vec<PendingIssueCompletion> field with #[serde(default)] — persists in-flight auto-PR work across maestro restarts (3 round-trip tests)  [Issue #12, #159, #514]
 │   ├── tui/
 │   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress; spawns async version check on startup via check_for_update() — result delivered as VersionCheckResult data event; key handlers for upgrade flow (confirm/decline banner); CompletionSummary key-intercept branch: [f] collects NeedsReview sessions and calls spawn_gate_fix_session() for each then transitions to Overview, [i] opens issue browser, [r] opens prompt input, [l] switches to Overview (activity log view), [Enter]/[Esc] returns to dashboard via transition_to_dashboard(), [q] quits; ContinuousPause key-intercept overlay: [s] skip, [r] retry, [q] quit continuous loop; RefreshSuggestions branch sets loading_suggestions=true and queues FetchSuggestionData; exit path checks once_mode — exits immediately when true, otherwise shows CompletionSummary overlay; "All Issues" navigation always creates a fresh IssueBrowserScreen to prevent stale milestone filters leaking across navigation contexts; PromptInputScreen always created with injected history so Up/Down arrow recall works correctly; F-key bar actions wired (F1–F10, Alt-X); per-tick flash_counter decrement dispatched to session pool; pub mod theme; pub mod widgets; RunAdaptScaffold command dispatch; background task handlers for FetchMilestoneHealthIssues and PatchMilestoneDescription; pub(crate) mod agent_graph wired  [Phase 3, Issue #31-33, #46-48, #35, #38, #83, #84, #85, #86, #104, #117, #118, #124, #202, #218, #232, #371, #500, #526]
+│   │   ├── agent_personalities/           # [SPIKE-ONLY / THROWAWAY] Role sprites prototype — gated behind `--features spike`; removed in ADR-002 cleanup commit  [Issue #536]
+│   │   │   ├── role.rs                    # Role enum (5 variants) + derive_role keyword classifier
+│   │   │   ├── sprite.rs                  # Sprite([[char;6];6]) per-role 6×6 ghost sprite grids
+│   │   │   ├── palette.rs                 # role_color() + role_abbrev() (3-char ASCII fallback)
+│   │   │   └── render.rs                  # draw_named_sprite() ratatui renderer (fg-only sprite or 3-char abbrev)
 │   │   ├── agent_graph/                   # Agent graph visualization module (productionized in #526)
 │   │   │   ├── mod.rs                     # Module facade; re-exports pub(crate) items; phase-offset and aspect-ratio fixes applied  [Issue #526]
 │   │   │   ├── model.rs                   # GraphNode, GraphEdge, NodeId, NodeKind, Positioned data types; build_graph() signature changed to &[&Session] (issue #527)  [Issue #526, #527]
@@ -442,7 +447,8 @@ maestro/
 │       └── queue.rs                       # WorkQueue, QueuedItem, QueueValidationError; validate_selection()  [Issue #65]
 ├── docs/
 │   ├── adr/                               # Architecture Decision Records; one file per decision; ADRs that survive a spike are the only artifact merged to main from that spike
-│   │   └── 001-agent-graph-viz.md         # ADR 001: agent graph visualization — Go/No-Go verdict (concentric/radial bipartite layout, Braille canvas); tracking issue #513
+│   │   ├── 001-agent-graph-viz.md         # ADR 001: agent graph visualization — Go/No-Go verdict (concentric/radial bipartite layout, Braille canvas); tracking issue #513
+│   │   └── 002-agent-personalities.md     # ADR 002: agent personality sprites — 5-role taxonomy, 6×6 ghost sprites, hybrid derive_role, ASCII fallback; Go verdict; tracking issue #536
 │   ├── api-contracts/                     # JSON Schema (Draft 2020-12) for every external payload that crosses a process boundary; one file per payload type; referenced by /validate-contracts and subagent-gatekeeper
 │   │   ├── README.md                      # Convention guide: naming, additionalProperties policy, gatekeeper integration  [Issue #327]
 │   │   └── review-comment.json            # Schema for the maestro-review JSON block in /review PR comments; parsed by review::parse and TUI pr_review screen  [Issue #327]
@@ -481,6 +487,8 @@ maestro/
 │   ├── check-file-size.sh                 # Enforce per-file LOC limits (500-line rule)
 │   ├── check-layers.sh                    # Enforce architecture layer boundaries
 │   └── coverage-tiers.yml                 # Coverage tier definitions
+├── examples/
+│   └── agent_personalities_spike.rs       # [SPIKE-ONLY / THROWAWAY] Example binary entry point; `cargo run --example agent_personalities_spike --features spike`; removed in ADR-002 cleanup commit  [Issue #536]
 ├── benches/                               # Criterion benchmark crates
 │   ├── parser.rs                          # Benchmark: stream-json parser throughput  [Issue #19]
 │   └── turboquant.rs                      # Benchmark: TurboQuant quantization pipeline throughput
@@ -492,7 +500,7 @@ maestro/
 │   └── scripts/                           # Test script fixtures
 ├── .gitignore                             # Includes .maestro/worktrees/ and runtime artifacts; .maestro/knowledge.md (written by maestro adapt, auto-loaded as system-prompt component by SessionPool::try_promote) is also excluded
 ├── Cargo.lock                             # Dependency lock file
-├── Cargo.toml                             # Rust package manifest; tempfile promoted to runtime dependency; thiserror = "1" added; insta dev-dependency; optimized release profile; [features] section with experimental-sanitizer = [] only (spike feature flag and [[example]] blocks removed); flate2 and tar dependencies for tar.gz extraction in self-updater; strip-ansi-escapes = "0.2" for ANSI stripping in clipboard copy  [Issue #142, #233, #482, #499, #526]
+├── Cargo.toml                             # Rust package manifest; tempfile promoted to runtime dependency; thiserror = "1" added; insta dev-dependency; optimized release profile; [features] section includes experimental-sanitizer = [] and spike = [] (spike feature removed in ADR-002 cleanup commit); [[example]] entry for agent_personalities_spike (removed in cleanup); flate2 and tar dependencies for tar.gz extraction in self-updater; strip-ansi-escapes = "0.2" for ANSI stripping in clipboard copy  [Issue #142, #233, #482, #499, #526, #536]
 ├── CHANGELOG.md                           # Release history following Keep a Changelog format
 ├── LICENSE
 ├── README.md                              # Project front door
