@@ -254,3 +254,7 @@ fn draw_sprite_on_canvas(ctx: &mut Context<'_>, cx: f64, cy: f64, sprite: Sprite
 #[cfg(test)]
 #[path = "render_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "status_modifier_tests.rs"]
+mod status_modifier_tests;
