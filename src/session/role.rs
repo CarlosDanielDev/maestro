@@ -127,7 +127,6 @@ pub fn derive_role(prompt: &str) -> Role {
 /// of work that other roles execute. The other six mappings are obvious from
 /// the registry table (gatekeeper/qa/security-analyst/idea-triager all
 /// review; docs-analyst writes docs; master-planner plans).
-#[allow(dead_code)] // Reason: consumed by #543 (role-colored chip on subagent dispatches in activity log)
 pub fn role_for_subagent_name(name: &str) -> Option<Role> {
     match name {
         "subagent-architect" | "subagent-master-planner" => Some(Role::Orchestrator),

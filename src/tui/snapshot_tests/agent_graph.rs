@@ -124,9 +124,55 @@ fn agent_graph_renders_at_120x40() {
     assert_snapshot!(t.backend());
 }
 
+/// A session with no `files_touched` — exercises the only remaining fallback
+/// path (no edges to draw, just one node, so the card is still the right
+/// affordance).
+fn single_agent_no_files_session() -> Vec<Session> {
+    vec![make_session(
+        "Solo task with no files yet",
+        0,
+        201,
+        SessionStatus::Running,
+        &[],
+    )]
+}
+
+fn buffer_text(t: &Terminal<TestBackend>) -> String {
+    let buf = t.backend().buffer();
+    let mut out = String::with_capacity((buf.area.width as usize + 1) * buf.area.height as usize);
+    for y in 0..buf.area.height {
+        for x in 0..buf.area.width {
+            out.push_str(buf[(x, y)].symbol());
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// Issue #543 follow-up: a single agent with files-touched should render the
+/// full graph (agent + file ring + edges), not the fallback card. The graph
+/// is meaningful as soon as there is at least one edge to draw.
 #[test]
-fn agent_graph_renders_single_agent_card() {
+fn agent_graph_renders_single_agent_with_files_as_graph() {
     let t = render_graph(&single_agent_session(), 80, 24);
+    let text = buffer_text(&t);
+    assert!(
+        !text.contains("no files touched yet"),
+        "expected full graph render for 1 agent + 1 file, got fallback card:\n{text}"
+    );
+    assert_snapshot!(t.backend());
+}
+
+/// The fallback card is still the right affordance when there is nothing
+/// edge-shaped to draw (1 agent, 0 files).
+#[test]
+fn agent_graph_falls_back_when_single_agent_has_no_files() {
+    let t = render_graph(&single_agent_no_files_session(), 80, 24);
+    let text = buffer_text(&t);
+    assert!(
+        text.contains("no files touched yet"),
+        "expected fallback card for 1 agent + 0 files:\n{text}"
+    );
     assert_snapshot!(t.backend());
 }
 

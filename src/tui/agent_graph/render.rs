@@ -40,12 +40,19 @@ pub(crate) fn draw_agent_graph(
         draw_too_small(f, area);
         return;
     }
-    if nodes
+    let agent_count = nodes
         .iter()
         .filter(|n| matches!(n.kind, NodeKind::Agent { .. }))
-        .count()
-        < 2
-    {
+        .count();
+    let file_count = nodes
+        .iter()
+        .filter(|n| matches!(n.kind, NodeKind::File))
+        .count();
+    // Fall back to the card only when there is nothing edge-shaped to draw:
+    // zero agents, or one agent with no touched files. A single agent with
+    // file edges is still a meaningful graph (agent at center, files in the
+    // outer ring) and is more informative than the placeholder card.
+    if agent_count == 0 || (agent_count == 1 && file_count == 0) {
         draw_single_agent_card(f, area, nodes);
         return;
     }
@@ -199,7 +206,7 @@ fn draw_single_agent_card(f: &mut Frame, area: Rect, nodes: &[GraphNode]) {
         Line::from(format!("▶  {label}  RUNNING")),
         Line::from(format!("    Files: {}", files.join(", "))),
         Line::from(""),
-        Line::from("1 agent active — graph view activates at 2+ agents"),
+        Line::from("1 agent, no files touched yet — graph activates on first file edit"),
     ];
 
     let para = Paragraph::new(body).alignment(Alignment::Center).block(
