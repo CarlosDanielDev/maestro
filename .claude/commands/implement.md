@@ -397,7 +397,7 @@ Next: run /pushup to commit, push, create PR, and close the issue.
 - If issue closed → hook exits 1. Re-open first or pick a different issue.
 - If dirty tree → prompt (S)tash/(A)bort.
 - If baseline fails → exit 2. Fix baseline first.
-- If gatekeeper FAILs with DOR missing → comment posted, `needs-info` label applied, exit 5.
+- If gatekeeper FAILs with DOR missing → proposed remediation printed to stderr for human review, exit 5. Re-run with `--auto-comment` to auto-post the comment and apply `needs-info` label.
 - If blockers open → exit 5. Wait for blockers to close.
 - If RED/GREEN fails → exit 3/4. Actionable error with log path.
 
