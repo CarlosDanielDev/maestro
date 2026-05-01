@@ -188,19 +188,22 @@ impl SessionPool {
     }
 
     /// Move a terminal session to `finished` and tear down its worktree.
-    /// Use only when the work is committed/merged or the user explicitly
-    /// authorized cleanup. The recovery-on-gate-failure path retains the
-    /// worktree — see [`Self::finalize_retain_worktree`].
+    /// Test-only affordance: production code routes finalization through
+    /// [`Self::finalize`], which dispatches to teardown vs. retain based
+    /// on the session's terminal status. Tests use the explicit form to
+    /// assert the correct branch fired.
+    #[cfg(test)]
     pub fn finalize_and_teardown(&mut self, session_id: Uuid) {
         if let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) {
             self.finalize_at(idx, false);
         }
     }
 
-    /// Move a terminal session to `finished` without removing its worktree,
-    /// so uncommitted model edits in `.maestro/worktrees/issue-NNN/` survive
-    /// for recovery. File claims are still released so future sessions see
-    /// the freed slot.
+    /// Move a terminal session to `finished` without removing its
+    /// worktree. Test-only counterpart to `finalize_and_teardown` — see
+    /// note above. Production code reaches this branch via
+    /// [`Self::finalize`] when the session ended in `FailedGates`.
+    #[cfg(test)]
     pub fn finalize_retain_worktree(&mut self, session_id: Uuid) {
         if let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) {
             self.finalize_at(idx, true);
@@ -218,9 +221,12 @@ impl SessionPool {
         self.finished.push(managed);
     }
 
-    /// Whether a worktree exists for the given slug. Delegates to the
-    /// underlying `WorktreeManager` so callers can assert teardown vs. retain
-    /// without exposing the manager itself.
+    /// Whether a worktree exists for the given slug. Test-only
+    /// accessor that delegates to the underlying `WorktreeManager` so
+    /// integration tests can assert teardown vs. retain without
+    /// exposing the manager itself. Production code never inspects
+    /// worktree existence at this layer.
+    #[cfg(test)]
     pub fn worktree_exists(&self, slug: &str) -> bool {
         self.worktree_mgr.exists(slug)
     }
