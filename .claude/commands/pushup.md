@@ -67,15 +67,19 @@ EOF
 
 4. **Surface the new PR to a running maestro TUI for auto-review (#545 P1).** After a successful `gh pr create`, write a single-line JSON marker to `~/.maestro/last-pr-created`. A running maestro instance polls this file once per `check_completions` tick; on a fresh write it enqueues `TuiCommand::PrCreated` and triggers `/review`.
 
+The write must be atomic (write to `.tmp`, then `mv`) so the consumer never reads a partially-written line. The maestro reader also refuses to follow a symlink at this path and validates `owner` and `repo` against argv-injection (security review concern #8 on #545).
+
 ```bash
 mkdir -p "$HOME/.maestro"
 ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+marker="$HOME/.maestro/last-pr-created"
 printf '{"pr_number":%d,"owner":"%s","repo":"%s","ts":"%s"}\n' \
   "<pr-number>" "<owner>" "<repo>" "$ts" \
-  > "$HOME/.maestro/last-pr-created"
+  > "${marker}.tmp"
+mv "${marker}.tmp" "$marker"
 ```
 
-The marker is consumed-once: maestro deletes it after dispatching the review. If the marker is malformed, maestro logs a Warn entry and deletes it.
+The marker is consumed-once: maestro deletes it after dispatching the review. If the marker is malformed or fails the owner/repo guard, maestro logs a Warn entry and deletes it.
 
 ### Step 5: Link Issue to PR
 

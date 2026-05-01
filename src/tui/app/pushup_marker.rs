@@ -51,9 +51,27 @@ impl App {
         let Some(path) = self.marker_path() else {
             return;
         };
-        let Ok(meta) = std::fs::metadata(&path) else {
+        // Use symlink_metadata so a symlink at the marker path is detected
+        // BEFORE we read it — read_to_string follows symlinks (security
+        // review concern #8 on #545).
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
             return;
         };
+        if meta.file_type().is_symlink() {
+            self.activity_log.push_simple(
+                "PUSHUP".into(),
+                format!(
+                    "Refusing to read ~/.maestro/last-pr-created: it is a symlink at {:?}",
+                    path
+                ),
+                LogLevel::Warn,
+            );
+            // remove_file does NOT follow symlinks (it unlinks the link
+            // itself), so this is safe — the link target stays intact.
+            let _ = std::fs::remove_file(&path);
+            self.last_pr_marker_mtime = None;
+            return;
+        }
         let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
         if Some(mtime) == self.last_pr_marker_mtime {
             return;
@@ -67,6 +85,19 @@ impl App {
         };
         match serde_json::from_str::<PushupMarker>(&raw) {
             Ok(marker) => {
+                if let Err(e) = validate_marker_owner_repo(&marker) {
+                    self.activity_log.push_simple(
+                        "PUSHUP".into(),
+                        format!(
+                            "Marker owner/repo rejected: {} — deleting (security guard)",
+                            e
+                        ),
+                        LogLevel::Warn,
+                    );
+                    let _ = std::fs::remove_file(&path);
+                    self.last_pr_marker_mtime = None;
+                    return;
+                }
                 self.activity_log.push_simple(
                     "PUSHUP".into(),
                     format!(
@@ -98,4 +129,22 @@ impl App {
             }
         }
     }
+}
+
+/// Defense-in-depth: even though `~/.maestro/` is per-user, a same-user
+/// attacker who plants a marker should not be able to redirect maestro's
+/// auto-review to a `gh pr view --repo "../other-org/repo"` (security
+/// review concern #8 on #545). Reject anything that would not survive
+/// `validate_gh_arg` or fails the `owner/repo` shape.
+fn validate_marker_owner_repo(marker: &PushupMarker) -> anyhow::Result<()> {
+    crate::util::validate_gh_arg(&marker.owner, "marker owner")?;
+    crate::util::validate_gh_arg(&marker.repo, "marker repo")?;
+    if marker.owner.contains('/') || marker.repo.contains('/') {
+        anyhow::bail!(
+            "marker owner/repo must not contain slashes (got owner={:?}, repo={:?})",
+            marker.owner,
+            marker.repo
+        );
+    }
+    Ok(())
 }

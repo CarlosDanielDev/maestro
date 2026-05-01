@@ -488,9 +488,20 @@ impl GhCliClient {
     /// Builder: thread an explicit `owner/repo` through every read-only
     /// and label-edit shellout. PR creation deliberately ignores this —
     /// see `build_create_pr_argv`.
-    pub fn with_repo(mut self, repo: String) -> Self {
+    ///
+    /// Validates the input through `validate_gh_arg` (rejects shell
+    /// metacharacters and `--`-prefixed values) and enforces the
+    /// `owner/repo` shape — every other validated `gh` argument in this
+    /// file goes through the same gate (security review concern #7 on
+    /// #545).
+    pub fn with_repo(mut self, repo: String) -> Result<Self> {
+        validate_gh_arg(&repo, "repo")?;
+        let parts: Vec<&str> = repo.split('/').collect();
+        if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
+            anyhow::bail!("repo must be in 'owner/repo' format (got {:?})", repo);
+        }
         self.repo = Some(repo);
-        self
+        Ok(self)
     }
 
     fn repo_arg(&self) -> Option<&str> {
@@ -803,6 +814,10 @@ impl GitHubClient for GhCliClient {
         event: crate::provider::github::types::PrReviewEvent,
         body: &str,
     ) -> Result<()> {
+        // Parity with create_pr / create_issue / create_milestone — every
+        // user-facing body that ships to GitHub is bounded at the same cap
+        // (security review concern #6 on #545).
+        validate_body(body, "PR review body")?;
         let argv = gh_argv::build_submit_pr_review_argv(pr_number, event, body);
         self.run_gh(&argv_refs(&argv)).await?;
         Ok(())
@@ -2103,5 +2118,37 @@ mod tests {
             mock.patch_milestone_calls(),
             vec![(1u64, "first".to_string()), (2u64, "second".to_string()),]
         );
+    }
+
+    // ── #545 security review concern #7 ──────────────────────────────────
+
+    #[test]
+    fn with_repo_accepts_owner_slash_repo() {
+        let c = GhCliClient::new().with_repo("CarlosDanielDev/maestro".into());
+        assert!(c.is_ok());
+    }
+
+    #[test]
+    fn with_repo_rejects_dash_prefixed_value() {
+        let c = GhCliClient::new().with_repo("--evil-flag=value".into());
+        assert!(c.is_err(), "must reject argv-injection-shaped repo");
+    }
+
+    #[test]
+    fn with_repo_rejects_missing_slash() {
+        let c = GhCliClient::new().with_repo("not-owner-repo-shape".into());
+        assert!(c.is_err());
+    }
+
+    #[test]
+    fn with_repo_rejects_empty_owner() {
+        let c = GhCliClient::new().with_repo("/repo".into());
+        assert!(c.is_err());
+    }
+
+    #[test]
+    fn with_repo_rejects_empty_repo() {
+        let c = GhCliClient::new().with_repo("owner/".into());
+        assert!(c.is_err());
     }
 }

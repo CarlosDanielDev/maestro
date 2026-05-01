@@ -329,7 +329,14 @@ impl From<PendingPrRaw> for PendingPr {
     fn from(raw: PendingPrRaw) -> Self {
         let mut last_errors = raw.last_errors;
         if last_errors.is_empty() && !raw.last_error.is_empty() {
-            last_errors.push_back(raw.last_error);
+            // Migrated values bypass the runtime
+            // `record_error_for_correlation` path that normally redacts
+            // gh tokens before they hit `last_errors`. Re-apply the
+            // same redaction here so a token persisted in a pre-#545
+            // state file does NOT survive the upgrade unredacted
+            // (security review concern #5 on #545).
+            let redacted = crate::provider::github::client::redact_secrets(&raw.last_error);
+            last_errors.push_back(redacted);
         }
         Self {
             issue_number: raw.issue_number,
@@ -469,6 +476,37 @@ mod tests {
         let p: PendingPr = serde_json::from_str(legacy_json).unwrap();
         assert!(p.last_errors.is_empty());
         assert_eq!(p.manual_retry_count, 0);
+    }
+
+    #[test]
+    fn pending_pr_legacy_last_error_redacts_secrets_on_migration() {
+        // A pre-#545 maestro that hit a `gh` error containing a token
+        // would persist the unredacted value in last_error. Migrating
+        // it into last_errors must run the value through the same
+        // redact_secrets pipeline the runtime uses; otherwise the
+        // upgrade leaks credentials into the activity log + new state
+        // file. (security review concern #5 on #545)
+        let legacy_json = r#"{
+            "issue_number": 7,
+            "issue_numbers": [],
+            "branch": "maestro/issue-7",
+            "base_branch": "main",
+            "files_touched": [],
+            "cost_usd": 0.0,
+            "attempt": 0,
+            "max_attempts": 3,
+            "last_error": "gh api error: Authorization: Bearer ghp_FAKETOKEN1234567890ABCDEFGHIJ leaked here",
+            "last_attempt_at": "2026-01-01T00:00:00Z",
+            "next_retry_at": null,
+            "status": "retry_scheduled"
+        }"#;
+        let p: PendingPr = serde_json::from_str(legacy_json).unwrap();
+        let migrated = p.last_errors.back().expect("migrated value present");
+        assert!(
+            !migrated.contains("ghp_FAKETOKEN1234567890ABCDEFGHIJ"),
+            "raw token must be redacted on migration, got: {}",
+            migrated,
+        );
     }
 
     #[test]

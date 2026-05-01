@@ -162,11 +162,9 @@ fi
 # without re-exporting (each Bash call is a fresh shell). Overwritten on next
 # run. Path resolved by sentinel-path.sh into $XDG_RUNTIME_DIR or
 # $HOME/.cache/maestro to avoid the /tmp symlink-attack vector on multi-user
-# Linux (#545 P3). The legacy /tmp/maestro-current-gate-dir is also written
-# for back-compat with consumers (e.g. /implement Step 2) that have not yet
-# learned to walk the new resolution chain.
+# Linux (#545 P3 + security review concern #2 on #545: dropping the legacy
+# /tmp write — every consumer in this branch walks the resolution chain).
 # shellcheck disable=SC1091
 source "$(dirname "$0")/sentinel-path.sh"
 echo -n "$GATE_LOG_DIR" > "$SENTINEL_PATH"
-echo -n "$GATE_LOG_DIR" > /tmp/maestro-current-gate-dir
 echo "sentinel: $SENTINEL_PATH"

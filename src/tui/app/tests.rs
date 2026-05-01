@@ -2047,6 +2047,65 @@ mod pending_prs_persistence {
         );
     }
 
+    #[tokio::test]
+    async fn poll_pr_marker_refuses_symlink() {
+        // Security review concern #8 on #545: a same-user attacker could
+        // plant a symlink at ~/.maestro/last-pr-created. The reader must
+        // detect it (via symlink_metadata) and unlink the symlink without
+        // following it. The link target stays untouched.
+        let home = tempfile::tempdir().unwrap();
+        let marker_dir = home.path().join(".maestro");
+        std::fs::create_dir_all(&marker_dir).unwrap();
+        let target = home.path().join("decoy.txt");
+        std::fs::write(&target, "decoy contents").unwrap();
+        let marker = marker_dir.join("last-pr-created");
+        std::os::unix::fs::symlink(&target, &marker).unwrap();
+
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        app.poll_last_pr_created_marker().await;
+
+        assert!(!marker.exists(), "symlink at marker path must be unlinked");
+        assert!(target.exists(), "symlink target must NOT be deleted");
+        let warn = app
+            .activity_log
+            .entries()
+            .iter()
+            .any(|e| matches!(e.level, LogLevel::Warn) && e.message.contains("symlink"));
+        assert!(
+            warn,
+            "symlink must produce a Warn entry mentioning 'symlink'"
+        );
+        let queued = app
+            .pending_commands
+            .iter()
+            .any(|c| matches!(c, TuiCommand::PrCreated { .. }));
+        assert!(!queued, "symlink must NOT enqueue a PrCreated command");
+    }
+
+    #[tokio::test]
+    async fn poll_pr_marker_rejects_owner_with_path_traversal() {
+        // Security review concern #8: marker owner/repo from JSON must
+        // not be a vehicle for argv injection or path traversal.
+        let home = tempfile::tempdir().unwrap();
+        let marker = marker_path(home.path());
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(
+            &marker,
+            r#"{"pr_number":42,"owner":"../evil","repo":"r","ts":"2026-04-30T00:00:00Z"}"#,
+        )
+        .unwrap();
+
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        app.poll_last_pr_created_marker().await;
+
+        assert!(!marker.exists(), "rejected marker must be deleted");
+        let queued = app
+            .pending_commands
+            .iter()
+            .any(|c| matches!(c, TuiCommand::PrCreated { .. }));
+        assert!(!queued, "owner with traversal must NOT enqueue PrCreated");
+    }
+
     #[test]
     fn app_new_emits_no_warn_when_state_has_no_pending_prs() {
         let app = build_app_with_seeded_state(MaestroState::default());
