@@ -7,6 +7,37 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(session): post-completion gate failure no longer destroys uncommitted model edits (#558)
+  - Root cause: on any gate failure (clippy, tests, etc.) the completion dispatcher called
+    `git worktree remove --force`, silently deleting all uncommitted work the model had
+    written to the worktree between the session ending and the gates running.
+  - New terminal `SessionStatus::FailedGates` is set on the session instead of tearing
+    down. The dispatcher in `App::check_completions` routes `FailedGates` to
+    `SessionPool::finalize_retain_worktree` (new), which moves the session to the
+    finished bucket and releases file claims but does NOT remove the worktree at
+    `.maestro/worktrees/issue-NNN/`.
+  - An activity-log entry `Worktree retained at <path> for recovery` at `LogLevel::Warn`
+    is emitted so the path is visible in the TUI. Recovery affordance (TUI action to
+    resume from the retained tree) is tracked in sister issue #560.
+
+  **State-file format bump (v0.17.0):** `SessionStatus` gains the `"failed_gates"` serde
+  variant. A v0.16 binary deserializing a v0.17 `maestro-state.json` will fail to parse
+  the file. Delete `maestro-state.json` before downgrading.
+
+  **API changes (in-tree only):**
+  - New: `SessionStatus::FailedGates` — terminal variant; `is_terminal()` returns `true`
+  - New: `SessionPool::finalize_retain_worktree(id)` — moves session to finished without
+    removing the worktree
+  - New: `SessionPool::worktree_exists(slug)` — delegates to the underlying
+    `WorktreeManager`; used in tests to assert retain vs. teardown behaviour
+  - Renamed: `SessionPool::on_session_completed` → `SessionPool::finalize_and_teardown`
+    (all in-tree callers updated; public only to integration-test crate)
+
+  **Sister issues:** #559 (label-update logs error on gate failure), #560 (TUI recovery
+  affordance — depends on #558), #562 (auto-commit before gates run).
+
 ### Added
 
 - feat(session): classify subagent dispatches and surface their Role (#542)

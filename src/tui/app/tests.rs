@@ -973,7 +973,7 @@ fn dismissed_flag_prevents_summary_retrigger_scenario() {
     app.pool.enqueue(session);
     let promoted = app.pool.try_promote();
     for id in promoted {
-        app.pool.on_session_completed(id);
+        app.pool.finalize_and_teardown(id);
     }
     assert!(app.pool.all_done(), "pool must be all_done");
 

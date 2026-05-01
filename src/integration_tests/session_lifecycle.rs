@@ -85,7 +85,7 @@ fn on_completed_moves_from_active_to_finished() {
     pool.try_promote();
     assert_eq!(pool.active_count(), 1);
 
-    pool.on_session_completed(id);
+    pool.finalize_and_teardown(id);
 
     assert_eq!(pool.active_count(), 0);
     assert_eq!(pool.total_count(), 1); // 1 in finished
@@ -101,7 +101,7 @@ fn completed_session_cleans_up_worktree() {
     pool.enqueue(s);
     pool.try_promote();
 
-    pool.on_session_completed(id);
+    pool.finalize_and_teardown(id);
 
     // Re-enqueueing same issue slug succeeds (proves worktree was cleaned up)
     let s2 = make_session_with_issue(10);
@@ -123,10 +123,10 @@ fn all_done_only_true_after_every_session_finishes() {
 
     assert!(!pool.all_done());
 
-    pool.on_session_completed(id1);
+    pool.finalize_and_teardown(id1);
     assert!(!pool.all_done());
 
-    pool.on_session_completed(id2);
+    pool.finalize_and_teardown(id2);
     assert!(pool.all_done());
 }
 

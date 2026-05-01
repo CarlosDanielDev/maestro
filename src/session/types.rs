@@ -12,6 +12,10 @@ pub enum SessionStatus {
     Completed,
     GatesRunning,
     NeedsReview,
+    /// Terminal status used when post-completion gates fail. Distinct from
+    /// `Errored` so the dispatcher knows to retain the worktree for recovery
+    /// rather than tear it down with the rest of the session state.
+    FailedGates,
     Errored,
     Paused,
     Killed,
@@ -37,6 +41,7 @@ impl SessionStatus {
             Self::Completed => IconId::CheckCircle,
             Self::GatesRunning => IconId::Search,
             Self::NeedsReview => IconId::NeedsReview,
+            Self::FailedGates => IconId::XCircle,
             Self::Errored => IconId::XCircle,
             Self::Paused => IconId::Pause,
             Self::Killed => IconId::Skull,
@@ -56,6 +61,7 @@ impl SessionStatus {
             Self::Completed => "[+]",
             Self::GatesRunning => "[?]",
             Self::NeedsReview => "[!]",
+            Self::FailedGates => "[!G]",
             Self::Errored => "[X]",
             Self::Paused => "[-]",
             Self::Killed => "[x]",
@@ -83,6 +89,7 @@ impl SessionStatus {
             Self::Completed => "COMPLETED",
             Self::GatesRunning => "GATES_RUNNING",
             Self::NeedsReview => "NEEDS_REVIEW",
+            Self::FailedGates => "FAILED_GATES",
             Self::Errored => "ERRORED",
             Self::Paused => "PAUSED",
             Self::Killed => "KILLED",
@@ -114,8 +121,9 @@ impl SessionStatus {
             Paused => &[Running, Killed],
             Stalled => &[Retrying, Killed, Errored],
             Completed => &[],
-            GatesRunning => &[NeedsReview, Completed, Errored],
+            GatesRunning => &[NeedsReview, FailedGates, Completed, Errored],
             NeedsReview => &[],
+            FailedGates => &[],
             Errored => &[Retrying],
             Retrying => &[Spawning, Errored, Killed],
             CiFix => &[Spawning, Errored, Killed],
@@ -962,6 +970,50 @@ mod tests {
         let stripped = json.replace(r#","conflict_fix_context":null"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
         assert!(rt.conflict_fix_context.is_none());
+    }
+
+    // --- Issue #558: SessionStatus::FailedGates ---
+
+    #[test]
+    fn failed_gates_status_is_terminal() {
+        assert!(SessionStatus::FailedGates.is_terminal());
+    }
+
+    #[test]
+    fn failed_gates_status_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionStatus::FailedGates).unwrap();
+        assert_eq!(json, r#""failed_gates""#);
+    }
+
+    #[test]
+    fn failed_gates_status_deserializes_from_snake_case() {
+        let status: SessionStatus = serde_json::from_str(r#""failed_gates""#).unwrap();
+        assert_eq!(status, SessionStatus::FailedGates);
+    }
+
+    #[test]
+    fn valid_transitions_gates_running_includes_failed_gates() {
+        let transitions = SessionStatus::GatesRunning.valid_transitions();
+        assert!(
+            transitions.contains(&SessionStatus::FailedGates),
+            "GatesRunning must allow transition to FailedGates"
+        );
+    }
+
+    #[test]
+    fn failed_gates_has_label_and_symbol() {
+        let status = SessionStatus::FailedGates;
+        assert!(!status.symbol().is_empty());
+        assert_eq!(status.label(), "FAILED_GATES");
+    }
+
+    #[test]
+    fn session_with_failed_gates_round_trips_via_serde() {
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        s.status = SessionStatus::FailedGates;
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.status, SessionStatus::FailedGates);
     }
 
     // --- Issue #169: Hollow completion detection ---

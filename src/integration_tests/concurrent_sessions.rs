@@ -41,7 +41,7 @@ fn completing_one_session_frees_slot_for_next() {
     assert_eq!(pool.active_count(), 1);
     assert_eq!(pool.queued_count(), 1);
 
-    pool.on_session_completed(id1);
+    pool.finalize_and_teardown(id1);
     let promoted = pool.try_promote();
 
     assert_eq!(
@@ -131,22 +131,22 @@ fn multiple_promotions_saturate_and_drain() {
     let p1 = pool.try_promote();
     assert_eq!(p1.len(), 2);
 
-    pool.on_session_completed(ids[0]);
-    pool.on_session_completed(ids[1]);
+    pool.finalize_and_teardown(ids[0]);
+    pool.finalize_and_teardown(ids[1]);
 
     // Round 2
     let p2 = pool.try_promote();
     assert_eq!(p2.len(), 2);
 
-    pool.on_session_completed(ids[2]);
-    pool.on_session_completed(ids[3]);
+    pool.finalize_and_teardown(ids[2]);
+    pool.finalize_and_teardown(ids[3]);
 
     // Round 3
     let p3 = pool.try_promote();
     assert_eq!(p3.len(), 2);
 
-    pool.on_session_completed(ids[4]);
-    pool.on_session_completed(ids[5]);
+    pool.finalize_and_teardown(ids[4]);
+    pool.finalize_and_teardown(ids[5]);
 
     assert!(pool.all_done());
     assert_eq!(pool.total_count(), 6);

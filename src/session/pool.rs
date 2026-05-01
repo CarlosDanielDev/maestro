@@ -174,20 +174,55 @@ impl SessionPool {
         promoted
     }
 
-    /// Handle a session reaching terminal state: move to finished, cleanup worktree.
-    pub fn on_session_completed(&mut self, session_id: Uuid) {
+    /// Move a terminal session from `active` to `finished`, deciding whether
+    /// to tear down the worktree based on status: `FailedGates` retains the
+    /// worktree (uncommitted model edits live there); every other terminal
+    /// status tears it down. Returns `true` when a session was finalized.
+    pub fn finalize(&mut self, session_id: Uuid) -> bool {
+        let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) else {
+            return false;
+        };
+        let retain = self.active[idx].session.status == SessionStatus::FailedGates;
+        self.finalize_at(idx, retain);
+        true
+    }
+
+    /// Move a terminal session to `finished` and tear down its worktree.
+    /// Use only when the work is committed/merged or the user explicitly
+    /// authorized cleanup. The recovery-on-gate-failure path retains the
+    /// worktree — see [`Self::finalize_retain_worktree`].
+    pub fn finalize_and_teardown(&mut self, session_id: Uuid) {
         if let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) {
-            let managed = self.active.remove(idx);
-            let slug = session_slug(&managed.session);
-
-            // Release all file claims for this session
-            self.file_claims.release_all(session_id);
-
-            // Cleanup worktree
-            let _ = self.worktree_mgr.remove(&slug);
-
-            self.finished.push(managed);
+            self.finalize_at(idx, false);
         }
+    }
+
+    /// Move a terminal session to `finished` without removing its worktree,
+    /// so uncommitted model edits in `.maestro/worktrees/issue-NNN/` survive
+    /// for recovery. File claims are still released so future sessions see
+    /// the freed slot.
+    pub fn finalize_retain_worktree(&mut self, session_id: Uuid) {
+        if let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) {
+            self.finalize_at(idx, true);
+        }
+    }
+
+    fn finalize_at(&mut self, idx: usize, retain_worktree: bool) {
+        let managed = self.active.remove(idx);
+        let session_id = managed.session.id;
+        self.file_claims.release_all(session_id);
+        if !retain_worktree {
+            let slug = session_slug(&managed.session);
+            let _ = self.worktree_mgr.remove(&slug);
+        }
+        self.finished.push(managed);
+    }
+
+    /// Whether a worktree exists for the given slug. Delegates to the
+    /// underlying `WorktreeManager` so callers can assert teardown vs. retain
+    /// without exposing the manager itself.
+    pub fn worktree_exists(&self, slug: &str) -> bool {
+        self.worktree_mgr.exists(slug)
     }
 
     /// Get all sessions for display: active first, then finished, then queued.
@@ -482,29 +517,29 @@ mod tests {
     }
 
     #[test]
-    fn on_session_completed_moves_to_finished() {
+    fn finalize_and_teardown_moves_to_finished() {
         let mut pool = make_pool(2);
         let session = make_session("done");
         let id = session.id;
         pool.enqueue(session);
         pool.try_promote();
 
-        pool.on_session_completed(id);
+        pool.finalize_and_teardown(id);
         assert_eq!(pool.active_count(), 0);
         assert_eq!(pool.total_count(), 1); // in finished
     }
 
     #[test]
-    fn on_session_completed_unknown_id_is_noop() {
+    fn finalize_and_teardown_unknown_id_is_noop() {
         let mut pool = make_pool(2);
         pool.enqueue(make_session("running"));
         pool.try_promote();
-        pool.on_session_completed(Uuid::new_v4());
+        pool.finalize_and_teardown(Uuid::new_v4());
         assert_eq!(pool.active_count(), 1);
     }
 
     #[test]
-    fn on_session_completed_frees_slot_for_promotion() {
+    fn finalize_and_teardown_frees_slot_for_promotion() {
         let mut pool = make_pool(1);
         let s1 = make_session("first");
         let id1 = s1.id;
@@ -512,7 +547,7 @@ mod tests {
         pool.enqueue(make_session("second"));
         pool.try_promote(); // promotes first, second stays queued
 
-        pool.on_session_completed(id1);
+        pool.finalize_and_teardown(id1);
         let promoted = pool.try_promote();
         assert_eq!(promoted.len(), 1);
         assert_eq!(pool.active_count(), 1);
@@ -545,7 +580,7 @@ mod tests {
         let id = session.id;
         pool.enqueue(session);
         pool.try_promote();
-        pool.on_session_completed(id);
+        pool.finalize_and_teardown(id);
         assert!(pool.get_session_mut(id).is_some());
     }
 
@@ -586,8 +621,8 @@ mod tests {
         pool.enqueue(s1);
         pool.enqueue(s2);
         pool.try_promote();
-        pool.on_session_completed(id1);
-        pool.on_session_completed(id2);
+        pool.finalize_and_teardown(id1);
+        pool.finalize_and_teardown(id2);
         assert!(pool.all_done());
     }
 
@@ -618,7 +653,7 @@ mod tests {
     }
 
     #[test]
-    fn on_session_completed_releases_claims() {
+    fn finalize_and_teardown_releases_claims() {
         let mut pool = make_pool(2);
         let session = make_session("claimer");
         let id = session.id;
@@ -627,7 +662,7 @@ mod tests {
         pool.file_claims.claim("src/a.rs", id);
         pool.file_claims.claim("src/b.rs", id);
 
-        pool.on_session_completed(id);
+        pool.finalize_and_teardown(id);
         assert_eq!(pool.file_claims.total_claims(), 0);
     }
 
@@ -667,7 +702,7 @@ mod tests {
         assert_eq!(pool.all_sessions().len(), 2);
 
         // Complete s1 to move it to finished
-        pool.on_session_completed(id1);
+        pool.finalize_and_teardown(id1);
         pool.try_promote(); // promotes s2
 
         assert_eq!(pool.all_sessions().len(), 2);
@@ -684,7 +719,7 @@ mod tests {
         let id = s.id;
         pool.enqueue(s);
         pool.try_promote();
-        pool.on_session_completed(id);
+        pool.finalize_and_teardown(id);
         assert_eq!(pool.total_count(), 1); // 1 finished
 
         assert!(pool.dismiss_session(id));
@@ -723,7 +758,7 @@ mod tests {
                     .session
                     .transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted);
             }
-            pool.on_session_completed(id);
+            pool.finalize_and_teardown(id);
         }
         assert_eq!(pool.total_count(), 2);
 
@@ -844,8 +879,100 @@ mod tests {
             .unwrap()
             .session
             .transition_flash_remaining = 3;
-        pool.on_session_completed(id);
+        pool.finalize_and_teardown(id);
         pool.tick_flash_counters();
         assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 2);
+    }
+
+    // --- Issue #558: finalize_retain_worktree (gate-failure recovery path) ---
+
+    #[test]
+    fn finalize_retain_worktree_moves_session_to_finished() {
+        let mut pool = make_pool(2);
+        let session = make_session_with_issue("retain", 558);
+        let id = session.id;
+        pool.enqueue(session);
+        pool.try_promote();
+        assert_eq!(pool.active_count(), 1);
+
+        pool.finalize_retain_worktree(id);
+        assert_eq!(pool.active_count(), 0);
+        assert_eq!(pool.total_count(), 1);
+    }
+
+    #[test]
+    fn finalize_retain_worktree_does_not_call_remove() {
+        let mut pool = make_pool(2);
+        let session = make_session_with_issue("keep-worktree", 558);
+        let id = session.id;
+        pool.enqueue(session);
+        pool.try_promote();
+        assert!(
+            pool.worktree_exists("issue-558"),
+            "worktree must exist after promotion"
+        );
+
+        pool.finalize_retain_worktree(id);
+
+        assert!(
+            pool.worktree_exists("issue-558"),
+            "worktree must NOT have been removed after finalize_retain_worktree"
+        );
+    }
+
+    #[test]
+    fn finalize_retain_worktree_releases_file_claims() {
+        let mut pool = make_pool(2);
+        let session = make_session_with_issue("claimer", 558);
+        let id = session.id;
+        pool.enqueue(session);
+        pool.try_promote();
+        pool.file_claims.claim("src/a.rs", id);
+        pool.file_claims.claim("src/b.rs", id);
+        assert_eq!(pool.file_claims.total_claims(), 2);
+
+        pool.finalize_retain_worktree(id);
+        assert_eq!(pool.file_claims.total_claims(), 0);
+    }
+
+    #[test]
+    fn finalize_and_teardown_calls_remove() {
+        let mut pool = make_pool(2);
+        let session = make_session_with_issue("teardown", 558);
+        let id = session.id;
+        pool.enqueue(session);
+        pool.try_promote();
+        assert!(pool.worktree_exists("issue-558"));
+
+        pool.finalize_and_teardown(id);
+
+        assert!(
+            !pool.worktree_exists("issue-558"),
+            "worktree MUST be removed after finalize_and_teardown"
+        );
+    }
+
+    #[test]
+    fn finalize_retain_worktree_idempotent_when_called_twice() {
+        let mut pool = make_pool(2);
+        let session = make_session_with_issue("idempotent", 558);
+        let id = session.id;
+        pool.enqueue(session);
+        pool.try_promote();
+
+        pool.finalize_retain_worktree(id);
+        pool.finalize_retain_worktree(id);
+
+        assert_eq!(
+            pool.total_count(),
+            1,
+            "second call must not duplicate or panic"
+        );
+    }
+
+    #[test]
+    fn worktree_exists_returns_false_for_unknown_slug() {
+        let pool = make_pool(2);
+        assert!(!pool.worktree_exists("issue-99999"));
     }
 }

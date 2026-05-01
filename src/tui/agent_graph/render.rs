@@ -231,7 +231,7 @@ pub(super) fn status_modifier(status: SessionStatus) -> Modifier {
     use SessionStatus::*;
     match status {
         Running | GatesRunning | NeedsReview | NeedsPr | CiFix | ConflictFix => Modifier::BOLD,
-        Errored => Modifier::DIM | Modifier::BOLD,
+        Errored | FailedGates => Modifier::DIM | Modifier::BOLD,
         Completed | Killed | Paused => Modifier::DIM,
         Stalled => Modifier::DIM | Modifier::REVERSED,
         Spawning | Queued | Retrying => Modifier::empty(),

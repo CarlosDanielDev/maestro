@@ -215,6 +215,7 @@ mod tests {
             SessionStatus::GatesRunning,
             &[
                 SessionStatus::NeedsReview,
+                SessionStatus::FailedGates,
                 SessionStatus::Completed,
                 SessionStatus::Errored,
             ],
@@ -224,6 +225,11 @@ mod tests {
     #[test]
     fn valid_transitions_needs_review_is_empty() {
         assert!(SessionStatus::NeedsReview.valid_transitions().is_empty());
+    }
+
+    #[test]
+    fn valid_transitions_failed_gates_is_empty() {
+        assert!(SessionStatus::FailedGates.valid_transitions().is_empty());
     }
 
     #[test]
