@@ -364,6 +364,16 @@ pub fn is_auth_error(stderr: &str) -> bool {
 /// Sentinel prefix used to tag gh auth errors in anyhow messages.
 const GH_AUTH_ERROR_SENTINEL: &str = "[gh-auth-error]";
 
+/// True when stderr matches `gh issue edit --remove-label`'s
+/// "label missing" shape, keyed on the label literal so unrelated
+/// `not found` errors (issue/repo/branch) don't trigger. Both
+/// "not on repo" and "not on issue" share this stderr (gh v2.x);
+/// both are no-ops for remove.
+fn is_label_not_found_error(stderr: &str, label: &str) -> bool {
+    let needle = format!("'{}' not found", label);
+    stderr.contains(&needle)
+}
+
 /// Extract the PR number from `gh pr create` stdout.
 ///
 /// `gh pr create` does not accept `--json`; it prints the new PR's URL
@@ -613,8 +623,18 @@ impl GitHubClient for GhCliClient {
     async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()> {
         validate_gh_arg(label, "label")?;
         let argv = gh_argv::build_remove_label_argv(issue_number, label, self.repo_arg());
-        self.run_gh(&argv_refs(&argv)).await?;
-        Ok(())
+        match self.run_gh(&argv_refs(&argv)).await {
+            Ok(_) => Ok(()),
+            Err(e) if is_label_not_found_error(&e.to_string(), label) => {
+                tracing::debug!(
+                    issue = issue_number,
+                    label = label,
+                    "remove_label: label not found on repo or issue — treating as no-op"
+                );
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     async fn create_pr(
@@ -1672,6 +1692,50 @@ mod tests {
     fn is_gh_auth_error_returns_false_for_regular_error() {
         let err = anyhow::anyhow!("gh command failed: branch not found");
         assert!(!is_gh_auth_error(&err));
+    }
+
+    // -- is_label_not_found_error (#559) --
+
+    #[test]
+    fn is_label_not_found_error_matches_quoted_label() {
+        let stderr = "failed to update https://github.com/foo/bar: 'maestro:in-progress' not found";
+        assert!(is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_issue_not_found() {
+        let stderr = "GraphQL: Could not resolve to an Issue";
+        assert!(!is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_label_mismatch() {
+        let stderr = "'maestro:done' not found";
+        assert!(!is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_auth_shape() {
+        let stderr = "[gh-auth-error] gh auth status failed";
+        assert!(!is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_matches_issue_url_form() {
+        let stderr = "failed to update https://github.com/CarlosDanielDev/maestro/issues/542: \
+                      'maestro:in-progress' not found";
+        assert!(is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_case_mismatch() {
+        let stderr = "'maestro:in-progress' not found";
+        assert!(!is_label_not_found_error(stderr, "Maestro:In-Progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_empty_stderr() {
+        assert!(!is_label_not_found_error("", "maestro:in-progress"));
     }
 
     // -- create_milestone / create_issue mock tests --
