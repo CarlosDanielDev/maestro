@@ -15,12 +15,25 @@
 
 use crate::provider::github::types::PrReviewEvent;
 
+/// Append `--repo {owner}/{repo}` to `argv` when `repo` is set. No-op
+/// otherwise. Centralizes the rollout so individual builders stay tidy.
+fn append_repo(argv: &mut Vec<String>, repo: Option<&str>) {
+    if let Some(r) = repo {
+        argv.push("--repo".into());
+        argv.push(r.into());
+    }
+}
+
 pub(crate) fn build_create_pr_argv(
     head_branch: &str,
     base_branch: &str,
     title: &str,
     body: &str,
 ) -> Vec<String> {
+    // Intentionally NOT taking `repo`: `gh pr create` infers the target
+    // repo from the just-pushed branch's tracking remote. Passing
+    // --repo here suppresses that and breaks worktree semantics where
+    // the worktree's remote is the source of truth (#545 P2 review).
     vec![
         "pr".into(),
         "create".into(),
@@ -35,8 +48,8 @@ pub(crate) fn build_create_pr_argv(
     ]
 }
 
-pub(crate) fn build_list_prs_for_branch_argv(head_branch: &str) -> Vec<String> {
-    vec![
+pub(crate) fn build_list_prs_for_branch_argv(head_branch: &str, repo: Option<&str>) -> Vec<String> {
+    let mut argv = vec![
         "pr".into(),
         "list".into(),
         "--head".into(),
@@ -45,37 +58,53 @@ pub(crate) fn build_list_prs_for_branch_argv(head_branch: &str) -> Vec<String> {
         "open".into(),
         "--json".into(),
         "number".into(),
-    ]
+    ];
+    append_repo(&mut argv, repo);
+    argv
 }
 
-pub(crate) fn build_get_issue_argv(issue_number: u64) -> Vec<String> {
-    vec![
+pub(crate) fn build_get_issue_argv(issue_number: u64, repo: Option<&str>) -> Vec<String> {
+    let mut argv = vec![
         "issue".into(),
         "view".into(),
         issue_number.to_string(),
         "--json".into(),
         "number,title,body,labels,state,url".into(),
-    ]
+    ];
+    append_repo(&mut argv, repo);
+    argv
 }
 
-pub(crate) fn build_add_label_argv(issue_number: u64, label: &str) -> Vec<String> {
-    vec![
+pub(crate) fn build_add_label_argv(
+    issue_number: u64,
+    label: &str,
+    repo: Option<&str>,
+) -> Vec<String> {
+    let mut argv = vec![
         "issue".into(),
         "edit".into(),
         issue_number.to_string(),
         "--add-label".into(),
         label.into(),
-    ]
+    ];
+    append_repo(&mut argv, repo);
+    argv
 }
 
-pub(crate) fn build_remove_label_argv(issue_number: u64, label: &str) -> Vec<String> {
-    vec![
+pub(crate) fn build_remove_label_argv(
+    issue_number: u64,
+    label: &str,
+    repo: Option<&str>,
+) -> Vec<String> {
+    let mut argv = vec![
         "issue".into(),
         "edit".into(),
         issue_number.to_string(),
         "--remove-label".into(),
         label.into(),
-    ]
+    ];
+    append_repo(&mut argv, repo);
+    argv
 }
 
 pub(crate) fn build_submit_pr_review_argv(
@@ -157,7 +186,7 @@ pub(crate) fn build_patch_milestone_description_argv(milestone_number: u64) -> V
     ]
 }
 
-pub(crate) fn build_list_issues_argv(labels_csv: Option<&str>) -> Vec<String> {
+pub(crate) fn build_list_issues_argv(labels_csv: Option<&str>, repo: Option<&str>) -> Vec<String> {
     let mut argv = vec![
         "issue".into(),
         "list".into(),
@@ -174,11 +203,15 @@ pub(crate) fn build_list_issues_argv(labels_csv: Option<&str>) -> Vec<String> {
         argv.push("--label".into());
         argv.push(csv.into());
     }
+    append_repo(&mut argv, repo);
     argv
 }
 
-pub(crate) fn build_list_issues_by_milestone_argv(milestone: &str) -> Vec<String> {
-    vec![
+pub(crate) fn build_list_issues_by_milestone_argv(
+    milestone: &str,
+    repo: Option<&str>,
+) -> Vec<String> {
+    let mut argv = vec![
         "issue".into(),
         "list".into(),
         "--milestone".into(),
@@ -189,7 +222,9 @@ pub(crate) fn build_list_issues_by_milestone_argv(milestone: &str) -> Vec<String
         "100".into(),
         "--json".into(),
         "number,title,body,labels,state,url,milestone".into(),
-    ]
+    ];
+    append_repo(&mut argv, repo);
+    argv
 }
 
 pub(crate) fn build_list_milestones_argv(state: &str) -> Vec<String> {
@@ -200,8 +235,8 @@ pub(crate) fn build_list_milestones_argv(state: &str) -> Vec<String> {
     ]
 }
 
-pub(crate) fn build_list_open_prs_argv(json_fields: &str) -> Vec<String> {
-    vec![
+pub(crate) fn build_list_open_prs_argv(json_fields: &str, repo: Option<&str>) -> Vec<String> {
+    let mut argv = vec![
         "pr".into(),
         "list".into(),
         "--state".into(),
@@ -210,21 +245,29 @@ pub(crate) fn build_list_open_prs_argv(json_fields: &str) -> Vec<String> {
         "100".into(),
         "--json".into(),
         json_fields.into(),
-    ]
+    ];
+    append_repo(&mut argv, repo);
+    argv
 }
 
-pub(crate) fn build_get_pr_argv(pr_number: u64, json_fields: &str) -> Vec<String> {
-    vec![
+pub(crate) fn build_get_pr_argv(
+    pr_number: u64,
+    json_fields: &str,
+    repo: Option<&str>,
+) -> Vec<String> {
+    let mut argv = vec![
         "pr".into(),
         "view".into(),
         pr_number.to_string(),
         "--json".into(),
         json_fields.into(),
-    ]
+    ];
+    append_repo(&mut argv, repo);
+    argv
 }
 
-pub(crate) fn build_create_issue_dupe_check_argv() -> Vec<String> {
-    vec![
+pub(crate) fn build_create_issue_dupe_check_argv(repo: Option<&str>) -> Vec<String> {
+    let mut argv = vec![
         "issue".into(),
         "list".into(),
         "--state".into(),
@@ -233,7 +276,9 @@ pub(crate) fn build_create_issue_dupe_check_argv() -> Vec<String> {
         "1000".into(),
         "--json".into(),
         "number,title,state".into(),
-    ]
+    ];
+    append_repo(&mut argv, repo);
+    argv
 }
 
 #[cfg(test)]
@@ -264,7 +309,7 @@ mod tests {
     #[test]
     fn list_prs_for_branch_argv() {
         assert_eq!(
-            build_list_prs_for_branch_argv("feat/x"),
+            build_list_prs_for_branch_argv("feat/x", None),
             s(&[
                 "pr", "list", "--head", "feat/x", "--state", "open", "--json", "number",
             ])
@@ -276,7 +321,7 @@ mod tests {
         // Note: gh issue view --json field set must NOT include `milestone` —
         // that field is invalid on `issue view` (only `milestoneTitle` /
         // `milestoneNumber` are valid; we currently omit it entirely).
-        let argv = build_get_issue_argv(42);
+        let argv = build_get_issue_argv(42, None);
         assert_eq!(
             argv,
             s(&[
@@ -299,7 +344,7 @@ mod tests {
     #[test]
     fn add_label_argv() {
         assert_eq!(
-            build_add_label_argv(7, "maestro:done"),
+            build_add_label_argv(7, "maestro:done", None),
             s(&["issue", "edit", "7", "--add-label", "maestro:done",])
         );
     }
@@ -307,7 +352,7 @@ mod tests {
     #[test]
     fn remove_label_argv() {
         assert_eq!(
-            build_remove_label_argv(7, "maestro:in-progress"),
+            build_remove_label_argv(7, "maestro:in-progress", None),
             s(&[
                 "issue",
                 "edit",
@@ -426,7 +471,7 @@ mod tests {
     #[test]
     fn list_issues_argv_with_labels() {
         assert_eq!(
-            build_list_issues_argv(Some("a,b,c")),
+            build_list_issues_argv(Some("a,b,c"), None),
             s(&[
                 "issue",
                 "list",
@@ -444,7 +489,7 @@ mod tests {
 
     #[test]
     fn list_issues_argv_without_labels() {
-        let argv = build_list_issues_argv(None);
+        let argv = build_list_issues_argv(None, None);
         assert!(!argv.contains(&"--label".to_string()));
         assert_eq!(
             argv.last().unwrap(),
@@ -454,14 +499,14 @@ mod tests {
 
     #[test]
     fn list_issues_argv_with_empty_labels_treated_as_none() {
-        let argv = build_list_issues_argv(Some(""));
+        let argv = build_list_issues_argv(Some(""), None);
         assert!(!argv.contains(&"--label".to_string()));
     }
 
     #[test]
     fn list_issues_by_milestone_argv() {
         assert_eq!(
-            build_list_issues_by_milestone_argv("v0.17.0"),
+            build_list_issues_by_milestone_argv("v0.17.0", None),
             s(&[
                 "issue",
                 "list",
@@ -492,7 +537,7 @@ mod tests {
     #[test]
     fn list_open_prs_argv() {
         assert_eq!(
-            build_list_open_prs_argv("number,title,state"),
+            build_list_open_prs_argv("number,title,state", None),
             s(&[
                 "pr",
                 "list",
@@ -509,7 +554,7 @@ mod tests {
     #[test]
     fn get_pr_argv() {
         assert_eq!(
-            build_get_pr_argv(541, "number,title"),
+            build_get_pr_argv(541, "number,title", None),
             s(&["pr", "view", "541", "--json", "number,title"])
         );
     }
@@ -517,7 +562,7 @@ mod tests {
     #[test]
     fn create_issue_dupe_check_argv() {
         assert_eq!(
-            build_create_issue_dupe_check_argv(),
+            build_create_issue_dupe_check_argv(None),
             s(&[
                 "issue",
                 "list",
@@ -528,6 +573,137 @@ mod tests {
                 "--json",
                 "number,title,state",
             ])
+        );
+    }
+
+    // --- #545 P2: --repo flag rollout on read-only/edit shellouts ---
+
+    #[test]
+    fn list_prs_for_branch_argv_with_repo_appends_repo_flag() {
+        let argv = build_list_prs_for_branch_argv("feat/x", Some("owner/repo"));
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "--repo" && w[1] == "owner/repo"),
+            "argv must contain --repo owner/repo, got: {:?}",
+            argv
+        );
+    }
+
+    #[test]
+    fn list_prs_for_branch_argv_without_repo_omits_flag() {
+        let argv = build_list_prs_for_branch_argv("feat/x", None);
+        assert!(
+            !argv.contains(&"--repo".to_string()),
+            "argv must NOT contain --repo when None, got: {:?}",
+            argv
+        );
+    }
+
+    #[test]
+    fn get_issue_argv_with_repo_appends_repo_flag() {
+        let argv = build_get_issue_argv(42, Some("owner/repo"));
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+        );
+    }
+
+    #[test]
+    fn get_issue_argv_without_repo_omits_flag() {
+        let argv = build_get_issue_argv(42, None);
+        assert!(!argv.contains(&"--repo".to_string()));
+    }
+
+    #[test]
+    fn get_pr_argv_with_repo_appends_repo_flag() {
+        let argv = build_get_pr_argv(541, "number,title", Some("owner/repo"));
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+        );
+    }
+
+    #[test]
+    fn get_pr_argv_without_repo_omits_flag() {
+        let argv = build_get_pr_argv(541, "number,title", None);
+        assert!(!argv.contains(&"--repo".to_string()));
+    }
+
+    #[test]
+    fn list_open_prs_argv_with_repo_appends_repo_flag() {
+        let argv = build_list_open_prs_argv("number,title", Some("owner/repo"));
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+        );
+    }
+
+    #[test]
+    fn list_open_prs_argv_without_repo_omits_flag() {
+        let argv = build_list_open_prs_argv("number,title", None);
+        assert!(!argv.contains(&"--repo".to_string()));
+    }
+
+    #[test]
+    fn list_issues_argv_with_repo_appends_repo_flag() {
+        let argv = build_list_issues_argv(None, Some("owner/repo"));
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+        );
+    }
+
+    #[test]
+    fn list_issues_argv_without_repo_omits_flag() {
+        let argv = build_list_issues_argv(None, None);
+        assert!(!argv.contains(&"--repo".to_string()));
+    }
+
+    #[test]
+    fn list_issues_by_milestone_argv_with_repo_appends_repo_flag() {
+        let argv = build_list_issues_by_milestone_argv("v1", Some("owner/repo"));
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+        );
+    }
+
+    #[test]
+    fn list_issues_by_milestone_argv_without_repo_omits_flag() {
+        let argv = build_list_issues_by_milestone_argv("v1", None);
+        assert!(!argv.contains(&"--repo".to_string()));
+    }
+
+    #[test]
+    fn create_issue_dupe_check_argv_with_repo_appends_repo_flag() {
+        let argv = build_create_issue_dupe_check_argv(Some("owner/repo"));
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+        );
+    }
+
+    #[test]
+    fn add_label_argv_with_repo_appends_repo_flag() {
+        let argv = build_add_label_argv(7, "maestro:done", Some("owner/repo"));
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+        );
+    }
+
+    #[test]
+    fn add_label_argv_without_repo_omits_flag() {
+        let argv = build_add_label_argv(7, "maestro:done", None);
+        assert!(!argv.contains(&"--repo".to_string()));
+    }
+
+    #[test]
+    fn remove_label_argv_with_repo_appends_repo_flag() {
+        let argv = build_remove_label_argv(7, "maestro:in-progress", Some("owner/repo"));
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
         );
     }
 }
