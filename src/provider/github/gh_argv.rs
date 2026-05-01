@@ -707,3 +707,147 @@ mod tests {
         );
     }
 }
+
+/// Wire-format integration tests (#545 P1).
+///
+/// `#[ignore]`-tagged: every flag emitted by every `build_*_argv` MUST
+/// appear in the actual `gh <subcmd> --help` output. Without this the
+/// snapshot suite above is a regression guard against US, not against
+/// `gh`. If `gh` deprecates a flag we emit, this catches it on day one.
+///
+/// Run via:
+/// ```sh
+/// RUN_GH_INTEGRATION=1 cargo test --lib gh_argv::wire_tests -- --ignored
+/// ```
+///
+/// **Placement note (deviation from issue text):** the issue body lists
+/// `tests/gh_argv_wire.rs` (separate integration crate). Keeping the
+/// tests inline here avoids re-exporting `gh_argv::*` and the dependent
+/// `provider::github::types` chain through `lib.rs` purely to enable
+/// testing — that would broaden the public surface for no production
+/// benefit. The contract (gated on `RUN_GH_INTEGRATION=1`, runs against
+/// real `gh`) is identical.
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::process::Command;
+
+    fn integration_enabled() -> bool {
+        std::env::var("RUN_GH_INTEGRATION").as_deref() == Ok("1")
+    }
+
+    fn gh_help_flags(subcmd: &[&str]) -> HashSet<String> {
+        let mut args: Vec<&str> = subcmd.to_vec();
+        args.push("--help");
+        let out = Command::new("gh")
+            .args(&args)
+            .output()
+            .expect("gh must be on PATH for wire tests");
+        let text = String::from_utf8_lossy(&out.stdout).to_string()
+            + &String::from_utf8_lossy(&out.stderr);
+        text.split_whitespace()
+            .filter(|tok| tok.starts_with("--") && tok.len() > 2)
+            .map(|tok| {
+                tok.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '-')
+                    .to_string()
+            })
+            .collect()
+    }
+
+    fn used_flags(argv: &[String]) -> Vec<String> {
+        argv.iter()
+            .filter(|s| s.starts_with("--"))
+            .cloned()
+            .collect()
+    }
+
+    fn assert_all_recognized(argv: &[String], help_flags: &HashSet<String>, label: &str) {
+        for flag in used_flags(argv) {
+            assert!(
+                help_flags.contains(&flag),
+                "{}: flag '{}' is NOT in `gh` help — may be deprecated",
+                label,
+                flag
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "needs RUN_GH_INTEGRATION=1 + gh on PATH"]
+    fn wire_create_pr_flags_recognized() {
+        if !integration_enabled() {
+            return;
+        }
+        let argv = build_create_pr_argv("feat/x", "main", "Title", "Body");
+        let flags = gh_help_flags(&["pr", "create"]);
+        assert_all_recognized(&argv, &flags, "build_create_pr_argv");
+    }
+
+    #[test]
+    #[ignore = "needs RUN_GH_INTEGRATION=1 + gh on PATH"]
+    fn wire_list_prs_for_branch_flags_recognized() {
+        if !integration_enabled() {
+            return;
+        }
+        let argv = build_list_prs_for_branch_argv("feat/x", Some("o/r"));
+        let flags = gh_help_flags(&["pr", "list"]);
+        assert_all_recognized(&argv, &flags, "build_list_prs_for_branch_argv");
+    }
+
+    #[test]
+    #[ignore = "needs RUN_GH_INTEGRATION=1 + gh on PATH"]
+    fn wire_get_pr_flags_recognized() {
+        if !integration_enabled() {
+            return;
+        }
+        let argv = build_get_pr_argv(1, "number,title", Some("o/r"));
+        let flags = gh_help_flags(&["pr", "view"]);
+        assert_all_recognized(&argv, &flags, "build_get_pr_argv");
+    }
+
+    #[test]
+    #[ignore = "needs RUN_GH_INTEGRATION=1 + gh on PATH"]
+    fn wire_get_issue_flags_recognized() {
+        if !integration_enabled() {
+            return;
+        }
+        let argv = build_get_issue_argv(1, Some("o/r"));
+        let flags = gh_help_flags(&["issue", "view"]);
+        assert_all_recognized(&argv, &flags, "build_get_issue_argv");
+    }
+
+    #[test]
+    #[ignore = "needs RUN_GH_INTEGRATION=1 + gh on PATH"]
+    fn wire_list_issues_flags_recognized() {
+        if !integration_enabled() {
+            return;
+        }
+        let argv = build_list_issues_argv(Some("foo,bar"), Some("o/r"));
+        let flags = gh_help_flags(&["issue", "list"]);
+        assert_all_recognized(&argv, &flags, "build_list_issues_argv");
+    }
+
+    #[test]
+    #[ignore = "needs RUN_GH_INTEGRATION=1 + gh on PATH"]
+    fn wire_add_label_flags_recognized() {
+        if !integration_enabled() {
+            return;
+        }
+        let argv = build_add_label_argv(1, "maestro:done", Some("o/r"));
+        let flags = gh_help_flags(&["issue", "edit"]);
+        assert_all_recognized(&argv, &flags, "build_add_label_argv");
+    }
+
+    #[test]
+    #[ignore = "needs RUN_GH_INTEGRATION=1 + gh on PATH"]
+    fn wire_submit_pr_review_flags_recognized() {
+        if !integration_enabled() {
+            return;
+        }
+        use crate::provider::github::types::PrReviewEvent;
+        let argv = build_submit_pr_review_argv(1, PrReviewEvent::Approve, "LGTM");
+        let flags = gh_help_flags(&["pr", "review"]);
+        assert_all_recognized(&argv, &flags, "build_submit_pr_review_argv");
+    }
+}
