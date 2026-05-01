@@ -9,6 +9,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- fix(tui): agent-graph file marker rectangle removed; label now anchors at edge endpoint (p.y) eliminating the one-cell vertical gap between edge and label (#569)
+  - Pre-fix a 0.04×0.04 `Rectangle` marker sat at the file node position and the label was
+    printed 0.08 canvas units below — roughly one terminal row — leaving a visible gap between
+    the incoming edge and the label, making the label look orphaned from its edge in both Block
+    and Braille rendering modes.
+  - Fix: the marker rectangle is removed entirely and `ctx.print(lx, p.y, …)` anchors the label
+    exactly at the edge endpoint. The label's leading glyph now serves as the visual node; the
+    edge terminates inside it and the gap is impossible by construction.
+  - The marker carried no semantic information (no status, no animation, no role color), so its
+    removal loses nothing. Agent nodes are unchanged — their sprite/rectangle encodes role and
+    status that a text label alone cannot. If a future feature needs a per-file status icon,
+    the recommended pattern is to prepend a glyph character to the label (e.g. `⚠ main.rs`).
+  - Snapshot baselines refreshed across all `agent_graph_*` tests. New regression snapshot
+    `file_node_marker_and_label_visually_connected` pins the 1-agent+3-files case.
+  - Decision documented in `docs/adr/001-agent-graph-viz.md` § Addendum (#569).
+
 - fix(tui): agent-graph file labels now grow outward from the marker and truncate with an ellipsis when they would overshoot the canvas (#568)
   - Pre-fix `ctx.print(p.x, p.y - 0.08, …)` always anchored the label's leftmost cell at the
     marker, so files on the right half of the ring overflowed off the right border (truncating

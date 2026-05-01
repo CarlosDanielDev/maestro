@@ -167,18 +167,12 @@ pub(crate) fn draw_agent_graph(
                         }
                     }
                     NodeKind::File => {
+                        // Label anchored at the edge endpoint; any y-offset reintroduces the gap. See ADR #569.
                         let (color, modifier) = file_style();
                         let style = Style::default().fg(color).add_modifier(modifier);
-                        ctx.draw(&Rectangle {
-                            x: p.x - 0.02,
-                            y: p.y - 0.02,
-                            width: 0.04,
-                            height: 0.04,
-                            color,
-                        });
                         let pt = CanvasPoint { x: p.x, y: p.y };
                         let (lx, rendered) = place_file_label(pt, &label, inner_cols);
-                        ctx.print(lx, p.y - 0.08, Line::styled(rendered, style));
+                        ctx.print(lx, p.y, Line::styled(rendered, style));
                     }
                 }
             }

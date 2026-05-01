@@ -297,3 +297,21 @@ fn file_label_truncates_with_ellipsis() {
     );
     assert_snapshot!(t.backend());
 }
+
+// --- Issue #569: file marker dot and label visually connected ----------------
+
+#[test]
+fn file_node_marker_and_label_visually_connected() {
+    // Canonical 1×3 case: 1 agent + 3 files. With the fix the label's
+    // leading glyph sits exactly at the edge endpoint (p.y), with no
+    // empty cell gap between the edge tip and the label row.
+    let sessions = vec![make_session(
+        "Issue 569 fix",
+        0,
+        569,
+        SessionStatus::Running,
+        &["src/a.rs", "src/b.rs", "src/c.rs"],
+    )];
+    let t = render_graph(&sessions, 100, 30);
+    assert_snapshot!(t.backend());
+}
