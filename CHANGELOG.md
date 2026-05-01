@@ -23,9 +23,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
     amends the WIP commit on full success.
   - On gate failure the WIP sentinel commit remains at HEAD; the retained worktree (from #558) is
     therefore always recoverable with a plain `git reset --soft HEAD~1`.
-  - `sanitize_log()` promoted from private to `pub(super)` in `auto_pr.rs` so the new
-    `completion_git.rs` module can re-apply the same input-sanitization that fixed #514 LOW-1 at
-    the new log-message call sites (security analyst H-1 remediation).
+  - `sanitize_log()` moved out of `auto_pr.rs` into the new `src/util/sanitize.rs` module
+    (`pub fn`, crate-public) so the new `completion_git.rs` and any future consumer can re-apply
+    the same input-sanitization that fixed #514 LOW-1 at the new log-message call sites
+    (security analyst H-1 remediation).
   - Flag-injection hardening: `--` separator added before the branch positional in all `git push`
     invocations; `commit_and_push` now refuses branch names starting with `-`.
 

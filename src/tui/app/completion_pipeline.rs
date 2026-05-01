@@ -172,6 +172,14 @@ impl App {
                         completion.issue_number
                     )
                 };
+                // Re-detect WIP at HEAD when gates were skipped (empty
+                // `gates` config). Without this, a branch that already
+                // carries a WIP commit from a prior gates-enabled run
+                // would have its WIP subject pushed verbatim by the
+                // legacy `commit_and_push` fallback. The `||` short-
+                // circuits when we already created/detected a WIP.
+                let head_is_wip =
+                    head_is_wip || self.git_ops.head_is_wip_backup(&wt_path).unwrap_or(false);
                 let outcome =
                     self.amend_or_commit_and_push(&wt_path, &branch, &commit_msg, head_is_wip);
                 if outcome.committed_clean {
