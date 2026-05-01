@@ -295,6 +295,29 @@ pub enum PendingPrStatus {
     PermanentlyFailed,
 }
 
+/// Canonical PendingPr fixture for cross-module test reuse. Returns an entry
+/// in the `AwaitingManualRetry` shape: 3/3 attempts spent, no errors stored,
+/// no scheduled retry. Override fields after construction for variants.
+#[cfg(test)]
+pub(crate) fn awaiting_pending_pr(issue_number: u64) -> PendingPr {
+    PendingPr {
+        issue_number,
+        issue_numbers: vec![],
+        branch: format!("maestro/issue-{}", issue_number),
+        base_branch: "main".into(),
+        files_touched: vec![],
+        cost_usd: 0.0,
+        attempt: 3,
+        max_attempts: 3,
+        last_error: String::new(),
+        last_attempt_at: chrono::Utc::now(),
+        next_retry_at: None,
+        status: PendingPrStatus::AwaitingManualRetry,
+        last_errors: VecDeque::new(),
+        manual_retry_count: 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

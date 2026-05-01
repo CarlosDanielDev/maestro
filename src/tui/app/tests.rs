@@ -1864,22 +1864,10 @@ mod pending_prs_persistence {
     use crate::tui::activity_log::LogLevel;
 
     fn make_pending_pr(issue_number: u64) -> PendingPr {
-        PendingPr {
-            issue_number,
-            issue_numbers: vec![],
-            branch: format!("maestro/issue-{}", issue_number),
-            base_branch: "main".into(),
-            files_touched: vec![],
-            cost_usd: 0.0,
-            attempt: 1,
-            max_attempts: 3,
-            last_error: "boom".into(),
-            last_attempt_at: chrono::Utc::now(),
-            next_retry_at: None,
-            status: PendingPrStatus::AwaitingManualRetry,
-            last_errors: std::collections::VecDeque::new(),
-            manual_retry_count: 0,
-        }
+        let mut p = crate::provider::github::types::awaiting_pending_pr(issue_number);
+        p.attempt = 1;
+        p.last_error = "boom".into();
+        p
     }
 
     fn build_app_with_seeded_state(state: MaestroState) -> App {

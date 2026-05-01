@@ -279,10 +279,9 @@ mod tests {
     };
     use crate::provider::github::types::{
         PENDING_PR_LAST_ERRORS_CAP, PENDING_PR_MANUAL_RETRY_LIFETIME_CAP, PendingPr,
-        PendingPrStatus,
+        PendingPrStatus, awaiting_pending_pr,
     };
     use crate::tui::activity_log::LogLevel;
-    use std::collections::VecDeque;
 
     #[test]
     fn normalize_error_strips_iso_timestamps() {
@@ -330,22 +329,7 @@ mod tests {
     }
 
     fn make_pending_pr(issue_number: u64) -> PendingPr {
-        PendingPr {
-            issue_number,
-            issue_numbers: vec![],
-            branch: format!("maestro/issue-{}", issue_number),
-            base_branch: "main".into(),
-            files_touched: vec![],
-            cost_usd: 0.0,
-            attempt: 3,
-            max_attempts: 3,
-            last_error: String::new(),
-            last_attempt_at: chrono::Utc::now(),
-            next_retry_at: None,
-            status: PendingPrStatus::AwaitingManualRetry,
-            last_errors: VecDeque::new(),
-            manual_retry_count: 0,
-        }
+        awaiting_pending_pr(issue_number)
     }
 
     #[test]
