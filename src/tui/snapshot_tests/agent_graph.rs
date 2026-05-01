@@ -226,3 +226,30 @@ fn agent_graph_ascii_fallback_spinner_running_node() {
     let t = render_with(&three_agent_sessions(), 120, 40, false, 0);
     assert_snapshot!(t.backend());
 }
+
+/// Regression test for #567: with 1 agent + 2 files, file #2 lands at
+/// exactly 270° (south). Pre-fix, the agent's `#NNN` label was painted at
+/// `(p.x, p.y - 0.35)` — directly on the edge to that south file. The fix
+/// places the label at the midpoint of the largest angular gap, so the
+/// label sits clear of every outbound edge. The snapshot pins the visual.
+fn single_agent_two_files_session() -> Vec<Session> {
+    vec![make_session(
+        "Issue 567 fix",
+        0,
+        567,
+        SessionStatus::Running,
+        &["src/a.rs", "src/b.rs"],
+    )]
+}
+
+#[test]
+fn agent_label_does_not_overlap_south_edge() {
+    let t = render_with(&single_agent_two_files_session(), 120, 40, false, 0);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_label_does_not_overlap_south_edge_nerd_font() {
+    let t = render_with(&single_agent_two_files_session(), 120, 40, true, 0);
+    assert_snapshot!(t.backend());
+}
