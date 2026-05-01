@@ -191,6 +191,7 @@ impl SessionPool {
     /// Use only when the work is committed/merged or the user explicitly
     /// authorized cleanup. The recovery-on-gate-failure path retains the
     /// worktree — see [`Self::finalize_retain_worktree`].
+    #[allow(dead_code)] // production uses `finalize()`; kept for tests and explicit callers
     pub fn finalize_and_teardown(&mut self, session_id: Uuid) {
         if let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) {
             self.finalize_at(idx, false);
@@ -201,6 +202,7 @@ impl SessionPool {
     /// so uncommitted model edits in `.maestro/worktrees/issue-NNN/` survive
     /// for recovery. File claims are still released so future sessions see
     /// the freed slot.
+    #[allow(dead_code)] // production uses `finalize()`; kept for tests and explicit callers
     pub fn finalize_retain_worktree(&mut self, session_id: Uuid) {
         if let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) {
             self.finalize_at(idx, true);
@@ -221,6 +223,7 @@ impl SessionPool {
     /// Whether a worktree exists for the given slug. Delegates to the
     /// underlying `WorktreeManager` so callers can assert teardown vs. retain
     /// without exposing the manager itself.
+    #[allow(dead_code)] // used by integration tests; kept on the public API surface
     pub fn worktree_exists(&self, slug: &str) -> bool {
         self.worktree_mgr.exists(slug)
     }
