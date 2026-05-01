@@ -4,32 +4,12 @@
 //! so the regression we're guarding — a real `git worktree remove --force`
 //! call landing on the gate-failure path — is covered end to end.
 
-use crate::integration_tests::helpers::make_session_with_issue;
+use crate::integration_tests::helpers::{init_git_repo, make_session_with_issue};
 use crate::session::pool::SessionPool;
 use crate::session::transition::TransitionReason;
 use crate::session::types::{Session, SessionStatus};
 use crate::session::worktree::GitWorktreeManager;
-use std::path::Path;
-use std::process::Command;
 use tokio::sync::mpsc;
-
-fn run_git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .status()
-        .expect("git must be on PATH");
-    assert!(status.success(), "git {:?} failed in {:?}", args, dir);
-}
-
-fn init_git_repo(dir: &Path) {
-    run_git(dir, &["init", "-q", "-b", "main"]);
-    run_git(dir, &["config", "user.email", "test@example.com"]);
-    run_git(dir, &["config", "user.name", "Test"]);
-    std::fs::write(dir.join("README.md"), "init").expect("write README");
-    run_git(dir, &["add", "README.md"]);
-    run_git(dir, &["commit", "-q", "-m", "init"]);
-}
 
 fn promote_one(pool: &mut SessionPool, session: Session) -> uuid::Uuid {
     let id = session.id;

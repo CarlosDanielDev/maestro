@@ -30,15 +30,7 @@ pub(crate) fn pr_url(repo_slug: &str, pr_number: u64) -> Option<String> {
     ))
 }
 
-/// Strip ASCII control characters (other than space) from external error
-/// strings before they hit the activity log. Defeats terminal escape /
-/// label-spoofing that could ride on `gh` or `git` stderr (LOW-1, #514
-/// security review).
-fn sanitize_log(s: &str) -> String {
-    s.chars()
-        .map(|c| if c == ' ' || !c.is_control() { c } else { ' ' })
-        .collect()
-}
+use crate::util::sanitize::sanitize_log;
 
 impl App {
     /// Execute the auto-PR pipeline for a successful session-end event.

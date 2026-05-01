@@ -3,6 +3,7 @@ mod budget;
 mod bypass;
 mod ci_polling;
 pub(crate) mod clipboard_action;
+mod completion_git;
 mod completion_pipeline;
 mod completion_summary;
 mod context_overflow;

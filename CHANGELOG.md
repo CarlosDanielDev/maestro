@@ -9,6 +9,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- fix(daemon): session WIP work is now committed before post-completion gates run, so model edits survive gate failure, crash, or manual worktree removal (#562)
+  - Root cause: the daemon ran post-completion gates against the worktree before ever committing the
+    model's file edits. A gate failure (or any subsequent crash / `rm -rf`) could still destroy
+    every file the model had written, even after #558 kept the worktree directory on failure.
+  - `GitOps` trait gains three new methods: `backup_wip(branch)` creates a sentinel WIP commit
+    (`WIP: <branch> — auto-backup before gates`), `amend_clean_and_push(branch)` amends that commit
+    with the final message and force-pushes on success, and `head_is_wip_backup(branch)` detects
+    whether HEAD is still a WIP sentinel (used by recovery tooling).
+  - `completion_pipeline.rs` now calls `App::backup_wip_before_gates()` immediately after the
+    session reaches `Completed`, before `gate_runner.run_gates()`. The old
+    `git_ops.commit_and_push()` block is replaced by `App::amend_or_commit_and_push()` which
+    amends the WIP commit on full success.
+  - On gate failure the WIP sentinel commit remains at HEAD; the retained worktree (from #558) is
+    therefore always recoverable with a plain `git reset --soft HEAD~1`.
+  - `sanitize_log()` promoted from private to `pub(super)` in `auto_pr.rs` so the new
+    `completion_git.rs` module can re-apply the same input-sanitization that fixed #514 LOW-1 at
+    the new log-message call sites (security analyst H-1 remediation).
+  - Flag-injection hardening: `--` separator added before the branch positional in all `git push`
+    invocations; `commit_and_push` now refuses branch names starting with `-`.
+
+  **New files:** `src/git_mock.rs`, `src/git_tests.rs`,
+  `src/tui/app/completion_git.rs`, `src/integration_tests/wip_backup.rs`.
+
 - fix(tui): "Session Failed Gates" recovery modal replaces the completion overlay when gates failed (#560)
   - This is the TUI half of the post-completion gate failure recovery story: #558 retained the
     worktree on gate failure (daemon layer), and this change makes that worktree actionable from
