@@ -51,6 +51,12 @@ pub use ci_polling::CiPoller;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
+/// Single source of truth for the "GitHub auth missing — recover" hint.
+/// Reused at every site that tells the user what to do once `gh auth
+/// login` finishes. Without this, the same advice ships in 4 different
+/// phrasings and drifts over time (#545 P2 review).
+pub(crate) const AUTH_RECOVERY_HINT: &str = "Run `gh auth login` then press Shift+P to retry.";
+
 pub struct App {
     pub pool: SessionPool,
     pub activity_log: ActivityLog,
@@ -225,7 +231,16 @@ impl App {
         // Recover the pending-PR retry queue from prior run so Shift+P
         // (#521) can resurrect them after a maestro restart. The schema has
         // always supported this; only the rehydration was missing.
-        let recovered_prs = state.pending_prs.clone();
+        // Apply PENDING_PRS_REHYDRATE_CAP defensively: a corrupt or
+        // maliciously-crafted state file with millions of entries would
+        // otherwise OOM App::new (#545 P2).
+        let original_pending_prs_count = state.pending_prs.len();
+        let mut recovered_prs = state.pending_prs.clone();
+        let pending_prs_truncated =
+            original_pending_prs_count > crate::provider::github::types::PENDING_PRS_REHYDRATE_CAP;
+        if pending_prs_truncated {
+            recovered_prs.truncate(crate::provider::github::types::PENDING_PRS_REHYDRATE_CAP);
+        }
         let recovered_prs_count = recovered_prs.len();
         let mut app = Self {
             pool,
@@ -331,6 +346,17 @@ impl App {
             attempted_pr_issue_numbers: std::collections::HashSet::new(),
             git_ops: Box::new(crate::git::CliGitOps),
         };
+        if pending_prs_truncated {
+            app.activity_log.push_simple(
+                "#orphan-prs".into(),
+                format!(
+                    "Truncated pending_prs from {} to {} on rehydrate — state file may be corrupt; excess entries dropped to protect process memory",
+                    original_pending_prs_count,
+                    crate::provider::github::types::PENDING_PRS_REHYDRATE_CAP,
+                ),
+                LogLevel::Warn,
+            );
+        }
         if recovered_prs_count > 0 {
             // List the actual issue numbers so the user knows which panels
             // to focus before pressing Shift+P, instead of guessing across
@@ -476,7 +502,7 @@ impl App {
             self.gh_auth_ok = false;
             self.activity_log.push_simple(
                 "AUTH".into(),
-                "GitHub authentication lost. Run `gh auth login` to re-authenticate.".into(),
+                format!("GitHub authentication lost. {}", AUTH_RECOVERY_HINT),
                 LogLevel::Error,
             );
             true
@@ -489,8 +515,8 @@ impl App {
         self.activity_log.push_simple(
             format!("#{}", issue_number),
             format!(
-                "Skipping {} — GitHub not authenticated. Run `gh auth login`",
-                operation
+                "Skipping {} — GitHub not authenticated. {}",
+                operation, AUTH_RECOVERY_HINT
             ),
             LogLevel::Warn,
         );

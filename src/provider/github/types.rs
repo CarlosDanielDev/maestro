@@ -242,11 +242,27 @@ impl PrReviewEvent {
 }
 
 /// Most recent error messages a PendingPr will retain for correlation.
+///
+/// **Independence note:** This cap (3) coincidentally equals
+/// `PrRetryPolicy::max_attempts` (also 3 today). They are NOT linked.
+/// `PENDING_PR_LAST_ERRORS_CAP` controls how many distinct errors we
+/// keep for the deterministic-failure detector; `max_attempts` controls
+/// the auto-retry budget. Changing one MUST NOT silently propagate to
+/// the other. The detector relies on having ≥ 3 samples to declare a
+/// failure deterministic; the retry budget is a separate UX dial.
 pub const PENDING_PR_LAST_ERRORS_CAP: usize = 3;
 
 /// Lifetime cap on Shift+P-triggered manual retries before the entry is
 /// transitioned to `PermanentlyFailed`.
 pub const PENDING_PR_MANUAL_RETRY_LIFETIME_CAP: u32 = 5;
+
+/// Hard ceiling on `MaestroState::pending_prs.len()` accepted from disk
+/// on rehydrate. A corrupt or maliciously-crafted `maestro-state.json`
+/// could otherwise exhaust memory in `App::new` (each entry is hundreds
+/// of bytes before its `last_errors` deque). 1000 is far above any
+/// realistic backlog (each entry is a failed PR creation; a healthy
+/// install will see < 10 at any time).
+pub const PENDING_PRS_REHYDRATE_CAP: usize = 1000;
 
 /// A PR creation that failed and is queued for retry.
 ///

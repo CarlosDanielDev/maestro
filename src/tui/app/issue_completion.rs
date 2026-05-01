@@ -207,8 +207,10 @@ impl App {
         }
 
         let mut last_errors = std::collections::VecDeque::new();
-        last_errors
-            .push_back("GitHub auth missing — run `gh auth login` then press Shift+P".to_string());
+        last_errors.push_back(format!(
+            "GitHub auth missing. {}",
+            super::AUTH_RECOVERY_HINT
+        ));
         let pending = PendingPr {
             issue_number,
             issue_numbers: issue_numbers.to_vec(),
@@ -228,8 +230,10 @@ impl App {
 
         self.activity_log.push_simple(
             format!("#{}", issue_number),
-            "PR creation deferred — auth missing. Run `gh auth login` then press Shift+P to retry."
-                .into(),
+            format!(
+                "PR creation deferred — auth missing. {}",
+                super::AUTH_RECOVERY_HINT
+            ),
             LogLevel::Warn,
         );
     }

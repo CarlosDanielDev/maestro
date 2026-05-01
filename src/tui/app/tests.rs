@@ -1931,6 +1931,39 @@ mod pending_prs_persistence {
     }
 
     #[test]
+    fn app_new_truncates_pending_prs_above_rehydrate_cap() {
+        use crate::provider::github::types::PENDING_PRS_REHYDRATE_CAP;
+        let mut seed = MaestroState::default();
+        for i in 0..(PENDING_PRS_REHYDRATE_CAP + 1) {
+            seed.pending_prs.push(make_pending_pr(i as u64));
+        }
+        let app = build_app_with_seeded_state(seed);
+
+        assert_eq!(
+            app.pending_prs.len(),
+            PENDING_PRS_REHYDRATE_CAP,
+            "App::new must truncate pending_prs to PENDING_PRS_REHYDRATE_CAP"
+        );
+        let truncate_warn = app.activity_log.entries().iter().any(|e| {
+            matches!(e.level, LogLevel::Warn) && e.message.contains("Truncated pending_prs")
+        });
+        assert!(
+            truncate_warn,
+            "App::new must emit a Warn log entry containing 'Truncated pending_prs' when the cap is exceeded",
+        );
+    }
+
+    #[test]
+    fn auth_recovery_hint_const_is_well_formed() {
+        use super::AUTH_RECOVERY_HINT;
+        assert!(!AUTH_RECOVERY_HINT.is_empty());
+        assert!(
+            AUTH_RECOVERY_HINT.contains("gh auth login"),
+            "AUTH_RECOVERY_HINT must reference `gh auth login` so users know how to recover"
+        );
+    }
+
+    #[test]
     fn app_new_emits_no_warn_when_state_has_no_pending_prs() {
         let app = build_app_with_seeded_state(MaestroState::default());
 
