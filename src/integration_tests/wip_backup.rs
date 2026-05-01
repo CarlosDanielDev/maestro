@@ -5,7 +5,8 @@
 
 use crate::git::{CliGitOps, GitOps, WIP_SUBJECT_PREFIX, WIP_SUBJECT_SUFFIX};
 use crate::integration_tests::helpers::{
-    git_head_subject, init_git_repo, make_app_with_gate, make_session_with_issue, run_git,
+    git_head_subject, init_git_repo, make_app_with_gate, make_app_without_gates,
+    make_session_with_issue, run_git,
 };
 use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
@@ -190,5 +191,50 @@ async fn pipeline_does_not_stack_wip_commits_on_second_gate_failure() {
         count_wip_commits(tmp.path()),
         1,
         "AC #8: must remain exactly ONE WIP commit (head_is_wip_backup short-circuit)"
+    );
+}
+
+/// Regression test for the gates-disabled fallback (PR #573 review #1).
+/// When `[gates] enabled = false` AND the branch already carries a WIP
+/// backup commit from a prior gates-enabled run, the post-gate path
+/// must still detect the WIP and amend it into a clean conventional
+/// commit — not push the WIP subject verbatim via the legacy
+/// commit_and_push fallback.
+#[tokio::test]
+async fn pipeline_amends_existing_wip_when_gates_are_disabled() {
+    let branch = "feat/issue-562";
+    let (_remote, work) = build_remote_and_clone(branch);
+
+    // Simulate a prior gates-enabled run that left a WIP at HEAD.
+    let ops = CliGitOps;
+    let pre_ops: &dyn GitOps = &ops;
+    std::fs::write(work.path().join("model_edit.rs"), "fn model() {}").unwrap();
+    pre_ops
+        .backup_wip(work.path(), 562)
+        .expect("seed prior WIP");
+    assert!(
+        pre_ops
+            .head_is_wip_backup(work.path())
+            .expect("read HEAD subject"),
+        "precondition: WIP at HEAD before pipeline runs"
+    );
+
+    let mut app = make_app_without_gates("issue-562-wip-gates-disabled");
+    arm_session_at_running(&mut app, 562, make_completion(562, branch, work.path()));
+
+    app.check_completions()
+        .await
+        .expect("check_completions must not error");
+
+    let subject = git_head_subject(work.path());
+    assert_eq!(
+        subject, "feat: implement changes for issue #562",
+        "gates-disabled path must amend the existing WIP into a clean message, \
+         not push the WIP subject verbatim"
+    );
+    assert_eq!(
+        count_wip_commits(work.path()),
+        0,
+        "no WIP commits should remain after the amend"
     );
 }

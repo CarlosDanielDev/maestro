@@ -146,4 +146,18 @@ mod helpers {
         app.config = Some(toml::from_str(&toml).expect("test config parse"));
         app.with_git_ops(Box::new(crate::git::CliGitOps))
     }
+
+    /// Like `make_app_with_gate`, but with `[gates] enabled = false` so
+    /// `build_completion_gates` returns an empty `Vec`. Lets tests
+    /// exercise the gates-disabled completion path.
+    pub fn make_app_without_gates(label: &str) -> crate::tui::app::App {
+        let mut app = crate::tui::make_test_app(label);
+        let toml = "[project]\nrepo = \"owner/repo\"\n\
+                    [sessions]\n\
+                    [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+                    [github]\n[notifications]\n\
+                    [gates]\nenabled = false\n";
+        app.config = Some(toml::from_str(toml).expect("test config parse"));
+        app.with_git_ops(Box::new(crate::git::CliGitOps))
+    }
 }
