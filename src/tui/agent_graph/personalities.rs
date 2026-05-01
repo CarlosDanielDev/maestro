@@ -69,6 +69,12 @@ const DEVOPS: Sprite = Sprite([
 /// All five roles in declaration order. Useful for exhaustive iteration in
 /// tests (so adding a `Role` variant fails the build until the new role is
 /// covered) and for cross-module helpers that need to fan out over every role.
+///
+/// `#[cfg(test)]`-gated: every current consumer is in a test module
+/// (inline tests in this file + `snapshot_tests/activity_log_dispatch.rs`,
+/// itself test-only). Drop the gate when production code starts iterating
+/// roles.
+#[cfg(test)]
 pub(crate) const ALL_ROLES: [Role; 5] = [
     Role::Implementer,
     Role::Orchestrator,

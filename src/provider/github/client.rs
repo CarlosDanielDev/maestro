@@ -474,6 +474,12 @@ impl GhCliClient {
     /// Validates the input through `validate_gh_arg` (rejects shell
     /// metacharacters and `--`-prefixed values) and enforces the
     /// `owner/repo` shape via `parse_owner_repo`.
+    ///
+    /// Currently exercised only by unit tests — the wiring from
+    /// `Config::project::repo` through every `GhCliClient::new()` call
+    /// site is tracked as #565. Until that lands, every shellout
+    /// falls back to gh's worktree-remote inference.
+    #[allow(dead_code)]
     pub fn with_repo(mut self, repo: String) -> Result<Self> {
         validate_gh_arg(&repo, "repo")?;
         crate::provider::github::types::parse_owner_repo(&repo)
