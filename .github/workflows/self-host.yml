@@ -1,0 +1,139 @@
+name: self-host
+
+# Self-hosting smoke test: build the maestro binary on a clean runner,
+# create an ephemeral GitHub repo, run maestro headlessly against a
+# fixture issue, assert it opens a PR, then delete the repo. The single
+# guard that would have caught the 2026-03-20 `gh pr create --json number`
+# wire-format regression six weeks earlier (#545 P0).
+#
+# Manual-trigger only for v1. PR-trigger comes once we know it is stable.
+#
+# Required repository secrets (workflow refuses to run if either is unset):
+#   MAESTRO_SELFTEST_PAT    — fine-grained PAT scoped to ONE sandbox owner,
+#                              with Contents:RW, Issues:RW, Pull requests:RW,
+#                              Administration:RW (for repo create + delete).
+#                              MUST NOT be a token with access to the main
+#                              repo — see the `if:` guard on the smoke job.
+#   MAESTRO_SELFTEST_OWNER  — the sandbox org/user under which the
+#                              ephemeral test repo is created and deleted.
+#
+# Untrusted-input handling: every `${{ github.event.inputs.* }}` value is
+# routed through an `env:` block before reaching `run:`, so values cannot
+# break out of shell quoting. See:
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_title:
+        description: 'Test issue title'
+        required: false
+        default: 'Self-host smoke test issue'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Self-host smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ secrets.MAESTRO_SELFTEST_PAT }}
+      MAESTRO_SELFTEST_OWNER: ${{ secrets.MAESTRO_SELFTEST_OWNER }}
+      RUST_BACKTRACE: 1
+    steps:
+      # Refuses to run if the sandbox owner secret is unset — without this
+      # guard a misconfigured workflow could create a test repo under the
+      # main org, which is the exact scenario the workflow exists to avoid.
+      # Job-level `if: secrets.X != ''` is not permitted by Actions, so the
+      # guard runs as the first step.
+      - name: Verify sandbox owner is configured
+        run: |
+          if [ -z "$MAESTRO_SELFTEST_OWNER" ]; then
+            echo "::error::MAESTRO_SELFTEST_OWNER repository secret is unset."
+            echo "::error::Refusing to run — without an explicit sandbox owner the"
+            echo "::error::workflow could create a test repo under the main org."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install gh CLI
+        run: |
+          (sudo mkdir -p -m 755 /etc/apt/keyrings \
+            && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+              | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+            && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+            && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+              | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null) \
+            && sudo apt-get update \
+            && sudo apt-get install -y gh
+
+      - name: Verify gh authentication
+        run: gh auth status
+
+      - name: cargo install maestro
+        run: cargo install --path . --locked
+
+      - name: Provision ephemeral test repo
+        id: provision
+        run: |
+          repo_name="maestro-smoke-$(date +%s)-${GITHUB_RUN_ID}"
+          gh repo create "${MAESTRO_SELFTEST_OWNER}/${repo_name}" \
+            --private \
+            --description "Maestro self-host smoke test (auto-created; auto-deleted)"
+          echo "test_repo=${MAESTRO_SELFTEST_OWNER}/${repo_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Seed fixture issue
+        id: seed
+        env:
+          TEST_REPO: ${{ steps.provision.outputs.test_repo }}
+          # Untrusted input — routed via env, never interpolated into shell.
+          ISSUE_TITLE: ${{ inputs.issue_title }}
+        run: |
+          issue_url=$(gh issue create \
+            --repo "$TEST_REPO" \
+            --title "$ISSUE_TITLE" \
+            --body "Maestro self-host smoke fixture issue. Maestro should open a PR for this issue when run headlessly.")
+          issue_number=$(basename "$issue_url")
+          echo "issue_number=${issue_number}" >> "$GITHUB_OUTPUT"
+
+      - name: Run maestro headlessly
+        env:
+          TEST_REPO: ${{ steps.provision.outputs.test_repo }}
+          ISSUE_NUMBER: ${{ steps.seed.outputs.issue_number }}
+        run: |
+          # `maestro run --once` exits after a single completion cycle.
+          # The exact invocation here is the smoke contract; when it
+          # changes, this workflow is the regression guard.
+          maestro run --issue "$ISSUE_NUMBER" --once || \
+            (echo "::error::maestro run failed; see logs above" && exit 1)
+
+      - name: Assert PR was opened
+        env:
+          TEST_REPO: ${{ steps.provision.outputs.test_repo }}
+        run: |
+          prs=$(gh pr list --repo "$TEST_REPO" --json number,headRefName)
+          count=$(echo "$prs" | jq '. | length')
+          if [ "$count" -lt 1 ]; then
+            echo "::error::self-host smoke: expected at least 1 PR; saw $count"
+            exit 1
+          fi
+          echo "self-host smoke: PR opened ($prs)"
+
+      - name: Cleanup ephemeral repo
+        if: always()
+        env:
+          TEST_REPO: ${{ steps.provision.outputs.test_repo }}
+        run: |
+          if [ -n "$TEST_REPO" ]; then
+            gh repo delete "$TEST_REPO" --yes \
+              || echo "::warning::Cleanup failed; manual deletion required for $TEST_REPO"
+          fi

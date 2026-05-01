@@ -115,6 +115,27 @@ pub fn titles_equivalent(a: &str, b: &str) -> bool {
     normalize_title(a).eq_ignore_ascii_case(&normalize_title(b))
 }
 
+/// Cap on PR/issue body + milestone description (one byte below GitHub's
+/// 65 536-byte limit so caller-side suffixes still fit).
+pub const GH_BODY_MAX_BYTES: usize = 65_535;
+
+/// Reject null bytes (gh argv encoding can't carry them) and payloads
+/// over [`GH_BODY_MAX_BYTES`].
+pub fn validate_body(raw: &str, field: &str) -> Result<()> {
+    if raw.contains('\0') {
+        bail!("{} must not contain null bytes", field);
+    }
+    if raw.len() > GH_BODY_MAX_BYTES {
+        bail!(
+            "{} too long: {} bytes (max {})",
+            field,
+            raw.len(),
+            GH_BODY_MAX_BYTES
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +361,31 @@ mod tests {
     fn titles_equivalent_distinguishes_different_titles() {
         assert!(!titles_equivalent("foo", "foo bar"));
         assert!(!titles_equivalent("M0: Core", "M1: Core"));
+    }
+
+    // --- validate_body ---
+
+    #[test]
+    fn validate_body_accepts_short() {
+        assert!(validate_body("A normal PR description.", "PR body").is_ok());
+    }
+
+    #[test]
+    fn validate_body_rejects_null_byte() {
+        let err = validate_body("body\0content", "PR body").unwrap_err();
+        assert!(err.to_string().contains("null byte"), "got: {}", err);
+    }
+
+    #[test]
+    fn validate_body_rejects_over_cap() {
+        let too_long = "x".repeat(GH_BODY_MAX_BYTES + 1);
+        let err = validate_body(&too_long, "PR body").unwrap_err();
+        assert!(err.to_string().contains("PR body"), "got: {}", err);
+    }
+
+    #[test]
+    fn validate_body_accepts_at_cap() {
+        let exact = "x".repeat(GH_BODY_MAX_BYTES);
+        assert!(validate_body(&exact, "PR body").is_ok());
     }
 }

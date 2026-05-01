@@ -242,14 +242,37 @@ impl PrReviewEvent {
 }
 
 /// Most recent error messages a PendingPr will retain for correlation.
+///
+/// **Independence note:** This cap (3) coincidentally equals
+/// `PrRetryPolicy::max_attempts` (also 3 today). They are NOT linked.
+/// `PENDING_PR_LAST_ERRORS_CAP` controls how many distinct errors we
+/// keep for the deterministic-failure detector; `max_attempts` controls
+/// the auto-retry budget. Changing one MUST NOT silently propagate to
+/// the other. The detector relies on having ≥ 3 samples to declare a
+/// failure deterministic; the retry budget is a separate UX dial.
 pub const PENDING_PR_LAST_ERRORS_CAP: usize = 3;
 
 /// Lifetime cap on Shift+P-triggered manual retries before the entry is
 /// transitioned to `PermanentlyFailed`.
 pub const PENDING_PR_MANUAL_RETRY_LIFETIME_CAP: u32 = 5;
 
+/// Hard ceiling on `MaestroState::pending_prs.len()` accepted from disk
+/// on rehydrate. A corrupt or maliciously-crafted `maestro-state.json`
+/// could otherwise exhaust memory in `App::new` (each entry is hundreds
+/// of bytes before its `last_errors` deque). 1000 is far above any
+/// realistic backlog (each entry is a failed PR creation; a healthy
+/// install will see < 10 at any time).
+pub const PENDING_PRS_REHYDRATE_CAP: usize = 1000;
+
 /// A PR creation that failed and is queued for retry.
+///
+/// Deserialized via [`PendingPrRaw`] so legacy state files (which carried
+/// a `last_error: String` field that has since been folded into
+/// `last_errors`) migrate cleanly: when `last_errors` is empty and a
+/// non-empty `last_error` is present, the value is pushed onto
+/// `last_errors`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "PendingPrRaw")]
 pub struct PendingPr {
     pub issue_number: u64,
     /// Additional issue numbers for unified PR sessions.
@@ -260,7 +283,6 @@ pub struct PendingPr {
     pub cost_usd: f64,
     pub attempt: u32,
     pub max_attempts: u32,
-    pub last_error: String,
     pub last_attempt_at: DateTime<Utc>,
     pub next_retry_at: Option<DateTime<Utc>>,
     pub status: PendingPrStatus,
@@ -274,6 +296,63 @@ pub struct PendingPr {
     /// abandonment when the underlying failure is deterministic.
     #[serde(default)]
     pub manual_retry_count: u32,
+}
+
+/// Wire shape used only on deserialize. Accepts both the legacy schema
+/// (with `last_error: String`) and the current schema (without). On
+/// conversion to [`PendingPr`] a non-empty `last_error` is migrated into
+/// `last_errors` when the deque is empty, so users upgrading from older
+/// maestro do not lose error context.
+#[derive(Deserialize)]
+struct PendingPrRaw {
+    issue_number: u64,
+    #[serde(default)]
+    issue_numbers: Vec<u64>,
+    branch: String,
+    base_branch: String,
+    files_touched: Vec<String>,
+    cost_usd: f64,
+    attempt: u32,
+    max_attempts: u32,
+    #[serde(default)]
+    last_error: String,
+    last_attempt_at: DateTime<Utc>,
+    next_retry_at: Option<DateTime<Utc>>,
+    status: PendingPrStatus,
+    #[serde(default)]
+    last_errors: VecDeque<String>,
+    #[serde(default)]
+    manual_retry_count: u32,
+}
+
+impl From<PendingPrRaw> for PendingPr {
+    fn from(raw: PendingPrRaw) -> Self {
+        let mut last_errors = raw.last_errors;
+        if last_errors.is_empty() && !raw.last_error.is_empty() {
+            // Migrated values bypass the runtime
+            // `record_error_for_correlation` path that normally redacts
+            // gh tokens before they hit `last_errors`. Re-apply the
+            // same redaction here so a token persisted in an old state
+            // file does NOT survive the upgrade unredacted.
+            let redacted = super::redaction::redact_secrets(&raw.last_error);
+            last_errors.push_back(redacted);
+        }
+        Self {
+            issue_number: raw.issue_number,
+            issue_numbers: raw.issue_numbers,
+            branch: raw.branch,
+            base_branch: raw.base_branch,
+            files_touched: raw.files_touched,
+            cost_usd: raw.cost_usd,
+            attempt: raw.attempt,
+            max_attempts: raw.max_attempts,
+            last_attempt_at: raw.last_attempt_at,
+            next_retry_at: raw.next_retry_at,
+            status: raw.status,
+            last_errors,
+            manual_retry_count: raw.manual_retry_count,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -293,6 +372,47 @@ pub enum PendingPrStatus {
     /// expected to fix the underlying problem (e.g., file a bug, run
     /// `gh pr create` manually) and dismiss the entry.
     PermanentlyFailed,
+}
+
+/// Split an `owner/repo` slug into its two halves. Returns `Err` with a
+/// human-readable reason if the slug is empty, missing the slash, has
+/// extra slashes, or has empty halves. The shape rule is the only thing
+/// this enforces — character-level validation (`validate_gh_arg`) is
+/// the caller's responsibility because the appropriate failure mode
+/// (Result, Option, ValidationFeedback) varies by call site.
+pub fn parse_owner_repo(slug: &str) -> Result<(&str, &str), &'static str> {
+    let mut parts = slug.split('/');
+    let owner = parts.next().unwrap_or("");
+    let repo = parts.next().unwrap_or("");
+    if parts.next().is_some() {
+        return Err("must match owner/repo format (extra slashes)");
+    }
+    if owner.is_empty() || repo.is_empty() {
+        return Err("must match owner/repo format (empty owner or repo)");
+    }
+    Ok((owner, repo))
+}
+
+/// Canonical PendingPr fixture for cross-module test reuse. Returns an entry
+/// in the `AwaitingManualRetry` shape: 3/3 attempts spent, no errors stored,
+/// no scheduled retry. Override fields after construction for variants.
+#[cfg(test)]
+pub(crate) fn awaiting_pending_pr(issue_number: u64) -> PendingPr {
+    PendingPr {
+        issue_number,
+        issue_numbers: vec![],
+        branch: format!("maestro/issue-{}", issue_number),
+        base_branch: "main".into(),
+        files_touched: vec![],
+        cost_usd: 0.0,
+        attempt: 3,
+        max_attempts: 3,
+        last_attempt_at: chrono::Utc::now(),
+        next_retry_at: None,
+        status: PendingPrStatus::AwaitingManualRetry,
+        last_errors: VecDeque::new(),
+        manual_retry_count: 0,
+    }
 }
 
 #[cfg(test)]
@@ -337,7 +457,6 @@ mod tests {
             cost_usd: 1.23,
             attempt: 1,
             max_attempts: 3,
-            last_error: "network timeout".to_string(),
             last_attempt_at: Utc::now(),
             next_retry_at: Some(Utc::now()),
             status: PendingPrStatus::RetryScheduled,
@@ -375,6 +494,98 @@ mod tests {
         let p: PendingPr = serde_json::from_str(legacy_json).unwrap();
         assert!(p.last_errors.is_empty());
         assert_eq!(p.manual_retry_count, 0);
+    }
+
+    #[test]
+    fn pending_pr_legacy_last_error_redacts_secrets_on_migration() {
+        // An older maestro that hit a `gh` error containing a token
+        // would persist the unredacted value in last_error. Migrating
+        // it into last_errors must run the value through the same
+        // redact_secrets pipeline the runtime uses; otherwise the
+        // upgrade leaks credentials into the activity log + new state
+        // file.
+        let legacy_json = r#"{
+            "issue_number": 7,
+            "issue_numbers": [],
+            "branch": "maestro/issue-7",
+            "base_branch": "main",
+            "files_touched": [],
+            "cost_usd": 0.0,
+            "attempt": 0,
+            "max_attempts": 3,
+            "last_error": "gh api error: Authorization: Bearer ghp_FAKETOKEN1234567890ABCDEFGHIJ leaked here",
+            "last_attempt_at": "2026-01-01T00:00:00Z",
+            "next_retry_at": null,
+            "status": "retry_scheduled"
+        }"#;
+        let p: PendingPr = serde_json::from_str(legacy_json).unwrap();
+        let migrated = p.last_errors.back().expect("migrated value present");
+        assert!(
+            !migrated.contains("ghp_FAKETOKEN1234567890ABCDEFGHIJ"),
+            "raw token must be redacted on migration, got: {}",
+            migrated,
+        );
+    }
+
+    #[test]
+    fn pending_pr_legacy_last_error_migrates_to_last_errors() {
+        // State files written by v0.16.x and earlier had a
+        // `last_error: String` field that is now removed. When
+        // `last_errors` is empty AND `last_error` is non-empty, the
+        // deserializer must migrate the value into `last_errors` so users
+        // upgrading from a very-old maestro do not lose error context.
+        let legacy_json = r#"{
+            "issue_number": 7,
+            "issue_numbers": [],
+            "branch": "maestro/issue-7",
+            "base_branch": "main",
+            "files_touched": [],
+            "cost_usd": 0.0,
+            "attempt": 0,
+            "max_attempts": 3,
+            "last_error": "network timeout",
+            "last_attempt_at": "2026-01-01T00:00:00Z",
+            "next_retry_at": null,
+            "status": "retry_scheduled"
+        }"#;
+        let p: PendingPr = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(p.last_errors.len(), 1);
+        assert_eq!(p.last_errors.back().unwrap(), "network timeout");
+    }
+
+    #[test]
+    fn pending_pr_neither_field_yields_empty_last_errors() {
+        // Truly bare JSON (no last_error, no last_errors) must yield an
+        // empty deque without panicking.
+        let bare_json = r#"{
+            "issue_number": 9,
+            "issue_numbers": [],
+            "branch": "maestro/issue-9",
+            "base_branch": "main",
+            "files_touched": [],
+            "cost_usd": 0.0,
+            "attempt": 0,
+            "max_attempts": 3,
+            "last_attempt_at": "2026-01-01T00:00:00Z",
+            "next_retry_at": null,
+            "status": "retry_scheduled"
+        }"#;
+        let p: PendingPr = serde_json::from_str(bare_json).unwrap();
+        assert!(p.last_errors.is_empty());
+    }
+
+    #[test]
+    fn pending_pr_serialized_form_omits_last_error_key() {
+        // Forward-compat regression guard: the serialized form must NOT
+        // include a `last_error` key. New JSON files are written without
+        // it; old binaries reading them is out of contract.
+        let p = awaiting_pending_pr(1);
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(
+            !json.contains("\"last_error\""),
+            "serialized PendingPr must not contain last_error key, got: {}",
+            json,
+        );
     }
 
     // Priority::from_label

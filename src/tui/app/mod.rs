@@ -12,6 +12,7 @@ pub(crate) mod helpers;
 mod issue_completion;
 mod plugins;
 mod pr_retry;
+mod pushup_marker;
 mod review;
 mod session_lifecycle;
 mod session_spawners;
@@ -50,6 +51,12 @@ use chrono::Utc;
 pub use ci_polling::CiPoller;
 use std::time::Instant;
 use tokio::sync::mpsc;
+
+/// Single source of truth for the "GitHub auth missing — recover" hint.
+/// Reused at every site that tells the user what to do once `gh auth
+/// login` finishes. Without this, the same advice ships in multiple
+/// phrasings and drifts over time.
+pub(crate) const AUTH_RECOVERY_HINT: &str = "Run `gh auth login` then press Shift+P to retry.";
 
 pub struct App {
     pub pool: SessionPool,
@@ -201,6 +208,12 @@ pub struct App {
     /// tests inject `MockGitOps` via `with_git_ops`. Used by the auto-PR
     /// pipeline's zero-commit gate.
     pub(crate) git_ops: Box<dyn crate::git::GitOps>,
+    /// Override for `$HOME` in tests. Production reads `std::env::var("HOME")`.
+    /// Used by `pushup_marker` to find `~/.maestro/last-pr-created`.
+    pub(crate) home_dir_override: Option<std::path::PathBuf>,
+    /// Last-seen mtime of `~/.maestro/last-pr-created`. Prevents re-firing
+    /// `TuiCommand::PrCreated` on every tick when the marker hasn't moved.
+    pub(crate) last_pr_marker_mtime: Option<std::time::SystemTime>,
 }
 
 impl App {
@@ -225,7 +238,16 @@ impl App {
         // Recover the pending-PR retry queue from prior run so Shift+P
         // (#521) can resurrect them after a maestro restart. The schema has
         // always supported this; only the rehydration was missing.
-        let recovered_prs = state.pending_prs.clone();
+        // Apply PENDING_PRS_REHYDRATE_CAP defensively: a corrupt or
+        // maliciously-crafted state file with millions of entries would
+        // otherwise OOM App::new.
+        let original_pending_prs_count = state.pending_prs.len();
+        let mut recovered_prs = state.pending_prs.clone();
+        let pending_prs_truncated =
+            original_pending_prs_count > crate::provider::github::types::PENDING_PRS_REHYDRATE_CAP;
+        if pending_prs_truncated {
+            recovered_prs.truncate(crate::provider::github::types::PENDING_PRS_REHYDRATE_CAP);
+        }
         let recovered_prs_count = recovered_prs.len();
         let mut app = Self {
             pool,
@@ -330,7 +352,20 @@ impl App {
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
             attempted_pr_issue_numbers: std::collections::HashSet::new(),
             git_ops: Box::new(crate::git::CliGitOps),
+            home_dir_override: None,
+            last_pr_marker_mtime: None,
         };
+        if pending_prs_truncated {
+            app.activity_log.push_simple(
+                "#orphan-prs".into(),
+                format!(
+                    "Truncated pending_prs from {} to {} on rehydrate — state file may be corrupt; excess entries dropped to protect process memory",
+                    original_pending_prs_count,
+                    crate::provider::github::types::PENDING_PRS_REHYDRATE_CAP,
+                ),
+                LogLevel::Warn,
+            );
+        }
         if recovered_prs_count > 0 {
             // List the actual issue numbers so the user knows which panels
             // to focus before pressing Shift+P, instead of guessing across
@@ -357,6 +392,14 @@ impl App {
     #[cfg(test)]
     pub(crate) fn with_git_ops(mut self, git_ops: Box<dyn crate::git::GitOps>) -> Self {
         self.git_ops = git_ops;
+        self
+    }
+
+    /// Builder for tests: override the `$HOME` lookup so the marker
+    /// watcher reads from a tempdir instead of the real home.
+    #[cfg(test)]
+    pub(crate) fn with_home_dir(mut self, home: std::path::PathBuf) -> Self {
+        self.home_dir_override = Some(home);
         self
     }
 
@@ -476,7 +519,7 @@ impl App {
             self.gh_auth_ok = false;
             self.activity_log.push_simple(
                 "AUTH".into(),
-                "GitHub authentication lost. Run `gh auth login` to re-authenticate.".into(),
+                format!("GitHub authentication lost. {}", AUTH_RECOVERY_HINT),
                 LogLevel::Error,
             );
             true
@@ -489,8 +532,8 @@ impl App {
         self.activity_log.push_simple(
             format!("#{}", issue_number),
             format!(
-                "Skipping {} — GitHub not authenticated. Run `gh auth login`",
-                operation
+                "Skipping {} — GitHub not authenticated. {}",
+                operation, AUTH_RECOVERY_HINT
             ),
             LogLevel::Warn,
         );

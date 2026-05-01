@@ -82,21 +82,16 @@ impl App {
                     Err(e) => {
                         let err_str = e.to_string().trim_end().to_string();
                         let pending = &mut self.pending_prs[idx];
-                        pending.last_error = err_str.clone();
                         record_error_for_correlation(pending, err_str.clone());
 
                         if errors_match_threshold(pending) {
-                            pending.status = PendingPrStatus::PermanentlyFailed;
-                            pending.next_retry_at = None;
-                            self.activity_log.push_simple(
-                                format!("#{}", issue_number),
-                                format!(
-                                    "PR retry stuck on identical error {}×. Branch: {}. \
-                                     Stderr captured. Run `gh pr create --base {} --head {}` \
-                                     manually or file a bug.",
-                                    PENDING_PR_LAST_ERRORS_CAP, branch, pending.base_branch, branch,
+                            transition_to_permanently_failed(
+                                pending,
+                                &format!(
+                                    "PR retry stuck on identical error {}×. Stderr captured",
+                                    PENDING_PR_LAST_ERRORS_CAP,
                                 ),
-                                LogLevel::Error,
+                                &mut self.activity_log,
                             );
                         } else if let Some(delay) = policy.delay_for_attempt(attempt) {
                             pending.next_retry_at = Some(
@@ -158,19 +153,13 @@ impl App {
 
         pending.manual_retry_count = pending.manual_retry_count.saturating_add(1);
         if pending.manual_retry_count > PENDING_PR_MANUAL_RETRY_LIFETIME_CAP {
-            pending.status = PendingPrStatus::PermanentlyFailed;
-            pending.next_retry_at = None;
-            self.activity_log.push_simple(
-                format!("#{}", issue_number),
-                format!(
-                    "Manual PR retries exhausted (>{}). Branch: {}. Run \
-                     `gh pr create --base {} --head {}` manually or file a bug.",
+            transition_to_permanently_failed(
+                pending,
+                &format!(
+                    "Manual PR retries exhausted (>{})",
                     PENDING_PR_MANUAL_RETRY_LIFETIME_CAP,
-                    pending.branch,
-                    pending.base_branch,
-                    pending.branch,
                 ),
-                LogLevel::Error,
+                &mut self.activity_log,
             );
             return;
         }
@@ -244,6 +233,28 @@ fn record_error_for_correlation(
     pending.last_errors.push_back(normalized);
 }
 
+/// Transition `pending` into `PermanentlyFailed` and log a uniform Error
+/// entry. `reason` is the human-facing prefix (e.g., "Manual PR retries
+/// exhausted (>5)" or "PR retry stuck on identical error 3×. Stderr
+/// captured"); the helper appends the branch context and the manual
+/// recovery hint.
+fn transition_to_permanently_failed(
+    pending: &mut crate::provider::github::types::PendingPr,
+    reason: &str,
+    log: &mut crate::tui::activity_log::ActivityLog,
+) {
+    pending.status = PendingPrStatus::PermanentlyFailed;
+    pending.next_retry_at = None;
+    log.push_simple(
+        format!("#{}", pending.issue_number),
+        format!(
+            "{}. Branch: {}. Run `gh pr create --base {} --head {}` manually or file a bug.",
+            reason, pending.branch, pending.base_branch, pending.branch,
+        ),
+        LogLevel::Error,
+    );
+}
+
 /// True iff `pending.last_errors` contains exactly `PENDING_PR_LAST_ERRORS_CAP`
 /// entries AND every entry is byte-equal — a deterministic-failure signal.
 /// The byte comparison is reliable because `record_error_for_correlation`
@@ -267,10 +278,9 @@ mod tests {
     };
     use crate::provider::github::types::{
         PENDING_PR_LAST_ERRORS_CAP, PENDING_PR_MANUAL_RETRY_LIFETIME_CAP, PendingPr,
-        PendingPrStatus,
+        PendingPrStatus, awaiting_pending_pr,
     };
     use crate::tui::activity_log::LogLevel;
-    use std::collections::VecDeque;
 
     #[test]
     fn normalize_error_strips_iso_timestamps() {
@@ -318,22 +328,7 @@ mod tests {
     }
 
     fn make_pending_pr(issue_number: u64) -> PendingPr {
-        PendingPr {
-            issue_number,
-            issue_numbers: vec![],
-            branch: format!("maestro/issue-{}", issue_number),
-            base_branch: "main".into(),
-            files_touched: vec![],
-            cost_usd: 0.0,
-            attempt: 3,
-            max_attempts: 3,
-            last_error: String::new(),
-            last_attempt_at: chrono::Utc::now(),
-            next_retry_at: None,
-            status: PendingPrStatus::AwaitingManualRetry,
-            last_errors: VecDeque::new(),
-            manual_retry_count: 0,
-        }
+        awaiting_pending_pr(issue_number)
     }
 
     #[test]

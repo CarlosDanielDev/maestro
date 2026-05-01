@@ -17,6 +17,34 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `tui::app::event_handler` formats `Dispatching <name>` for tool-use events with a known subagent name, instead of the bare `Using Agent` label.
   - 23 new tests: 6 parser tests (extraction + sanitization + length cap), 8 role-lookup tests covering each registry entry, 2 ToolMeta storage tests, 2 stream-event round-trip tests, plus 5 baseline tests for ergonomics. 2 new snapshot tests in `src/tui/snapshot_tests/activity_log_dispatch.rs` pin the `Dispatching <name>` rendering and the unchanged plain-tool path.
 
+### PR #544 review follow-ups — auto-PR guards + workflow hardening (#545 — 2026-04-30)
+
+Eight commits closing out the post-#544 review queue. Grouped by priority:
+
+**P0 — correctness fixes that restore behavior users already depended on:**
+
+- `PendingPr.last_error` is removed and consolidated into `last_errors: VecDeque<String>` (cap 3). State files written by older builds migrate cleanly via a `#[serde(from = "PendingPrLegacy")]` backward-compat shim — no manual migration needed, no data loss. A canonical `awaiting_pending_pr` test fixture makes the serde contract explicit.
+- `transition_to_permanently_failed` is extracted from `process_pending_pr_retries` into its own function, making the cap-3 bail-out path independently testable.
+- `App::new` rehydration now surfaces the cap-coincidence note and the `AUTH_RECOVERY_HINT` constant on startup when orphan pending PRs are detected.
+
+**P1 — human-in-the-loop safety and `gh pr create` hardening:**
+
+- `/implement` Step 4 DOR remediation now requires the explicit `--auto-comment` flag to auto-post the gatekeeper-drafted comment and apply the `needs-info` label. Without the flag the proposed action is printed to stderr for human review and the command stops — posting LLM-emitted text to a public issue is a non-recoverable action. Add `--auto-comment` to the invocation to restore the previous auto-post behavior.
+- `create_pr` gains `validate_body()` (rejects empty title; enforces `GH_BODY_MAX_BYTES` limit). Eight `GhCliClient` argv builders gain the `--repo` flag rollout via `GhCliClient::with_repo()`.
+
+**P2 — `/pushup` last-PR-created marker and idempotent issue close:**
+
+- After a successful `gh pr create`, `/pushup` Step 4 writes a single-line JSON marker to `~/.maestro/last-pr-created`. A running maestro TUI polls this file once per `check_completions` tick; on a fresh write it enqueues `TuiCommand::PrCreated` and triggers `/review`. The marker is consumed-once — maestro deletes it after dispatch. Malformed JSON logs a Warn entry and is deleted.
+- `/pushup` Step 6.5 issue-close is now fully idempotent: if the issue is already `CLOSED` (previous run succeeded up to this point) the close + comment are skipped with a log message, not an error.
+
+**P3 — XDG sentinel path chain and hook test coverage:**
+
+- The `/tmp/maestro-current-gate-dir` sentinel for `$GATE_LOG_DIR` persistence is migrated to the XDG-aware chain: `$XDG_RUNTIME_DIR` → `$HOME/.cache/maestro` → `${TMPDIR:-/tmp}`. The chosen path is printed as `sentinel: <path>` on stdout. The legacy `/tmp` path is still written for back-compat with any automation that reads it directly. New helper script `.claude/hooks/sentinel-path.sh` encapsulates the resolution logic; the `/implement` Step 2 recovery snippet now walks the same three-candidate chain. New test files `.claude/hooks/tests/test-sentinel.sh` and `.claude/hooks/tests/test_parse_gatekeeper_report.py` cover the sentinel and gatekeeper-parser behaviors respectively.
+
+**CI — self-host smoke workflow:**
+
+- `.github/workflows/self-host.yml` is the single guard that would have caught the 2026-03-20 `gh pr create --json number` wire-format regression six weeks earlier. On `workflow_dispatch` it builds the maestro binary on a clean runner, creates an ephemeral sandbox repo, runs maestro headlessly against a fixture issue, asserts a PR is opened, then deletes the repo. Manual trigger only for v1; PR-trigger follows once stable. **Requires two repository secrets:** `MAESTRO_SELFTEST_PAT` (fine-grained PAT with Contents:RW, Issues:RW, Pull requests:RW, Administration:RW scoped to the sandbox owner) and `MAESTRO_SELFTEST_OWNER` (the sandbox org/user). The workflow refuses to run if `MAESTRO_SELFTEST_OWNER` is unset — without this guard a misconfigured run could create a test repo under the main org.
+
 ### Fixed (auto-PR + workflow root-cause batch — 2026-04-30)
 
 This batch responds to a multi-audit review of why users were abandoning

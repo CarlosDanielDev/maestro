@@ -206,6 +206,11 @@ impl App {
             return;
         }
 
+        let mut last_errors = std::collections::VecDeque::new();
+        last_errors.push_back(format!(
+            "GitHub auth missing. {}",
+            super::AUTH_RECOVERY_HINT
+        ));
         let pending = PendingPr {
             issue_number,
             issue_numbers: issue_numbers.to_vec(),
@@ -215,19 +220,20 @@ impl App {
             cost_usd,
             attempt: 0,
             max_attempts: PrRetryPolicy::default().max_attempts,
-            last_error: "GitHub auth missing — run `gh auth login` then press Shift+P".into(),
             last_attempt_at: chrono::Utc::now(),
             next_retry_at: None,
             status: PendingPrStatus::AwaitingManualRetry,
-            last_errors: std::collections::VecDeque::new(),
+            last_errors,
             manual_retry_count: 0,
         };
         self.pending_prs.push(pending);
 
         self.activity_log.push_simple(
             format!("#{}", issue_number),
-            "PR creation deferred — auth missing. Run `gh auth login` then press Shift+P to retry."
-                .into(),
+            format!(
+                "PR creation deferred — auth missing. {}",
+                super::AUTH_RECOVERY_HINT
+            ),
             LogLevel::Warn,
         );
     }

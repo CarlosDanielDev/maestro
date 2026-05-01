@@ -13,8 +13,13 @@ import json
 import re
 import sys
 
-FENCE_PATTERN = re.compile(
-    r"```json\s+gatekeeper\s*\n(.*?)\n```",
+# Two acceptable fence formats:
+#   1. legacy:    ```json gatekeeper   (the original, kept for back-compat)
+#   2. headered:  ## Gatekeeper        (Markdown header) followed by a plain
+#                 ```json fence anywhere later in the same response.
+FENCE_LEGACY = re.compile(r"```json\s+gatekeeper\s*\n(.*?)\n```", re.DOTALL)
+FENCE_HEADERED = re.compile(
+    r"##\s*Gatekeeper\b[^\n]*\n.*?```json\s*\n(.*?)\n```",
     re.DOTALL,
 )
 
@@ -26,10 +31,17 @@ class ParseError(Exception):
 
 
 def extract_report(text: str) -> dict:
-    """Extract the first ```json gatekeeper fenced block and parse as JSON."""
-    match = FENCE_PATTERN.search(text)
+    """Extract the first matching gatekeeper fence and parse as JSON.
+
+    Accepts either the legacy ```json gatekeeper fence or a plain ```json
+    fence preceded somewhere by a `## Gatekeeper` header.
+    """
+    match = FENCE_LEGACY.search(text) or FENCE_HEADERED.search(text)
     if not match:
-        raise ParseError("no ```json gatekeeper fenced block found in input")
+        raise ParseError(
+            "no gatekeeper fence found — expected either "
+            "```json gatekeeper or `## Gatekeeper` header followed by ```json"
+        )
 
     content = match.group(1)
     try:

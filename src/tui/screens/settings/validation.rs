@@ -57,11 +57,10 @@ pub fn validate_repo(config: &Config) -> ValidationFeedback {
     if repo.is_empty() {
         return ValidationFeedback::error("repo is required");
     }
-    let parts: Vec<&str> = repo.splitn(2, '/').collect();
-    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
-        return ValidationFeedback::error("must match owner/repo format");
+    match crate::provider::github::types::parse_owner_repo(repo) {
+        Ok(_) => ValidationFeedback::valid(),
+        Err(_) => ValidationFeedback::error("must match owner/repo format"),
     }
-    ValidationFeedback::valid()
 }
 
 pub fn validate_base_branch(config: &Config) -> ValidationFeedback {

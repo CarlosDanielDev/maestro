@@ -458,9 +458,9 @@ async fn auto_pr_when_auth_missing_enqueues_pending_pr_for_manual_retry() {
     assert_eq!(p.status, PendingPrStatus::AwaitingManualRetry);
     assert!(p.next_retry_at.is_none(), "manual retry — no auto schedule");
     assert!(
-        p.last_error.contains("auth"),
-        "last_error must explain auth missing, got: {}",
-        p.last_error,
+        p.last_errors.back().is_some_and(|s| s.contains("auth")),
+        "last_errors.back() must explain auth missing, got: {:?}",
+        p.last_errors,
     );
     assert_eq!(p.attempt, 0);
 

@@ -19,19 +19,11 @@ use std::time::Instant;
 
 /// Build a canonical GitHub PR URL from a `owner/repo` slug and PR number.
 ///
-/// Returns `None` when the slug is not a single `owner/repo` pair (empty
-/// halves, missing slash, or extra slashes). Callers that get `None`
-/// should fall back to `client.get_pr(pr_number)` and read `html_url`.
+/// Returns `None` when the slug is not a single `owner/repo` pair.
+/// Callers that get `None` should fall back to `client.get_pr(pr_number)`
+/// and read `html_url`.
 pub(crate) fn pr_url(repo_slug: &str, pr_number: u64) -> Option<String> {
-    let mut parts = repo_slug.split('/');
-    let owner = parts.next()?;
-    let repo = parts.next()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    if owner.is_empty() || repo.is_empty() {
-        return None;
-    }
+    let (owner, repo) = crate::provider::github::types::parse_owner_repo(repo_slug).ok()?;
     Some(format!(
         "https://github.com/{}/{}/pull/{}",
         owner, repo, pr_number
@@ -281,6 +273,8 @@ impl App {
                 let was_auth = self.check_gh_auth_error(&e);
                 let policy = PrRetryPolicy::default();
                 let now = chrono::Utc::now();
+                let mut last_errors = std::collections::VecDeque::new();
+                last_errors.push_back(e.to_string());
                 let pending = PendingPr {
                     issue_number,
                     issue_numbers: issue_numbers.clone(),
@@ -290,13 +284,12 @@ impl App {
                     cost_usd,
                     attempt: 0,
                     max_attempts: policy.max_attempts,
-                    last_error: e.to_string(),
                     last_attempt_at: now,
                     next_retry_at: policy.delay_for_attempt(0).map(|d| {
                         now + chrono::Duration::from_std(d).unwrap_or(chrono::Duration::seconds(5))
                     }),
                     status: PendingPrStatus::RetryScheduled,
-                    last_errors: std::collections::VecDeque::new(),
+                    last_errors,
                     manual_retry_count: 0,
                 };
                 self.pending_prs.push(pending);

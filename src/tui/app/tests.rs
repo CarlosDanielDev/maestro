@@ -1864,22 +1864,10 @@ mod pending_prs_persistence {
     use crate::tui::activity_log::LogLevel;
 
     fn make_pending_pr(issue_number: u64) -> PendingPr {
-        PendingPr {
-            issue_number,
-            issue_numbers: vec![],
-            branch: format!("maestro/issue-{}", issue_number),
-            base_branch: "main".into(),
-            files_touched: vec![],
-            cost_usd: 0.0,
-            attempt: 1,
-            max_attempts: 3,
-            last_error: "boom".into(),
-            last_attempt_at: chrono::Utc::now(),
-            next_retry_at: None,
-            status: PendingPrStatus::AwaitingManualRetry,
-            last_errors: std::collections::VecDeque::new(),
-            manual_retry_count: 0,
-        }
+        let mut p = crate::provider::github::types::awaiting_pending_pr(issue_number);
+        p.attempt = 1;
+        p.last_errors.push_back("boom".into());
+        p
     }
 
     fn build_app_with_seeded_state(state: MaestroState) -> App {
@@ -1940,6 +1928,182 @@ mod pending_prs_persistence {
             "the warn must mention Shift+P so users know how to recover"
         );
         assert_eq!(warn.session_label, "#orphan-prs");
+    }
+
+    #[test]
+    fn app_new_truncates_pending_prs_above_rehydrate_cap() {
+        use crate::provider::github::types::PENDING_PRS_REHYDRATE_CAP;
+        let mut seed = MaestroState::default();
+        for i in 0..(PENDING_PRS_REHYDRATE_CAP + 1) {
+            seed.pending_prs.push(make_pending_pr(i as u64));
+        }
+        let app = build_app_with_seeded_state(seed);
+
+        assert_eq!(
+            app.pending_prs.len(),
+            PENDING_PRS_REHYDRATE_CAP,
+            "App::new must truncate pending_prs to PENDING_PRS_REHYDRATE_CAP"
+        );
+        let truncate_warn = app.activity_log.entries().iter().any(|e| {
+            matches!(e.level, LogLevel::Warn) && e.message.contains("Truncated pending_prs")
+        });
+        assert!(
+            truncate_warn,
+            "App::new must emit a Warn log entry containing 'Truncated pending_prs' when the cap is exceeded",
+        );
+    }
+
+    #[test]
+    fn auth_recovery_hint_const_is_well_formed() {
+        use super::AUTH_RECOVERY_HINT;
+        assert!(!AUTH_RECOVERY_HINT.is_empty());
+        assert!(
+            AUTH_RECOVERY_HINT.contains("gh auth login"),
+            "AUTH_RECOVERY_HINT must reference `gh auth login` so users know how to recover"
+        );
+    }
+
+    // ── /pushup → maestro auto-review hand-off via marker file ──
+
+    fn marker_path(home: &std::path::Path) -> std::path::PathBuf {
+        home.join(".maestro").join("last-pr-created")
+    }
+
+    fn make_app_with_home(home: std::path::PathBuf) -> App {
+        let path = std::env::temp_dir().join(format!("marker-test-{}.json", uuid::Uuid::new_v4()));
+        let store = StateStore::new(path);
+        App::new(
+            store,
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        )
+        .with_home_dir(home)
+    }
+
+    #[tokio::test]
+    async fn poll_pr_marker_fresh_enqueues_pr_created_and_deletes_file() {
+        let home = tempfile::tempdir().unwrap();
+        let marker = marker_path(home.path());
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(
+            &marker,
+            r#"{"pr_number":42,"owner":"o","repo":"r","ts":"2026-04-30T00:00:00Z"}"#,
+        )
+        .unwrap();
+
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        app.poll_last_pr_created_marker().await;
+
+        assert!(
+            !marker.exists(),
+            "fresh marker must be deleted after consume (consume-once semantics)"
+        );
+        let queued = app
+            .pending_commands
+            .iter()
+            .any(|c| matches!(c, TuiCommand::PrCreated { pr_number: 42, .. }));
+        assert!(queued, "fresh marker must enqueue TuiCommand::PrCreated");
+    }
+
+    #[tokio::test]
+    async fn poll_pr_marker_corrupt_json_warns_and_deletes() {
+        let home = tempfile::tempdir().unwrap();
+        let marker = marker_path(home.path());
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(&marker, b"not valid json {{{").unwrap();
+
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        let cmds_before = app.pending_commands.len();
+        app.poll_last_pr_created_marker().await;
+
+        assert!(!marker.exists(), "corrupt marker must be deleted");
+        assert_eq!(
+            app.pending_commands.len(),
+            cmds_before,
+            "corrupt marker must NOT enqueue a command"
+        );
+        let warn =
+            app.activity_log.entries().iter().any(|e| {
+                matches!(e.level, LogLevel::Warn) && e.message.contains("last-pr-created")
+            });
+        assert!(
+            warn,
+            "corrupt marker must produce a Warn-level activity log entry"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_pr_marker_missing_is_noop() {
+        let home = tempfile::tempdir().unwrap();
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        let cmds_before = app.pending_commands.len();
+        app.poll_last_pr_created_marker().await;
+        assert_eq!(
+            app.pending_commands.len(),
+            cmds_before,
+            "missing marker must be a silent no-op"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_pr_marker_refuses_symlink() {
+        // A same-user attacker could plant a symlink at
+        // ~/.maestro/last-pr-created. The reader must detect it (via
+        // symlink_metadata) and unlink the symlink without following
+        // it; the link target must stay untouched.
+        let home = tempfile::tempdir().unwrap();
+        let marker_dir = home.path().join(".maestro");
+        std::fs::create_dir_all(&marker_dir).unwrap();
+        let target = home.path().join("decoy.txt");
+        std::fs::write(&target, "decoy contents").unwrap();
+        let marker = marker_dir.join("last-pr-created");
+        std::os::unix::fs::symlink(&target, &marker).unwrap();
+
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        app.poll_last_pr_created_marker().await;
+
+        assert!(!marker.exists(), "symlink at marker path must be unlinked");
+        assert!(target.exists(), "symlink target must NOT be deleted");
+        let warn = app
+            .activity_log
+            .entries()
+            .iter()
+            .any(|e| matches!(e.level, LogLevel::Warn) && e.message.contains("symlink"));
+        assert!(
+            warn,
+            "symlink must produce a Warn entry mentioning 'symlink'"
+        );
+        let queued = app
+            .pending_commands
+            .iter()
+            .any(|c| matches!(c, TuiCommand::PrCreated { .. }));
+        assert!(!queued, "symlink must NOT enqueue a PrCreated command");
+    }
+
+    #[tokio::test]
+    async fn poll_pr_marker_rejects_owner_with_path_traversal() {
+        // Marker owner/repo from JSON must not be a vehicle for argv
+        // injection or path traversal.
+        let home = tempfile::tempdir().unwrap();
+        let marker = marker_path(home.path());
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(
+            &marker,
+            r#"{"pr_number":42,"owner":"../evil","repo":"r","ts":"2026-04-30T00:00:00Z"}"#,
+        )
+        .unwrap();
+
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        app.poll_last_pr_created_marker().await;
+
+        assert!(!marker.exists(), "rejected marker must be deleted");
+        let queued = app
+            .pending_commands
+            .iter()
+            .any(|c| matches!(c, TuiCommand::PrCreated { .. }));
+        assert!(!queued, "owner with traversal must NOT enqueue PrCreated");
     }
 
     #[test]

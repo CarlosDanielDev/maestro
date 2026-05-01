@@ -343,28 +343,11 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     }
 }
 
-/// Scrub credentials from `gh` stderr/stdout before it lands in error
-/// messages, activity logs, or `maestro-state.json`.
-///
-/// Catches:
-/// - `Authorization: Bearer <token>` / `Authorization: token <token>`
-///   (gh emits these when the user enables `GH_DEBUG=api`)
-/// - GitHub token prefixes: `ghp_`, `gho_`, `ghs_`, `ghu_`, `ghr_`,
-///   and `github_pat_<v2>`
-///
-/// The redaction substitutes `[REDACTED]` so the rest of the message
-/// stays readable for diagnostics.
-pub fn redact_secrets(s: &str) -> String {
-    use std::sync::OnceLock;
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::Regex::new(
-            r"(?i)(?:authorization:\s*(?:bearer|token)\s+\S+|gh[oprsu]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)",
-        )
-        .unwrap()
-    });
-    re.replace_all(s, "[REDACTED]").into_owned()
-}
+// `redact_secrets` lives in `provider::github::redaction` so the lower
+// `types.rs` layer can call it on rehydrate without depending on
+// `client.rs`. Re-exported here for back-compat with existing
+// `crate::provider::github::client::redact_secrets` call sites.
+pub use super::redaction::redact_secrets;
 
 /// Check if a stderr string indicates a GitHub CLI authentication failure.
 pub fn is_auth_error(stderr: &str) -> bool {
@@ -463,7 +446,7 @@ mod parser_tests {
 }
 
 use crate::provider::github::gh_argv;
-use crate::util::{titles_equivalent, validate_gh_arg, validate_title};
+use crate::util::{titles_equivalent, validate_body, validate_gh_arg, validate_title};
 
 /// Convert a `Vec<String>` argv into `Vec<&str>` for `run_gh`.
 fn argv_refs(argv: &[String]) -> Vec<&str> {
@@ -471,11 +454,36 @@ fn argv_refs(argv: &[String]) -> Vec<&str> {
 }
 
 /// Implementation that shells out to `gh` CLI.
-pub struct GhCliClient;
+pub struct GhCliClient {
+    /// `owner/repo` to thread through every read-only / edit shellout
+    /// (`gh pr list/view`, `gh issue view/list/edit`). Without this `gh`
+    /// infers the repo from the worktree's git remote which can fail
+    /// silently when the worktree is in an odd state.
+    repo: Option<String>,
+}
 
 impl GhCliClient {
     pub fn new() -> Self {
-        Self
+        Self { repo: None }
+    }
+
+    /// Builder: thread an explicit `owner/repo` through every read-only
+    /// and label-edit shellout. PR creation deliberately ignores this —
+    /// see `build_create_pr_argv`.
+    ///
+    /// Validates the input through `validate_gh_arg` (rejects shell
+    /// metacharacters and `--`-prefixed values) and enforces the
+    /// `owner/repo` shape via `parse_owner_repo`.
+    pub fn with_repo(mut self, repo: String) -> Result<Self> {
+        validate_gh_arg(&repo, "repo")?;
+        crate::provider::github::types::parse_owner_repo(&repo)
+            .map_err(|e| anyhow::anyhow!("repo {:?}: {}", repo, e))?;
+        self.repo = Some(repo);
+        Ok(self)
+    }
+
+    fn repo_arg(&self) -> Option<&str> {
+        self.repo.as_deref()
     }
 
     async fn run_gh(&self, args: &[&str]) -> Result<String> {
@@ -535,14 +543,14 @@ impl GitHubClient for GhCliClient {
         } else {
             Some(label_arg.as_str())
         };
-        let argv = gh_argv::build_list_issues_argv(labels_csv);
+        let argv = gh_argv::build_list_issues_argv(labels_csv, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_issues_json(&json_str)
     }
 
     async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>> {
         validate_gh_arg(milestone, "milestone")?;
-        let argv = gh_argv::build_list_issues_by_milestone_argv(milestone);
+        let argv = gh_argv::build_list_issues_by_milestone_argv(milestone, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_issues_json(&json_str)
     }
@@ -561,7 +569,7 @@ impl GitHubClient for GhCliClient {
     }
 
     async fn get_issue(&self, number: u64) -> Result<GhIssue> {
-        let argv = gh_argv::build_get_issue_argv(number);
+        let argv = gh_argv::build_get_issue_argv(number, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         // gh issue view returns a single object, wrap it in array for parsing
         let issues = parse_issues_json(&format!("[{}]", json_str))?;
@@ -573,7 +581,7 @@ impl GitHubClient for GhCliClient {
 
     async fn add_label(&self, issue_number: u64, label: &str) -> Result<()> {
         validate_gh_arg(label, "label")?;
-        let argv = gh_argv::build_add_label_argv(issue_number, label);
+        let argv = gh_argv::build_add_label_argv(issue_number, label, self.repo_arg());
         let result = self.run_gh(&argv_refs(&argv)).await;
 
         if let Err(ref e) = result {
@@ -598,7 +606,7 @@ impl GitHubClient for GhCliClient {
 
     async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()> {
         validate_gh_arg(label, "label")?;
-        let argv = gh_argv::build_remove_label_argv(issue_number, label);
+        let argv = gh_argv::build_remove_label_argv(issue_number, label, self.repo_arg());
         self.run_gh(&argv_refs(&argv)).await?;
         Ok(())
     }
@@ -611,16 +619,18 @@ impl GitHubClient for GhCliClient {
         head_branch: &str,
         base_branch: &str,
     ) -> Result<u64> {
+        let normalized_title = validate_title(title, "PR title")?;
+        validate_body(body, "PR body")?;
         validate_gh_arg(head_branch, "head_branch")?;
         validate_gh_arg(base_branch, "base_branch")?;
-        let argv = gh_argv::build_create_pr_argv(head_branch, base_branch, title, body);
+        let argv = gh_argv::build_create_pr_argv(head_branch, base_branch, &normalized_title, body);
         let stdout = self.run_gh(&argv_refs(&argv)).await?;
         parse_pr_number_from_create_output(&stdout)
     }
 
     async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
         validate_gh_arg(head_branch, "head_branch")?;
-        let argv = gh_argv::build_list_prs_for_branch_argv(head_branch);
+        let argv = gh_argv::build_list_prs_for_branch_argv(head_branch, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         let prs: Vec<serde_json::Value> = serde_json::from_str(&json_str)?;
         Ok(prs
@@ -631,6 +641,7 @@ impl GitHubClient for GhCliClient {
 
     async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
         let normalized = validate_title(title, "milestone title")?;
+        validate_body(description, "milestone description")?;
 
         let mut open = self.list_milestones("open").await?;
         let closed = self.list_milestones("closed").await?;
@@ -706,9 +717,10 @@ impl GitHubClient for GhCliClient {
         milestone: Option<u64>,
     ) -> Result<CreateOutcome> {
         let normalized = validate_title(title, "issue title")?;
+        validate_body(body, "issue body")?;
 
         // Proactive pre-check: scan open + closed issues for an equivalent title.
-        let dupe_argv = gh_argv::build_create_issue_dupe_check_argv();
+        let dupe_argv = gh_argv::build_create_issue_dupe_check_argv(self.repo_arg());
         let all_json = self.run_gh(&argv_refs(&dupe_argv)).await?;
         let all_issues: Vec<serde_json::Value> = serde_json::from_str(&all_json)
             .context("Failed to parse issue list JSON for dupe pre-check")?;
@@ -760,13 +772,13 @@ impl GitHubClient for GhCliClient {
     }
 
     async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
-        let argv = gh_argv::build_list_open_prs_argv(PR_JSON_FIELDS);
+        let argv = gh_argv::build_list_open_prs_argv(PR_JSON_FIELDS, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_prs_json(&json_str)
     }
 
     async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
-        let argv = gh_argv::build_get_pr_argv(number, PR_JSON_FIELDS);
+        let argv = gh_argv::build_get_pr_argv(number, PR_JSON_FIELDS, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         let prs = parse_prs_json(&format!("[{}]", json_str))?;
         prs.into_iter()
@@ -780,6 +792,9 @@ impl GitHubClient for GhCliClient {
         event: crate::provider::github::types::PrReviewEvent,
         body: &str,
     ) -> Result<()> {
+        // Parity with create_pr / create_issue / create_milestone — every
+        // user-facing body that ships to GitHub is bounded at the same cap.
+        validate_body(body, "PR review body")?;
         let argv = gh_argv::build_submit_pr_review_argv(pr_number, event, body);
         self.run_gh(&argv_refs(&argv)).await?;
         Ok(())
@@ -2080,5 +2095,37 @@ mod tests {
             mock.patch_milestone_calls(),
             vec![(1u64, "first".to_string()), (2u64, "second".to_string()),]
         );
+    }
+
+    // ── with_repo argv-injection guard ────────────────────────────────
+
+    #[test]
+    fn with_repo_accepts_owner_slash_repo() {
+        let c = GhCliClient::new().with_repo("CarlosDanielDev/maestro".into());
+        assert!(c.is_ok());
+    }
+
+    #[test]
+    fn with_repo_rejects_dash_prefixed_value() {
+        let c = GhCliClient::new().with_repo("--evil-flag=value".into());
+        assert!(c.is_err(), "must reject argv-injection-shaped repo");
+    }
+
+    #[test]
+    fn with_repo_rejects_missing_slash() {
+        let c = GhCliClient::new().with_repo("not-owner-repo-shape".into());
+        assert!(c.is_err());
+    }
+
+    #[test]
+    fn with_repo_rejects_empty_owner() {
+        let c = GhCliClient::new().with_repo("/repo".into());
+        assert!(c.is_err());
+    }
+
+    #[test]
+    fn with_repo_rejects_empty_repo() {
+        let c = GhCliClient::new().with_repo("owner/".into());
+        assert!(c.is_err());
     }
 }

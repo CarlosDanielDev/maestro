@@ -34,7 +34,7 @@
 3. **Delegate to Gatekeeper (MANDATORY):**
    - `subagent-gatekeeper` → structured JSON report (DOR, blockers, contracts, task_type)
    - Parse via `.claude/hooks/parse_gatekeeper_report.py`
-   - On DOR FAIL → orchestrator posts gatekeeper-drafted comment, applies `needs-info` label, **STOP**
+   - On DOR FAIL → by default, orchestrator prints the proposed comment for human review and **STOP**s (does NOT auto-post); pass `--auto-comment` to `/implement` to auto-post the comment and apply `needs-info` label
    - On blocker/contract FAIL → **STOP** with reasons from the report
 4. **Delegate to Architect for blueprint - MANDATORY:**
    - `subagent-architect` - For all architecture decisions
@@ -171,7 +171,8 @@ Pre-check hook (implement-gates.sh) → STOP on any gate failure
     │
     ▼
 subagent-gatekeeper → STOP if DOR/blockers/contracts FAIL
-                      (auto-comment + needs-info on DOR FAIL)
+                      (DOR FAIL: print proposed comment for human review by default;
+                       pass --auto-comment to /implement to auto-post + needs-info)
     │
     ▼
 subagent-architect → Blueprint (includes testable interfaces)

@@ -205,25 +205,15 @@ mod tests {
 
     #[test]
     fn maestro_state_pending_prs_round_trips_via_serde() {
-        use crate::provider::github::types::{PendingPr, PendingPrStatus};
+        use crate::provider::github::types::{PendingPrStatus, awaiting_pending_pr};
 
         let mut state = MaestroState::default();
-        state.pending_prs.push(PendingPr {
-            issue_number: 7,
-            issue_numbers: vec![],
-            branch: "maestro/issue-7".into(),
-            base_branch: "main".into(),
-            files_touched: vec!["src/lib.rs".into()],
-            cost_usd: 0.5,
-            attempt: 0,
-            max_attempts: 3,
-            last_error: String::new(),
-            last_attempt_at: chrono::Utc::now(),
-            next_retry_at: None,
-            status: PendingPrStatus::RetryScheduled,
-            last_errors: std::collections::VecDeque::new(),
-            manual_retry_count: 0,
-        });
+        let mut p = awaiting_pending_pr(7);
+        p.files_touched = vec!["src/lib.rs".into()];
+        p.cost_usd = 0.5;
+        p.attempt = 0;
+        p.status = PendingPrStatus::RetryScheduled;
+        state.pending_prs.push(p);
 
         let json = serde_json::to_string(&state).unwrap();
         let rt: MaestroState = serde_json::from_str(&json).unwrap();

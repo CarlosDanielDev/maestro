@@ -97,10 +97,21 @@ if [ -n "$(git status --porcelain)" ]; then
     fi
   fi
 
+  surface_stash_list() {
+    # CI loops can pile up auto-stashes invisibly; surface the top of
+    # the list so the user sees them accumulating.
+    local list count
+    list=$(git stash list)
+    count=$(printf '%s\n' "$list" | grep -c '^stash@' || true)
+    echo "implement-gates: most recent stashes (top 5 of ${count}):"
+    printf '%s\n' "$list" | head -5
+  }
+
   case "$resolved_action" in
     stash)
       git stash push -m "auto-stash before /implement #${issue_number}"
       echo "implement-gates: stashed as 'auto-stash before /implement #${issue_number}'"
+      surface_stash_list
       ;;
     abort)
       echo "implement-gates: aborting on dirty tree (--dirty-tree-action=abort)"
@@ -117,6 +128,7 @@ if [ -n "$(git status --porcelain)" ]; then
         S|s)
           git stash push -m "auto-stash before /implement #${issue_number}"
           echo "implement-gates: stashed as 'auto-stash before /implement #${issue_number}'"
+          surface_stash_list
           ;;
         *)
           echo "implement-gates: aborting on dirty tree"
@@ -148,5 +160,11 @@ if [ -x .claude/hooks/preflight.sh ]; then
 fi
 
 # Sentinel: persist GATE_LOG_DIR so subsequent Bash tool calls can recover it
-# without re-exporting (each Bash call is a fresh shell). Overwritten on next run.
-echo -n "$GATE_LOG_DIR" > /tmp/maestro-current-gate-dir
+# without re-exporting (each Bash call is a fresh shell). Overwritten on next
+# run. Path resolved by sentinel-path.sh into $XDG_RUNTIME_DIR or
+# $HOME/.cache/maestro to avoid the /tmp symlink-attack vector on multi-user
+# Linux. /implement Step 2 walks the same resolution chain on read.
+# shellcheck disable=SC1091
+source "$(dirname "$0")/sentinel-path.sh"
+echo -n "$GATE_LOG_DIR" > "$SENTINEL_PATH"
+echo "sentinel: $SENTINEL_PATH"

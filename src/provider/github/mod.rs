@@ -9,4 +9,5 @@ pub mod gh_argv;
 pub mod labels;
 pub mod merge;
 pub mod pr;
+pub mod redaction;
 pub mod types;

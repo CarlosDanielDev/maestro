@@ -22,6 +22,7 @@ Fetch a GitHub issue and implement it following the enforced TDD harness.
 | `--continue` | — | Step 5 idempotency: continue on existing branch (skip prompt) |
 | `--restart` | — | Step 5 idempotency: delete existing branch and start fresh (skip prompt; still requires inner `RESTART` confirmation if interactive) |
 | `--dirty-tree-action=stash\|abort\|ask` | — | Pre-check Gate 6: how to handle a dirty working tree. Pass-through to `implement-gates.sh`. |
+| `--auto-comment` | — | Step 4 DOR remediation: auto-post the gatekeeper-drafted comment + `needs-info` label. Default: print the proposed action and STOP for human review. |
 
 `--training` / `-t` is explicitly rejected — Training mode is for `.claude/` configuration, not implementation.
 
@@ -39,6 +40,7 @@ Extract from `$ARGUMENTS`:
 3. **Mode flag** (if present).
 4. **Idempotency flag** (`--continue` or `--restart`, if present). Reject with exit 1 if both are passed.
 5. **Dirty-tree action** (`--dirty-tree-action=...`, if present) — captured for pass-through to the pre-check hook in Step 2.
+6. **Auto-comment opt-in** (`--auto-comment`, if present) — export `AUTO_COMMENT=1` for Step 4 DOR auto-remediation.
 
 ```bash
 export ISSUE_NUMBER="<n>"  # substitute the parsed number
@@ -71,12 +73,23 @@ bash .claude/hooks/implement-gates.sh "$ISSUE_NUMBER" \
   ${DIRTY_TREE_ACTION:+--dirty-tree-action=$DIRTY_TREE_ACTION}
 ```
 
-The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success AND writes the same path to `/tmp/maestro-current-gate-dir` so subsequent Bash tool calls can recover it without relying on env-var persistence (each Bash call is a fresh shell — `export` does not propagate).
+The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success AND writes the same path to a sentinel file resolved via `.claude/hooks/sentinel-path.sh` (preferred) plus the legacy `/tmp/maestro-current-gate-dir` (back-compat). The sentinel allows subsequent Bash tool calls to recover `GATE_LOG_DIR` without relying on env-var persistence (each Bash call is a fresh shell — `export` does not propagate).
 
-Recovery pattern for any later step:
+The resolution chain (per #545 P3 — symlink-attack hardening on multi-user Linux) is `$XDG_RUNTIME_DIR` → `$HOME/.cache/maestro` → `${TMPDIR:-/tmp}`. The hook prints the chosen path as `sentinel: <path>` on stdout.
+
+Recovery pattern for any later step (walks the same chain):
 
 ```bash
-GATE_LOG_DIR=$(cat /tmp/maestro-current-gate-dir)
+GATE_LOG_DIR=""
+for candidate in \
+  "${XDG_RUNTIME_DIR:-}/maestro-current-gate-dir" \
+  "${HOME}/.cache/maestro/maestro-current-gate-dir" \
+  "/tmp/maestro-current-gate-dir"; do
+  if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+    GATE_LOG_DIR=$(cat "$candidate")
+    break
+  fi
+done
 ```
 
 The sentinel file is overwritten on the next `/implement` run, so it always points at the current gate session.
@@ -117,14 +130,31 @@ task_type=$(jq -r .task_type "$GATE_LOG_DIR/gatekeeper.json")
 if [ "$status" = "FAIL" ]; then
   dor_passed=$(jq -r .dor.passed "$GATE_LOG_DIR/gatekeeper.json")
   if [ "$dor_passed" = "false" ]; then
-    # Auto-remediation for DOR failures.
     comment_body=$(jq -r .remediation.comment_body "$GATE_LOG_DIR/gatekeeper.json")
-    gh issue comment "$ISSUE_NUMBER" --body "$comment_body"
-    for label in $(jq -r '.remediation.labels_to_add[]' "$GATE_LOG_DIR/gatekeeper.json"); do
-      gh issue edit "$ISSUE_NUMBER" --add-label "$label"
-    done
+    labels_csv=$(jq -r '.remediation.labels_to_add | join(", ")' "$GATE_LOG_DIR/gatekeeper.json")
+
+    if [ "${AUTO_COMMENT:-0}" = "1" ]; then
+      # Operator opted in via --auto-comment: post the comment + apply labels.
+      gh issue comment "$ISSUE_NUMBER" --body "$comment_body"
+      for label in $(jq -r '.remediation.labels_to_add[]' "$GATE_LOG_DIR/gatekeeper.json"); do
+        gh issue edit "$ISSUE_NUMBER" --add-label "$label"
+      done
+      echo "Gatekeeper FAIL: DOR auto-remediation posted (--auto-comment)." >&2
+    else
+      # Default: print the proposed action for human review, do NOT post.
+      # Posting LLM-emitted text to a public issue is a non-recoverable
+      # action; default to human-in-the-loop (#545 P1).
+      echo "Gatekeeper FAIL: DOR not satisfied." >&2
+      echo "Proposed remediation (NOT posted; re-run with --auto-comment to post):" >&2
+      echo "" >&2
+      echo "  Issue:  #$ISSUE_NUMBER" >&2
+      echo "  Labels: $labels_csv" >&2
+      echo "  Comment body:" >&2
+      echo "  ----" >&2
+      printf '%s\n' "$comment_body" | sed 's/^/  /' >&2
+      echo "  ----" >&2
+    fi
   fi
-  # Print reasons for the operator.
   echo "Gatekeeper FAIL:" >&2
   jq -r '.reasons[]' "$GATE_LOG_DIR/gatekeeper.json" | while read -r r; do
     echo "  - $r" >&2
@@ -367,7 +397,7 @@ Next: run /pushup to commit, push, create PR, and close the issue.
 - If issue closed → hook exits 1. Re-open first or pick a different issue.
 - If dirty tree → prompt (S)tash/(A)bort.
 - If baseline fails → exit 2. Fix baseline first.
-- If gatekeeper FAILs with DOR missing → comment posted, `needs-info` label applied, exit 5.
+- If gatekeeper FAILs with DOR missing → proposed remediation printed to stderr for human review, exit 5. Re-run with `--auto-comment` to auto-post the comment and apply `needs-info` label.
 - If blockers open → exit 5. Wait for blockers to close.
 - If RED/GREEN fails → exit 3/4. Actionable error with log path.
 

@@ -1492,23 +1492,7 @@ mod tests {
     // ── Issue #521: Shift+P manual PR retry keybinding ──────────────────
 
     fn make_awaiting_pending_pr(issue_number: u64) -> crate::provider::github::types::PendingPr {
-        use crate::provider::github::types::{PendingPr, PendingPrStatus};
-        PendingPr {
-            issue_number,
-            issue_numbers: vec![],
-            branch: format!("maestro/issue-{}", issue_number),
-            base_branch: "main".into(),
-            files_touched: vec![],
-            cost_usd: 0.0,
-            attempt: 3,
-            max_attempts: 3,
-            last_error: String::new(),
-            last_attempt_at: chrono::Utc::now(),
-            next_retry_at: None,
-            status: PendingPrStatus::AwaitingManualRetry,
-            last_errors: std::collections::VecDeque::new(),
-            manual_retry_count: 0,
-        }
+        crate::provider::github::types::awaiting_pending_pr(issue_number)
     }
 
     #[tokio::test]
