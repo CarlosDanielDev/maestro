@@ -206,6 +206,9 @@ impl App {
             return;
         }
 
+        let mut last_errors = std::collections::VecDeque::new();
+        last_errors
+            .push_back("GitHub auth missing — run `gh auth login` then press Shift+P".to_string());
         let pending = PendingPr {
             issue_number,
             issue_numbers: issue_numbers.to_vec(),
@@ -215,11 +218,10 @@ impl App {
             cost_usd,
             attempt: 0,
             max_attempts: PrRetryPolicy::default().max_attempts,
-            last_error: "GitHub auth missing — run `gh auth login` then press Shift+P".into(),
             last_attempt_at: chrono::Utc::now(),
             next_retry_at: None,
             status: PendingPrStatus::AwaitingManualRetry,
-            last_errors: std::collections::VecDeque::new(),
+            last_errors,
             manual_retry_count: 0,
         };
         self.pending_prs.push(pending);

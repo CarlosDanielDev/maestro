@@ -249,7 +249,14 @@ pub const PENDING_PR_LAST_ERRORS_CAP: usize = 3;
 pub const PENDING_PR_MANUAL_RETRY_LIFETIME_CAP: u32 = 5;
 
 /// A PR creation that failed and is queued for retry.
+///
+/// Deserialized via [`PendingPrRaw`] so legacy state files written before
+/// `#545` (which carried a `last_error: String` field that has since been
+/// folded into `last_errors`) migrate cleanly: when `last_errors` is empty
+/// and a non-empty `last_error` is present, the value is pushed onto
+/// `last_errors`. New JSON output omits `last_error` entirely.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "PendingPrRaw")]
 pub struct PendingPr {
     pub issue_number: u64,
     /// Additional issue numbers for unified PR sessions.
@@ -260,7 +267,6 @@ pub struct PendingPr {
     pub cost_usd: f64,
     pub attempt: u32,
     pub max_attempts: u32,
-    pub last_error: String,
     pub last_attempt_at: DateTime<Utc>,
     pub next_retry_at: Option<DateTime<Utc>>,
     pub status: PendingPrStatus,
@@ -274,6 +280,57 @@ pub struct PendingPr {
     /// abandonment when the underlying failure is deterministic.
     #[serde(default)]
     pub manual_retry_count: u32,
+}
+
+/// Wire shape used only on deserialize. Accepts both the pre-`#545` schema
+/// (with `last_error: String`) and the new schema (without). On conversion
+/// to [`PendingPr`] a non-empty `last_error` is migrated into `last_errors`
+/// when the deque is empty, so users upgrading from a very-old maestro do
+/// not lose error context.
+#[derive(Deserialize)]
+struct PendingPrRaw {
+    issue_number: u64,
+    #[serde(default)]
+    issue_numbers: Vec<u64>,
+    branch: String,
+    base_branch: String,
+    files_touched: Vec<String>,
+    cost_usd: f64,
+    attempt: u32,
+    max_attempts: u32,
+    #[serde(default)]
+    last_error: String,
+    last_attempt_at: DateTime<Utc>,
+    next_retry_at: Option<DateTime<Utc>>,
+    status: PendingPrStatus,
+    #[serde(default)]
+    last_errors: VecDeque<String>,
+    #[serde(default)]
+    manual_retry_count: u32,
+}
+
+impl From<PendingPrRaw> for PendingPr {
+    fn from(raw: PendingPrRaw) -> Self {
+        let mut last_errors = raw.last_errors;
+        if last_errors.is_empty() && !raw.last_error.is_empty() {
+            last_errors.push_back(raw.last_error);
+        }
+        Self {
+            issue_number: raw.issue_number,
+            issue_numbers: raw.issue_numbers,
+            branch: raw.branch,
+            base_branch: raw.base_branch,
+            files_touched: raw.files_touched,
+            cost_usd: raw.cost_usd,
+            attempt: raw.attempt,
+            max_attempts: raw.max_attempts,
+            last_attempt_at: raw.last_attempt_at,
+            next_retry_at: raw.next_retry_at,
+            status: raw.status,
+            last_errors,
+            manual_retry_count: raw.manual_retry_count,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,7 +366,6 @@ pub(crate) fn awaiting_pending_pr(issue_number: u64) -> PendingPr {
         cost_usd: 0.0,
         attempt: 3,
         max_attempts: 3,
-        last_error: String::new(),
         last_attempt_at: chrono::Utc::now(),
         next_retry_at: None,
         status: PendingPrStatus::AwaitingManualRetry,
@@ -360,7 +416,6 @@ mod tests {
             cost_usd: 1.23,
             attempt: 1,
             max_attempts: 3,
-            last_error: "network timeout".to_string(),
             last_attempt_at: Utc::now(),
             next_retry_at: Some(Utc::now()),
             status: PendingPrStatus::RetryScheduled,
@@ -398,6 +453,67 @@ mod tests {
         let p: PendingPr = serde_json::from_str(legacy_json).unwrap();
         assert!(p.last_errors.is_empty());
         assert_eq!(p.manual_retry_count, 0);
+    }
+
+    #[test]
+    fn pending_pr_legacy_last_error_migrates_to_last_errors() {
+        // State files written by v0.16.x and earlier (before #545) had a
+        // `last_error: String` field that is now removed. When
+        // `last_errors` is empty AND `last_error` is non-empty, the
+        // deserializer must migrate the value into `last_errors` so users
+        // upgrading from a very-old maestro do not lose error context.
+        let legacy_json = r#"{
+            "issue_number": 7,
+            "issue_numbers": [],
+            "branch": "maestro/issue-7",
+            "base_branch": "main",
+            "files_touched": [],
+            "cost_usd": 0.0,
+            "attempt": 0,
+            "max_attempts": 3,
+            "last_error": "network timeout",
+            "last_attempt_at": "2026-01-01T00:00:00Z",
+            "next_retry_at": null,
+            "status": "retry_scheduled"
+        }"#;
+        let p: PendingPr = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(p.last_errors.len(), 1);
+        assert_eq!(p.last_errors.back().unwrap(), "network timeout");
+    }
+
+    #[test]
+    fn pending_pr_neither_field_yields_empty_last_errors() {
+        // Truly bare JSON (no last_error, no last_errors) must yield an
+        // empty deque without panicking.
+        let bare_json = r#"{
+            "issue_number": 9,
+            "issue_numbers": [],
+            "branch": "maestro/issue-9",
+            "base_branch": "main",
+            "files_touched": [],
+            "cost_usd": 0.0,
+            "attempt": 0,
+            "max_attempts": 3,
+            "last_attempt_at": "2026-01-01T00:00:00Z",
+            "next_retry_at": null,
+            "status": "retry_scheduled"
+        }"#;
+        let p: PendingPr = serde_json::from_str(bare_json).unwrap();
+        assert!(p.last_errors.is_empty());
+    }
+
+    #[test]
+    fn pending_pr_serialized_form_omits_last_error_key() {
+        // Forward-compat regression guard: the serialized form must NOT
+        // include a `last_error` key. New JSON files are written without
+        // it; old binaries reading them is out of contract.
+        let p = awaiting_pending_pr(1);
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(
+            !json.contains("\"last_error\""),
+            "serialized PendingPr must not contain last_error key, got: {}",
+            json,
+        );
     }
 
     // Priority::from_label

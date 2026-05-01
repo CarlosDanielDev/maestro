@@ -281,6 +281,8 @@ impl App {
                 let was_auth = self.check_gh_auth_error(&e);
                 let policy = PrRetryPolicy::default();
                 let now = chrono::Utc::now();
+                let mut last_errors = std::collections::VecDeque::new();
+                last_errors.push_back(e.to_string());
                 let pending = PendingPr {
                     issue_number,
                     issue_numbers: issue_numbers.clone(),
@@ -290,13 +292,12 @@ impl App {
                     cost_usd,
                     attempt: 0,
                     max_attempts: policy.max_attempts,
-                    last_error: e.to_string(),
                     last_attempt_at: now,
                     next_retry_at: policy.delay_for_attempt(0).map(|d| {
                         now + chrono::Duration::from_std(d).unwrap_or(chrono::Duration::seconds(5))
                     }),
                     status: PendingPrStatus::RetryScheduled,
-                    last_errors: std::collections::VecDeque::new(),
+                    last_errors,
                     manual_retry_count: 0,
                 };
                 self.pending_prs.push(pending);

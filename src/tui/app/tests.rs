@@ -1866,7 +1866,7 @@ mod pending_prs_persistence {
     fn make_pending_pr(issue_number: u64) -> PendingPr {
         let mut p = crate::provider::github::types::awaiting_pending_pr(issue_number);
         p.attempt = 1;
-        p.last_error = "boom".into();
+        p.last_errors.push_back("boom".into());
         p
     }
 
