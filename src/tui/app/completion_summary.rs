@@ -53,7 +53,10 @@ impl App {
                 String::new()
             };
 
-            let gate_failures = if s.status == SessionStatus::NeedsReview {
+            let gate_failures = if matches!(
+                s.status,
+                SessionStatus::NeedsReview | SessionStatus::FailedGates
+            ) {
                 s.gate_results
                     .iter()
                     .filter(|r| !r.passed)
@@ -75,6 +78,7 @@ impl App {
                 pr_link,
                 error_summary,
                 gate_failures,
+                worktree_path: s.worktree_path.clone(),
                 issue_number: s.issue_number,
                 model: s.model.clone(),
             });

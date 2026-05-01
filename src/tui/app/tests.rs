@@ -25,6 +25,7 @@ fn completion_session_line_fields_are_accessible() {
         pr_link: String::new(),
         error_summary: String::new(),
         gate_failures: vec![],
+        worktree_path: None,
         issue_number: Some(42),
         model: "opus".to_string(),
     };
@@ -237,6 +238,7 @@ fn completion_session_line_pr_link_defaults_to_empty() {
         pr_link: String::new(),
         error_summary: String::new(),
         gate_failures: vec![],
+        worktree_path: None,
         issue_number: Some(1),
         model: "opus".to_string(),
     };
@@ -254,6 +256,7 @@ fn completion_session_line_holds_pr_link_value() {
         pr_link: "https://github.com/org/repo/pull/42".into(),
         error_summary: String::new(),
         gate_failures: vec![],
+        worktree_path: None,
         issue_number: Some(42),
         model: "opus".to_string(),
     };
@@ -271,6 +274,7 @@ fn completion_session_line_holds_error_summary_value() {
         pr_link: String::new(),
         error_summary: "Error: process exited with code 1".into(),
         gate_failures: vec![],
+        worktree_path: None,
         issue_number: Some(7),
         model: "opus".to_string(),
     };
@@ -515,6 +519,7 @@ fn completion_session_line_gate_failures_defaults_to_empty() {
         pr_link: String::new(),
         error_summary: String::new(),
         gate_failures: vec![],
+        worktree_path: None,
         issue_number: Some(42),
         model: "opus".to_string(),
     };
@@ -535,6 +540,7 @@ fn completion_session_line_holds_gate_failures() {
             gate: "tests".to_string(),
             message: "cargo test failed".to_string(),
         }],
+        worktree_path: None,
         issue_number: Some(7),
         model: "opus".to_string(),
     };
@@ -566,6 +572,7 @@ fn has_needs_review_returns_false_when_all_completed() {
             pr_link: String::new(),
             error_summary: String::new(),
             gate_failures: vec![],
+            worktree_path: None,
             issue_number: Some(1),
             model: "opus".to_string(),
         }],
@@ -592,6 +599,7 @@ fn has_needs_review_returns_true_when_one_session_needs_review() {
                 gate: "tests".to_string(),
                 message: "failed".to_string(),
             }],
+            worktree_path: None,
             issue_number: Some(2),
             model: "opus".to_string(),
         }],
@@ -616,6 +624,7 @@ fn has_needs_review_returns_true_when_mixed_statuses() {
                 pr_link: String::new(),
                 error_summary: String::new(),
                 gate_failures: vec![],
+                worktree_path: None,
                 issue_number: Some(1),
                 model: "opus".to_string(),
             },
@@ -631,6 +640,7 @@ fn has_needs_review_returns_true_when_mixed_statuses() {
                     gate: "clippy".to_string(),
                     message: "lint error".to_string(),
                 }],
+                worktree_path: None,
                 issue_number: Some(2),
                 model: "opus".to_string(),
             },
@@ -854,6 +864,7 @@ fn spawn_gate_fix_session_queues_pending_launch() {
             gate: "tests".to_string(),
             message: "cargo test failed".to_string(),
         }],
+        worktree_path: None,
         issue_number: Some(55),
         model: "opus".to_string(),
     };
@@ -880,6 +891,7 @@ fn spawn_gate_fix_session_does_nothing_when_no_issue_number() {
             gate: "tests".to_string(),
             message: "failed".to_string(),
         }],
+        worktree_path: None,
         issue_number: None,
         model: "opus".to_string(),
     };
@@ -1495,6 +1507,58 @@ fn toggle_agent_graph_does_not_push_nav_stack() {
         app.nav_stack.depth(),
         depth_before,
         "toggle must not grow nav_stack — Esc should not pop back through toggle history"
+    );
+}
+
+// --- Issue #560: Failed-gates recovery modal — Cycle 1 (data model) ---
+
+#[test]
+fn build_completion_summary_populates_gate_failures_for_failed_gates_session() {
+    let mut app = make_app();
+    let mut session = crate::session::types::Session::new(
+        "task".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(560),
+        None,
+    );
+    session.status = crate::session::types::SessionStatus::FailedGates;
+    session.gate_results = vec![
+        GateResultEntry::fail("clippy", "function 'x' is never used (truncated)"),
+        GateResultEntry::fail("label_update", "'maestro:in-progress' not found"),
+    ];
+    app.pool.enqueue(session);
+
+    let summary = app.build_completion_summary();
+    assert_eq!(
+        summary.sessions[0].gate_failures.len(),
+        2,
+        "FailedGates sessions must surface their gate_results as gate_failures \
+         on the CompletionSessionLine — currently only NeedsReview does."
+    );
+    assert_eq!(summary.sessions[0].gate_failures[0].gate, "clippy");
+    assert_eq!(summary.sessions[0].gate_failures[1].gate, "label_update");
+}
+
+#[test]
+fn build_completion_summary_includes_worktree_path_on_failed_gates_line() {
+    let mut app = make_app();
+    let mut session = crate::session::types::Session::new(
+        "task".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        Some(560),
+        None,
+    );
+    session.status = crate::session::types::SessionStatus::FailedGates;
+    session.worktree_path = Some(std::path::PathBuf::from(".maestro/worktrees/issue-560"));
+    app.pool.enqueue(session);
+
+    let summary = app.build_completion_summary();
+    assert_eq!(
+        summary.sessions[0].worktree_path,
+        Some(std::path::PathBuf::from(".maestro/worktrees/issue-560")),
+        "FailedGates session's worktree_path must surface on the line so [s] can reach it"
     );
 }
 

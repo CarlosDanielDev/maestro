@@ -164,6 +164,7 @@ async fn handle_secondary_mode_keys(app: &mut App, key: &KeyEvent) -> Option<Key
             Some(KeyAction::Consumed)
         }
         app::TuiMode::LogViewer(id) => Some(handle_log_viewer(app, key, id).await),
+        app::TuiMode::GateOutputViewer(_) => Some(handle_gate_output_viewer(app, key)),
         app::TuiMode::ConfirmKill(id) => Some(handle_confirm_kill(app, key, id).await),
         app::TuiMode::SessionSwitcher => {
             handle_session_switcher(app, key);
@@ -215,6 +216,16 @@ fn handle_queue_execution(app: &mut App, key: &KeyEvent) -> KeyAction {
 }
 
 fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
+    // Recovery keys (s/g/r/v/q) override the success table because `r`
+    // and `q` mean different things in failed-gates mode.
+    let in_failed_gates_mode = app
+        .completion_summary
+        .as_ref()
+        .map(|s| s.has_failed_gates())
+        .unwrap_or(false);
+    if in_failed_gates_mode {
+        return handle_completion_summary_failed_gates(app, key);
+    }
     match (key.code, key.modifiers) {
         (KeyCode::Enter, _) | (KeyCode::Esc, _) => {
             app.transition_to_dashboard();
@@ -284,6 +295,70 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
         KeyCode::Up | KeyCode::Down | KeyCode::Char('k' | 'j')
     ) {
         app.completion_summary = None;
+    }
+    KeyAction::Consumed
+}
+
+/// Recovery-modal key dispatch. Unlike the success handler, this one
+/// does NOT clear `completion_summary` on every key: `[v]` round-trips
+/// through the gate-output viewer and `[Esc]` returns here.
+fn handle_completion_summary_failed_gates(app: &mut App, key: &KeyEvent) -> KeyAction {
+    let first_failed = app
+        .completion_summary
+        .as_ref()
+        .and_then(|s| s.first_failed_gates_session())
+        .cloned();
+
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('s'), _) => {
+            if let Some(sl) = first_failed.as_ref()
+                && let Some(wt) = sl.worktree_path.as_ref()
+                && let Err(e) = app.shell_launcher.open_shell_at(wt)
+            {
+                app.activity_log.push_simple(
+                    "shell".into(),
+                    format!("Shell open failed: {}", e),
+                    LogLevel::Error,
+                );
+            }
+        }
+        (KeyCode::Char('g'), _) => {
+            if let Some(sl) = first_failed.as_ref() {
+                if let Err(e) = app.retry_completion_gates(sl.session_id) {
+                    app.activity_log.push_simple(
+                        "gates".into(),
+                        format!("Gate retry failed: {}", e),
+                        LogLevel::Error,
+                    );
+                } else {
+                    app.completion_summary = Some(app.build_completion_summary());
+                }
+            }
+        }
+        (KeyCode::Char('r'), _) => {
+            if let Some(sl) = first_failed.as_ref() {
+                app.spawn_resume_implement_session(sl);
+                app.completion_summary = None;
+                app.completion_summary_dismissed = true;
+                app.tui_mode = app::TuiMode::Overview;
+            }
+        }
+        (KeyCode::Char('q'), _) => {
+            // Recovery `[q]` closes the modal, NOT ConfirmExit — the
+            // success-modal disambiguation is asserted by tests.
+            app.completion_summary = None;
+            app.completion_summary_dismissed = true;
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        (KeyCode::Char('v'), _) => {
+            if let Some(sl) = first_failed.as_ref() {
+                app.log_viewer_scroll = 0;
+                app.tui_mode = app::TuiMode::GateOutputViewer(sl.session_id);
+            }
+        }
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => app.panel_view.scroll_up(),
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => app.panel_view.scroll_down(),
+        _ => {}
     }
     KeyAction::Consumed
 }
@@ -407,6 +482,33 @@ fn handle_session_summary(app: &mut App, key: &KeyEvent) {
         }
         _ => {}
     }
+}
+
+/// Gate-output viewer key dispatch (issue #560 → `[v]`).
+///
+/// Mirrors the log-viewer scroll keys but `[Esc]` and `[q]` return to
+/// the failed-gates completion modal (still rendered underneath) rather
+/// than navigating to the dashboard.
+fn handle_gate_output_viewer(app: &mut App, key: &KeyEvent) -> KeyAction {
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) | (KeyCode::Char('q'), _) => {
+            app.tui_mode = app::TuiMode::CompletionSummary;
+        }
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+            app.log_viewer_scroll = app.log_viewer_scroll.saturating_sub(1);
+        }
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+            app.log_viewer_scroll = app.log_viewer_scroll.saturating_add(1);
+        }
+        (KeyCode::Char('G'), _) => {
+            app.log_viewer_scroll = u16::MAX;
+        }
+        (KeyCode::Char('g'), _) => {
+            app.log_viewer_scroll = 0;
+        }
+        _ => {}
+    }
+    KeyAction::Consumed
 }
 
 async fn handle_log_viewer(app: &mut App, key: &KeyEvent, _id: uuid::Uuid) -> KeyAction {
@@ -1556,5 +1658,340 @@ mod tests {
             PendingPrStatus::AwaitingManualRetry,
             "text-input mode must block Shift+P"
         );
+    }
+
+    // ── Issue #560: failed-gates recovery handler — `[s]` shell ───────
+
+    use crate::tui::app::types::{CompletionSessionLine, CompletionSummaryData, GateFailureInfo};
+    use crate::tui::shell_launcher::CapturingShellLauncher;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
+    fn failed_gates_summary(worktree: Option<&str>) -> CompletionSummaryData {
+        CompletionSummaryData {
+            sessions: vec![CompletionSessionLine {
+                session_id: uuid::Uuid::nil(),
+                label: "#560".to_string(),
+                status: crate::session::types::SessionStatus::FailedGates,
+                cost_usd: 0.0,
+                elapsed: "0s".to_string(),
+                pr_link: String::new(),
+                error_summary: String::new(),
+                gate_failures: vec![GateFailureInfo {
+                    gate: "clippy".to_string(),
+                    message: "function never used".to_string(),
+                }],
+                worktree_path: worktree.map(PathBuf::from),
+                issue_number: Some(560),
+                model: "opus".to_string(),
+            }],
+            total_cost_usd: 0.0,
+            session_count: 1,
+            suggestions: vec![],
+            selected_suggestion: 0,
+        }
+    }
+
+    fn completed_summary() -> CompletionSummaryData {
+        CompletionSummaryData {
+            sessions: vec![CompletionSessionLine {
+                session_id: uuid::Uuid::nil(),
+                label: "#560".to_string(),
+                status: crate::session::types::SessionStatus::Completed,
+                cost_usd: 0.0,
+                elapsed: "0s".to_string(),
+                pr_link: String::new(),
+                error_summary: String::new(),
+                gate_failures: vec![],
+                worktree_path: None,
+                issue_number: Some(560),
+                model: "opus".to_string(),
+            }],
+            total_cost_usd: 0.0,
+            session_count: 1,
+            suggestions: vec![],
+            selected_suggestion: 0,
+        }
+    }
+
+    #[test]
+    fn completion_summary_s_key_calls_shell_launcher_with_worktree_path() {
+        let calls: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        let launcher = CapturingShellLauncher {
+            calls: calls.clone(),
+            should_fail: false,
+        };
+        let mut app = make_app().with_shell_launcher(Box::new(launcher));
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(failed_gates_summary(Some(".maestro/worktrees/issue-560")));
+
+        handle_completion_summary(&mut app, &key('s'));
+
+        let captured = calls.lock().expect("mutex");
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0], PathBuf::from(".maestro/worktrees/issue-560"));
+    }
+
+    #[test]
+    fn completion_summary_s_key_logs_error_when_shell_launch_fails() {
+        let calls: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        let launcher = CapturingShellLauncher {
+            calls,
+            should_fail: true,
+        };
+        let mut app = make_app().with_shell_launcher(Box::new(launcher));
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(failed_gates_summary(Some(".maestro/worktrees/issue-560")));
+
+        handle_completion_summary(&mut app, &key('s'));
+
+        // Modal stays open so the user can choose another action.
+        assert_eq!(app.tui_mode, TuiMode::CompletionSummary);
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.to_lowercase().contains("shell")),
+            "shell launch failure must produce an activity-log entry"
+        );
+    }
+
+    #[test]
+    fn completion_summary_g_key_calls_retry_completion_gates_for_failed_session() {
+        use crate::gates::runner::GateCheck;
+        use crate::gates::types::{CompletionGate, GateResult};
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        // Inline trait fake so this test isn't coupled to gate_retry's
+        // CapturingGateRunner internal type.
+        struct CountingRunner {
+            count: AtomicU32,
+        }
+        impl GateCheck for std::sync::Arc<CountingRunner> {
+            fn run_gates(&self, _: &[CompletionGate], _: &std::path::Path) -> Vec<GateResult> {
+                self.count.fetch_add(1, Ordering::SeqCst);
+                vec![GateResult::fail("clippy", "still failing on retry")]
+            }
+        }
+
+        let runner = std::sync::Arc::new(CountingRunner {
+            count: AtomicU32::new(0),
+        });
+        let mut app = make_app().with_gate_runner(Box::new(runner.clone()));
+        let toml = "[project]\nrepo = \"owner/repo\"\n\
+                    [sessions]\n\
+                    [sessions.completion_gates]\nenabled = true\n\
+                    [[sessions.completion_gates.commands]]\n\
+                    name = \"clippy\"\nrun = \"echo c\"\nrequired = true\n\
+                    [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\n\
+                    alert_threshold_pct = 80\n\
+                    [github]\n[notifications]\n\
+                    [gates]\nenabled = false\ntest_command = \"\"\n";
+        app.config = Some(toml::from_str(toml).expect("config"));
+
+        // Build a real session with a worktree path so retry can find it.
+        use crate::session::transition::TransitionReason;
+        use crate::session::types::Session;
+        let mut session = Session::new(
+            "task".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(560),
+            None,
+        );
+        let session_id = session.id;
+        session.worktree_path = Some(PathBuf::from("/tmp/wt"));
+        session
+            .transition_to(
+                crate::session::types::SessionStatus::Spawning,
+                TransitionReason::Promoted,
+            )
+            .expect("Q->Sp");
+        session
+            .transition_to(
+                crate::session::types::SessionStatus::Running,
+                TransitionReason::Spawned,
+            )
+            .expect("Sp->Ru");
+        session
+            .transition_to(
+                crate::session::types::SessionStatus::GatesRunning,
+                TransitionReason::GatesStarted,
+            )
+            .expect("Ru->GR");
+        session
+            .transition_to(
+                crate::session::types::SessionStatus::FailedGates,
+                TransitionReason::GatesFailed,
+            )
+            .expect("GR->FG");
+        app.pool.enqueue(session);
+        app.pool.try_promote();
+        app.pool.finalize(session_id);
+
+        let mut summary = failed_gates_summary(Some("/tmp/wt"));
+        summary.sessions[0].session_id = session_id;
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(summary);
+
+        handle_completion_summary(&mut app, &key('g'));
+
+        assert_eq!(runner.count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn completion_summary_g_key_does_nothing_when_no_failed_gates_session() {
+        use crate::gates::runner::GateCheck;
+        use crate::gates::types::{CompletionGate, GateResult};
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        struct CountingRunner {
+            count: AtomicU32,
+        }
+        impl GateCheck for std::sync::Arc<CountingRunner> {
+            fn run_gates(&self, _: &[CompletionGate], _: &std::path::Path) -> Vec<GateResult> {
+                self.count.fetch_add(1, Ordering::SeqCst);
+                vec![]
+            }
+        }
+
+        let runner = std::sync::Arc::new(CountingRunner {
+            count: AtomicU32::new(0),
+        });
+        let mut app = make_app().with_gate_runner(Box::new(runner.clone()));
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(completed_summary());
+
+        handle_completion_summary(&mut app, &key('g'));
+
+        assert_eq!(
+            runner.count.load(Ordering::SeqCst),
+            0,
+            "[g] on a success modal must not invoke the gate runner"
+        );
+    }
+
+    #[test]
+    fn completion_summary_r_key_in_failed_gates_mode_spawns_resume_session() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(failed_gates_summary(Some(".maestro/worktrees/issue-560")));
+
+        handle_completion_summary(&mut app, &key('r'));
+
+        assert_eq!(app.pending_session_launches.len(), 1);
+        assert!(
+            app.pending_session_launches[0]
+                .prompt
+                .contains("/implement #560 --continue"),
+        );
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Overview,
+            "after spawning resume the modal closes and we land on Overview"
+        );
+    }
+
+    #[test]
+    fn completion_summary_r_key_in_success_mode_navigates_to_prompt_input() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(completed_summary());
+
+        handle_completion_summary(&mut app, &key('r'));
+
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::PromptInput,
+            "success-modal [r] preserves existing PromptInput navigation"
+        );
+        assert!(
+            app.pending_session_launches.is_empty(),
+            "success-modal [r] does not spawn a session"
+        );
+    }
+
+    #[test]
+    fn failed_gates_q_returns_to_overview_without_confirm_exit() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(failed_gates_summary(Some(".maestro/worktrees/issue-560")));
+
+        handle_completion_summary(&mut app, &key('q'));
+
+        assert_ne!(
+            app.tui_mode,
+            TuiMode::ConfirmExit,
+            "failed-gates [q] must NOT trigger app-exit confirmation"
+        );
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert!(app.completion_summary.is_none());
+    }
+
+    #[test]
+    fn success_modal_q_still_navigates_to_confirm_exit() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(completed_summary());
+
+        handle_completion_summary(&mut app, &key('q'));
+
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::ConfirmExit,
+            "success-modal [q] preserves existing ConfirmExit behaviour"
+        );
+    }
+
+    #[test]
+    fn completion_summary_v_key_enters_gate_output_viewer() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        let summary = failed_gates_summary(Some(".maestro/worktrees/issue-560"));
+        let session_id = summary.sessions[0].session_id;
+        app.completion_summary = Some(summary);
+
+        handle_completion_summary(&mut app, &key('v'));
+
+        assert!(matches!(app.tui_mode, TuiMode::GateOutputViewer(id) if id == session_id));
+        assert!(
+            app.completion_summary.is_some(),
+            "[v] must keep the summary populated so [Esc] can return to it"
+        );
+        assert_eq!(app.log_viewer_scroll, 0, "[v] resets scroll on entry");
+    }
+
+    #[tokio::test]
+    async fn gate_output_viewer_esc_returns_to_completion_summary() {
+        let mut app = make_app();
+        let summary = failed_gates_summary(Some(".maestro/worktrees/issue-560"));
+        app.completion_summary = Some(summary);
+        app.tui_mode = TuiMode::GateOutputViewer(uuid::Uuid::nil());
+
+        let action = handle_secondary_mode_keys(&mut app, &key_code(KeyCode::Esc)).await;
+        assert!(action.is_some());
+        assert_eq!(app.tui_mode, TuiMode::CompletionSummary);
+        assert!(
+            app.completion_summary.is_some(),
+            "summary must remain populated for re-entry"
+        );
+    }
+
+    #[test]
+    fn completion_summary_s_key_does_nothing_when_no_failed_gates_session() {
+        let calls: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        let launcher = CapturingShellLauncher {
+            calls: calls.clone(),
+            should_fail: false,
+        };
+        let mut app = make_app().with_shell_launcher(Box::new(launcher));
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(completed_summary());
+
+        handle_completion_summary(&mut app, &key('s'));
+
+        // Success modal does not bind `s`, so the launcher must not be called.
+        assert!(calls.lock().expect("mutex").is_empty());
     }
 }

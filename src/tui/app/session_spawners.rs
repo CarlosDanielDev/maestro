@@ -130,6 +130,43 @@ impl App {
         );
     }
 
+    /// Spawn a `/implement #NNN --continue` resumption session against
+    /// the retained worktree of a `FailedGates` line (issue #560 → `[r]`).
+    /// Differs from `spawn_gate_fix_session` which builds a fresh
+    /// remediation prompt: this preserves the original implement run's
+    /// context by handing the model the canonical resume command.
+    pub fn spawn_resume_implement_session(&mut self, failed_line: &CompletionSessionLine) {
+        let issue_number = match failed_line.issue_number {
+            Some(n) => n,
+            None => return,
+        };
+        let worktree_path = match failed_line.worktree_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+
+        let (default_model, mode) = self.default_model_and_mode();
+        let model = if failed_line.model.is_empty() {
+            default_model
+        } else {
+            failed_line.model.clone()
+        };
+
+        let prompt = format!("/implement #{} --continue", issue_number);
+        let mut session = Session::new(prompt, model, mode, Some(issue_number), None);
+        session.issue_title = Some(format!("Resume #{}", issue_number));
+        // The session manager picks up `worktree_path` and skips creation
+        // of a fresh worktree when it's already populated.
+        session.worktree_path = Some(worktree_path);
+        self.pending_session_launches.push(session);
+
+        self.activity_log.push_simple(
+            format!("#{}", issue_number),
+            "Launched resume session against retained worktree".into(),
+            LogLevel::Info,
+        );
+    }
+
     /// Spawn a Claude session to resolve merge conflicts for a PR.
     pub fn spawn_conflict_fix_session(&mut self, config: &crate::tui::screens::ConflictFixConfig) {
         use crate::provider::github::merge::build_conflict_fix_prompt;
@@ -243,6 +280,74 @@ max_cost_total = 10.0
         assert_eq!(ctx.attempt, 1);
         assert!(session.issue_title.unwrap().contains("CI Fix"));
         assert_eq!(session.status, SessionStatus::CiFix);
+    }
+
+    // ── Issue #560: spawn_resume_implement_session ───────────────────
+
+    fn make_failed_line(issue: Option<u64>, worktree: Option<&str>) -> CompletionSessionLine {
+        CompletionSessionLine {
+            session_id: uuid::Uuid::nil(),
+            label: "#560".to_string(),
+            status: SessionStatus::FailedGates,
+            cost_usd: 0.0,
+            elapsed: "0s".to_string(),
+            pr_link: String::new(),
+            error_summary: String::new(),
+            gate_failures: vec![],
+            worktree_path: worktree.map(std::path::PathBuf::from),
+            issue_number: issue,
+            model: "claude-opus-4-5".to_string(),
+        }
+    }
+
+    #[test]
+    fn spawn_resume_implement_session_pushes_session_with_continue_prompt() {
+        let mut app = crate::tui::make_test_app("issue-560-resume-prompt");
+        let line = make_failed_line(Some(560), Some(".maestro/worktrees/issue-560"));
+        app.spawn_resume_implement_session(&line);
+        assert_eq!(app.pending_session_launches.len(), 1);
+        assert!(
+            app.pending_session_launches[0]
+                .prompt
+                .contains("/implement #560 --continue"),
+            "resume prompt must use /implement #N --continue, got: {}",
+            app.pending_session_launches[0].prompt
+        );
+    }
+
+    #[test]
+    fn spawn_resume_implement_session_sets_worktree_path_on_new_session() {
+        let mut app = crate::tui::make_test_app("issue-560-resume-wt");
+        let line = make_failed_line(Some(560), Some(".maestro/worktrees/issue-560"));
+        app.spawn_resume_implement_session(&line);
+        assert_eq!(
+            app.pending_session_launches[0].worktree_path,
+            Some(std::path::PathBuf::from(".maestro/worktrees/issue-560")),
+            "resume session must inherit the failed session's worktree_path so the \
+             session manager re-uses the existing worktree"
+        );
+    }
+
+    #[test]
+    fn spawn_resume_implement_session_does_nothing_when_issue_number_is_none() {
+        let mut app = crate::tui::make_test_app("issue-560-resume-no-issue");
+        let line = make_failed_line(None, Some(".maestro/worktrees/issue-560"));
+        app.spawn_resume_implement_session(&line);
+        assert!(
+            app.pending_session_launches.is_empty(),
+            "resume must not spawn a session for an unnamed line"
+        );
+    }
+
+    #[test]
+    fn spawn_resume_implement_session_does_nothing_when_worktree_path_is_none() {
+        let mut app = crate::tui::make_test_app("issue-560-resume-no-wt");
+        let line = make_failed_line(Some(560), None);
+        app.spawn_resume_implement_session(&line);
+        assert!(
+            app.pending_session_launches.is_empty(),
+            "resume must not spawn without a worktree_path — there's nothing to resume to"
+        );
     }
 
     #[test]

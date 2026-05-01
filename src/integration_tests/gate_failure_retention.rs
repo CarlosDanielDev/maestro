@@ -218,3 +218,173 @@ fn gate_failure_transition_to_failed_gates_is_valid() {
          finalize_retain_worktree"
     );
 }
+
+// --- Issue #560: pipeline must persist worktree_path on the session when
+// gates fail, so the recovery modal can surface it for [s] / [g] / [r]. ---
+
+fn make_app_with_failing_test_gate() -> (crate::tui::app::App, tempfile::TempDir, std::path::PathBuf)
+{
+    let mut app = crate::tui::make_test_app("issue-560-pipeline");
+    let toml = "[project]\nrepo = \"owner/repo\"\n\
+                [sessions]\n\
+                [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+                [github]\n[notifications]\n\
+                [gates]\nenabled = true\ntest_command = \"false\"\n";
+    app.config = Some(toml::from_str(toml).expect("test config parse"));
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let wt_path = tmp.path().to_path_buf();
+    (app, tmp, wt_path)
+}
+
+fn make_app_with_passing_test_gate() -> (crate::tui::app::App, tempfile::TempDir, std::path::PathBuf)
+{
+    let mut app = crate::tui::make_test_app("issue-560-pipeline-pass");
+    let toml = "[project]\nrepo = \"owner/repo\"\n\
+                [sessions]\n\
+                [budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+                [github]\n[notifications]\n\
+                [gates]\nenabled = true\ntest_command = \"true\"\n";
+    app.config = Some(toml::from_str(toml).expect("test config parse"));
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let wt_path = tmp.path().to_path_buf();
+    (app, tmp, wt_path)
+}
+
+#[tokio::test]
+async fn pipeline_sets_worktree_path_on_session_when_gates_fail() {
+    let (mut app, _tmp, wt_path) = make_app_with_failing_test_gate();
+
+    let session = make_session_with_issue(560);
+    let id = session.id;
+    app.pool.enqueue(session);
+    app.pool.try_promote();
+
+    // Walk the state machine so check_completions can transition the active
+    // session through GatesRunning -> FailedGates.
+    let managed = app.pool.get_active_mut(id).expect("active");
+    managed
+        .session
+        .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+        .expect("Q->Spawning");
+    managed
+        .session
+        .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+        .expect("Sp->Running");
+
+    app.pending_issue_completions
+        .push(crate::tui::app::types::PendingIssueCompletion {
+            issue_number: 560,
+            issue_numbers: vec![],
+            success: true,
+            cost_usd: 0.0,
+            files_touched: vec![],
+            worktree_branch: Some("feat/issue-560".to_string()),
+            worktree_path: Some(wt_path.clone()),
+            is_ci_fix: false,
+        });
+
+    app.check_completions()
+        .await
+        .expect("check_completions must not error");
+
+    let s = app.pool.get_session(id).expect("session findable");
+    assert_eq!(
+        s.status,
+        SessionStatus::FailedGates,
+        "failing test gate must transition session to FailedGates"
+    );
+    assert_eq!(
+        s.worktree_path,
+        Some(wt_path.clone()),
+        "pipeline must persist worktree_path on the session at FailedGates \
+         transition so [s] / [g] / [r] can find it after the modal opens"
+    );
+}
+
+#[tokio::test]
+async fn pipeline_does_not_set_worktree_path_when_gates_pass() {
+    let (mut app, _tmp, wt_path) = make_app_with_passing_test_gate();
+
+    let session = make_session_with_issue(560);
+    let id = session.id;
+    app.pool.enqueue(session);
+    app.pool.try_promote();
+
+    let managed = app.pool.get_active_mut(id).expect("active");
+    managed
+        .session
+        .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+        .expect("Q->Spawning");
+    managed
+        .session
+        .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+        .expect("Sp->Running");
+
+    app.pending_issue_completions
+        .push(crate::tui::app::types::PendingIssueCompletion {
+            issue_number: 560,
+            issue_numbers: vec![],
+            success: true,
+            cost_usd: 0.0,
+            files_touched: vec![],
+            worktree_branch: Some("feat/issue-560".to_string()),
+            worktree_path: Some(wt_path.clone()),
+            is_ci_fix: false,
+        });
+
+    app.check_completions()
+        .await
+        .expect("check_completions must not error");
+
+    let s = app.pool.get_session(id).expect("session findable");
+    assert!(
+        s.worktree_path.is_none(),
+        "passing-gate completions must not leak worktree_path onto the session — \
+         the worktree is torn down by finalize_at, so the field would dangle"
+    );
+}
+
+#[tokio::test]
+async fn pipeline_gate_results_populated_only_with_failing_gates() {
+    let (mut app, _tmp, wt_path) = make_app_with_failing_test_gate();
+
+    let session = make_session_with_issue(560);
+    let id = session.id;
+    app.pool.enqueue(session);
+    app.pool.try_promote();
+
+    let managed = app.pool.get_active_mut(id).expect("active");
+    managed
+        .session
+        .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+        .expect("Q->Spawning");
+    managed
+        .session
+        .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+        .expect("Sp->Running");
+
+    app.pending_issue_completions
+        .push(crate::tui::app::types::PendingIssueCompletion {
+            issue_number: 560,
+            issue_numbers: vec![],
+            success: true,
+            cost_usd: 0.0,
+            files_touched: vec![],
+            worktree_branch: Some("feat/issue-560".to_string()),
+            worktree_path: Some(wt_path),
+            is_ci_fix: false,
+        });
+
+    app.check_completions()
+        .await
+        .expect("check_completions must not error");
+
+    let s = app.pool.get_session(id).expect("session findable");
+    // Only one gate (TestsPass via fallback) is configured and it failed,
+    // so gate_results should hold exactly one failing entry.
+    assert_eq!(s.gate_results.len(), 1);
+    assert!(!s.gate_results[0].passed);
+    assert_eq!(s.gate_results[0].gate, "tests_pass");
+}

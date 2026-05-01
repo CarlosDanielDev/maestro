@@ -435,6 +435,7 @@ mod tests {
             thinking_started_at: None,
             tq_handoff_original_tokens: None,
             tq_handoff_compressed_tokens: None,
+            worktree_path: None,
             transition_history: vec![],
             intent: crate::session::intent::SessionIntent::default(),
             role: crate::session::role::Role::default(),

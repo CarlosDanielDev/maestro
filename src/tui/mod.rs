@@ -22,6 +22,7 @@ mod screen_dispatch;
 pub mod screens;
 pub mod session_summary;
 pub mod session_switcher;
+pub mod shell_launcher;
 pub mod spinner;
 mod summary;
 pub mod theme;
@@ -60,7 +61,7 @@ async fn run_claude_print_for_wizard(prompt: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-fn enter_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
+pub(crate) fn enter_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     execute!(
         out,
         EnterAlternateScreen,
@@ -69,7 +70,7 @@ fn enter_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     )
 }
 
-fn leave_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
+pub(crate) fn leave_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     execute!(
         out,
         LeaveAlternateScreen,
