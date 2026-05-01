@@ -12,6 +12,7 @@ pub(crate) mod helpers;
 mod issue_completion;
 mod plugins;
 mod pr_retry;
+mod pushup_marker;
 mod review;
 mod session_lifecycle;
 mod session_spawners;
@@ -207,6 +208,12 @@ pub struct App {
     /// tests inject `MockGitOps` via `with_git_ops`. Used by the auto-PR
     /// pipeline's zero-commit gate.
     pub(crate) git_ops: Box<dyn crate::git::GitOps>,
+    /// Override for `$HOME` in tests. Production reads `std::env::var("HOME")`.
+    /// Used by `pushup_marker` to find `~/.maestro/last-pr-created`.
+    pub(crate) home_dir_override: Option<std::path::PathBuf>,
+    /// Last-seen mtime of `~/.maestro/last-pr-created`. Prevents re-firing
+    /// `TuiCommand::PrCreated` on every tick when the marker hasn't moved.
+    pub(crate) last_pr_marker_mtime: Option<std::time::SystemTime>,
 }
 
 impl App {
@@ -345,6 +352,8 @@ impl App {
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
             attempted_pr_issue_numbers: std::collections::HashSet::new(),
             git_ops: Box::new(crate::git::CliGitOps),
+            home_dir_override: None,
+            last_pr_marker_mtime: None,
         };
         if pending_prs_truncated {
             app.activity_log.push_simple(
@@ -383,6 +392,14 @@ impl App {
     #[cfg(test)]
     pub(crate) fn with_git_ops(mut self, git_ops: Box<dyn crate::git::GitOps>) -> Self {
         self.git_ops = git_ops;
+        self
+    }
+
+    /// Builder for tests: override the `$HOME` lookup so the marker
+    /// watcher reads from a tempdir instead of the real home.
+    #[cfg(test)]
+    pub(crate) fn with_home_dir(mut self, home: std::path::PathBuf) -> Self {
+        self.home_dir_override = Some(home);
         self
     }
 

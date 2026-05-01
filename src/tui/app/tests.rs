@@ -1963,6 +1963,90 @@ mod pending_prs_persistence {
         );
     }
 
+    // ── #545 P1: /pushup → maestro auto-review hand-off via marker file ──
+
+    fn marker_path(home: &std::path::Path) -> std::path::PathBuf {
+        home.join(".maestro").join("last-pr-created")
+    }
+
+    fn make_app_with_home(home: std::path::PathBuf) -> App {
+        let path = std::env::temp_dir().join(format!("marker-test-{}.json", uuid::Uuid::new_v4()));
+        let store = StateStore::new(path);
+        App::new(
+            store,
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        )
+        .with_home_dir(home)
+    }
+
+    #[tokio::test]
+    async fn poll_pr_marker_fresh_enqueues_pr_created_and_deletes_file() {
+        let home = tempfile::tempdir().unwrap();
+        let marker = marker_path(home.path());
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(
+            &marker,
+            r#"{"pr_number":42,"owner":"o","repo":"r","ts":"2026-04-30T00:00:00Z"}"#,
+        )
+        .unwrap();
+
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        app.poll_last_pr_created_marker().await;
+
+        assert!(
+            !marker.exists(),
+            "fresh marker must be deleted after consume (consume-once semantics)"
+        );
+        let queued = app
+            .pending_commands
+            .iter()
+            .any(|c| matches!(c, TuiCommand::PrCreated { pr_number: 42, .. }));
+        assert!(queued, "fresh marker must enqueue TuiCommand::PrCreated");
+    }
+
+    #[tokio::test]
+    async fn poll_pr_marker_corrupt_json_warns_and_deletes() {
+        let home = tempfile::tempdir().unwrap();
+        let marker = marker_path(home.path());
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(&marker, b"not valid json {{{").unwrap();
+
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        let cmds_before = app.pending_commands.len();
+        app.poll_last_pr_created_marker().await;
+
+        assert!(!marker.exists(), "corrupt marker must be deleted");
+        assert_eq!(
+            app.pending_commands.len(),
+            cmds_before,
+            "corrupt marker must NOT enqueue a command"
+        );
+        let warn =
+            app.activity_log.entries().iter().any(|e| {
+                matches!(e.level, LogLevel::Warn) && e.message.contains("last-pr-created")
+            });
+        assert!(
+            warn,
+            "corrupt marker must produce a Warn-level activity log entry"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_pr_marker_missing_is_noop() {
+        let home = tempfile::tempdir().unwrap();
+        let mut app = make_app_with_home(home.path().to_path_buf());
+        let cmds_before = app.pending_commands.len();
+        app.poll_last_pr_created_marker().await;
+        assert_eq!(
+            app.pending_commands.len(),
+            cmds_before,
+            "missing marker must be a silent no-op"
+        );
+    }
+
     #[test]
     fn app_new_emits_no_warn_when_state_has_no_pending_prs() {
         let app = build_app_with_seeded_state(MaestroState::default());

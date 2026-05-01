@@ -65,6 +65,18 @@ EOF
 
 3. If PR already exists, update it if needed: `gh pr edit <pr-number> --body "..."`
 
+4. **Surface the new PR to a running maestro TUI for auto-review (#545 P1).** After a successful `gh pr create`, write a single-line JSON marker to `~/.maestro/last-pr-created`. A running maestro instance polls this file once per `check_completions` tick; on a fresh write it enqueues `TuiCommand::PrCreated` and triggers `/review`.
+
+```bash
+mkdir -p "$HOME/.maestro"
+ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+printf '{"pr_number":%d,"owner":"%s","repo":"%s","ts":"%s"}\n' \
+  "<pr-number>" "<owner>" "<repo>" "$ts" \
+  > "$HOME/.maestro/last-pr-created"
+```
+
+The marker is consumed-once: maestro deletes it after dispatching the review. If the marker is malformed, maestro logs a Warn entry and deletes it.
+
 ### Step 5: Link Issue to PR
 
 The `Closes #<issue-number>` in the PR body automatically links the issue.
@@ -132,10 +144,19 @@ gh api repos/<owner>/<repo>/milestones/<milestone-number> -X PATCH -f descriptio
 
 Runs AFTER the milestone graph is correctly stamped. If this step fails after Step 6 succeeded, the milestone graph is correctly stamped but the issue stays open — re-run `/pushup` or close manually. **This partial state is recoverable** (running `/pushup` again will idempotently re-detect the milestone is already stamped via Step 6.3 and skip straight to closing the issue).
 
-1. **On the Issue:** Add a comment and close it:
+1. **On the Issue:** Add a comment and close it idempotently. A previous `/pushup` run may have already closed the issue (e.g., it failed mid-Step-6 and the user re-ran); the close step must NOT fail in that case.
+
 ```bash
-gh issue comment <issue-number> --body "Completed in PR #<pr-number>"
-gh issue close <issue-number>
+issue_state=$(gh issue view <issue-number> --json state --jq '.state' 2>/dev/null || echo "ERROR")
+if [ "$issue_state" = "CLOSED" ]; then
+  echo "/pushup: issue #<issue-number> is already CLOSED — skipping comment + close (idempotent re-run)"
+elif [ "$issue_state" = "ERROR" ]; then
+  echo "/pushup: failed to read issue state; aborting close (will retry on next /pushup)" >&2
+  exit 1
+else
+  gh issue comment <issue-number> --body "Completed in PR #<pr-number>"
+  gh issue close <issue-number>
+fi
 ```
 
 2. **On the PR:** Verify all checks pass (informational only, don't block):
