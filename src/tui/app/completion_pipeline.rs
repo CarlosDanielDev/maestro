@@ -3,7 +3,6 @@ use super::helpers::{build_completion_gates, session_label};
 use super::types::TuiMode;
 use crate::gates::runner::{self, GateCheck, GateRunner};
 use crate::gates::types::{CompletionGate, GateResult};
-use crate::git::GitOps;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::retry::RetryPolicy;
 use crate::session::transition::TransitionReason;
@@ -32,6 +31,11 @@ impl App {
 
         for mut completion in pending {
             let issue_label = format!("#{}", completion.issue_number);
+            // Threaded from `backup_wip_before_gates` (pre-gate) into
+            // `amend_or_commit_and_push` (post-gate-success) so the
+            // post-gate step skips a redundant `head_is_wip_backup`
+            // detection subprocess.
+            let mut head_is_wip = false;
 
             // Run completion gates before accepting the result
             if completion.success
@@ -43,6 +47,14 @@ impl App {
                         .session
                         .transition_to(SessionStatus::GatesRunning, TransitionReason::GatesStarted);
                 }
+
+                // WIP backup commit before gates run, so model edits
+                // survive any gate failure or external interruption
+                // (crash, reboot, manual rm -rf). Failures are logged
+                // but do not abort the gate run.
+                let wt_path_for_backup = wt_path.clone();
+                head_is_wip =
+                    self.backup_wip_before_gates(completion.issue_number, &wt_path_for_backup);
 
                 let gate_runner = GateRunner;
                 let results = gate_runner.run_gates(&gates, wt_path);
@@ -137,12 +149,16 @@ impl App {
                 }
             }
 
-            // If successful and we have a worktree, commit and push changes
+            // If successful and we have a worktree, amend the WIP
+            // backup into a clean conventional commit and push. Falls
+            // back to legacy commit_and_push when no WIP exists at
+            // HEAD (e.g. backup_wip failed earlier).
             if completion.success
-                && let (Some(branch), Some(wt_path)) =
-                    (&completion.worktree_branch, &completion.worktree_path)
+                && let (Some(branch), Some(wt_path)) = (
+                    completion.worktree_branch.clone(),
+                    completion.worktree_path.clone(),
+                )
             {
-                let git_ops = crate::git::CliGitOps;
                 let commit_msg = if completion.issue_numbers.len() >= 2 {
                     let refs: Vec<String> = completion
                         .issue_numbers
@@ -156,21 +172,28 @@ impl App {
                         completion.issue_number
                     )
                 };
-                match git_ops.commit_and_push(wt_path, branch, &commit_msg) {
-                    Ok(()) => {
-                        self.activity_log.push_simple(
-                            format!("#{}", completion.issue_number),
-                            format!("Pushed to branch {}", branch),
-                            LogLevel::Info,
-                        );
-                    }
-                    Err(e) => {
-                        self.activity_log.push_simple(
-                            format!("#{}", completion.issue_number),
-                            format!("Git push failed: {}", e),
-                            LogLevel::Error,
-                        );
-                    }
+                // Re-detect WIP at HEAD when gates were skipped (empty
+                // `gates` config). Without this, a branch that already
+                // carries a WIP commit from a prior gates-enabled run
+                // would have its WIP subject pushed verbatim by the
+                // legacy `commit_and_push` fallback. The `||` short-
+                // circuits when we already created/detected a WIP.
+                let head_is_wip =
+                    head_is_wip || self.git_ops.head_is_wip_backup(&wt_path).unwrap_or(false);
+                let outcome =
+                    self.amend_or_commit_and_push(&wt_path, &branch, &commit_msg, head_is_wip);
+                if outcome.committed_clean {
+                    self.activity_log.push_simple(
+                        format!("#{}", completion.issue_number),
+                        format!("Pushed to branch {}", branch),
+                        LogLevel::Info,
+                    );
+                } else if let Some(err) = outcome.error_message {
+                    self.activity_log.push_simple(
+                        format!("#{}", completion.issue_number),
+                        format!("Git push failed: {}", err),
+                        LogLevel::Error,
+                    );
                 }
             }
 

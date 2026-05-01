@@ -1,6 +1,12 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
+
+/// Canonical WIP backup commit subject. Producer (`backup_wip`) and
+/// detector (`head_is_wip_backup`) both reference these so they can
+/// never drift.
+pub const WIP_SUBJECT_PREFIX: &str = "WIP: maestro session #";
+pub const WIP_SUBJECT_SUFFIX: &str = " backup before gates [skip ci]";
 
 /// Trait for git operations, enabling mock injection in tests.
 pub trait GitOps: Send + Sync {
@@ -14,6 +20,26 @@ pub trait GitOps: Send + Sync {
     /// session case for #514.
     #[allow(dead_code)] // Reason: zero-commit detection wired in #520; awaiting consumer
     fn has_commits_ahead(&self, worktree_path: &Path, branch: &str, base: &str) -> Result<bool>;
+
+    /// Stage all changes and create an `--allow-empty` WIP backup
+    /// commit. Subject embeds `issue_number` via [`WIP_SUBJECT_PREFIX`]
+    /// / [`WIP_SUBJECT_SUFFIX`] so [`head_is_wip_backup`] can recognize
+    /// it later. Does NOT push — the WIP lives locally until the
+    /// gate-pass path amends and pushes.
+    fn backup_wip(&self, worktree_path: &Path, issue_number: u64) -> Result<()>;
+
+    /// Replace the WIP commit at HEAD with a clean conventional-commit
+    /// message and push `branch` to origin. Equivalent to
+    /// `git add -A && git commit --amend --allow-empty -m <message>`
+    /// followed by `git push -u --force-with-lease origin <branch>`.
+    fn amend_clean_and_push(&self, worktree_path: &Path, branch: &str, message: &str)
+    -> Result<()>;
+
+    /// Return `true` iff HEAD's subject matches the canonical WIP
+    /// backup pattern. Returns `Ok(false)` (not `Err`) when the
+    /// worktree is missing or the branch has no commits — both are
+    /// valid "no WIP at HEAD" answers.
+    fn head_is_wip_backup(&self, worktree_path: &Path) -> Result<bool>;
 }
 
 /// Production implementation using git CLI commands.
@@ -21,7 +47,12 @@ pub struct CliGitOps;
 
 impl GitOps for CliGitOps {
     fn commit_and_push(&self, worktree_path: &Path, branch: &str, message: &str) -> Result<()> {
-        // git add -A
+        // Refuse refs starting with `-` so a regressed validator can't
+        // turn the bare branch positional into a flag-injection vector.
+        if branch.starts_with('-') {
+            anyhow::bail!("invalid branch ref: must not start with `-`");
+        }
+
         let output = Command::new("git")
             .args(["add", "-A"])
             .current_dir(worktree_path)
@@ -33,16 +64,16 @@ impl GitOps for CliGitOps {
             );
         }
 
-        // Check if there's anything to commit
         let status = Command::new("git")
             .args(["status", "--porcelain"])
             .current_dir(worktree_path)
             .output()?;
         let status_out = String::from_utf8_lossy(&status.stdout);
         if status_out.trim().is_empty() {
-            // Nothing to commit — still push in case of unpushed commits
+            // Nothing to commit — still push in case of unpushed commits.
+            // `--` separates the branch positional from any flags.
             let output = Command::new("git")
-                .args(["push", "-u", "origin", branch])
+                .args(["push", "-u", "origin", "--", branch])
                 .current_dir(worktree_path)
                 .output()?;
             if !output.status.success() {
@@ -54,7 +85,6 @@ impl GitOps for CliGitOps {
             return Ok(());
         }
 
-        // git commit
         let output = Command::new("git")
             .args(["commit", "-m", message])
             .current_dir(worktree_path)
@@ -66,9 +96,8 @@ impl GitOps for CliGitOps {
             );
         }
 
-        // git push
         let output = Command::new("git")
-            .args(["push", "-u", "origin", branch])
+            .args(["push", "-u", "origin", "--", branch])
             .current_dir(worktree_path)
             .output()?;
         if !output.status.success() {
@@ -124,143 +153,145 @@ impl GitOps for CliGitOps {
             .map_err(|e| anyhow::anyhow!("parsing rev-list count `{}`: {}", stdout.trim(), e))?;
         Ok(count > 0)
     }
-}
 
-#[cfg(test)]
-pub struct MockGitOps {
-    pub should_fail: bool,
-    pub remote_branches: Vec<String>,
-    pub commits_ahead: bool,
-}
-
-#[cfg(test)]
-impl MockGitOps {
-    pub fn new() -> Self {
-        Self {
-            should_fail: false,
-            remote_branches: Vec::new(),
-            commits_ahead: false,
+    fn backup_wip(&self, worktree_path: &Path, issue_number: u64) -> Result<()> {
+        if !worktree_path.exists() {
+            anyhow::bail!(
+                "worktree path missing for WIP backup: {}",
+                worktree_path.display()
+            );
         }
-    }
 
-    pub fn with_commits_ahead(mut self, value: bool) -> Self {
-        self.commits_ahead = value;
-        self
-    }
+        let subject = format!(
+            "{}{}{}",
+            WIP_SUBJECT_PREFIX, issue_number, WIP_SUBJECT_SUFFIX
+        );
 
-    pub fn with_failure(mut self) -> Self {
-        self.should_fail = true;
-        self
-    }
-}
+        let add = Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(worktree_path)
+            .output()
+            .with_context(|| format!("running git add -A in {}", worktree_path.display()))?;
+        if !add.status.success() {
+            anyhow::bail!(
+                "git add failed (WIP backup): {}",
+                String::from_utf8_lossy(&add.stderr).trim()
+            );
+        }
 
-#[cfg(test)]
-impl GitOps for MockGitOps {
-    fn commit_and_push(&self, _worktree_path: &Path, _branch: &str, _message: &str) -> Result<()> {
-        if self.should_fail {
-            anyhow::bail!("mock: git operations failed");
+        let commit = Command::new("git")
+            .args(["commit", "--allow-empty", "-m", &subject])
+            .current_dir(worktree_path)
+            .output()
+            .with_context(|| {
+                format!(
+                    "running git commit (WIP backup) in {}",
+                    worktree_path.display()
+                )
+            })?;
+        if !commit.status.success() {
+            anyhow::bail!(
+                "git commit (WIP backup) failed: {}",
+                String::from_utf8_lossy(&commit.stderr).trim()
+            );
         }
         Ok(())
     }
 
-    fn list_remote_branches(&self, prefix: &str) -> Result<Vec<String>> {
-        if self.should_fail {
-            anyhow::bail!("mock: git operations failed");
+    fn amend_clean_and_push(
+        &self,
+        worktree_path: &Path,
+        branch: &str,
+        message: &str,
+    ) -> Result<()> {
+        if branch.starts_with('-') {
+            anyhow::bail!("invalid branch ref: must not start with `-`");
         }
-        Ok(self
-            .remote_branches
-            .iter()
-            .filter(|b| b.contains(prefix))
-            .cloned()
-            .collect())
+        if !worktree_path.exists() {
+            anyhow::bail!(
+                "worktree path missing for amend: {}",
+                worktree_path.display()
+            );
+        }
+
+        let add = Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(worktree_path)
+            .output()
+            .with_context(|| {
+                format!(
+                    "running git add -A (pre-amend) in {}",
+                    worktree_path.display()
+                )
+            })?;
+        if !add.status.success() {
+            anyhow::bail!(
+                "git add (pre-amend) failed: {}",
+                String::from_utf8_lossy(&add.stderr).trim()
+            );
+        }
+
+        let amend = Command::new("git")
+            .args(["commit", "--amend", "--allow-empty", "-m", message])
+            .current_dir(worktree_path)
+            .output()
+            .with_context(|| {
+                format!("running git commit --amend in {}", worktree_path.display())
+            })?;
+        if !amend.status.success() {
+            anyhow::bail!(
+                "git commit --amend failed: {}",
+                String::from_utf8_lossy(&amend.stderr).trim()
+            );
+        }
+
+        // `--force-with-lease` is required because amend rewrites the
+        // commit hash; the lease keeps a concurrent push-then-amend
+        // race from clobbering an unexpected remote tip. `--` separates
+        // the branch positional from flags so a regressed validator
+        // can't turn it into a flag-injection vector.
+        let push = Command::new("git")
+            .args(["push", "-u", "--force-with-lease", "origin", "--", branch])
+            .current_dir(worktree_path)
+            .output()
+            .with_context(|| format!("running git push (post-amend) for {}", branch))?;
+        if !push.status.success() {
+            anyhow::bail!(
+                "git push (post-amend) failed: {}",
+                String::from_utf8_lossy(&push.stderr).trim()
+            );
+        }
+        Ok(())
     }
 
-    fn has_commits_ahead(&self, _worktree_path: &Path, _branch: &str, _base: &str) -> Result<bool> {
-        if self.should_fail {
-            anyhow::bail!("mock: git operations failed");
+    fn head_is_wip_backup(&self, worktree_path: &Path) -> Result<bool> {
+        if !worktree_path.exists() {
+            return Ok(false);
         }
-        Ok(self.commits_ahead)
+        // One subprocess. Non-zero exit means HEAD is unborn (fresh
+        // branch, no commits) — a valid "no WIP at HEAD" answer.
+        // Using exit-code as the signal is locale-resilient (no
+        // stderr-grepping for English error strings).
+        let output = Command::new("git")
+            .args(["log", "-1", "--pretty=%s"])
+            .current_dir(worktree_path)
+            .output()
+            .with_context(|| format!("reading git HEAD subject in {}", worktree_path.display()))?;
+        if !output.status.success() {
+            return Ok(false);
+        }
+        let subject = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(subject.starts_with(WIP_SUBJECT_PREFIX) && subject.ends_with(WIP_SUBJECT_SUFFIX))
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "git_mock.rs"]
+pub mod mock;
 
-    #[test]
-    fn mock_git_ops_succeeds_by_default() {
-        let ops = MockGitOps::new();
-        assert!(
-            ops.commit_and_push(Path::new("/tmp"), "main", "test")
-                .is_ok()
-        );
-    }
+#[cfg(test)]
+pub use mock::MockGitOps;
 
-    #[test]
-    fn mock_git_ops_fails_when_configured() {
-        let ops = MockGitOps::new().with_failure();
-        assert!(
-            ops.commit_and_push(Path::new("/tmp"), "main", "test")
-                .is_err()
-        );
-    }
-
-    // --- Issue #159: list_remote_branches tests ---
-
-    #[test]
-    fn mock_git_ops_list_remote_branches_filters_by_prefix() {
-        let ops = MockGitOps {
-            should_fail: false,
-            remote_branches: vec![
-                "origin/maestro/issue-42".to_string(),
-                "origin/maestro/issue-99".to_string(),
-                "origin/feat/something".to_string(),
-            ],
-            commits_ahead: false,
-        };
-        let branches = ops.list_remote_branches("maestro/issue-").unwrap();
-        assert_eq!(branches.len(), 2);
-        assert!(branches.contains(&"origin/maestro/issue-42".to_string()));
-        assert!(branches.contains(&"origin/maestro/issue-99".to_string()));
-    }
-
-    #[test]
-    fn mock_git_ops_list_remote_branches_returns_empty_when_no_match() {
-        let ops = MockGitOps {
-            should_fail: false,
-            remote_branches: vec!["origin/feat/something".to_string()],
-            commits_ahead: false,
-        };
-        let branches = ops.list_remote_branches("maestro/issue-").unwrap();
-        assert!(branches.is_empty());
-    }
-
-    // --- Issue #514: has_commits_ahead detection ---
-
-    #[test]
-    fn mock_git_ops_has_commits_ahead_returns_false_by_default() {
-        let ops = MockGitOps::new();
-        assert!(
-            !ops.has_commits_ahead(Path::new("/tmp"), "branch", "main")
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn mock_git_ops_has_commits_ahead_returns_configured_value() {
-        let ops = MockGitOps::new().with_commits_ahead(true);
-        assert!(
-            ops.has_commits_ahead(Path::new("/tmp"), "branch", "main")
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn mock_git_ops_has_commits_ahead_propagates_should_fail() {
-        let ops = MockGitOps::new().with_failure();
-        assert!(
-            ops.has_commits_ahead(Path::new("/tmp"), "branch", "main")
-                .is_err()
-        );
-    }
-}
+#[cfg(test)]
+#[path = "git_tests.rs"]
+mod tests;
