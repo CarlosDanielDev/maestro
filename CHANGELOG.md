@@ -9,6 +9,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- fix(github): `remove_label` no longer logs an Error when the label is absent from the repo (#559)
+  - Root cause: on gate failure the completion path called `remove_label("maestro:in-progress")`
+    against repos whose label set never included that label. The `gh` CLI exits non-zero with
+    `Label 'maestro:in-progress' not found` on stderr, which the client surfaced as a user-visible
+    Error-level activity-log entry — noise with no remediation action.
+  - New private predicate `is_label_not_found_error(stderr, label)` detects the pattern.
+    `remove_label` now matches on the predicate: a matching error is swallowed and re-emitted at
+    `tracing::debug!` level; all other errors still propagate normally.
+  - 7 new unit tests in `src/provider/github/client.rs` cover the predicate against
+    matching, mismatched-label, issue-not-found, auth-shape, case-mismatch, URL-form,
+    and empty-stderr inputs.
+
 - fix(session): post-completion gate failure no longer destroys uncommitted model edits (#558)
   - Root cause: on any gate failure (clippy, tests, etc.) the completion dispatcher called
     `git worktree remove --force`, silently deleting all uncommitted work the model had
