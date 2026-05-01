@@ -2,6 +2,7 @@ pub mod adapt;
 pub mod adapt_follow_up;
 pub mod bypass_dispatch;
 pub mod bypass_warning;
+pub mod gate_output_viewer;
 pub mod hollow_retry;
 pub mod home;
 #[allow(dead_code)]

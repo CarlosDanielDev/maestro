@@ -65,6 +65,9 @@ pub enum TuiMode {
     BypassWarning,
     /// Milestone health-check wizard: DOR + dep-graph review (#500).
     MilestoneHealth,
+    /// Paged view of a `FailedGates` session's full gate stderr (#560).
+    /// Reached via `[v]` on the failed-gates recovery modal.
+    GateOutputViewer(uuid::Uuid),
 }
 
 impl TuiMode {
@@ -107,6 +110,7 @@ impl TuiMode {
             Self::Roadmap => "Roadmap",
             Self::BypassWarning => "Bypass Warning",
             Self::MilestoneHealth => "Milestone Health",
+            Self::GateOutputViewer(_) => "Gate Output",
         }
     }
 }
@@ -360,6 +364,10 @@ pub struct CompletionSessionLine {
     pub pr_link: String,
     pub error_summary: String,
     pub gate_failures: Vec<GateFailureInfo>,
+    /// Retained worktree path for FailedGates lines. Surfaces from
+    /// `Session.worktree_path` so the recovery keys (`s`, `g`, `r`) can
+    /// reach it without going through the activity log.
+    pub worktree_path: Option<std::path::PathBuf>,
     pub issue_number: Option<u64>,
     pub model: String,
 }
@@ -373,6 +381,24 @@ impl CompletionSummaryData {
 
     pub fn has_conflict_suggestions(&self) -> bool {
         !self.suggestions.is_empty()
+    }
+
+    /// True when at least one session in the summary is in `FailedGates`
+    /// state. Used by the completion overlay to switch from the success
+    /// modal to the recovery modal (issue #560).
+    pub fn has_failed_gates(&self) -> bool {
+        self.sessions
+            .iter()
+            .any(|s| s.status == SessionStatus::FailedGates)
+    }
+
+    /// First session line in `FailedGates` state, if any. Used by the
+    /// recovery handlers (`[s]`, `[g]`, `[r]`, `[v]`) to know which
+    /// worktree to act on.
+    pub fn first_failed_gates_session(&self) -> Option<&CompletionSessionLine> {
+        self.sessions
+            .iter()
+            .find(|s| s.status == SessionStatus::FailedGates)
     }
 }
 
@@ -545,5 +571,88 @@ mod tests {
         let label = TuiMode::AgentGraph.breadcrumb_label();
         assert!(!label.is_empty());
         assert_eq!(label, "Agent Graph");
+    }
+
+    // ── Issue #560: failed-gates helpers on CompletionSummaryData ────────
+
+    fn line_with_status(
+        id: u128,
+        status: crate::session::types::SessionStatus,
+    ) -> CompletionSessionLine {
+        CompletionSessionLine {
+            session_id: uuid::Uuid::from_u128(id),
+            label: format!("#{}", id),
+            status,
+            cost_usd: 0.0,
+            elapsed: "0s".to_string(),
+            pr_link: String::new(),
+            error_summary: String::new(),
+            gate_failures: vec![],
+            worktree_path: None,
+            issue_number: Some(id as u64),
+            model: "opus".to_string(),
+        }
+    }
+
+    #[test]
+    fn completion_summary_has_failed_gates_returns_false_when_no_failed_gates_session() {
+        let data = CompletionSummaryData {
+            sessions: vec![line_with_status(
+                1,
+                crate::session::types::SessionStatus::Completed,
+            )],
+            total_cost_usd: 0.0,
+            session_count: 1,
+            suggestions: vec![],
+            selected_suggestion: 0,
+        };
+        assert!(!data.has_failed_gates());
+    }
+
+    #[test]
+    fn completion_summary_has_failed_gates_returns_true_when_any_session_is_failed_gates() {
+        let data = CompletionSummaryData {
+            sessions: vec![
+                line_with_status(1, crate::session::types::SessionStatus::Completed),
+                line_with_status(2, crate::session::types::SessionStatus::FailedGates),
+            ],
+            total_cost_usd: 0.0,
+            session_count: 2,
+            suggestions: vec![],
+            selected_suggestion: 0,
+        };
+        assert!(data.has_failed_gates());
+    }
+
+    #[test]
+    fn completion_summary_first_failed_gates_session_returns_none_when_all_pass() {
+        let data = CompletionSummaryData {
+            sessions: vec![line_with_status(
+                1,
+                crate::session::types::SessionStatus::Completed,
+            )],
+            total_cost_usd: 0.0,
+            session_count: 1,
+            suggestions: vec![],
+            selected_suggestion: 0,
+        };
+        assert!(data.first_failed_gates_session().is_none());
+    }
+
+    #[test]
+    fn completion_summary_first_failed_gates_session_returns_correct_line() {
+        let data = CompletionSummaryData {
+            sessions: vec![
+                line_with_status(1, crate::session::types::SessionStatus::Completed),
+                line_with_status(2, crate::session::types::SessionStatus::FailedGates),
+            ],
+            total_cost_usd: 0.0,
+            session_count: 2,
+            suggestions: vec![],
+            selected_suggestion: 0,
+        };
+        let result = data.first_failed_gates_session();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().session_id, uuid::Uuid::from_u128(2));
     }
 }

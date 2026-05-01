@@ -8,6 +8,7 @@ mod completion_summary;
 mod context_overflow;
 pub(crate) mod data_handler;
 mod event_handler;
+mod gate_retry;
 pub(crate) mod helpers;
 mod issue_completion;
 mod plugins;
@@ -76,6 +77,12 @@ pub struct App {
     pub(crate) pending_issue_completions: Vec<PendingIssueCompletion>,
     pub(crate) pending_hooks: Vec<PendingHook>,
     pub health_monitor: Box<dyn HealthCheck>,
+    /// Gate runner used by `App::retry_completion_gates` ([g] on the
+    /// failed-gates recovery modal — issue #560). Production wires
+    /// `GateRunner`; tests inject `CapturingGateRunner` via
+    /// `with_gate_runner`. Kept on `App` instead of a free function so
+    /// the `[g]` keybinding handler has a stable injection point.
+    pub gate_runner: Box<dyn crate::gates::runner::GateCheck>,
     pub budget_enforcer: Option<BudgetEnforcer>,
     pub model_router: Option<ModelRouter>,
     pub progress_tracker: ProgressTracker,
@@ -182,6 +189,10 @@ pub struct App {
     /// System clipboard adapter for the `c` Copy keybinding. Tests
     /// inject a `MockClipboard` via `with_clipboard`.
     pub(crate) clipboard: Box<dyn crate::tui::clipboard::Clipboard>,
+    /// Shell launcher for the `[s] Shell into worktree` recovery key on
+    /// the failed-gates modal (#560). Production wires `OsShellLauncher`;
+    /// tests inject `CapturingShellLauncher` via `with_shell_launcher`.
+    pub(crate) shell_launcher: Box<dyn crate::tui::shell_launcher::ShellLauncher>,
     /// Transient (~2 s) banner shown after a copy action.
     pub(crate) copy_toast: Option<crate::tui::app::clipboard_action::CopyToast>,
     /// Desktop notification dispatcher. Production wires `OsascriptNotifier`;
@@ -267,6 +278,7 @@ impl App {
             pending_issue_completions: recovered_completions,
             pending_hooks: Vec::new(),
             health_monitor: Box::new(HealthMonitor::new()),
+            gate_runner: Box::new(crate::gates::runner::GateRunner),
             budget_enforcer: None,
             model_router: None,
             progress_tracker: ProgressTracker::new(),
@@ -348,6 +360,7 @@ impl App {
             prd_explore_cursor: 0,
             settings_store: None,
             clipboard: Box::new(crate::tui::clipboard::SystemClipboard),
+            shell_launcher: Box::new(crate::tui::shell_launcher::OsShellLauncher),
             copy_toast: None,
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
             attempted_pr_issue_numbers: std::collections::HashSet::new(),
@@ -410,6 +423,26 @@ impl App {
         clipboard: Box<dyn crate::tui::clipboard::Clipboard>,
     ) -> Self {
         self.clipboard = clipboard;
+        self
+    }
+
+    /// Builder for tests: swap the shell launcher for a `CapturingShellLauncher`.
+    #[cfg(test)]
+    pub(crate) fn with_shell_launcher(
+        mut self,
+        launcher: Box<dyn crate::tui::shell_launcher::ShellLauncher>,
+    ) -> Self {
+        self.shell_launcher = launcher;
+        self
+    }
+
+    /// Builder for tests: swap the gate runner for a fake.
+    #[cfg(test)]
+    pub(crate) fn with_gate_runner(
+        mut self,
+        runner: Box<dyn crate::gates::runner::GateCheck>,
+    ) -> Self {
+        self.gate_runner = runner;
         self
     }
 

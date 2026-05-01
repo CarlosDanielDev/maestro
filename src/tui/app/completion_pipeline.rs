@@ -1,5 +1,5 @@
 use super::App;
-use super::helpers::session_label;
+use super::helpers::{build_completion_gates, session_label};
 use super::types::TuiMode;
 use crate::gates::runner::{self, GateCheck, GateRunner};
 use crate::gates::types::{CompletionGate, GateResult};
@@ -28,26 +28,7 @@ impl App {
         // Process pending issue completions (gates, git push, label updates, PR creation)
         let pending = std::mem::take(&mut self.pending_issue_completions);
 
-        // Build gates once from config (independent of individual completions)
-        let gates: Vec<CompletionGate> = if let Some(ref cfg) = self.config
-            && cfg.sessions.completion_gates.enabled
-            && !cfg.sessions.completion_gates.commands.is_empty()
-        {
-            cfg.sessions
-                .completion_gates
-                .commands
-                .iter()
-                .map(CompletionGate::from_config_entry)
-                .collect()
-        } else if let Some(ref cfg) = self.config
-            && cfg.gates.enabled
-        {
-            vec![CompletionGate::TestsPass {
-                command: cfg.gates.test_command.clone(),
-            }]
-        } else {
-            vec![]
-        };
+        let gates: Vec<CompletionGate> = build_completion_gates(self.config.as_ref());
 
         for mut completion in pending {
             let issue_label = format!("#{}", completion.issue_number);
@@ -111,6 +92,11 @@ impl App {
 
                     if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
                         managed.session.gate_results = failed_gate_results;
+                        // Persist the retained worktree path on the session so
+                        // the post-failure recovery modal (issue #560) can
+                        // surface it for [s] / [g] / [r] without piping it
+                        // through the activity log.
+                        managed.session.worktree_path = completion.worktree_path.clone();
                         let _ = managed.session.transition_to(
                             SessionStatus::FailedGates,
                             TransitionReason::GatesFailed,

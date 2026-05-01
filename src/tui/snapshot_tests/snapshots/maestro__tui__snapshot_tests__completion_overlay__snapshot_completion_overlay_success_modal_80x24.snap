@@ -1,0 +1,29 @@
+---
+source: src/tui/snapshot_tests/completion_overlay.rs
+assertion_line: 68
+expression: term.backend()
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"            ╔═════════════════[ Session Complete ]═════════════════╗            "
+"            ║                                                      ║            "
+"            ║   #42 COMPLETED $0.12 2m30s                         ║            "
+"            ║                                                      ║            "
+"            ║  Total: $0.12  (1 session)                           ║            "
+"            ║                                                      ║            "
+"            ║  [i] Browse  [r] New Prompt  [l] Logs  [d] Dashboard ║            "
+"            ║                                                      ║            "
+"            ║                                                      ║            "
+"            ║                                                      ║            "
+"            ║                                                      ║            "
+"            ║                                                      ║            "
+"            ║                                                      ║            "
+"            ║                                                      ║            "
+"            ║                                                      ║            "
+"            ╚══════════════════════════════════════════════════════╝            "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

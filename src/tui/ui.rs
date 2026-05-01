@@ -379,6 +379,21 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &theme,
             );
         }
+        TuiMode::GateOutputViewer(id) => {
+            // Look up the session in the pool (covers both active and
+            // finished — FailedGates is terminal so the session lives
+            // in `finished` after the pipeline finalizes it).
+            let session_clone = app.pool.get_session(id).cloned();
+            if let Some(session) = session_clone {
+                crate::tui::screens::gate_output_viewer::draw_gate_output_viewer(
+                    f,
+                    &session,
+                    app.log_viewer_scroll,
+                    chunks[1],
+                    &theme,
+                );
+            }
+        }
         TuiMode::ConfirmKill(_) => {
             let sessions = app.pool.all_sessions();
             app.panel_view.draw_with_claims(
@@ -1189,7 +1204,7 @@ fn draw_confirm_exit_overlay(
     f.render_widget(Paragraph::new(lines).block(block), popup);
 }
 
-fn draw_completion_overlay(
+pub(crate) fn draw_completion_overlay(
     f: &mut Frame,
     summary: &crate::tui::app::CompletionSummaryData,
     area: Rect,
@@ -1333,30 +1348,68 @@ fn draw_completion_overlay(
 
     lines.push(Line::from(""));
 
-    // Hint bar: single source of truth is `mode_hints.rs`. The conditional
-    // `[f] Fix` is prepended here because it only applies when the summary
-    // actually has suggestions — static hint tables can't encode that.
-    let km = keymap::mode_keymap(TuiMode::CompletionSummary, None, &[], false);
-    let mut keybind_spans = vec![Span::raw("  ")];
-    if summary.has_needs_review() || summary.has_conflict_suggestions() {
-        keybind_spans.push(Span::styled("[f]", Style::default().fg(theme.keybind_key)));
-        keybind_spans.push(Span::styled(
-            " Fix",
-            Style::default().fg(theme.text_primary),
-        ));
-        keybind_spans.push(Span::raw("  "));
+    let failed_gates_mode = summary.has_failed_gates();
+
+    if failed_gates_mode
+        && let Some(fl) = summary.first_failed_gates_session()
+        && let Some(wt) = fl.worktree_path.as_ref()
+    {
+        lines.push(Line::from(vec![
+            Span::raw("  Worktree retained: "),
+            Span::styled(
+                wt.display().to_string(),
+                Style::default().fg(theme.accent_warning),
+            ),
+        ]));
+        lines.push(Line::from(""));
     }
-    keybind_spans.extend(keymap::hint_bar_spans(
-        km.hints,
-        theme.keybind_key,
-        theme.text_primary,
-    ));
+
+    let mut keybind_spans = vec![Span::raw("  ")];
+    if failed_gates_mode {
+        for (k, label) in [
+            ("s", "Shell"),
+            ("g", "Re-run Gates"),
+            ("r", "Resume"),
+            ("v", "View Output"),
+            ("q", "Close"),
+        ] {
+            keybind_spans.push(Span::styled(
+                format!("[{}]", k),
+                Style::default().fg(theme.keybind_key),
+            ));
+            keybind_spans.push(Span::styled(
+                format!(" {}", label),
+                Style::default().fg(theme.text_primary),
+            ));
+            keybind_spans.push(Span::raw("  "));
+        }
+    } else {
+        let km = keymap::mode_keymap(TuiMode::CompletionSummary, None, &[], false);
+        if summary.has_needs_review() || summary.has_conflict_suggestions() {
+            keybind_spans.push(Span::styled("[f]", Style::default().fg(theme.keybind_key)));
+            keybind_spans.push(Span::styled(
+                " Fix",
+                Style::default().fg(theme.text_primary),
+            ));
+            keybind_spans.push(Span::raw("  "));
+        }
+        keybind_spans.extend(keymap::hint_bar_spans(
+            km.hints,
+            theme.keybind_key,
+            theme.text_primary,
+        ));
+    }
 
     lines.push(Line::from(keybind_spans));
 
+    let (title, border) = if failed_gates_mode {
+        ("Session Failed Gates", theme.accent_warning)
+    } else {
+        ("Session Complete", theme.accent_success)
+    };
     let block = theme
-        .styled_block("Session Complete", false)
-        .border_style(Style::default().fg(theme.accent_success));
+        .styled_block(title, false)
+        .border_style(Style::default().fg(border));
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, overlay_area);

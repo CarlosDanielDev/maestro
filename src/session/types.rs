@@ -284,6 +284,10 @@ pub struct Session {
     /// TurboQuant: compressed token count of a fork-handoff compression.
     #[serde(default)]
     pub tq_handoff_compressed_tokens: Option<u64>,
+    /// Retained worktree for `FailedGates` recovery. `None` when no
+    /// worktree survived completion.
+    #[serde(default)]
+    pub worktree_path: Option<PathBuf>,
     /// History of state transitions for audit trail.
     #[serde(default)]
     pub transition_history: Vec<super::transition::SessionTransition>,
@@ -387,6 +391,7 @@ impl Session {
             thinking_started_at: None,
             tq_handoff_original_tokens: None,
             tq_handoff_compressed_tokens: None,
+            worktree_path: None,
             transition_history: Vec::new(),
             intent,
             role,
@@ -1014,6 +1019,35 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let rt: Session = serde_json::from_str(&json).unwrap();
         assert_eq!(rt.status, SessionStatus::FailedGates);
+    }
+
+    // --- Issue #560: Session.worktree_path field for FailedGates recovery ---
+
+    #[test]
+    fn session_worktree_path_defaults_to_none() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        assert!(s.worktree_path.is_none());
+    }
+
+    #[test]
+    fn session_worktree_path_round_trips_via_serde() {
+        let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        s.worktree_path = Some(std::path::PathBuf::from(".maestro/worktrees/issue-560"));
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            rt.worktree_path,
+            Some(std::path::PathBuf::from(".maestro/worktrees/issue-560"))
+        );
+    }
+
+    #[test]
+    fn session_worktree_path_deserializes_with_default_when_field_absent() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json.replace(r#","worktree_path":null"#, "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert!(rt.worktree_path.is_none());
     }
 
     // --- Issue #169: Hollow completion detection ---

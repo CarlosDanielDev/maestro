@@ -631,6 +631,32 @@ pub fn mode_keymap(
         TuiMode::Roadmap => ("Roadmap", FKeyVis::Minimal, &[]),
         TuiMode::BypassWarning => ("Bypass Warning", FKeyVis::Minimal, &[]),
         TuiMode::MilestoneHealth => ("Milestone Health", FKeyVis::Minimal, &[]),
+        TuiMode::GateOutputViewer(_) => (
+            "Gate Output",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "Esc",
+                    action: "Back",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "j/k",
+                    action: "Scroll",
+                    priority: 1,
+                },
+                InlineHint {
+                    key: "G",
+                    action: "Bottom",
+                    priority: 2,
+                },
+                InlineHint {
+                    key: "g",
+                    action: "Top",
+                    priority: 3,
+                },
+            ],
+        ),
     };
 
     let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);

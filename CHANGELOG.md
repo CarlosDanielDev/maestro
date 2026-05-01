@@ -9,6 +9,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- fix(tui): "Session Failed Gates" recovery modal replaces the completion overlay when gates failed (#560)
+  - This is the TUI half of the post-completion gate failure recovery story: #558 retained the
+    worktree on gate failure (daemon layer), and this change makes that worktree actionable from
+    inside the TUI. #559 fixed noisy `remove_label` error logs that accompanied gate failures.
+  - When `SessionStatus::FailedGates` is present in the completion summary, the completion overlay
+    now renders an amber-bordered "Session Failed Gates" modal instead of the standard success
+    overlay. The success-path modal (`[i] Browse  [r] New Prompt  [l] Logs  [d] Dashboard  [q] Quit`)
+    is unchanged when all gates passed.
+  - Five new keybindings on the failed-gates modal:
+    - `[s]` — opens `$SHELL` rooted at the retained worktree via `ShellLauncher` trait
+    - `[g]` — re-runs the post-completion gates against the retained worktree (`App::retry_completion_gates`)
+    - `[r]` — spawns a `/implement #N --continue` resumption session against the worktree
+    - `[v]` — opens a full-screen paged viewer of the gate stderr (`GateOutputViewer`)
+    - `[q]` — closes the modal and returns to Overview (NOT ConfirmExit)
+  - `Session` gains `worktree_path: Option<PathBuf>` with `#[serde(default)]`; the completion
+    dispatcher sets it at the `FailedGates` transition so the recovery modal can display and act on
+    the path. The `CompletionSessionLine` type mirrors this field.
+  - `draw_completion_overlay()` made `pub(crate)` to allow direct invocation from snapshot tests.
+  - 32 new tests across 6 TDD cycles bring the total to 4 295 (was 4 263).
+
+  **New files:** `src/tui/shell_launcher.rs`, `src/tui/app/gate_retry.rs`,
+  `src/tui/screens/gate_output_viewer.rs`, `src/tui/snapshot_tests/completion_overlay.rs`.
+
 - fix(github): `remove_label` no longer logs an Error when the label is absent from the repo (#559)
   - Root cause: on gate failure the completion path called `remove_label("maestro:in-progress")`
     against repos whose label set never included that label. The `gh` CLI exits non-zero with
