@@ -71,12 +71,23 @@ bash .claude/hooks/implement-gates.sh "$ISSUE_NUMBER" \
   ${DIRTY_TREE_ACTION:+--dirty-tree-action=$DIRTY_TREE_ACTION}
 ```
 
-The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success AND writes the same path to `/tmp/maestro-current-gate-dir` so subsequent Bash tool calls can recover it without relying on env-var persistence (each Bash call is a fresh shell — `export` does not propagate).
+The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success AND writes the same path to a sentinel file resolved via `.claude/hooks/sentinel-path.sh` (preferred) plus the legacy `/tmp/maestro-current-gate-dir` (back-compat). The sentinel allows subsequent Bash tool calls to recover `GATE_LOG_DIR` without relying on env-var persistence (each Bash call is a fresh shell — `export` does not propagate).
 
-Recovery pattern for any later step:
+The resolution chain (per #545 P3 — symlink-attack hardening on multi-user Linux) is `$XDG_RUNTIME_DIR` → `$HOME/.cache/maestro` → `${TMPDIR:-/tmp}`. The hook prints the chosen path as `sentinel: <path>` on stdout.
+
+Recovery pattern for any later step (walks the same chain):
 
 ```bash
-GATE_LOG_DIR=$(cat /tmp/maestro-current-gate-dir)
+GATE_LOG_DIR=""
+for candidate in \
+  "${XDG_RUNTIME_DIR:-}/maestro-current-gate-dir" \
+  "${HOME}/.cache/maestro/maestro-current-gate-dir" \
+  "/tmp/maestro-current-gate-dir"; do
+  if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+    GATE_LOG_DIR=$(cat "$candidate")
+    break
+  fi
+done
 ```
 
 The sentinel file is overwritten on the next `/implement` run, so it always points at the current gate session.
