@@ -266,11 +266,11 @@ pub const PENDING_PRS_REHYDRATE_CAP: usize = 1000;
 
 /// A PR creation that failed and is queued for retry.
 ///
-/// Deserialized via [`PendingPrRaw`] so legacy state files written before
-/// `#545` (which carried a `last_error: String` field that has since been
-/// folded into `last_errors`) migrate cleanly: when `last_errors` is empty
-/// and a non-empty `last_error` is present, the value is pushed onto
-/// `last_errors`. New JSON output omits `last_error` entirely.
+/// Deserialized via [`PendingPrRaw`] so legacy state files (which carried
+/// a `last_error: String` field that has since been folded into
+/// `last_errors`) migrate cleanly: when `last_errors` is empty and a
+/// non-empty `last_error` is present, the value is pushed onto
+/// `last_errors`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "PendingPrRaw")]
 pub struct PendingPr {
@@ -298,11 +298,11 @@ pub struct PendingPr {
     pub manual_retry_count: u32,
 }
 
-/// Wire shape used only on deserialize. Accepts both the pre-`#545` schema
-/// (with `last_error: String`) and the new schema (without). On conversion
-/// to [`PendingPr`] a non-empty `last_error` is migrated into `last_errors`
-/// when the deque is empty, so users upgrading from a very-old maestro do
-/// not lose error context.
+/// Wire shape used only on deserialize. Accepts both the legacy schema
+/// (with `last_error: String`) and the current schema (without). On
+/// conversion to [`PendingPr`] a non-empty `last_error` is migrated into
+/// `last_errors` when the deque is empty, so users upgrading from older
+/// maestro do not lose error context.
 #[derive(Deserialize)]
 struct PendingPrRaw {
     issue_number: u64,
@@ -332,10 +332,9 @@ impl From<PendingPrRaw> for PendingPr {
             // Migrated values bypass the runtime
             // `record_error_for_correlation` path that normally redacts
             // gh tokens before they hit `last_errors`. Re-apply the
-            // same redaction here so a token persisted in a pre-#545
-            // state file does NOT survive the upgrade unredacted
-            // (security review concern #5 on #545).
-            let redacted = crate::provider::github::client::redact_secrets(&raw.last_error);
+            // same redaction here so a token persisted in an old state
+            // file does NOT survive the upgrade unredacted.
+            let redacted = super::redaction::redact_secrets(&raw.last_error);
             last_errors.push_back(redacted);
         }
         Self {
@@ -373,6 +372,25 @@ pub enum PendingPrStatus {
     /// expected to fix the underlying problem (e.g., file a bug, run
     /// `gh pr create` manually) and dismiss the entry.
     PermanentlyFailed,
+}
+
+/// Split an `owner/repo` slug into its two halves. Returns `Err` with a
+/// human-readable reason if the slug is empty, missing the slash, has
+/// extra slashes, or has empty halves. The shape rule is the only thing
+/// this enforces — character-level validation (`validate_gh_arg`) is
+/// the caller's responsibility because the appropriate failure mode
+/// (Result, Option, ValidationFeedback) varies by call site.
+pub fn parse_owner_repo(slug: &str) -> Result<(&str, &str), &'static str> {
+    let mut parts = slug.split('/');
+    let owner = parts.next().unwrap_or("");
+    let repo = parts.next().unwrap_or("");
+    if parts.next().is_some() {
+        return Err("must match owner/repo format (extra slashes)");
+    }
+    if owner.is_empty() || repo.is_empty() {
+        return Err("must match owner/repo format (empty owner or repo)");
+    }
+    Ok((owner, repo))
 }
 
 /// Canonical PendingPr fixture for cross-module test reuse. Returns an entry
@@ -480,12 +498,12 @@ mod tests {
 
     #[test]
     fn pending_pr_legacy_last_error_redacts_secrets_on_migration() {
-        // A pre-#545 maestro that hit a `gh` error containing a token
+        // An older maestro that hit a `gh` error containing a token
         // would persist the unredacted value in last_error. Migrating
         // it into last_errors must run the value through the same
         // redact_secrets pipeline the runtime uses; otherwise the
         // upgrade leaks credentials into the activity log + new state
-        // file. (security review concern #5 on #545)
+        // file.
         let legacy_json = r#"{
             "issue_number": 7,
             "issue_numbers": [],
@@ -511,7 +529,7 @@ mod tests {
 
     #[test]
     fn pending_pr_legacy_last_error_migrates_to_last_errors() {
-        // State files written by v0.16.x and earlier (before #545) had a
+        // State files written by v0.16.x and earlier had a
         // `last_error: String` field that is now removed. When
         // `last_errors` is empty AND `last_error` is non-empty, the
         // deserializer must migrate the value into `last_errors` so users

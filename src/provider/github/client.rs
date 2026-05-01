@@ -343,28 +343,11 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     }
 }
 
-/// Scrub credentials from `gh` stderr/stdout before it lands in error
-/// messages, activity logs, or `maestro-state.json`.
-///
-/// Catches:
-/// - `Authorization: Bearer <token>` / `Authorization: token <token>`
-///   (gh emits these when the user enables `GH_DEBUG=api`)
-/// - GitHub token prefixes: `ghp_`, `gho_`, `ghs_`, `ghu_`, `ghr_`,
-///   and `github_pat_<v2>`
-///
-/// The redaction substitutes `[REDACTED]` so the rest of the message
-/// stays readable for diagnostics.
-pub fn redact_secrets(s: &str) -> String {
-    use std::sync::OnceLock;
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::Regex::new(
-            r"(?i)(?:authorization:\s*(?:bearer|token)\s+\S+|gh[oprsu]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)",
-        )
-        .unwrap()
-    });
-    re.replace_all(s, "[REDACTED]").into_owned()
-}
+// `redact_secrets` lives in `provider::github::redaction` so the lower
+// `types.rs` layer can call it on rehydrate without depending on
+// `client.rs`. Re-exported here for back-compat with existing
+// `crate::provider::github::client::redact_secrets` call sites.
+pub use super::redaction::redact_secrets;
 
 /// Check if a stderr string indicates a GitHub CLI authentication failure.
 pub fn is_auth_error(stderr: &str) -> bool {
@@ -475,8 +458,7 @@ pub struct GhCliClient {
     /// `owner/repo` to thread through every read-only / edit shellout
     /// (`gh pr list/view`, `gh issue view/list/edit`). Without this `gh`
     /// infers the repo from the worktree's git remote which can fail
-    /// silently when the worktree is in an odd state — the AC4 preflight
-    /// failure that motivated the rollout (#545 P2).
+    /// silently when the worktree is in an odd state.
     repo: Option<String>,
 }
 
@@ -491,15 +473,11 @@ impl GhCliClient {
     ///
     /// Validates the input through `validate_gh_arg` (rejects shell
     /// metacharacters and `--`-prefixed values) and enforces the
-    /// `owner/repo` shape — every other validated `gh` argument in this
-    /// file goes through the same gate (security review concern #7 on
-    /// #545).
+    /// `owner/repo` shape via `parse_owner_repo`.
     pub fn with_repo(mut self, repo: String) -> Result<Self> {
         validate_gh_arg(&repo, "repo")?;
-        let parts: Vec<&str> = repo.split('/').collect();
-        if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
-            anyhow::bail!("repo must be in 'owner/repo' format (got {:?})", repo);
-        }
+        crate::provider::github::types::parse_owner_repo(&repo)
+            .map_err(|e| anyhow::anyhow!("repo {:?}: {}", repo, e))?;
         self.repo = Some(repo);
         Ok(self)
     }
@@ -815,8 +793,7 @@ impl GitHubClient for GhCliClient {
         body: &str,
     ) -> Result<()> {
         // Parity with create_pr / create_issue / create_milestone — every
-        // user-facing body that ships to GitHub is bounded at the same cap
-        // (security review concern #6 on #545).
+        // user-facing body that ships to GitHub is bounded at the same cap.
         validate_body(body, "PR review body")?;
         let argv = gh_argv::build_submit_pr_review_argv(pr_number, event, body);
         self.run_gh(&argv_refs(&argv)).await?;
@@ -2120,7 +2097,7 @@ mod tests {
         );
     }
 
-    // ── #545 security review concern #7 ──────────────────────────────────
+    // ── with_repo argv-injection guard ────────────────────────────────
 
     #[test]
     fn with_repo_accepts_owner_slash_repo() {

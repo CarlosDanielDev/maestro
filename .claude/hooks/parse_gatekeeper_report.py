@@ -13,7 +13,7 @@ import json
 import re
 import sys
 
-# Two acceptable fence formats — see #545:
+# Two acceptable fence formats:
 #   1. legacy:    ```json gatekeeper   (the original, kept for back-compat)
 #   2. headered:  ## Gatekeeper        (Markdown header) followed by a plain
 #                 ```json fence anywhere later in the same response.

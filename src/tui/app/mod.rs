@@ -54,8 +54,8 @@ use tokio::sync::mpsc;
 
 /// Single source of truth for the "GitHub auth missing — recover" hint.
 /// Reused at every site that tells the user what to do once `gh auth
-/// login` finishes. Without this, the same advice ships in 4 different
-/// phrasings and drifts over time (#545 P2 review).
+/// login` finishes. Without this, the same advice ships in multiple
+/// phrasings and drifts over time.
 pub(crate) const AUTH_RECOVERY_HINT: &str = "Run `gh auth login` then press Shift+P to retry.";
 
 pub struct App {
@@ -240,7 +240,7 @@ impl App {
         // always supported this; only the rehydration was missing.
         // Apply PENDING_PRS_REHYDRATE_CAP defensively: a corrupt or
         // maliciously-crafted state file with millions of entries would
-        // otherwise OOM App::new (#545 P2).
+        // otherwise OOM App::new.
         let original_pending_prs_count = state.pending_prs.len();
         let mut recovered_prs = state.pending_prs.clone();
         let pending_prs_truncated =

@@ -1,4 +1,4 @@
-//! Auto-review hand-off from `/pushup` to a running maestro TUI (#545 P1).
+//! Auto-review hand-off from `/pushup` to a running maestro TUI.
 //!
 //! `/pushup` writes `~/.maestro/last-pr-created` after `gh pr create`
 //! succeeds. Maestro polls the file once per `check_completions` tick;
@@ -13,14 +13,16 @@
 //! `ts` is informational and is not parsed.
 //!
 //! Failure modes:
-//! - Marker absent  → silent no-op.
+//! - Marker absent → silent no-op.
 //! - Marker mtime equals last-seen mtime → no-op (avoids re-firing).
-//! - Marker contains malformed JSON → Warn-log, delete the file, no
-//!   command queued.
+//! - Marker is a symlink → Warn-log, unlink the symlink (NOT the
+//!   target), no command queued.
+//! - Marker contains malformed JSON or fails the owner/repo guard →
+//!   Warn-log, delete the file, no command queued.
 
 use super::App;
 use crate::tui::activity_log::LogLevel;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 const MARKER_REL_PATH: &str = ".maestro/last-pr-created";
@@ -44,6 +46,16 @@ impl App {
         self.home_dir().map(|h| h.join(MARKER_REL_PATH))
     }
 
+    /// Unlink the marker and reset the cached mtime. Errors from
+    /// `remove_file` are intentionally swallowed: the cleanup is best-
+    /// effort, and the next tick will re-attempt if the marker is still
+    /// there. `remove_file` does NOT follow symlinks (it `unlink`s the
+    /// link itself), so this is safe to call on a symlinked marker.
+    fn consume_marker(&mut self, path: &Path) {
+        let _ = std::fs::remove_file(path);
+        self.last_pr_marker_mtime = None;
+    }
+
     /// Poll `~/.maestro/last-pr-created`; on a fresh marker enqueue
     /// `TuiCommand::PrCreated` and delete the file. Called once per
     /// `check_completions` tick.
@@ -51,9 +63,8 @@ impl App {
         let Some(path) = self.marker_path() else {
             return;
         };
-        // Use symlink_metadata so a symlink at the marker path is detected
-        // BEFORE we read it — read_to_string follows symlinks (security
-        // review concern #8 on #545).
+        // symlink_metadata so we detect a symlink BEFORE read_to_string
+        // follows it.
         let Ok(meta) = std::fs::symlink_metadata(&path) else {
             return;
         };
@@ -66,10 +77,7 @@ impl App {
                 ),
                 LogLevel::Warn,
             );
-            // remove_file does NOT follow symlinks (it unlinks the link
-            // itself), so this is safe — the link target stays intact.
-            let _ = std::fs::remove_file(&path);
-            self.last_pr_marker_mtime = None;
+            self.consume_marker(&path);
             return;
         }
         let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
@@ -83,38 +91,8 @@ impl App {
                 return;
             }
         };
-        match serde_json::from_str::<PushupMarker>(&raw) {
-            Ok(marker) => {
-                if let Err(e) = validate_marker_owner_repo(&marker) {
-                    self.activity_log.push_simple(
-                        "PUSHUP".into(),
-                        format!(
-                            "Marker owner/repo rejected: {} — deleting (security guard)",
-                            e
-                        ),
-                        LogLevel::Warn,
-                    );
-                    let _ = std::fs::remove_file(&path);
-                    self.last_pr_marker_mtime = None;
-                    return;
-                }
-                self.activity_log.push_simple(
-                    "PUSHUP".into(),
-                    format!(
-                        "Detected /pushup PR #{}; dispatching auto-review",
-                        marker.pr_number
-                    ),
-                    LogLevel::Info,
-                );
-                self.pending_commands
-                    .push(super::types::TuiCommand::PrCreated {
-                        pr_number: marker.pr_number,
-                        owner: marker.owner,
-                        repo: marker.repo,
-                    });
-                let _ = std::fs::remove_file(&path);
-                self.last_pr_marker_mtime = None;
-            }
+        let marker = match serde_json::from_str::<PushupMarker>(&raw) {
+            Ok(m) => m,
             Err(e) => {
                 self.activity_log.push_simple(
                     "PUSHUP".into(),
@@ -124,18 +102,45 @@ impl App {
                     ),
                     LogLevel::Warn,
                 );
-                let _ = std::fs::remove_file(&path);
-                self.last_pr_marker_mtime = None;
+                self.consume_marker(&path);
+                return;
             }
+        };
+        if let Err(e) = validate_marker_owner_repo(&marker) {
+            self.activity_log.push_simple(
+                "PUSHUP".into(),
+                format!(
+                    "Marker owner/repo rejected: {} — deleting (security guard)",
+                    e
+                ),
+                LogLevel::Warn,
+            );
+            self.consume_marker(&path);
+            return;
         }
+        self.activity_log.push_simple(
+            "PUSHUP".into(),
+            format!(
+                "Detected /pushup PR #{}; dispatching auto-review",
+                marker.pr_number
+            ),
+            LogLevel::Info,
+        );
+        self.pending_commands
+            .push(super::types::TuiCommand::PrCreated {
+                pr_number: marker.pr_number,
+                owner: marker.owner,
+                repo: marker.repo,
+            });
+        self.consume_marker(&path);
     }
 }
 
 /// Defense-in-depth: even though `~/.maestro/` is per-user, a same-user
 /// attacker who plants a marker should not be able to redirect maestro's
-/// auto-review to a `gh pr view --repo "../other-org/repo"` (security
-/// review concern #8 on #545). Reject anything that would not survive
-/// `validate_gh_arg` or fails the `owner/repo` shape.
+/// auto-review to a `gh pr view --repo "../other-org/repo"`. Reject
+/// anything that would not survive `validate_gh_arg` or fails the
+/// no-slashes check on either field.
 fn validate_marker_owner_repo(marker: &PushupMarker) -> anyhow::Result<()> {
     crate::util::validate_gh_arg(&marker.owner, "marker owner")?;
     crate::util::validate_gh_arg(&marker.repo, "marker repo")?;

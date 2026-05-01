@@ -2,7 +2,7 @@
 # Sourced helper. Sets $SENTINEL_PATH to the canonical
 # maestro-current-gate-dir sentinel location.
 #
-# Resolution order (#545 P3 — symlink-attack hardening on multi-user Linux):
+# Resolution order (symlink-attack hardening on multi-user Linux):
 #   1. $XDG_RUNTIME_DIR        (Linux systemd/elogind; tmpfs, mode 0700)
 #   2. $HOME/.cache/maestro    (Linux + macOS portable fallback)
 #   3. ${TMPDIR:-/tmp}         (last resort; macOS pre-XDG, oddly-configured)

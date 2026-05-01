@@ -99,11 +99,12 @@ if [ -n "$(git status --porcelain)" ]; then
 
   surface_stash_list() {
     # CI loops can pile up auto-stashes invisibly; surface the top of
-    # the list so the user sees them accumulating (#545 P3).
-    local count
-    count=$(git stash list | wc -l | tr -d ' ')
+    # the list so the user sees them accumulating.
+    local list count
+    list=$(git stash list)
+    count=$(printf '%s\n' "$list" | grep -c '^stash@' || true)
     echo "implement-gates: most recent stashes (top 5 of ${count}):"
-    git stash list | head -5
+    printf '%s\n' "$list" | head -5
   }
 
   case "$resolved_action" in
@@ -162,8 +163,7 @@ fi
 # without re-exporting (each Bash call is a fresh shell). Overwritten on next
 # run. Path resolved by sentinel-path.sh into $XDG_RUNTIME_DIR or
 # $HOME/.cache/maestro to avoid the /tmp symlink-attack vector on multi-user
-# Linux (#545 P3 + security review concern #2 on #545: dropping the legacy
-# /tmp write — every consumer in this branch walks the resolution chain).
+# Linux. /implement Step 2 walks the same resolution chain on read.
 # shellcheck disable=SC1091
 source "$(dirname "$0")/sentinel-path.sh"
 echo -n "$GATE_LOG_DIR" > "$SENTINEL_PATH"

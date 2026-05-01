@@ -33,7 +33,7 @@ pub(crate) fn build_create_pr_argv(
     // Intentionally NOT taking `repo`: `gh pr create` infers the target
     // repo from the just-pushed branch's tracking remote. Passing
     // --repo here suppresses that and breaks worktree semantics where
-    // the worktree's remote is the source of truth (#545 P2 review).
+    // the worktree's remote is the source of truth.
     vec![
         "pr".into(),
         "create".into(),
@@ -576,139 +576,103 @@ mod tests {
         );
     }
 
-    // --- #545 P2: --repo flag rollout on read-only/edit shellouts ---
+    // ── --repo flag rollout on read-only/edit shellouts ──
 
-    #[test]
-    fn list_prs_for_branch_argv_with_repo_appends_repo_flag() {
-        let argv = build_list_prs_for_branch_argv("feat/x", Some("owner/repo"));
+    fn assert_has_repo_flag(argv: &[String], expected: &str) {
         assert!(
             argv.windows(2)
-                .any(|w| w[0] == "--repo" && w[1] == "owner/repo"),
-            "argv must contain --repo owner/repo, got: {:?}",
-            argv
+                .any(|w| w[0] == "--repo" && w[1] == expected),
+            "argv must contain --repo {expected}, got: {argv:?}"
         );
     }
 
-    #[test]
-    fn list_prs_for_branch_argv_without_repo_omits_flag() {
-        let argv = build_list_prs_for_branch_argv("feat/x", None);
+    fn assert_no_repo_flag(argv: &[String]) {
         assert!(
             !argv.contains(&"--repo".to_string()),
-            "argv must NOT contain --repo when None, got: {:?}",
-            argv
+            "argv must NOT contain --repo when None, got: {argv:?}"
         );
     }
 
     #[test]
-    fn get_issue_argv_with_repo_appends_repo_flag() {
-        let argv = build_get_issue_argv(42, Some("owner/repo"));
-        assert!(
-            argv.windows(2)
-                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+    fn list_prs_for_branch_argv_repo_flag() {
+        assert_has_repo_flag(
+            &build_list_prs_for_branch_argv("feat/x", Some("owner/repo")),
+            "owner/repo",
         );
+        assert_no_repo_flag(&build_list_prs_for_branch_argv("feat/x", None));
     }
 
     #[test]
-    fn get_issue_argv_without_repo_omits_flag() {
-        let argv = build_get_issue_argv(42, None);
-        assert!(!argv.contains(&"--repo".to_string()));
+    fn get_issue_argv_repo_flag() {
+        assert_has_repo_flag(&build_get_issue_argv(42, Some("owner/repo")), "owner/repo");
+        assert_no_repo_flag(&build_get_issue_argv(42, None));
     }
 
     #[test]
-    fn get_pr_argv_with_repo_appends_repo_flag() {
-        let argv = build_get_pr_argv(541, "number,title", Some("owner/repo"));
-        assert!(
-            argv.windows(2)
-                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+    fn get_pr_argv_repo_flag() {
+        assert_has_repo_flag(
+            &build_get_pr_argv(541, "number,title", Some("owner/repo")),
+            "owner/repo",
         );
+        assert_no_repo_flag(&build_get_pr_argv(541, "number,title", None));
     }
 
     #[test]
-    fn get_pr_argv_without_repo_omits_flag() {
-        let argv = build_get_pr_argv(541, "number,title", None);
-        assert!(!argv.contains(&"--repo".to_string()));
-    }
-
-    #[test]
-    fn list_open_prs_argv_with_repo_appends_repo_flag() {
-        let argv = build_list_open_prs_argv("number,title", Some("owner/repo"));
-        assert!(
-            argv.windows(2)
-                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+    fn list_open_prs_argv_repo_flag() {
+        assert_has_repo_flag(
+            &build_list_open_prs_argv("number,title", Some("owner/repo")),
+            "owner/repo",
         );
+        assert_no_repo_flag(&build_list_open_prs_argv("number,title", None));
     }
 
     #[test]
-    fn list_open_prs_argv_without_repo_omits_flag() {
-        let argv = build_list_open_prs_argv("number,title", None);
-        assert!(!argv.contains(&"--repo".to_string()));
-    }
-
-    #[test]
-    fn list_issues_argv_with_repo_appends_repo_flag() {
-        let argv = build_list_issues_argv(None, Some("owner/repo"));
-        assert!(
-            argv.windows(2)
-                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+    fn list_issues_argv_repo_flag() {
+        assert_has_repo_flag(
+            &build_list_issues_argv(None, Some("owner/repo")),
+            "owner/repo",
         );
+        assert_no_repo_flag(&build_list_issues_argv(None, None));
     }
 
     #[test]
-    fn list_issues_argv_without_repo_omits_flag() {
-        let argv = build_list_issues_argv(None, None);
-        assert!(!argv.contains(&"--repo".to_string()));
-    }
-
-    #[test]
-    fn list_issues_by_milestone_argv_with_repo_appends_repo_flag() {
-        let argv = build_list_issues_by_milestone_argv("v1", Some("owner/repo"));
-        assert!(
-            argv.windows(2)
-                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+    fn list_issues_by_milestone_argv_repo_flag() {
+        assert_has_repo_flag(
+            &build_list_issues_by_milestone_argv("v1", Some("owner/repo")),
+            "owner/repo",
         );
+        assert_no_repo_flag(&build_list_issues_by_milestone_argv("v1", None));
     }
 
     #[test]
-    fn list_issues_by_milestone_argv_without_repo_omits_flag() {
-        let argv = build_list_issues_by_milestone_argv("v1", None);
-        assert!(!argv.contains(&"--repo".to_string()));
-    }
-
-    #[test]
-    fn create_issue_dupe_check_argv_with_repo_appends_repo_flag() {
-        let argv = build_create_issue_dupe_check_argv(Some("owner/repo"));
-        assert!(
-            argv.windows(2)
-                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+    fn create_issue_dupe_check_argv_repo_flag() {
+        assert_has_repo_flag(
+            &build_create_issue_dupe_check_argv(Some("owner/repo")),
+            "owner/repo",
         );
+        assert_no_repo_flag(&build_create_issue_dupe_check_argv(None));
     }
 
     #[test]
-    fn add_label_argv_with_repo_appends_repo_flag() {
-        let argv = build_add_label_argv(7, "maestro:done", Some("owner/repo"));
-        assert!(
-            argv.windows(2)
-                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+    fn add_label_argv_repo_flag() {
+        assert_has_repo_flag(
+            &build_add_label_argv(7, "maestro:done", Some("owner/repo")),
+            "owner/repo",
         );
+        assert_no_repo_flag(&build_add_label_argv(7, "maestro:done", None));
     }
 
     #[test]
-    fn add_label_argv_without_repo_omits_flag() {
-        let argv = build_add_label_argv(7, "maestro:done", None);
-        assert!(!argv.contains(&"--repo".to_string()));
-    }
-
-    #[test]
-    fn remove_label_argv_with_repo_appends_repo_flag() {
-        let argv = build_remove_label_argv(7, "maestro:in-progress", Some("owner/repo"));
-        assert!(
-            argv.windows(2)
-                .any(|w| w[0] == "--repo" && w[1] == "owner/repo")
+    fn remove_label_argv_repo_flag() {
+        assert_has_repo_flag(
+            &build_remove_label_argv(7, "maestro:in-progress", Some("owner/repo")),
+            "owner/repo",
         );
+        assert_no_repo_flag(&build_remove_label_argv(7, "maestro:in-progress", None));
     }
 }
 
-/// Wire-format integration tests (#545 P1).
+/// Wire-format integration tests.
 ///
 /// `#[ignore]`-tagged: every flag emitted by every `build_*_argv` MUST
 /// appear in the actual `gh <subcmd> --help` output. Without this the
@@ -720,13 +684,9 @@ mod tests {
 /// RUN_GH_INTEGRATION=1 cargo test --lib gh_argv::wire_tests -- --ignored
 /// ```
 ///
-/// **Placement note (deviation from issue text):** the issue body lists
-/// `tests/gh_argv_wire.rs` (separate integration crate). Keeping the
-/// tests inline here avoids re-exporting `gh_argv::*` and the dependent
-/// `provider::github::types` chain through `lib.rs` purely to enable
-/// testing — that would broaden the public surface for no production
-/// benefit. The contract (gated on `RUN_GH_INTEGRATION=1`, runs against
-/// real `gh`) is identical.
+/// Inline rather than under `tests/` so we don't have to re-export
+/// `gh_argv` + the dependent `provider::github::types` chain through
+/// `lib.rs` purely to enable testing.
 #[cfg(test)]
 mod wire_tests {
     use super::*;

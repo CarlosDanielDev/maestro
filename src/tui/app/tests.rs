@@ -1963,7 +1963,7 @@ mod pending_prs_persistence {
         );
     }
 
-    // ── #545 P1: /pushup → maestro auto-review hand-off via marker file ──
+    // ── /pushup → maestro auto-review hand-off via marker file ──
 
     fn marker_path(home: &std::path::Path) -> std::path::PathBuf {
         home.join(".maestro").join("last-pr-created")
@@ -2049,10 +2049,10 @@ mod pending_prs_persistence {
 
     #[tokio::test]
     async fn poll_pr_marker_refuses_symlink() {
-        // Security review concern #8 on #545: a same-user attacker could
-        // plant a symlink at ~/.maestro/last-pr-created. The reader must
-        // detect it (via symlink_metadata) and unlink the symlink without
-        // following it. The link target stays untouched.
+        // A same-user attacker could plant a symlink at
+        // ~/.maestro/last-pr-created. The reader must detect it (via
+        // symlink_metadata) and unlink the symlink without following
+        // it; the link target must stay untouched.
         let home = tempfile::tempdir().unwrap();
         let marker_dir = home.path().join(".maestro");
         std::fs::create_dir_all(&marker_dir).unwrap();
@@ -2084,8 +2084,8 @@ mod pending_prs_persistence {
 
     #[tokio::test]
     async fn poll_pr_marker_rejects_owner_with_path_traversal() {
-        // Security review concern #8: marker owner/repo from JSON must
-        // not be a vehicle for argv injection or path traversal.
+        // Marker owner/repo from JSON must not be a vehicle for argv
+        // injection or path traversal.
         let home = tempfile::tempdir().unwrap();
         let marker = marker_path(home.path());
         std::fs::create_dir_all(marker.parent().unwrap()).unwrap();

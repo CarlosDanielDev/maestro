@@ -19,7 +19,7 @@ impl App {
             self.fire_plugin_hook(ph.hook, ph.ctx).await;
         }
 
-        // Poll the /pushup hand-off marker for auto-review (#545 P1).
+        // Poll the /pushup hand-off marker for auto-review.
         self.poll_last_pr_created_marker().await;
 
         // Process pending PR retries

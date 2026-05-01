@@ -19,19 +19,11 @@ use std::time::Instant;
 
 /// Build a canonical GitHub PR URL from a `owner/repo` slug and PR number.
 ///
-/// Returns `None` when the slug is not a single `owner/repo` pair (empty
-/// halves, missing slash, or extra slashes). Callers that get `None`
-/// should fall back to `client.get_pr(pr_number)` and read `html_url`.
+/// Returns `None` when the slug is not a single `owner/repo` pair.
+/// Callers that get `None` should fall back to `client.get_pr(pr_number)`
+/// and read `html_url`.
 pub(crate) fn pr_url(repo_slug: &str, pr_number: u64) -> Option<String> {
-    let mut parts = repo_slug.split('/');
-    let owner = parts.next()?;
-    let repo = parts.next()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    if owner.is_empty() || repo.is_empty() {
-        return None;
-    }
+    let (owner, repo) = crate::provider::github::types::parse_owner_repo(repo_slug).ok()?;
     Some(format!(
         "https://github.com/{}/{}/pull/{}",
         owner, repo, pr_number
