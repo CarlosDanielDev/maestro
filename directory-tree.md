@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-04-30 23:59 (UTC)
+> Last updated: 2026-05-01 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -424,6 +424,7 @@ maestro/
 │   │   ├── stream_parsing.rs              # 22 tests: stream event parsing and parser round-trips
 │   │   ├── completion_pipeline.rs         # 9 tests: label transitions and PR creation
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
+│   │   ├── gate_failure_retention.rs      # 5 tests: gate-failure worktree retention vs. teardown; uses real git worktree commands (not MockWorktreeManager) to guard against the #558 regression  [Issue #558]
 │   │   ├── worktree_lifecycle.rs          # 8 tests: worktree create/cleanup and health monitoring
 │   │   ├── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
 │   │   ├── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
@@ -715,6 +716,7 @@ maestro/
 | `src/integration_tests/stream_parsing.rs` | 22 tests covering stream event parsing and parser round-trips |
 | `src/integration_tests/completion_pipeline.rs` | 9 tests covering label transitions and PR creation |
 | `src/integration_tests/concurrent_sessions.rs` | 6 tests covering `max_concurrent` enforcement |
+| `src/integration_tests/gate_failure_retention.rs` | 5 tests covering gate-failure worktree retention; uses real `git worktree` commands so the #558 regression (force-remove on gate failure) is guarded end-to-end (Issue #558) |
 | `src/integration_tests/worktree_lifecycle.rs` | 8 tests covering worktree create/cleanup and health monitoring |
 | `src/integration_tests/upgrade.rs` | End-to-end upgrade flow tests: version check, banner state transitions, installer backup/swap, `RestartCommand` construction (Issue #118) |
 | `src/turboquant/` | Vector quantization for context compression (Issues #242-253, #343-345, #347) |

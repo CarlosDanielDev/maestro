@@ -112,12 +112,27 @@ impl App {
                     if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
                         managed.session.gate_results = failed_gate_results;
                         let _ = managed.session.transition_to(
-                            SessionStatus::NeedsReview,
+                            SessionStatus::FailedGates,
                             TransitionReason::GatesFailed,
                         );
                         managed
                             .session
                             .log_activity(format!("Gates failed: {}", failures.join("; ")));
+                        if let Some(wt_path) = &completion.worktree_path {
+                            let retain_msg =
+                                format!("Worktree retained at {} for recovery", wt_path.display());
+                            managed.session.log_activity(retain_msg.clone());
+                            tracing::warn!(
+                                issue = completion.issue_number,
+                                worktree = %wt_path.display(),
+                                "retaining worktree after gate failure",
+                            );
+                            self.activity_log.push_simple(
+                                issue_label.clone(),
+                                retain_msg,
+                                LogLevel::Warn,
+                            );
+                        }
                     }
 
                     completion.success = false;
@@ -369,10 +384,8 @@ impl App {
             .map(|s| s.id)
             .collect();
 
-        // Only process sessions that are actually in the active list
         for id in &completed_ids {
-            if self.pool.get_active_mut(*id).is_some() {
-                self.pool.on_session_completed(*id);
+            if self.pool.finalize(*id) {
                 self.health_monitor.remove(*id);
                 self.progress_tracker.remove(id);
             }
