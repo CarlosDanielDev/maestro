@@ -23,7 +23,7 @@ const RING_AGENTS: f64 = 0.45;
 const RING_FILES: f64 = 0.85;
 /// Terminal cells are ~2:1 tall on common monospace fonts; scaling x by this
 /// constant makes rings render as visual circles rather than vertical ellipses.
-const CELL_ASPECT: f64 = 0.5;
+pub(super) const CELL_ASPECT: f64 = 0.5;
 
 pub(crate) struct ConcentricLayout;
 

@@ -9,6 +9,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- fix(tui): agent-graph `#NNN` label no longer collides with outbound edges that radiate south of the agent sprite (#567)
+  - Pre-fix the issue-number chip was always painted at `(p.x, p.y - 0.35)` (nerd-font) /
+    `(p.x, p.y - 0.08)` (ASCII) — directly on top of any edge running south. With one agent and
+    two files the layout places the second file at exactly 270°, so the chip sat on the edge
+    every time.
+  - New `src/tui/agent_graph/label_placement.rs` module computes the angle of every outbound
+    edge from the agent and places the label at the midpoint of the largest angular gap between
+    them (north when there are no edges). The anchor is shifted leftward by
+    `(1 − cos θ) / 2 × label_width` cells, so east-pointing labels extend rightward (clear of
+    the western edge bundle) and west-pointing labels extend leftward — instead of always
+    centering and pulling the label back into the edge it was meant to avoid.
+  - Snapshot baselines refreshed across `agent_graph_*`, `agent_graph_dispatcher`, and
+    `agent_personalities`. New regression snapshots
+    `agent_label_does_not_overlap_south_edge{,_nerd_font}` pin the corrected placement.
+
 - fix(daemon): session WIP work is now committed before post-completion gates run, so model edits survive gate failure, crash, or manual worktree removal (#562)
   - Root cause: the daemon ran post-completion gates against the worktree before ever committing the
     model's file edits. A gate failure (or any subsequent crash / `rm -rf`) could still destroy

@@ -18,11 +18,21 @@ use ratatui::{
 };
 
 use super::animation::{SessionRenderInfo, edge_color, node_animation_style};
+use super::label_placement::{CanvasPoint, place_label};
 use super::layout::{ConcentricLayout, Layout};
 use super::model::{GraphEdge, GraphNode, NodeId, NodeKind};
 use super::personalities::{Sprite, glyph_for_role, role_abbrev, role_color};
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::spinner::graph_node_frame;
+
+/// Radial distance from the agent center at which to place the `#NNN` label
+/// in nerd-font mode. Just outside the 6-row sprite (sprite half-height ≈
+/// 0.25 with `ROW_STEP = 0.1`), with a small gap for readability.
+const LABEL_RADIUS_SPRITE: f64 = 0.40;
+
+/// Radial distance for the ASCII-mode `[ROLE] #NNN` label. The agent glyph
+/// is a 1×1 cell rectangle, so a small offset suffices.
+const LABEL_RADIUS_BLOCK: f64 = 0.10;
 
 const MIN_WIDTH: u16 = 80;
 const MIN_HEIGHT: u16 = 24;
@@ -120,9 +130,23 @@ pub(crate) fn draw_agent_graph(
                         };
                         let style = Style::default().fg(color).add_modifier(modifier);
 
+                        let agent_pt = CanvasPoint { x: p.x, y: p.y };
+                        let outbound = outbound_targets(
+                            &node.id,
+                            &edges_for_paint,
+                            &nodes_for_paint,
+                            &positions_for_paint,
+                        );
+
                         if use_nerd_font {
                             draw_sprite_on_canvas(ctx, p.x, p.y, glyph_for_role(role), style);
-                            ctx.print(p.x, p.y - 0.35, Line::styled(label, style));
+                            let (lx, ly) = place_label(
+                                agent_pt,
+                                &outbound,
+                                LABEL_RADIUS_SPRITE,
+                                label.chars().count(),
+                            );
+                            ctx.print(lx, ly, Line::styled(label, style));
                         } else {
                             ctx.draw(&Rectangle {
                                 x: p.x - 0.02,
@@ -132,7 +156,13 @@ pub(crate) fn draw_agent_graph(
                                 color,
                             });
                             let labeled = format!("[{}] {}", role_abbrev(role), label);
-                            ctx.print(p.x, p.y - 0.08, Line::styled(labeled, style));
+                            let (lx, ly) = place_label(
+                                agent_pt,
+                                &outbound,
+                                LABEL_RADIUS_BLOCK,
+                                labeled.chars().count(),
+                            );
+                            ctx.print(lx, ly, Line::styled(labeled, style));
                         }
                     }
                     NodeKind::File => {
@@ -152,6 +182,26 @@ pub(crate) fn draw_agent_graph(
         });
 
     f.render_widget(canvas, area);
+}
+
+/// Collect the canvas-space target points of edges that originate at
+/// `agent_id`. Used to compute a label angle that avoids overlapping any
+/// outbound edge — see `super::label_placement` and issue #567.
+fn outbound_targets(
+    agent_id: &NodeId,
+    edges: &[GraphEdge],
+    nodes: &[GraphNode],
+    positions: &[super::layout::Positioned],
+) -> Vec<CanvasPoint> {
+    edges
+        .iter()
+        .filter(|e| &e.from == agent_id)
+        .filter_map(|e| {
+            let to_idx = nodes.iter().position(|n| n.id == e.to)?;
+            let p = positions[to_idx];
+            Some(CanvasPoint { x: p.x, y: p.y })
+        })
+        .collect()
 }
 
 fn label_for_node(
@@ -261,6 +311,10 @@ fn draw_sprite_on_canvas(ctx: &mut Context<'_>, cx: f64, cy: f64, sprite: Sprite
 #[cfg(test)]
 #[path = "render_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "render_label_placement_tests.rs"]
+mod label_placement_tests;
 
 #[cfg(test)]
 #[path = "status_modifier_tests.rs"]
