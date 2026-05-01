@@ -8,6 +8,8 @@
 
 use std::f64::consts::{FRAC_PI_2, TAU};
 
+use ratatui::layout::Alignment;
+
 use super::layout::CELL_ASPECT;
 
 /// A point in canvas virtual coordinates ([-1.0, 1.0]).
@@ -124,6 +126,74 @@ fn normalize_to_two_pi(theta: f64) -> f64 {
         x += TAU;
     }
     x
+}
+
+/// Half-width of the center band (in canvas units) where a file label is
+/// rendered centered on its marker rather than anchored to one side. Files
+/// near the top / bottom of the ring sit here.
+const FILE_LABEL_DEAD_BAND: f64 = 0.05;
+
+/// Cells reserved between the rendered label and the nearest canvas border
+/// so labels never touch the frame. Subtracted from the raw outward span.
+const FILE_LABEL_BORDER_MARGIN_CELLS: f64 = 1.0;
+
+/// Place a FILE label so it grows OUTWARD from the canvas center, away from
+/// the marker, with ellipsis truncation when it would overshoot the canvas
+/// border. Y stays at the caller's `p.y - 0.08` (or whatever offset they
+/// chose); only the x-anchor and possibly-truncated label are returned.
+///
+/// Rule:
+/// - `p.x >  DEAD_BAND` (right half) → anchor at `p.x` (label extends right;
+///   `Alignment::Left` relative to the marker).
+/// - `p.x < -DEAD_BAND` (left half) → anchor at `p.x − width` (right edge of
+///   label sits at the marker; `Alignment::Right`).
+/// - `|p.x| ≤ DEAD_BAND` (top/bottom of the ring) → centered on the marker.
+///
+/// Truncation: if the label cannot fit in the outward span
+/// (`inner_cols * (1 - |p.x|) / 2 - margin` cells) it is truncated to
+/// `available - 1` chars and an ellipsis is appended, preserving the leading
+/// characters.
+pub(super) fn place_file_label(p: CanvasPoint, label: &str, inner_cols: u16) -> (f64, String) {
+    let inner_cols_f = (inner_cols as f64).max(1.0);
+    let cell_w = 2.0 / inner_cols_f;
+
+    let (align, available_cells) = if p.x > FILE_LABEL_DEAD_BAND {
+        let raw = inner_cols_f * (1.0 - p.x) / 2.0 - FILE_LABEL_BORDER_MARGIN_CELLS;
+        (Alignment::Left, raw.floor().max(1.0) as usize)
+    } else if p.x < -FILE_LABEL_DEAD_BAND {
+        let raw = inner_cols_f * (1.0 + p.x) / 2.0 - FILE_LABEL_BORDER_MARGIN_CELLS;
+        (Alignment::Right, raw.floor().max(1.0) as usize)
+    } else {
+        let raw = inner_cols_f - 2.0 * FILE_LABEL_BORDER_MARGIN_CELLS;
+        (Alignment::Center, raw.floor().max(1.0) as usize)
+    };
+
+    let (display, width) = truncate_label_to_cells(label, available_cells);
+    let width_f = width as f64;
+
+    let anchor_x = match align {
+        Alignment::Left => p.x,
+        Alignment::Right => p.x - width_f * cell_w,
+        Alignment::Center => p.x - width_f * cell_w * 0.5,
+    };
+
+    (anchor_x, display)
+}
+
+/// Char-count truncation with `…` suffix. Returns the truncated label and its
+/// char count, so callers don't re-walk the string for width.
+fn truncate_label_to_cells(label: &str, available_cells: usize) -> (String, usize) {
+    let len = label.chars().count();
+    if len <= available_cells {
+        return (label.to_string(), len);
+    }
+    if available_cells <= 1 {
+        return ("…".to_string(), 1);
+    }
+    let keep = available_cells - 1;
+    let mut out: String = label.chars().take(keep).collect();
+    out.push('…');
+    (out, available_cells)
 }
 
 fn angular_distance(a: f64, b: f64) -> f64 {
@@ -296,5 +366,133 @@ mod tests {
                 "safe_label_angle must be deterministic",
             );
         }
+    }
+
+    // --- place_file_label ----------------------------------------------------
+
+    #[test]
+    fn place_file_label_right_half_left_anchored_at_marker() {
+        // Right-half marker, short label fits outward space. Anchor must equal
+        // marker x — label grows rightward (outward) from the marker.
+        let p = CanvasPoint { x: 0.7, y: 0.0 };
+        let (anchor_x, display) = place_file_label(p, "main.rs", 98);
+        assert_eq!(display, "main.rs");
+        assert!(
+            (anchor_x - 0.7).abs() < 1e-9,
+            "right-half anchor must equal p.x; got {anchor_x}"
+        );
+    }
+
+    #[test]
+    fn place_file_label_left_half_right_anchored_at_marker() {
+        // Left-half marker, short label fits. Right edge of label sits at marker x,
+        // so anchor_x = p.x − label_width_canvas.
+        let p = CanvasPoint { x: -0.7, y: 0.0 };
+        let label = "auth.rs";
+        let inner_cols: u16 = 98;
+        let cell_w = 2.0 / inner_cols as f64;
+        let (anchor_x, display) = place_file_label(p, label, inner_cols);
+        assert_eq!(display, label);
+        let expected = p.x - (label.chars().count() as f64) * cell_w;
+        assert!(
+            (anchor_x - expected).abs() < 1e-9,
+            "left-half anchor must be p.x − label_width_canvas; got {anchor_x} expected {expected}"
+        );
+    }
+
+    #[test]
+    fn place_file_label_center_band_centered() {
+        // |p.x| < 0.05 — center band (top/bottom of the file ring). Label
+        // centered horizontally on the marker.
+        let p = CanvasPoint { x: 0.0, y: 0.9 };
+        let label = "types.rs";
+        let inner_cols: u16 = 98;
+        let cell_w = 2.0 / inner_cols as f64;
+        let (anchor_x, display) = place_file_label(p, label, inner_cols);
+        assert_eq!(display, label);
+        let half = (label.chars().count() as f64) * cell_w / 2.0;
+        assert!(
+            (anchor_x - (p.x - half)).abs() < 1e-9,
+            "center-band anchor must be p.x − half_label_canvas; got {anchor_x}"
+        );
+    }
+
+    #[test]
+    fn place_file_label_truncates_long_label_right_half() {
+        let p = CanvasPoint { x: 0.6, y: 0.0 };
+        let long_label = "a".repeat(80);
+        let inner_cols: u16 = 98;
+        let outward_cells = (inner_cols as f64 * (1.0 - p.x) / 2.0 - 1.0).floor() as usize;
+        let (anchor_x, display) = place_file_label(p, &long_label, inner_cols);
+        assert!(display.ends_with('…'), "truncated label must end with '…'");
+        assert!(
+            display.chars().count() <= outward_cells,
+            "truncated label ({} chars) must fit in outward cells ({outward_cells})",
+            display.chars().count()
+        );
+        assert!(
+            (anchor_x - p.x).abs() < 1e-9,
+            "right-half anchor must still equal p.x after truncation"
+        );
+    }
+
+    #[test]
+    fn place_file_label_truncates_long_label_left_half() {
+        let p = CanvasPoint { x: -0.6, y: 0.0 };
+        let long_label = "b".repeat(80);
+        let inner_cols: u16 = 98;
+        let outward_cells = (inner_cols as f64 * (1.0 + p.x) / 2.0 - 1.0).floor() as usize;
+        let (_anchor_x, display) = place_file_label(p, &long_label, inner_cols);
+        assert!(display.ends_with('…'), "truncated label must end with '…'");
+        assert!(
+            display.chars().count() <= outward_cells,
+            "truncated label ({} chars) must fit in outward cells ({outward_cells})",
+            display.chars().count()
+        );
+    }
+
+    #[test]
+    fn place_file_label_preserves_prefix() {
+        // Outward cells at p.x = 0.5, inner_cols = 98 → floor(24.5 - 1) = 23.
+        // Truncation keeps 22 leading chars + '…' (matches the recognizable
+        // module-path prefix from the issue body example).
+        let p = CanvasPoint { x: 0.5, y: 0.0 };
+        let label = "maestro__tui__snapshot_tests__some_long_test_name";
+        let inner_cols: u16 = 98;
+        let (_anchor_x, display) = place_file_label(p, label, inner_cols);
+        assert!(
+            display.ends_with('…'),
+            "long label must be truncated with '…'"
+        );
+        assert!(
+            display.starts_with("maestro__tui__snapshot"),
+            "truncated label must preserve leading prefix; got: {display}"
+        );
+    }
+
+    #[test]
+    fn place_file_label_no_truncation_when_fits() {
+        // Short label at center; outward space is generous. No ellipsis.
+        let p = CanvasPoint { x: 0.0, y: 0.9 };
+        let label = "foo.rs";
+        let (_anchor_x, display) = place_file_label(p, label, 98);
+        assert_eq!(display, label, "fitting label must be returned unchanged");
+        assert!(!display.contains('…'), "no ellipsis for a label that fits");
+    }
+
+    #[test]
+    fn place_file_label_handles_minimum_inner_cols() {
+        // 80-col viewport minus 2 borders = 78 inner cols; p.x = 0.9 →
+        // outward space ≈ floor(78 * 0.1 / 2 - 1) = 2 cells. Output must fit.
+        let p = CanvasPoint { x: 0.9, y: 0.0 };
+        let inner_cols: u16 = 78;
+        let outward_cells = (inner_cols as f64 * (1.0 - p.x) / 2.0 - 1.0).floor() as usize;
+        let label = "config.rs";
+        let (_anchor_x, display) = place_file_label(p, label, inner_cols);
+        assert!(
+            display.chars().count() <= outward_cells.max(1),
+            "output ({} chars) must fit in tight outward space ({outward_cells} cells)",
+            display.chars().count()
+        );
     }
 }

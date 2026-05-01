@@ -154,6 +154,8 @@ Test strategy for the follow-up (recorded here so the follow-up DOR can copy it 
   - Agent: small `Rectangle` (1×1 virtual unit), colour = status colour (`Running` → green, `Errored` → red, `Completed` → muted), label `S-XXXX` (first 4 chars of `Uuid`) or `#<issue>` if the session has one.
   - File: same `Rectangle` in a neutral colour, label = basename (last path component). On collision, fall back to last 2 path components separated by `/`.
 
+> **Addendum (#568, 2026-05-01):** The original render path anchored every file label's leftmost cell at the node marker, causing labels on the left half of the ring to grow rightward into the graph interior and labels on the right half to overflow the canvas border. `place_file_label()` in `label_placement.rs` corrects this: right-half labels anchor at the marker and grow outward (rightward); left-half labels right-anchor at the marker and grow outward (leftward); markers within the `|p.x| ≤ FILE_LABEL_DEAD_BAND` center band remain centered. Labels that would overshoot the available outward span are truncated with an ellipsis via `truncate_with_ellipsis()`. No architectural change — this is a render-path bug fix with no impact on the layout algorithm, data model, or trait boundary.
+
 ### A note on "color themes"
 
 The issue's permanent Out-of-Scope list excludes "color themes". We read this as **user-configurable themes**, not "no colour at all" — status colours are necessary for legibility. The follow-up MUST NOT add a theme system; it MAY hard-code status colours from the existing `Theme` struct.
