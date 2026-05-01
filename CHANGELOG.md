@@ -9,6 +9,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- fix(tui): agent-graph file labels now grow outward from the marker and truncate with an ellipsis when they would overshoot the canvas (#568)
+  - Pre-fix `ctx.print(p.x, p.y - 0.08, …)` always anchored the label's leftmost cell at the
+    marker, so files on the right half of the ring overflowed off the right border (truncating
+    or disappearing) and files on the left half extended rightward into the graph interior,
+    overlapping edges and the agent sprite.
+  - New `place_file_label(p, label, inner_cols)` helper in `src/tui/agent_graph/label_placement.rs`
+    decides per-side: right-half markers (`p.x > 0.05`) anchor at the marker so the label grows
+    rightward; left-half markers (`p.x < -0.05`) right-anchor at the marker so the label grows
+    leftward; markers in the `|p.x| ≤ 0.05` center band stay centered.
+  - When a label is wider than the available outward span (`inner_cols * (1 - |p.x|) / 2 - 1`
+    cells), it is truncated to `available - 1` chars and an ellipsis is appended, preserving the
+    leading characters so long snapshot-test filenames stay recognizable from the prefix.
+  - Snapshot baselines refreshed across `agent_graph_*` and `agent_graph_dispatcher`. New
+    regressions `file_labels_grow_outward` and `file_label_truncates_with_ellipsis` pin the
+    per-side and truncation behavior.
+
 - fix(tui): agent-graph `#NNN` label no longer collides with outbound edges that radiate south of the agent sprite (#567)
   - Pre-fix the issue-number chip was always painted at `(p.x, p.y - 0.35)` (nerd-font) /
     `(p.x, p.y - 0.08)` (ASCII) — directly on top of any edge running south. With one agent and

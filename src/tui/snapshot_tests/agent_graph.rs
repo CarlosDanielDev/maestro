@@ -253,3 +253,47 @@ fn agent_label_does_not_overlap_south_edge_nerd_font() {
     let t = render_with(&single_agent_two_files_session(), 120, 40, true, 0);
     assert_snapshot!(t.backend());
 }
+
+// --- Issue #568: file-label per-side anchoring + ellipsis truncation -----
+
+fn four_cardinal_files_session() -> Vec<Session> {
+    vec![make_session(
+        "Cardinal files",
+        0,
+        568,
+        SessionStatus::Running,
+        &[
+            "east_file.rs",
+            "north_file.rs",
+            "west_file.rs",
+            "south_file.rs",
+        ],
+    )]
+}
+
+#[test]
+fn file_labels_grow_outward() {
+    // 1 agent + 4 files at the cardinal positions. Snapshot pins per-side
+    // anchoring: right-half labels start at marker x, left-half labels
+    // end at marker x.
+    let t = render_graph(&four_cardinal_files_session(), 100, 30);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn file_label_truncates_with_ellipsis() {
+    let sessions = vec![make_session(
+        "Long label",
+        0,
+        568,
+        SessionStatus::Running,
+        &["maestro__tui__snapshot_tests__agent_graph__agent_graph_renders_single_agent.snap"],
+    )];
+    let t = render_graph(&sessions, 100, 30);
+    let text = buffer_text(&t);
+    assert!(
+        text.contains('…'),
+        "60+ char file label must be truncated with '…' in rendered output"
+    );
+    assert_snapshot!(t.backend());
+}

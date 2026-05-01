@@ -18,7 +18,7 @@ use ratatui::{
 };
 
 use super::animation::{SessionRenderInfo, edge_color, node_animation_style};
-use super::label_placement::{CanvasPoint, place_label};
+use super::label_placement::{CanvasPoint, place_file_label, place_label};
 use super::layout::{ConcentricLayout, Layout};
 use super::model::{GraphEdge, GraphNode, NodeId, NodeKind};
 use super::personalities::{Sprite, glyph_for_role, role_abbrev, role_color};
@@ -79,6 +79,7 @@ pub(crate) fn draw_agent_graph(
     let nodes_for_paint = nodes.to_vec();
     let edges_for_paint = edges.to_vec();
     let positions_for_paint = positions;
+    let inner_cols = area.width.saturating_sub(2);
     let session_infos: Vec<SessionRenderInfo> = sessions
         .iter()
         .map(|s| SessionRenderInfo::from_session(s))
@@ -175,7 +176,9 @@ pub(crate) fn draw_agent_graph(
                             height: 0.04,
                             color,
                         });
-                        ctx.print(p.x, p.y - 0.08, Line::styled(label, style));
+                        let pt = CanvasPoint { x: p.x, y: p.y };
+                        let (lx, rendered) = place_file_label(pt, &label, inner_cols);
+                        ctx.print(lx, p.y - 0.08, Line::styled(rendered, style));
                     }
                 }
             }
