@@ -52,12 +52,12 @@ load_config() {
 extract_json_field() {
   local json="$1"
   local field="$2"
-  echo "$json" | grep -o "\"$field\":\"[^\"]*\"" | cut -d'"' -f4 || true
+  jq -r --arg field "$field" '.[$field] // empty' 2>/dev/null <<< "$json" || true
 }
 
 extract_message_field() {
   local json="$1"
-  echo "$json" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p'
+  jq -r '.message // empty' 2>/dev/null <<< "$json" || true
 }
 
 # =============================================================================
