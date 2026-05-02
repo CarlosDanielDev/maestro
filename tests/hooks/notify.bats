@@ -6,6 +6,7 @@
 #   - Slack JSON payload built via jq --arg (no heredoc interpolation).
 #   - PowerShell title/message single-quote escape and newline strip.
 #   - macOS tr-based sanitization regression guard.
+#   - Linux notify-send Pango markup escape and option separator.
 #   - shellcheck static-analysis gate.
 
 setup() {
@@ -136,6 +137,42 @@ STUB
 
   [[ "$log_content" != *"it's"* ]]
   [[ "$log_content" != *"!"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Linux regression test
+# ---------------------------------------------------------------------------
+
+@test "linux notification escapes markup and terminates options (regression)" {
+  cat > "$FAKE_BIN/notify-send" <<'STUB'
+#!/bin/bash
+{
+  printf '%s\n' "$#"
+  for arg in "$@"; do
+    printf '<%s>\n' "$arg"
+  done
+} > "$FAKE_BIN/notify-send.log"
+STUB
+  chmod +x "$FAKE_BIN/notify-send"
+  PATH="$FAKE_BIN:$PATH"
+  export PATH FAKE_BIN
+
+  local title="--icon=/etc/passwd & <bad>"
+  local message='<a href="https://evil/">click</a> &amp; >'
+
+  run send_linux_notification "$title" "$message"
+  [ "$status" -eq 0 ]
+
+  [ -f "$FAKE_BIN/notify-send.log" ]
+  argv_count="$(sed -n '1p' "$FAKE_BIN/notify-send.log")"
+  argv_separator="$(sed -n '2p' "$FAKE_BIN/notify-send.log")"
+  argv_title="$(sed -n '3p' "$FAKE_BIN/notify-send.log")"
+  argv_message="$(sed -n '4p' "$FAKE_BIN/notify-send.log")"
+
+  [ "$argv_count" = "3" ]
+  [ "$argv_separator" = "<-->" ]
+  [ "$argv_title" = "<--icon=/etc/passwd &amp; &lt;bad&gt;>" ]
+  [ "$argv_message" = '<&lt;a href="https://evil/"&gt;click&lt;/a&gt; &amp;amp; &gt;>' ]
 }
 
 # ---------------------------------------------------------------------------
