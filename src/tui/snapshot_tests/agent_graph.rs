@@ -315,3 +315,33 @@ fn file_node_marker_and_label_visually_connected() {
     let t = render_graph(&sessions, 100, 30);
     assert_snapshot!(t.backend());
 }
+
+// --- Issue #576: viewport-aware sprite geometry ----------------------------
+
+fn single_agent_one_file_session_576() -> Vec<Session> {
+    vec![make_session(
+        "Issue 576 fix",
+        0,
+        576,
+        SessionStatus::Running,
+        &["src/main.rs"],
+    )]
+}
+
+#[test]
+fn agent_sprite_contiguous_at_80x24() {
+    let t = render_with(&single_agent_one_file_session_576(), 80, 24, true, 0);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_sprite_contiguous_at_120x40() {
+    let t = render_with(&single_agent_one_file_session_576(), 120, 40, true, 0);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_sprite_contiguous_at_200x60() {
+    let t = render_with(&single_agent_one_file_session_576(), 200, 60, true, 0);
+    assert_snapshot!(t.backend());
+}

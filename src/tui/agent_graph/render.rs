@@ -25,14 +25,14 @@ use super::personalities::{Sprite, glyph_for_role, role_abbrev, role_color};
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::spinner::graph_node_frame;
 
-/// Radial distance from the agent center at which to place the `#NNN` label
-/// in nerd-font mode. Just outside the 6-row sprite (sprite half-height ≈
-/// 0.25 with `ROW_STEP = 0.1`), with a small gap for readability.
-const LABEL_RADIUS_SPRITE: f64 = 0.40;
-
 /// Radial distance for the ASCII-mode `[ROLE] #NNN` label. The agent glyph
 /// is a 1×1 cell rectangle, so a small offset suffices.
 const LABEL_RADIUS_BLOCK: f64 = 0.10;
+
+/// Number of cell rows of empty space between the sprite top/bottom and the
+/// nerd-font `#NNN` label. Combined with the sprite's half-height
+/// (2.5 cell rows) gives a label radius of `4.0 * cell_h`. Issue #576.
+const SPRITE_LABEL_BUFFER_CELLS: f64 = 1.5;
 
 const MIN_WIDTH: u16 = 80;
 const MIN_HEIGHT: u16 = 24;
@@ -80,6 +80,7 @@ pub(crate) fn draw_agent_graph(
     let edges_for_paint = edges.to_vec();
     let positions_for_paint = positions;
     let inner_cols = area.width.saturating_sub(2);
+    let inner_rows = area.height.saturating_sub(2);
     let session_infos: Vec<SessionRenderInfo> = sessions
         .iter()
         .map(|s| SessionRenderInfo::from_session(s))
@@ -140,11 +141,21 @@ pub(crate) fn draw_agent_graph(
                         );
 
                         if use_nerd_font {
-                            draw_sprite_on_canvas(ctx, p.x, p.y, glyph_for_role(role), style);
+                            draw_sprite_on_canvas(
+                                ctx,
+                                p.x,
+                                p.y,
+                                glyph_for_role(role),
+                                style,
+                                inner_cols,
+                                inner_rows,
+                            );
+                            let cell_h = 2.0 / inner_rows.max(2).saturating_sub(1) as f64;
+                            let label_radius = (2.5 + SPRITE_LABEL_BUFFER_CELLS) * cell_h;
                             let (lx, ly) = place_label(
                                 agent_pt,
                                 &outbound,
-                                LABEL_RADIUS_SPRITE,
+                                label_radius,
                                 label.chars().count(),
                             );
                             ctx.print(lx, ly, Line::styled(label, style));
@@ -287,21 +298,30 @@ pub(super) fn status_modifier(status: SessionStatus) -> Modifier {
 
 /// Paint a 6×6 sprite onto the canvas at `(cx, cy)` (canvas units).
 ///
-/// `ROW_STEP` must be at least the canvas-cell height in y-units
-/// (`2.0 / inner_rows`) or sprite rows collide on the same buffer cell. At
-/// 80×24 with 22 inner rows the cell height is ≈ 0.091; we round up to `0.1`
-/// so the 6-row sprite occupies ~0.6 units (≈ 6 cells) vertically. `X_OFFSET`
-/// centers the 6-char-wide row around `cx` based on the canvas-cell width
-/// (`2.0 / inner_cols`, ≈ 0.026 at 80 columns) — half of a 6-cell row is
-/// 3 cells ≈ 0.078.
-fn draw_sprite_on_canvas(ctx: &mut Context<'_>, cx: f64, cy: f64, sprite: Sprite, style: Style) {
-    const ROW_STEP: f64 = 0.1;
-    const X_OFFSET: f64 = -0.078;
+/// `row_step` and `x_offset` are derived from ratatui's canvas-to-cell mapping
+/// (`2.0 / (inner_rows - 1)`, `2.0 / (inner_cols - 1)` — see `Canvas::render`
+/// in ratatui 0.29) so consecutive sprite rows land in adjacent terminal rows
+/// on every viewport from 80×24 up to 200×60. Pre-#576 these were hard-coded
+/// constants calibrated to 80×24, which left 1- to 3-row gaps between sprite
+/// rows on larger viewports because `ctx.print` floors y to a cell index.
+/// See `docs/adr/002-agent-personalities.md` § Viewport-Derived Sprite Sizing.
+fn draw_sprite_on_canvas(
+    ctx: &mut Context<'_>,
+    cx: f64,
+    cy: f64,
+    sprite: Sprite,
+    style: Style,
+    inner_cols: u16,
+    inner_rows: u16,
+) {
+    let row_step = 2.0 / inner_rows.max(2).saturating_sub(1) as f64;
+    let cell_w = 2.0 / inner_cols.max(2).saturating_sub(1) as f64;
+    let x_offset = -2.5 * cell_w;
 
     for (row_idx, row_chars) in sprite.rows().iter().enumerate() {
-        let y = cy + (2.5 - row_idx as f64) * ROW_STEP;
+        let y = cy + (2.5 - row_idx as f64) * row_step;
         let s: String = row_chars.iter().collect();
-        ctx.print(cx + X_OFFSET, y, Line::styled(s, style));
+        ctx.print(cx + x_offset, y, Line::styled(s, style));
     }
 }
 
@@ -316,3 +336,7 @@ mod label_placement_tests;
 #[cfg(test)]
 #[path = "status_modifier_tests.rs"]
 mod status_modifier_tests;
+
+#[cfg(test)]
+#[path = "render_sprite_tests.rs"]
+mod sprite_tests;
