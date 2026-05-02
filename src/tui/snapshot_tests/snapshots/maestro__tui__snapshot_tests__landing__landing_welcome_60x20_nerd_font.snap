@@ -1,0 +1,24 @@
+---
+source: src/tui/snapshot_tests/landing.rs
+expression: terminal.backend()
+---
+"                                                            "
+"                                                            "
+"         __  __    _    _____ ____ _____ ____   ___         "
+"        |  \/  |  / \  | ____/ ___|_   _|  _ \ / _ \        "
+"       | |\/| | / _ \ |  _| \___ \ | | | |_) | | | |        "
+"       | |  | |/ ___ \| |___ ___) || | |  _ <| |_| |        "
+"        |_|  |_/_/   \_\_____|____/ |_| |_| \_\\___/        "
+"                          v0.17.0                           "
+"                                                            "
+"                   [d]  Dashboard                           "
+"                   [i]  Create Issue                        "
+"                   [m]  Create Milestone                    "
+"                   [s]  Project Stats                       "
+"                   [p]  PRD                                 "
+"                   [r]  Roadmap                             "
+"                   [h]  Milestone Review                    "
+"                   [q]  Quit                                "
+"                                                            "
+"                   <q> quit                                 "
+"                                                            "

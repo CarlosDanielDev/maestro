@@ -11,6 +11,7 @@ mod dashboard;
 mod detail;
 mod fullscreen;
 mod issue_browser;
+mod landing;
 mod milestone;
 mod overview;
 mod turboquant_dashboard;
