@@ -134,6 +134,14 @@ escape_powershell_string() {
   printf '%s' "$input" | tr -d '\r\n' | sed "s/'/''/g"
 }
 
+escape_pango_markup() {
+  local input="$1"
+  printf '%s' "$input" | sed \
+    -e 's/&/\&amp;/g' \
+    -e 's/</\&lt;/g' \
+    -e 's/>/\&gt;/g'
+}
+
 send_slack_notification() {
   local channel="$1"
   local text="$2"
@@ -187,7 +195,12 @@ send_windows_notification() {
 send_linux_notification() {
   local title="$1"
   local message="$2"
-  notify-send "$title" "$message"
+
+  local safe_title safe_message
+  safe_title=$(escape_pango_markup "$title")
+  safe_message=$(escape_pango_markup "$message")
+
+  notify-send -- "$safe_title" "$safe_message"
 }
 
 send_desktop_notification() {
