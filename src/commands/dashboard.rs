@@ -31,6 +31,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
 
     let loaded = Config::find_and_load_with_path().ok();
     let config = loaded.as_ref().map(|l| l.config.clone());
+    let github_repo = config.as_ref().map(|c| c.project.repo.clone());
 
     let repo_name = config
         .as_ref()
@@ -111,7 +112,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
 
     let mut app = if let Some(lc) = loaded {
         let mut app = setup_app_from_config(lc, store, worktree_mgr, None);
-        app.github_client = Some(Box::new(GhCliClient::new()));
+        app.github_client = Some(Box::new(GhCliClient::from_config_repo(github_repo)));
         app
     } else {
         App::new(

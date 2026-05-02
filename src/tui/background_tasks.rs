@@ -5,12 +5,13 @@ use crate::provider::github::client::{GhCliClient, GitHubClient};
 pub(super) fn spawn_issue_fetch(
     tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>,
     config: screens::SessionConfig,
+    repo: Option<String>,
 ) {
     let custom_prompt = config.custom_prompt.clone();
     match config.issue_number {
         Some(issue_number) => {
             tokio::spawn(async move {
-                let client = GhCliClient::new();
+                let client = GhCliClient::from_config_repo(repo);
                 let result = client.get_issue(issue_number).await;
                 let _ = tx.send(app::TuiDataEvent::Issue(result, custom_prompt));
             });

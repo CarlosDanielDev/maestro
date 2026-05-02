@@ -274,7 +274,9 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
 
     // Phase 4: Materialize
     eprintln!("Phase 4: Creating GitHub artifacts...");
-    let github = crate::provider::github::client::GhCliClient::new();
+    let github = crate::provider::github::client::GhCliClient::from_config_repo(
+        project_cfg.as_ref().map(|c| c.project.repo.clone()),
+    );
     let materializer = GhMaterializer::new(github);
     let result = materializer.materialize(&plan, &report, false).await?;
 
@@ -352,7 +354,9 @@ pub async fn detect_milestone_hint(
         ));
     }
 
-    let github = crate::provider::github::client::GhCliClient::new();
+    let github = crate::provider::github::client::GhCliClient::from_config_repo(
+        project_cfg.map(|c| c.project.repo.clone()),
+    );
     let mut titles: Vec<String> = Vec::new();
     for state in ["open", "closed"] {
         match crate::provider::github::client::GitHubClient::list_milestones(&github, state).await {

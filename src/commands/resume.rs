@@ -7,6 +7,7 @@ use crate::state::store::StateStore;
 
 pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
     let loaded = Config::find_and_load_with_path()?;
+    let repo = Some(loaded.config.project.repo.clone());
     let store = StateStore::new(StateStore::default_path());
     let state = store.load()?;
     let repo_root = std::env::current_dir()?;
@@ -60,7 +61,7 @@ pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
         app.add_session(new_session).await?;
     }
 
-    app.github_client = Some(Box::new(GhCliClient::new()));
+    app.github_client = Some(Box::new(GhCliClient::from_config_repo(repo)));
 
     crate::tui::run(app).await
 }
