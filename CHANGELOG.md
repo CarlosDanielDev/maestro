@@ -7,6 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-05-02
+
+### Added
+
+- spike: explore graph visualization of active agents in the ratatui canvas; established the design space and selected the canvas-based approach (#513)
+- feat(settings): `views.agent_graph_enabled` toggle in `maestro.toml` gates the agent-graph view at startup (#525)
+- feat(tui): productionize agent-graph layout — ConcentricLayout with aspect-ratio normalization and phase correction for deterministic, non-overlapping agent positioning (#526)
+- feat(tui): agent-graph integrated into the session render dispatcher behind the `views.agent_graph_enabled` settings flag (#527)
+- feat(tui): `[g]` keybinding toggles between agent-graph and panel view at runtime (#528)
+- feat(tui): loading and activity pulse animations on graph nodes and edges during active subagent dispatches (#529)
+- spike: agent personalities — role taxonomy (Orchestrator, Reviewer, Docs), ASCII/nerd-font sprite designs, and visual-identity guidelines; documented in `docs/adr/002-agent-personalities.md` (#536)
+- feat(session): `Role` enum with `derive_role` classifier and `Session::role` field; maps session subagent type to Orchestrator / Reviewer / Docs identity (#538)
+- feat(tui): role-appropriate ASCII/nerd-font personality sprites rendered on agent nodes in the agent-graph view (#539)
+- feat(tui): role-colored chip on subagent dispatch entries in the activity log — Orchestrator (blue), Reviewer (yellow), Docs (green) (#543)
+
 ### Fixed
 
 - fix(tui): agent-graph sprite rows now render contiguously on every viewport from 80×24 up to 200×60 (#576)
@@ -252,6 +267,15 @@ production argv was never asserted against `gh`'s actual flag surface.
   - On `Err(_)`: emits a `tracing::warn!` and proceeds optimistically with the existing `create_pr` flow (the existing error-handling path takes over).
   - `App` gains a `git_ops: Box<dyn GitOps>` field (production wires `CliGitOps`; tests inject `MockGitOps` via `with_git_ops`). `on_issue_session_completed` and `run_auto_pr` gain a `worktree_path: Option<PathBuf>` arg threaded from `PendingIssueCompletion`.
   - Two new behavior tests: `auto_pr_zero_commits_skips_pr_with_visible_message` and `auto_pr_git_check_error_falls_through_to_create_pr` (the latter pins the AC3 fallthrough contract).
+
+### Changed
+
+- ci(audit): grant `checks:write` permission to the Cargo Audit workflow job; triage RUSTSEC-2026-0002 (#517)
+
+### Documentation
+
+- docs: README.md overhaul reflecting current project state, features, and install instructions (#331)
+- docs: GitHub Wiki — feature guides, architecture overview, and usage documentation (#330)
 
 ## [0.16.1] - 2026-04-29
 
