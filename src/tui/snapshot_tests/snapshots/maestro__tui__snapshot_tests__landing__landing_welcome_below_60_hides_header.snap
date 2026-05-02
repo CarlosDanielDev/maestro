@@ -1,0 +1,20 @@
+---
+source: src/tui/snapshot_tests/landing.rs
+expression: terminal.backend()
+---
+"                                                  "
+"                                                  "
+"                                                  "
+"              [d]  Dashboard                      "
+"              [i]  Create Issue                   "
+"              [m]  Create Milestone               "
+"              [s]  Project Stats                  "
+"              [p]  PRD                            "
+"              [r]  Roadmap                        "
+"              [h]  Milestone Review               "
+"              [q]  Quit                           "
+"                                                  "
+"              <q> quit                            "
+"                                                  "
+"                                                  "
+"                                                  "

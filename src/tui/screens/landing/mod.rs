@@ -1,4 +1,4 @@
-mod draw;
+pub(crate) mod draw;
 pub mod types;
 
 pub use types::{LandingTarget, MENU_ITEMS};
