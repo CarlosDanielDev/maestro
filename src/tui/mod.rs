@@ -61,6 +61,10 @@ async fn run_claude_print_for_wizard(prompt: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+fn github_repo_from_app(app: &App) -> Option<String> {
+    app.config.as_ref().map(|c| c.project.repo.clone())
+}
+
 pub(crate) fn enter_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     execute!(
         out,
@@ -184,16 +188,18 @@ async fn event_loop(
             match cmd {
                 app::TuiCommand::FetchIssues => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let result = client.list_issues(&[]).await;
                         let _ = tx.send(app::TuiDataEvent::Issues(result));
                     });
                 }
                 app::TuiCommand::FetchSuggestionData => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let (ready_result, failed_result, milestones_result) = tokio::join!(
                             client.list_issues(&["maestro:ready"]),
                             client.list_issues(&["maestro:failed"]),
@@ -228,8 +234,9 @@ async fn event_loop(
                 }
                 app::TuiCommand::FetchMilestones => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         match client.list_milestones("open").await {
                             Ok(milestones) => {
                                 let futures: Vec<_> = milestones
@@ -251,19 +258,21 @@ async fn event_loop(
                     });
                 }
                 app::TuiCommand::LaunchSession(config) => {
-                    spawn_issue_fetch(app.data_tx.clone(), config);
+                    spawn_issue_fetch(app.data_tx.clone(), config, github_repo_from_app(app));
                 }
                 app::TuiCommand::LaunchSessions(configs) => {
+                    let repo = github_repo_from_app(app);
                     for config in configs {
-                        spawn_issue_fetch(app.data_tx.clone(), config);
+                        spawn_issue_fetch(app.data_tx.clone(), config, repo.clone());
                     }
                 }
                 app::TuiCommand::LaunchUnifiedSession(config) => {
                     let tx = app.data_tx.clone();
                     let issue_numbers: Vec<u64> = config.issues.iter().map(|(n, _)| *n).collect();
                     let custom_prompt = config.custom_prompt.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let futures: Vec<_> = issue_numbers
                             .iter()
                             .map(|num| client.get_issue(*num))
@@ -326,8 +335,9 @@ async fn event_loop(
                 }
                 app::TuiCommand::FetchOpenPrs => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let result = client.list_open_prs().await;
                         let _ = tx.send(app::TuiDataEvent::PullRequests(result));
                     });
@@ -338,8 +348,9 @@ async fn event_loop(
                     body,
                 } => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let result = client.submit_pr_review(pr_number, event, &body).await;
                         let _ = tx.send(app::TuiDataEvent::PrReviewSubmitted(result));
                     });
@@ -423,9 +434,11 @@ async fn event_loop(
                 }
                 app::TuiCommand::RunAdaptMaterialize(plan, report) => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
                         use crate::adapt::materializer::{GhMaterializer, PlanMaterializer};
-                        let github = crate::provider::github::client::GhCliClient::new();
+                        let github =
+                            crate::provider::github::client::GhCliClient::from_config_repo(repo);
                         let materializer = GhMaterializer::new(github);
                         let result = materializer.materialize(&plan, &report, false).await;
                         let _ = tx.send(app::TuiDataEvent::AdaptMaterializeResult(result));
@@ -433,12 +446,13 @@ async fn event_loop(
                 }
                 app::TuiCommand::CreateIssue(payload) => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
                         use crate::provider::github::client::CreateOutcome;
                         let body =
                             crate::tui::screens::issue_wizard::render_body_markdown(&payload);
                         let labels = crate::tui::screens::issue_wizard::render_labels(&payload);
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let result = client
                             .create_issue(&payload.title, &body, &labels, payload.milestone)
                             .await;
@@ -458,8 +472,9 @@ async fn event_loop(
                 }
                 app::TuiCommand::FetchWizardDependencies => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let result = client.list_issues(&[]).await;
                         let _ = tx.send(app::TuiDataEvent::WizardDependencyIssues(result));
                     });
@@ -490,9 +505,11 @@ async fn event_loop(
                 }
                 app::TuiCommand::CreateMilestoneWithIssues(plan) => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
                         let res =
-                            crate::tui::screens::milestone_wizard::materialize_plan(&plan).await;
+                            crate::tui::screens::milestone_wizard::materialize_plan(&plan, repo)
+                                .await;
                         let _ = tx.send(app::TuiDataEvent::MilestonePlanCreated(res));
                     });
                 }
@@ -512,8 +529,9 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     let local_sessions: Vec<crate::session::types::Session> =
                         app.pool.all_sessions().into_iter().cloned().collect();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let (
                             open_result,
                             closed_result,
@@ -543,8 +561,9 @@ async fn event_loop(
                 }
                 app::TuiCommand::SyncPrd => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let result = crate::prd::sync::GitHubPrdSyncer::new(Box::new(client))
                             .fetch_current_state()
                             .await;
@@ -553,8 +572,9 @@ async fn event_loop(
                 }
                 app::TuiCommand::SyncRoadmap => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let result =
                             crate::tui::screens::roadmap::loader::load_roadmap(&client).await;
                         let _ = tx.send(app::TuiDataEvent::RoadmapResult(result));
@@ -575,8 +595,9 @@ async fn event_loop(
                 }
                 app::TuiCommand::FetchMilestoneHealthIssues { milestone } => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let result = client
                             .list_issues_by_milestone(&milestone.title)
                             .await
@@ -589,8 +610,9 @@ async fn event_loop(
                     description,
                 } => {
                     let tx = app.data_tx.clone();
+                    let repo = github_repo_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::new();
+                        let client = GhCliClient::from_config_repo(repo);
                         let result = client
                             .patch_milestone_description(milestone_number, &description)
                             .await;

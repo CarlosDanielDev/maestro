@@ -5,7 +5,7 @@ use crate::work::types::WorkItem;
 
 pub async fn cmd_queue() -> anyhow::Result<()> {
     let config = Config::find_and_load()?;
-    let client = GhCliClient::new();
+    let client = GhCliClient::from_config_repo(Some(config.project.repo.clone()));
     let label_refs: Vec<&str> = config
         .github
         .issue_filter_labels
@@ -75,7 +75,8 @@ pub async fn cmd_queue() -> anyhow::Result<()> {
 }
 
 pub async fn cmd_add(issue_number: u64) -> anyhow::Result<()> {
-    let client = GhCliClient::new();
+    let repo = Config::find_and_load().ok().map(|c| c.project.repo);
+    let client = GhCliClient::from_config_repo(repo);
     client.add_label(issue_number, "maestro:ready").await?;
     println!("Added 'maestro:ready' label to issue #{}", issue_number);
     Ok(())

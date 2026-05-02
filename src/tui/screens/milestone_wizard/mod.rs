@@ -96,9 +96,12 @@ pub fn level_buckets(issues: &[AiProposedIssue]) -> Vec<Vec<usize>> {
 /// each accepted issue in dependency order with its `Blocked By` section
 /// rewritten to use actual issue numbers. Used by the `Materializing`
 /// step's background task (#297, duplicate-aware via #455).
-pub async fn materialize_plan(plan: &AiGeneratedPlan) -> Result<MilestoneCreationResult, String> {
+pub async fn materialize_plan(
+    plan: &AiGeneratedPlan,
+    repo: Option<String>,
+) -> Result<MilestoneCreationResult, String> {
     use crate::provider::github::client::GhCliClient;
-    let client = GhCliClient::new();
+    let client = GhCliClient::from_config_repo(repo);
     materialize_plan_with_client(plan, &client).await
 }
 

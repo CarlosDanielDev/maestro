@@ -477,6 +477,20 @@ impl GhCliClient {
         Self { repo: None }
     }
 
+    pub fn from_config_repo(repo: Option<String>) -> Self {
+        let Some(repo) = repo.map(|r| r.trim().to_string()).filter(|r| !r.is_empty()) else {
+            return Self::new();
+        };
+
+        match Self::new().with_repo(repo) {
+            Ok(client) => client,
+            Err(e) => {
+                tracing::warn!("Ignoring invalid configured GitHub repo: {e}");
+                Self::new()
+            }
+        }
+    }
+
     /// Builder: thread an explicit `owner/repo` through every read-only
     /// and label-edit shellout. PR creation deliberately ignores this —
     /// see `build_create_pr_argv`.
@@ -485,11 +499,6 @@ impl GhCliClient {
     /// metacharacters and `--`-prefixed values) and enforces the
     /// `owner/repo` shape via `parse_owner_repo`.
     ///
-    /// Currently exercised only by unit tests — the wiring from
-    /// `Config::project::repo` through every `GhCliClient::new()` call
-    /// site is tracked as #565. Until that lands, every shellout
-    /// falls back to gh's worktree-remote inference.
-    #[allow(dead_code)]
     pub fn with_repo(mut self, repo: String) -> Result<Self> {
         validate_gh_arg(&repo, "repo")?;
         crate::provider::github::types::parse_owner_repo(&repo)
@@ -2173,6 +2182,25 @@ mod tests {
     fn with_repo_accepts_owner_slash_repo() {
         let c = GhCliClient::new().with_repo("CarlosDanielDev/maestro".into());
         assert!(c.is_ok());
+    }
+
+    #[test]
+    fn from_config_repo_injects_repo_into_list_open_prs_argv() {
+        let c = GhCliClient::from_config_repo(Some("CarlosDanielDev/maestro".into()));
+        let argv = gh_argv::build_list_open_prs_argv("number", c.repo_arg());
+        assert!(
+            argv.windows(2)
+                .any(|w| w == ["--repo", "CarlosDanielDev/maestro"])
+        );
+    }
+
+    #[test]
+    fn from_config_repo_falls_back_for_missing_or_invalid_repo() {
+        assert_eq!(GhCliClient::from_config_repo(None).repo_arg(), None);
+        assert_eq!(
+            GhCliClient::from_config_repo(Some("not-owner-repo-shape".into())).repo_arg(),
+            None
+        );
     }
 
     #[test]

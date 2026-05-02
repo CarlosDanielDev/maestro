@@ -114,7 +114,7 @@ pub async fn cmd_run(
         .with_image_paths(images.clone());
         app.add_session(session).await?;
     } else if let Some(milestone_name) = milestone {
-        let client = GhCliClient::new();
+        let client = GhCliClient::from_config_repo(Some(config.project.repo.clone()));
         let issues = client.list_issues_by_milestone(&milestone_name).await?;
         if issues.is_empty() {
             anyhow::bail!("No open issues found in milestone '{}'", milestone_name);
@@ -136,7 +136,7 @@ pub async fn cmd_run(
             tracing::info!("--continuous ignored: Flag::ContinuousMode is disabled");
         }
     } else if let Some(issue_str) = issue {
-        let client = GhCliClient::new();
+        let client = GhCliClient::from_config_repo(Some(config.project.repo.clone()));
 
         for num_str in issue_str.split(',') {
             let num: u64 = num_str
@@ -162,7 +162,7 @@ pub async fn cmd_run(
 
         app.github_client = Some(Box::new(client));
     } else {
-        let client = GhCliClient::new();
+        let client = GhCliClient::from_config_repo(Some(config.project.repo.clone()));
         let label_refs: Vec<&str> = issue_filter_labels.iter().map(|s| s.as_str()).collect();
         let issues = client.list_issues(&label_refs).await?;
 

@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- feat(github): thread configured `project.repo` into production `GhCliClient` shellouts via `--repo`, with validation and bare-client fallback when config is unavailable or invalid (#565).
+
 ## [0.17.0] - 2026-05-02
 
 ### Added
