@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-01 (UTC)
+> Last updated: 2026-05-02 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -40,7 +40,7 @@ maestro/
 │   │   │   └── idea_triager_pass.txt              # Golden-path fixture: full valid idea-triager report
 │   │   ├── implement-gates.sh             # Pre-implementation gate: DOR / blocker / contract checks
 │   │   ├── notify.ps1                     # Windows notification hook
-│   │   ├── notify.sh                      # Unix notification hook
+│   │   ├── notify.sh                      # Unix notification hook; Slack payload built via `jq -n --arg` (soft dep: no-ops gracefully when jq absent); PowerShell single-quote escaping via escape_powershell_string helper  [Issue #583]
 │   │   ├── parse_gatekeeper_report.py     # Validates and re-emits gatekeeper JSON reports (exit 1 on contract violation)
 │   │   ├── parse_idea_triager_report.py   # Validates and re-emits idea-triager JSON reports; enforces fence, version, enums (exit 1 on violation)  [Issue #484]
 │   │   ├── preflight.sh                   # Preflight environment checks run before session launch
@@ -511,7 +511,9 @@ maestro/
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
 │   ├── gatekeeper/                        # Gatekeeper harness fixtures and tests
-│   ├── hooks/                             # Hook script tests
+│   ├── hooks/                             # Hook script bats tests (requires bats-core)
+│   │   ├── implement-gates.bats           # bats tests for implement-gates.sh
+│   │   └── notify.bats                    # 10 bats tests: Slack JSON payload construction, PowerShell escape, macOS regression, shellcheck  [Issue #583]
 │   ├── manifests/                         # Test manifest fixtures
 │   └── scripts/                           # Test script fixtures
 ├── .gitignore                             # Includes .maestro/worktrees/ and runtime artifacts; .maestro/knowledge.md (written by maestro adapt, auto-loaded as system-prompt component by SessionPool::try_promote) is also excluded
@@ -543,6 +545,7 @@ maestro/
 | `.claude/agents/` | Subagent definitions |
 | `.claude/commands/` | Slash command definitions |
 | `.claude/hooks/` | Pre/post command notification hooks |
+| `.claude/hooks/notify.sh` | Unix notification hook; Slack payload constructed with `jq -n --arg` (no raw string interpolation); PowerShell toast uses `escape_powershell_string` helper; `jq` is a soft runtime dependency — Slack notifications are skipped silently when absent (Issue #583) |
 | `.claude/skills/` | Reusable knowledge bases for subagents |
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
 | `build.rs` | Build script: generates `maestro.1` man page and bash/zsh/fish completions into `OUT_DIR` at build time (Issue #18) |

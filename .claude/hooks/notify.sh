@@ -33,8 +33,10 @@ load_config() {
 
   # Prioridade: config do projeto > config global
   if [[ -f "$CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
     source "$CONFIG_FILE"
   elif [[ -f "$LEGACY_CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
     source "$LEGACY_CONFIG_FILE"
   fi
 
@@ -114,22 +116,41 @@ truncate_message() {
 # NOTIFICATION SENDERS
 # =============================================================================
 
+# Build a Slack chat.postMessage JSON payload using jq so all JSON-special
+# characters in the user-controlled text are escaped safely.
+build_slack_payload() {
+  local channel="$1"
+  local text="$2"
+  jq -n --arg channel "$channel" --arg text "$text" \
+    '{channel: $channel, text: $text}'
+}
+
+# Escape a value for embedding inside a PowerShell single-quoted string literal.
+# The only character that needs escaping inside '...' is the single quote
+# itself, which is doubled. Newlines/CRs would terminate our single-line literal
+# and allow injection of additional statements, so they are stripped.
+escape_powershell_string() {
+  local input="$1"
+  printf '%s' "$input" | tr -d '\r\n' | sed "s/'/''/g"
+}
+
 send_slack_notification() {
   local channel="$1"
   local text="$2"
-  local tmp_payload="/tmp/claude_slack_$$.json"
 
-  cat > "$tmp_payload" <<EOF
-{"channel":"$channel","text":"$text"}
-EOF
+  if ! command -v jq &> /dev/null; then
+    echo "notify.sh: jq is required for Slack notifications but is not installed; skipping" >&2
+    return 0
+  fi
+
+  local payload
+  payload=$(build_slack_payload "$channel" "$text")
 
   curl -s -X POST \
     -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
     -H "Content-type: application/json; charset=utf-8" \
-    -d @"$tmp_payload" \
-    "$SLACK_API_URL" > /dev/null 2>&1
-
-  rm -f "$tmp_payload" 2>/dev/null
+    --data-binary "$payload" \
+    "$SLACK_API_URL" > /dev/null 2>&1 || true
 }
 
 send_macos_notification() {
@@ -144,12 +165,17 @@ send_macos_notification() {
 send_windows_notification() {
   local title="$1"
   local message="$2"
+
+  local safe_title safe_message
+  safe_title=$(escape_powershell_string "$title")
+  safe_message=$(escape_powershell_string "$message")
+
   powershell.exe -ExecutionPolicy Bypass -Command "
     Add-Type -AssemblyName System.Windows.Forms
     \$balloon = New-Object System.Windows.Forms.NotifyIcon
     \$balloon.Icon = [System.Drawing.SystemIcons]::Information
-    \$balloon.BalloonTipTitle = '$title'
-    \$balloon.BalloonTipText = '$message'
+    \$balloon.BalloonTipTitle = '$safe_title'
+    \$balloon.BalloonTipText = '$safe_message'
     \$balloon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Info
     \$balloon.Visible = \$true
     \$balloon.ShowBalloonTip(5000)
@@ -245,4 +271,9 @@ main() {
   fi
 }
 
-main "$@"
+# Run main only when this script is executed directly, not when sourced
+# (e.g. by bats tests). `(return 0 2>/dev/null)` succeeds in a sourced
+# context and fails when the script is invoked as a process.
+if ! (return 0 2>/dev/null); then
+  main "$@"
+fi
