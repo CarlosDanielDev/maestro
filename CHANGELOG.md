@@ -9,6 +9,30 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- fix(tui): agent-graph sprite rows now render contiguously on every viewport from 80×24 up to 200×60 (#576)
+  - Pre-fix `draw_sprite_on_canvas` hard-coded `ROW_STEP = 0.1` and `X_OFFSET = -0.078` in canvas
+    units. Both values were calibrated to the 80×24 floor; on larger viewports the canvas-cell
+    height shrinks (≈ 0.034 at 60 inner rows) but the constants stayed fixed, so consecutive
+    sprite rows landed on non-adjacent buffer rows. The 6-row sprite read as 4 visually
+    disconnected chunks (hat / body / torso / legs) and occupied ≈ 60% of canvas height on a
+    typical session-window viewport.
+  - `draw_sprite_on_canvas` now takes `inner_cols` and `inner_rows` and derives `row_step` and
+    `x_offset` from ratatui's canvas-to-cell mapping (`2.0 / (inner_rows - 1)` and
+    `-2.5 * 2.0 / (inner_cols - 1)`). Each sprite row maps 1:1 to a terminal row; the 6-cell
+    row stays centered on `cx` within ±1 cell across viewports.
+  - `LABEL_RADIUS_SPRITE = 0.40` was replaced with `(2.5 + 1.5) * cell_h` computed at the call
+    site so the agent's `#NNN` label sits a constant one to two cells outside the sprite top
+    regardless of viewport size; the old constant was correct only at 80×24.
+  - Three new size-pinned snapshot tests (`agent_sprite_contiguous_at_80x24`,
+    `agent_sprite_contiguous_at_120x40`, `agent_sprite_contiguous_at_200x60`) lock the visual
+    on the smallest, midsize, and large supported viewports. Three behavioral assertions
+    (`sprite_no_gap_between_rows_at_*`, `sprite_height_within_30_percent_of_inner_rows_at_120x40`,
+    `sprite_horizontally_centered_within_1_cell_at_*`) verify the geometry programmatically.
+  - All existing nerd-font sprite snapshots were re-baselined: the sprite is now compact
+    (6 cells) instead of stretched (≈ 18 cells on large viewports) and the label sits closer
+    to the sprite on midsize and large viewports.
+  - Decision documented in `docs/adr/002-agent-personalities.md` § Addendum (#576).
+
 - fix(tui): agent-graph file marker rectangle removed; label now anchors at edge endpoint (p.y) eliminating the one-cell vertical gap between edge and label (#569)
   - Pre-fix a 0.04×0.04 `Rectangle` marker sat at the file node position and the label was
     printed 0.08 canvas units below — roughly one terminal row — leaving a visible gap between

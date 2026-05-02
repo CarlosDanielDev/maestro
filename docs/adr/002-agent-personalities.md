@@ -455,3 +455,38 @@ Two sessions, not five, because two is the minimum to demonstrate "sprites are v
 - Maestro current node rendering: `src/tui/agent_graph/render.rs:99-200`
 - Maestro session model: `src/session/types.rs:202-289` (`Session` struct)
 - Maestro guardrails: `docs/RUST-GUARDRAILS.md` §2 errors, §6 serialization, §7 testing, §11 observability
+
+---
+
+## Addendum — Viewport-Derived Sprite Sizing (#576)
+
+The original `draw_sprite_on_canvas` hard-coded `ROW_STEP = 0.1` and `X_OFFSET = -0.078` in canvas units, calibrated to the 80×24 minimum viewport. On larger viewports the canvas-cell size shrinks (cell height ≈ 0.034 at 60 inner rows) but the constants stayed fixed, so:
+
+- `ctx.print` floored each sprite row to a different cell and 1- to 3-row gaps appeared between consecutive sprite rows — the sprite read as 4 disconnected chunks (hat / body / torso / legs) instead of a single character.
+- The 6-row sprite spanned ~0.6 canvas units regardless of viewport, occupying ~60% of canvas height on 200×60 — pulling visual attention away from the graph.
+- Horizontal centering drifted on wider viewports because `X_OFFSET = -0.078` represented "3 cell widths" only at 80 columns.
+
+### Decision
+
+**Approach A** (viewport-derived constants), per the trade-off triangle Simplicity + Flexibility (small Performance cost — one f64 division per frame, negligible at human tick rates). Approach B (Paragraph overlay) was rejected because it would split rendering across two coordinate systems for no additional benefit.
+
+`draw_sprite_on_canvas` now takes `inner_cols` and `inner_rows` and derives:
+
+- `row_step = 2.0 / (inner_rows - 1)` — exactly one terminal row per sprite row.
+- `x_offset = -2.5 * 2.0 / (inner_cols - 1)` — half of a 6-cell row, centered on `cx`.
+
+The `(inner_cols - 1)` and `(inner_rows - 1)` denominators mirror ratatui 0.29's label-print mapping (`Canvas::render` in `widgets/canvas.rs`) — see the `(width - 1)` / `(height - 1)` resolution computed for label rendering. Using `(inner_cols)` / `(inner_rows)` directly produces accumulated drift over six rows and collisions on the bottom rows on large viewports.
+
+`LABEL_RADIUS_SPRITE` was replaced with `(2.5 + SPRITE_LABEL_BUFFER_CELLS) * cell_h` computed at the call site, where `SPRITE_LABEL_BUFFER_CELLS = 1.5` keeps the agent's `#NNN` label visually one to two cells outside the sprite top across all supported viewports. The constant 0.40 was the right value at 80×24 only.
+
+### Properties
+
+- **Contiguous on every viewport** — rows 80×24 → 200×60 produce six adjacent terminal rows with no gaps. Verified by `sprite_no_gap_between_rows_at_*` and three new size-pinned snapshots.
+- **Bounded height budget** — sprite always renders in 6 cells (≈ 16% of inner rows on 120×40, well under the 30% AC).
+- **Horizontally centered within ±1 cell** — verified by `sprite_horizontally_centered_within_1_cell_at_*`.
+- **No new dependencies** — pure refactor of existing `f64` math.
+
+### Side Effects
+
+- All nerd-font sprite snapshots were re-baselined. The agent label sits one cell closer to the sprite at 120×40 and 200×60 because the dynamic `label_radius` shrinks with the cell size; on 80×24 the visual is essentially unchanged.
+- File labels and edge animation rendering are unaffected — they live in independent code paths.
