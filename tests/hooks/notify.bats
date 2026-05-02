@@ -27,6 +27,30 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
+# JSON parsing tests
+# ---------------------------------------------------------------------------
+
+@test "extract_json_field decodes JSON escapes" {
+  local json='{"tool_name":"Bash \"quoted\" path\\to\\file \u00e9"}'
+  local expected
+  expected="$(printf 'Bash "quoted" path\\to\\file \303\251')"
+
+  run extract_json_field "$json" "tool_name"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$expected" ]
+}
+
+@test "extract_message_field decodes JSON escapes and embedded newline" {
+  local json='{"message":"line1\nline2 \"quoted\" path\\to\\file \u263a"}'
+  local expected
+  expected="$(printf 'line1\nline2 "quoted" path\\to\\file \342\230\272')"
+
+  run extract_message_field "$json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$expected" ]
+}
+
+# ---------------------------------------------------------------------------
 # Slack payload tests
 # ---------------------------------------------------------------------------
 
