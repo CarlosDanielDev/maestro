@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/completion_overlay.rs
-assertion_line: 68
 expression: term.backend()
 ---
 "                                                                                "

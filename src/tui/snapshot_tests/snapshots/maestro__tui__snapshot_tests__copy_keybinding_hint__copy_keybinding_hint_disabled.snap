@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/copy_keybinding_hint.rs
-assertion_line: 28
 expression: render_spans(false)
 ---
 [

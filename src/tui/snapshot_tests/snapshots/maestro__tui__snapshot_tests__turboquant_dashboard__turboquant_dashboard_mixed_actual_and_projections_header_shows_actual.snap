@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/turboquant_dashboard.rs
-assertion_line: 112
 expression: terminal.backend()
 ---
 "┌──────────────────────────────────────────────────[ Actual Savings ]──────────────────────────────────────────────────┐"

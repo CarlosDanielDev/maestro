@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/turboquant_dashboard.rs
-assertion_line: 130
 expression: terminal.backend()
 ---
 "╭──────────────────────────────────────────[ Estimated Savings (projection) ]──────────────────────────────────────────╮"
