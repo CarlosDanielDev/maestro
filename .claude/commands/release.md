@@ -82,25 +82,40 @@ If any check fails, STOP and report the issue.
 
 ### Step 4b: Post-Bump Test Gate (MANDATORY — catches snapshot drift)
 
-**Why this step exists:** the dashboard's "What's New" widget reads the top changelog entry at runtime, so bumping the version rewrites that output. Four `src/tui/snapshot_tests/dashboard/home_screen_*.snap` insta snapshots will fail every single release unless they are regenerated. Skipping this step guarantees CI failure on the release PR.
+**Why this step exists:** several TUI screens embed the version string, so bumping the version causes their insta snapshots to drift every release. Three groups are known to fail every release:
+
+| Snapshot group | Count | Why it drifts |
+|---|---|---|
+| `tui::snapshot_tests::dashboard::home_screen_*` | 4 | "What's New" widget reads top CHANGELOG entry at runtime |
+| `tui::snapshot_tests::landing::landing_welcome_*` | 6 | Welcome screen renders the version string (#582) |
+| `tui::snapshot_tests::agent_graph_dispatcher::agent_graph_dispatcher_*` | 2 | Agent-graph dispatcher view renders the version string |
+
+Skipping this step guarantees CI failure on the release PR.
 
 1. Run `cargo test --bin maestro` — record the output.
 2. **If all tests pass**: proceed to Step 5.
-3. **If tests fail AND every failure is under `tui::snapshot_tests::dashboard::home_screen_*`**:
-   a. Run `cargo insta test --accept -- tui::snapshot_tests::dashboard` (use the absolute path `~/.cargo/bin/cargo-insta` if `cargo insta` isn't on PATH).
-   b. Stage the updated snapshots: `git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__dashboard__home_screen_*.snap`
-   c. Re-run `cargo test --bin maestro` and confirm it now passes.
-   d. These snapshot updates will be included in the **same** commit as the version bump in Step 5.
-4. **If any other tests fail** (anything outside `dashboard::home_screen_*`): STOP — do NOT auto-accept. Report the failures to the user. These are real regressions and must be investigated.
+3. **If tests fail AND every failure belongs to one of the three known-drift groups above**:
+   a. Run (use the absolute path `~/.cargo/bin/cargo-insta` if `cargo insta` isn't on PATH):
+      ```bash
+      ~/.cargo/bin/cargo-insta test --accept -- tui::snapshot_tests::dashboard
+      ~/.cargo/bin/cargo-insta test --accept -- tui::snapshot_tests::landing
+      ~/.cargo/bin/cargo-insta test --accept -- tui::snapshot_tests::agent_graph_dispatcher
+      ```
+      (Skip any group that had no failures — `cargo insta` is a no-op when nothing needs review.)
+   b. Re-run `cargo test --bin maestro` and confirm it now passes.
+   c. These snapshot updates will be included in the **same** commit as the version bump in Step 5.
+4. **If any other tests fail** (anything outside the three groups listed above): STOP — do NOT auto-accept. Report the failures to the user. These are real regressions and must be investigated.
 
-> **Do NOT blanket-accept snapshots.** Only the four `home_screen_*` dashboard snapshots are expected to drift from a version bump. Any other snapshot failure is a real regression hiding behind an automated accept.
+> **Do NOT blanket-accept snapshots.** Only the known-drift groups above are expected to fail from a version bump. Any failure outside those groups is a real regression hiding behind an automated accept.
 
 ### Step 5: Commit the Version Bump
 
 ```bash
 git add Cargo.toml CHANGELOG.md
-# Also include any dashboard snapshot updates from Step 4b:
+# Also include any snapshot updates from Step 4b (all three known-drift groups):
 git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__dashboard__home_screen_*.snap 2>/dev/null || true
+git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__landing__landing_welcome_*.snap 2>/dev/null || true
+git add src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__agent_graph_dispatcher__agent_graph_dispatcher_*.snap 2>/dev/null || true
 git commit -m "chore: release v<version>
 
 <one-line summary of what's in this release>
