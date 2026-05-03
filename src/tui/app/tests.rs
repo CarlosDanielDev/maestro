@@ -1980,6 +1980,21 @@ mod pending_prs_persistence {
         )
     }
 
+    fn build_app_with_raw_state(contents: &[u8]) -> App {
+        let path =
+            std::env::temp_dir().join(format!("state-load-error-{}.json", uuid::Uuid::new_v4()));
+        if let Err(e) = std::fs::write(&path, contents) {
+            panic!("raw state should be written: {e}");
+        }
+        App::new(
+            StateStore::new(path),
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        )
+    }
+
     #[test]
     fn app_new_rehydrates_pending_prs_from_persisted_state() {
         let mut seed = MaestroState::default();
@@ -2022,6 +2037,28 @@ mod pending_prs_persistence {
             "the warn must mention Shift+P so users know how to recover"
         );
         assert_eq!(warn.session_label, "#orphan-prs");
+    }
+
+    #[test]
+    fn app_new_notifies_when_state_load_fails() {
+        let app = build_app_with_raw_state(b"{not valid json");
+
+        let error_log = app.activity_log.entries().iter().any(|e| {
+            matches!(e.level, LogLevel::Error)
+                && e.session_label == "State"
+                && e.message.contains("Failed to load persisted state")
+        });
+        assert!(
+            error_log,
+            "state load failure must be visible in the TUI log"
+        );
+        assert!(
+            app.notifications
+                .active_banners()
+                .iter()
+                .any(|n| n.title == "State load failed"),
+            "state load failure must create a TUI notification banner"
+        );
     }
 
     #[test]

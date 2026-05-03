@@ -217,7 +217,10 @@ impl App {
     ) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (data_tx, data_rx) = mpsc::unbounded_channel();
-        let state = store.load().unwrap_or_default();
+        let (state, state_load_error) = match store.load() {
+            Ok(state) => (state, None),
+            Err(e) => (MaestroState::default(), Some(e.to_string())),
+        };
         let mut pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx);
         pool.set_permission_mode(permission_mode.clone());
         pool.set_allowed_tools(allowed_tools.clone());
@@ -334,6 +337,18 @@ impl App {
             home_dir_override: None,
             last_pr_marker_mtime: None,
         };
+        if let Some(error) = state_load_error {
+            app.activity_log.push_simple(
+                "State".into(),
+                format!("Failed to load persisted state: {}", error),
+                LogLevel::Error,
+            );
+            app.notifications.notify(
+                crate::notifications::types::InterruptLevel::Critical,
+                "State load failed",
+                &error,
+            );
+        }
         if pending_prs_truncated {
             app.activity_log.push_simple(
                 "#orphan-prs".into(),
@@ -640,7 +655,19 @@ impl App {
         // entries after a restart — without this the in-memory queue is
         // lost on shutdown.
         self.state.pending_prs = self.pending_prs.clone();
-        let _ = self.store.save(&self.state);
+        if let Err(e) = self.store.save(&self.state) {
+            let message = e.to_string();
+            self.activity_log.push_simple(
+                "State".into(),
+                format!("Failed to save persisted state: {}", message),
+                LogLevel::Error,
+            );
+            self.notifications.notify(
+                crate::notifications::types::InterruptLevel::Critical,
+                "State save failed",
+                &message,
+            );
+        }
     }
 }
 
