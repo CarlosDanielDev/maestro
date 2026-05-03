@@ -7,6 +7,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-05-03
+
+### Changed
+
+- tech-debt: extract `ScreenState` and `SessionConfig` sub-structs from `App` (#395)
+- tech-debt: replace `unwrap()` with error propagation in `session/manager.rs` (#396)
+- tech-debt: replace `unwrap()` with error propagation in `work/executor.rs` and `state/store.rs` (#397)
+- chore: tech debt catalog superseded by broken-out items in v0.18.0–v0.21.0 (#407)
+
 ## [0.17.1] - 2026-05-03
 
 ### Added
