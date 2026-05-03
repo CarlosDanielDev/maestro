@@ -28,6 +28,7 @@ pub struct ManagedSession {
     pub permission_mode: Option<String>,
     /// Allowed tools whitelist.
     pub allowed_tools: Vec<String>,
+    claude_binary: String,
     last_tool_start: Option<std::time::Instant>,
     thinking_start: Option<std::time::Instant>,
 }
@@ -43,6 +44,7 @@ impl ManagedSession {
             system_prompt_appendix: None,
             permission_mode: None,
             allowed_tools: Vec::new(),
+            claude_binary: "claude".to_string(),
             last_tool_start: None,
             thinking_start: None,
         }
@@ -63,9 +65,15 @@ impl ManagedSession {
             system_prompt_appendix,
             permission_mode: None,
             allowed_tools: Vec::new(),
+            claude_binary: "claude".to_string(),
             last_tool_start: None,
             thinking_start: None,
         }
+    }
+
+    #[cfg(test)]
+    fn set_claude_binary_for_test(&mut self, binary: impl Into<String>) {
+        self.claude_binary = binary.into();
     }
 
     /// Build the CLI arguments for spawning the Claude process.
@@ -117,7 +125,7 @@ impl ManagedSession {
             .transition_to(SessionStatus::Spawning, TransitionReason::Promoted);
         self.session.started_at = Some(Utc::now());
 
-        let mut cmd = Command::new("claude");
+        let mut cmd = Command::new(&self.claude_binary);
         cmd.args(self.build_args());
 
         // Set working directory to worktree if available
@@ -129,7 +137,21 @@ impl ManagedSession {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = cmd.spawn().context("Failed to spawn claude CLI")?;
+        let mut child = match cmd.spawn().with_context(|| {
+            format!(
+                "Failed to spawn Claude CLI using binary '{}'",
+                self.claude_binary
+            )
+        }) {
+            Ok(child) => child,
+            Err(err) => {
+                let _ = self
+                    .session
+                    .transition_to(SessionStatus::Errored, TransitionReason::StreamError);
+                self.session.log_activity(format!("Spawn failed: {err}"));
+                return Err(err);
+            }
+        };
 
         let pid = child.id().unwrap_or(0);
         self.session.pid = Some(pid);
@@ -487,6 +509,25 @@ mod tests {
         assert!(
             !args.iter().any(|a| a == "--permission-mode"),
             "permission_mode=default must not emit --permission-mode flag"
+        );
+    }
+
+    #[tokio::test]
+    async fn spawn_invalid_binary_returns_error_without_panic() {
+        let mut ms = make_managed("test");
+        ms.set_claude_binary_for_test("/definitely/not/a/claude/binary");
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let result = ms.spawn(tx).await;
+
+        assert!(result.is_err());
+        assert_eq!(ms.session.status, SessionStatus::Errored);
+        assert!(
+            ms.session
+                .activity_log
+                .iter()
+                .any(|entry| entry.message.contains("Spawn failed")),
+            "spawn failure should be recorded in the session activity log"
         );
     }
 
