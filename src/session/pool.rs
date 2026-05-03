@@ -464,6 +464,27 @@ mod tests {
         )
     }
 
+    fn must_get_active_mut(pool: &mut SessionPool, id: Uuid) -> &mut ManagedSession {
+        match pool.get_active_mut(id) {
+            Some(managed) => managed,
+            None => panic!("expected active session {id}"),
+        }
+    }
+
+    fn must_get_session(pool: &SessionPool, id: Uuid) -> &Session {
+        match pool.get_session(id) {
+            Some(session) => session,
+            None => panic!("expected session {id} in pool"),
+        }
+    }
+
+    fn must_get_appendix(managed: &ManagedSession) -> &str {
+        match managed.system_prompt_appendix.as_deref() {
+            Some(appendix) => appendix,
+            None => panic!("expected system prompt appendix"),
+        }
+    }
+
     #[test]
     fn enqueue_adds_to_queue() {
         let mut pool = make_pool(2);
@@ -684,14 +705,11 @@ mod tests {
         // Verify worktree_path was set on the active session
         let managed = &pool.active[0];
         assert!(managed.worktree_path.is_some());
-        assert!(
-            managed
-                .worktree_path
-                .as_ref()
-                .unwrap()
-                .to_string_lossy()
-                .contains("issue-42")
-        );
+        let path = match managed.worktree_path.as_ref() {
+            Some(path) => path,
+            None => panic!("expected worktree path for issue session"),
+        };
+        assert!(path.to_string_lossy().contains("issue-42"));
     }
 
     #[test]
@@ -782,12 +800,11 @@ mod tests {
         let id = session.id;
         pool.enqueue(session);
         pool.try_promote();
-        pool.get_active_mut(id)
-            .unwrap()
+        must_get_active_mut(&mut pool, id)
             .session
             .transition_flash_remaining = 3;
         pool.tick_flash_counters();
-        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 2);
+        assert_eq!(must_get_session(&pool, id).transition_flash_remaining, 2);
     }
 
     #[test]
@@ -797,9 +814,9 @@ mod tests {
         let id = session.id;
         pool.enqueue(session);
         pool.try_promote();
-        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 0);
+        assert_eq!(must_get_session(&pool, id).transition_flash_remaining, 0);
         pool.tick_flash_counters();
-        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 0);
+        assert_eq!(must_get_session(&pool, id).transition_flash_remaining, 0);
     }
 
     #[test]
@@ -812,17 +829,15 @@ mod tests {
         pool.enqueue(s1);
         pool.enqueue(s2);
         pool.try_promote();
-        pool.get_active_mut(id1)
-            .unwrap()
+        must_get_active_mut(&mut pool, id1)
             .session
             .transition_flash_remaining = 4;
-        pool.get_active_mut(id2)
-            .unwrap()
+        must_get_active_mut(&mut pool, id2)
             .session
             .transition_flash_remaining = 2;
         pool.tick_flash_counters();
-        assert_eq!(pool.get_session(id1).unwrap().transition_flash_remaining, 3);
-        assert_eq!(pool.get_session(id2).unwrap().transition_flash_remaining, 1);
+        assert_eq!(must_get_session(&pool, id1).transition_flash_remaining, 3);
+        assert_eq!(must_get_session(&pool, id2).transition_flash_remaining, 1);
     }
 
     // --- Issue #344: TurboQuant system-prompt compaction integration ---
@@ -854,7 +869,7 @@ mod tests {
         pool.enqueue(make_session("work"));
         pool.try_promote();
         let managed = &pool.active[0];
-        let appendix = managed.system_prompt_appendix.as_ref().unwrap();
+        let appendix = must_get_appendix(managed);
         assert!(appendix.contains("GUARDRAIL"));
     }
 
@@ -870,7 +885,7 @@ mod tests {
         pool.enqueue(make_session("work"));
         pool.try_promote();
         let managed = &pool.active[0];
-        let appendix = managed.system_prompt_appendix.as_ref().unwrap();
+        let appendix = must_get_appendix(managed);
         assert!(appendix.contains("GUARDRAIL: X"));
     }
 
@@ -881,13 +896,12 @@ mod tests {
         let id = s.id;
         pool.enqueue(s);
         pool.try_promote();
-        pool.get_active_mut(id)
-            .unwrap()
+        must_get_active_mut(&mut pool, id)
             .session
             .transition_flash_remaining = 3;
         pool.finalize_and_teardown(id);
         pool.tick_flash_counters();
-        assert_eq!(pool.get_session(id).unwrap().transition_flash_remaining, 2);
+        assert_eq!(must_get_session(&pool, id).transition_flash_remaining, 2);
     }
 
     // --- Issue #558: finalize_retain_worktree (gate-failure recovery path) ---
