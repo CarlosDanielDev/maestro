@@ -7,9 +7,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-05-03
+
 ### Added
 
-- feat(github): thread configured `project.repo` into production `GhCliClient` shellouts via `--repo`, with validation and bare-client fallback when config is unavailable or invalid (#565).
+- feat(github): thread configured `project.repo` into production `GhCliClient` shellouts via `--repo`, with validation and bare-client fallback when config is unavailable or invalid (#565)
+- feat(tui): redesign welcome page with symmetric LazyVim-style layout (#582)
+
+### Fixed
+
+- fix(security): sanitize Slack and PowerShell injection in `notify.sh` (#583)
+- fix(security): sanitize Linux notify-send markup and option-flag injection (#586)
+
+### Changed
+
+- refactor(security): replace regex JSON parsing in `notify.sh` with `jq` (#587)
+
+### Documentation
+
+- docs(security): warn about `maestro.toml` supply-chain risk in `SECURITY.md` (#584)
 
 ## [0.17.0] - 2026-05-02
 
