@@ -2,6 +2,7 @@ use super::App;
 use super::helpers::session_label;
 use super::types::{CompletionSessionLine, CompletionSummaryData, GateFailureInfo, TuiCommand};
 use crate::session::types::SessionStatus;
+use crate::tui::activity_log::LogLevel;
 use crate::util::truncate_with_ellipsis;
 
 impl App {
@@ -112,7 +113,19 @@ impl App {
         self.state.sessions = all.iter().copied().cloned().collect();
         self.state.update_total_cost();
         self.state.last_updated = Some(chrono::Utc::now());
-        let _ = self.store.save(&self.state);
+        if let Err(e) = self.store.save(&self.state) {
+            let message = e.to_string();
+            self.activity_log.push_simple(
+                "State".into(),
+                format!("Failed to save persisted state: {}", message),
+                LogLevel::Error,
+            );
+            self.notifications.notify(
+                crate::notifications::types::InterruptLevel::Critical,
+                "State save failed",
+                &message,
+            );
+        }
 
         // Build recent sessions for the home screen
         let recent: Vec<crate::tui::screens::home::SessionSummary> = all

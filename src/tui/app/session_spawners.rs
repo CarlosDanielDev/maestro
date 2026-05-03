@@ -216,8 +216,21 @@ impl App {
                 None => return false,
             };
             match exec.advance() {
-                Some(item) => item.issue_number,
-                None => return false,
+                Ok(Some(item)) => item.issue_number,
+                Ok(None) => return false,
+                Err(e) => {
+                    self.activity_log.push_simple(
+                        "Queue".into(),
+                        format!("Queue advance failed: {}", e),
+                        LogLevel::Error,
+                    );
+                    self.notifications.notify(
+                        crate::notifications::types::InterruptLevel::Critical,
+                        "Queue advance failed",
+                        &e.to_string(),
+                    );
+                    return false;
+                }
             }
         };
 

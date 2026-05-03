@@ -1,5 +1,6 @@
 #![allow(dead_code)] // Reason: work executor for session orchestration — to be wired into main pipeline
 use super::queue::{QueuedItem, WorkQueue};
+use anyhow::{Result, bail};
 
 /// Execution state of a single queue item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,9 +92,12 @@ impl QueueExecutor {
 
     /// Advance to the next pending item. Returns the QueuedItem to launch,
     /// or None if all items are done.
-    pub fn advance(&mut self) -> Option<&QueuedItem> {
+    pub fn advance(&mut self) -> Result<Option<&QueuedItem>> {
         if !matches!(self.phase, ExecutorPhase::Idle) {
-            return None;
+            bail!(
+                "cannot advance queue while executor is in {:?} phase",
+                self.phase
+            );
         }
 
         let next = self
@@ -105,11 +109,11 @@ impl QueueExecutor {
             Some(idx) => {
                 self.items[idx].state = QueueItemState::Running;
                 self.phase = ExecutorPhase::Running { current_index: idx };
-                Some(&self.items[idx].queued)
+                Ok(Some(&self.items[idx].queued))
             }
             None => {
                 self.phase = ExecutorPhase::Finished;
-                None
+                Ok(None)
             }
         }
     }
@@ -203,7 +207,17 @@ mod tests {
     fn make_queue(issues: &[u64]) -> WorkQueue {
         let items: Vec<WorkItem> = issues.iter().map(|&n| make_item(n)).collect();
         let graph = DependencyGraph::build(&items);
-        WorkQueue::validate_selection(issues, &graph).unwrap()
+        match WorkQueue::validate_selection(issues, &graph) {
+            Ok(queue) => queue,
+            Err(e) => panic!("test queue should validate: {e}"),
+        }
+    }
+
+    fn advance_ok(exec: &mut QueueExecutor) -> Option<&QueuedItem> {
+        match exec.advance() {
+            Ok(item) => item,
+            Err(e) => panic!("advance should succeed: {e}"),
+        }
     }
 
     #[test]
@@ -242,7 +256,7 @@ mod tests {
     fn advance_from_idle_moves_to_running_index_zero() {
         let queue = make_queue(&[1, 2]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         assert_eq!(exec.phase(), ExecutorPhase::Running { current_index: 0 });
     }
 
@@ -250,7 +264,7 @@ mod tests {
     fn advance_sets_current_item_state_to_running() {
         let queue = make_queue(&[1, 2]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         assert_eq!(exec.items()[0].state, QueueItemState::Running);
     }
 
@@ -258,7 +272,7 @@ mod tests {
     fn set_session_id_attaches_uuid_to_current_item() {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         let id = uuid::Uuid::new_v4();
         exec.set_session_id(id);
         assert_eq!(exec.items()[0].session_id, Some(id));
@@ -268,7 +282,7 @@ mod tests {
     fn mark_success_on_last_item_moves_to_finished() {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_success();
         assert_eq!(exec.phase(), ExecutorPhase::Finished);
     }
@@ -277,7 +291,7 @@ mod tests {
     fn mark_success_on_non_last_item_moves_to_idle() {
         let queue = make_queue(&[1, 2]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_success();
         assert_eq!(exec.phase(), ExecutorPhase::Idle);
     }
@@ -286,7 +300,7 @@ mod tests {
     fn mark_success_sets_item_state_to_succeeded() {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_success();
         assert_eq!(exec.items()[0].state, QueueItemState::Succeeded);
     }
@@ -295,7 +309,7 @@ mod tests {
     fn completed_count_increments_after_mark_success() {
         let queue = make_queue(&[1, 2]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_success();
         assert_eq!(exec.completed_count(), 1);
     }
@@ -304,7 +318,7 @@ mod tests {
     fn mark_failure_moves_to_awaiting_decision() {
         let queue = make_queue(&[1, 2]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         assert_eq!(
             exec.phase(),
@@ -316,7 +330,7 @@ mod tests {
     fn mark_failure_sets_item_state_to_failed() {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         assert_eq!(exec.items()[0].state, QueueItemState::Failed);
     }
@@ -325,7 +339,7 @@ mod tests {
     fn apply_decision_retry_moves_to_idle() {
         let queue = make_queue(&[1, 2]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         exec.apply_decision(FailureAction::Retry);
         assert_eq!(exec.phase(), ExecutorPhase::Idle);
@@ -335,7 +349,7 @@ mod tests {
     fn apply_decision_retry_resets_item_state_to_pending() {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         exec.apply_decision(FailureAction::Retry);
         assert_eq!(exec.items()[0].state, QueueItemState::Pending);
@@ -345,7 +359,7 @@ mod tests {
     fn apply_decision_skip_sets_item_state_to_skipped() {
         let queue = make_queue(&[1, 2]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         exec.apply_decision(FailureAction::Skip);
         assert_eq!(exec.items()[0].state, QueueItemState::Skipped);
@@ -355,7 +369,7 @@ mod tests {
     fn apply_decision_skip_on_last_item_moves_to_finished() {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         exec.apply_decision(FailureAction::Skip);
         assert_eq!(exec.phase(), ExecutorPhase::Finished);
@@ -365,7 +379,7 @@ mod tests {
     fn apply_decision_skip_on_non_last_item_moves_to_idle() {
         let queue = make_queue(&[1, 2]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         exec.apply_decision(FailureAction::Skip);
         assert_eq!(exec.phase(), ExecutorPhase::Idle);
@@ -375,7 +389,7 @@ mod tests {
     fn apply_decision_abort_always_moves_to_finished() {
         let queue = make_queue(&[1, 2, 3]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         exec.apply_decision(FailureAction::Abort);
         assert_eq!(exec.phase(), ExecutorPhase::Finished);
@@ -392,7 +406,7 @@ mod tests {
     fn is_finished_returns_false_when_running() {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         assert!(!exec.is_finished());
     }
 
@@ -400,7 +414,7 @@ mod tests {
     fn is_finished_returns_false_when_awaiting_decision() {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         assert!(!exec.is_finished());
     }
@@ -409,7 +423,7 @@ mod tests {
     fn is_finished_returns_true_when_finished() {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_success();
         assert!(exec.is_finished());
     }
@@ -419,11 +433,11 @@ mod tests {
         let queue = make_queue(&[1, 2]);
         let mut exec = QueueExecutor::new(&queue);
 
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_success();
         assert_eq!(exec.completed_count(), 1);
 
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_success();
         assert_eq!(exec.completed_count(), 2);
         assert!(exec.is_finished());
@@ -434,11 +448,11 @@ mod tests {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
 
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         exec.apply_decision(FailureAction::Retry);
 
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_success();
         assert!(exec.is_finished());
         assert_eq!(exec.completed_count(), 1);
@@ -449,7 +463,7 @@ mod tests {
         let queue = make_queue(&[1, 2, 3]);
         let mut exec = QueueExecutor::new(&queue);
 
-        exec.advance();
+        advance_ok(&mut exec);
         exec.mark_failure();
         exec.apply_decision(FailureAction::Abort);
 
@@ -471,7 +485,7 @@ mod tests {
         let queue = make_queue(&[1]);
         let mut exec = QueueExecutor::new(&queue);
         assert_eq!(exec.phase(), ExecutorPhase::Idle);
-        exec.advance();
+        advance_ok(&mut exec);
         assert!(matches!(exec.phase(), ExecutorPhase::Running { .. }));
     }
 
@@ -479,8 +493,22 @@ mod tests {
     fn advance_on_empty_queue_moves_directly_to_finished() {
         let queue = make_queue(&[]);
         let mut exec = QueueExecutor::new(&queue);
-        let result = exec.advance();
+        let result = advance_ok(&mut exec);
         assert!(result.is_none());
         assert_eq!(exec.phase(), ExecutorPhase::Finished);
+    }
+
+    #[test]
+    fn advance_while_running_returns_error() {
+        let queue = make_queue(&[1]);
+        let mut exec = QueueExecutor::new(&queue);
+        advance_ok(&mut exec);
+
+        let err = match exec.advance() {
+            Ok(_) => panic!("second advance while running should fail"),
+            Err(e) => e,
+        };
+
+        assert!(err.to_string().contains("cannot advance queue"));
     }
 }

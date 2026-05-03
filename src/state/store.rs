@@ -73,8 +73,15 @@ mod tests {
     use crate::state::types::MaestroState;
     use std::sync::Arc;
 
+    fn must<T, E: std::fmt::Display>(result: std::result::Result<T, E>, context: &str) -> T {
+        match result {
+            Ok(value) => value,
+            Err(e) => panic!("{context}: {e}"),
+        }
+    }
+
     fn make_store() -> (tempfile::TempDir, StateStore) {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = must(tempfile::tempdir(), "tempdir should be created");
         let path = dir.path().join("test-state.json");
         (dir, StateStore::new(path))
     }
@@ -82,7 +89,7 @@ mod tests {
     #[test]
     fn load_returns_default_when_no_file() {
         let (_dir, store) = make_store();
-        let state = store.load().unwrap();
+        let state = must(store.load(), "missing state should load default");
         assert!(state.sessions.is_empty());
         assert_eq!(state.total_cost_usd, 0.0);
     }
@@ -90,11 +97,29 @@ mod tests {
     #[test]
     fn save_then_load_round_trips() {
         let (_dir, store) = make_store();
-        let mut state = MaestroState::default();
-        state.total_cost_usd = 42.5;
-        store.save(&state).unwrap();
-        let loaded = store.load().unwrap();
+        let state = MaestroState {
+            total_cost_usd: 42.5,
+            ..Default::default()
+        };
+        must(store.save(&state), "state should save");
+        let loaded = must(store.load(), "state should load");
         assert_eq!(loaded.total_cost_usd, 42.5);
+    }
+
+    #[test]
+    fn load_corrupt_json_returns_error() {
+        let (_dir, store) = make_store();
+        must(
+            std::fs::write(&store.path, b"{not valid json"),
+            "corrupt state should be written",
+        );
+
+        let err = match store.load() {
+            Ok(_) => panic!("corrupt state should return Err"),
+            Err(e) => e,
+        };
+
+        assert!(err.to_string().contains("parsing state"));
     }
 
     #[test]
@@ -116,9 +141,9 @@ mod tests {
         }
         state.sessions.push(s);
         let reports = state.compact(None);
-        store.save(&state).unwrap();
+        must(store.save(&state), "state should save");
         assert!(reports.is_empty());
-        let loaded = store.load().unwrap();
+        let loaded = must(store.load(), "state should load");
         assert_eq!(loaded.sessions[0].activity_log.len(), 5);
     }
 
@@ -146,9 +171,9 @@ mod tests {
 
         let adapter = TurboQuantAdapter::new(4);
         let reports = state.compact(Some(&adapter));
-        store.save(&state).unwrap();
+        must(store.save(&state), "state should save");
         assert_eq!(reports.len(), 1);
-        let loaded = store.load().unwrap();
+        let loaded = must(store.load(), "state should load");
         assert_eq!(loaded.sessions[0].activity_log.len(), 1);
         assert!(loaded.sessions[0].activity_log[0].message.contains("x12"));
     }
@@ -178,8 +203,11 @@ mod tests {
             "file_claims": {},
             "last_updated": null
         }"#;
-        std::fs::write(&store.path, legacy_json).unwrap();
-        let loaded = store.load().unwrap();
+        must(
+            std::fs::write(&store.path, legacy_json),
+            "legacy state should be written",
+        );
+        let loaded = must(store.load(), "legacy state should load");
         assert_eq!(loaded.sessions.len(), 1);
         assert!(loaded.sessions[0].tq_handoff_original_tokens.is_none());
         assert!(loaded.sessions[0].tq_handoff_compressed_tokens.is_none());
@@ -187,7 +215,7 @@ mod tests {
 
     #[test]
     fn concurrent_saves_do_not_corrupt() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = must(tempfile::tempdir(), "tempdir should be created");
         let path = dir.path().join("concurrent-state.json");
         let store = Arc::new(StateStore::new(path));
 
@@ -195,19 +223,23 @@ mod tests {
             .map(|i| {
                 let store = Arc::clone(&store);
                 std::thread::spawn(move || {
-                    let mut state = MaestroState::default();
-                    state.total_cost_usd = i as f64;
-                    store.save(&state).unwrap();
+                    let state = MaestroState {
+                        total_cost_usd: i as f64,
+                        ..Default::default()
+                    };
+                    must(store.save(&state), "concurrent save should succeed");
                 })
             })
             .collect();
 
         for h in handles {
-            h.join().unwrap();
+            if h.join().is_err() {
+                panic!("save thread should not panic");
+            }
         }
 
         // File must be valid JSON after all concurrent writes
-        let loaded = store.load().unwrap();
+        let loaded = must(store.load(), "state should load after concurrent saves");
         assert!(loaded.total_cost_usd >= 0.0);
     }
 }
