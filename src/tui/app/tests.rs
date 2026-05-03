@@ -173,9 +173,9 @@ fn transition_to_dashboard_preserves_orthogonal_state() {
 #[test]
 fn transition_to_dashboard_creates_home_screen_when_missing() {
     let mut app = make_app();
-    assert!(app.home_screen.is_none());
+    assert!(app.screen_state.home_screen.is_none());
     app.transition_to_dashboard();
-    assert!(app.home_screen.is_some());
+    assert!(app.screen_state.home_screen.is_some());
 }
 
 #[test]
@@ -197,7 +197,8 @@ fn transition_to_dashboard_sets_loading_suggestions_flag() {
     let mut app = make_app();
     app.transition_to_dashboard();
     assert!(
-        app.home_screen
+        app.screen_state
+            .home_screen
             .as_ref()
             .map(|s| s.loading_suggestions)
             .unwrap_or(false),
@@ -209,7 +210,7 @@ fn transition_to_dashboard_sets_loading_suggestions_flag() {
 fn suggestion_data_event_clears_loading_flag_on_home_screen() {
     let mut app = make_app();
     app.transition_to_dashboard();
-    if let Some(ref mut screen) = app.home_screen {
+    if let Some(ref mut screen) = app.screen_state.home_screen {
         screen.loading_suggestions = true;
     }
     app.handle_data_event(TuiDataEvent::SuggestionData(SuggestionDataPayload {
@@ -220,7 +221,11 @@ fn suggestion_data_event_clears_loading_flag_on_home_screen() {
         closed_issue_count: 0,
     }));
     assert!(
-        !app.home_screen.as_ref().unwrap().loading_suggestions,
+        !app.screen_state
+            .home_screen
+            .as_ref()
+            .unwrap()
+            .loading_suggestions,
         "SuggestionData event must clear loading_suggestions"
     );
 }
@@ -943,10 +948,11 @@ fn transition_to_dashboard_sets_dismissed_flag() {
 #[test]
 fn transition_to_dashboard_clears_issue_browser_screen() {
     let mut app = make_app();
-    app.issue_browser_screen = Some(crate::tui::screens::IssueBrowserScreen::new(vec![]));
+    app.screen_state.issue_browser_screen =
+        Some(crate::tui::screens::IssueBrowserScreen::new(vec![]));
     app.transition_to_dashboard();
     assert!(
-        app.issue_browser_screen.is_none(),
+        app.screen_state.issue_browser_screen.is_none(),
         "transition_to_dashboard must clear stale issue_browser_screen"
     );
 }
@@ -1172,7 +1178,7 @@ fn ci_check_details_keyed_by_pr_number() {
 #[test]
 fn app_queue_confirmation_screen_defaults_to_none() {
     let app = make_app();
-    assert!(app.queue_confirmation_screen.is_none());
+    assert!(app.screen_state.queue_confirmation_screen.is_none());
 }
 
 // --- Issue #68: QueueExecutor state ---
@@ -1634,8 +1640,8 @@ mod adapt_chaining {
 
     fn app_with_adapt_screen() -> App {
         let mut app = make_app();
-        app.adapt_screen = Some(AdaptScreen::new());
-        app.adapt_screen.as_mut().unwrap().step = AdaptStep::Scanning;
+        app.screen_state.adapt_screen = Some(AdaptScreen::new());
+        app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Scanning;
         app
     }
 
@@ -1644,7 +1650,7 @@ mod adapt_chaining {
         let mut app = app_with_adapt_screen();
         app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(make_profile()))));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Analyzing);
         assert!(screen.results.profile.is_some());
         assert_eq!(app.pending_commands.len(), 1);
@@ -1657,11 +1663,16 @@ mod adapt_chaining {
     #[test]
     fn scan_ok_with_scan_only_completes() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().config.scan_only = true;
+        app.screen_state
+            .adapt_screen
+            .as_mut()
+            .unwrap()
+            .config
+            .scan_only = true;
 
         app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(make_profile()))));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Complete);
         assert!(app.pending_commands.is_empty());
     }
@@ -1673,7 +1684,7 @@ mod adapt_chaining {
             "scan failed"
         ))));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Failed);
         assert_eq!(screen.error.as_ref().unwrap().phase, AdaptStep::Scanning);
     }
@@ -1681,15 +1692,16 @@ mod adapt_chaining {
     #[test]
     fn analyze_ok_chains_to_consolidate() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().step = AdaptStep::Analyzing;
-        app.adapt_screen
+        app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Analyzing;
+        app.screen_state
+            .adapt_screen
             .as_mut()
             .unwrap()
             .set_scan_result(make_profile());
 
         app.handle_data_event(TuiDataEvent::AdaptAnalyzeResult(Ok(make_report())));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Consolidating);
         assert!(screen.results.report.is_some());
         assert_eq!(app.pending_commands.len(), 1);
@@ -1702,12 +1714,17 @@ mod adapt_chaining {
     #[test]
     fn analyze_ok_with_no_issues_completes() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().step = AdaptStep::Analyzing;
-        app.adapt_screen.as_mut().unwrap().config.no_issues = true;
+        app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Analyzing;
+        app.screen_state
+            .adapt_screen
+            .as_mut()
+            .unwrap()
+            .config
+            .no_issues = true;
 
         app.handle_data_event(TuiDataEvent::AdaptAnalyzeResult(Ok(make_report())));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Complete);
         assert!(app.pending_commands.is_empty());
     }
@@ -1715,13 +1732,13 @@ mod adapt_chaining {
     #[test]
     fn analyze_err_sets_failed() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().step = AdaptStep::Analyzing;
+        app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Analyzing;
 
         app.handle_data_event(TuiDataEvent::AdaptAnalyzeResult(Err(anyhow::anyhow!(
             "analyze failed"
         ))));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Failed);
         assert_eq!(screen.error.as_ref().unwrap().phase, AdaptStep::Analyzing);
     }
@@ -1729,19 +1746,21 @@ mod adapt_chaining {
     #[test]
     fn plan_ok_chains_to_materialize() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().step = AdaptStep::Planning;
-        app.adapt_screen
+        app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Planning;
+        app.screen_state
+            .adapt_screen
             .as_mut()
             .unwrap()
             .set_scan_result(make_profile());
-        app.adapt_screen
+        app.screen_state
+            .adapt_screen
             .as_mut()
             .unwrap()
             .set_analyze_result(make_report());
 
         app.handle_data_event(TuiDataEvent::AdaptPlanResult(Ok(make_plan())));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Scaffolding);
         assert!(screen.results.plan.is_some());
         assert_eq!(app.pending_commands.len(), 1);
@@ -1754,12 +1773,17 @@ mod adapt_chaining {
     #[test]
     fn plan_ok_with_dry_run_completes() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().step = AdaptStep::Planning;
-        app.adapt_screen.as_mut().unwrap().config.dry_run = true;
+        app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Planning;
+        app.screen_state
+            .adapt_screen
+            .as_mut()
+            .unwrap()
+            .config
+            .dry_run = true;
 
         app.handle_data_event(TuiDataEvent::AdaptPlanResult(Ok(make_plan())));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Complete);
         assert!(app.pending_commands.is_empty());
     }
@@ -1767,13 +1791,13 @@ mod adapt_chaining {
     #[test]
     fn plan_err_sets_failed() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().step = AdaptStep::Planning;
+        app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Planning;
 
         app.handle_data_event(TuiDataEvent::AdaptPlanResult(Err(anyhow::anyhow!(
             "plan failed"
         ))));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Failed);
         assert_eq!(screen.error.as_ref().unwrap().phase, AdaptStep::Planning);
     }
@@ -1781,13 +1805,13 @@ mod adapt_chaining {
     #[test]
     fn materialize_ok_completes() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().step = AdaptStep::Materializing;
+        app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Materializing;
 
         app.handle_data_event(TuiDataEvent::AdaptMaterializeResult(Ok(
             make_materialize_result(),
         )));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Complete);
         assert!(screen.results.materialize.is_some());
     }
@@ -1795,13 +1819,13 @@ mod adapt_chaining {
     #[test]
     fn materialize_err_sets_failed() {
         let mut app = app_with_adapt_screen();
-        app.adapt_screen.as_mut().unwrap().step = AdaptStep::Materializing;
+        app.screen_state.adapt_screen.as_mut().unwrap().step = AdaptStep::Materializing;
 
         app.handle_data_event(TuiDataEvent::AdaptMaterializeResult(Err(anyhow::anyhow!(
             "materialize failed"
         ))));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert_eq!(screen.step, AdaptStep::Failed);
         assert_eq!(
             screen.error.as_ref().unwrap().phase,
@@ -1812,13 +1836,13 @@ mod adapt_chaining {
     #[test]
     fn cancelled_screen_ignores_scan_result() {
         let mut app = app_with_adapt_screen();
-        let screen = app.adapt_screen.as_mut().unwrap();
+        let screen = app.screen_state.adapt_screen.as_mut().unwrap();
         screen.cancelled = true;
         screen.results = crate::tui::screens::adapt::AdaptResults::default();
 
         app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(make_profile()))));
 
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         // Step stays at Scanning (not transitioned)
         assert_eq!(screen.step, AdaptStep::Scanning);
         assert!(screen.results.profile.is_none());
@@ -1832,7 +1856,7 @@ mod adapt_chaining {
         // Phase 1: Scan
         app.handle_data_event(TuiDataEvent::AdaptScanResult(Ok(Box::new(make_profile()))));
         assert_eq!(
-            app.adapt_screen.as_ref().unwrap().step,
+            app.screen_state.adapt_screen.as_ref().unwrap().step,
             AdaptStep::Analyzing
         );
 
@@ -1841,7 +1865,7 @@ mod adapt_chaining {
         assert!(matches!(cmd, TuiCommand::RunAdaptAnalyze(_, _)));
         app.handle_data_event(TuiDataEvent::AdaptAnalyzeResult(Ok(make_report())));
         assert_eq!(
-            app.adapt_screen.as_ref().unwrap().step,
+            app.screen_state.adapt_screen.as_ref().unwrap().step,
             AdaptStep::Consolidating
         );
 
@@ -1851,14 +1875,17 @@ mod adapt_chaining {
         app.handle_data_event(TuiDataEvent::AdaptConsolidateResult(Ok(
             "# PRD: Test".to_string()
         )));
-        assert_eq!(app.adapt_screen.as_ref().unwrap().step, AdaptStep::Planning);
+        assert_eq!(
+            app.screen_state.adapt_screen.as_ref().unwrap().step,
+            AdaptStep::Planning
+        );
 
         // Phase 3: Plan
         let cmd = app.pending_commands.pop().unwrap();
         assert!(matches!(cmd, TuiCommand::RunAdaptPlan(_, _, _, _)));
         app.handle_data_event(TuiDataEvent::AdaptPlanResult(Ok(make_plan())));
         assert_eq!(
-            app.adapt_screen.as_ref().unwrap().step,
+            app.screen_state.adapt_screen.as_ref().unwrap().step,
             AdaptStep::Scaffolding
         );
 
@@ -1872,7 +1899,7 @@ mod adapt_chaining {
             skipped_count: 0,
         })));
         assert_eq!(
-            app.adapt_screen.as_ref().unwrap().step,
+            app.screen_state.adapt_screen.as_ref().unwrap().step,
             AdaptStep::Materializing
         );
 
@@ -1882,10 +1909,13 @@ mod adapt_chaining {
         app.handle_data_event(TuiDataEvent::AdaptMaterializeResult(Ok(
             make_materialize_result(),
         )));
-        assert_eq!(app.adapt_screen.as_ref().unwrap().step, AdaptStep::Complete);
+        assert_eq!(
+            app.screen_state.adapt_screen.as_ref().unwrap().step,
+            AdaptStep::Complete
+        );
 
         // All results stored
-        let screen = app.adapt_screen.as_ref().unwrap();
+        let screen = app.screen_state.adapt_screen.as_ref().unwrap();
         assert!(screen.results.profile.is_some());
         assert!(screen.results.report.is_some());
         assert!(screen.results.plan.is_some());

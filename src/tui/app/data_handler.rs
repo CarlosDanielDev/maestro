@@ -50,16 +50,8 @@ fn fold_ingest_into_prd(prd_slot: &mut Option<Prd>, sync: &PrdSyncResult) -> Opt
 impl App {
     /// Resolve model and mode from config and issue labels.
     fn resolve_model_and_mode(&self, labels: &[String]) -> (String, String) {
-        let model = self
-            .config
-            .as_ref()
-            .map(|c| c.sessions.default_model.clone())
-            .unwrap_or_else(|| "opus".to_string());
-        let default_mode = self
-            .config
-            .as_ref()
-            .map(|c| c.sessions.default_mode.clone())
-            .unwrap_or_else(|| "orchestrator".to_string());
+        let model = self.session_config.default_model.clone();
+        let default_mode = self.session_config.default_mode.clone();
         let mode = crate::modes::mode_from_labels(labels).unwrap_or(default_mode);
         (model, mode)
     }
@@ -87,7 +79,7 @@ impl App {
     pub fn handle_data_event(&mut self, evt: TuiDataEvent) {
         match evt {
             TuiDataEvent::Issues(Ok(issues)) => {
-                if let Some(ref mut screen) = self.issue_browser_screen {
+                if let Some(ref mut screen) = self.screen_state.issue_browser_screen {
                     screen.set_issues(issues);
                 }
             }
@@ -98,20 +90,20 @@ impl App {
                     format!("Failed to fetch issues: {}", e),
                     LogLevel::Error,
                 );
-                if let Some(ref mut screen) = self.issue_browser_screen {
+                if let Some(ref mut screen) = self.screen_state.issue_browser_screen {
                     screen.loading = false;
                 }
             }
             TuiDataEvent::Milestones(Ok(entries)) => {
                 if matches!(self.tui_mode, crate::tui::app::TuiMode::MilestoneHealth)
-                    && let Some(ref mut screen) = self.milestone_health_screen
+                    && let Some(ref mut screen) = self.screen_state.milestone_health_screen
                 {
                     let milestones: Vec<_> = entries.iter().map(|(m, _)| m.clone()).collect();
                     if let Some(cmd) = screen.apply_milestones_loaded(Ok(milestones)) {
                         self.pending_commands.push(cmd);
                     }
                 }
-                if let Some(ref mut screen) = self.milestone_screen {
+                if let Some(ref mut screen) = self.screen_state.milestone_screen {
                     screen.milestones = entries.into_iter().map(MilestoneEntry::from).collect();
                     screen.loading = false;
                 }
@@ -124,12 +116,12 @@ impl App {
                     LogLevel::Error,
                 );
                 if matches!(self.tui_mode, crate::tui::app::TuiMode::MilestoneHealth)
-                    && let Some(ref mut screen) = self.milestone_health_screen
+                    && let Some(ref mut screen) = self.screen_state.milestone_health_screen
                 {
                     let _ = screen
                         .apply_milestones_loaded(Err(anyhow::anyhow!("milestones fetch failed")));
                 }
-                if let Some(ref mut screen) = self.milestone_screen {
+                if let Some(ref mut screen) = self.screen_state.milestone_screen {
                     screen.loading = false;
                 }
             }
@@ -173,7 +165,7 @@ impl App {
                     sessions_active: active,
                     sessions_total: total,
                 };
-                if let Some(ref mut screen) = self.home_screen {
+                if let Some(ref mut screen) = self.screen_state.home_screen {
                     screen.set_suggestions(suggestions);
                     screen.set_stats(stats);
                 }
@@ -210,7 +202,7 @@ impl App {
                 self.upgrade_state = crate::updater::UpgradeState::Failed(msg);
             }
             TuiDataEvent::AdaptScanResult(result) => {
-                if let Some(ref mut screen) = self.adapt_screen {
+                if let Some(ref mut screen) = self.screen_state.adapt_screen {
                     if screen.is_cancelled() {
                         return;
                     }
@@ -230,7 +222,7 @@ impl App {
                 }
             }
             TuiDataEvent::AdaptAnalyzeResult(result) => {
-                if let Some(ref mut screen) = self.adapt_screen {
+                if let Some(ref mut screen) = self.screen_state.adapt_screen {
                     if screen.is_cancelled() {
                         return;
                     }
@@ -250,7 +242,7 @@ impl App {
                 }
             }
             TuiDataEvent::AdaptConsolidateResult(result) => {
-                if let Some(ref mut screen) = self.adapt_screen {
+                if let Some(ref mut screen) = self.screen_state.adapt_screen {
                     if screen.is_cancelled() {
                         return;
                     }
@@ -270,7 +262,7 @@ impl App {
                 }
             }
             TuiDataEvent::AdaptPlanResult(result) => {
-                if let Some(ref mut screen) = self.adapt_screen {
+                if let Some(ref mut screen) = self.screen_state.adapt_screen {
                     if screen.is_cancelled() {
                         return;
                     }
@@ -290,7 +282,7 @@ impl App {
                 }
             }
             TuiDataEvent::AdaptScaffoldResult(result) => {
-                if let Some(ref mut screen) = self.adapt_screen {
+                if let Some(ref mut screen) = self.screen_state.adapt_screen {
                     if screen.is_cancelled() {
                         return;
                     }
@@ -310,7 +302,7 @@ impl App {
                 }
             }
             TuiDataEvent::PullRequests(Ok(prs)) => {
-                if let Some(ref mut screen) = self.pr_review_screen {
+                if let Some(ref mut screen) = self.screen_state.pr_review_screen {
                     screen.set_prs(prs);
                 }
             }
@@ -321,7 +313,7 @@ impl App {
                     format!("Failed to fetch pull requests: {}", e),
                     LogLevel::Error,
                 );
-                if let Some(ref mut screen) = self.pr_review_screen {
+                if let Some(ref mut screen) = self.screen_state.pr_review_screen {
                     screen.set_loading_error(&format!("{}", e));
                 }
             }
@@ -331,7 +323,7 @@ impl App {
                     "Review submitted successfully".into(),
                     LogLevel::Info,
                 );
-                if let Some(ref mut screen) = self.pr_review_screen {
+                if let Some(ref mut screen) = self.screen_state.pr_review_screen {
                     screen.set_done();
                 }
             }
@@ -342,12 +334,12 @@ impl App {
                     format!("Failed to submit review: {}", e),
                     LogLevel::Error,
                 );
-                if let Some(ref mut screen) = self.pr_review_screen {
+                if let Some(ref mut screen) = self.screen_state.pr_review_screen {
                     screen.set_error(&format!("{}", e));
                 }
             }
             TuiDataEvent::AdaptMaterializeResult(result) => {
-                if let Some(ref mut screen) = self.adapt_screen {
+                if let Some(ref mut screen) = self.screen_state.adapt_screen {
                     if screen.is_cancelled() {
                         return;
                     }
@@ -415,7 +407,7 @@ impl App {
                 );
             }
             TuiDataEvent::IssueCreated(result) => {
-                if let Some(ref mut screen) = self.issue_wizard_screen {
+                if let Some(ref mut screen) = self.screen_state.issue_wizard_screen {
                     screen.finish_create(result);
                 }
             }
@@ -424,23 +416,23 @@ impl App {
                 state,
                 title,
             } => {
-                if let Some(ref mut screen) = self.issue_wizard_screen {
+                if let Some(ref mut screen) = self.screen_state.issue_wizard_screen {
                     screen.finish_create_already_exists(number, state, title);
                 }
             }
             TuiDataEvent::ProjectStats(data) => {
-                if let Some(ref mut screen) = self.project_stats_screen {
+                if let Some(ref mut screen) = self.screen_state.project_stats_screen {
                     screen.set_data(data);
                 }
             }
             TuiDataEvent::AiPlanningResult(result) => {
-                if let Some(ref mut screen) = self.milestone_wizard_screen {
+                if let Some(ref mut screen) = self.screen_state.milestone_wizard_screen {
                     screen.apply_planning_result(result);
                 }
             }
             TuiDataEvent::WizardDependencyIssues(result) => match result {
                 Ok(issues) => {
-                    if let Some(ref mut screen) = self.issue_wizard_screen {
+                    if let Some(ref mut screen) = self.screen_state.issue_wizard_screen {
                         screen.apply_dep_issues(issues);
                     }
                 }
@@ -450,23 +442,23 @@ impl App {
                         format!("Failed to fetch issues for Dependencies step: {}", e),
                         LogLevel::Error,
                     );
-                    if let Some(ref mut screen) = self.issue_wizard_screen {
+                    if let Some(ref mut screen) = self.screen_state.issue_wizard_screen {
                         screen.apply_dep_issues(Vec::new());
                     }
                 }
             },
             TuiDataEvent::AiReviewResult(result) => {
-                if let Some(ref mut screen) = self.issue_wizard_screen {
+                if let Some(ref mut screen) = self.screen_state.issue_wizard_screen {
                     screen.apply_ai_review(result);
                 }
             }
             TuiDataEvent::AiImproveResult(result) => {
-                if let Some(ref mut screen) = self.issue_wizard_screen {
+                if let Some(ref mut screen) = self.screen_state.issue_wizard_screen {
                     screen.apply_improve_result(result);
                 }
             }
             TuiDataEvent::MilestonePlanCreated(result) => {
-                if let Some(ref mut screen) = self.milestone_wizard_screen {
+                if let Some(ref mut screen) = self.screen_state.milestone_wizard_screen {
                     screen.finish_materialization(result);
                 }
             }
@@ -486,7 +478,7 @@ impl App {
                     if let Some(prd) = self.prd.as_mut() {
                         prd.current_state = sync.current_state.clone();
                         prd.timeline = sync.timeline.clone();
-                        if let Some(s) = self.prd_screen.as_mut() {
+                        if let Some(s) = self.screen_state.prd_screen.as_mut() {
                             s.dirty = true;
                             s.sync_status = crate::tui::screens::prd::PrdSyncStatus::SyncedAt(
                                 std::time::Instant::now(),
@@ -511,7 +503,7 @@ impl App {
                 }
                 Err(e) => {
                     let msg = e.to_string();
-                    if let Some(s) = self.prd_screen.as_mut() {
+                    if let Some(s) = self.screen_state.prd_screen.as_mut() {
                         s.sync_status = crate::tui::screens::prd::PrdSyncStatus::Failed {
                             at: std::time::Instant::now(),
                             message: msg.clone(),
@@ -526,7 +518,7 @@ impl App {
             },
             TuiDataEvent::RoadmapResult(result) => match result {
                 Ok(entries) => {
-                    if let Some(s) = self.roadmap_screen.as_mut() {
+                    if let Some(s) = self.screen_state.roadmap_screen.as_mut() {
                         s.set_entries(entries);
                     }
                 }
@@ -562,7 +554,7 @@ impl App {
                 ),
             },
             TuiDataEvent::MilestoneHealthIssuesFetched(result) => {
-                if let Some(ref mut screen) = self.milestone_health_screen {
+                if let Some(ref mut screen) = self.screen_state.milestone_health_screen {
                     let cmd = screen.apply_issues_fetched(result);
                     if let Some(cmd) = cmd {
                         self.pending_commands.push(cmd);
@@ -570,7 +562,7 @@ impl App {
                 }
             }
             TuiDataEvent::MilestoneHealthPatched(result) => {
-                if let Some(ref mut screen) = self.milestone_health_screen {
+                if let Some(ref mut screen) = self.screen_state.milestone_health_screen {
                     screen.apply_patch_result(result);
                 }
             }

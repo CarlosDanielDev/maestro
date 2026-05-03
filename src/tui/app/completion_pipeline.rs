@@ -211,11 +211,7 @@ impl App {
         }
 
         // Stall detection: check for sessions that haven't produced events
-        let stall_timeout = self
-            .config
-            .as_ref()
-            .map(|c| Duration::from_secs(c.sessions.stall_timeout_secs))
-            .unwrap_or(Duration::from_secs(300));
+        let stall_timeout = Duration::from_secs(self.session_config.stall_timeout_secs);
 
         let stalled_ids = self.health_monitor.check_stalls(stall_timeout);
         for id in &stalled_ids {
@@ -328,7 +324,7 @@ impl App {
             self.add_session(session).await?;
         }
 
-        if self.adapt_follow_up_screen.is_none() {
+        if self.screen_state.adapt_follow_up_screen.is_none() {
             // Pick the first just-completed session we haven't yet evaluated;
             // mark the candidate "considered" so the overlay sticks when
             // dismissed and `parse_suggestions` doesn't run twice per tick.
@@ -351,7 +347,7 @@ impl App {
                     crate::adapt::suggestions::parse_suggestions(&managed.session.last_message);
                 if suggestions.len() >= 2 {
                     let label = session_label(&managed.session);
-                    self.adapt_follow_up_screen = Some(
+                    self.screen_state.adapt_follow_up_screen = Some(
                         crate::tui::screens::AdaptFollowUpScreen::new(label, suggestions),
                     );
                     self.tui_mode = TuiMode::AdaptFollowUp;
@@ -361,7 +357,7 @@ impl App {
 
         // Show hollow retry prompt for sessions that exceeded auto-retry limits.
         // Consultation-satisfied sessions are excluded — they're already "done".
-        if self.hollow_retry_screen.is_none()
+        if self.screen_state.hollow_retry_screen.is_none()
             && let Some(hollow_session) = self.pool.all_sessions().iter().find(|s| {
                 s.status == SessionStatus::Completed
                     && s.is_hollow_completion
@@ -375,12 +371,13 @@ impl App {
                 .as_ref()
                 .map(|p| p.effective_max(hollow_session))
                 .unwrap_or(0);
-            self.hollow_retry_screen = Some(crate::tui::screens::HollowRetryScreen::new(
-                hollow_session.id,
-                label,
-                hollow_session.retry_count,
-                max,
-            ));
+            self.screen_state.hollow_retry_screen =
+                Some(crate::tui::screens::HollowRetryScreen::new(
+                    hollow_session.id,
+                    label,
+                    hollow_session.retry_count,
+                    max,
+                ));
             self.tui_mode = TuiMode::HollowRetry;
         }
 

@@ -96,8 +96,8 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
     // (#290). Only intercept the Dashboard boot path — session-launching
     // subcommands (cmd_run / cmd_resume) go straight to their work view.
     if !no_splash && matches!(app.tui_mode, app::TuiMode::Dashboard) {
-        if app.landing_screen.is_none() {
-            app.landing_screen = Some(screens::LandingScreen::new());
+        if app.screen_state.landing_screen.is_none() {
+            app.screen_state.landing_screen = Some(screens::LandingScreen::new());
         }
         app.tui_mode = app::TuiMode::Landing;
     }
@@ -296,16 +296,8 @@ async fn event_loop(
                     });
                 }
                 app::TuiCommand::LaunchPromptSession(config) => {
-                    let model = app
-                        .config
-                        .as_ref()
-                        .map(|c| c.sessions.default_model.clone())
-                        .unwrap_or_else(|| "opus".to_string());
-                    let mode = app
-                        .config
-                        .as_ref()
-                        .map(|c| c.sessions.default_mode.clone())
-                        .unwrap_or_else(|| "orchestrator".to_string());
+                    let model = app.session_config.default_model.clone();
+                    let mode = app.session_config.default_mode.clone();
 
                     let original_prompt = config.prompt.clone();
                     let prompt = if config.image_paths.is_empty() {
@@ -712,7 +704,7 @@ async fn event_loop(
                     | app::TuiMode::CompletionSummary
             )
         {
-            if app.home_screen.is_some() && app.pool.total_count() == 0 {
+            if app.screen_state.home_screen.is_some() && app.pool.total_count() == 0 {
                 app.tui_mode = app::TuiMode::Dashboard;
                 continue;
             }
@@ -758,7 +750,7 @@ mod handle_screen_action_tests {
         let mut app = make_app();
         app.transition_to_dashboard();
         app.pending_commands.clear();
-        if let Some(ref mut screen) = app.home_screen {
+        if let Some(ref mut screen) = app.screen_state.home_screen {
             screen.loading_suggestions = false;
         }
         handle_screen_action(&mut app, ScreenAction::RefreshSuggestions);
@@ -774,12 +766,13 @@ mod handle_screen_action_tests {
     fn handle_refresh_suggestions_action_sets_loading_flag_on_home_screen() {
         let mut app = make_app();
         app.transition_to_dashboard();
-        if let Some(ref mut screen) = app.home_screen {
+        if let Some(ref mut screen) = app.screen_state.home_screen {
             screen.loading_suggestions = false;
         }
         handle_screen_action(&mut app, ScreenAction::RefreshSuggestions);
         assert!(
-            app.home_screen
+            app.screen_state
+                .home_screen
                 .as_ref()
                 .map(|s| s.loading_suggestions)
                 .unwrap_or(false),
@@ -818,11 +811,12 @@ mod handle_screen_action_tests {
     #[test]
     fn push_issue_browser_from_all_issues_resets_stale_milestone_screen() {
         let mut app = make_app();
-        app.issue_browser_screen = Some(screens::IssueBrowserScreen::new(vec![make_issue(
-            1,
-            Some(42),
-        )]));
-        app.milestone_screen = None;
+        app.screen_state.issue_browser_screen =
+            Some(screens::IssueBrowserScreen::new(vec![make_issue(
+                1,
+                Some(42),
+            )]));
+        app.screen_state.milestone_screen = None;
         app.tui_mode = app::TuiMode::Dashboard;
         app.pending_commands.clear();
 
@@ -833,7 +827,7 @@ mod handle_screen_action_tests {
                 .iter()
                 .any(|c| matches!(c, app::TuiCommand::FetchIssues)),
         );
-        let screen = app.issue_browser_screen.as_ref().unwrap();
+        let screen = app.screen_state.issue_browser_screen.as_ref().unwrap();
         assert!(screen.loading);
         assert!(screen.issues.is_empty());
     }
@@ -850,9 +844,9 @@ mod handle_screen_action_tests {
             closed_issues: 0,
             issues: vec![make_issue(7, Some(3))],
         };
-        app.milestone_screen = Some(screens::MilestoneScreen::new(vec![entry]));
+        app.screen_state.milestone_screen = Some(screens::MilestoneScreen::new(vec![entry]));
         app.tui_mode = app::TuiMode::MilestoneView;
-        app.issue_browser_screen = None;
+        app.screen_state.issue_browser_screen = None;
         app.pending_commands.clear();
 
         handle_screen_action(&mut app, ScreenAction::Push(app::TuiMode::IssueBrowser));
@@ -862,7 +856,7 @@ mod handle_screen_action_tests {
                 .iter()
                 .any(|c| matches!(c, app::TuiCommand::FetchIssues)),
         );
-        let screen = app.issue_browser_screen.as_ref().unwrap();
+        let screen = app.screen_state.issue_browser_screen.as_ref().unwrap();
         assert_eq!(screen.issues.len(), 1);
         assert_eq!(screen.issues[0].number, 7);
     }
@@ -872,8 +866,8 @@ mod handle_screen_action_tests {
         let mut app = make_app();
         let mut stale_screen = screens::IssueBrowserScreen::new(vec![]);
         stale_screen.set_milestone_filter(Some(5));
-        app.issue_browser_screen = Some(stale_screen);
-        app.milestone_screen = None;
+        app.screen_state.issue_browser_screen = Some(stale_screen);
+        app.screen_state.milestone_screen = None;
         app.tui_mode = app::TuiMode::Dashboard;
         app.pending_commands.clear();
 
@@ -886,7 +880,7 @@ mod handle_screen_action_tests {
         ];
         app.handle_data_event(app::TuiDataEvent::Issues(Ok(fetched)));
 
-        let screen = app.issue_browser_screen.as_ref().unwrap();
+        let screen = app.screen_state.issue_browser_screen.as_ref().unwrap();
         assert_eq!(screen.filtered_indices.len(), 3);
     }
 
@@ -906,14 +900,14 @@ mod handle_screen_action_tests {
                 make_issue_with_state(12, Some(5), "open"),
             ],
         };
-        app.milestone_screen = Some(screens::MilestoneScreen::new(vec![entry]));
+        app.screen_state.milestone_screen = Some(screens::MilestoneScreen::new(vec![entry]));
         app.tui_mode = app::TuiMode::MilestoneView;
-        app.issue_browser_screen = None;
+        app.screen_state.issue_browser_screen = None;
         app.pending_commands.clear();
 
         handle_screen_action(&mut app, ScreenAction::Push(app::TuiMode::IssueBrowser));
 
-        let screen = app.issue_browser_screen.as_ref().unwrap();
+        let screen = app.screen_state.issue_browser_screen.as_ref().unwrap();
         assert_eq!(screen.issues.len(), 2);
         assert!(screen.issues.iter().all(|i| i.state == "open"));
     }
@@ -931,12 +925,13 @@ mod handle_paste_tests {
     #[test]
     fn dispatch_paste_routes_to_prompt_input_screen_when_active() {
         let mut app = make_app();
-        app.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
         app.tui_mode = app::TuiMode::PromptInput;
 
         dispatch_paste_to_active_screen(&mut app, "hello from paste");
 
         let text = app
+            .screen_state
             .prompt_input_screen
             .as_ref()
             .expect("prompt_input_screen must be Some")
@@ -947,19 +942,24 @@ mod handle_paste_tests {
     #[test]
     fn dispatch_paste_preserves_embedded_newlines() {
         let mut app = make_app();
-        app.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
         app.tui_mode = app::TuiMode::PromptInput;
 
         dispatch_paste_to_active_screen(&mut app, "line1\nline2\nline3");
 
-        let text = app.prompt_input_screen.as_ref().unwrap().editor_text();
+        let text = app
+            .screen_state
+            .prompt_input_screen
+            .as_ref()
+            .unwrap()
+            .editor_text();
         assert_eq!(text, "line1\nline2\nline3");
     }
 
     #[test]
     fn dispatch_paste_does_not_launch_session() {
         let mut app = make_app();
-        app.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
         app.tui_mode = app::TuiMode::PromptInput;
         app.pending_commands.clear();
 
@@ -980,12 +980,17 @@ mod handle_paste_tests {
     #[test]
     fn app_handle_paste_with_prompt_input_active_inserts_text() {
         let mut app = make_app();
-        app.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
         app.tui_mode = app::TuiMode::PromptInput;
 
         app.handle_paste("multi\nline\npaste");
 
-        let text = app.prompt_input_screen.as_ref().unwrap().editor_text();
+        let text = app
+            .screen_state
+            .prompt_input_screen
+            .as_ref()
+            .unwrap()
+            .editor_text();
         assert_eq!(text, "multi\nline\npaste");
     }
 

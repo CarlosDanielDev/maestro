@@ -13,6 +13,7 @@ impl App {
     pub fn activate_bypass_from_cli(&mut self) {
         self.bypass_active = true;
         self.bypass_warning_acknowledged = true;
+        self.session_config.permission_mode = "bypassPermissions".to_string();
         self.activity_log.push_simple(
             "BYPASS".into(),
             "Bypass mode enabled (cli) — auto-accepting review corrections".into(),
@@ -27,6 +28,7 @@ impl App {
         }
         self.bypass_active = false;
         self.pool.set_permission_mode("default".to_string());
+        self.session_config.permission_mode = "default".to_string();
         self.activity_log.push_simple(
             "BYPASS".into(),
             format!("Bypass mode disabled ({reason})"),
@@ -43,7 +45,7 @@ impl App {
             return false;
         }
         if !self.bypass_warning_acknowledged {
-            self.bypass_warning_screen =
+            self.screen_state.bypass_warning_screen =
                 Some(crate::tui::screens::bypass_warning::BypassWarningState::new());
             return true;
         }
@@ -57,6 +59,7 @@ impl App {
         self.bypass_warning_acknowledged = true;
         self.pool
             .set_permission_mode("bypassPermissions".to_string());
+        self.session_config.permission_mode = "bypassPermissions".to_string();
         self.activity_log.push_simple(
             "BYPASS".into(),
             format!("Bypass mode enabled ({source}) — auto-accepting review corrections"),
@@ -114,7 +117,7 @@ mod tests {
         let mut app = make_app();
         let pushed = app.request_bypass_toggle();
         assert!(pushed);
-        assert!(app.bypass_warning_screen.is_some());
+        assert!(app.screen_state.bypass_warning_screen.is_some());
         assert!(!app.bypass_active);
     }
 

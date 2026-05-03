@@ -22,7 +22,7 @@ impl App {
     /// Surfaces a status flash on the screen, and reverts the in-screen
     /// widget on write failure.
     pub fn process_pending_caveman_toggle(&mut self) {
-        let Some(screen) = self.settings_screen.as_mut() else {
+        let Some(screen) = self.screen_state.settings_screen.as_mut() else {
             return;
         };
         let Some(new_value) = screen.take_pending_caveman_toggle() else {

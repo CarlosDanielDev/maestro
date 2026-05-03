@@ -131,7 +131,7 @@ impl App {
             .collect();
 
         // Initialize home screen if needed (cmd_run path has no home_screen)
-        if self.home_screen.is_none() {
+        if self.screen_state.home_screen.is_none() {
             let project_info = crate::tui::screens::home::ProjectInfo {
                 repo: self
                     .config
@@ -146,20 +146,20 @@ impl App {
                     .unwrap_or_else(|| "unknown".to_string()),
                 username: None,
             };
-            self.home_screen = Some(crate::tui::screens::HomeScreen::new(
+            self.screen_state.home_screen = Some(crate::tui::screens::HomeScreen::new(
                 project_info,
                 recent,
                 Vec::new(),
             ));
-        } else if let Some(ref mut screen) = self.home_screen {
+        } else if let Some(ref mut screen) = self.screen_state.home_screen {
             screen.recent_sessions = recent;
         }
 
         // Clear completion summary and stale screen state, then switch to dashboard
         self.completion_summary = None;
         self.completion_summary_dismissed = true;
-        self.issue_browser_screen = None;
-        if let Some(ref mut screen) = self.home_screen {
+        self.screen_state.issue_browser_screen = None;
+        if let Some(ref mut screen) = self.screen_state.home_screen {
             screen.start_loading_suggestions();
         }
         self.pending_commands.push(TuiCommand::FetchSuggestionData);

@@ -15,7 +15,7 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
 
     ensure_loaded(app);
 
-    let Some(screen) = app.roadmap_screen.as_mut() else {
+    let Some(screen) = app.screen_state.roadmap_screen.as_mut() else {
         return ScreenAction::None;
     };
 
@@ -65,7 +65,7 @@ fn handle_filter_edit(
 }
 
 fn handle_view(app: &mut App, code: KeyCode) -> ScreenAction {
-    let Some(screen) = app.roadmap_screen.as_mut() else {
+    let Some(screen) = app.screen_state.roadmap_screen.as_mut() else {
         return ScreenAction::None;
     };
     match code {
@@ -121,8 +121,8 @@ fn handle_view(app: &mut App, code: KeyCode) -> ScreenAction {
 }
 
 pub fn ensure_loaded(app: &mut App) {
-    if app.roadmap_screen.is_none() {
-        app.roadmap_screen = Some(RoadmapScreen::new());
+    if app.screen_state.roadmap_screen.is_none() {
+        app.screen_state.roadmap_screen = Some(RoadmapScreen::new());
         app.pending_commands
             .push(crate::tui::app::TuiCommand::SyncRoadmap);
     }
