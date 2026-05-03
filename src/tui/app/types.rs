@@ -2,10 +2,13 @@ use crate::adapt::AdaptConfig;
 use crate::adapt::types::{
     AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile, ScaffoldResult,
 };
+use crate::config::SessionsConfig;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::provider::github::types::{GhIssue, GhMilestone};
 use crate::session::types::SessionStatus;
-use crate::tui::screens::{PromptSessionConfig, SessionConfig, UnifiedSessionConfig};
+use crate::tui::screens::{
+    PromptSessionConfig, SessionConfig as ScreenSessionConfig, UnifiedSessionConfig,
+};
 
 /// TUI display mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,6 +190,65 @@ pub struct SessionUiState {
     pub show_summary_popup: bool,
 }
 
+/// Screen-owned state kept out of the top-level App surface.
+#[derive(Default)]
+pub struct ScreenState {
+    pub home_screen: Option<crate::tui::screens::HomeScreen>,
+    pub landing_screen: Option<crate::tui::screens::LandingScreen>,
+    pub issue_wizard_screen: Option<crate::tui::screens::IssueWizardScreen>,
+    pub project_stats_screen: Option<crate::tui::screens::ProjectStatsScreen>,
+    pub milestone_wizard_screen: Option<crate::tui::screens::MilestoneWizardScreen>,
+    pub issue_browser_screen: Option<crate::tui::screens::IssueBrowserScreen>,
+    pub milestone_screen: Option<crate::tui::screens::MilestoneScreen>,
+    pub prompt_input_screen: Option<crate::tui::screens::PromptInputScreen>,
+    pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
+    pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
+    pub adapt_follow_up_screen: Option<crate::tui::screens::AdaptFollowUpScreen>,
+    pub sanitize_screen: Option<crate::sanitize::screen::SanitizeScreen>,
+    pub settings_screen: Option<crate::tui::screens::SettingsScreen>,
+    pub session_switcher: Option<crate::tui::session_switcher::SessionSwitcher>,
+    pub adapt_screen: Option<crate::tui::screens::adapt::AdaptScreen>,
+    pub pr_review_screen: Option<crate::tui::screens::pr_review::PrReviewScreen>,
+    pub release_notes_screen: Option<crate::tui::screens::ReleaseNotesScreen>,
+    pub prd_screen: Option<crate::tui::screens::prd::PrdScreen>,
+    pub bypass_warning_screen: Option<crate::tui::screens::bypass_warning::BypassWarningState>,
+    pub roadmap_screen: Option<crate::tui::screens::roadmap::RoadmapScreen>,
+    pub milestone_health_screen:
+        Option<crate::tui::screens::milestone_health::MilestoneHealthScreen>,
+}
+
+/// Effective session defaults and limits used by TUI-launched sessions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionConfig {
+    pub max_concurrent: usize,
+    pub stall_timeout_secs: u64,
+    pub default_model: String,
+    pub default_mode: String,
+    pub permission_mode: String,
+    pub allowed_tools: Vec<String>,
+}
+
+impl SessionConfig {
+    pub fn new(max_concurrent: usize, permission_mode: String, allowed_tools: Vec<String>) -> Self {
+        Self {
+            max_concurrent,
+            stall_timeout_secs: 300,
+            default_model: "opus".to_string(),
+            default_mode: "orchestrator".to_string(),
+            permission_mode,
+            allowed_tools,
+        }
+    }
+
+    pub fn apply_config(&mut self, config: &SessionsConfig) {
+        self.stall_timeout_secs = config.stall_timeout_secs;
+        self.default_model.clone_from(&config.default_model);
+        self.default_mode.clone_from(&config.default_mode);
+        self.permission_mode.clone_from(&config.permission_mode);
+        self.allowed_tools.clone_from(&config.allowed_tools);
+    }
+}
+
 /// Payload for suggestion data fetched from GitHub.
 pub struct SuggestionDataPayload {
     pub ready_issue_count: usize,
@@ -225,8 +287,8 @@ pub enum TuiCommand {
     /// the milestone first, then each accepted issue with its
     /// `Blocked By` rewritten to actual issue numbers.
     CreateMilestoneWithIssues(crate::tui::screens::milestone_wizard::AiGeneratedPlan),
-    LaunchSession(SessionConfig),
-    LaunchSessions(Vec<SessionConfig>),
+    LaunchSession(ScreenSessionConfig),
+    LaunchSessions(Vec<ScreenSessionConfig>),
     LaunchPromptSession(PromptSessionConfig),
     LaunchUnifiedSession(UnifiedSessionConfig),
     RunAdaptScan(AdaptConfig),

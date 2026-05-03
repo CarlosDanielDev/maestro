@@ -235,12 +235,12 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
             app.completion_summary_dismissed = true;
             let mut screen = screens::IssueBrowserScreen::new(vec![]);
             screen.loading = true;
-            app.issue_browser_screen = Some(screen);
+            app.screen_state.issue_browser_screen = Some(screen);
             app.pending_commands.push(app::TuiCommand::FetchIssues);
             app.tui_mode = app::TuiMode::IssueBrowser;
         }
         (KeyCode::Char('r'), _) => {
-            app.prompt_input_screen = Some(app::helpers::create_prompt_input_screen(
+            app.screen_state.prompt_input_screen = Some(app::helpers::create_prompt_input_screen(
                 &app.prompt_history,
             ));
             app.tui_mode = app::TuiMode::PromptInput;
@@ -550,16 +550,16 @@ async fn handle_confirm_kill(app: &mut App, key: &KeyEvent, session_id: uuid::Uu
 fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
     match key.code {
         KeyCode::Esc => {
-            app.session_switcher = None;
+            app.screen_state.session_switcher = None;
             app.navigate_back_or_dashboard();
         }
         KeyCode::Up => {
-            if let Some(sw) = &mut app.session_switcher {
+            if let Some(sw) = &mut app.screen_state.session_switcher {
                 sw.move_up();
             }
         }
         KeyCode::Down => {
-            if let Some(sw) = &mut app.session_switcher {
+            if let Some(sw) = &mut app.screen_state.session_switcher {
                 let count = {
                     let sessions = app.pool.all_sessions();
                     let refs: Vec<&crate::session::types::Session> = sessions;
@@ -569,12 +569,12 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
             }
         }
         KeyCode::Enter => {
-            let selected_id = app.session_switcher.as_ref().and_then(|sw| {
+            let selected_id = app.screen_state.session_switcher.as_ref().and_then(|sw| {
                 let sessions = app.pool.all_sessions();
                 sw.selected_session(&sessions).map(|s| s.id)
             });
             if let Some(id) = selected_id {
-                app.session_switcher = None;
+                app.screen_state.session_switcher = None;
                 app.navigate_to(app::TuiMode::Detail(id));
             }
         }
@@ -598,7 +598,7 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         };
         app.activity_log
             .push_simple("TQ".into(), label.into(), LogLevel::Info);
-        if let Some(ref mut screen) = app.settings_screen {
+        if let Some(ref mut screen) = app.screen_state.settings_screen {
             screen.sync_tq_enabled(new_state);
         }
         return true;
@@ -860,7 +860,8 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             }
         }
         (KeyCode::Char('w'), _) => {
-            app.session_switcher = Some(crate::tui::session_switcher::SessionSwitcher::default());
+            app.screen_state.session_switcher =
+                Some(crate::tui::session_switcher::SessionSwitcher::default());
             app.navigate_to(app::TuiMode::SessionSwitcher);
         }
         // Ctrl+C is short-circuited at the top of handle_key, so reaching
@@ -1023,7 +1024,7 @@ mod tests {
         while wizard.step() != IssueWizardStep::BasicInfo {
             wizard.try_advance();
         }
-        app.issue_wizard_screen = Some(wizard);
+        app.screen_state.issue_wizard_screen = Some(wizard);
         app.tui_mode = TuiMode::IssueWizard;
         assert!(is_text_input_mode(&app));
     }
@@ -1035,7 +1036,7 @@ mod tests {
         let mut app = make_app();
         let mut wizard = crate::tui::screens::IssueWizardScreen::new();
         wizard.try_advance(); // Context → TypeSelect
-        app.issue_wizard_screen = Some(wizard);
+        app.screen_state.issue_wizard_screen = Some(wizard);
         app.tui_mode = TuiMode::IssueWizard;
         assert!(!is_text_input_mode(&app));
     }
@@ -1043,7 +1044,8 @@ mod tests {
     #[test]
     fn is_text_input_mode_true_for_milestone_wizard_on_goal_definition() {
         let mut app = make_app();
-        app.milestone_wizard_screen = Some(crate::tui::screens::MilestoneWizardScreen::new());
+        app.screen_state.milestone_wizard_screen =
+            Some(crate::tui::screens::MilestoneWizardScreen::new());
         app.tui_mode = TuiMode::MilestoneWizard;
         assert!(is_text_input_mode(&app));
     }
@@ -1051,7 +1053,8 @@ mod tests {
     #[test]
     fn is_text_input_mode_false_for_project_stats() {
         let mut app = make_app();
-        app.project_stats_screen = Some(crate::tui::screens::ProjectStatsScreen::new());
+        app.screen_state.project_stats_screen =
+            Some(crate::tui::screens::ProjectStatsScreen::new());
         app.tui_mode = TuiMode::ProjectStats;
         assert!(!is_text_input_mode(&app));
     }

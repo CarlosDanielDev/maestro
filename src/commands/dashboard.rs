@@ -126,7 +126,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
 
     app.gh_auth_ok = gh_auth_ok;
 
-    app.home_screen = Some(crate::tui::screens::HomeScreen::new(
+    app.screen_state.home_screen = Some(crate::tui::screens::HomeScreen::new(
         project_info,
         recent_sessions,
         doctor_warnings,

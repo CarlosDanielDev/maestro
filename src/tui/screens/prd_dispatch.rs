@@ -48,7 +48,7 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
     let Some(prd) = app.prd.as_mut() else {
         return ScreenAction::None;
     };
-    let Some(screen) = app.prd_screen.as_mut() else {
+    let Some(screen) = app.screen_state.prd_screen.as_mut() else {
         return ScreenAction::None;
     };
 
@@ -99,7 +99,7 @@ fn ingest_chosen_candidate(app: &mut App) {
         return;
     };
     let report = prd.merge_ingested(&parsed);
-    if let Some(s) = app.prd_screen.as_mut() {
+    if let Some(s) = app.screen_state.prd_screen.as_mut() {
         s.dirty = true;
     }
     let identifier = if candidate.number > 0 {
@@ -128,7 +128,7 @@ fn reset_prd(app: &mut App) {
     let store = FilePrdStore::new(repo_root());
     let _ = std::fs::remove_file(store.prd_path());
     app.prd = Some(Prd::new());
-    if let Some(s) = app.prd_screen.as_mut() {
+    if let Some(s) = app.screen_state.prd_screen.as_mut() {
         s.dirty = false;
         s.sync_status = crate::tui::screens::prd::PrdSyncStatus::Idle;
         s.save_status = crate::tui::screens::prd::PrdSaveStatus::default();
@@ -164,7 +164,7 @@ fn drop_guard(action: PrdAction, app: &mut App) -> ScreenAction {
 }
 
 pub fn ensure_loaded(app: &mut App) {
-    if app.prd.is_some() && app.prd_screen.is_some() {
+    if app.prd.is_some() && app.screen_state.prd_screen.is_some() {
         return;
     }
     let store = FilePrdStore::new(repo_root());
@@ -181,7 +181,9 @@ pub fn ensure_loaded(app: &mut App) {
         }
     };
     app.prd.get_or_insert(prd);
-    app.prd_screen.get_or_insert_with(PrdScreen::new);
+    app.screen_state
+        .prd_screen
+        .get_or_insert_with(PrdScreen::new);
     // First-load on a fresh PRD: auto-sync from GitHub so Current State +
     // Timeline are populated immediately rather than blank. The user can
     // still press [y] to refresh later.
@@ -203,7 +205,7 @@ fn save_prd(app: &mut App) {
     let store = FilePrdStore::new(repo_root());
     match store.save(prd) {
         Ok(()) => {
-            if let Some(s) = app.prd_screen.as_mut() {
+            if let Some(s) = app.screen_state.prd_screen.as_mut() {
                 s.dirty = false;
                 s.save_status.last_saved = Some(Instant::now());
                 s.save_status.last_error = None;
@@ -215,7 +217,7 @@ fn save_prd(app: &mut App) {
             );
         }
         Err(e) => {
-            if let Some(s) = app.prd_screen.as_mut() {
+            if let Some(s) = app.screen_state.prd_screen.as_mut() {
                 s.save_status.last_error = Some(e.to_string());
             }
             app.activity_log.push_simple(
@@ -251,7 +253,7 @@ fn queue_sync(app: &mut App) {
     // Mark the screen state so the header chip flips to "⟳ Syncing…" on
     // the next render — without this the user has no immediate feedback
     // that their keypress did anything.
-    if let Some(s) = app.prd_screen.as_mut() {
+    if let Some(s) = app.screen_state.prd_screen.as_mut() {
         s.sync_status = PrdSyncStatus::Syncing {
             started_at: Instant::now(),
         };

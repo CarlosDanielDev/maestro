@@ -100,14 +100,8 @@ pub struct App {
     pub cached_mode_km_key: (TuiMode, Option<crate::session::types::SessionStatus>, bool),
     pub context_monitor: Box<dyn ContextMonitor>,
     pub fork_policy: Option<ForkPolicy>,
-    pub home_screen: Option<crate::tui::screens::HomeScreen>,
-    pub landing_screen: Option<crate::tui::screens::LandingScreen>,
-    pub issue_wizard_screen: Option<crate::tui::screens::IssueWizardScreen>,
-    pub project_stats_screen: Option<crate::tui::screens::ProjectStatsScreen>,
-    pub milestone_wizard_screen: Option<crate::tui::screens::MilestoneWizardScreen>,
-    pub issue_browser_screen: Option<crate::tui::screens::IssueBrowserScreen>,
-    pub milestone_screen: Option<crate::tui::screens::MilestoneScreen>,
-    pub prompt_input_screen: Option<crate::tui::screens::PromptInputScreen>,
+    pub screen_state: ScreenState,
+    pub session_config: crate::tui::app::types::SessionConfig,
     pub pending_commands: Vec<TuiCommand>,
     pub pending_session_launches: Vec<Session>,
     pub data_tx: mpsc::UnboundedSender<TuiDataEvent>,
@@ -123,18 +117,9 @@ pub struct App {
     pub gh_auth_ok: bool,
     pub pending_prs: Vec<crate::provider::github::types::PendingPr>,
     pub flags: crate::flags::store::FeatureFlags,
-    pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
     pub queue_executor: Option<crate::work::executor::QueueExecutor>,
     pub queue_launch_configs: Option<Vec<crate::tui::screens::SessionConfig>>,
-    pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
-    pub adapt_follow_up_screen: Option<crate::tui::screens::AdaptFollowUpScreen>,
-    pub sanitize_screen: Option<crate::sanitize::screen::SanitizeScreen>,
-    pub settings_screen: Option<crate::tui::screens::SettingsScreen>,
     pub prompt_history: crate::state::prompt_history::PromptHistoryStore,
-    pub session_switcher: Option<crate::tui::session_switcher::SessionSwitcher>,
-    pub adapt_screen: Option<crate::tui::screens::adapt::AdaptScreen>,
-    pub pr_review_screen: Option<crate::tui::screens::pr_review::PrReviewScreen>,
-    pub release_notes_screen: Option<crate::tui::screens::ReleaseNotesScreen>,
     pub tool_start_times: std::collections::HashMap<uuid::Uuid, (String, Instant)>,
     pub no_splash: bool,
     pub show_mascot: bool,
@@ -162,12 +147,6 @@ pub struct App {
     /// Live PRD (#321) loaded from `.maestro/prd.toml`; lazily populated by
     /// the PRD screen on first entry.
     pub prd: Option<crate::prd::model::Prd>,
-    pub prd_screen: Option<crate::tui::screens::prd::PrdScreen>,
-    pub bypass_warning_screen: Option<crate::tui::screens::bypass_warning::BypassWarningState>,
-    pub roadmap_screen: Option<crate::tui::screens::roadmap::RoadmapScreen>,
-    /// Milestone health-check wizard (#500).
-    pub milestone_health_screen:
-        Option<crate::tui::screens::milestone_health::MilestoneHealthScreen>,
     /// Last completed `/review` cycle (#327). Populated by data_handler;
     /// consumed by the PR-review screen on next render.
     pub pending_review_report: Option<crate::review::types::ReviewReport>,
@@ -240,8 +219,13 @@ impl App {
         let (data_tx, data_rx) = mpsc::unbounded_channel();
         let state = store.load().unwrap_or_default();
         let mut pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx);
-        pool.set_permission_mode(permission_mode);
-        pool.set_allowed_tools(allowed_tools);
+        pool.set_permission_mode(permission_mode.clone());
+        pool.set_allowed_tools(allowed_tools.clone());
+        let session_config = crate::tui::app::types::SessionConfig::new(
+            max_concurrent,
+            permission_mode,
+            allowed_tools,
+        );
         // Recover any pending completions persisted from a prior run so the
         // auto-PR work is retried on next tick (#514). The AC4 preflight
         // (PR-already-exists check) prevents double-firing when the prior
@@ -295,14 +279,8 @@ impl App {
             cached_mode_km_key: (TuiMode::Overview, None, false),
             context_monitor: Box::new(ProductionContextMonitor::new()),
             fork_policy: None,
-            home_screen: None,
-            landing_screen: None,
-            issue_wizard_screen: None,
-            project_stats_screen: None,
-            milestone_wizard_screen: None,
-            issue_browser_screen: None,
-            milestone_screen: None,
-            prompt_input_screen: None,
+            screen_state: ScreenState::default(),
+            session_config,
             pending_commands: Vec::new(),
             pending_session_launches: Vec::new(),
             data_tx,
@@ -318,13 +296,8 @@ impl App {
             gh_auth_ok: true,
             pending_prs: recovered_prs,
             flags: crate::flags::store::FeatureFlags::default(),
-            queue_confirmation_screen: None,
             queue_executor: None,
             queue_launch_configs: None,
-            hollow_retry_screen: None,
-            adapt_follow_up_screen: None,
-            sanitize_screen: None,
-            settings_screen: None,
             prompt_history: crate::state::prompt_history::PromptHistoryStore::new(
                 crate::state::prompt_history::PromptHistoryStore::default_path(),
                 crate::config::default_max_prompt_history(),
@@ -333,10 +306,6 @@ impl App {
             show_mascot: true,
             mascot_style: crate::mascot::MascotStyle::default(),
             mascot_animator: MascotAnimator::new(&SystemClock),
-            session_switcher: None,
-            adapt_screen: None,
-            pr_review_screen: None,
-            release_notes_screen: None,
             tool_start_times: std::collections::HashMap::new(),
             session_ui_state: std::collections::HashMap::new(),
             log_viewer_scroll: 0,
@@ -349,10 +318,6 @@ impl App {
             bypass_active: false,
             bypass_warning_acknowledged: false,
             prd: None,
-            prd_screen: None,
-            bypass_warning_screen: None,
-            roadmap_screen: None,
-            milestone_health_screen: None,
             pending_review_report: None,
             concerns_cursor: 0,
             prd_candidates: Vec::new(),
@@ -480,6 +445,11 @@ impl App {
     }
 
     pub fn configure(&mut self, config: Config) {
+        self.session_config.apply_config(&config.sessions);
+        if self.bypass_active {
+            self.session_config.permission_mode = "bypassPermissions".to_string();
+        }
+
         // Shared adapter so fork and pool observe the same enabled state.
         let tq_adapter = if config.turboquant.enabled {
             Some(std::sync::Arc::new(

@@ -203,7 +203,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             );
         }
         TuiMode::Dashboard => {
-            if let Some(ref mut screen) = app.home_screen {
+            if let Some(ref mut screen) = app.screen_state.home_screen {
                 screen.set_mascot(
                     app.show_mascot,
                     app.mascot_animator.state(),
@@ -214,7 +214,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::Landing => {
-            if let Some(ref mut screen) = app.landing_screen {
+            if let Some(ref mut screen) = app.screen_state.landing_screen {
                 screen.set_mascot(
                     app.mascot_animator.state(),
                     app.mascot_animator.frame_index(),
@@ -224,37 +224,37 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::IssueWizard => {
-            if let Some(ref mut screen) = app.issue_wizard_screen {
+            if let Some(ref mut screen) = app.screen_state.issue_wizard_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::ProjectStats => {
-            if let Some(ref mut screen) = app.project_stats_screen {
+            if let Some(ref mut screen) = app.screen_state.project_stats_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::MilestoneWizard => {
-            if let Some(ref mut screen) = app.milestone_wizard_screen {
+            if let Some(ref mut screen) = app.screen_state.milestone_wizard_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::IssueBrowser => {
-            if let Some(ref mut screen) = app.issue_browser_screen {
+            if let Some(ref mut screen) = app.screen_state.issue_browser_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::MilestoneView => {
-            if let Some(ref mut screen) = app.milestone_screen {
+            if let Some(ref mut screen) = app.screen_state.milestone_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::PromptInput => {
-            if let Some(ref mut screen) = app.prompt_input_screen {
+            if let Some(ref mut screen) = app.screen_state.prompt_input_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::QueueConfirmation => {
-            if let Some(ref mut screen) = app.queue_confirmation_screen {
+            if let Some(ref mut screen) = app.screen_state.queue_confirmation_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -315,12 +315,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             );
         }
         TuiMode::Sanitize => {
-            if let Some(ref mut screen) = app.sanitize_screen {
+            if let Some(ref mut screen) = app.screen_state.sanitize_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
         TuiMode::Settings => {
-            if let Some(ref mut screen) = app.settings_screen {
+            if let Some(ref mut screen) = app.screen_state.settings_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -335,13 +335,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &theme,
                 spinner_tick,
             );
-            if let Some(ref sw) = app.session_switcher {
+            if let Some(ref sw) = app.screen_state.session_switcher {
                 let sessions = app.pool.all_sessions();
                 sw.draw(f, chunks[1], &sessions, &theme);
             }
         }
         TuiMode::AdaptWizard => {
-            if let Some(ref mut screen) = app.adapt_screen {
+            if let Some(ref mut screen) = app.screen_state.adapt_screen {
                 screen.tick();
                 screen.draw(f, chunks[1], &theme);
             }
@@ -358,13 +358,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     app.concerns_cursor,
                     &theme,
                 );
-            } else if let Some(ref mut screen) = app.pr_review_screen {
+            } else if let Some(ref mut screen) = app.screen_state.pr_review_screen {
                 screen.tick();
                 screen.draw(f, chunks[1], &theme);
             }
         }
         TuiMode::ReleaseNotes => {
-            if let Some(ref mut screen) = app.release_notes_screen {
+            if let Some(ref mut screen) = app.screen_state.release_notes_screen {
                 screen.draw(f, chunks[1], &theme);
             }
         }
@@ -411,12 +411,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         TuiMode::ConfirmExit => {
             match app.nav_stack.peek() {
                 Some(&TuiMode::Dashboard) => {
-                    if let Some(ref mut screen) = app.home_screen {
+                    if let Some(ref mut screen) = app.screen_state.home_screen {
                         screen.draw(f, chunks[1], &theme);
                     }
                 }
                 Some(&TuiMode::Landing) => {
-                    if let Some(ref mut screen) = app.landing_screen {
+                    if let Some(ref mut screen) = app.screen_state.landing_screen {
                         screen.set_mascot(
                             app.mascot_animator.state(),
                             app.mascot_animator.frame_index(),
@@ -426,12 +426,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     }
                 }
                 Some(&TuiMode::Prd) => {
-                    if let (Some(prd), Some(screen)) = (app.prd.as_ref(), app.prd_screen.as_ref()) {
+                    if let (Some(prd), Some(screen)) =
+                        (app.prd.as_ref(), app.screen_state.prd_screen.as_ref())
+                    {
                         crate::tui::screens::prd::draw::draw(f, chunks[1], screen, prd, &theme);
                     }
                 }
                 Some(&TuiMode::Roadmap) => {
-                    if let Some(screen) = app.roadmap_screen.as_ref() {
+                    if let Some(screen) = app.screen_state.roadmap_screen.as_ref() {
                         crate::tui::screens::roadmap::draw(f, chunks[1], screen, &theme);
                     }
                 }
@@ -495,7 +497,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &theme,
                 spinner_tick,
             );
-            if let Some(ref mut screen) = app.hollow_retry_screen {
+            if let Some(ref mut screen) = app.screen_state.hollow_retry_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -532,7 +534,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &theme,
                 spinner_tick,
             );
-            if let Some(ref mut screen) = app.adapt_follow_up_screen {
+            if let Some(ref mut screen) = app.screen_state.adapt_follow_up_screen {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -551,13 +553,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     app.prd_explore_cursor,
                     &theme,
                 );
-            } else if let (Some(prd), Some(screen)) = (app.prd.as_ref(), app.prd_screen.as_ref()) {
+            } else if let (Some(prd), Some(screen)) =
+                (app.prd.as_ref(), app.screen_state.prd_screen.as_ref())
+            {
                 crate::tui::screens::prd::draw::draw(f, chunks[1], screen, prd, &theme);
             }
         }
         TuiMode::Roadmap => {
             crate::tui::screens::roadmap_dispatch::ensure_loaded(app);
-            if let Some(screen) = app.roadmap_screen.as_ref() {
+            if let Some(screen) = app.screen_state.roadmap_screen.as_ref() {
                 crate::tui::screens::roadmap::draw(f, chunks[1], screen, &theme);
             }
         }
@@ -573,7 +577,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             f.render_widget(para, chunks[1]);
         }
         TuiMode::MilestoneHealth => {
-            if let Some(ref screen) = app.milestone_health_screen {
+            if let Some(ref screen) = app.screen_state.milestone_health_screen {
                 crate::tui::screens::milestone_health::draw::draw(
                     f,
                     chunks[1],
@@ -693,31 +697,86 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 /// Resolve the active screen (if any) to extract keybindings and input mode.
 pub(super) fn active_screen(app: &App) -> Option<&dyn Screen> {
     match app.tui_mode {
-        TuiMode::Dashboard => app.home_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::Landing => app.landing_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::IssueBrowser => app.issue_browser_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::IssueWizard => app.issue_wizard_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::MilestoneView => app.milestone_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::Dashboard => app
+            .screen_state
+            .home_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::Landing => app
+            .screen_state
+            .landing_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::IssueBrowser => app
+            .screen_state
+            .issue_browser_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::IssueWizard => app
+            .screen_state
+            .issue_wizard_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::MilestoneView => app
+            .screen_state
+            .milestone_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
         TuiMode::MilestoneWizard => app
+            .screen_state
             .milestone_wizard_screen
             .as_ref()
             .map(|s| s as &dyn Screen),
-        TuiMode::ProjectStats => app.project_stats_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::PromptInput => app.prompt_input_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::ProjectStats => app
+            .screen_state
+            .project_stats_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::PromptInput => app
+            .screen_state
+            .prompt_input_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
         TuiMode::QueueConfirmation => app
+            .screen_state
             .queue_confirmation_screen
             .as_ref()
             .map(|s| s as &dyn Screen),
-        TuiMode::Sanitize => app.sanitize_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::Settings => app.settings_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::PrReview => app.pr_review_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::HollowRetry => app.hollow_retry_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::Sanitize => app
+            .screen_state
+            .sanitize_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::Settings => app
+            .screen_state
+            .settings_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::PrReview => app
+            .screen_state
+            .pr_review_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::HollowRetry => app
+            .screen_state
+            .hollow_retry_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
         TuiMode::AdaptFollowUp => app
+            .screen_state
             .adapt_follow_up_screen
             .as_ref()
             .map(|s| s as &dyn Screen),
-        TuiMode::AdaptWizard => app.adapt_screen.as_ref().map(|s| s as &dyn Screen),
-        TuiMode::ReleaseNotes => app.release_notes_screen.as_ref().map(|s| s as &dyn Screen),
+        TuiMode::AdaptWizard => app
+            .screen_state
+            .adapt_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::ReleaseNotes => app
+            .screen_state
+            .release_notes_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
         _ => None,
     }
 }

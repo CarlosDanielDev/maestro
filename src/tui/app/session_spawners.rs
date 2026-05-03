@@ -8,6 +8,7 @@ use crate::session::types::{Session, SessionStatus};
 use crate::tui::activity_log::LogLevel;
 
 /// Resolve default model and mode from config (or built-in defaults).
+#[cfg(test)]
 pub(crate) fn default_model_and_mode(config: Option<&crate::config::Config>) -> (String, String) {
     let model = config
         .map(|c| c.sessions.default_model.clone())
@@ -71,7 +72,10 @@ pub(crate) fn create_gate_fix_session(
 
 impl App {
     pub(super) fn default_model_and_mode(&self) -> (String, String) {
-        default_model_and_mode(self.config.as_ref())
+        (
+            self.session_config.default_model.clone(),
+            self.session_config.default_mode.clone(),
+        )
     }
 
     pub(super) fn spawn_ci_fix_session(
