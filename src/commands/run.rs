@@ -1,6 +1,6 @@
 use crate::commands::setup::{setup_app_from_config_with_bypass, startup_cleanup};
 use crate::config::Config;
-use crate::provider::github::client::{GhCliClient, RepoProvider};
+use crate::provider::{create_provider, github::client::RepoProvider};
 use crate::session::types::Session;
 use crate::session::worktree::GitWorktreeManager;
 use crate::state::store::StateStore;
@@ -116,7 +116,8 @@ pub async fn cmd_run(
         .with_image_paths(images.clone());
         app.add_session(session).await?;
     } else if let Some(milestone_name) = milestone {
-        let client = GhCliClient::from_config_repo(Some(config.project.repo.clone()));
+        let provider_config = config.effective_provider_config();
+        let client = create_provider(&provider_config)?;
         let issues = client.list_issues_by_milestone(&milestone_name).await?;
         if issues.is_empty() {
             anyhow::bail!("No open issues found in milestone '{}'", milestone_name);
@@ -126,7 +127,7 @@ pub async fn cmd_run(
         let assigner = WorkAssigner::new(items);
 
         app.work_assignment_service = Some(WorkAssignmentService::new(assigner));
-        app.github_client = Some(Box::new(client));
+        app.github_client = Some(client);
 
         if continuous && app.flags.is_enabled(crate::flags::Flag::ContinuousMode) {
             app.continuous_mode = Some(crate::continuous::ContinuousModeState::new());
@@ -138,7 +139,8 @@ pub async fn cmd_run(
             tracing::info!("--continuous ignored: Flag::ContinuousMode is disabled");
         }
     } else if let Some(issue_str) = issue {
-        let client = GhCliClient::from_config_repo(Some(config.project.repo.clone()));
+        let provider_config = config.effective_provider_config();
+        let client = create_provider(&provider_config)?;
 
         for num_str in issue_str.split(',') {
             let num: u64 = num_str
@@ -166,9 +168,10 @@ pub async fn cmd_run(
             app.add_session(session).await?;
         }
 
-        app.github_client = Some(Box::new(client));
+        app.github_client = Some(client);
     } else {
-        let client = GhCliClient::from_config_repo(Some(config.project.repo.clone()));
+        let provider_config = config.effective_provider_config();
+        let client = create_provider(&provider_config)?;
         let label_refs: Vec<&str> = issue_filter_labels.iter().map(|s| s.as_str()).collect();
         let issues = client.list_issues(&label_refs).await?;
 
@@ -183,7 +186,7 @@ pub async fn cmd_run(
         let assigner = WorkAssigner::new(items);
 
         app.work_assignment_service = Some(WorkAssignmentService::new(assigner));
-        app.github_client = Some(Box::new(client));
+        app.github_client = Some(client);
     }
 
     app.once_mode = once;

@@ -147,7 +147,7 @@ impl App {
                     LogLevel::Error,
                 );
             }
-            TuiDataEvent::SuggestionData(payload) => {
+            TuiDataEvent::SuggestionData(Ok(payload)) => {
                 let active = self.pool.active_count();
                 let total = self.pool.total_count();
                 let suggestions = crate::tui::screens::home::Suggestion::build_suggestions(
@@ -175,6 +175,13 @@ impl App {
                     screen.set_suggestions(suggestions);
                     screen.set_stats(stats);
                 }
+            }
+            TuiDataEvent::SuggestionData(Err(e)) => {
+                self.activity_log.push_simple(
+                    "GitHub".into(),
+                    format!("Failed to fetch suggestion data: {}", e),
+                    LogLevel::Error,
+                );
             }
             TuiDataEvent::VersionCheckResult(Some(info)) => {
                 self.activity_log.push_simple(
@@ -427,10 +434,17 @@ impl App {
                     screen.finish_create_already_exists(number, state, title);
                 }
             }
-            TuiDataEvent::ProjectStats(data) => {
+            TuiDataEvent::ProjectStats(Ok(data)) => {
                 if let Some(ref mut screen) = self.screen_state.project_stats_screen {
                     screen.set_data(data);
                 }
+            }
+            TuiDataEvent::ProjectStats(Err(e)) => {
+                self.activity_log.push_simple(
+                    "GitHub".into(),
+                    format!("Failed to fetch project stats: {}", e),
+                    LogLevel::Error,
+                );
             }
             TuiDataEvent::AiPlanningResult(result) => {
                 if let Some(ref mut screen) = self.screen_state.milestone_wizard_screen {

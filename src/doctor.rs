@@ -98,6 +98,9 @@ pub fn run_all_checks(config: Option<&Config>) -> DoctorReport {
             checks.push(check_az_identity());
         }
     }
+    if let Some(cfg) = config {
+        checks.push(check_provider_matches_remote(cfg.provider.kind));
+    }
 
     checks.push(check_claude_cli());
 
@@ -303,6 +306,38 @@ fn check_git_remote() -> CheckResult {
             "git remote",
             "no git remote found — are you in a git repo?",
             CheckSeverity::Required,
+        ),
+    }
+}
+
+fn check_provider_matches_remote(configured: ProviderKind) -> CheckResult {
+    match Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            let url = String::from_utf8_lossy(&out.stdout);
+            let detected = crate::provider::detect_provider_from_remote(url.trim());
+            if detected == configured {
+                CheckResult::pass(
+                    "provider",
+                    format!("configured provider matches origin ({detected:?})"),
+                    CheckSeverity::Optional,
+                )
+            } else {
+                CheckResult::fail(
+                    "provider",
+                    format!(
+                        "configured provider is {configured:?}, but origin looks like {detected:?}"
+                    ),
+                    CheckSeverity::Optional,
+                )
+            }
+        }
+        _ => CheckResult::fail(
+            "provider",
+            "could not detect provider from origin remote",
+            CheckSeverity::Optional,
         ),
     }
 }

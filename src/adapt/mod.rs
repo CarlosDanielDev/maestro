@@ -274,9 +274,11 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
 
     // Phase 4: Materialize
     eprintln!("Phase 4: Creating GitHub artifacts...");
-    let github = crate::provider::github::client::GhCliClient::from_config_repo(
-        project_cfg.as_ref().map(|c| c.project.repo.clone()),
-    );
+    let provider_config = project_cfg
+        .as_ref()
+        .map(|c| c.effective_provider_config())
+        .unwrap_or_default();
+    let github = crate::provider::create_provider(&provider_config)?;
     let materializer = GhMaterializer::new(github);
     let result = materializer.materialize(&plan, &report, false).await?;
 
@@ -354,9 +356,16 @@ pub async fn detect_milestone_hint(
         ));
     }
 
-    let github = crate::provider::github::client::GhCliClient::from_config_repo(
-        project_cfg.map(|c| c.project.repo.clone()),
-    );
+    let provider_config = project_cfg
+        .map(|c| c.effective_provider_config())
+        .unwrap_or_default();
+    let github = match crate::provider::create_provider(&provider_config) {
+        Ok(github) => github,
+        Err(e) => {
+            tracing::warn!("Failed to create provider for pattern detection: {e}");
+            return None;
+        }
+    };
     let mut titles: Vec<String> = Vec::new();
     for state in ["open", "closed"] {
         match crate::provider::github::client::RepoProvider::list_milestones(&github, state).await {

@@ -1,6 +1,6 @@
 use crate::commands::setup::{DEFAULT_MAX_CONCURRENT, setup_app_from_config, startup_cleanup};
 use crate::config::Config;
-use crate::provider::github::client::GhCliClient;
+use crate::provider::create_provider;
 use crate::session::worktree::GitWorktreeManager;
 use crate::state::store::StateStore;
 use crate::tui::app::App;
@@ -35,7 +35,6 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         Err(e) => return Err(e),
     };
     let config = loaded.as_ref().map(|l| l.config.clone());
-    let github_repo = config.as_ref().map(|c| c.project.repo.clone());
 
     let repo_name = config
         .as_ref()
@@ -115,8 +114,9 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
     let worktree_mgr = Box::new(GitWorktreeManager::new(repo_root));
 
     let mut app = if let Some(lc) = loaded {
+        let provider_config = lc.config.effective_provider_config();
         let mut app = setup_app_from_config(lc, store, worktree_mgr, None);
-        app.github_client = Some(Box::new(GhCliClient::from_config_repo(github_repo)));
+        app.github_client = Some(create_provider(&provider_config)?);
         app
     } else {
         App::new(

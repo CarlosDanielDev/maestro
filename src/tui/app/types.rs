@@ -342,7 +342,7 @@ pub enum TuiDataEvent {
         title: String,
     },
     /// Aggregated stats for the Project Stats screen (#292).
-    ProjectStats(crate::tui::screens::project_stats::ProjectStatsData),
+    ProjectStats(anyhow::Result<crate::tui::screens::project_stats::ProjectStatsData>),
     /// AI planning result for the Milestone Wizard (#294). `Err(s)` is the
     /// human-readable failure reason rendered on the `Failed` step.
     AiPlanningResult(Result<crate::tui::screens::milestone_wizard::AiGeneratedPlan, String>),
@@ -361,7 +361,7 @@ pub enum TuiDataEvent {
     ),
     Milestones(anyhow::Result<Vec<(Milestone, Vec<Issue>)>>),
     Issue(anyhow::Result<Issue>, Option<String>),
-    SuggestionData(SuggestionDataPayload),
+    SuggestionData(anyhow::Result<SuggestionDataPayload>),
     VersionCheckResult(Option<crate::updater::ReleaseInfo>),
     UpgradeResult(Result<String, String>),
     AdaptScanResult(anyhow::Result<Box<ProjectProfile>>),
