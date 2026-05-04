@@ -207,6 +207,20 @@ impl TokenUsage {
     }
 }
 
+/// Resolved per-session mode settings.
+///
+/// Kept in `session::types` rather than `config` so sessions can persist the
+/// effective spawn-time settings without depending on the full runtime config.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionModeConfig {
+    #[serde(default)]
+    pub system_prompt: String,
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    #[serde(default)]
+    pub permission_mode: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
@@ -218,6 +232,9 @@ pub struct Session {
     pub issue_numbers: Vec<u64>,
     pub model: String,
     pub mode: String,
+    /// Resolved mode settings captured when the session was created.
+    #[serde(default)]
+    pub mode_config: Option<SessionModeConfig>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
     pub cost_usd: f64,
@@ -364,6 +381,7 @@ impl Session {
             issue_numbers: Vec::new(),
             model,
             mode,
+            mode_config: None,
             started_at: None,
             finished_at: None,
             cost_usd: 0.0,
@@ -440,6 +458,11 @@ impl Session {
     /// Builder method to attach image paths to a session.
     pub fn with_image_paths(mut self, paths: Vec<PathBuf>) -> Self {
         self.image_paths = paths;
+        self
+    }
+
+    pub fn with_mode_config(mut self, mode_config: Option<SessionModeConfig>) -> Self {
+        self.mode_config = mode_config;
         self
     }
 

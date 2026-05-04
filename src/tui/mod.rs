@@ -298,6 +298,8 @@ async fn event_loop(
                 app::TuiCommand::LaunchPromptSession(config) => {
                     let model = app.session_config.default_model.clone();
                     let mode = app.session_config.default_mode.clone();
+                    let mode_config =
+                        crate::modes::resolve_session_mode_config(&mode, app.config.as_ref());
 
                     let original_prompt = config.prompt.clone();
                     let prompt = if config.image_paths.is_empty() {
@@ -312,7 +314,8 @@ async fn event_loop(
                     };
 
                     let session =
-                        crate::session::types::Session::new(prompt, model, mode, None, None);
+                        crate::session::types::Session::new(prompt, model, mode, None, None)
+                            .with_mode_config(mode_config);
 
                     // Record in prompt history
                     app.prompt_history
