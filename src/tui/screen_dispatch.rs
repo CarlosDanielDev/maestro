@@ -353,9 +353,16 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         .push(app::TuiCommand::FetchProjectStats);
                 }
                 app::TuiMode::MilestoneWizard => {
+                    let provider_kind = app
+                        .config
+                        .as_ref()
+                        .map(|c| c.provider.kind)
+                        .unwrap_or_default();
                     app.screen_state
                         .milestone_wizard_screen
-                        .get_or_insert_with(screens::MilestoneWizardScreen::new);
+                        .get_or_insert_with(|| {
+                            screens::MilestoneWizardScreen::with_provider_kind(provider_kind)
+                        });
                 }
                 app::TuiMode::IssueBrowser => {
                     let layout = app
@@ -400,8 +407,14 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     }
                 }
                 app::TuiMode::AdaptWizard => {
-                    app.screen_state.adapt_screen =
-                        Some(crate::tui::screens::adapt::AdaptScreen::new());
+                    let provider_kind = app
+                        .config
+                        .as_ref()
+                        .map(|c| c.provider.kind)
+                        .unwrap_or_default();
+                    app.screen_state.adapt_screen = Some(
+                        crate::tui::screens::adapt::AdaptScreen::with_provider_kind(provider_kind),
+                    );
                 }
                 app::TuiMode::PrReview => {
                     app.screen_state.pr_review_screen =

@@ -2,6 +2,7 @@ pub mod ai_planning;
 mod draw;
 pub mod types;
 
+use crate::provider::types::ProviderKind;
 pub use ai_planning::{build_planning_prompt, parse_planning_response};
 pub use types::{AiGeneratedPlan, AiProposedIssue, MilestonePlanPayload, MilestoneWizardStep};
 
@@ -222,6 +223,7 @@ use ratatui::{
 /// and AI launch; #297 wires the Review/Preview/Materializing/Complete
 /// steps and the GitHub creation chain.
 pub struct MilestoneWizardScreen {
+    provider_kind: ProviderKind,
     step: MilestoneWizardStep,
     payload: MilestonePlanPayload,
     pub(super) goal_field: TextAreaField,
@@ -256,8 +258,20 @@ impl MilestoneWizardScreen {
         Self::with_clipboard(Box::new(SystemClipboard))
     }
 
+    pub fn with_provider_kind(provider_kind: ProviderKind) -> Self {
+        Self::with_clipboard_and_provider_kind(Box::new(SystemClipboard), provider_kind)
+    }
+
     pub fn with_clipboard(clipboard: Box<dyn ClipboardProvider>) -> Self {
+        Self::with_clipboard_and_provider_kind(clipboard, ProviderKind::default())
+    }
+
+    pub fn with_clipboard_and_provider_kind(
+        clipboard: Box<dyn ClipboardProvider>,
+        provider_kind: ProviderKind,
+    ) -> Self {
         Self {
+            provider_kind,
             step: MilestoneWizardStep::default(),
             payload: MilestonePlanPayload::default(),
             goal_field: TextAreaField::multi_line(),
@@ -275,6 +289,14 @@ impl MilestoneWizardScreen {
             milestone_reused: false,
             skipped_issue_numbers: Vec::new(),
         }
+    }
+
+    pub fn milestone_label(&self) -> &'static str {
+        crate::provider::types::provider_milestone_label(self.provider_kind)
+    }
+
+    pub fn milestone_label_lowercase(&self) -> String {
+        self.milestone_label().to_ascii_lowercase()
     }
 
     /// Route a pasted payload into the active text surface for the
@@ -415,8 +437,11 @@ impl MilestoneWizardScreen {
     /// #452 helpers. Returns `Some(reason)` on the first failure.
     pub fn plan_validation_error(&self) -> Option<String> {
         let plan = self.generated_plan.as_ref()?;
-        if let Err(e) = crate::util::validate_title(&plan.milestone_title, "milestone title") {
-            return Some(format!("Invalid milestone title: {e}"));
+        let label = self.milestone_label_lowercase();
+        if let Err(e) =
+            crate::util::validate_title(&plan.milestone_title, &format!("{label} title"))
+        {
+            return Some(format!("Invalid {label} title: {e}"));
         }
         for issue in plan.issues.iter().filter(|i| i.accepted) {
             if let Err(e) = crate::util::validate_title(&issue.title, "issue title") {
@@ -669,7 +694,7 @@ impl Default for MilestoneWizardScreen {
 impl KeymapProvider for MilestoneWizardScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
         vec![KeyBindingGroup {
-            title: "Milestone Wizard",
+            title: "Wizard",
             bindings: vec![
                 KeyBinding {
                     key: "Enter",

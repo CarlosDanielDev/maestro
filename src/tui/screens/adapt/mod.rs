@@ -6,6 +6,7 @@ pub use types::*;
 use crate::adapt::types::{
     AdaptPlan, AdaptReport, MaterializeResult, ProjectProfile, ScaffoldResult,
 };
+use crate::provider::types::ProviderKind;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -17,6 +18,7 @@ use super::{Screen, ScreenAction};
 const FIELD_COUNT: usize = 5;
 
 pub struct AdaptScreen {
+    pub provider_kind: ProviderKind,
     pub step: AdaptStep,
     pub config: AdaptWizardConfig,
     pub selected_field: usize,
@@ -31,11 +33,16 @@ pub struct AdaptScreen {
 
 impl AdaptScreen {
     pub fn new() -> Self {
+        Self::with_provider_kind(ProviderKind::default())
+    }
+
+    pub fn with_provider_kind(provider_kind: ProviderKind) -> Self {
         let (results, loaded_from_cache) = match AdaptResults::load_cache() {
             Some(cached) => (cached, true),
             None => (AdaptResults::default(), false),
         };
         Self {
+            provider_kind,
             step: AdaptStep::Configure,
             config: AdaptWizardConfig::default(),
             selected_field: 0,
@@ -46,6 +53,22 @@ impl AdaptScreen {
             cancelled: false,
             loaded_from_cache,
         }
+    }
+
+    pub fn milestone_label(&self) -> &'static str {
+        crate::provider::types::provider_milestone_label(self.provider_kind)
+    }
+
+    pub fn milestone_label_lowercase(&self) -> String {
+        self.milestone_label().to_ascii_lowercase()
+    }
+
+    pub fn issue_label_plural(&self) -> &'static str {
+        crate::provider::types::provider_issue_label_plural(self.provider_kind)
+    }
+
+    pub fn issue_label_plural_lowercase(&self) -> String {
+        self.issue_label_plural().to_ascii_lowercase()
     }
 
     pub fn tick(&mut self) {
@@ -251,6 +274,12 @@ impl AdaptScreen {
             _ => {}
         }
         ScreenAction::None
+    }
+}
+
+impl Default for AdaptScreen {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

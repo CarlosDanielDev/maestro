@@ -8,13 +8,13 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-const GOAL_QUESTIONS: &[&str] = &[
-    "What is the main objective of this milestone?",
+const GOAL_QUESTION_TAILS: &[&str] = &[
     "What problem does it solve?",
     "Who benefits when this ships?",
 ];
 
-const NON_GOAL_PROMPT: &str = "What should this milestone explicitly NOT include? Listing non-goals up front prevents scope creep.";
+const NON_GOAL_PROMPT_SUFFIX: &str =
+    " explicitly NOT include? Listing non-goals up front prevents scope creep.";
 
 impl MilestoneWizardScreen {
     pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, _theme: &Theme) {
@@ -55,7 +55,7 @@ impl MilestoneWizardScreen {
         .block(
             Block::default()
                 .borders(Borders::BOTTOM)
-                .title("Milestone Wizard"),
+                .title(format!("{} Wizard", self.milestone_label())),
         );
         f.render_widget(header, area);
     }
@@ -81,11 +81,17 @@ impl MilestoneWizardScreen {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(GOAL_QUESTIONS.len() as u16 + 2),
+                Constraint::Length(GOAL_QUESTION_TAILS.len() as u16 + 3),
                 Constraint::Min(3),
             ])
             .split(area);
-        self.draw_questions(f, chunks[0], "AI", GOAL_QUESTIONS);
+        let mut questions = Vec::with_capacity(GOAL_QUESTION_TAILS.len() + 1);
+        questions.push(format!(
+            "What is the main objective of this {}?",
+            self.milestone_label_lowercase()
+        ));
+        questions.extend(GOAL_QUESTION_TAILS.iter().map(|q| (*q).to_string()));
+        self.draw_questions(f, chunks[0], "AI", &questions);
         // Block + cursor style were set by `refresh_field_blocks` on the
         // mutable draw entry point. TextArea::widget renders its own
         // content, cursor, and border.
@@ -97,7 +103,12 @@ impl MilestoneWizardScreen {
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(3)])
             .split(area);
-        self.draw_questions(f, chunks[0], "AI", &[NON_GOAL_PROMPT]);
+        let prompt = format!(
+            "What should this {}{}",
+            self.milestone_label_lowercase(),
+            NON_GOAL_PROMPT_SUFFIX
+        );
+        self.draw_questions(f, chunks[0], "AI", &[prompt]);
         f.render_widget(self.non_goals_field.area(), chunks[1]);
     }
 
@@ -232,7 +243,7 @@ impl MilestoneWizardScreen {
     fn draw_preview_step(&self, f: &mut Frame, area: Rect) {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title("Preview  (Enter to confirm and create on GitHub)");
+            .title("Preview  (Enter to confirm and create)");
         let inner = block.inner(area);
         f.render_widget(block, area);
         let Some(plan) = self.generated_plan() else {
@@ -272,7 +283,7 @@ impl MilestoneWizardScreen {
         f.render_widget(block, area);
         let label = match self.materialize_progress() {
             Some((created, total)) => format!("Creating issue {}/{}…", created, total),
-            None => "Submitting plan to GitHub…".to_string(),
+            None => "Submitting plan to provider…".to_string(),
         };
         f.render_widget(
             Paragraph::new(vec![
@@ -297,8 +308,10 @@ impl MilestoneWizardScreen {
             let skipped_count = self.skipped_issue_numbers().len();
             if self.milestone_was_reused() {
                 let mut summary = format!(
-                    "Reused existing milestone #{}; created {} issues",
-                    num, created_count
+                    "Reused existing {} #{}; created {} issues",
+                    self.milestone_label_lowercase(),
+                    num,
+                    created_count
                 );
                 if skipped_count > 0 {
                     let nums: Vec<String> = self
@@ -321,7 +334,7 @@ impl MilestoneWizardScreen {
                 )));
             } else {
                 lines.push(Line::from(Span::styled(
-                    format!("Milestone #{} created", num),
+                    format!("{} #{} created", self.milestone_label(), num),
                     Style::default()
                         .fg(Color::LightGreen)
                         .add_modifier(Modifier::BOLD),
@@ -352,7 +365,7 @@ impl MilestoneWizardScreen {
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 
-    fn draw_questions(&self, f: &mut Frame, area: Rect, role: &str, questions: &[&str]) {
+    fn draw_questions(&self, f: &mut Frame, area: Rect, role: &str, questions: &[String]) {
         let mut lines: Vec<Line> = Vec::new();
         for q in questions {
             lines.push(Line::from(vec![

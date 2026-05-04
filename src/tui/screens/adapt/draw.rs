@@ -221,7 +221,10 @@ fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
     if let Some(ref plan) = screen.results.plan {
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
-            Span::styled("Milestones: ", Style::default().fg(theme.text_secondary)),
+            Span::styled(
+                format!("{}s: ", screen.milestone_label()),
+                Style::default().fg(theme.text_secondary),
+            ),
             Span::styled(
                 format!("{}", plan.milestones.len()),
                 Style::default().fg(theme.text_primary),
@@ -229,7 +232,10 @@ fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
         ]));
         let issue_count: usize = plan.milestones.iter().map(|m| m.issues.len()).sum();
         lines.push(Line::from(vec![
-            Span::styled("Issues: ", Style::default().fg(theme.text_secondary)),
+            Span::styled(
+                format!("{}: ", screen.issue_label_plural()),
+                Style::default().fg(theme.text_secondary),
+            ),
             Span::styled(
                 format!("{}", issue_count),
                 Style::default().fg(theme.text_primary),
@@ -261,9 +267,11 @@ fn draw_complete(screen: &AdaptScreen, f: &mut Frame, area: Rect, theme: &Theme)
             ),
             Span::styled(
                 format!(
-                    "{} milestones, {} issues",
+                    "{} {}s, {} {}",
                     mat.milestones_created.len(),
-                    mat.issues_created.len()
+                    screen.milestone_label_lowercase(),
+                    mat.issues_created.len(),
+                    screen.issue_label_plural_lowercase()
                 ),
                 Style::default().fg(theme.text_primary),
             ),
@@ -347,7 +355,13 @@ fn phase_summary(screen: &AdaptScreen, step: AdaptStep) -> String {
         AdaptStep::Planning => {
             if let Some(ref p) = screen.results.plan {
                 let issues: usize = p.milestones.iter().map(|m| m.issues.len()).sum();
-                format!(" — {} milestones, {} issues", p.milestones.len(), issues)
+                format!(
+                    " — {} {}s, {} {}",
+                    p.milestones.len(),
+                    screen.milestone_label_lowercase(),
+                    issues,
+                    screen.issue_label_plural_lowercase()
+                )
             } else {
                 String::new()
             }
@@ -365,9 +379,11 @@ fn phase_summary(screen: &AdaptScreen, step: AdaptStep) -> String {
         AdaptStep::Materializing => {
             if let Some(ref m) = screen.results.materialize {
                 format!(
-                    " — {} milestones, {} issues created",
+                    " — {} {}s, {} {} created",
                     m.milestones_created.len(),
-                    m.issues_created.len()
+                    screen.milestone_label_lowercase(),
+                    m.issues_created.len(),
+                    screen.issue_label_plural_lowercase()
                 )
             } else {
                 String::new()

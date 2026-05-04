@@ -2,6 +2,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
+pub use super::terms::{
+    provider_display_name, provider_issue_label_lowercase, provider_issue_label_plural,
+    provider_milestone_label,
+};
+
 static BLOCKED_BY_RE: OnceLock<regex::Regex> = OnceLock::new();
 
 fn blocked_by_regex() -> &'static regex::Regex {
