@@ -29,7 +29,11 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         );
     }
 
-    let loaded = Config::find_and_load_with_path().ok();
+    let loaded = match Config::find_and_load_with_path() {
+        Ok(loaded) => Some(loaded),
+        Err(e) if e.to_string().starts_with("No maestro.toml found") => None,
+        Err(e) => return Err(e),
+    };
     let config = loaded.as_ref().map(|l| l.config.clone());
     let github_repo = config.as_ref().map(|c| c.project.repo.clone());
 
