@@ -125,12 +125,6 @@ mod tests {
         wrap_lines(&lines, (0, 0), width).lines
     }
 
-    // Helper: wrap multiple logical lines and return visual lines.
-    fn wrap_multi(lines: &[&str], width: u16) -> Vec<String> {
-        let owned: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
-        wrap_lines(&owned, (0, 0), width).lines
-    }
-
     // === Group 1: Basic wrapping ===
 
     #[test]

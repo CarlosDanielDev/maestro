@@ -473,7 +473,7 @@ mod tests {
         ]);
         assigner.mark_in_progress(1);
         let cascaded = assigner.mark_failed_cascade(1);
-        let mut nums = cascaded.clone();
+        let mut nums = cascaded;
         nums.sort();
         assert_eq!(nums, vec![2, 3]);
         assert_eq!(assigner.count_by_status().failed, 3);
@@ -488,7 +488,7 @@ mod tests {
         ]);
         assigner.mark_in_progress(1);
         let cascaded = assigner.mark_failed_cascade(1);
-        let mut nums = cascaded.clone();
+        let mut nums = cascaded;
         nums.sort();
         assert_eq!(nums, vec![2, 3]);
     }

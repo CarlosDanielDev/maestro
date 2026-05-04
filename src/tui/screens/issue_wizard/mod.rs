@@ -1484,12 +1484,14 @@ mod tests {
 
     #[test]
     fn render_body_includes_attachments_section_when_images_present() {
-        let mut p = IssueCreationPayload::default();
-        p.title = "t".into();
-        p.overview = "o".into();
-        p.expected_behavior = "e".into();
-        p.acceptance_criteria = "a".into();
-        p.image_paths = vec!["/tmp/a.png".into(), "/tmp/b.png".into()];
+        let p = IssueCreationPayload {
+            title: "t".into(),
+            overview: "o".into(),
+            expected_behavior: "e".into(),
+            acceptance_criteria: "a".into(),
+            image_paths: vec!["/tmp/a.png".into(), "/tmp/b.png".into()],
+            ..Default::default()
+        };
         let body = render_body_markdown(&p);
         assert!(body.contains("## Attachments"));
         assert!(body.contains("[Attached image: /tmp/a.png]"));
@@ -1498,11 +1500,13 @@ mod tests {
 
     #[test]
     fn render_body_omits_attachments_section_when_empty() {
-        let mut p = IssueCreationPayload::default();
-        p.title = "t".into();
-        p.overview = "o".into();
-        p.expected_behavior = "e".into();
-        p.acceptance_criteria = "a".into();
+        let p = IssueCreationPayload {
+            title: "t".into(),
+            overview: "o".into(),
+            expected_behavior: "e".into(),
+            acceptance_criteria: "a".into(),
+            ..Default::default()
+        };
         let body = render_body_markdown(&p);
         assert!(!body.contains("## Attachments"));
     }

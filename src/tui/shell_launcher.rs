@@ -98,9 +98,12 @@ mod tests {
         let path = PathBuf::from("/tmp/wt/issue-542");
         let result = launcher.open_shell_at(&path);
         assert!(result.is_ok());
-        let calls = launcher.calls.lock().expect("mutex");
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0], path);
+        let (len, called_path) = {
+            let calls = launcher.calls.lock().expect("mutex");
+            (calls.len(), calls[0].clone())
+        };
+        assert_eq!(len, 1);
+        assert_eq!(called_path, path);
     }
 
     #[test]

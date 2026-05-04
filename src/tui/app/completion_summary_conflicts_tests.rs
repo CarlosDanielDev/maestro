@@ -16,7 +16,7 @@ fn build_completion_summary_gate_failure_message_truncated() {
         None,
     );
     session.status = crate::session::types::SessionStatus::NeedsReview;
-    session.gate_results = vec![GateResultEntry::fail("tests", &"x".repeat(300))];
+    session.gate_results = vec![GateResultEntry::fail("tests", "x".repeat(300))];
     app.pool.enqueue(session);
 
     let summary = app.build_completion_summary();

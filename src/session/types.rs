@@ -1364,10 +1364,9 @@ mod tests {
         let mut s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
         s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
             .unwrap();
-        let last = s
-            .activity_log
-            .last()
-            .expect("activity log should have entry");
+        let Some(last) = s.activity_log.last() else {
+            panic!("activity log should have entry");
+        };
         assert!(
             last.message.contains("STATUS:"),
             "expected STATUS: prefix, got: {}",

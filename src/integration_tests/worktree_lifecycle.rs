@@ -58,10 +58,10 @@ fn multiple_sessions_each_get_unique_worktree() {
     let ids: Vec<_> = pool.all_sessions().iter().map(|s| s.id).collect();
     let mut paths: Vec<String> = Vec::new();
     for id in ids {
-        if let Some(managed) = pool.get_active_mut(id) {
-            if let Some(ref path) = managed.worktree_path {
-                paths.push(path.to_string_lossy().to_string());
-            }
+        if let Some(managed) = pool.get_active_mut(id)
+            && let Some(ref path) = managed.worktree_path
+        {
+            paths.push(path.to_string_lossy().to_string());
         }
     }
 

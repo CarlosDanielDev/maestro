@@ -6,16 +6,18 @@ use async_trait::async_trait;
 #[async_trait]
 impl RepoProvider for MockGitHubClient {
     async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
-        let state = self.inner.lock().unwrap();
         let label_set: std::collections::HashSet<&str> = labels.iter().copied().collect();
-        let filtered = state
-            .issues
-            .iter()
-            .filter(|i| {
-                label_set.is_empty() || i.labels.iter().any(|l| label_set.contains(l.as_str()))
-            })
-            .cloned()
-            .collect();
+        let filtered = {
+            let state = self.inner.lock().unwrap();
+            state
+                .issues
+                .iter()
+                .filter(|i| {
+                    label_set.is_empty() || i.labels.iter().any(|l| label_set.contains(l.as_str()))
+                })
+                .cloned()
+                .collect()
+        };
         Ok(filtered)
     }
 
@@ -51,6 +53,7 @@ impl RepoProvider for MockGitHubClient {
             anyhow::bail!("{}", err);
         }
         state.add_label_calls.push((issue, label.to_string()));
+        drop(state);
         Ok(())
     }
 
@@ -60,6 +63,7 @@ impl RepoProvider for MockGitHubClient {
             anyhow::bail!("{}", err);
         }
         state.remove_label_calls.push((issue, label.to_string()));
+        drop(state);
         Ok(())
     }
 
@@ -204,6 +208,7 @@ impl RepoProvider for MockGitHubClient {
             event,
             body: body.to_string(),
         });
+        drop(state);
         Ok(())
     }
 
@@ -227,6 +232,7 @@ impl RepoProvider for MockGitHubClient {
         if !state.labels.contains(&name.to_string()) {
             state.labels.push(name.to_string());
         }
+        drop(state);
         Ok(())
     }
 
@@ -251,6 +257,7 @@ impl RepoProvider for MockGitHubClient {
         {
             m.description = description.to_string();
         }
+        drop(state);
         Ok(())
     }
 
@@ -312,6 +319,7 @@ impl RepoProvider for MockGitHubClient {
         if let Some(ref err) = state.merge_pr_error {
             anyhow::bail!("{}", err);
         }
+        drop(state);
         Ok(())
     }
 }

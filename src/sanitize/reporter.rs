@@ -222,9 +222,7 @@ mod tests {
             vec![make_finding(Severity::Warning, "src/b.rs", 5)],
         );
 
-        let result = TextReporter::default()
-            .generate(&report, Severity::Info)
-            .unwrap();
+        let result = TextReporter.generate(&report, Severity::Info).unwrap();
 
         assert!(result.contains("CRITICAL"));
         assert!(result.contains("WARNING"));
@@ -236,9 +234,7 @@ mod tests {
     #[test]
     fn text_format_empty_report_shows_no_issues_found() {
         let report = SanitizeReport::default();
-        let result = TextReporter::default()
-            .generate(&report, Severity::Info)
-            .unwrap();
+        let result = TextReporter.generate(&report, Severity::Info).unwrap();
         assert!(result.to_lowercase().contains("no issues found"));
     }
 
@@ -251,9 +247,7 @@ mod tests {
             vec![make_finding(Severity::Critical, "src/main.rs", 0)],
         );
 
-        let result = JsonReporter::default()
-            .generate(&report, Severity::Info)
-            .unwrap();
+        let result = JsonReporter.generate(&report, Severity::Info).unwrap();
 
         let deserialized: SanitizeReport =
             serde_json::from_str(&result).expect("output must be valid JSON");
@@ -286,9 +280,7 @@ mod tests {
             vec![],
         );
 
-        let result = MarkdownReporter::default()
-            .generate(&report, Severity::Info)
-            .unwrap();
+        let result = MarkdownReporter.generate(&report, Severity::Info).unwrap();
 
         assert!(result.contains('#'));
         assert!(result.contains("src/foo.rs"));
@@ -299,9 +291,7 @@ mod tests {
     #[test]
     fn markdown_format_empty_report_shows_no_issues_found() {
         let report = SanitizeReport::default();
-        let result = MarkdownReporter::default()
-            .generate(&report, Severity::Info)
-            .unwrap();
+        let result = MarkdownReporter.generate(&report, Severity::Info).unwrap();
         assert!(result.to_lowercase().contains("no issues found"));
     }
 
@@ -318,9 +308,7 @@ mod tests {
             vec![],
         );
 
-        let result = TextReporter::default()
-            .generate(&report, Severity::Warning)
-            .unwrap();
+        let result = TextReporter.generate(&report, Severity::Warning).unwrap();
 
         assert!(result.contains("src/a.rs"));
         assert!(result.contains("src/b.rs"));
@@ -337,9 +325,7 @@ mod tests {
             vec![],
         );
 
-        let result = TextReporter::default()
-            .generate(&report, Severity::Critical)
-            .unwrap();
+        let result = TextReporter.generate(&report, Severity::Critical).unwrap();
 
         assert!(!result.contains("src/x.rs"));
         assert!(!result.contains("src/y.rs"));

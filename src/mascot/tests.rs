@@ -342,17 +342,17 @@ fn widget_applies_clawd_orange_to_non_space_cells() {
     let expected_fg = Color::Rgb(215, 119, 87);
     for y in 0..buf.area.height {
         for x in 0..buf.area.width {
-            if let Some(cell) = buf.cell((x, y)) {
-                if cell.symbol() != " " {
-                    assert_eq!(
-                        cell.fg,
-                        expected_fg,
-                        "Wrong fg at ({}, {}): symbol={:?}",
-                        x,
-                        y,
-                        cell.symbol()
-                    );
-                }
+            if let Some(cell) = buf.cell((x, y))
+                && cell.symbol() != " "
+            {
+                assert_eq!(
+                    cell.fg,
+                    expected_fg,
+                    "Wrong fg at ({}, {}): symbol={:?}",
+                    x,
+                    y,
+                    cell.symbol()
+                );
             }
         }
     }

@@ -124,10 +124,7 @@ fn run_to_report(
     let _ = state.transition(HealthInput::Key(KeyCode::Enter)); // Picker → Loading
     let dor = check_issues(&issues);
     let anomalies = analyze(&milestone.description, &issues);
-    let report = HealthReport {
-        dor,
-        anomalies: anomalies.clone(),
-    };
+    let report = HealthReport { dor, anomalies };
     let _ = state.transition(HealthInput::DataFetched(Ok((milestone, issues))));
     report
 }

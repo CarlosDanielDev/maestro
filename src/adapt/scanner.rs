@@ -590,11 +590,13 @@ fn build_tree_recursive(current: &Path, depth: usize, max_depth: usize, lines: &
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub struct MockProjectScanner {
     result: Option<ProjectProfile>,
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 impl MockProjectScanner {
     pub fn with_profile(profile: ProjectProfile) -> Self {
         Self {

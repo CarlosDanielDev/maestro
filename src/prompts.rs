@@ -468,7 +468,7 @@ mod tests {
     // --- image prompt tests (issue #42) ---
 
     fn make_image_paths(names: &[&str]) -> Vec<std::path::PathBuf> {
-        names.iter().map(|n| std::path::PathBuf::from(n)).collect()
+        names.iter().map(std::path::PathBuf::from).collect()
     }
 
     #[test]

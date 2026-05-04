@@ -847,8 +847,10 @@ mod tests {
 
     #[test]
     fn from_config_override_replaces_single_field() {
-        let mut overrides = ThemeOverrides::default();
-        overrides.text_primary = Some(SerializableColor(Color::Magenta));
+        let overrides = ThemeOverrides {
+            text_primary: Some(SerializableColor(Color::Magenta)),
+            ..Default::default()
+        };
         let cfg = ThemeConfig {
             preset: ThemePreset::Dark,
             overrides,
@@ -860,9 +862,11 @@ mod tests {
 
     #[test]
     fn from_config_multiple_overrides_all_applied() {
-        let mut overrides = ThemeOverrides::default();
-        overrides.text_primary = Some(SerializableColor(Color::Magenta));
-        overrides.border_active = Some(SerializableColor(Color::LightBlue));
+        let overrides = ThemeOverrides {
+            text_primary: Some(SerializableColor(Color::Magenta)),
+            border_active: Some(SerializableColor(Color::LightBlue)),
+            ..Default::default()
+        };
         let cfg = ThemeConfig {
             preset: ThemePreset::Dark,
             overrides,
@@ -1439,8 +1443,10 @@ mod tests {
 
     #[test]
     fn from_config_overrides_selection_bg() {
-        let mut overrides = ThemeOverrides::default();
-        overrides.selection_bg = Some(SerializableColor(Color::Magenta));
+        let overrides = ThemeOverrides {
+            selection_bg: Some(SerializableColor(Color::Magenta)),
+            ..Default::default()
+        };
         let cfg = ThemeConfig {
             preset: ThemePreset::Dark,
             overrides,
@@ -1450,8 +1456,10 @@ mod tests {
 
     #[test]
     fn from_config_overrides_selection_fg() {
-        let mut overrides = ThemeOverrides::default();
-        overrides.selection_fg = Some(SerializableColor(Color::LightYellow));
+        let overrides = ThemeOverrides {
+            selection_fg: Some(SerializableColor(Color::LightYellow)),
+            ..Default::default()
+        };
         let cfg = ThemeConfig {
             preset: ThemePreset::Dark,
             overrides,
@@ -1494,8 +1502,10 @@ mod tests {
 
     #[test]
     fn fkey_badge_override_applies() {
-        let mut overrides = ThemeOverrides::default();
-        overrides.fkey_badge_bg = Some(SerializableColor(Color::Magenta));
+        let overrides = ThemeOverrides {
+            fkey_badge_bg: Some(SerializableColor(Color::Magenta)),
+            ..Default::default()
+        };
         let cfg = ThemeConfig {
             preset: ThemePreset::Dark,
             overrides,

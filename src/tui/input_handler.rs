@@ -1731,9 +1731,12 @@ mod tests {
 
         handle_completion_summary(&mut app, &key('s'));
 
-        let captured = calls.lock().expect("mutex");
-        assert_eq!(captured.len(), 1);
-        assert_eq!(captured[0], PathBuf::from(".maestro/worktrees/issue-560"));
+        let (len, path) = {
+            let captured = calls.lock().expect("mutex");
+            (captured.len(), captured[0].clone())
+        };
+        assert_eq!(len, 1);
+        assert_eq!(path, PathBuf::from(".maestro/worktrees/issue-560"));
     }
 
     #[test]
