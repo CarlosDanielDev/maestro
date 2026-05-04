@@ -2,7 +2,7 @@ pub mod azure_devops;
 pub mod github;
 pub mod types;
 
-use self::github::client::RepoProvider;
+pub use self::github::client::{CreateOutcome, RepoProvider};
 use crate::config::ProviderConfig;
 use anyhow::Result;
 use types::ProviderKind;

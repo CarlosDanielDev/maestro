@@ -4,7 +4,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 
 use super::types::*;
-use crate::provider::github::client::{CreateOutcome, RepoProvider};
+use crate::provider::{CreateOutcome, RepoProvider, types::ProviderKind};
 
 const DEFAULT_LABEL_COLOR: &str = "EDEDED";
 
@@ -46,13 +46,17 @@ pub trait PlanMaterializer: Send + Sync {
     ) -> anyhow::Result<MaterializeResult>;
 }
 
-pub struct GhMaterializer<G: RepoProvider> {
-    github: G,
+pub struct RepoMaterializer<'a> {
+    provider: &'a dyn RepoProvider,
+    provider_kind: ProviderKind,
 }
 
-impl<G: RepoProvider> GhMaterializer<G> {
-    pub fn new(github: G) -> Self {
-        Self { github }
+impl<'a> RepoMaterializer<'a> {
+    pub fn new(provider_kind: ProviderKind, provider: &'a dyn RepoProvider) -> Self {
+        Self {
+            provider,
+            provider_kind,
+        }
     }
 
     /// Ensure all labels referenced in the plan (and tech-debt catalog) exist on
@@ -75,13 +79,13 @@ impl<G: RepoProvider> GhMaterializer<G> {
             return Ok(());
         }
 
-        let existing = self.github.list_labels().await?;
+        let existing = self.provider.list_labels().await?;
         let existing_names: HashSet<&str> = existing.iter().map(|l| l.as_str()).collect();
 
         for label in &needed {
             if !existing_names.contains(label.as_str()) {
                 let color = color_for_label(label);
-                self.github
+                self.provider
                     .create_label(label, color)
                     .await
                     .with_context(|| format!("Failed to create label '{}'", label))?;
@@ -93,7 +97,7 @@ impl<G: RepoProvider> GhMaterializer<G> {
 }
 
 #[async_trait]
-impl<G: RepoProvider> PlanMaterializer for GhMaterializer<G> {
+impl PlanMaterializer for RepoMaterializer<'_> {
     async fn materialize(
         &self,
         plan: &AdaptPlan,
@@ -114,7 +118,7 @@ impl<G: RepoProvider> PlanMaterializer for GhMaterializer<G> {
 
         for milestone in &plan.milestones {
             let ms_outcome = self
-                .github
+                .provider
                 .create_milestone(&milestone.title, &milestone.description)
                 .await?;
             let ms_number = ms_outcome.number();
@@ -127,11 +131,15 @@ impl<G: RepoProvider> PlanMaterializer for GhMaterializer<G> {
             });
 
             for issue in &milestone.issues {
-                let body =
-                    resolve_blocked_by(&issue.body, &issue.blocked_by_titles, &title_to_number);
+                let body = resolve_blocked_by(
+                    self.provider_kind,
+                    &issue.body,
+                    &issue.blocked_by_titles,
+                    &title_to_number,
+                );
 
                 let outcome = self
-                    .github
+                    .provider
                     .create_issue(&issue.title, &body, &issue.labels, Some(ms_number))
                     .await?;
                 let issue_number = outcome.number();
@@ -163,7 +171,7 @@ impl<G: RepoProvider> PlanMaterializer for GhMaterializer<G> {
             let body = build_tech_debt_catalog_body(&report.tech_debt_items);
             let first_ms = milestones_created.first().map(|m| m.number);
             let outcome = self
-                .github
+                .provider
                 .create_issue(
                     "chore: Tech debt catalog",
                     &body,
@@ -233,6 +241,7 @@ fn build_dry_run_result(plan: &AdaptPlan) -> MaterializeResult {
 }
 
 fn resolve_blocked_by(
+    provider_kind: ProviderKind,
     body: &str,
     blocked_by_titles: &[String],
     title_to_number: &HashMap<String, u64>,
@@ -245,7 +254,17 @@ fn resolve_blocked_by(
         .iter()
         .map(|title| {
             if let Some(num) = title_to_number.get(title) {
-                format!("- #{} {}", num, title)
+                match provider_kind {
+                    ProviderKind::Github => format!("- #{} {}", num, title),
+                    ProviderKind::AzureDevops => {
+                        // Reason: Azure DevOps has no native "blocked by" field in
+                        // the RepoProvider create_issue surface. Keep the human
+                        // `#N` line for existing GitHub-style section parsers and add
+                        // `blocked-by: #N` so provider-neutral work-item parsing can
+                        // reconstruct the dependency graph from the description.
+                        format!("- #{} {} (blocked-by: #{})", num, title, num)
+                    }
+                }
             } else {
                 format!("- {}", title)
             }
@@ -323,7 +342,279 @@ pub fn build_tech_debt_catalog_body(items: &[TechDebtItem]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::github::client::mock::MockGitHubClient;
+    use crate::provider::types::{
+        CheckRun, CiStatus, Issue, MergeMethod, Milestone, PullRequest, ReviewEvent,
+    };
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug, Clone)]
+    struct CreateIssueRecord {
+        title: String,
+        body: String,
+        labels: Vec<String>,
+        milestone: Option<u64>,
+    }
+
+    #[derive(Debug, Default)]
+    struct FakeState {
+        labels: Vec<String>,
+        list_labels_calls: u32,
+        list_labels_error: Option<String>,
+        create_label_calls: Vec<(String, String)>,
+        create_label_error: Option<String>,
+        existing_milestones: Vec<Milestone>,
+        created_milestones: Vec<Milestone>,
+        create_milestone_calls: Vec<(String, String)>,
+        milestone_counter: u64,
+        existing_issues: Vec<Issue>,
+        created_issues: Vec<Issue>,
+        create_issue_calls: Vec<CreateIssueRecord>,
+        issue_counter: u64,
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeProvider {
+        state: Arc<Mutex<FakeState>>,
+    }
+
+    impl FakeProvider {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn set_labels(&self, labels: Vec<String>) {
+            self.state.lock().unwrap().labels = labels;
+        }
+
+        fn set_list_labels_error(&self, msg: &str) {
+            self.state.lock().unwrap().list_labels_error = Some(msg.to_string());
+        }
+
+        fn set_create_label_error(&self, msg: &str) {
+            self.state.lock().unwrap().create_label_error = Some(msg.to_string());
+        }
+
+        fn list_labels_call_count(&self) -> u32 {
+            self.state.lock().unwrap().list_labels_calls
+        }
+
+        fn create_label_calls(&self) -> Vec<(String, String)> {
+            self.state.lock().unwrap().create_label_calls.clone()
+        }
+
+        fn set_existing_milestones(&self, milestones: Vec<Milestone>) {
+            self.state.lock().unwrap().existing_milestones = milestones;
+        }
+
+        fn create_milestone_calls(&self) -> Vec<(String, String)> {
+            self.state.lock().unwrap().create_milestone_calls.clone()
+        }
+
+        fn set_existing_issues(&self, issues: Vec<Issue>) {
+            self.state.lock().unwrap().existing_issues = issues;
+        }
+
+        fn create_issue_calls(&self) -> Vec<CreateIssueRecord> {
+            self.state.lock().unwrap().create_issue_calls.clone()
+        }
+    }
+
+    fn issue_by_title<'a>(issues: &'a [Issue], title: &str) -> Option<&'a Issue> {
+        issues.iter().find(|issue| issue.title == title)
+    }
+
+    fn milestone_by_title<'a>(milestones: &'a [Milestone], title: &str) -> Option<&'a Milestone> {
+        milestones.iter().find(|milestone| milestone.title == title)
+    }
+
+    #[async_trait]
+    impl RepoProvider for FakeProvider {
+        async fn list_issues(&self, _labels: &[&str]) -> anyhow::Result<Vec<Issue>> {
+            let state = self.state.lock().unwrap();
+            let mut issues = state.existing_issues.clone();
+            issues.extend(state.created_issues.clone());
+            Ok(issues)
+        }
+
+        async fn list_issues_by_milestone(&self, _milestone: &str) -> anyhow::Result<Vec<Issue>> {
+            Ok(Vec::new())
+        }
+
+        async fn list_milestones(&self, _state: &str) -> anyhow::Result<Vec<Milestone>> {
+            let state = self.state.lock().unwrap();
+            let mut milestones = state.existing_milestones.clone();
+            milestones.extend(state.created_milestones.clone());
+            Ok(milestones)
+        }
+
+        async fn get_issue(&self, number: u64) -> anyhow::Result<Issue> {
+            self.list_issues(&[])
+                .await?
+                .into_iter()
+                .find(|issue| issue.number == number)
+                .ok_or_else(|| anyhow::anyhow!("issue {number} not found"))
+        }
+
+        async fn add_label(&self, _issue_number: u64, _label: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn remove_label(&self, _issue_number: u64, _label: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn create_pr(
+            &self,
+            _issue_number: u64,
+            _title: &str,
+            _body: &str,
+            _head_branch: &str,
+            _base_branch: &str,
+        ) -> anyhow::Result<u64> {
+            anyhow::bail!("create_pr is not used by materializer tests")
+        }
+
+        async fn list_prs_for_branch(&self, _head_branch: &str) -> anyhow::Result<Vec<u64>> {
+            Ok(Vec::new())
+        }
+
+        async fn create_milestone(
+            &self,
+            title: &str,
+            description: &str,
+        ) -> anyhow::Result<CreateOutcome> {
+            let mut state = self.state.lock().unwrap();
+            if let Some(milestone) = milestone_by_title(&state.existing_milestones, title)
+                .or_else(|| milestone_by_title(&state.created_milestones, title))
+            {
+                return Ok(CreateOutcome::Existed {
+                    number: milestone.number,
+                    state: milestone.state.clone(),
+                });
+            }
+
+            state.milestone_counter += 1;
+            let number = state.milestone_counter;
+            state
+                .create_milestone_calls
+                .push((title.to_string(), description.to_string()));
+            state.created_milestones.push(Milestone {
+                number,
+                title: title.to_string(),
+                description: description.to_string(),
+                state: "open".to_string(),
+                open_issues: 0,
+                closed_issues: 0,
+            });
+            Ok(CreateOutcome::Created(number))
+        }
+
+        async fn create_issue(
+            &self,
+            title: &str,
+            body: &str,
+            labels: &[String],
+            milestone: Option<u64>,
+        ) -> anyhow::Result<CreateOutcome> {
+            let mut state = self.state.lock().unwrap();
+            if let Some(issue) = issue_by_title(&state.existing_issues, title)
+                .or_else(|| issue_by_title(&state.created_issues, title))
+            {
+                return Ok(CreateOutcome::Existed {
+                    number: issue.number,
+                    state: issue.state.clone(),
+                });
+            }
+
+            state.issue_counter += 1;
+            let number = state.issue_counter;
+            state.create_issue_calls.push(CreateIssueRecord {
+                title: title.to_string(),
+                body: body.to_string(),
+                labels: labels.to_vec(),
+                milestone,
+            });
+            state.created_issues.push(Issue {
+                number,
+                title: title.to_string(),
+                body: body.to_string(),
+                labels: labels.to_vec(),
+                state: "open".to_string(),
+                html_url: format!("https://example.invalid/issues/{number}"),
+                milestone,
+                assignees: Vec::new(),
+            });
+            Ok(CreateOutcome::Created(number))
+        }
+
+        async fn list_open_prs(&self) -> anyhow::Result<Vec<PullRequest>> {
+            Ok(Vec::new())
+        }
+
+        async fn get_pr(&self, _number: u64) -> anyhow::Result<PullRequest> {
+            anyhow::bail!("get_pr is not used by materializer tests")
+        }
+
+        async fn submit_pr_review(
+            &self,
+            _pr_number: u64,
+            _event: ReviewEvent,
+            _body: &str,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn list_labels(&self) -> anyhow::Result<Vec<String>> {
+            let mut state = self.state.lock().unwrap();
+            state.list_labels_calls += 1;
+            if let Some(err) = state.list_labels_error.clone() {
+                anyhow::bail!(err);
+            }
+            Ok(state.labels.clone())
+        }
+
+        async fn create_label(&self, name: &str, color: &str) -> anyhow::Result<()> {
+            let mut state = self.state.lock().unwrap();
+            if let Some(err) = state.create_label_error.clone() {
+                anyhow::bail!(err);
+            }
+            state
+                .create_label_calls
+                .push((name.to_string(), color.to_string()));
+            if !state.labels.iter().any(|label| label == name) {
+                state.labels.push(name.to_string());
+            }
+            Ok(())
+        }
+
+        async fn patch_milestone_description(
+            &self,
+            _milestone_number: u64,
+            _description: &str,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn ci_status_for_branch(&self, _branch: &str) -> anyhow::Result<CiStatus> {
+            Ok(CiStatus::NoneConfigured)
+        }
+
+        async fn ci_status_for_pr(&self, _pr_number: u64) -> anyhow::Result<CiStatus> {
+            Ok(CiStatus::NoneConfigured)
+        }
+
+        async fn ci_check_runs_for_pr(&self, _pr_number: u64) -> anyhow::Result<Vec<CheckRun>> {
+            Ok(Vec::new())
+        }
+
+        async fn ci_logs_for_check(&self, _check_id: &str) -> anyhow::Result<String> {
+            Ok(String::new())
+        }
+
+        async fn merge_pr(&self, _pr_number: u64, _method: MergeMethod) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
 
     fn sample_plan() -> AdaptPlan {
         AdaptPlan {
@@ -393,8 +684,8 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_creates_milestones_before_issues() {
-        let client = MockGitHubClient::new();
-        let materializer = GhMaterializer::new(client.clone());
+        let client = FakeProvider::new();
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -415,8 +706,8 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_resolves_blocked_by_titles() {
-        let client = MockGitHubClient::new();
-        let materializer = GhMaterializer::new(client.clone());
+        let client = FakeProvider::new();
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -436,9 +727,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn materialize_azure_devops_uses_provider_neutral_calls() {
+        let provider = FakeProvider::new();
+        provider.set_labels(vec!["enhancement".into(), "testing".into()]);
+        let materializer = RepoMaterializer::new(ProviderKind::AzureDevops, &provider);
+        let plan = sample_plan();
+        let report = sample_report();
+
+        let result = materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        assert_eq!(result.milestones_created.len(), 1);
+        assert_eq!(result.issues_created.len(), 2);
+        assert_eq!(provider.create_milestone_calls().len(), 1);
+        let calls = provider.create_issue_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].labels, vec!["enhancement".to_string()]);
+        assert_eq!(calls[0].milestone, Some(1));
+    }
+
+    #[tokio::test]
+    async fn materialize_azure_devops_dependency_encoding_round_trips_from_body() {
+        let provider = FakeProvider::new();
+        provider.set_labels(vec!["enhancement".into(), "testing".into()]);
+        let materializer = RepoMaterializer::new(ProviderKind::AzureDevops, &provider);
+        let plan = sample_plan();
+        let report = sample_report();
+
+        materializer
+            .materialize(&plan, &report, false)
+            .await
+            .unwrap();
+
+        let calls = provider.create_issue_calls();
+        let body = calls
+            .iter()
+            .find(|call| call.title == "test: add tests")
+            .map(|call| call.body.clone())
+            .expect("dependent work item should have been created");
+        let issue = crate::provider::types::Issue {
+            number: 2,
+            title: "test: add tests".into(),
+            body,
+            labels: Vec::new(),
+            state: "open".into(),
+            html_url: String::new(),
+            milestone: Some(1),
+            assignees: Vec::new(),
+        };
+
+        assert_eq!(issue.blocked_by_from_body(), vec![1]);
+        assert!(issue.body.contains("## Blocked By"));
+        assert!(issue.body.contains("- #1 feat: setup"));
+    }
+
+    #[tokio::test]
     async fn materialize_dry_run_does_not_call_client() {
-        let client = MockGitHubClient::new();
-        let materializer = GhMaterializer::new(client.clone());
+        let client = FakeProvider::new();
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -454,8 +802,8 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_creates_tech_debt_issue_when_items_exist() {
-        let client = MockGitHubClient::new();
-        let materializer = GhMaterializer::new(client.clone());
+        let client = FakeProvider::new();
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report_with_debt();
 
@@ -471,8 +819,8 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_skips_tech_debt_issue_when_no_items() {
-        let client = MockGitHubClient::new();
-        let materializer = GhMaterializer::new(client.clone());
+        let client = FakeProvider::new();
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -530,7 +878,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("feat: setup".to_string(), 5u64);
 
-        let result = resolve_blocked_by(body, &titles, &map);
+        let result = resolve_blocked_by(ProviderKind::Github, body, &titles, &map);
         assert!(result.contains("## Blocked By"));
         assert!(result.contains("#5"));
     }
@@ -538,7 +886,7 @@ mod tests {
     #[test]
     fn resolve_blocked_by_empty_titles_returns_original() {
         let body = "Some body";
-        let result = resolve_blocked_by(body, &[], &HashMap::new());
+        let result = resolve_blocked_by(ProviderKind::Github, body, &[], &HashMap::new());
         assert_eq!(result, "Some body");
     }
 
@@ -563,10 +911,10 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_labels_creates_missing_labels_with_correct_colors() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec![]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = plan_with_labels(vec!["enhancement".into(), "bug".into()]);
         let report = sample_report();
 
@@ -592,10 +940,10 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_labels_skips_labels_that_already_exist() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec!["enhancement".into(), "bug".into()]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = plan_with_labels(vec!["enhancement".into(), "bug".into()]);
         let report = sample_report();
 
@@ -612,9 +960,9 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_labels_skips_when_no_labels_needed() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = plan_with_labels(vec![]);
         let report = sample_report();
 
@@ -632,10 +980,10 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_labels_includes_tech_debt_labels_when_report_has_debt() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec![]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = plan_with_labels(vec!["type:feature".into()]);
         let report = sample_report_with_debt();
 
@@ -661,10 +1009,10 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_succeeds_on_fresh_repo_with_empty_labels() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec![]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -682,10 +1030,10 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_is_idempotent_when_labels_already_exist() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec!["enhancement".into(), "testing".into()]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -721,10 +1069,10 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_dry_run_skips_ensure_labels() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec![]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -740,10 +1088,10 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_labels_propagates_list_labels_error() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_list_labels_error("gh: HTTP 403 Forbidden");
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = plan_with_labels(vec!["enhancement".into()]);
         let report = sample_report();
 
@@ -761,11 +1109,11 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_labels_propagates_create_label_error() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec![]);
         client.set_create_label_error("gh: HTTP 422 Unprocessable Entity");
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = plan_with_labels(vec!["enhancement".into()]);
         let report = sample_report();
 
@@ -809,11 +1157,11 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_reuses_existing_milestone_instead_of_creating_duplicate() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec!["enhancement".into(), "testing".into()]);
         client.set_existing_milestones(vec![make_milestone(42, "M0: Foundation", "open")]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -841,13 +1189,13 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_skips_duplicate_issue_and_continues_batch() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec!["enhancement".into(), "testing".into()]);
         // Seed one of the three planned issues (sample_plan has 2; simulate
         // first one already existing).
         client.set_existing_issues(vec![make_seeded_issue(101, "feat: setup", "open")]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -868,11 +1216,11 @@ mod tests {
     async fn materialize_resolves_blocked_by_for_skipped_issues() {
         // The test: a later issue's blocked_by references a skipped (pre-existing)
         // earlier issue; the resolved body must contain the existing issue number.
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec!["enhancement".into(), "testing".into()]);
         client.set_existing_issues(vec![make_seeded_issue(500, "feat: setup", "open")]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -899,10 +1247,10 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_is_fully_idempotent_on_second_run() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec!["enhancement".into(), "testing".into()]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 
@@ -938,11 +1286,11 @@ mod tests {
 
     #[tokio::test]
     async fn materialize_records_reused_milestone_title() {
-        let client = MockGitHubClient::new();
+        let client = FakeProvider::new();
         client.set_labels(vec!["enhancement".into(), "testing".into()]);
         client.set_existing_milestones(vec![make_milestone(7, "M0: Foundation", "closed")]);
 
-        let materializer = GhMaterializer::new(client.clone());
+        let materializer = RepoMaterializer::new(ProviderKind::Github, &client);
         let plan = sample_plan();
         let report = sample_report();
 

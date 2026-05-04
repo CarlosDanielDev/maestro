@@ -35,7 +35,7 @@ pub mod widgets;
 mod snapshot_tests;
 
 use crate::config::ProviderConfig;
-use crate::provider::{create_provider, github::client::RepoProvider};
+use crate::provider::{RepoProvider, create_provider};
 use crate::tui::activity_log::LogLevel;
 use app::App;
 use background_tasks::{spawn_issue_fetch, spawn_version_check};
@@ -443,10 +443,12 @@ async fn event_loop(
                 app::TuiCommand::RunAdaptMaterialize(plan, report) => {
                     let tx = app.data_tx.clone();
                     let provider_config = provider_config_from_app(app);
+                    let provider_kind = provider_config.kind;
                     tokio::spawn(async move {
-                        use crate::adapt::materializer::{GhMaterializer, PlanMaterializer};
-                        let result = with_provider(provider_config, |github| async move {
-                            let materializer = GhMaterializer::new(github);
+                        use crate::adapt::materializer::{PlanMaterializer, RepoMaterializer};
+                        let result = with_provider(provider_config, |provider| async move {
+                            let materializer =
+                                RepoMaterializer::new(provider_kind, provider.as_ref());
                             materializer.materialize(&plan, &report, false).await
                         })
                         .await;
@@ -457,7 +459,7 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        use crate::provider::github::client::CreateOutcome;
+                        use crate::provider::CreateOutcome;
                         let body =
                             crate::tui::screens::issue_wizard::render_body_markdown(&payload);
                         let labels = crate::tui::screens::issue_wizard::render_labels(&payload);
