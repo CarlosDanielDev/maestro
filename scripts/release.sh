@@ -307,7 +307,7 @@ fi
 
 # ── Step 5: Commit ──────────────────────────────────────────────────────────────
 info "Staging files..."
-git add Cargo.toml Cargo.lock CHANGELOG.md
+git add Cargo.toml CHANGELOG.md
 
 # Stage known-drift snapshots if they were updated
 git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__dashboard__home_screen_"*.snap 2>/dev/null || true
