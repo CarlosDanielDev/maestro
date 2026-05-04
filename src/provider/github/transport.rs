@@ -1,0 +1,2332 @@
+use super::types::{GhIssue, GhMilestone};
+use anyhow::{Context, Result};
+use async_trait::async_trait;
+use std::{future::Future, time::Duration};
+
+/// Outcome of a `create_milestone` / `create_issue` call. Tells callers
+/// whether a new artifact was freshly created or an existing one was
+/// matched (by equivalent title, open or closed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreateOutcome {
+    /// A new milestone/issue was created. The `u64` is its number.
+    Created(u64),
+    /// An existing milestone/issue with an equivalent title was found.
+    /// `state` is the current state (`"open"` or `"closed"`).
+    Existed { number: u64, state: String },
+}
+
+impl CreateOutcome {
+    /// Convenience: the number regardless of whether it was newly created
+    /// or matched an existing record.
+    pub fn number(&self) -> u64 {
+        match self {
+            Self::Created(n) => *n,
+            Self::Existed { number, .. } => *number,
+        }
+    }
+
+    /// Whether this outcome reused an existing record.
+    pub fn is_existed(&self) -> bool {
+        matches!(self, Self::Existed { .. })
+    }
+}
+
+/// Trait for GitHub API operations. Mockable for testing.
+#[async_trait]
+pub trait GitHubClient: Send + Sync {
+    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<GhIssue>>;
+    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>>;
+    async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>>;
+    async fn get_issue(&self, number: u64) -> Result<GhIssue>;
+    async fn add_label(&self, issue_number: u64, label: &str) -> Result<()>;
+    async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()>;
+    async fn create_pr(
+        &self,
+        issue_number: u64,
+        title: &str,
+        body: &str,
+        head_branch: &str,
+        base_branch: &str,
+    ) -> Result<u64>;
+    /// List open PR numbers for a given head branch.
+    #[allow(dead_code)] // Reason: orphan branch detection feature
+    async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>>;
+
+    /// Create a GitHub milestone. Returns `CreateOutcome::Created(n)` on
+    /// success or `CreateOutcome::Existed { .. }` if an existing milestone
+    /// with an equivalent title (normalized + case-insensitive) was found.
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome>;
+
+    /// Create a GitHub issue. Returns `CreateOutcome::Created(n)` on
+    /// success or `CreateOutcome::Existed { .. }` if an existing issue
+    /// with an equivalent title (normalized + case-insensitive) was found.
+    async fn create_issue(
+        &self,
+        title: &str,
+        body: &str,
+        labels: &[String],
+        milestone: Option<u64>,
+    ) -> Result<CreateOutcome>;
+
+    /// List open pull requests for the current repository.
+    async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>>;
+
+    /// Get a single pull request by number.
+    #[allow(dead_code)] // Reason: PR detail view — currently PR data comes from list
+    async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest>;
+
+    /// Submit a review on a pull request.
+    async fn submit_pr_review(
+        &self,
+        pr_number: u64,
+        event: crate::provider::github::types::PrReviewEvent,
+        body: &str,
+    ) -> Result<()>;
+
+    /// List all label names on the current repository.
+    async fn list_labels(&self) -> Result<Vec<String>>;
+
+    /// Create a label on the current repository. Uses --force to be idempotent.
+    async fn create_label(&self, name: &str, color: &str) -> Result<()>;
+
+    /// Patch a milestone's description on GitHub. Used by the milestone
+    /// health-check wizard (#500) to write the corrected dependency graph.
+    async fn patch_milestone_description(
+        &self,
+        milestone_number: u64,
+        description: &str,
+    ) -> Result<()>;
+}
+
+/// Extract label names from a JSON value containing `{"labels": [{"name": "..."}, ...]}`.
+fn extract_label_names(v: &serde_json::Value) -> Vec<String> {
+    v.get("labels")
+        .and_then(|l| l.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|lv| {
+                    lv.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Parse JSON output from `gh issue list --json ...`.
+pub fn parse_issues_json(json_str: &str) -> Result<Vec<GhIssue>> {
+    let raw: Vec<serde_json::Value> =
+        serde_json::from_str(json_str).context("Failed to parse GitHub issues JSON")?;
+    let mut issues = Vec::new();
+    for v in raw {
+        let labels = extract_label_names(&v);
+
+        let milestone = v.get("milestone").and_then(|m| {
+            if m.is_null() {
+                None
+            } else if let Some(n) = m.as_u64() {
+                Some(n)
+            } else {
+                m.get("number").and_then(|n| n.as_u64())
+            }
+        });
+
+        let assignees: Vec<String> = v
+            .get("assignees")
+            .and_then(|a| a.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|av| {
+                        av.get("login")
+                            .and_then(|l| l.as_str())
+                            .or_else(|| av.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        issues.push(GhIssue {
+            number: v
+                .get("number")
+                .and_then(|n| n.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("Missing 'number' field in issue JSON"))?,
+            title: v
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string(),
+            body: v
+                .get("body")
+                .and_then(|b| b.as_str())
+                .unwrap_or("")
+                .to_string(),
+            labels,
+            state: v
+                .get("state")
+                .and_then(|s| s.as_str())
+                .unwrap_or("open")
+                .to_lowercase(),
+            html_url: v
+                .get("html_url")
+                .or_else(|| v.get("url"))
+                .and_then(|u| u.as_str())
+                .unwrap_or("")
+                .to_string(),
+            milestone,
+            assignees,
+        });
+    }
+    Ok(issues)
+}
+
+/// Parse JSON output from `gh api repos/{owner}/{repo}/milestones`.
+pub fn parse_milestones_json(json_str: &str) -> Result<Vec<GhMilestone>> {
+    serde_json::from_str(json_str).context("Failed to parse milestones JSON")
+}
+
+/// Parse JSON output from `gh pr list --json ...`.
+pub fn parse_prs_json(
+    json_str: &str,
+) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
+    let raw: Vec<serde_json::Value> =
+        serde_json::from_str(json_str).context("Failed to parse GitHub PRs JSON")?;
+    let mut prs = Vec::new();
+    for v in raw {
+        let labels = extract_label_names(&v);
+
+        let author = v
+            .get("author")
+            .and_then(|a| {
+                if a.is_string() {
+                    a.as_str().map(|s| s.to_string())
+                } else {
+                    a.get("login")
+                        .and_then(|l| l.as_str())
+                        .map(|s| s.to_string())
+                }
+            })
+            .unwrap_or_default();
+
+        prs.push(crate::provider::github::types::GhPullRequest {
+            number: v
+                .get("number")
+                .and_then(|n| n.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("Missing 'number' field in PR JSON"))?,
+            title: v
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string(),
+            body: v
+                .get("body")
+                .and_then(|b| b.as_str())
+                .unwrap_or("")
+                .to_string(),
+            state: v
+                .get("state")
+                .and_then(|s| s.as_str())
+                .unwrap_or("open")
+                .to_lowercase(),
+            html_url: v
+                .get("url")
+                .and_then(|u| u.as_str())
+                .unwrap_or("")
+                .to_string(),
+            head_branch: v
+                .get("headRefName")
+                .and_then(|h| h.as_str())
+                .unwrap_or("")
+                .to_string(),
+            base_branch: v
+                .get("baseRefName")
+                .and_then(|b| b.as_str())
+                .unwrap_or("")
+                .to_string(),
+            author,
+            labels,
+            draft: v.get("isDraft").and_then(|d| d.as_bool()).unwrap_or(false),
+            mergeable: v
+                .get("mergeable")
+                .and_then(|m| {
+                    if m.is_boolean() {
+                        m.as_bool()
+                    } else {
+                        m.as_str().map(|s| s == "MERGEABLE")
+                    }
+                })
+                .unwrap_or(false),
+            additions: v.get("additions").and_then(|a| a.as_u64()).unwrap_or(0),
+            deletions: v.get("deletions").and_then(|d| d.as_u64()).unwrap_or(0),
+            changed_files: v.get("changedFiles").and_then(|c| c.as_u64()).unwrap_or(0),
+        });
+    }
+    Ok(prs)
+}
+
+/// Blanket impl: if T: GitHubClient, then &T is also a GitHubClient.
+#[async_trait]
+impl<T: GitHubClient + ?Sized> GitHubClient for &T {
+    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<GhIssue>> {
+        (**self).list_issues(labels).await
+    }
+    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>> {
+        (**self).list_issues_by_milestone(milestone).await
+    }
+    async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>> {
+        (**self).list_milestones(state).await
+    }
+    async fn get_issue(&self, number: u64) -> Result<GhIssue> {
+        (**self).get_issue(number).await
+    }
+    async fn add_label(&self, issue_number: u64, label: &str) -> Result<()> {
+        (**self).add_label(issue_number, label).await
+    }
+    async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()> {
+        (**self).remove_label(issue_number, label).await
+    }
+    async fn create_pr(
+        &self,
+        issue_number: u64,
+        title: &str,
+        body: &str,
+        head_branch: &str,
+        base_branch: &str,
+    ) -> Result<u64> {
+        (**self)
+            .create_pr(issue_number, title, body, head_branch, base_branch)
+            .await
+    }
+    async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
+        (**self).list_prs_for_branch(head_branch).await
+    }
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
+        (**self).create_milestone(title, description).await
+    }
+    async fn create_issue(
+        &self,
+        title: &str,
+        body: &str,
+        labels: &[String],
+        milestone: Option<u64>,
+    ) -> Result<CreateOutcome> {
+        (**self).create_issue(title, body, labels, milestone).await
+    }
+    async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
+        (**self).list_open_prs().await
+    }
+    async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
+        (**self).get_pr(number).await
+    }
+    async fn submit_pr_review(
+        &self,
+        pr_number: u64,
+        event: crate::provider::github::types::PrReviewEvent,
+        body: &str,
+    ) -> Result<()> {
+        (**self).submit_pr_review(pr_number, event, body).await
+    }
+    async fn list_labels(&self) -> Result<Vec<String>> {
+        (**self).list_labels().await
+    }
+    async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+        (**self).create_label(name, color).await
+    }
+    async fn patch_milestone_description(
+        &self,
+        milestone_number: u64,
+        description: &str,
+    ) -> Result<()> {
+        (**self)
+            .patch_milestone_description(milestone_number, description)
+            .await
+    }
+}
+
+// `redact_secrets` lives in `provider::github::redaction` so the lower
+// `types.rs` layer can call it on rehydrate without depending on
+// `client.rs`. Re-exported here for back-compat with existing
+// `crate::provider::github::client::redact_secrets` call sites.
+pub use super::redaction::redact_secrets;
+
+/// Check if a stderr string indicates a GitHub CLI authentication failure.
+pub fn is_auth_error(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("not logged in")
+        || lower.contains("authentication required")
+        || lower.contains("http 401")
+        || lower.contains("auth login")
+        || lower.contains("try authenticating")
+        || lower.contains("authentication token")
+        || lower.contains("could not authenticate")
+}
+
+/// Sentinel prefix used to tag gh auth errors in anyhow messages.
+const GH_AUTH_ERROR_SENTINEL: &str = "[gh-auth-error]";
+const GH_RATE_LIMIT_MAX_ATTEMPTS: u32 = 3;
+
+fn is_rate_limit_error(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("http 429")
+        || lower.contains("rate limit exceeded")
+        || lower.contains("secondary rate limit")
+        || lower.contains("too many requests")
+}
+
+fn rate_limit_delay_for_attempt(attempt: u32) -> Duration {
+    Duration::from_millis(250u64.saturating_mul(2u64.saturating_pow(attempt)))
+}
+
+async fn with_rate_limit_retries<F, Fut>(
+    mut operation: F,
+    sleep_between_attempts: bool,
+) -> Result<String>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<String>>,
+{
+    let mut attempt = 0;
+    loop {
+        match operation().await {
+            Err(err)
+                if attempt + 1 < GH_RATE_LIMIT_MAX_ATTEMPTS
+                    && is_rate_limit_error(&err.to_string()) =>
+            {
+                if sleep_between_attempts {
+                    tokio::time::sleep(rate_limit_delay_for_attempt(attempt)).await;
+                }
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+pub(crate) fn normalize_paginated_json_arrays(json: &str) -> Result<String> {
+    let stream = serde_json::Deserializer::from_str(json).into_iter::<serde_json::Value>();
+    let mut items = Vec::new();
+    for value in stream {
+        match value.context("Failed to parse paginated GitHub JSON")? {
+            serde_json::Value::Array(page) => items.extend(page),
+            other => anyhow::bail!("Expected paginated GitHub response array, got {other:?}"),
+        }
+    }
+    serde_json::to_string(&items).context("Failed to normalize paginated GitHub JSON")
+}
+
+/// True when stderr matches `gh issue edit --remove-label`'s
+/// "label missing" shape, keyed on the label literal so unrelated
+/// `not found` errors (issue/repo/branch) don't trigger. Both
+/// "not on repo" and "not on issue" share this stderr (gh v2.x);
+/// both are no-ops for remove.
+fn is_label_not_found_error(stderr: &str, label: &str) -> bool {
+    let needle = format!("'{}' not found", label);
+    stderr.contains(&needle)
+}
+
+/// Extract the PR number from `gh pr create` stdout.
+///
+/// `gh pr create` does not accept `--json`; it prints the new PR's URL
+/// (e.g. `https://github.com/owner/repo/pull/123`) on stdout, possibly
+/// preceded by progress lines. We grab the last `/pull/<digits>` token.
+pub(crate) fn parse_pr_number_from_create_output(stdout: &str) -> Result<u64> {
+    let after_pull = stdout
+        .lines()
+        .filter_map(|line| line.trim().rsplit_once("/pull/").map(|(_, rest)| rest))
+        .next_back()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "gh pr create did not return a /pull/ URL. stdout was: {:?}",
+                stdout
+            )
+        })?;
+    let digits: String = after_pull
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits
+        .parse::<u64>()
+        .with_context(|| format!("Could not parse PR number from `{}`", after_pull))
+}
+
+/// JSON fields requested from `gh pr list/view`.
+const PR_JSON_FIELDS: &str = "number,title,body,state,url,headRefName,baseRefName,author,labels,isDraft,mergeable,additions,deletions,changedFiles";
+
+/// Check if an anyhow error is a gh CLI auth error (by sentinel prefix).
+pub fn is_gh_auth_error(err: &anyhow::Error) -> bool {
+    err.to_string().contains(GH_AUTH_ERROR_SENTINEL)
+}
+
+#[cfg(test)]
+mod parser_tests {
+    use super::{
+        normalize_paginated_json_arrays, parse_pr_number_from_create_output,
+        with_rate_limit_retries,
+    };
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    #[test]
+    fn extracts_number_from_url_only() {
+        let out = "https://github.com/owner/repo/pull/123\n";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 123);
+    }
+
+    #[test]
+    fn extracts_number_with_preceding_progress_lines() {
+        let out = "Creating pull request for foo into main in owner/repo\n\
+                   \n\
+                   https://github.com/owner/repo/pull/4242\n";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 4242);
+    }
+
+    #[test]
+    fn extracts_number_with_trailing_whitespace() {
+        let out = "  https://github.com/owner/repo/pull/9  ";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 9);
+    }
+
+    #[test]
+    fn ignores_query_string_and_fragment_after_number() {
+        let out = "https://github.com/owner/repo/pull/77?foo=bar#anchor";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 77);
+    }
+
+    #[test]
+    fn errors_on_empty_stdout() {
+        assert!(parse_pr_number_from_create_output("").is_err());
+    }
+
+    #[test]
+    fn errors_when_no_pull_url_present() {
+        let out = "Some unrelated diagnostic text\nNo URL here\n";
+        assert!(parse_pr_number_from_create_output(out).is_err());
+    }
+
+    #[test]
+    fn picks_last_pull_url_when_multiple_present() {
+        let out = "previous: https://github.com/o/r/pull/1\nfinal: https://github.com/o/r/pull/2\n";
+        assert_eq!(parse_pr_number_from_create_output(out).unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn retries_once_after_rate_limit_error() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let result = with_rate_limit_retries(
+            || {
+                let attempts = Arc::clone(&attempts);
+                async move {
+                    let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                    if attempt == 0 {
+                        anyhow::bail!("gh command failed: HTTP 429 too many requests");
+                    }
+                    Ok("ok".to_string())
+                }
+            },
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result, "ok");
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn pagination_normalizes_concatenated_json_arrays() {
+        let normalized = normalize_paginated_json_arrays(
+            r#"[{"number":1,"title":"one"}][{"number":2,"title":"two"}]"#,
+        )
+        .unwrap();
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&normalized).unwrap();
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0]["number"], 1);
+        assert_eq!(parsed[1]["number"], 2);
+    }
+}
+
+use crate::provider::github::gh_argv;
+use crate::util::{titles_equivalent, validate_body, validate_gh_arg, validate_title};
+
+/// Convert a `Vec<String>` argv into `Vec<&str>` for `run_gh`.
+fn argv_refs(argv: &[String]) -> Vec<&str> {
+    argv.iter().map(String::as_str).collect()
+}
+
+/// Implementation that shells out to `gh` CLI.
+pub struct GhCliClient {
+    /// `owner/repo` to thread through every read-only / edit shellout
+    /// (`gh pr list/view`, `gh issue view/list/edit`). Without this `gh`
+    /// infers the repo from the worktree's git remote which can fail
+    /// silently when the worktree is in an odd state.
+    repo: Option<String>,
+}
+
+impl GhCliClient {
+    pub fn new() -> Self {
+        Self { repo: None }
+    }
+
+    pub fn from_config_repo(repo: Option<String>) -> Self {
+        let Some(repo) = repo.map(|r| r.trim().to_string()).filter(|r| !r.is_empty()) else {
+            return Self::new();
+        };
+
+        match Self::new().with_repo(repo) {
+            Ok(client) => client,
+            Err(e) => {
+                tracing::warn!("Ignoring invalid configured GitHub repo: {e}");
+                Self::new()
+            }
+        }
+    }
+
+    /// Builder: thread an explicit `owner/repo` through every read-only
+    /// and label-edit shellout. PR creation deliberately ignores this —
+    /// see `build_create_pr_argv`.
+    ///
+    /// Validates the input through `validate_gh_arg` (rejects shell
+    /// metacharacters and `--`-prefixed values) and enforces the
+    /// `owner/repo` shape via `parse_owner_repo`.
+    ///
+    pub fn with_repo(mut self, repo: String) -> Result<Self> {
+        validate_gh_arg(&repo, "repo")?;
+        crate::provider::github::types::parse_owner_repo(&repo)
+            .map_err(|e| anyhow::anyhow!("repo {:?}: {}", repo, e))?;
+        self.repo = Some(repo);
+        Ok(self)
+    }
+
+    fn repo_arg(&self) -> Option<&str> {
+        self.repo.as_deref()
+    }
+
+    async fn run_gh(&self, args: &[&str]) -> Result<String> {
+        self.run_gh_with_stdin(args, None).await
+    }
+
+    async fn run_gh_with_stdin(&self, args: &[&str], stdin_data: Option<&[u8]>) -> Result<String> {
+        with_rate_limit_retries(|| self.run_gh_with_stdin_once(args, stdin_data), true).await
+    }
+
+    async fn run_gh_with_stdin_once(
+        &self,
+        args: &[&str],
+        stdin_data: Option<&[u8]>,
+    ) -> Result<String> {
+        let stdin_cfg = if stdin_data.is_some() {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        };
+
+        let mut child = tokio::process::Command::new("gh")
+            .args(args)
+            .stdin(stdin_cfg)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .context("Failed to run `gh` CLI. Is it installed?")?;
+
+        if let Some(data) = stdin_data
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            use tokio::io::AsyncWriteExt;
+            stdin.write_all(data).await?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .await
+            .context("Failed to wait for `gh` CLI")?;
+
+        if !output.status.success() {
+            let stderr_raw = String::from_utf8_lossy(&output.stderr);
+            let stderr = redact_secrets(stderr_raw.trim());
+            if is_auth_error(&stderr) {
+                anyhow::bail!("{} {}", GH_AUTH_ERROR_SENTINEL, stderr);
+            }
+            anyhow::bail!("gh command failed: {}", stderr);
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+}
+
+#[async_trait]
+impl GitHubClient for GhCliClient {
+    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<GhIssue>> {
+        for label in labels {
+            validate_gh_arg(label, "label")?;
+        }
+        let label_arg = labels.join(",");
+        let labels_csv = if label_arg.is_empty() {
+            None
+        } else {
+            Some(label_arg.as_str())
+        };
+        let argv = gh_argv::build_list_issues_argv(labels_csv, self.repo_arg());
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
+        parse_issues_json(&json_str)
+    }
+
+    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>> {
+        validate_gh_arg(milestone, "milestone")?;
+        let argv = gh_argv::build_list_issues_by_milestone_argv(milestone, self.repo_arg());
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
+        parse_issues_json(&json_str)
+    }
+
+    async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>> {
+        match state {
+            "open" | "closed" | "all" => {}
+            _ => anyhow::bail!(
+                "Invalid milestone state: {:?}. Must be open, closed, or all",
+                state
+            ),
+        }
+        let argv = gh_argv::build_list_milestones_argv(state);
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
+        let normalized = normalize_paginated_json_arrays(&json_str)?;
+        parse_milestones_json(&normalized)
+    }
+
+    async fn get_issue(&self, number: u64) -> Result<GhIssue> {
+        let argv = gh_argv::build_get_issue_argv(number, self.repo_arg());
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
+        // gh issue view returns a single object, wrap it in array for parsing
+        let issues = parse_issues_json(&format!("[{}]", json_str))?;
+        issues
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Issue #{} not found", number))
+    }
+
+    async fn add_label(&self, issue_number: u64, label: &str) -> Result<()> {
+        validate_gh_arg(label, "label")?;
+        let argv = gh_argv::build_add_label_argv(issue_number, label, self.repo_arg());
+        let result = self.run_gh(&argv_refs(&argv)).await;
+
+        if let Err(ref e) = result {
+            let err_msg = e.to_string();
+            // If the label doesn't exist, create it and retry
+            if err_msg.contains("not found") || err_msg.contains("label") {
+                let color = match label {
+                    "maestro:ready" => "0E8A16",
+                    "maestro:in-progress" => "F9D0C4",
+                    "maestro:done" => "0E8A16",
+                    "maestro:failed" => "D93F0B",
+                    _ => "EDEDED",
+                };
+                let _ = self.create_label(label, color).await;
+                // Retry adding the label
+                self.run_gh(&argv_refs(&argv)).await?;
+                return Ok(());
+            }
+        }
+        result.map(|_| ())
+    }
+
+    async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()> {
+        validate_gh_arg(label, "label")?;
+        let argv = gh_argv::build_remove_label_argv(issue_number, label, self.repo_arg());
+        match self.run_gh(&argv_refs(&argv)).await {
+            Ok(_) => Ok(()),
+            Err(e) if is_label_not_found_error(&e.to_string(), label) => {
+                tracing::debug!(
+                    issue = issue_number,
+                    label = label,
+                    "remove_label: label not found on repo or issue — treating as no-op"
+                );
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn create_pr(
+        &self,
+        _issue_number: u64,
+        title: &str,
+        body: &str,
+        head_branch: &str,
+        base_branch: &str,
+    ) -> Result<u64> {
+        let normalized_title = validate_title(title, "PR title")?;
+        validate_body(body, "PR body")?;
+        validate_gh_arg(head_branch, "head_branch")?;
+        validate_gh_arg(base_branch, "base_branch")?;
+        let argv = gh_argv::build_create_pr_argv(head_branch, base_branch, &normalized_title, body);
+        let stdout = self.run_gh(&argv_refs(&argv)).await?;
+        parse_pr_number_from_create_output(&stdout)
+    }
+
+    async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
+        validate_gh_arg(head_branch, "head_branch")?;
+        let argv = gh_argv::build_list_prs_for_branch_argv(head_branch, self.repo_arg());
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
+        let prs: Vec<serde_json::Value> = serde_json::from_str(&json_str)?;
+        Ok(prs
+            .iter()
+            .filter_map(|v| v.get("number").and_then(|n| n.as_u64()))
+            .collect())
+    }
+
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
+        let normalized = validate_title(title, "milestone title")?;
+        validate_body(description, "milestone description")?;
+
+        let mut open = self.list_milestones("open").await?;
+        let closed = self.list_milestones("closed").await?;
+        open.extend(closed);
+        if let Some(existing) = open
+            .iter()
+            .find(|m| titles_equivalent(&m.title, &normalized))
+        {
+            tracing::info!(
+                milestone = %normalized,
+                number = existing.number,
+                state = %existing.state,
+                "create_milestone proactive hit — reusing existing milestone"
+            );
+            return Ok(CreateOutcome::Existed {
+                number: existing.number,
+                state: existing.state.clone(),
+            });
+        }
+
+        let argv = gh_argv::build_create_milestone_argv(&normalized, description);
+        let result = self.run_gh(&argv_refs(&argv)).await;
+
+        match result {
+            Ok(json_str) => {
+                let v: serde_json::Value = serde_json::from_str(&json_str)
+                    .context("Failed to parse milestone response")?;
+                let number = v
+                    .get("number")
+                    .and_then(|n| n.as_u64())
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'number' in milestone response"))?;
+                Ok(CreateOutcome::Created(number))
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // 422 = duplicate milestone race — re-fetch open + closed
+                // and resolve via titles_equivalent.
+                if msg.contains("422") || msg.contains("Validation Failed") {
+                    let mut all = self.list_milestones("open").await?;
+                    let closed = self.list_milestones("closed").await?;
+                    all.extend(closed);
+                    if let Some(existing) = all
+                        .iter()
+                        .find(|m| titles_equivalent(&m.title, &normalized))
+                    {
+                        tracing::info!(
+                            milestone = %normalized,
+                            number = existing.number,
+                            state = %existing.state,
+                            "create_milestone 422 recovery — matched existing milestone"
+                        );
+                        return Ok(CreateOutcome::Existed {
+                            number: existing.number,
+                            state: existing.state.clone(),
+                        });
+                    }
+                    Err(anyhow::anyhow!(
+                        "Milestone '{}' caused 422 but not found in open or closed milestones",
+                        normalized
+                    ))
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
+    async fn create_issue(
+        &self,
+        title: &str,
+        body: &str,
+        labels: &[String],
+        milestone: Option<u64>,
+    ) -> Result<CreateOutcome> {
+        let normalized = validate_title(title, "issue title")?;
+        validate_body(body, "issue body")?;
+
+        // Proactive pre-check: scan open + closed issues for an equivalent title.
+        let dupe_argv = gh_argv::build_create_issue_dupe_check_argv(self.repo_arg());
+        let all_json = self.run_gh(&argv_refs(&dupe_argv)).await?;
+        let all_issues: Vec<serde_json::Value> = serde_json::from_str(&all_json)
+            .context("Failed to parse issue list JSON for dupe pre-check")?;
+        for v in &all_issues {
+            let existing_title = v.get("title").and_then(|t| t.as_str()).unwrap_or("");
+            if titles_equivalent(existing_title, &normalized) {
+                let number = v.get("number").and_then(|n| n.as_u64()).unwrap_or(0);
+                let state = v
+                    .get("state")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("open")
+                    .to_lowercase();
+                tracing::info!(
+                    issue = %normalized,
+                    number,
+                    state = %state,
+                    "create_issue proactive hit — reusing existing issue"
+                );
+                return Ok(CreateOutcome::Existed { number, state });
+            }
+        }
+
+        // Use REST API via stdin because `gh issue create --milestone`
+        // expects a title string, but we only have the milestone number.
+        let mut payload = serde_json::json!({
+            "title": normalized,
+            "body": body,
+        });
+        if !labels.is_empty() {
+            payload["labels"] = serde_json::json!(labels);
+        }
+        if let Some(ms) = milestone {
+            payload["milestone"] = serde_json::json!(ms);
+        }
+
+        let json_body = serde_json::to_string(&payload)?;
+        let create_argv = gh_argv::build_create_issue_argv();
+        let json_str = self
+            .run_gh_with_stdin(&argv_refs(&create_argv), Some(json_body.as_bytes()))
+            .await?;
+
+        let v: serde_json::Value =
+            serde_json::from_str(&json_str).context("Failed to parse issue creation response")?;
+        let number = v
+            .get("number")
+            .and_then(|n| n.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'number' in issue creation response"))?;
+        Ok(CreateOutcome::Created(number))
+    }
+
+    async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
+        let argv = gh_argv::build_list_open_prs_argv(PR_JSON_FIELDS, self.repo_arg());
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
+        parse_prs_json(&json_str)
+    }
+
+    async fn get_pr(&self, number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
+        let argv = gh_argv::build_get_pr_argv(number, PR_JSON_FIELDS, self.repo_arg());
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
+        let prs = parse_prs_json(&format!("[{}]", json_str))?;
+        prs.into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("PR #{} not found", number))
+    }
+
+    async fn submit_pr_review(
+        &self,
+        pr_number: u64,
+        event: crate::provider::github::types::PrReviewEvent,
+        body: &str,
+    ) -> Result<()> {
+        // Parity with create_pr / create_issue / create_milestone — every
+        // user-facing body that ships to GitHub is bounded at the same cap.
+        validate_body(body, "PR review body")?;
+        let argv = gh_argv::build_submit_pr_review_argv(pr_number, event, body);
+        self.run_gh(&argv_refs(&argv)).await?;
+        Ok(())
+    }
+
+    async fn list_labels(&self) -> Result<Vec<String>> {
+        let argv = gh_argv::build_list_labels_argv();
+        let json_str = self.run_gh(&argv_refs(&argv)).await?;
+        let labels: Vec<serde_json::Value> =
+            serde_json::from_str(&json_str).context("Failed to parse label list JSON")?;
+        Ok(labels
+            .iter()
+            .filter_map(|v| {
+                v.get("name")
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.to_string())
+            })
+            .collect())
+    }
+
+    async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+        validate_gh_arg(name, "label name")?;
+        validate_gh_arg(color, "label color")?;
+        let argv = gh_argv::build_create_label_argv(name, color);
+        self.run_gh(&argv_refs(&argv)).await?;
+        Ok(())
+    }
+
+    async fn patch_milestone_description(
+        &self,
+        milestone_number: u64,
+        description: &str,
+    ) -> Result<()> {
+        let payload = serde_json::json!({ "description": description });
+        let json_body = serde_json::to_string(&payload)?;
+        let argv = gh_argv::build_patch_milestone_description_argv(milestone_number);
+        self.run_gh_with_stdin(&argv_refs(&argv), Some(json_body.as_bytes()))
+            .await
+            .with_context(|| format!("patching milestone #{} description", milestone_number))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+pub mod mock {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    pub struct MockGitHubClient {
+        inner: Arc<Mutex<MockState>>,
+    }
+
+    #[derive(Default)]
+    struct MockState {
+        issues: Vec<GhIssue>,
+        milestones: Vec<GhMilestone>,
+        add_label_error: Option<String>,
+        remove_label_error: Option<String>,
+        create_pr_response: Option<u64>,
+        create_pr_error: Option<String>,
+        get_issue_errors: std::collections::HashMap<u64, String>,
+        list_prs_for_branch_responses: std::collections::HashMap<String, Vec<u64>>,
+
+        add_label_calls: Vec<(u64, String)>,
+        remove_label_calls: Vec<(u64, String)>,
+        create_pr_calls: Vec<CreatePrCallRecord>,
+
+        create_milestone_calls: Vec<(String, String)>,
+        create_milestone_counter: u64,
+        create_issue_calls: Vec<CreateIssueCallRecord>,
+        create_issue_counter: u64,
+
+        // Label management fields
+        labels: Vec<String>,
+        list_labels_calls: u32,
+        list_labels_error: Option<String>,
+        create_label_calls: Vec<(String, String)>,
+        create_label_error: Option<String>,
+
+        // PR review fields
+        pull_requests: Vec<crate::provider::github::types::GhPullRequest>,
+        list_open_prs_error: Option<String>,
+        get_pr_errors: std::collections::HashMap<u64, String>,
+        submit_pr_review_error: Option<String>,
+        submit_pr_review_calls: Vec<SubmitPrReviewCallRecord>,
+
+        // Milestone health-check fields (#500)
+        list_issues_by_milestone_error: Option<String>,
+        patch_milestone_error: Option<String>,
+        patch_milestone_calls: Vec<(u64, String)>,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct SubmitPrReviewCallRecord {
+        pub pr_number: u64,
+        pub event: crate::provider::github::types::PrReviewEvent,
+        pub body: String,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct CreatePrCallRecord {
+        pub issue_number: u64,
+        pub title: String,
+        pub body: String,
+        pub head_branch: String,
+        pub base_branch: String,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct CreateIssueCallRecord {
+        pub title: String,
+        pub body: String,
+        pub labels: Vec<String>,
+        pub milestone: Option<u64>,
+    }
+
+    impl MockGitHubClient {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        pub fn set_issues(&self, issues: Vec<GhIssue>) {
+            let mut guard = self.inner.lock().unwrap();
+            let max = issues.iter().map(|i| i.number).max().unwrap_or(0);
+            guard.create_issue_counter = guard.create_issue_counter.max(max);
+            guard.issues = issues;
+        }
+
+        pub fn set_milestones(&self, milestones: Vec<GhMilestone>) {
+            let mut guard = self.inner.lock().unwrap();
+            let max = milestones.iter().map(|m| m.number).max().unwrap_or(0);
+            guard.create_milestone_counter = guard.create_milestone_counter.max(max);
+            guard.milestones = milestones;
+        }
+
+        /// Alias of `set_milestones` matching the naming requested in #453.
+        pub fn set_existing_milestones(&self, milestones: Vec<GhMilestone>) {
+            self.set_milestones(milestones);
+        }
+
+        /// Alias of `set_issues` matching the naming requested in #453.
+        pub fn set_existing_issues(&self, issues: Vec<GhIssue>) {
+            self.set_issues(issues);
+        }
+
+        pub fn set_get_issue_error(&self, number: u64, msg: &str) {
+            self.inner
+                .lock()
+                .unwrap()
+                .get_issue_errors
+                .insert(number, msg.to_string());
+        }
+
+        pub fn set_add_label_error(&self, msg: &str) {
+            self.inner.lock().unwrap().add_label_error = Some(msg.to_string());
+        }
+
+        pub fn set_remove_label_error(&self, msg: &str) {
+            self.inner.lock().unwrap().remove_label_error = Some(msg.to_string());
+        }
+
+        pub fn set_create_pr_response(&self, pr_number: u64) {
+            self.inner.lock().unwrap().create_pr_response = Some(pr_number);
+        }
+
+        pub fn set_create_pr_error(&self, msg: &str) {
+            self.inner.lock().unwrap().create_pr_error = Some(msg.to_string());
+        }
+
+        pub fn set_list_prs_for_branch(&self, branch: &str, pr_numbers: Vec<u64>) {
+            self.inner
+                .lock()
+                .unwrap()
+                .list_prs_for_branch_responses
+                .insert(branch.to_string(), pr_numbers);
+        }
+
+        pub fn add_label_calls(&self) -> Vec<(u64, String)> {
+            self.inner.lock().unwrap().add_label_calls.clone()
+        }
+
+        pub fn remove_label_calls(&self) -> Vec<(u64, String)> {
+            self.inner.lock().unwrap().remove_label_calls.clone()
+        }
+
+        pub fn create_pr_calls(&self) -> Vec<CreatePrCallRecord> {
+            self.inner.lock().unwrap().create_pr_calls.clone()
+        }
+
+        pub fn create_milestone_calls(&self) -> Vec<(String, String)> {
+            self.inner.lock().unwrap().create_milestone_calls.clone()
+        }
+
+        pub fn create_issue_calls(&self) -> Vec<CreateIssueCallRecord> {
+            self.inner.lock().unwrap().create_issue_calls.clone()
+        }
+
+        pub fn set_labels(&self, labels: Vec<String>) {
+            self.inner.lock().unwrap().labels = labels;
+        }
+
+        pub fn set_list_labels_error(&self, msg: &str) {
+            self.inner.lock().unwrap().list_labels_error = Some(msg.to_string());
+        }
+
+        pub fn set_create_label_error(&self, msg: &str) {
+            self.inner.lock().unwrap().create_label_error = Some(msg.to_string());
+        }
+
+        pub fn list_labels_call_count(&self) -> u32 {
+            self.inner.lock().unwrap().list_labels_calls
+        }
+
+        pub fn create_label_calls(&self) -> Vec<(String, String)> {
+            self.inner.lock().unwrap().create_label_calls.clone()
+        }
+
+        pub fn set_pull_requests(&self, prs: Vec<crate::provider::github::types::GhPullRequest>) {
+            self.inner.lock().unwrap().pull_requests = prs;
+        }
+
+        pub fn set_list_open_prs_error(&self, msg: &str) {
+            self.inner.lock().unwrap().list_open_prs_error = Some(msg.to_string());
+        }
+
+        pub fn set_get_pr_error(&self, number: u64, msg: &str) {
+            self.inner
+                .lock()
+                .unwrap()
+                .get_pr_errors
+                .insert(number, msg.to_string());
+        }
+
+        pub fn set_submit_pr_review_error(&self, msg: &str) {
+            self.inner.lock().unwrap().submit_pr_review_error = Some(msg.to_string());
+        }
+
+        pub fn submit_pr_review_calls(&self) -> Vec<SubmitPrReviewCallRecord> {
+            self.inner.lock().unwrap().submit_pr_review_calls.clone()
+        }
+
+        // Milestone health-check helpers (#500)
+
+        pub fn set_list_issues_by_milestone_error(&self, msg: &str) {
+            self.inner.lock().unwrap().list_issues_by_milestone_error = Some(msg.to_string());
+        }
+
+        pub fn set_patch_milestone_error(&self, msg: &str) {
+            self.inner.lock().unwrap().patch_milestone_error = Some(msg.to_string());
+        }
+
+        pub fn clear_patch_milestone_error(&self) {
+            self.inner.lock().unwrap().patch_milestone_error = None;
+        }
+
+        pub fn patch_milestone_calls(&self) -> Vec<(u64, String)> {
+            self.inner.lock().unwrap().patch_milestone_calls.clone()
+        }
+    }
+
+    #[async_trait]
+    impl GitHubClient for MockGitHubClient {
+        async fn list_issues(&self, labels: &[&str]) -> Result<Vec<GhIssue>> {
+            let state = self.inner.lock().unwrap();
+            let label_set: std::collections::HashSet<&str> = labels.iter().copied().collect();
+            let filtered = state
+                .issues
+                .iter()
+                .filter(|i| {
+                    label_set.is_empty() || i.labels.iter().any(|l| label_set.contains(l.as_str()))
+                })
+                .cloned()
+                .collect();
+            Ok(filtered)
+        }
+
+        async fn list_issues_by_milestone(&self, _milestone: &str) -> Result<Vec<GhIssue>> {
+            let state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.list_issues_by_milestone_error {
+                anyhow::bail!("{}", err);
+            }
+            Ok(state.issues.clone())
+        }
+
+        async fn list_milestones(&self, _state: &str) -> Result<Vec<GhMilestone>> {
+            let state = self.inner.lock().unwrap();
+            Ok(state.milestones.clone())
+        }
+
+        async fn get_issue(&self, number: u64) -> Result<GhIssue> {
+            let state = self.inner.lock().unwrap();
+            if let Some(err_msg) = state.get_issue_errors.get(&number) {
+                anyhow::bail!("{}", err_msg);
+            }
+            state
+                .issues
+                .iter()
+                .find(|i| i.number == number)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("mock: issue #{} not found", number))
+        }
+
+        async fn add_label(&self, issue: u64, label: &str) -> Result<()> {
+            let mut state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.add_label_error {
+                anyhow::bail!("{}", err);
+            }
+            state.add_label_calls.push((issue, label.to_string()));
+            Ok(())
+        }
+
+        async fn remove_label(&self, issue: u64, label: &str) -> Result<()> {
+            let mut state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.remove_label_error {
+                anyhow::bail!("{}", err);
+            }
+            state.remove_label_calls.push((issue, label.to_string()));
+            Ok(())
+        }
+
+        async fn create_pr(
+            &self,
+            issue_number: u64,
+            title: &str,
+            body: &str,
+            head_branch: &str,
+            base_branch: &str,
+        ) -> Result<u64> {
+            let mut state = self.inner.lock().unwrap();
+            state.create_pr_calls.push(CreatePrCallRecord {
+                issue_number,
+                title: title.to_string(),
+                body: body.to_string(),
+                head_branch: head_branch.to_string(),
+                base_branch: base_branch.to_string(),
+            });
+            if let Some(ref err) = state.create_pr_error {
+                anyhow::bail!("{}", err);
+            }
+            Ok(state.create_pr_response.unwrap_or(1))
+        }
+
+        async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
+            let state = self.inner.lock().unwrap();
+            Ok(state
+                .list_prs_for_branch_responses
+                .get(head_branch)
+                .cloned()
+                .unwrap_or_default())
+        }
+
+        async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
+            use crate::util::{titles_equivalent, validate_title};
+            let normalized = validate_title(title, "milestone title")?;
+
+            let mut state = self.inner.lock().unwrap();
+            let outcome = if let Some(existing) = state
+                .milestones
+                .iter()
+                .find(|m| titles_equivalent(&m.title, &normalized))
+            {
+                CreateOutcome::Existed {
+                    number: existing.number,
+                    state: existing.state.clone(),
+                }
+            } else {
+                state.create_milestone_counter += 1;
+                let number = state.create_milestone_counter;
+                state
+                    .create_milestone_calls
+                    .push((normalized.clone(), description.to_string()));
+                state.milestones.push(GhMilestone {
+                    number,
+                    title: normalized,
+                    description: description.to_string(),
+                    state: "open".to_string(),
+                    open_issues: 0,
+                    closed_issues: 0,
+                });
+                CreateOutcome::Created(number)
+            };
+            drop(state);
+            Ok(outcome)
+        }
+
+        async fn create_issue(
+            &self,
+            title: &str,
+            body: &str,
+            labels: &[String],
+            milestone: Option<u64>,
+        ) -> Result<CreateOutcome> {
+            use crate::util::{titles_equivalent, validate_title};
+            let normalized = validate_title(title, "issue title")?;
+
+            let mut state = self.inner.lock().unwrap();
+            let outcome = if let Some(existing) = state
+                .issues
+                .iter()
+                .find(|i| titles_equivalent(&i.title, &normalized))
+            {
+                CreateOutcome::Existed {
+                    number: existing.number,
+                    state: existing.state.clone(),
+                }
+            } else {
+                state.create_issue_counter += 1;
+                let number = state.create_issue_counter;
+                state.create_issue_calls.push(CreateIssueCallRecord {
+                    title: normalized.clone(),
+                    body: body.to_string(),
+                    labels: labels.to_vec(),
+                    milestone,
+                });
+                state.issues.push(GhIssue {
+                    number,
+                    title: normalized,
+                    body: body.to_string(),
+                    labels: labels.to_vec(),
+                    state: "open".to_string(),
+                    html_url: format!("https://github.com/mock/repo/issues/{}", number),
+                    milestone,
+                    assignees: Vec::new(),
+                });
+                CreateOutcome::Created(number)
+            };
+            drop(state);
+            Ok(outcome)
+        }
+
+        async fn list_open_prs(
+            &self,
+        ) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
+            let state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.list_open_prs_error {
+                anyhow::bail!("{}", err);
+            }
+            Ok(state.pull_requests.clone())
+        }
+
+        async fn get_pr(
+            &self,
+            number: u64,
+        ) -> Result<crate::provider::github::types::GhPullRequest> {
+            let state = self.inner.lock().unwrap();
+            if let Some(err_msg) = state.get_pr_errors.get(&number) {
+                anyhow::bail!("{}", err_msg);
+            }
+            state
+                .pull_requests
+                .iter()
+                .find(|p| p.number == number)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("mock: PR #{} not found", number))
+        }
+
+        async fn submit_pr_review(
+            &self,
+            pr_number: u64,
+            event: crate::provider::github::types::PrReviewEvent,
+            body: &str,
+        ) -> Result<()> {
+            let mut state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.submit_pr_review_error {
+                anyhow::bail!("{}", err);
+            }
+            state.submit_pr_review_calls.push(SubmitPrReviewCallRecord {
+                pr_number,
+                event,
+                body: body.to_string(),
+            });
+            Ok(())
+        }
+
+        async fn list_labels(&self) -> Result<Vec<String>> {
+            let mut state = self.inner.lock().unwrap();
+            state.list_labels_calls += 1;
+            if let Some(ref err) = state.list_labels_error {
+                anyhow::bail!("{}", err);
+            }
+            Ok(state.labels.clone())
+        }
+
+        async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+            let mut state = self.inner.lock().unwrap();
+            if let Some(ref err) = state.create_label_error {
+                anyhow::bail!("{}", err);
+            }
+            state
+                .create_label_calls
+                .push((name.to_string(), color.to_string()));
+            if !state.labels.contains(&name.to_string()) {
+                state.labels.push(name.to_string());
+            }
+            Ok(())
+        }
+
+        async fn patch_milestone_description(
+            &self,
+            milestone_number: u64,
+            description: &str,
+        ) -> Result<()> {
+            let mut state = self.inner.lock().unwrap();
+            state
+                .patch_milestone_calls
+                .push((milestone_number, description.to_string()));
+            if let Some(ref err) = state.patch_milestone_error {
+                anyhow::bail!("{}", err);
+            }
+            // Mirror the production write into the in-memory milestone, so
+            // follow-up `list_milestones` calls see the new description.
+            if let Some(m) = state
+                .milestones
+                .iter_mut()
+                .find(|m| m.number == milestone_number)
+            {
+                m.description = description.to_string();
+            }
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mock::MockGitHubClient;
+
+    fn make_issue(number: u64, labels: &[&str]) -> GhIssue {
+        GhIssue {
+            number,
+            title: format!("Issue #{}", number),
+            body: String::new(),
+            labels: labels.iter().map(|s| s.to_string()).collect(),
+            state: "open".to_string(),
+            html_url: format!("https://github.com/owner/repo/issues/{}", number),
+            milestone: None,
+            assignees: vec![],
+        }
+    }
+
+    // parse_issues_json
+
+    #[test]
+    fn parse_issues_json_valid_array() {
+        let json = r#"[
+            {"number": 1, "title": "First", "body": "desc", "labels": [{"name": "maestro:ready"}], "state": "open", "url": "https://github.com/r/i/1"},
+            {"number": 2, "title": "Second", "body": "", "labels": [], "state": "open", "url": "https://github.com/r/i/2"}
+        ]"#;
+        let issues = parse_issues_json(json).unwrap();
+        assert_eq!(issues.len(), 2);
+        assert_eq!(issues[0].number, 1);
+        assert_eq!(issues[0].labels, vec!["maestro:ready"]);
+        assert_eq!(issues[1].number, 2);
+    }
+
+    #[test]
+    fn parse_issues_json_empty_array() {
+        let issues = parse_issues_json("[]").unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn parse_issues_json_invalid_json_returns_err() {
+        assert!(parse_issues_json("{not json}").is_err());
+    }
+
+    #[test]
+    fn parse_issues_json_normalizes_state_to_lowercase() {
+        let json = r#"[
+            {"number": 1, "title": "T", "body": "", "state": "OPEN", "url": "u", "labels": []},
+            {"number": 2, "title": "T2", "body": "", "state": "CLOSED", "url": "u2", "labels": []}
+        ]"#;
+        let issues = parse_issues_json(json).unwrap();
+        assert_eq!(
+            issues[0].state, "open",
+            "OPEN must be normalized to lowercase"
+        );
+        assert_eq!(
+            issues[1].state, "closed",
+            "CLOSED must be normalized to lowercase"
+        );
+    }
+
+    #[test]
+    fn parse_issues_json_extracts_label_names_from_objects() {
+        let json = r#"[
+            {"number": 5, "title": "T", "body": "", "state": "open", "url": "u",
+             "labels": [{"name": "priority:P0"}, {"name": "maestro:ready"}]}
+        ]"#;
+        let issues = parse_issues_json(json).unwrap();
+        assert_eq!(issues[0].labels, vec!["priority:P0", "maestro:ready"]);
+    }
+
+    // MockGitHubClient tests
+
+    #[tokio::test]
+    async fn mock_list_issues_returns_all_when_no_filter() {
+        let client = MockGitHubClient::new();
+        client.set_issues(vec![
+            make_issue(1, &["maestro:ready"]),
+            make_issue(2, &["bug"]),
+        ]);
+        let issues = client.list_issues(&[]).await.unwrap();
+        assert_eq!(issues.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn mock_list_issues_filters_by_label() {
+        let client = MockGitHubClient::new();
+        client.set_issues(vec![
+            make_issue(1, &["maestro:ready"]),
+            make_issue(2, &["bug"]),
+        ]);
+        let issues = client.list_issues(&["maestro:ready"]).await.unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].number, 1);
+    }
+
+    #[tokio::test]
+    async fn mock_get_issue_found() {
+        let client = MockGitHubClient::new();
+        client.set_issues(vec![make_issue(42, &["maestro:ready"])]);
+        let issue = client.get_issue(42).await.unwrap();
+        assert_eq!(issue.number, 42);
+    }
+
+    #[tokio::test]
+    async fn mock_get_issue_not_found_returns_err() {
+        let client = MockGitHubClient::new();
+        let result = client.get_issue(999).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn mock_get_issue_custom_error() {
+        let client = MockGitHubClient::new();
+        client.set_get_issue_error(10, "rate limited");
+        client.set_issues(vec![make_issue(10, &[])]);
+        let err = client.get_issue(10).await.unwrap_err();
+        assert!(err.to_string().contains("rate limited"));
+    }
+
+    #[tokio::test]
+    async fn mock_add_label_records_call() {
+        let client = MockGitHubClient::new();
+        client.add_label(7, "maestro:in-progress").await.unwrap();
+        let calls = client.add_label_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0], (7, "maestro:in-progress".to_string()));
+    }
+
+    #[tokio::test]
+    async fn mock_add_label_propagates_configured_error() {
+        let client = MockGitHubClient::new();
+        client.set_add_label_error("label not found");
+        let result = client.add_label(1, "anything").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("label not found"));
+    }
+
+    #[tokio::test]
+    async fn mock_remove_label_records_call() {
+        let client = MockGitHubClient::new();
+        client.remove_label(5, "maestro:ready").await.unwrap();
+        let calls = client.remove_label_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0], (5, "maestro:ready".to_string()));
+    }
+
+    #[tokio::test]
+    async fn mock_remove_label_propagates_configured_error() {
+        let client = MockGitHubClient::new();
+        client.set_remove_label_error("network error");
+        let result = client.remove_label(1, "anything").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn mock_create_pr_records_call() {
+        let client = MockGitHubClient::new();
+        client.set_create_pr_response(42);
+        let pr_number = client
+            .create_pr(
+                10,
+                "feat: add thing",
+                "Closes #10",
+                "maestro/issue-10",
+                "main",
+            )
+            .await
+            .unwrap();
+        assert_eq!(pr_number, 42);
+
+        let calls = client.create_pr_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].issue_number, 10);
+        assert_eq!(calls[0].head_branch, "maestro/issue-10");
+        assert_eq!(calls[0].base_branch, "main");
+    }
+
+    #[tokio::test]
+    async fn mock_create_pr_propagates_configured_error() {
+        let client = MockGitHubClient::new();
+        client.set_create_pr_error("branch not found");
+        let result = client
+            .create_pr(1, "title", "body", "bad-branch", "main")
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("branch not found"));
+    }
+
+    // parse_milestones_json
+
+    #[test]
+    fn parse_milestones_json_valid_array() {
+        let json = r#"[
+            {"number": 1, "title": "v1.0", "description": "First release", "state": "open", "open_issues": 3, "closed_issues": 7},
+            {"number": 2, "title": "v2.0", "description": "", "state": "open", "open_issues": 0, "closed_issues": 0}
+        ]"#;
+        let milestones = parse_milestones_json(json).unwrap();
+        assert_eq!(milestones.len(), 2);
+        assert_eq!(milestones[0].number, 1);
+        assert_eq!(milestones[0].title, "v1.0");
+        assert_eq!(milestones[0].open_issues, 3);
+        assert_eq!(milestones[0].closed_issues, 7);
+        assert_eq!(milestones[1].number, 2);
+    }
+
+    #[test]
+    fn parse_milestones_json_empty_array() {
+        let milestones = parse_milestones_json("[]").unwrap();
+        assert!(milestones.is_empty());
+    }
+
+    #[test]
+    fn parse_milestones_json_invalid_json_returns_err() {
+        assert!(parse_milestones_json("{not json}").is_err());
+    }
+
+    #[test]
+    fn parse_milestones_json_missing_optional_fields_default() {
+        let json = r#"[{"number": 5, "title": "v5", "state": "open"}]"#;
+        let milestones = parse_milestones_json(json).unwrap();
+        assert_eq!(milestones[0].description, "");
+        assert_eq!(milestones[0].open_issues, 0);
+        assert_eq!(milestones[0].closed_issues, 0);
+    }
+
+    // MockGitHubClient::list_milestones
+
+    #[tokio::test]
+    async fn mock_list_milestones_returns_stored_milestones() {
+        let client = MockGitHubClient::new();
+        client.set_milestones(vec![
+            GhMilestone {
+                number: 1,
+                title: "v1.0".to_string(),
+                description: String::new(),
+                state: "open".to_string(),
+                open_issues: 2,
+                closed_issues: 3,
+            },
+            GhMilestone {
+                number: 2,
+                title: "v2.0".to_string(),
+                description: String::new(),
+                state: "open".to_string(),
+                open_issues: 0,
+                closed_issues: 0,
+            },
+        ]);
+        let milestones = client.list_milestones("open").await.unwrap();
+        assert_eq!(milestones.len(), 2);
+        assert_eq!(milestones[0].title, "v1.0");
+    }
+
+    #[tokio::test]
+    async fn mock_list_milestones_returns_empty_when_none_set() {
+        let client = MockGitHubClient::new();
+        let milestones = client.list_milestones("open").await.unwrap();
+        assert!(milestones.is_empty());
+    }
+
+    // -- list_prs_for_branch --
+
+    #[tokio::test]
+    async fn mock_list_prs_for_branch_returns_configured_prs() {
+        let client = MockGitHubClient::new();
+        client.set_list_prs_for_branch("maestro/issue-42", vec![10, 20]);
+        let prs = client
+            .list_prs_for_branch("maestro/issue-42")
+            .await
+            .unwrap();
+        assert_eq!(prs, vec![10, 20]);
+    }
+
+    #[tokio::test]
+    async fn mock_list_prs_for_branch_returns_empty_for_unknown_branch() {
+        let client = MockGitHubClient::new();
+        let prs = client
+            .list_prs_for_branch("maestro/issue-99")
+            .await
+            .unwrap();
+        assert!(prs.is_empty());
+    }
+
+    // -- is_auth_error --
+
+    #[test]
+    fn is_auth_error_returns_true_for_not_logged_in() {
+        assert!(is_auth_error("ERROR: not logged in to any GitHub host"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_true_for_authentication_required() {
+        assert!(is_auth_error("gh: authentication required"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_true_for_http_401() {
+        assert!(is_auth_error("HTTP 401: Unauthorized"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_true_for_auth_token_errors() {
+        assert!(is_auth_error(
+            "error refreshing authentication token: token expired"
+        ));
+    }
+
+    #[test]
+    fn is_auth_error_returns_true_for_try_authenticating() {
+        assert!(is_auth_error("try authenticating with: gh auth login"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_false_for_network_timeout() {
+        assert!(!is_auth_error("dial tcp: connection timed out"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_false_for_branch_not_found() {
+        assert!(!is_auth_error("ERROR: branch 'maestro/issue-99' not found"));
+    }
+
+    #[test]
+    fn is_auth_error_returns_false_for_empty_string() {
+        assert!(!is_auth_error(""));
+    }
+
+    #[test]
+    fn is_auth_error_is_case_insensitive() {
+        assert!(is_auth_error("NOT LOGGED IN TO ANY GITHUB HOST"));
+        assert!(is_auth_error("Http 401: unauthorized"));
+        assert!(is_auth_error("AUTHENTICATION REQUIRED"));
+    }
+
+    // -- is_gh_auth_error --
+
+    #[test]
+    fn is_gh_auth_error_returns_true_for_sentinel() {
+        let err = anyhow::anyhow!("[gh-auth-error] not logged in");
+        assert!(is_gh_auth_error(&err));
+    }
+
+    #[test]
+    fn is_gh_auth_error_returns_false_for_regular_error() {
+        let err = anyhow::anyhow!("gh command failed: branch not found");
+        assert!(!is_gh_auth_error(&err));
+    }
+
+    // -- is_label_not_found_error (#559) --
+
+    #[test]
+    fn is_label_not_found_error_matches_quoted_label() {
+        let stderr = "failed to update https://github.com/foo/bar: 'maestro:in-progress' not found";
+        assert!(is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_issue_not_found() {
+        let stderr = "GraphQL: Could not resolve to an Issue";
+        assert!(!is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_label_mismatch() {
+        let stderr = "'maestro:done' not found";
+        assert!(!is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_auth_shape() {
+        let stderr = "[gh-auth-error] gh auth status failed";
+        assert!(!is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_matches_issue_url_form() {
+        let stderr = "failed to update https://github.com/CarlosDanielDev/maestro/issues/542: \
+                      'maestro:in-progress' not found";
+        assert!(is_label_not_found_error(stderr, "maestro:in-progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_case_mismatch() {
+        let stderr = "'maestro:in-progress' not found";
+        assert!(!is_label_not_found_error(stderr, "Maestro:In-Progress"));
+    }
+
+    #[test]
+    fn is_label_not_found_error_rejects_empty_stderr() {
+        assert!(!is_label_not_found_error("", "maestro:in-progress"));
+    }
+
+    // -- create_milestone / create_issue mock tests --
+
+    #[tokio::test]
+    async fn mock_create_milestone_records_call_and_returns_number() {
+        let client = MockGitHubClient::new();
+        let o1 = client
+            .create_milestone("M0", "First milestone")
+            .await
+            .unwrap();
+        let o2 = client
+            .create_milestone("M1", "Second milestone")
+            .await
+            .unwrap();
+        assert_eq!(o1, CreateOutcome::Created(1));
+        assert_eq!(o2, CreateOutcome::Created(2));
+        let calls = client.create_milestone_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].0, "M0");
+        assert_eq!(calls[1].0, "M1");
+    }
+
+    #[tokio::test]
+    async fn mock_create_issue_records_call_and_returns_number() {
+        let client = MockGitHubClient::new();
+        let o = client
+            .create_issue("feat: thing", "body", &["enhancement".into()], Some(1))
+            .await
+            .unwrap();
+        assert_eq!(o, CreateOutcome::Created(1));
+        let calls = client.create_issue_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].title, "feat: thing");
+        assert_eq!(calls[0].labels, vec!["enhancement"]);
+        assert_eq!(calls[0].milestone, Some(1));
+    }
+
+    #[tokio::test]
+    async fn mock_create_issue_increments_counter() {
+        let client = MockGitHubClient::new();
+        let o1 = client.create_issue("a", "", &[], None).await.unwrap();
+        let o2 = client.create_issue("b", "", &[], None).await.unwrap();
+        let o3 = client.create_issue("c", "", &[], None).await.unwrap();
+        assert_eq!(o1.number(), 1);
+        assert_eq!(o2.number(), 2);
+        assert_eq!(o3.number(), 3);
+        assert!(!o1.is_existed());
+        assert!(!o2.is_existed());
+        assert!(!o3.is_existed());
+    }
+
+    // -- Issue #453: CreateOutcome proactive pre-check --
+
+    fn gh_issue(number: u64, title: &str, state: &str) -> GhIssue {
+        GhIssue {
+            number,
+            title: title.to_string(),
+            body: String::new(),
+            labels: Vec::new(),
+            state: state.to_string(),
+            html_url: format!("https://github.com/owner/repo/issues/{}", number),
+            milestone: None,
+            assignees: Vec::new(),
+        }
+    }
+
+    fn gh_milestone(number: u64, title: &str, state: &str) -> GhMilestone {
+        GhMilestone {
+            number,
+            title: title.to_string(),
+            description: String::new(),
+            state: state.to_string(),
+            open_issues: 0,
+            closed_issues: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn create_milestone_proactive_hit_returns_existed_without_call() {
+        let client = MockGitHubClient::new();
+        client.set_existing_milestones(vec![gh_milestone(42, "M0: Foundation", "open")]);
+
+        let outcome = client
+            .create_milestone("M0: Foundation", "desc")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            CreateOutcome::Existed {
+                number: 42,
+                state: "open".into()
+            }
+        );
+        assert!(
+            client.create_milestone_calls().is_empty(),
+            "no POST should have been recorded"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_milestone_proactive_hit_tolerates_whitespace_and_case() {
+        let client = MockGitHubClient::new();
+        client.set_existing_milestones(vec![gh_milestone(42, "M0: Foundation", "open")]);
+
+        let outcome = client
+            .create_milestone("  m0:   foundation  ", "desc")
+            .await
+            .unwrap();
+
+        assert!(matches!(outcome, CreateOutcome::Existed { number: 42, .. }));
+        assert!(client.create_milestone_calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn create_milestone_finds_closed_milestone_and_returns_state() {
+        let client = MockGitHubClient::new();
+        client.set_existing_milestones(vec![gh_milestone(9, "M0: Done", "closed")]);
+
+        let outcome = client.create_milestone("M0: Done", "desc").await.unwrap();
+
+        assert_eq!(
+            outcome,
+            CreateOutcome::Existed {
+                number: 9,
+                state: "closed".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn create_milestone_creates_new_when_no_match() {
+        let client = MockGitHubClient::new();
+        client.set_existing_milestones(vec![gh_milestone(1, "M0", "open")]);
+
+        let outcome = client.create_milestone("M1", "desc").await.unwrap();
+
+        assert!(matches!(outcome, CreateOutcome::Created(_)));
+        assert_eq!(client.create_milestone_calls().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn create_issue_proactive_hit_returns_existed_without_call() {
+        let client = MockGitHubClient::new();
+        client.set_existing_issues(vec![gh_issue(100, "feat: login page", "open")]);
+
+        let outcome = client
+            .create_issue("feat: login page", "body", &[], None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            CreateOutcome::Existed {
+                number: 100,
+                state: "open".into()
+            }
+        );
+        assert!(
+            client.create_issue_calls().is_empty(),
+            "no POST should have been recorded"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_issue_finds_closed_issue() {
+        let client = MockGitHubClient::new();
+        client.set_existing_issues(vec![gh_issue(77, "feat: done", "closed")]);
+
+        let outcome = client
+            .create_issue("feat: done", "body", &[], None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            CreateOutcome::Existed {
+                number: 77,
+                state: "closed".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn create_issue_rejects_empty_title_before_list_call() {
+        let client = MockGitHubClient::new();
+        let result = client.create_issue("", "body", &[], None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_issue_rejects_whitespace_only_title() {
+        let client = MockGitHubClient::new();
+        let result = client.create_issue("   ", "body", &[], None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_issue_rejects_leading_dash_title() {
+        let client = MockGitHubClient::new();
+        let result = client.create_issue("-evil", "body", &[], None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_issue_rejects_oversize_title() {
+        let client = MockGitHubClient::new();
+        let huge = "x".repeat(300);
+        let result = client.create_issue(&huge, "body", &[], None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_milestone_rejects_empty_title() {
+        let client = MockGitHubClient::new();
+        let result = client.create_milestone("", "desc").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_outcome_number_helper() {
+        assert_eq!(CreateOutcome::Created(42).number(), 42);
+        assert_eq!(
+            CreateOutcome::Existed {
+                number: 7,
+                state: "open".into(),
+            }
+            .number(),
+            7
+        );
+    }
+
+    // -- PR review mock tests --
+
+    fn make_pr(number: u64) -> crate::provider::github::types::GhPullRequest {
+        crate::provider::github::types::GhPullRequest {
+            number,
+            title: format!("PR #{}", number),
+            body: String::new(),
+            state: "open".to_string(),
+            html_url: format!("https://github.com/owner/repo/pull/{}", number),
+            head_branch: format!("fix/issue-{}", number),
+            base_branch: "main".to_string(),
+            author: "bot".to_string(),
+            labels: vec![],
+            draft: false,
+            mergeable: true,
+            additions: 0,
+            deletions: 0,
+            changed_files: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn mock_list_open_prs_returns_configured_prs() {
+        let client = MockGitHubClient::new();
+        client.set_pull_requests(vec![make_pr(10), make_pr(11)]);
+        let prs = client.list_open_prs().await.unwrap();
+        assert_eq!(prs.len(), 2);
+        assert_eq!(prs[0].number, 10);
+        assert_eq!(prs[1].number, 11);
+    }
+
+    #[tokio::test]
+    async fn mock_list_open_prs_returns_empty_by_default() {
+        let client = MockGitHubClient::new();
+        let prs = client.list_open_prs().await.unwrap();
+        assert!(prs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mock_list_open_prs_propagates_configured_error() {
+        let client = MockGitHubClient::new();
+        client.set_list_open_prs_error("connection refused");
+        let result = client.list_open_prs().await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("connection refused")
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_get_pr_returns_pr_by_number() {
+        let client = MockGitHubClient::new();
+        client.set_pull_requests(vec![make_pr(42)]);
+        let pr = client.get_pr(42).await.unwrap();
+        assert_eq!(pr.number, 42);
+    }
+
+    #[tokio::test]
+    async fn mock_get_pr_returns_not_found_for_missing_number() {
+        let client = MockGitHubClient::new();
+        let result = client.get_pr(99).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn mock_get_pr_propagates_configured_error() {
+        let client = MockGitHubClient::new();
+        client.set_get_pr_error(5, "rate limited");
+        client.set_pull_requests(vec![make_pr(5)]);
+        let result = client.get_pr(5).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("rate limited"));
+    }
+
+    #[tokio::test]
+    async fn mock_submit_pr_review_records_approve_call() {
+        use crate::provider::github::types::PrReviewEvent;
+        let client = MockGitHubClient::new();
+        client
+            .submit_pr_review(7, PrReviewEvent::Approve, "LGTM")
+            .await
+            .unwrap();
+        let calls = client.submit_pr_review_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].pr_number, 7);
+        assert_eq!(calls[0].event, PrReviewEvent::Approve);
+        assert_eq!(calls[0].body, "LGTM");
+    }
+
+    #[tokio::test]
+    async fn mock_submit_pr_review_records_request_changes_call() {
+        use crate::provider::github::types::PrReviewEvent;
+        let client = MockGitHubClient::new();
+        client
+            .submit_pr_review(3, PrReviewEvent::RequestChanges, "needs work")
+            .await
+            .unwrap();
+        let calls = client.submit_pr_review_calls();
+        assert_eq!(calls[0].event, PrReviewEvent::RequestChanges);
+    }
+
+    #[tokio::test]
+    async fn mock_submit_pr_review_records_comment_call() {
+        use crate::provider::github::types::PrReviewEvent;
+        let client = MockGitHubClient::new();
+        client
+            .submit_pr_review(1, PrReviewEvent::Comment, "nice")
+            .await
+            .unwrap();
+        let calls = client.submit_pr_review_calls();
+        assert_eq!(calls[0].event, PrReviewEvent::Comment);
+    }
+
+    #[tokio::test]
+    async fn mock_submit_pr_review_propagates_configured_error() {
+        use crate::provider::github::types::PrReviewEvent;
+        let client = MockGitHubClient::new();
+        client.set_submit_pr_review_error("forbidden");
+        let result = client.submit_pr_review(1, PrReviewEvent::Approve, "").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("forbidden"));
+    }
+
+    // -- parse_prs_json --
+
+    #[test]
+    fn parse_prs_json_valid_array() {
+        let json = r#"[
+            {"number": 1, "title": "Fix bug", "body": "desc", "state": "OPEN", "url": "https://github.com/r/p/1",
+             "headRefName": "fix/bug", "baseRefName": "main", "author": {"login": "user1"},
+             "labels": [{"name": "enhancement"}], "isDraft": false, "mergeable": "MERGEABLE",
+             "additions": 10, "deletions": 5, "changedFiles": 3}
+        ]"#;
+        let prs = parse_prs_json(json).unwrap();
+        assert_eq!(prs.len(), 1);
+        assert_eq!(prs[0].number, 1);
+        assert_eq!(prs[0].title, "Fix bug");
+        assert_eq!(prs[0].head_branch, "fix/bug");
+        assert_eq!(prs[0].base_branch, "main");
+        assert_eq!(prs[0].author, "user1");
+        assert_eq!(prs[0].state, "open");
+        assert!(prs[0].mergeable);
+        assert_eq!(prs[0].additions, 10);
+        assert_eq!(prs[0].labels, vec!["enhancement"]);
+    }
+
+    #[test]
+    fn parse_prs_json_empty_array() {
+        let prs = parse_prs_json("[]").unwrap();
+        assert!(prs.is_empty());
+    }
+
+    #[test]
+    fn parse_prs_json_invalid_json_returns_err() {
+        assert!(parse_prs_json("{not json}").is_err());
+    }
+
+    // E-1: patch_milestone_description success path (#500).
+    #[tokio::test]
+    async fn mock_patch_milestone_description_success_records_call() {
+        let mock = MockGitHubClient::new();
+        let result = mock
+            .patch_milestone_description(42, "new description")
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(
+            mock.patch_milestone_calls(),
+            vec![(42u64, "new description".to_string())]
+        );
+    }
+
+    // E-2: error injection still records the call (#500).
+    #[tokio::test]
+    async fn mock_patch_milestone_description_error_returns_err_records_call() {
+        let mock = MockGitHubClient::new();
+        mock.set_patch_milestone_error("conflict: description was modified externally");
+        let result = mock.patch_milestone_description(7, "desc").await;
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("conflict"), "msg = {msg}");
+        assert_eq!(mock.patch_milestone_calls().len(), 1);
+    }
+
+    // E-3: multiple calls accumulate in order (#500).
+    #[tokio::test]
+    async fn mock_patch_milestone_multiple_calls_accumulate_in_order() {
+        let mock = MockGitHubClient::new();
+        let _ = mock.patch_milestone_description(1, "first").await;
+        let _ = mock.patch_milestone_description(2, "second").await;
+        assert_eq!(
+            mock.patch_milestone_calls(),
+            vec![(1u64, "first".to_string()), (2u64, "second".to_string()),]
+        );
+    }
+
+    // ── with_repo argv-injection guard ────────────────────────────────
+
+    #[test]
+    fn with_repo_accepts_owner_slash_repo() {
+        let c = GhCliClient::new().with_repo("CarlosDanielDev/maestro".into());
+        assert!(c.is_ok());
+    }
+
+    #[test]
+    fn from_config_repo_injects_repo_into_list_open_prs_argv() {
+        let c = GhCliClient::from_config_repo(Some("CarlosDanielDev/maestro".into()));
+        let argv = gh_argv::build_list_open_prs_argv("number", c.repo_arg());
+        assert!(
+            argv.windows(2)
+                .any(|w| w == ["--repo", "CarlosDanielDev/maestro"])
+        );
+    }
+
+    #[test]
+    fn from_config_repo_falls_back_for_missing_or_invalid_repo() {
+        assert_eq!(GhCliClient::from_config_repo(None).repo_arg(), None);
+        assert_eq!(
+            GhCliClient::from_config_repo(Some("not-owner-repo-shape".into())).repo_arg(),
+            None
+        );
+    }
+
+    #[test]
+    fn with_repo_rejects_dash_prefixed_value() {
+        let c = GhCliClient::new().with_repo("--evil-flag=value".into());
+        assert!(c.is_err(), "must reject argv-injection-shaped repo");
+    }
+
+    #[test]
+    fn with_repo_rejects_missing_slash() {
+        let c = GhCliClient::new().with_repo("not-owner-repo-shape".into());
+        assert!(c.is_err());
+    }
+
+    #[test]
+    fn with_repo_rejects_empty_owner() {
+        let c = GhCliClient::new().with_repo("/repo".into());
+        assert!(c.is_err());
+    }
+
+    #[test]
+    fn with_repo_rejects_empty_repo() {
+        let c = GhCliClient::new().with_repo("owner/".into());
+        assert!(c.is_err());
+    }
+}

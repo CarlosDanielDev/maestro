@@ -1,4 +1,4 @@
-use super::client::GitHubClient;
+use super::transport::GitHubClient;
 use super::types::MaestroLabel;
 use anyhow::Result;
 
@@ -49,7 +49,7 @@ impl<C: GitHubClient> LabelManager<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::github::client::mock::MockGitHubClient;
+    use crate::provider::github::transport::mock::MockGitHubClient;
 
     #[tokio::test]
     async fn mark_in_progress_removes_ready_adds_in_progress() {
