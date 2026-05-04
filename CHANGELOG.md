@@ -7,6 +7,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-05-04
+
+### Added
+- fix: gate Azure DevOps provider behind experimental.azure_devops flag (#404)
+- feat: wire modes resolver into session spawn path (#402)
+
+### Chore
+- tech-debt: resolve TurboQuant CompressedContext.vectors dead code (#403)
+
 ## [0.19.0] - 2026-05-04
 
 ### Chore
