@@ -7,6 +7,8 @@
 #   2. Sets up PATH with fake-gh.sh and fake-cargo.sh in front.
 #   3. Invokes the hook with environment overrides as needed.
 #   4. Asserts exit code and relevant stdout/stderr.
+#
+# shellcheck disable=SC2030,SC2031
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
@@ -22,7 +24,7 @@ setup() {
 
   # Scratch git repo.
   TEST_REPO="$("$FIXTURES/init-test-repo.sh")"
-  cd "$TEST_REPO"
+  cd "$TEST_REPO" || exit
 }
 
 teardown() {
@@ -61,7 +63,9 @@ teardown() {
   [[ "$output" == *"/tmp/maestro-123-"* ]]
   log_dir=$(echo "$output" | grep -oE '/tmp/maestro-123-[0-9]+' | head -1)
   [ -f "$log_dir/issue.json" ]
+  [ -f "$log_dir/issue-summary.md" ]
   python3 -c "import json; json.load(open('$log_dir/issue.json'))"
+  [[ "$(cat "$log_dir/issue-summary.md")" == *"# test issue"* ]]
 }
 
 @test "exits 1 when issue is CLOSED" {
@@ -97,10 +101,10 @@ teardown() {
   echo "dirty" > new-file.txt
   git add new-file.txt
   export FAKE_CARGO_TEST_EXIT=0
-  run bash -c "echo 'S' | bash '$HOOK' 123"
+  run bash "$HOOK" 123 --dirty-tree-action=stash
   [ "$status" -eq 0 ]
   [[ "$output" == *"stashed as 'auto-stash before /implement #123'"* ]]
-  [ -n "$(git stash list | grep 'auto-stash before /implement #123')" ]
+  git stash list | grep -q 'auto-stash before /implement #123'
 }
 
 @test "calls preflight.sh when present and propagates exit code on failure" {

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Pre-check hook for /implement.
 # Argument: $1 = issue number.
+# Outputs in $GATE_LOG_DIR:
+#   issue.json        — full gh issue payload fetched in Gate 4
+#   issue-summary.md  — condensed DOR-section summary for downstream agents
+#   dor-lint.json     — created later by /implement Step 4 fast-path lint
 #
 # Optional flags (parsed after the issue number):
 #   --dirty-tree-action=<stash|abort|ask>
@@ -10,6 +14,9 @@
 #       Default: ask if stdin is a TTY, otherwise abort with a clear message.
 
 set -euo pipefail
+
+hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$hook_dir/../.." && pwd)"
 
 issue_number="${1:-}"
 shift || true
@@ -66,6 +73,12 @@ if ! gh issue view "$issue_number" \
   > "$GATE_LOG_DIR/issue.json" 2>"$GATE_LOG_DIR/gh-error.log"; then
   echo "implement-gates: failed to fetch issue #${issue_number}" >&2
   cat "$GATE_LOG_DIR/gh-error.log" >&2
+  exit 1
+fi
+
+if ! "$repo_root/scripts/condense-issue.sh" "$GATE_LOG_DIR/issue.json" \
+  > "$GATE_LOG_DIR/issue-summary.md"; then
+  echo "implement-gates: failed to condense issue #${issue_number}" >&2
   exit 1
 fi
 
@@ -165,6 +178,6 @@ fi
 # $HOME/.cache/maestro to avoid the /tmp symlink-attack vector on multi-user
 # Linux. /implement Step 2 walks the same resolution chain on read.
 # shellcheck disable=SC1091
-source "$(dirname "$0")/sentinel-path.sh"
+source "$hook_dir/sentinel-path.sh"
 echo -n "$GATE_LOG_DIR" > "$SENTINEL_PATH"
 echo "sentinel: $SENTINEL_PATH"

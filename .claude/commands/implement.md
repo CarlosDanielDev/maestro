@@ -103,22 +103,92 @@ Exit codes:
 - `6` — dirty tree, user chose abort. Abort cleanly.
 - `7+` — preflight.sh failure. Abort with its stderr.
 
-### Step 3: Read cached issue JSON
+### Step 3: Read cached issue JSON and summary
 
-The hook has cached the issue JSON at `$GATE_LOG_DIR/issue.json`. Read it directly — no second `gh` call.
+The hook has cached the issue JSON at `$GATE_LOG_DIR/issue.json` and a condensed
+DOR summary at `$GATE_LOG_DIR/issue-summary.md`. Read them directly — no second
+`gh` call. Prefer `issue-summary.md` for downstream subagents that only need the
+issue requirements; keep `issue.json` for mechanical gates and fallback checks
+that need labels, state, comments, or other structured fields.
 
 ```bash
 cat "$GATE_LOG_DIR/issue.json"
+cat "$GATE_LOG_DIR/issue-summary.md"
 ```
 
 ### Step 4: Gatekeeper (GATE — MANDATORY)
 
-Invoke `subagent-gatekeeper` via the `Agent` tool. Pass the issue JSON (from `$GATE_LOG_DIR/issue.json`), selected mode, and repo name.
+Run the mechanical DOR lint first. It writes `$GATE_LOG_DIR/dor-lint.json` and
+always exits 0; the JSON verdict decides whether the subagent can be skipped.
+
+```bash
+scripts/dor-lint.sh "$GATE_LOG_DIR/issue.json" >/dev/null
+
+lint_passed=$(jq -r .passed "$GATE_LOG_DIR/dor-lint.json")
+all_blockers_closed=$(jq -r '.blocker_states | to_entries | all(.value == "CLOSED")' "$GATE_LOG_DIR/dor-lint.json")
+contract_required=$(jq -r '.reasons | index("contract validation required") != null' "$GATE_LOG_DIR/dor-lint.json")
+
+if [ "$lint_passed" = "true" ] && \
+   [ "$all_blockers_closed" = "true" ] && \
+   [ "$contract_required" = "false" ]; then
+  python3 - "$GATE_LOG_DIR/dor-lint.json" "$GATE_LOG_DIR/gatekeeper.json" <<'PY'
+import json
+import sys
+
+lint = json.load(open(sys.argv[1]))
+task_map = {
+    "feature": "implementation",
+    "bug": "implementation",
+    "trivial": "implementation",
+    "docs": "docs",
+    "refactor": "refactor",
+}
+report = {
+    "report_version": 1,
+    "status": "PASS",
+    "task_type": task_map.get(lint.get("task_type"), "implementation"),
+    "dor": {
+        "passed": True,
+        "missing_sections": [],
+        "weak_sections": [],
+    },
+    "blockers": {
+        "passed": True,
+        "open": [],
+    },
+    "contracts": {
+        "passed": True,
+        "missing": [],
+    },
+    "remediation": {
+        "comment_body": "",
+        "labels_to_add": [],
+    },
+    "reasons": [],
+}
+json.dump(report, open(sys.argv[2], "w"), separators=(",", ":"))
+open(sys.argv[2], "a").write("\n")
+PY
+  task_type=$(jq -r .task_type "$GATE_LOG_DIR/gatekeeper.json")
+  echo "Gatekeeper fast-path PASS (task_type: $task_type)"
+  export TASK_TYPE="$task_type"
+else
+  echo "DOR lint did not qualify for fast-path; invoking subagent-gatekeeper."
+fi
+```
+
+If the fast path did not write `$GATE_LOG_DIR/gatekeeper.json`, invoke
+`subagent-gatekeeper` via the `Agent` tool. Pass the issue JSON (from
+`$GATE_LOG_DIR/issue.json`), selected mode, and repo name. This preserves the
+subagent interface for ambiguous lint failures, missing sections, open blockers,
+and contract-validation cases.
 
 The subagent's response will contain a fenced `json gatekeeper` code block. Pipe its full response through the parser:
 
 ```bash
-echo "$SUBAGENT_RESPONSE" | python3 .claude/hooks/parse_gatekeeper_report.py > "$GATE_LOG_DIR/gatekeeper.json"
+if [ ! -f "$GATE_LOG_DIR/gatekeeper.json" ]; then
+  echo "$SUBAGENT_RESPONSE" | python3 .claude/hooks/parse_gatekeeper_report.py > "$GATE_LOG_DIR/gatekeeper.json"
+fi
 ```
 
 Then branch on the parsed report:
@@ -269,7 +339,9 @@ Vibe mode skips 6a and 6c. All gates use `bash` (not `sh`) — `${PIPESTATUS[0]}
 
 #### 6a. `subagent-architect` → blueprint
 
-Orchestrator mode only. Invoke `subagent-architect` with the issue JSON and the architecture blueprint request. If Step 5 chose Continue, prepend the resumption context prompt.
+Orchestrator mode only. Invoke `subagent-architect` with the condensed issue
+summary from `$GATE_LOG_DIR/issue-summary.md` and the architecture blueprint
+request. If Step 5 chose Continue, prepend the resumption context prompt.
 
 #### 6b. `/validate-contracts` (if architect blueprint touches API endpoints)
 

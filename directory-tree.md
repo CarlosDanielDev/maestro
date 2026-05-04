@@ -529,11 +529,15 @@ maestro/
 │   ├── check-coverage-tiers.sh            # Validate test-coverage tier thresholds
 │   ├── check-file-size.sh                 # Enforce per-file LOC limits (500-line rule)
 │   ├── check-layers.sh                    # Enforce architecture layer boundaries
+│   ├── condense-issue.sh                  # Emit deterministic DOR-section issue-summary.md from cached gh issue JSON  [Issue #555]
 │   ├── coverage-tiers.yml                 # Coverage tier definitions
+│   ├── dor-lint.sh                        # Fast mechanical DOR lint for /implement; writes dor-lint.json and resolves blocker states  [Issue #555]
 │   ├── update-milestone-graph.py          # Mechanical /pushup milestone dependency-graph updater with dry-run and post-PATCH verification  [Issue #554]
-│   └── tests/                             # Pytest coverage for workflow automation scripts
+│   └── tests/                             # Pytest and bats coverage for workflow automation scripts
+│       ├── test_condense_issue.bats       # bats tests for deterministic condensed issue summaries  [Issue #555]
+│       ├── test_dor_lint.bats             # bats tests for DOR lint, blocker states, contracts, and label task-type mapping  [Issue #555]
 │       ├── test_update_milestone_graph.py # Unit tests for idempotency, anchored replacement, roll-up, token boundaries, dry-run, and verification failure  [Issue #554]
-│       └── fixtures/                      # Markdown milestone graph fixtures for update-milestone-graph.py tests  [Issue #554]
+│       └── fixtures/                      # Markdown milestone graph fixtures plus issue JSON fixtures for DOR lint and summary tests  [Issues #554, #555]
 ├── benches/                               # Criterion benchmark crates
 │   ├── parser.rs                          # Benchmark: stream-json parser throughput  [Issue #19]
 │   └── turboquant.rs                      # Benchmark: TurboQuant quantization pipeline throughput

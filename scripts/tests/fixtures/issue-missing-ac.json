@@ -1,0 +1,6 @@
+{
+  "title": "Add color theme config",
+  "body": "## Overview\n\nUsers need configurable TUI themes.\n\n## Expected Behavior\n\nThe TUI loads a theme from maestro.toml.\n\n## Blocked By\n\n- None\n\n## Definition of Done\n\n- [ ] Tests pass\n",
+  "labels": [{"name": "enhancement"}],
+  "state": "OPEN"
+}
