@@ -5,9 +5,11 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 mod iterations;
+mod tags;
 
 struct MockAzRunner {
     calls: Mutex<Vec<Vec<String>>>,
+    in_file_contents: Mutex<Vec<String>>,
     outputs: Mutex<VecDeque<AzOutput>>,
 }
 
@@ -15,6 +17,7 @@ impl MockAzRunner {
     fn new(outputs: Vec<AzOutput>) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
+            in_file_contents: Mutex::new(Vec::new()),
             outputs: Mutex::new(outputs.into()),
         }
     }
@@ -38,6 +41,10 @@ impl MockAzRunner {
     fn calls(&self) -> Vec<Vec<String>> {
         self.calls.lock().unwrap().clone()
     }
+
+    fn in_file_contents(&self) -> Vec<String> {
+        self.in_file_contents.lock().unwrap().clone()
+    }
 }
 
 #[async_trait]
@@ -48,6 +55,15 @@ impl AzRunner for MockAzRunner {
                 .map(|arg| (*arg).to_string())
                 .collect::<Vec<_>>(),
         );
+        if let Some(path) = args
+            .windows(2)
+            .find_map(|window| (window[0] == "--in-file").then_some(window[1]))
+        {
+            self.in_file_contents
+                .lock()
+                .unwrap()
+                .push(std::fs::read_to_string(path)?);
+        }
         self.outputs
             .lock()
             .unwrap()
