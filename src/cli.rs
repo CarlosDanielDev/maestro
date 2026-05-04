@@ -145,6 +145,9 @@ pub enum Commands {
         /// merging detected defaults without overwriting customized keys.
         #[arg(long)]
         reset: bool,
+        /// Skip provider prompts/remote detection and write GitHub provider defaults.
+        #[arg(long)]
+        non_interactive: bool,
     },
     /// Clean orphaned worktrees left by crashed sessions
     Clean {
@@ -331,13 +334,37 @@ mod tests {
     #[test]
     fn init_subcommand_no_flag_parses_reset_false() {
         let cli = Cli::try_parse_from(["maestro", "init"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Init { reset: false })));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Init {
+                reset: false,
+                non_interactive: false,
+            })
+        ));
     }
 
     #[test]
     fn init_subcommand_reset_flag_parses_reset_true() {
         let cli = Cli::try_parse_from(["maestro", "init", "--reset"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Init { reset: true })));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Init {
+                reset: true,
+                non_interactive: false,
+            })
+        ));
+    }
+
+    #[test]
+    fn init_subcommand_non_interactive_parses_true() {
+        let cli = Cli::try_parse_from(["maestro", "init", "--non-interactive"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Init {
+                reset: false,
+                non_interactive: true,
+            })
+        ));
     }
 
     // ------------------------------------------------------------------

@@ -41,6 +41,25 @@ pub fn render_or_merge(
 ) -> Result<RenderOutcome> {
     let stacks = detector.detect(project_root);
     let defaults = template::render(&stacks);
+    render_or_merge_defaults(stacks, defaults, existing)
+}
+
+pub fn render_or_merge_with_provider(
+    detector: &dyn ProjectDetector,
+    project_root: &Path,
+    existing: Option<&str>,
+    provider: &template::ProviderTemplate,
+) -> Result<RenderOutcome> {
+    let stacks = detector.detect(project_root);
+    let defaults = template::render_with_provider(&stacks, provider);
+    render_or_merge_defaults(stacks, defaults, existing)
+}
+
+fn render_or_merge_defaults(
+    stacks: Vec<DetectedStack>,
+    defaults: String,
+    existing: Option<&str>,
+) -> Result<RenderOutcome> {
     match existing {
         None => Ok(RenderOutcome::Fresh {
             stacks,

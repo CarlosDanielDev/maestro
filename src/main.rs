@@ -115,7 +115,10 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Init { reset }) => cmd_init(reset),
+        Some(Commands::Init {
+            reset,
+            non_interactive,
+        }) => cmd_init(reset, non_interactive),
         Some(Commands::Clean { dry_run }) => cmd_clean(dry_run),
         Some(Commands::Logs { session, export }) => cmd_logs(session, export),
         Some(Commands::Resume { session }) => cmd_resume(session).await,

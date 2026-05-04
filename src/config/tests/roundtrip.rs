@@ -53,6 +53,70 @@ alert_threshold_pct = 80
 }
 
 #[test]
+fn config_save_round_trip_with_azure_devops_provider() {
+    use crate::provider::types::ProviderKind;
+    use std::io::Write;
+
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    write!(
+        f,
+        r#"{MINIMAL_TOML}
+[provider]
+kind = "azure_devops"
+organization = "https://dev.azure.com/MyOrg"
+az_project = "MyProject"
+
+[experimental]
+azure_devops = true
+"#
+    )
+    .unwrap();
+
+    let original = Config::load(f.path()).expect("load failed");
+    let out = tempfile::NamedTempFile::new().unwrap();
+    original.save(out.path()).expect("save failed");
+    let reloaded = Config::load(out.path()).expect("reload failed");
+
+    assert_eq!(original, reloaded);
+    assert_eq!(reloaded.provider.kind, ProviderKind::AzureDevops);
+    assert_eq!(
+        reloaded.provider.organization.as_deref(),
+        Some("https://dev.azure.com/MyOrg")
+    );
+    assert_eq!(reloaded.provider.az_project.as_deref(), Some("MyProject"));
+    assert!(reloaded.experimental.azure_devops);
+}
+
+#[test]
+fn config_save_round_trip_with_github_provider_omits_default_experimental() {
+    use crate::provider::types::ProviderKind;
+    use std::io::Write;
+
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    write!(
+        f,
+        r#"{MINIMAL_TOML}
+[provider]
+kind = "github"
+"#
+    )
+    .unwrap();
+
+    let original = Config::load(f.path()).expect("load failed");
+    let out = tempfile::NamedTempFile::new().unwrap();
+    original.save(out.path()).expect("save failed");
+    let serialized = std::fs::read_to_string(out.path()).unwrap();
+    let reloaded = Config::load(out.path()).expect("reload failed");
+
+    assert_eq!(reloaded.provider.kind, ProviderKind::Github);
+    assert_eq!(original, reloaded);
+    assert!(
+        !serialized.contains("[experimental]"),
+        "default experimental section should be omitted: {serialized}"
+    );
+}
+
+#[test]
 fn config_save_round_trip_full() {
     use std::io::Write;
     let mut f = tempfile::NamedTempFile::new().unwrap();
