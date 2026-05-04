@@ -4,6 +4,7 @@ use std::path::Path;
 
 mod adapt;
 mod budget;
+mod experimental;
 mod flags;
 mod gates;
 mod github;
@@ -21,6 +22,7 @@ mod views;
 
 pub use adapt::{AdaptSettings, MilestoneNaming};
 pub use budget::BudgetConfig;
+pub use experimental::ExperimentalConfig;
 pub use flags::FlagsConfig;
 #[allow(unused_imports)]
 pub use gates::{CiAutoFixConfig, GatesConfig};
@@ -78,13 +80,20 @@ pub struct Config {
     pub adapt: AdaptSettings,
     #[serde(default)]
     pub views: ViewsConfig,
+    #[serde(default, skip_serializing_if = "ExperimentalConfig::is_default")]
+    pub experimental: ExperimentalConfig,
 }
 
 impl Config {
+    pub const AZURE_DEVOPS_EXPERIMENTAL_ERROR: &'static str = "Azure DevOps provider is experimental and not yet feature-complete. To opt in, set `[experimental] azure_devops = true` in maestro.toml. Otherwise set `provider.kind = \"github\"`.";
+
     pub fn load(path: &Path) -> Result<Self> {
         let content =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        toml::from_str(&content).with_context(|| format!("parsing {}", path.display()))
+        let config: Self =
+            toml::from_str(&content).with_context(|| format!("parsing {}", path.display()))?;
+        config.validate()?;
+        Ok(config)
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
@@ -136,6 +145,16 @@ impl Config {
             "No maestro.toml found under {}. Run `maestro init` to create one.",
             base.display()
         )
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.provider.kind == crate::provider::types::ProviderKind::AzureDevops
+            && !self.experimental.azure_devops
+        {
+            anyhow::bail!(Self::AZURE_DEVOPS_EXPERIMENTAL_ERROR);
+        }
+
+        Ok(())
     }
 }
 

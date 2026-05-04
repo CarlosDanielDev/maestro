@@ -245,6 +245,13 @@ mod tests {
     }
 
     #[test]
+    fn template_render_omits_experimental_section() {
+        let out = render(&[DetectedStack::Rust]);
+        assert!(!out.contains("[experimental]"), "{out}");
+        assert!(!out.contains("azure_devops"), "{out}");
+    }
+
+    #[test]
     fn template_render_empty_stacks_produces_generic_template() {
         let out = render(&[]);
         assert!(!out.contains("\"cargo build\""), "{out}");

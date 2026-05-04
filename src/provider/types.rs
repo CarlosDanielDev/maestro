@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum ProviderKind {
     #[default]
     Github,
+    /// Experimental until v0.24.0; requires `experimental.azure_devops = true`.
     AzureDevops,
 }
 
