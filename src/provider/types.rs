@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -203,6 +204,96 @@ pub struct PullRequest {
     pub deletions: u64,
     #[serde(default)]
     pub changed_files: u64,
+}
+
+/// CI check status for a pull request or branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CiStatus {
+    /// Checks are still running.
+    Pending,
+    /// All checks passed.
+    Passed,
+    /// One or more checks failed.
+    Failed { summary: String },
+    /// No CI checks configured on this repo/branch.
+    NoneConfigured,
+}
+
+/// Status of an individual CI check run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckStatus {
+    #[serde(alias = "QUEUED", alias = "queued")]
+    Queued,
+    #[serde(alias = "IN_PROGRESS", alias = "in_progress")]
+    InProgress,
+    #[serde(alias = "COMPLETED", alias = "completed")]
+    Completed,
+    #[serde(alias = "WAITING", alias = "waiting")]
+    Waiting,
+    #[serde(alias = "PENDING", alias = "pending")]
+    Pending,
+    #[serde(alias = "REQUESTED", alias = "requested")]
+    Requested,
+    #[serde(other)]
+    #[default]
+    Unknown,
+}
+
+/// Conclusion of a completed CI check run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckConclusion {
+    #[serde(alias = "SUCCESS", alias = "success")]
+    Success,
+    #[serde(alias = "FAILURE", alias = "failure")]
+    Failure,
+    #[serde(alias = "NEUTRAL", alias = "neutral")]
+    Neutral,
+    #[serde(alias = "CANCELLED", alias = "cancelled")]
+    Cancelled,
+    #[serde(alias = "TIMED_OUT", alias = "timed_out")]
+    TimedOut,
+    #[serde(alias = "ACTION_REQUIRED", alias = "action_required")]
+    ActionRequired,
+    #[serde(alias = "SKIPPED", alias = "skipped")]
+    Skipped,
+    #[serde(alias = "STALE", alias = "stale")]
+    Stale,
+    #[serde(alias = "STARTUP_FAILURE", alias = "startup_failure")]
+    StartupFailure,
+    /// Check not yet completed or unrecognized conclusion.
+    #[serde(other)]
+    #[default]
+    None,
+}
+
+/// Granular detail for a single CI check run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckRun {
+    pub name: String,
+    pub status: CheckStatus,
+    pub conclusion: CheckConclusion,
+    pub started_at: Option<DateTime<Utc>>,
+    pub elapsed_secs: Option<u64>,
+}
+
+/// Pull request merge strategy.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MergeMethod {
+    Merge,
+    #[default]
+    Squash,
+    Rebase,
+}
+
+impl MergeMethod {
+    pub fn flag(&self) -> &'static str {
+        match self {
+            Self::Merge => "--merge",
+            Self::Squash => "--squash",
+            Self::Rebase => "--rebase",
+        }
+    }
 }
 
 /// The type of review action to submit on a pull request.

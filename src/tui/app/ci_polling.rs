@@ -1,5 +1,6 @@
 use super::App;
-use crate::provider::github::ci::{CiCheck, CiChecker, CiStatus, PendingPrCheck};
+use crate::provider::github::ci::PendingPrCheck;
+use crate::provider::types::{CheckRun, CiStatus};
 use crate::tui::activity_log::LogLevel;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -12,7 +13,7 @@ use std::time::{Duration, Instant};
 pub struct CiPoller {
     pub pending_pr_checks: Vec<PendingPrCheck>,
     pub last_ci_poll: Instant,
-    pub ci_check_details: HashMap<u64, Vec<crate::provider::github::ci::CheckRunDetail>>,
+    pub ci_check_details: HashMap<u64, Vec<CheckRun>>,
 }
 
 impl Default for CiPoller {
@@ -121,7 +122,7 @@ mod tests {
 }
 
 impl App {
-    pub(super) fn poll_ci_status(&mut self) {
+    pub(super) async fn poll_ci_status(&mut self) {
         let ci_poll_interval = self
             .config
             .as_ref()
@@ -132,6 +133,15 @@ impl App {
             return;
         }
         self.ci_poller.mark_polled();
+
+        let Some(provider) = self.github_client.take() else {
+            self.activity_log.push_simple(
+                "CI".into(),
+                "CI polling skipped: no repository provider configured".into(),
+                LogLevel::Error,
+            );
+            return;
+        };
 
         let ci_max_wait = self
             .config
@@ -146,12 +156,10 @@ impl App {
             .map(|c| c.gates.ci_auto_fix.max_retries)
             .unwrap_or(3);
 
-        let checker = CiChecker::new();
         let mut completed_indices = Vec::new();
         // Collect fix requests to process after the loop (avoids borrow conflict)
         let mut fix_requests: Vec<crate::provider::github::ci::CiFixRequest> = Vec::new();
-        let mut detail_updates: Vec<(u64, Vec<crate::provider::github::ci::CheckRunDetail>)> =
-            Vec::new();
+        let mut detail_updates: Vec<(u64, Vec<CheckRun>)> = Vec::new();
 
         for (i, check) in self.ci_poller.pending_pr_checks.iter_mut().enumerate() {
             check.check_count += 1;
@@ -172,7 +180,8 @@ impl App {
 
             // If awaiting a fix session's CI re-run, handle separately
             if check.awaiting_fix_ci {
-                match checker.check_pr_status(check.pr_number) {
+                let status = provider.ci_status_for_pr(check.pr_number).await;
+                match status {
                     Ok(CiStatus::Pending) => {
                         // Fix was pushed, CI is re-running. Reset flag.
                         check.awaiting_fix_ci = false;
@@ -199,7 +208,8 @@ impl App {
                 continue;
             }
 
-            match checker.check_pr_status(check.pr_number) {
+            let status = provider.ci_status_for_pr(check.pr_number).await;
+            match status {
                 Ok(CiStatus::Passed) => {
                     self.activity_log.push_simple(
                         format!("PR #{}", check.pr_number),
@@ -217,31 +227,21 @@ impl App {
                     if let Some(ref config) = self.config
                         && config.github.auto_merge
                     {
-                        let method_flag = config.github.merge_method.flag();
-                        let pr_str = check.pr_number.to_string();
-                        let result = std::process::Command::new("gh")
-                            .args(["pr", "merge", &pr_str, method_flag, "--delete-branch"])
-                            .output();
+                        let result = provider
+                            .merge_pr(check.pr_number, config.github.merge_method.clone())
+                            .await;
                         match result {
-                            Ok(output) if output.status.success() => {
+                            Ok(()) => {
                                 self.activity_log.push_simple(
                                     format!("PR #{}", check.pr_number),
                                     "Auto-merged".into(),
                                     LogLevel::Info,
                                 );
                             }
-                            Ok(output) => {
-                                let stderr = String::from_utf8_lossy(&output.stderr);
-                                self.activity_log.push_simple(
-                                    format!("PR #{}", check.pr_number),
-                                    format!("Auto-merge failed: {}", stderr.trim()),
-                                    LogLevel::Error,
-                                );
-                            }
                             Err(e) => {
                                 self.activity_log.push_simple(
                                     format!("PR #{}", check.pr_number),
-                                    format!("Auto-merge error: {}", e),
+                                    format!("Auto-merge failed: {}", e),
                                     LogLevel::Error,
                                 );
                             }
@@ -252,7 +252,7 @@ impl App {
                     use crate::provider::github::ci::{
                         CiFixRequest, CiPollAction, decide_ci_action,
                     };
-                    if let Ok(details) = checker.check_pr_details(check.pr_number) {
+                    if let Ok(details) = provider.ci_check_runs_for_pr(check.pr_number).await {
                         detail_updates.push((check.pr_number, details));
                     }
 
@@ -264,7 +264,7 @@ impl App {
 
                     match action {
                         CiPollAction::SpawnFix { .. } => {
-                            match checker.fetch_failure_log(check.pr_number, &check.branch) {
+                            match provider.ci_logs_for_check(&check.branch).await {
                                 Ok(failure_log) => {
                                     self.activity_log.push_simple(
                                         format!("PR #{}", check.pr_number),
@@ -327,7 +327,7 @@ impl App {
                     completed_indices.push(i);
                 }
                 Ok(CiStatus::Pending) => {
-                    if let Ok(details) = checker.check_pr_details(check.pr_number) {
+                    if let Ok(details) = provider.ci_check_runs_for_pr(check.pr_number).await {
                         detail_updates.push((check.pr_number, details));
                     }
                 }
@@ -361,6 +361,7 @@ impl App {
         // Remove completed checks
         completed_indices.sort_unstable();
         self.ci_poller.remove_completed(&completed_indices);
+        self.github_client = Some(provider);
     }
 }
 

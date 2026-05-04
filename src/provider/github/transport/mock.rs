@@ -1,5 +1,7 @@
 use super::CreateOutcome;
-use crate::provider::types::{Issue, Milestone, PullRequest, ReviewEvent};
+use crate::provider::types::{
+    CheckRun, CiStatus, Issue, MergeMethod, Milestone, PullRequest, ReviewEvent,
+};
 use std::sync::{Arc, Mutex};
 
 mod impl_client;
@@ -53,6 +55,19 @@ struct MockState {
     list_issues_by_milestone_error: Option<String>,
     patch_milestone_error: Option<String>,
     patch_milestone_calls: Vec<(u64, String)>,
+
+    // CI and merge provider surface fields (#460)
+    ci_status_for_branch_calls: Vec<String>,
+    ci_status_for_pr_calls: Vec<u64>,
+    ci_check_runs_for_pr_calls: Vec<u64>,
+    ci_logs_for_check_calls: Vec<String>,
+    merge_pr_calls: Vec<(u64, MergeMethod)>,
+    ci_status_for_branch_responses: std::collections::HashMap<String, CiStatus>,
+    ci_status_for_pr_responses: std::collections::HashMap<u64, CiStatus>,
+    ci_check_runs_for_pr_responses: std::collections::HashMap<u64, Vec<CheckRun>>,
+    ci_logs_for_check_responses: std::collections::HashMap<String, String>,
+    ci_error: Option<String>,
+    merge_pr_error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -220,5 +235,64 @@ impl MockGitHubClient {
 
     pub fn patch_milestone_calls(&self) -> Vec<(u64, String)> {
         self.inner.lock().unwrap().patch_milestone_calls.clone()
+    }
+
+    pub fn set_ci_status_for_pr(&self, pr_number: u64, status: CiStatus) {
+        self.inner
+            .lock()
+            .unwrap()
+            .ci_status_for_pr_responses
+            .insert(pr_number, status);
+    }
+
+    #[allow(dead_code)] // Reason: helper for provider CI tests that do not need PR numbers.
+    pub fn set_ci_status_for_branch(&self, branch: &str, status: CiStatus) {
+        self.inner
+            .lock()
+            .unwrap()
+            .ci_status_for_branch_responses
+            .insert(branch.to_string(), status);
+    }
+
+    #[allow(dead_code)] // Reason: helper for tests that exercise CI detail rendering.
+    pub fn set_ci_check_runs_for_pr(&self, pr_number: u64, runs: Vec<CheckRun>) {
+        self.inner
+            .lock()
+            .unwrap()
+            .ci_check_runs_for_pr_responses
+            .insert(pr_number, runs);
+    }
+
+    #[allow(dead_code)] // Reason: helper for tests that exercise CI auto-fix log retrieval.
+    pub fn set_ci_logs_for_check(&self, check_id: &str, log: &str) {
+        self.inner
+            .lock()
+            .unwrap()
+            .ci_logs_for_check_responses
+            .insert(check_id.to_string(), log.to_string());
+    }
+
+    #[allow(dead_code)] // Reason: helper for tests that exercise provider CI failures.
+    pub fn set_ci_error(&self, msg: &str) {
+        self.inner.lock().unwrap().ci_error = Some(msg.to_string());
+    }
+
+    #[allow(dead_code)] // Reason: helper for tests that exercise auto-merge failures.
+    pub fn set_merge_pr_error(&self, msg: &str) {
+        self.inner.lock().unwrap().merge_pr_error = Some(msg.to_string());
+    }
+
+    pub fn ci_status_for_pr_calls(&self) -> Vec<u64> {
+        self.inner.lock().unwrap().ci_status_for_pr_calls.clone()
+    }
+
+    #[allow(dead_code)] // Reason: helper for tests that assert CI log lookup routing.
+    pub fn ci_logs_for_check_calls(&self) -> Vec<String> {
+        self.inner.lock().unwrap().ci_logs_for_check_calls.clone()
+    }
+
+    #[allow(dead_code)] // Reason: helper for tests that assert auto-merge routing.
+    pub fn merge_pr_calls(&self) -> Vec<(u64, MergeMethod)> {
+        self.inner.lock().unwrap().merge_pr_calls.clone()
     }
 }

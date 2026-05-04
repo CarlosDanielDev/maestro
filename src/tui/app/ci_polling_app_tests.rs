@@ -11,8 +11,8 @@ fn make_app_with_flags(flags: crate::flags::store::FeatureFlags) -> crate::tui::
     app
 }
 
-#[test]
-fn poll_ci_status_skips_fix_when_ci_auto_fix_flag_disabled() {
+#[tokio::test]
+async fn poll_ci_status_skips_fix_when_ci_auto_fix_flag_disabled() {
     use crate::provider::github::ci::PendingPrCheck;
     let flags = crate::flags::store::FeatureFlags::new(
         std::collections::HashMap::new(),
@@ -37,11 +37,42 @@ fn poll_ci_status_skips_fix_when_ci_auto_fix_flag_disabled() {
     // poll_ci_status with Flag::CiAutoFix disabled — no fix sessions spawned.
     // The checker will fail (no gh in tests), but auto_fix_enabled is false so
     // CiPollAction::Abandon is chosen — no fix session enqueued.
-    app.poll_ci_status();
+    app.poll_ci_status().await;
     assert!(
         app.pending_session_launches.is_empty(),
         "poll_ci_status must not spawn fix session when Flag::CiAutoFix is disabled"
     );
+}
+
+#[tokio::test]
+async fn poll_ci_status_uses_provider_ci_status_once_per_tick() {
+    use crate::provider::github::ci::PendingPrCheck;
+    use crate::provider::github::client::mock::MockGitHubClient;
+    use crate::provider::types::CiStatus;
+
+    let mock = MockGitHubClient::new();
+    mock.set_ci_status_for_pr(123, CiStatus::Pending);
+
+    let mut app = make_app();
+    app.github_client = Some(Box::new(mock.clone()));
+    app.ci_poller.add_check(PendingPrCheck {
+        pr_number: 123,
+        issue_number: 42,
+        branch: "feat/test".to_string(),
+        fix_attempt: 0,
+        check_count: 0,
+        awaiting_fix_ci: false,
+        created_at: Instant::now()
+            .checked_sub(Duration::from_secs(120))
+            .unwrap_or_else(Instant::now),
+    });
+    app.ci_poller.last_ci_poll = Instant::now()
+        .checked_sub(Duration::from_secs(120))
+        .unwrap_or_else(Instant::now);
+
+    app.poll_ci_status().await;
+
+    assert_eq!(mock.ci_status_for_pr_calls(), vec![123]);
 }
 
 // --- Issue #125: CI check details field ---
@@ -55,10 +86,10 @@ fn app_ci_check_details_field_defaults_to_empty() {
 #[test]
 fn ci_check_details_can_be_populated_and_read() {
     let mut app = make_app();
-    let detail = crate::provider::github::ci::CheckRunDetail {
+    let detail = crate::provider::types::CheckRun {
         name: "build".into(),
-        status: crate::provider::github::ci::CheckStatus::Completed,
-        conclusion: crate::provider::github::ci::CheckConclusion::Success,
+        status: crate::provider::types::CheckStatus::Completed,
+        conclusion: crate::provider::types::CheckConclusion::Success,
         started_at: None,
         elapsed_secs: Some(42),
     };
@@ -70,10 +101,10 @@ fn ci_check_details_can_be_populated_and_read() {
 #[test]
 fn ci_check_details_keyed_by_pr_number() {
     let mut app = make_app();
-    let detail = crate::provider::github::ci::CheckRunDetail {
+    let detail = crate::provider::types::CheckRun {
         name: "test".into(),
-        status: crate::provider::github::ci::CheckStatus::InProgress,
-        conclusion: crate::provider::github::ci::CheckConclusion::None,
+        status: crate::provider::types::CheckStatus::InProgress,
+        conclusion: crate::provider::types::CheckConclusion::None,
         started_at: None,
         elapsed_secs: None,
     };

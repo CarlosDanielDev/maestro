@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
-use crate::provider::github::ci::{CheckConclusion, CheckRunDetail, CheckStatus};
+use crate::provider::types::{CheckConclusion, CheckRun as CheckRunDetail, CheckStatus};
 use crate::tui::icons::{self, IconId};
 use crate::tui::theme::Theme;
 
