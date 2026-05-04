@@ -45,7 +45,12 @@ pub async fn cmd_run(
         let report =
             tokio::task::spawn_blocking(move || crate::doctor::run_all_checks(Some(&config_ref)))
                 .await?;
-        if let Err(e) = crate::doctor::validate_preflight(&report) {
+        let validation_config = config.clone();
+        let validation = tokio::task::spawn_blocking(move || {
+            crate::doctor::validate_provider_setup(&validation_config)
+        })
+        .await?;
+        if let Err(e) = validation {
             crate::doctor::print_report(&report);
             return Err(e.context("Fix the issues above or pass --skip-doctor to bypass"));
         }
