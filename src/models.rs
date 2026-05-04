@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 
 /// Routes issues to specific models based on label-matching rules.
 pub struct ModelRouter {
@@ -23,7 +23,7 @@ impl ModelRouter {
     /// Resolve which model to use for a given issue.
     /// Checks issue labels against routing rules. First match wins.
     /// Rules are patterns like "priority:P0" or "type:docs".
-    pub fn resolve(&self, issue: &GhIssue) -> &str {
+    pub fn resolve(&self, issue: &Issue) -> &str {
         for (pattern, model) in &self.rules {
             if issue.labels.iter().any(|l| l == pattern) {
                 return model;
@@ -37,8 +37,8 @@ impl ModelRouter {
 mod tests {
     use super::*;
 
-    fn make_issue(labels: &[&str]) -> GhIssue {
-        GhIssue {
+    fn make_issue(labels: &[&str]) -> Issue {
+        Issue {
             number: 1,
             title: "Test".into(),
             body: String::new(),

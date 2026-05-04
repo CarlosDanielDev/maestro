@@ -2,9 +2,9 @@
 //! detector, and analyzer (#500).
 
 use super::*;
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 
-fn issue_blocked_by(number: u64, blockers: &[u64], milestone: Option<u64>) -> GhIssue {
+fn issue_blocked_by(number: u64, blockers: &[u64], milestone: Option<u64>) -> Issue {
     let body = if blockers.is_empty() {
         "## Blocked By\n\n- None\n".to_string()
     } else {
@@ -14,7 +14,7 @@ fn issue_blocked_by(number: u64, blockers: &[u64], milestone: Option<u64>) -> Gh
         }
         s
     };
-    GhIssue {
+    Issue {
         number,
         title: format!("Issue #{}", number),
         body,

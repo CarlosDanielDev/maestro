@@ -1,5 +1,4 @@
-use super::GhIssue;
-use crate::provider::github::types::GhMilestone;
+use crate::provider::types::{Issue, Milestone, PullRequest};
 use anyhow::{Context, Result};
 
 /// Extract label names from a JSON value containing `{"labels": [{"name": "..."}, ...]}`.
@@ -19,7 +18,7 @@ pub(super) fn extract_label_names(v: &serde_json::Value) -> Vec<String> {
 }
 
 /// Parse JSON output from `gh issue list --json ...`.
-pub fn parse_issues_json(json_str: &str) -> Result<Vec<GhIssue>> {
+pub fn parse_issues_json(json_str: &str) -> Result<Vec<Issue>> {
     let raw: Vec<serde_json::Value> =
         serde_json::from_str(json_str).context("Failed to parse GitHub issues JSON")?;
     let mut issues = Vec::new();
@@ -51,7 +50,7 @@ pub fn parse_issues_json(json_str: &str) -> Result<Vec<GhIssue>> {
             })
             .unwrap_or_default();
 
-        issues.push(GhIssue {
+        issues.push(Issue {
             number: v
                 .get("number")
                 .and_then(|n| n.as_u64())
@@ -86,14 +85,12 @@ pub fn parse_issues_json(json_str: &str) -> Result<Vec<GhIssue>> {
 }
 
 /// Parse JSON output from `gh api repos/{owner}/{repo}/milestones`.
-pub fn parse_milestones_json(json_str: &str) -> Result<Vec<GhMilestone>> {
+pub fn parse_milestones_json(json_str: &str) -> Result<Vec<Milestone>> {
     serde_json::from_str(json_str).context("Failed to parse milestones JSON")
 }
 
 /// Parse JSON output from `gh pr list --json ...`.
-pub fn parse_prs_json(
-    json_str: &str,
-) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
+pub fn parse_prs_json(json_str: &str) -> Result<Vec<PullRequest>> {
     let raw: Vec<serde_json::Value> =
         serde_json::from_str(json_str).context("Failed to parse GitHub PRs JSON")?;
     let mut prs = Vec::new();
@@ -113,7 +110,7 @@ pub fn parse_prs_json(
             })
             .unwrap_or_default();
 
-        prs.push(crate::provider::github::types::GhPullRequest {
+        prs.push(PullRequest {
             number: v
                 .get("number")
                 .and_then(|n| n.as_u64())

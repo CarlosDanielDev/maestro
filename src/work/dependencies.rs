@@ -108,12 +108,12 @@ mod tests {
     use super::*;
 
     fn make_item(number: u64, blocked_by: &[u64]) -> WorkItem {
-        use crate::provider::github::types::GhIssue;
+        use crate::provider::types::Issue;
         let labels: Vec<String> = blocked_by
             .iter()
             .map(|b| format!("blocked-by:#{}", b))
             .collect();
-        WorkItem::from_issue(GhIssue {
+        WorkItem::from_issue(Issue {
             number,
             title: format!("Issue #{}", number),
             body: String::new(),

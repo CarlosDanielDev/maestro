@@ -3,15 +3,15 @@
 #![deny(clippy::unwrap_used)]
 #![allow(dead_code)]
 
-use crate::provider::github::types::{GhIssue, GhMilestone};
+use crate::provider::types::{Issue, Milestone};
 
 /// One milestone row in the roadmap, with its issues already
 /// dependency-level-sorted (by `dep_levels::dep_levels`).
 #[derive(Debug, Clone)]
 pub struct RoadmapEntry {
-    pub milestone: GhMilestone,
+    pub milestone: Milestone,
     pub semver: SemVer,
-    pub issues: Vec<GhIssue>,
+    pub issues: Vec<Issue>,
 }
 
 /// Lightweight semver triple parsed from a milestone title like `v0.16.0`.
@@ -76,7 +76,7 @@ impl Filters {
             && matches!(self.status, StatusFilter::Any)
     }
 
-    pub fn matches(&self, issue: &GhIssue) -> bool {
+    pub fn matches(&self, issue: &Issue) -> bool {
         if !self.label.is_empty() {
             let needle = self.label.to_lowercase();
             if !issue
@@ -109,8 +109,8 @@ impl Filters {
 mod tests {
     use super::*;
 
-    fn gh_issue(state: &str, labels: &[&str], assignees: &[&str]) -> GhIssue {
-        GhIssue {
+    fn gh_issue(state: &str, labels: &[&str], assignees: &[&str]) -> Issue {
+        Issue {
             number: 1,
             title: "x".into(),
             body: String::new(),

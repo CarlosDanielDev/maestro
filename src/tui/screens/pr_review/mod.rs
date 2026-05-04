@@ -5,7 +5,7 @@ pub mod types;
 
 pub use types::*;
 
-use crate::provider::github::types::GhPullRequest;
+use crate::provider::types::PullRequest;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -16,10 +16,10 @@ use super::{Screen, ScreenAction};
 
 pub struct PrReviewScreen {
     pub step: PrReviewStep,
-    pub prs: Vec<GhPullRequest>,
+    pub prs: Vec<PullRequest>,
     pub selected: usize,
     pub scroll_offset: u16,
-    pub current_pr: Option<GhPullRequest>,
+    pub current_pr: Option<PullRequest>,
     pub form: ReviewForm,
     pub error: Option<String>,
     pub spinner_tick: usize,
@@ -43,18 +43,18 @@ impl PrReviewScreen {
         self.spinner_tick = self.spinner_tick.wrapping_add(1);
     }
 
-    pub fn set_prs(&mut self, prs: Vec<GhPullRequest>) {
+    pub fn set_prs(&mut self, prs: Vec<PullRequest>) {
         self.prs = prs;
         self.selected = 0;
         self.error = None;
         self.step = PrReviewStep::PrList;
     }
 
-    pub fn find_pr(&self, number: u64) -> Option<GhPullRequest> {
+    pub fn find_pr(&self, number: u64) -> Option<PullRequest> {
         self.prs.iter().find(|p| p.number == number).cloned()
     }
 
-    pub fn set_pr_detail(&mut self, pr: GhPullRequest) {
+    pub fn set_pr_detail(&mut self, pr: PullRequest) {
         self.current_pr = Some(pr);
         self.scroll_offset = 0;
         self.step = PrReviewStep::PrDetail;
@@ -286,12 +286,12 @@ impl Screen for PrReviewScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::github::types::PrReviewEvent;
+    use crate::provider::types::ReviewEvent;
     use crate::tui::screens::test_helpers::key_event;
     use crossterm::event::KeyCode;
 
-    fn make_pr(number: u64) -> GhPullRequest {
-        GhPullRequest {
+    fn make_pr(number: u64) -> PullRequest {
+        PullRequest {
             number,
             title: format!("PR #{}: Fix something", number),
             body: format!("## Summary\n\nFixes issue #{}", number),
@@ -309,7 +309,7 @@ mod tests {
         }
     }
 
-    fn make_three_prs() -> Vec<GhPullRequest> {
+    fn make_three_prs() -> Vec<PullRequest> {
         vec![make_pr(1), make_pr(2), make_pr(3)]
     }
 
@@ -543,25 +543,25 @@ mod tests {
     #[test]
     fn submit_review_default_event_is_comment() {
         let screen = screen_at_submit_review();
-        assert_eq!(screen.form.event, PrReviewEvent::Comment);
+        assert_eq!(screen.form.event, ReviewEvent::Comment);
     }
 
     #[test]
     fn submit_review_tab_cycles_event_type_forward() {
         let mut screen = screen_at_submit_review();
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
-        assert_eq!(screen.form.event, PrReviewEvent::Approve);
+        assert_eq!(screen.form.event, ReviewEvent::Approve);
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
-        assert_eq!(screen.form.event, PrReviewEvent::RequestChanges);
+        assert_eq!(screen.form.event, ReviewEvent::RequestChanges);
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Insert);
-        assert_eq!(screen.form.event, PrReviewEvent::Comment);
+        assert_eq!(screen.form.event, ReviewEvent::Comment);
     }
 
     #[test]
     fn submit_review_backtab_cycles_event_type_backward() {
         let mut screen = screen_at_submit_review();
         screen.handle_input(&key_event(KeyCode::BackTab), InputMode::Insert);
-        assert_eq!(screen.form.event, PrReviewEvent::RequestChanges);
+        assert_eq!(screen.form.event, ReviewEvent::RequestChanges);
     }
 
     #[test]
@@ -590,14 +590,14 @@ mod tests {
     #[test]
     fn submit_review_enter_returns_submit_action() {
         let mut screen = screen_at_submit_review();
-        screen.form.event = PrReviewEvent::Approve;
+        screen.form.event = ReviewEvent::Approve;
         screen.form.body = "LGTM".to_string();
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         assert_eq!(
             action,
             ScreenAction::SubmitPrReview {
                 pr_number: 1,
-                event: PrReviewEvent::Approve,
+                event: ReviewEvent::Approve,
                 body: "LGTM".to_string(),
             }
         );
@@ -606,13 +606,13 @@ mod tests {
     #[test]
     fn submit_review_enter_with_empty_body_still_returns_submit_action() {
         let mut screen = screen_at_submit_review();
-        screen.form.event = PrReviewEvent::Approve;
+        screen.form.event = ReviewEvent::Approve;
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         assert_eq!(
             action,
             ScreenAction::SubmitPrReview {
                 pr_number: 1,
-                event: PrReviewEvent::Approve,
+                event: ReviewEvent::Approve,
                 body: String::new(),
             }
         );

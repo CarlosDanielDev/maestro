@@ -31,7 +31,7 @@ mod worktree_lifecycle;
 mod helpers {
     use tokio::sync::mpsc;
 
-    use crate::provider::github::types::GhIssue;
+    use crate::provider::types::Issue;
     use crate::session::pool::SessionPool;
     use crate::session::types::Session;
     use crate::session::worktree::MockWorktreeManager;
@@ -82,8 +82,8 @@ mod helpers {
         s
     }
 
-    pub fn make_gh_issue(number: u64) -> GhIssue {
-        GhIssue {
+    pub fn make_gh_issue(number: u64) -> Issue {
+        Issue {
             number,
             title: format!("Implement feature #{}", number),
             body: String::new(),

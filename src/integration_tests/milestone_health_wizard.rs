@@ -11,15 +11,15 @@ use crossterm::event::KeyCode;
 
 use crate::milestone_health::report::HealthReport;
 use crate::milestone_health::{analyze, check_issues};
-use crate::provider::github::client::GitHubClient;
+use crate::provider::github::client::RepoProvider;
 use crate::provider::github::client::mock::MockGitHubClient;
-use crate::provider::github::types::{GhIssue, GhMilestone};
+use crate::provider::types::{Issue, Milestone};
 use crate::tui::screens::milestone_health::state::{
     HealthInput, HealthScreenState, HealthSideEffect, HealthStep, PatchOutcome,
 };
 
-fn ms(n: u64, title: &str, desc: &str) -> GhMilestone {
-    GhMilestone {
+fn ms(n: u64, title: &str, desc: &str) -> Milestone {
+    Milestone {
         number: n,
         title: title.to_string(),
         description: desc.to_string(),
@@ -83,8 +83,8 @@ fn missing_section_body(missing: &str) -> String {
     s
 }
 
-fn make_issue(number: u64, body: String) -> GhIssue {
-    GhIssue {
+fn make_issue(number: u64, body: String) -> Issue {
+    Issue {
         number,
         title: format!("Issue #{}", number),
         body,
@@ -116,8 +116,8 @@ fn graph_with_all_at_level_zero(numbers: &[u64]) -> String {
 
 fn run_to_report(
     state: &mut HealthScreenState,
-    milestone: GhMilestone,
-    issues: Vec<GhIssue>,
+    milestone: Milestone,
+    issues: Vec<Issue>,
 ) -> HealthReport {
     // Walk Picker → Loading via the public reducer.
     let _ = state.transition(HealthInput::MilestonesLoaded(Ok(vec![milestone.clone()])));
@@ -368,7 +368,7 @@ async fn empty_milestone_zero_issues_goes_to_empty_no_patch() {
 #[tokio::test]
 async fn fifty_issues_analysis_completes_dor_len_is_50() {
     let mock = MockGitHubClient::new();
-    let issues: Vec<GhIssue> = (1..=50)
+    let issues: Vec<Issue> = (1..=50)
         .map(|n| make_issue(n, full_feature_body(&[])))
         .collect();
     mock.set_issues(issues.clone());

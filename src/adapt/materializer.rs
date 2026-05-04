@@ -4,7 +4,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 
 use super::types::*;
-use crate::provider::github::client::{CreateOutcome, GitHubClient};
+use crate::provider::github::client::{CreateOutcome, RepoProvider};
 
 const DEFAULT_LABEL_COLOR: &str = "EDEDED";
 
@@ -46,11 +46,11 @@ pub trait PlanMaterializer: Send + Sync {
     ) -> anyhow::Result<MaterializeResult>;
 }
 
-pub struct GhMaterializer<G: GitHubClient> {
+pub struct GhMaterializer<G: RepoProvider> {
     github: G,
 }
 
-impl<G: GitHubClient> GhMaterializer<G> {
+impl<G: RepoProvider> GhMaterializer<G> {
     pub fn new(github: G) -> Self {
         Self { github }
     }
@@ -93,7 +93,7 @@ impl<G: GitHubClient> GhMaterializer<G> {
 }
 
 #[async_trait]
-impl<G: GitHubClient> PlanMaterializer for GhMaterializer<G> {
+impl<G: RepoProvider> PlanMaterializer for GhMaterializer<G> {
     async fn materialize(
         &self,
         plan: &AdaptPlan,
@@ -783,12 +783,8 @@ mod tests {
 
     // ── Issue #454: reused/skipped outcomes ────────────────────────────
 
-    fn make_milestone(
-        number: u64,
-        title: &str,
-        state: &str,
-    ) -> crate::provider::github::types::GhMilestone {
-        crate::provider::github::types::GhMilestone {
+    fn make_milestone(number: u64, title: &str, state: &str) -> crate::provider::types::Milestone {
+        crate::provider::types::Milestone {
             number,
             title: title.to_string(),
             description: String::new(),
@@ -798,12 +794,8 @@ mod tests {
         }
     }
 
-    fn make_seeded_issue(
-        number: u64,
-        title: &str,
-        state: &str,
-    ) -> crate::provider::github::types::GhIssue {
-        crate::provider::github::types::GhIssue {
+    fn make_seeded_issue(number: u64, title: &str, state: &str) -> crate::provider::types::Issue {
+        crate::provider::types::Issue {
             number,
             title: title.to_string(),
             body: String::new(),

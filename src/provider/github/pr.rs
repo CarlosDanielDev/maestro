@@ -1,5 +1,5 @@
-use super::transport::GitHubClient;
-use super::types::GhIssue;
+use super::transport::RepoProvider;
+use crate::provider::types::Issue;
 use anyhow::Result;
 use std::time::Duration;
 
@@ -19,7 +19,7 @@ fn append_pr_footer(body: &mut String, files_touched: &[&str], cost_usd: f64) {
 }
 
 /// Build the PR body for an issue.
-pub fn build_pr_body(issue: &GhIssue, files_touched: &[&str], cost_usd: f64) -> String {
+pub fn build_pr_body(issue: &Issue, files_touched: &[&str], cost_usd: f64) -> String {
     let mut body = String::new();
     body.push_str(&format!("Closes #{}\n\n", issue.number));
     body.push_str("## Summary\n\n");
@@ -32,7 +32,7 @@ pub fn build_pr_body(issue: &GhIssue, files_touched: &[&str], cost_usd: f64) -> 
 }
 
 /// Build a PR body that closes multiple issues (unified PR).
-pub fn build_unified_pr_body(issues: &[&GhIssue], files_touched: &[&str], cost_usd: f64) -> String {
+pub fn build_unified_pr_body(issues: &[&Issue], files_touched: &[&str], cost_usd: f64) -> String {
     let mut body = String::new();
 
     for issue in issues {
@@ -60,12 +60,12 @@ pub fn unified_branch_name(issue_numbers: &[u64]) -> String {
     format!("maestro/unified-{}", joined.join("-"))
 }
 
-pub struct PrCreator<C: GitHubClient> {
+pub struct PrCreator<C: RepoProvider> {
     client: C,
     base_branch: String,
 }
 
-impl<C: GitHubClient> PrCreator<C> {
+impl<C: RepoProvider> PrCreator<C> {
     pub fn new(client: C, base_branch: String) -> Self {
         Self {
             client,
@@ -76,7 +76,7 @@ impl<C: GitHubClient> PrCreator<C> {
     /// Create a PR for a completed issue session.
     pub async fn create_for_issue(
         &self,
-        issue: &GhIssue,
+        issue: &Issue,
         head_branch: &str,
         files_touched: &[&str],
         cost_usd: f64,
@@ -151,8 +151,8 @@ mod tests {
     use super::*;
     use crate::provider::github::transport::mock::MockGitHubClient;
 
-    fn make_issue(number: u64) -> GhIssue {
-        GhIssue {
+    fn make_issue(number: u64) -> Issue {
+        Issue {
             number,
             title: format!("Implement feature #{}", number),
             body: String::new(),

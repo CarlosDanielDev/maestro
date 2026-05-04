@@ -1,11 +1,11 @@
 use super::*;
-use crate::provider::github::transport::GitHubClient;
+use crate::provider::github::transport::RepoProvider;
 use anyhow::Result;
 use async_trait::async_trait;
 
 #[async_trait]
-impl GitHubClient for MockGitHubClient {
-    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<GhIssue>> {
+impl RepoProvider for MockGitHubClient {
+    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
         let state = self.inner.lock().unwrap();
         let label_set: std::collections::HashSet<&str> = labels.iter().copied().collect();
         let filtered = state
@@ -19,7 +19,7 @@ impl GitHubClient for MockGitHubClient {
         Ok(filtered)
     }
 
-    async fn list_issues_by_milestone(&self, _milestone: &str) -> Result<Vec<GhIssue>> {
+    async fn list_issues_by_milestone(&self, _milestone: &str) -> Result<Vec<Issue>> {
         let state = self.inner.lock().unwrap();
         if let Some(ref err) = state.list_issues_by_milestone_error {
             anyhow::bail!("{}", err);
@@ -27,12 +27,12 @@ impl GitHubClient for MockGitHubClient {
         Ok(state.issues.clone())
     }
 
-    async fn list_milestones(&self, _state: &str) -> Result<Vec<GhMilestone>> {
+    async fn list_milestones(&self, _state: &str) -> Result<Vec<Milestone>> {
         let state = self.inner.lock().unwrap();
         Ok(state.milestones.clone())
     }
 
-    async fn get_issue(&self, number: u64) -> Result<GhIssue> {
+    async fn get_issue(&self, number: u64) -> Result<Issue> {
         let state = self.inner.lock().unwrap();
         if let Some(err_msg) = state.get_issue_errors.get(&number) {
             anyhow::bail!("{}", err_msg);
@@ -114,7 +114,7 @@ impl GitHubClient for MockGitHubClient {
             state
                 .create_milestone_calls
                 .push((normalized.clone(), description.to_string()));
-            state.milestones.push(GhMilestone {
+            state.milestones.push(Milestone {
                 number,
                 title: normalized,
                 description: description.to_string(),
@@ -157,7 +157,7 @@ impl GitHubClient for MockGitHubClient {
                 labels: labels.to_vec(),
                 milestone,
             });
-            state.issues.push(GhIssue {
+            state.issues.push(Issue {
                 number,
                 title: normalized,
                 body: body.to_string(),
@@ -173,7 +173,7 @@ impl GitHubClient for MockGitHubClient {
         Ok(outcome)
     }
 
-    async fn list_open_prs(&self) -> Result<Vec<GhPullRequest>> {
+    async fn list_open_prs(&self) -> Result<Vec<PullRequest>> {
         let state = self.inner.lock().unwrap();
         if let Some(ref err) = state.list_open_prs_error {
             anyhow::bail!("{}", err);
@@ -181,7 +181,7 @@ impl GitHubClient for MockGitHubClient {
         Ok(state.pull_requests.clone())
     }
 
-    async fn get_pr(&self, number: u64) -> Result<GhPullRequest> {
+    async fn get_pr(&self, number: u64) -> Result<PullRequest> {
         let state = self.inner.lock().unwrap();
         if let Some(err_msg) = state.get_pr_errors.get(&number) {
             anyhow::bail!("{}", err_msg);
@@ -194,12 +194,7 @@ impl GitHubClient for MockGitHubClient {
             .ok_or_else(|| anyhow::anyhow!("mock: PR #{} not found", number))
     }
 
-    async fn submit_pr_review(
-        &self,
-        pr_number: u64,
-        event: PrReviewEvent,
-        body: &str,
-    ) -> Result<()> {
+    async fn submit_pr_review(&self, pr_number: u64, event: ReviewEvent, body: &str) -> Result<()> {
         let mut state = self.inner.lock().unwrap();
         if let Some(ref err) = state.submit_pr_review_error {
             anyhow::bail!("{}", err);

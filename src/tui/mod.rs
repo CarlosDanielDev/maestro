@@ -34,7 +34,7 @@ pub mod widgets;
 #[cfg(test)]
 mod snapshot_tests;
 
-use crate::provider::github::client::{GhCliClient, GitHubClient};
+use crate::provider::github::client::{GhCliClient, RepoProvider};
 use crate::tui::activity_log::LogLevel;
 use app::App;
 use background_tasks::{spawn_issue_fetch, spawn_version_check};
@@ -791,15 +791,15 @@ mod handle_screen_action_tests {
         assert!(app.pending_commands.is_empty());
     }
 
-    use crate::provider::github::types::GhIssue;
+    use crate::provider::types::Issue;
     use crate::tui::screens::milestone::MilestoneEntry;
 
-    fn make_issue(number: u64, milestone: Option<u64>) -> GhIssue {
+    fn make_issue(number: u64, milestone: Option<u64>) -> Issue {
         make_issue_with_state(number, milestone, "open")
     }
 
-    fn make_issue_with_state(number: u64, milestone: Option<u64>, state: &str) -> GhIssue {
-        GhIssue {
+    fn make_issue_with_state(number: u64, milestone: Option<u64>, state: &str) -> Issue {
+        Issue {
             number,
             title: format!("Issue #{number}"),
             body: String::new(),

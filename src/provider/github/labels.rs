@@ -1,13 +1,13 @@
-use super::transport::GitHubClient;
-use super::types::MaestroLabel;
+use super::transport::RepoProvider;
+use crate::provider::types::MaestroLabel;
 use anyhow::Result;
 
 /// Manages the maestro label lifecycle on GitHub issues.
-pub struct LabelManager<C: GitHubClient> {
+pub struct LabelManager<C: RepoProvider> {
     client: C,
 }
 
-impl<C: GitHubClient> LabelManager<C> {
+impl<C: RepoProvider> LabelManager<C> {
     pub fn new(client: C) -> Self {
         Self { client }
     }

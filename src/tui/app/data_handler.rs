@@ -63,7 +63,7 @@ impl App {
     /// Build a prompt from issue + optional custom instructions.
     fn build_issue_prompt_with_custom(
         &self,
-        gh_issue: &crate::provider::github::types::GhIssue,
+        gh_issue: &crate::provider::types::Issue,
         custom_prompt: &Option<String>,
     ) -> String {
         let base = self
@@ -580,10 +580,10 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::github::types::GhIssue;
+    use crate::provider::types::Issue;
 
-    fn issue_with_labels(labels: &[&str]) -> GhIssue {
-        GhIssue {
+    fn issue_with_labels(labels: &[&str]) -> Issue {
+        Issue {
             number: 402,
             title: "Wire mode resolver".to_string(),
             body: String::new(),

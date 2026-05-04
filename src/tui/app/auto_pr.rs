@@ -162,7 +162,7 @@ impl App {
         }
 
         let cached_issue = self.state.issue_cache.get(&issue_number).cloned();
-        let primary_issue: Option<crate::provider::github::types::GhIssue> = match cached_issue {
+        let primary_issue: Option<crate::provider::types::Issue> = match cached_issue {
             Some(cached) => Some(cached),
             None => match self
                 .github_client
@@ -204,7 +204,7 @@ impl App {
         let pr_creator = PrCreator::new(client.as_ref(), base_branch.clone());
 
         let pr_result = if is_unified {
-            let unified_issues: Vec<&crate::provider::github::types::GhIssue> = issue_numbers
+            let unified_issues: Vec<&crate::provider::types::Issue> = issue_numbers
                 .iter()
                 .filter_map(|n| self.state.issue_cache.get(n))
                 .collect();

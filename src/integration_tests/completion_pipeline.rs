@@ -1,5 +1,5 @@
 use crate::integration_tests::helpers::*;
-use crate::provider::github::client::GitHubClient;
+use crate::provider::github::client::RepoProvider;
 use crate::provider::github::client::mock::MockGitHubClient;
 use crate::provider::github::labels::LabelManager;
 use crate::provider::github::pr::{PrCreator, build_pr_body};

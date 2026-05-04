@@ -1,9 +1,9 @@
 use super::*;
-use crate::provider::github::transport::GitHubClient;
-use crate::provider::github::types::GhPullRequest;
+use crate::provider::github::transport::RepoProvider;
+use crate::provider::types::PullRequest;
 
-fn make_pr(number: u64) -> GhPullRequest {
-    GhPullRequest {
+fn make_pr(number: u64) -> PullRequest {
+    PullRequest {
         number,
         title: format!("PR #{}", number),
         body: String::new(),
@@ -79,49 +79,49 @@ async fn mock_get_pr_propagates_configured_error() {
 
 #[tokio::test]
 async fn mock_submit_pr_review_records_approve_call() {
-    use crate::provider::github::types::PrReviewEvent;
+    use crate::provider::types::ReviewEvent;
     let client = MockGitHubClient::new();
     client
-        .submit_pr_review(7, PrReviewEvent::Approve, "LGTM")
+        .submit_pr_review(7, ReviewEvent::Approve, "LGTM")
         .await
         .unwrap();
     let calls = client.submit_pr_review_calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].pr_number, 7);
-    assert_eq!(calls[0].event, PrReviewEvent::Approve);
+    assert_eq!(calls[0].event, ReviewEvent::Approve);
     assert_eq!(calls[0].body, "LGTM");
 }
 
 #[tokio::test]
 async fn mock_submit_pr_review_records_request_changes_call() {
-    use crate::provider::github::types::PrReviewEvent;
+    use crate::provider::types::ReviewEvent;
     let client = MockGitHubClient::new();
     client
-        .submit_pr_review(3, PrReviewEvent::RequestChanges, "needs work")
+        .submit_pr_review(3, ReviewEvent::RequestChanges, "needs work")
         .await
         .unwrap();
     let calls = client.submit_pr_review_calls();
-    assert_eq!(calls[0].event, PrReviewEvent::RequestChanges);
+    assert_eq!(calls[0].event, ReviewEvent::RequestChanges);
 }
 
 #[tokio::test]
 async fn mock_submit_pr_review_records_comment_call() {
-    use crate::provider::github::types::PrReviewEvent;
+    use crate::provider::types::ReviewEvent;
     let client = MockGitHubClient::new();
     client
-        .submit_pr_review(1, PrReviewEvent::Comment, "nice")
+        .submit_pr_review(1, ReviewEvent::Comment, "nice")
         .await
         .unwrap();
     let calls = client.submit_pr_review_calls();
-    assert_eq!(calls[0].event, PrReviewEvent::Comment);
+    assert_eq!(calls[0].event, ReviewEvent::Comment);
 }
 
 #[tokio::test]
 async fn mock_submit_pr_review_propagates_configured_error() {
-    use crate::provider::github::types::PrReviewEvent;
+    use crate::provider::types::ReviewEvent;
     let client = MockGitHubClient::new();
     client.set_submit_pr_review_error("forbidden");
-    let result = client.submit_pr_review(1, PrReviewEvent::Approve, "").await;
+    let result = client.submit_pr_review(1, ReviewEvent::Approve, "").await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("forbidden"));
 }

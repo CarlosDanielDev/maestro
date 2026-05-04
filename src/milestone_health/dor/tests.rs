@@ -1,10 +1,10 @@
 //! Tests for the DOR (Definition of Ready) checker (#500).
 
 use super::*;
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 
-fn raw_issue(number: u64, labels: &[&str], body: &str) -> GhIssue {
-    GhIssue {
+fn raw_issue(number: u64, labels: &[&str], body: &str) -> Issue {
+    Issue {
         number,
         title: format!("Issue #{}", number),
         body: body.to_string(),
@@ -29,7 +29,7 @@ fn body_with(sections: &[&str]) -> String {
     out
 }
 
-pub(crate) fn make_feature_issue(number: u64, missing: &[&str]) -> GhIssue {
+pub(crate) fn make_feature_issue(number: u64, missing: &[&str]) -> Issue {
     let kept: Vec<&str> = FEATURE_SECTIONS
         .iter()
         .copied()
@@ -38,7 +38,7 @@ pub(crate) fn make_feature_issue(number: u64, missing: &[&str]) -> GhIssue {
     raw_issue(number, &["type:feature"], &body_with(&kept))
 }
 
-pub(crate) fn make_bug_issue(number: u64, missing: &[&str]) -> GhIssue {
+pub(crate) fn make_bug_issue(number: u64, missing: &[&str]) -> Issue {
     let kept: Vec<&str> = BUG_SECTIONS
         .iter()
         .copied()

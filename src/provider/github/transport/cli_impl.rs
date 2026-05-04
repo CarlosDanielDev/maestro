@@ -1,17 +1,17 @@
 use super::{
-    CreateOutcome, GhCliClient, GitHubClient, PR_JSON_FIELDS, argv_refs, is_label_not_found_error,
+    CreateOutcome, GhCliClient, PR_JSON_FIELDS, RepoProvider, argv_refs, is_label_not_found_error,
     normalize_paginated_json_arrays, parse_issues_json, parse_milestones_json,
     parse_pr_number_from_create_output, parse_prs_json,
 };
 use crate::provider::github::gh_argv;
-use crate::provider::github::types::{GhIssue, GhMilestone, GhPullRequest, PrReviewEvent};
+use crate::provider::types::{Issue, Milestone, PullRequest, ReviewEvent};
 use crate::util::{titles_equivalent, validate_body, validate_gh_arg, validate_title};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
 #[async_trait]
-impl GitHubClient for GhCliClient {
-    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<GhIssue>> {
+impl RepoProvider for GhCliClient {
+    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
         for label in labels {
             validate_gh_arg(label, "label")?;
         }
@@ -26,14 +26,14 @@ impl GitHubClient for GhCliClient {
         parse_issues_json(&json_str)
     }
 
-    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>> {
+    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<Issue>> {
         validate_gh_arg(milestone, "milestone")?;
         let argv = gh_argv::build_list_issues_by_milestone_argv(milestone, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_issues_json(&json_str)
     }
 
-    async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>> {
+    async fn list_milestones(&self, state: &str) -> Result<Vec<Milestone>> {
         match state {
             "open" | "closed" | "all" => {}
             _ => anyhow::bail!(
@@ -47,7 +47,7 @@ impl GitHubClient for GhCliClient {
         parse_milestones_json(&normalized)
     }
 
-    async fn get_issue(&self, number: u64) -> Result<GhIssue> {
+    async fn get_issue(&self, number: u64) -> Result<Issue> {
         let argv = gh_argv::build_get_issue_argv(number, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         // gh issue view returns a single object, wrap it in array for parsing
@@ -260,13 +260,13 @@ impl GitHubClient for GhCliClient {
         Ok(CreateOutcome::Created(number))
     }
 
-    async fn list_open_prs(&self) -> Result<Vec<GhPullRequest>> {
+    async fn list_open_prs(&self) -> Result<Vec<PullRequest>> {
         let argv = gh_argv::build_list_open_prs_argv(PR_JSON_FIELDS, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_prs_json(&json_str)
     }
 
-    async fn get_pr(&self, number: u64) -> Result<GhPullRequest> {
+    async fn get_pr(&self, number: u64) -> Result<PullRequest> {
         let argv = gh_argv::build_get_pr_argv(number, PR_JSON_FIELDS, self.repo_arg());
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         let prs = parse_prs_json(&format!("[{}]", json_str))?;
@@ -275,12 +275,7 @@ impl GitHubClient for GhCliClient {
             .ok_or_else(|| anyhow::anyhow!("PR #{} not found", number))
     }
 
-    async fn submit_pr_review(
-        &self,
-        pr_number: u64,
-        event: PrReviewEvent,
-        body: &str,
-    ) -> Result<()> {
+    async fn submit_pr_review(&self, pr_number: u64, event: ReviewEvent, body: &str) -> Result<()> {
         // Parity with create_pr / create_issue / create_milestone — every
         // user-facing body that ships to GitHub is bounded at the same cap.
         validate_body(body, "PR review body")?;

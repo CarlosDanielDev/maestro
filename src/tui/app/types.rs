@@ -4,7 +4,7 @@ use crate::adapt::types::{
 };
 use crate::config::SessionsConfig;
 use crate::plugins::hooks::{HookContext, HookPoint};
-use crate::provider::github::types::{GhIssue, GhMilestone};
+use crate::provider::types::{Issue, Milestone};
 use crate::session::types::SessionStatus;
 use crate::tui::screens::{
     PromptSessionConfig, SessionConfig as ScreenSessionConfig, UnifiedSessionConfig,
@@ -300,7 +300,7 @@ pub enum TuiCommand {
     FetchOpenPrs,
     SubmitPrReview {
         pr_number: u64,
-        event: crate::provider::github::types::PrReviewEvent,
+        event: crate::provider::types::ReviewEvent,
         body: String,
     },
     /// Sync the live PRD's `current_state` from GitHub (#321).
@@ -314,10 +314,10 @@ pub enum TuiCommand {
         repo: String,
     },
     /// Fetch open issues for a selected milestone (#500). The full
-    /// `GhMilestone` is passed through so the background task does not need
+    /// `Milestone` is passed through so the background task does not need
     /// to re-fetch the milestone list to find it by number.
     FetchMilestoneHealthIssues {
-        milestone: GhMilestone,
+        milestone: Milestone,
     },
     /// Patch a milestone description via gh api PATCH (#500). The wizard
     /// dispatches this only after explicit user confirmation.
@@ -329,7 +329,7 @@ pub enum TuiCommand {
 
 /// Data events delivered from background fetch tasks.
 pub enum TuiDataEvent {
-    Issues(anyhow::Result<Vec<GhIssue>>),
+    Issues(anyhow::Result<Vec<Issue>>),
     /// Result of creating a GitHub issue via the Issue Wizard (#291+#298).
     /// Only emitted for `CreateOutcome::Created` — `Existed` surfaces as
     /// `IssueAlreadyExists` so the wizard can show a blocking modal (#455).
@@ -347,7 +347,7 @@ pub enum TuiDataEvent {
     /// human-readable failure reason rendered on the `Failed` step.
     AiPlanningResult(Result<crate::tui::screens::milestone_wizard::AiGeneratedPlan, String>),
     /// Open issues fetched for the Issue Wizard's Dependencies step (#295).
-    WizardDependencyIssues(anyhow::Result<Vec<GhIssue>>),
+    WizardDependencyIssues(anyhow::Result<Vec<Issue>>),
     /// AI review companion result (#296). Carries the raw response text
     /// or a human-readable failure reason.
     AiReviewResult(Result<String, String>),
@@ -359,8 +359,8 @@ pub enum TuiDataEvent {
     MilestonePlanCreated(
         Result<crate::tui::screens::milestone_wizard::MilestoneCreationResult, String>,
     ),
-    Milestones(anyhow::Result<Vec<(GhMilestone, Vec<GhIssue>)>>),
-    Issue(anyhow::Result<GhIssue>, Option<String>),
+    Milestones(anyhow::Result<Vec<(Milestone, Vec<Issue>)>>),
+    Issue(anyhow::Result<Issue>, Option<String>),
     SuggestionData(SuggestionDataPayload),
     VersionCheckResult(Option<crate::updater::ReleaseInfo>),
     UpgradeResult(Result<String, String>),
@@ -370,8 +370,8 @@ pub enum TuiDataEvent {
     AdaptPlanResult(anyhow::Result<AdaptPlan>),
     AdaptScaffoldResult(anyhow::Result<ScaffoldResult>),
     AdaptMaterializeResult(anyhow::Result<MaterializeResult>),
-    UnifiedIssues(anyhow::Result<Vec<GhIssue>>, Option<String>),
-    PullRequests(anyhow::Result<Vec<crate::provider::github::types::GhPullRequest>>),
+    UnifiedIssues(anyhow::Result<Vec<Issue>>, Option<String>),
+    PullRequests(anyhow::Result<Vec<crate::provider::types::PullRequest>>),
     PrReviewSubmitted(anyhow::Result<()>),
     /// Result of `SyncPrd` (#321) — fold into the live PRD's current_state.
     PrdSyncResult(anyhow::Result<crate::prd::sync::PrdSyncResult>),
@@ -383,7 +383,7 @@ pub enum TuiDataEvent {
         result: anyhow::Result<crate::review::types::ReviewReport>,
     },
     /// Result of `FetchMilestoneHealthIssues` (#500).
-    MilestoneHealthIssuesFetched(anyhow::Result<(GhMilestone, Vec<GhIssue>)>),
+    MilestoneHealthIssuesFetched(anyhow::Result<(Milestone, Vec<Issue>)>),
     /// Result of `PatchMilestoneDescription` (#500).
     MilestoneHealthPatched(anyhow::Result<()>),
 }

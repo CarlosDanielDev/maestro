@@ -1,9 +1,9 @@
 use super::*;
-use crate::provider::github::transport::GitHubClient;
-use crate::provider::github::types::{GhIssue, GhMilestone};
+use crate::provider::github::transport::RepoProvider;
+use crate::provider::types::{Issue, Milestone};
 
-fn make_issue(number: u64, labels: &[&str]) -> GhIssue {
-    GhIssue {
+fn make_issue(number: u64, labels: &[&str]) -> Issue {
+    Issue {
         number,
         title: format!("Issue #{}", number),
         body: String::new(),
@@ -139,7 +139,7 @@ async fn mock_create_pr_propagates_configured_error() {
 async fn mock_list_milestones_returns_stored_milestones() {
     let client = MockGitHubClient::new();
     client.set_milestones(vec![
-        GhMilestone {
+        Milestone {
             number: 1,
             title: "v1.0".to_string(),
             description: String::new(),
@@ -147,7 +147,7 @@ async fn mock_list_milestones_returns_stored_milestones() {
             open_issues: 2,
             closed_issues: 3,
         },
-        GhMilestone {
+        Milestone {
             number: 2,
             title: "v2.0".to_string(),
             description: String::new(),

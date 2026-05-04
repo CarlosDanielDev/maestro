@@ -1,6 +1,6 @@
 use crate::commands::setup::{setup_app_from_config_with_bypass, startup_cleanup};
 use crate::config::Config;
-use crate::provider::github::client::{GhCliClient, GitHubClient};
+use crate::provider::github::client::{GhCliClient, RepoProvider};
 use crate::session::types::Session;
 use crate::session::worktree::GitWorktreeManager;
 use crate::state::store::StateStore;

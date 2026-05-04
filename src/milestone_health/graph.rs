@@ -4,12 +4,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::milestone_health::dor::parse_blocked_by_section;
 use crate::milestone_health::types::{BlockedBySection, GraphAnomaly, GraphLevel, ParsedGraph};
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 
 /// Gather all blocker issue numbers for an issue: union of labels,
 /// inline `blocked-by:` references, and the structured `## Blocked By`
 /// section. Deduplicated and sorted.
-pub fn gather_blockers(issue: &GhIssue) -> Vec<u64> {
+pub fn gather_blockers(issue: &Issue) -> Vec<u64> {
     let mut all = issue.all_blockers();
     if let Some(BlockedBySection::Issues(nums)) = parse_blocked_by_section(&issue.body) {
         all.extend(nums);
@@ -115,7 +115,7 @@ fn parse_issue_bullet(line: &str) -> Option<(u64, bool)> {
 /// inline body refs, and the structured `## Blocked By` section). Computing
 /// this once and reusing it across `detect_cycles` and `compute_levels`
 /// avoids re-parsing each issue body O(N) times per `analyze` call.
-fn build_blockers_map(issues: &[GhIssue]) -> HashMap<u64, Vec<u64>> {
+fn build_blockers_map(issues: &[Issue]) -> HashMap<u64, Vec<u64>> {
     issues
         .iter()
         .map(|i| (i.number, gather_blockers(i)))
@@ -127,7 +127,7 @@ fn build_blockers_map(issues: &[GhIssue]) -> HashMap<u64, Vec<u64>> {
 /// `CrossMilestoneBlockedBy` anomalies, not level shifts). Cycle members
 /// get `None`.
 pub fn compute_levels(
-    issues: &[GhIssue],
+    issues: &[Issue],
     milestone_set: &HashSet<u64>,
 ) -> HashMap<u64, Option<usize>> {
     let blockers_map = build_blockers_map(issues);
@@ -136,7 +136,7 @@ pub fn compute_levels(
 }
 
 fn compute_levels_with(
-    issues: &[GhIssue],
+    issues: &[Issue],
     milestone_set: &HashSet<u64>,
     blockers_map: &HashMap<u64, Vec<u64>>,
     cycles: &[Vec<u64>],
@@ -198,13 +198,13 @@ fn compute_levels_with(
 /// SCCs are sorted by minimum issue number; within an SCC, members are
 /// sorted ascending.
 #[allow(dead_code)] // Reason: public ergonomic wrapper; production uses detect_cycles_with_blockers, tests call this directly
-pub fn detect_cycles(issues: &[GhIssue]) -> Vec<Vec<u64>> {
+pub fn detect_cycles(issues: &[Issue]) -> Vec<Vec<u64>> {
     let blockers_map = build_blockers_map(issues);
     detect_cycles_with_blockers(issues, &blockers_map)
 }
 
 fn detect_cycles_with_blockers(
-    issues: &[GhIssue],
+    issues: &[Issue],
     blockers_map: &HashMap<u64, Vec<u64>>,
 ) -> Vec<Vec<u64>> {
     let nodes: Vec<u64> = issues.iter().map(|i| i.number).collect();
@@ -324,7 +324,7 @@ fn strongconnect(
 /// Builds the blockers map, cycle set, and computed levels exactly once
 /// internally — earlier revisions ran detect_cycles three times and
 /// compute_levels twice on the same inputs.
-pub fn analyze(description: &str, issues: &[GhIssue]) -> Vec<GraphAnomaly> {
+pub fn analyze(description: &str, issues: &[Issue]) -> Vec<GraphAnomaly> {
     let mut out: Vec<GraphAnomaly> = Vec::new();
     let parsed = parse_graph(description);
     let milestone_set: HashSet<u64> = issues.iter().map(|i| i.number).collect();
@@ -361,7 +361,7 @@ pub fn analyze(description: &str, issues: &[GhIssue]) -> Vec<GraphAnomaly> {
         let levels_map = parsed.issue_to_level();
         let computed = compute_levels_with(issues, &milestone_set, &blockers_map, &cycles);
 
-        let mut sorted_issues: Vec<&GhIssue> = issues.iter().collect();
+        let mut sorted_issues: Vec<&Issue> = issues.iter().collect();
         sorted_issues.sort_by_key(|i| i.number);
         for issue in sorted_issues {
             if cycle_members.contains(&issue.number) {

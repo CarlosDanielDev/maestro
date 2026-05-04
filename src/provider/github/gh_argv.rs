@@ -13,7 +13,7 @@
 //! - Tests live in `#[cfg(test)] mod tests` at the bottom; one snapshot
 //!   per builder using literal `Vec<&str>` for readability.
 
-use crate::provider::github::types::PrReviewEvent;
+use crate::provider::types::ReviewEvent;
 
 /// Append `--repo {owner}/{repo}` to `argv` when `repo` is set. No-op
 /// otherwise. Centralizes the rollout so individual builders stay tidy.
@@ -109,7 +109,7 @@ pub(crate) fn build_remove_label_argv(
 
 pub(crate) fn build_submit_pr_review_argv(
     pr_number: u64,
-    event: PrReviewEvent,
+    event: ReviewEvent,
     body: &str,
 ) -> Vec<String> {
     let mut argv = vec![
@@ -366,21 +366,21 @@ mod tests {
     #[test]
     fn submit_pr_review_argv_with_body() {
         assert_eq!(
-            build_submit_pr_review_argv(99, PrReviewEvent::Approve, "LGTM"),
+            build_submit_pr_review_argv(99, ReviewEvent::Approve, "LGTM"),
             s(&["pr", "review", "99", "--approve", "--body", "LGTM",])
         );
     }
 
     #[test]
     fn submit_pr_review_argv_omits_body_when_empty() {
-        let argv = build_submit_pr_review_argv(99, PrReviewEvent::Comment, "");
+        let argv = build_submit_pr_review_argv(99, ReviewEvent::Comment, "");
         assert_eq!(argv, s(&["pr", "review", "99", "--comment"]));
         assert!(!argv.contains(&"--body".to_string()));
     }
 
     #[test]
     fn submit_pr_review_argv_request_changes() {
-        let argv = build_submit_pr_review_argv(99, PrReviewEvent::RequestChanges, "see comments");
+        let argv = build_submit_pr_review_argv(99, ReviewEvent::RequestChanges, "see comments");
         assert_eq!(
             argv,
             s(&[
@@ -805,8 +805,8 @@ mod wire_tests {
         if !integration_enabled() {
             return;
         }
-        use crate::provider::github::types::PrReviewEvent;
-        let argv = build_submit_pr_review_argv(1, PrReviewEvent::Approve, "LGTM");
+        use crate::provider::types::ReviewEvent;
+        let argv = build_submit_pr_review_argv(1, ReviewEvent::Approve, "LGTM");
         let flags = gh_help_flags(&["pr", "review"]);
         assert_all_recognized(&argv, &flags, "build_submit_pr_review_argv");
     }

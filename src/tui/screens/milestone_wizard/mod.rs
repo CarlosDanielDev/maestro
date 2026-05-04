@@ -105,9 +105,9 @@ pub async fn materialize_plan(
     materialize_plan_with_client(plan, &client).await
 }
 
-/// Inner impl parameterized over any `GitHubClient`. Exposed so tests
+/// Inner impl parameterized over any `RepoProvider`. Exposed so tests
 /// can drive a mock through the same logic as production.
-pub async fn materialize_plan_with_client<G: crate::provider::github::client::GitHubClient>(
+pub async fn materialize_plan_with_client<G: crate::provider::github::client::RepoProvider>(
     plan: &AiGeneratedPlan,
     client: &G,
 ) -> Result<MilestoneCreationResult, String> {
@@ -1067,10 +1067,10 @@ mod tests {
     #[tokio::test]
     async fn materialize_plan_returns_reused_when_milestone_exists() {
         use crate::provider::github::client::mock::MockGitHubClient;
-        use crate::provider::github::types::GhMilestone;
+        use crate::provider::types::Milestone;
 
         let client = MockGitHubClient::new();
-        client.set_existing_milestones(vec![GhMilestone {
+        client.set_existing_milestones(vec![Milestone {
             number: 42,
             title: "M0: Foundation".into(),
             description: String::new(),
@@ -1099,10 +1099,10 @@ mod tests {
     #[tokio::test]
     async fn materialize_plan_skips_duplicate_issues_within_reused_milestone() {
         use crate::provider::github::client::mock::MockGitHubClient;
-        use crate::provider::github::types::{GhIssue, GhMilestone};
+        use crate::provider::types::{Issue, Milestone};
 
         let client = MockGitHubClient::new();
-        client.set_existing_milestones(vec![GhMilestone {
+        client.set_existing_milestones(vec![Milestone {
             number: 42,
             title: "M0: Foundation".into(),
             description: String::new(),
@@ -1110,7 +1110,7 @@ mod tests {
             open_issues: 0,
             closed_issues: 0,
         }]);
-        client.set_existing_issues(vec![GhIssue {
+        client.set_existing_issues(vec![Issue {
             number: 99,
             title: "feat: login page".into(),
             body: String::new(),

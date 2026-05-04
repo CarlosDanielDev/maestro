@@ -359,7 +359,7 @@ pub async fn detect_milestone_hint(
     );
     let mut titles: Vec<String> = Vec::new();
     for state in ["open", "closed"] {
-        match crate::provider::github::client::GitHubClient::list_milestones(&github, state).await {
+        match crate::provider::github::client::RepoProvider::list_milestones(&github, state).await {
             Ok(ms) => titles.extend(ms.into_iter().map(|m| m.title)),
             Err(e) => {
                 tracing::warn!("Failed to list {state} milestones for pattern detection: {e}");

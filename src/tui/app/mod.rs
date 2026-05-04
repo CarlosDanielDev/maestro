@@ -33,7 +33,7 @@ use crate::models::ModelRouter;
 use crate::notifications::desktop::{DesktopNotifier, OsascriptNotifier};
 use crate::notifications::dispatcher::NotificationDispatcher;
 use crate::plugins::runner::PluginRunner;
-use crate::provider::github::client::GitHubClient;
+use crate::provider::github::client::RepoProvider;
 use crate::session::context_monitor::{ContextMonitor, ProductionContextMonitor};
 use crate::session::fork::ForkPolicy;
 use crate::session::health::{HealthCheck, HealthMonitor};
@@ -72,7 +72,7 @@ pub struct App {
     pub start_time: chrono::DateTime<chrono::Utc>,
     pub event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     pub work_assignment_service: Option<WorkAssignmentService>,
-    pub github_client: Option<Box<dyn GitHubClient>>,
+    pub github_client: Option<Box<dyn RepoProvider>>,
     pub config: Option<Config>,
     pub config_path: Option<std::path::PathBuf>,
     pub(crate) pending_issue_completions: Vec<PendingIssueCompletion>,

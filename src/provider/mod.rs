@@ -3,7 +3,7 @@ pub mod azure_devops;
 pub mod github;
 pub mod types;
 
-use self::github::client::GitHubClient;
+use self::github::client::RepoProvider;
 use crate::config::ProviderConfig;
 use anyhow::Result;
 use types::ProviderKind;
@@ -13,7 +13,7 @@ use self::github::client::GhCliClient;
 
 /// Create the appropriate provider client from config.
 #[allow(dead_code)] // to be wired when provider selection is exposed via CLI/config
-pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn GitHubClient>> {
+pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn RepoProvider>> {
     match config.kind {
         ProviderKind::Github => Ok(Box::new(GhCliClient::new())),
         ProviderKind::AzureDevops => {
@@ -104,6 +104,11 @@ mod tests {
     fn create_provider_github() {
         let cfg = ProviderConfig::default();
         let _client = create_provider(&cfg).unwrap();
+    }
+
+    #[test]
+    fn gh_cli_client_is_repo_provider_trait_object() {
+        let _: Box<dyn RepoProvider> = Box::new(GhCliClient::new());
     }
 
     #[test]

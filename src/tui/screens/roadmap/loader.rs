@@ -3,15 +3,15 @@
 #![deny(clippy::unwrap_used)]
 #![allow(dead_code)]
 
-use crate::provider::github::client::GitHubClient;
-use crate::provider::github::types::GhIssue;
+use crate::provider::github::client::RepoProvider;
+use crate::provider::types::Issue;
 use crate::tui::screens::roadmap::types::{RoadmapEntry, SemVer};
 use anyhow::Result;
 
 /// Concurrent fetch: first list all open + closed milestones, then for
 /// each pull its issues. Returns entries unsorted; the screen state sorts
 /// them by descending semver on `set_entries`.
-pub async fn load_roadmap(client: &dyn GitHubClient) -> Result<Vec<RoadmapEntry>> {
+pub async fn load_roadmap(client: &dyn RepoProvider) -> Result<Vec<RoadmapEntry>> {
     let (open_ms, closed_ms) = tokio::join!(
         client.list_milestones("open"),
         client.list_milestones("closed"),
@@ -21,7 +21,7 @@ pub async fn load_roadmap(client: &dyn GitHubClient) -> Result<Vec<RoadmapEntry>
 
     let mut entries = Vec::with_capacity(milestones.len());
     for m in milestones {
-        let issues: Vec<GhIssue> = client
+        let issues: Vec<Issue> = client
             .list_issues_by_milestone(&m.title)
             .await
             .unwrap_or_default();
@@ -36,24 +36,23 @@ pub async fn load_roadmap(client: &dyn GitHubClient) -> Result<Vec<RoadmapEntry>
 }
 
 // Tests for `load_roadmap` are exercised through the integration tests
-// that drive the App pipeline; the GitHubClient trait surface is too large
+// that drive the App pipeline; the RepoProvider trait surface is too large
 // to duplicate here as a hand-written fake.
 #[cfg(any())]
 mod tests {
     use super::*;
-    use crate::provider::github::client::GitHubClient;
-    use crate::provider::github::types::{
-        CreateOutcome, GhMilestone, GhPr, PendingPr, PrReviewEvent,
-    };
+    use crate::provider::github::client::{CreateOutcome, RepoProvider};
+    use crate::provider::github::types::PendingPr;
+    use crate::provider::types::{Milestone, PullRequest, ReviewEvent};
     use anyhow::Result;
     use async_trait::async_trait;
     use std::sync::Mutex;
 
     /// Minimal fake — only the methods we exercise here are non-trivial.
     struct FakeClient {
-        open_milestones: Vec<GhMilestone>,
-        closed_milestones: Vec<GhMilestone>,
-        issues_by_milestone: std::collections::HashMap<String, Vec<GhIssue>>,
+        open_milestones: Vec<Milestone>,
+        closed_milestones: Vec<Milestone>,
+        issues_by_milestone: std::collections::HashMap<String, Vec<Issue>>,
         calls: Mutex<Vec<String>>,
     }
 
@@ -69,12 +68,12 @@ mod tests {
     }
 
     #[async_trait]
-    impl GitHubClient for FakeClient {
-        async fn list_issues(&self, _labels: &[&str]) -> Result<Vec<GhIssue>> {
+    impl RepoProvider for FakeClient {
+        async fn list_issues(&self, _labels: &[&str]) -> Result<Vec<Issue>> {
             self.calls.lock().expect("lock").push("list_issues".into());
             Ok(Vec::new())
         }
-        async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>> {
+        async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<Issue>> {
             self.calls
                 .lock()
                 .expect("lock")
@@ -85,7 +84,7 @@ mod tests {
                 .cloned()
                 .unwrap_or_default())
         }
-        async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>> {
+        async fn list_milestones(&self, state: &str) -> Result<Vec<Milestone>> {
             self.calls
                 .lock()
                 .expect("lock")
@@ -111,7 +110,7 @@ mod tests {
         async fn list_open_prs(&self) -> Result<Vec<PendingPr>> {
             unimplemented!()
         }
-        async fn list_pr_details(&self) -> Result<Vec<GhPr>> {
+        async fn list_pr_details(&self) -> Result<Vec<PullRequest>> {
             unimplemented!()
         }
         async fn add_label(&self, _number: u64, _label: &str) -> Result<()> {
@@ -129,15 +128,15 @@ mod tests {
         async fn submit_pr_review(
             &self,
             _pr_number: u64,
-            _event: PrReviewEvent,
+            _event: ReviewEvent,
             _body: &str,
         ) -> Result<()> {
             unimplemented!()
         }
     }
 
-    fn ms(num: u64, title: &str, state: &str) -> GhMilestone {
-        GhMilestone {
+    fn ms(num: u64, title: &str, state: &str) -> Milestone {
+        Milestone {
             number: num,
             title: title.into(),
             description: String::new(),

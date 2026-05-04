@@ -1,4 +1,4 @@
-use super::types::{GhIssue, GhMilestone, GhPullRequest, PrReviewEvent};
+use crate::provider::types::{Issue, Milestone, PullRequest, ReviewEvent};
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -57,13 +57,13 @@ impl CreateOutcome {
     }
 }
 
-/// Trait for GitHub API operations. Mockable for testing.
+/// Trait for repository provider operations. Mockable for testing.
 #[async_trait]
-pub trait GitHubClient: Send + Sync {
-    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<GhIssue>>;
-    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>>;
-    async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>>;
-    async fn get_issue(&self, number: u64) -> Result<GhIssue>;
+pub trait RepoProvider: Send + Sync {
+    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>>;
+    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<Issue>>;
+    async fn list_milestones(&self, state: &str) -> Result<Vec<Milestone>>;
+    async fn get_issue(&self, number: u64) -> Result<Issue>;
     async fn add_label(&self, issue_number: u64, label: &str) -> Result<()>;
     async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()>;
     async fn create_pr(
@@ -84,15 +84,10 @@ pub trait GitHubClient: Send + Sync {
         labels: &[String],
         milestone: Option<u64>,
     ) -> Result<CreateOutcome>;
-    async fn list_open_prs(&self) -> Result<Vec<GhPullRequest>>;
+    async fn list_open_prs(&self) -> Result<Vec<PullRequest>>;
     #[allow(dead_code)] // Reason: PR detail view — currently PR data comes from list
-    async fn get_pr(&self, number: u64) -> Result<GhPullRequest>;
-    async fn submit_pr_review(
-        &self,
-        pr_number: u64,
-        event: PrReviewEvent,
-        body: &str,
-    ) -> Result<()>;
+    async fn get_pr(&self, number: u64) -> Result<PullRequest>;
+    async fn submit_pr_review(&self, pr_number: u64, event: ReviewEvent, body: &str) -> Result<()>;
     async fn list_labels(&self) -> Result<Vec<String>>;
     async fn create_label(&self, name: &str, color: &str) -> Result<()>;
     async fn patch_milestone_description(
@@ -102,19 +97,19 @@ pub trait GitHubClient: Send + Sync {
     ) -> Result<()>;
 }
 
-/// Blanket impl: if T: GitHubClient, then &T is also a GitHubClient.
+/// Blanket impl: if T: RepoProvider, then &T is also a RepoProvider.
 #[async_trait]
-impl<T: GitHubClient + ?Sized> GitHubClient for &T {
-    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<GhIssue>> {
+impl<T: RepoProvider + ?Sized> RepoProvider for &T {
+    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
         (**self).list_issues(labels).await
     }
-    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<GhIssue>> {
+    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<Issue>> {
         (**self).list_issues_by_milestone(milestone).await
     }
-    async fn list_milestones(&self, state: &str) -> Result<Vec<GhMilestone>> {
+    async fn list_milestones(&self, state: &str) -> Result<Vec<Milestone>> {
         (**self).list_milestones(state).await
     }
-    async fn get_issue(&self, number: u64) -> Result<GhIssue> {
+    async fn get_issue(&self, number: u64) -> Result<Issue> {
         (**self).get_issue(number).await
     }
     async fn add_label(&self, issue_number: u64, label: &str) -> Result<()> {
@@ -150,18 +145,13 @@ impl<T: GitHubClient + ?Sized> GitHubClient for &T {
     ) -> Result<CreateOutcome> {
         (**self).create_issue(title, body, labels, milestone).await
     }
-    async fn list_open_prs(&self) -> Result<Vec<GhPullRequest>> {
+    async fn list_open_prs(&self) -> Result<Vec<PullRequest>> {
         (**self).list_open_prs().await
     }
-    async fn get_pr(&self, number: u64) -> Result<GhPullRequest> {
+    async fn get_pr(&self, number: u64) -> Result<PullRequest> {
         (**self).get_pr(number).await
     }
-    async fn submit_pr_review(
-        &self,
-        pr_number: u64,
-        event: PrReviewEvent,
-        body: &str,
-    ) -> Result<()> {
+    async fn submit_pr_review(&self, pr_number: u64, event: ReviewEvent, body: &str) -> Result<()> {
         (**self).submit_pr_review(pr_number, event, body).await
     }
     async fn list_labels(&self) -> Result<Vec<String>> {

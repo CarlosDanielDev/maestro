@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 use crate::session::image::image_section_for_prompt;
 use std::path::{Path, PathBuf};
 
@@ -85,7 +85,7 @@ pub struct PromptBuilder;
 impl PromptBuilder {
     /// Build a structured prompt for an issue-based session with optional image references.
     pub fn build_issue_prompt_with_images(
-        issue: &GhIssue,
+        issue: &Issue,
         config: &Config,
         image_relative_paths: &[PathBuf],
     ) -> String {
@@ -97,7 +97,7 @@ impl PromptBuilder {
     }
 
     /// Build a structured prompt for an issue-based session.
-    pub fn build_issue_prompt(issue: &GhIssue, config: &Config) -> String {
+    pub fn build_issue_prompt(issue: &Issue, config: &Config) -> String {
         let task_type = Self::detect_task_type(issue);
         let phase_instructions = Self::phase_instructions(&task_type);
         let safety_guards = Self::safety_guards();
@@ -134,7 +134,7 @@ impl PromptBuilder {
     }
 
     /// Detect the task type from issue labels.
-    fn detect_task_type(issue: &GhIssue) -> String {
+    fn detect_task_type(issue: &Issue) -> String {
         for label in &issue.labels {
             match label.as_str() {
                 "type:docs" | "documentation" => return "Documentation".into(),
@@ -208,8 +208,8 @@ impl PromptBuilder {
 mod tests {
     use super::*;
 
-    fn make_issue(labels: &[&str]) -> GhIssue {
-        GhIssue {
+    fn make_issue(labels: &[&str]) -> Issue {
+        Issue {
             number: 42,
             title: "Test issue".into(),
             body: "Fix the thing".into(),

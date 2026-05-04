@@ -5,13 +5,13 @@
 
 use super::App;
 use crate::provider::github::client::mock::MockGitHubClient;
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 use crate::session::worktree::MockWorktreeManager;
 use crate::state::store::StateStore;
 use crate::tui::activity_log::LogLevel;
 
-fn make_issue(number: u64) -> GhIssue {
-    GhIssue {
+fn make_issue(number: u64) -> Issue {
+    Issue {
         number,
         title: format!("Test issue #{}", number),
         body: String::new(),

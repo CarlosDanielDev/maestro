@@ -1,6 +1,5 @@
-use super::types::Issue;
-use crate::provider::github::client::GitHubClient;
-use crate::provider::github::types::GhMilestone;
+use crate::provider::github::client::RepoProvider;
+use crate::provider::types::{Issue, Milestone, PullRequest, ReviewEvent};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
@@ -105,7 +104,7 @@ pub fn parse_work_items_json(json_str: &str) -> Result<Vec<Issue>> {
 }
 
 #[async_trait]
-impl GitHubClient for AzDevOpsClient {
+impl RepoProvider for AzDevOpsClient {
     async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
         let mut wiql = String::from(
             "SELECT [System.Id] FROM WorkItems WHERE [System.State] <> 'Closed' \
@@ -217,7 +216,7 @@ impl GitHubClient for AzDevOpsClient {
         parse_work_items_json(&details_str)
     }
 
-    async fn list_milestones(&self, _state: &str) -> Result<Vec<GhMilestone>> {
+    async fn list_milestones(&self, _state: &str) -> Result<Vec<Milestone>> {
         // Azure DevOps uses iterations rather than milestones; not yet implemented.
         Ok(vec![])
     }
@@ -368,18 +367,18 @@ impl GitHubClient for AzDevOpsClient {
         anyhow::bail!("create_issue is not supported for Azure DevOps")
     }
 
-    async fn list_open_prs(&self) -> Result<Vec<crate::provider::github::types::GhPullRequest>> {
+    async fn list_open_prs(&self) -> Result<Vec<PullRequest>> {
         anyhow::bail!("list_open_prs is not supported for Azure DevOps")
     }
 
-    async fn get_pr(&self, _number: u64) -> Result<crate::provider::github::types::GhPullRequest> {
+    async fn get_pr(&self, _number: u64) -> Result<PullRequest> {
         anyhow::bail!("get_pr is not supported for Azure DevOps")
     }
 
     async fn submit_pr_review(
         &self,
         _pr_number: u64,
-        _event: crate::provider::github::types::PrReviewEvent,
+        _event: ReviewEvent,
         _body: &str,
     ) -> Result<()> {
         anyhow::bail!("submit_pr_review is not supported for Azure DevOps")
