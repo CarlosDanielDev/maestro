@@ -122,7 +122,6 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
 
     let model = config.model.as_deref().unwrap_or("sonnet").to_string();
 
-    // Phase 1: Scan
     eprintln!("Phase 1: Scanning project...");
     let scanner = LocalProjectScanner::new();
     let profile = scanner.scan(&config.path).await?;
@@ -137,7 +136,6 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Phase 2: Analyze
     eprintln!("Phase 2: Analyzing with Claude...");
     let analyzer = ClaudeAnalyzer::new(model.clone());
     let report = match analyzer.analyze(&profile).await {
@@ -165,7 +163,6 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Phase 2.5: Consolidate (PRD generation)
     eprintln!("Phase 2.5: Generating PRD...");
     use prd::PrdGenerator;
     let prd_generator = prd::ClaudePrdGenerator::new(model.clone());
@@ -230,7 +227,6 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         eprintln!("Phase 2.7: No milestone pattern detected (will defer to planner).");
     }
 
-    // Phase 3: Plan
     eprintln!("Phase 3: Planning milestones and issues...");
     let planner = ClaudePlanner::new(model.clone());
     let plan = planner
@@ -256,7 +252,6 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Phase 3.5: Scaffold
     eprintln!("Phase 3.5: Scaffolding .claude/ directory...");
     use scaffolder::{ClaudeScaffolder, ProjectScaffolder};
     let scaffolder = ClaudeScaffolder::new(model);
@@ -276,15 +271,14 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         .as_ref()
         .map(|c| c.effective_provider_config())
         .unwrap_or_default();
-    let (milestone_term, issue_term, catalog_term, provider_term) = match provider_config.kind {
+    let terms = match provider_config.kind {
         crate::provider::types::ProviderKind::Github => ("Milestones", "Issues", "issue", "GitHub"),
         crate::provider::types::ProviderKind::AzureDevops => {
             ("Iterations", "Work Items", "work item", "Azure DevOps")
         }
     };
 
-    // Phase 4: Materialize
-    eprintln!("Phase 4: Creating {} artifacts...", provider_term);
+    eprintln!("Phase 4: Creating {} artifacts...", terms.3);
     let provider = crate::provider::create_provider(&provider_config)?;
     let materializer = RepoMaterializer::new(provider_config.kind, provider.as_ref());
     let result = materializer.materialize(&plan, &report, false).await?;
@@ -301,12 +295,12 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         .count();
     eprintln!(
         "  {}: {} created, {} reused",
-        milestone_term, ms_created, ms_reused
+        terms.0, ms_created, ms_reused
     );
 
     let skipped = result.issues_skipped.len();
     if skipped == 0 {
-        eprintln!("  {}: {} created", issue_term, result.issues_created.len());
+        eprintln!("  {}: {} created", terms.1, result.issues_created.len());
     } else {
         let numbers: Vec<String> = if skipped <= 10 {
             result
@@ -320,14 +314,14 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         if numbers.is_empty() {
             eprintln!(
                 "  {}: {} created, {} skipped (duplicate titles)",
-                issue_term,
+                terms.1,
                 result.issues_created.len(),
                 skipped
             );
         } else {
             eprintln!(
                 "  {}: {} created, {} skipped (duplicate titles: {})",
-                issue_term,
+                terms.1,
                 result.issues_created.len(),
                 skipped,
                 numbers.join(", ")
@@ -335,7 +329,7 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         }
     }
     if let Some(ref td) = result.tech_debt_issue {
-        eprintln!("  Tech debt catalog {}: #{}", catalog_term, td.number);
+        eprintln!("  Tech debt catalog {}: #{}", terms.2, td.number);
     }
 
     Ok(())
