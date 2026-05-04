@@ -846,7 +846,7 @@ mod tests {
             az_project: Some("MyProject".into()),
             ..ProviderConfig::default()
         };
-        let checks = vec![
+        let checks = [
             build_az_cli_result(true, CheckSeverity::Required),
             build_az_identity_result(true, Some("user@example.com"), CheckSeverity::Required),
             build_azdo_config_result(&provider),

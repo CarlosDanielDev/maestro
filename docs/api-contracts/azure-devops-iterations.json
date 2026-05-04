@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CarlosDanielDev/maestro/docs/api-contracts/azure-devops-iterations.json",
+  "title": "Azure DevOps Iteration Classification Nodes",
+  "description": "Payload returned by `az boards iteration project list` and the individual node returned by `az boards iteration project create`.",
+  "oneOf": [
+    {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/iterationNode"
+      }
+    },
+    {
+      "$ref": "#/$defs/iterationNode"
+    }
+  ],
+  "$defs": {
+    "iterationNode": {
+      "type": "object",
+      "required": ["name", "path"],
+      "additionalProperties": true,
+      "properties": {
+        "identifier": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "structureType": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "startDate": {
+              "type": "string"
+            },
+            "finishDate": {
+              "type": "string",
+              "pattern": "^(\\d{4}-\\d{2}-\\d{2}|\\d{4}-\\d{2}-\\d{2}T.*)$"
+            },
+            "description": {
+              "type": "string"
+            }
+          }
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/iterationNode"
+          }
+        }
+      }
+    }
+  }
+}

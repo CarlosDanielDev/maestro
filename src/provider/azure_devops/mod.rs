@@ -2,14 +2,19 @@ use crate::provider::github::client::{CreateOutcome, RepoProvider};
 use crate::provider::types::{
     CheckRun, CiStatus, Issue, MergeMethod, Milestone, PullRequest, ReviewEvent,
 };
-use crate::util::validate_title;
+use crate::util::{titles_equivalent, validate_body, validate_title};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
 
 mod issues;
+mod iterations;
 
 use issues::{build_create_work_item_args, parse_created_work_item_id};
+use iterations::{
+    filter_iterations_by_state, iteration_path_for_milestone_number, iteration_state,
+    iterations_to_milestones, parse_iteration_json, parse_iterations_json, today_utc,
+};
 
 #[cfg(test)]
 mod tests;
@@ -51,6 +56,37 @@ impl AzDevOpsClient {
         }
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
+
+    async fn resolve_iteration_path_by_title_or_path(
+        &self,
+        milestone: &str,
+    ) -> Result<Option<String>> {
+        let json_str = self
+            .run_az(&[
+                "boards",
+                "iteration",
+                "project",
+                "list",
+                "--org",
+                &self.organization,
+                "--project",
+                &self.project,
+                "-o",
+                "json",
+            ])
+            .await?;
+        let iterations = parse_iterations_json(&json_str)?;
+        Ok(iterations
+            .into_iter()
+            .find(|iteration| {
+                titles_equivalent(&iteration.title, milestone) || iteration.path == milestone
+            })
+            .map(|iteration| iteration.path))
+    }
+}
+
+fn escape_wiql_string_literal(value: &str) -> String {
+    value.replace('\'', "''")
 }
 
 struct AzOutput {
@@ -213,10 +249,15 @@ impl RepoProvider for AzDevOpsClient {
     }
 
     async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<Issue>> {
+        let iteration_path = self
+            .resolve_iteration_path_by_title_or_path(milestone)
+            .await?
+            .unwrap_or_else(|| milestone.to_string());
+        let escaped_iteration_path = escape_wiql_string_literal(&iteration_path);
         let wiql = format!(
             "SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] UNDER '{}' \
              AND [System.State] <> 'Closed' AND [System.State] <> 'Removed'",
-            milestone
+            escaped_iteration_path
         );
 
         let json_str = self
@@ -266,9 +307,25 @@ impl RepoProvider for AzDevOpsClient {
         parse_work_items_json(&details_str)
     }
 
-    async fn list_milestones(&self, _state: &str) -> Result<Vec<Milestone>> {
-        // Azure DevOps uses iterations rather than milestones; not yet implemented.
-        Ok(vec![])
+    async fn list_milestones(&self, state: &str) -> Result<Vec<Milestone>> {
+        let today = today_utc();
+        let json_str = self
+            .run_az(&[
+                "boards",
+                "iteration",
+                "project",
+                "list",
+                "--org",
+                &self.organization,
+                "--project",
+                &self.project,
+                "-o",
+                "json",
+            ])
+            .await?;
+        let iterations = parse_iterations_json(&json_str)?;
+        let filtered = filter_iterations_by_state(iterations, state, today)?;
+        Ok(iterations_to_milestones(filtered, today))
     }
 
     async fn get_issue(&self, number: u64) -> Result<Issue> {
@@ -399,8 +456,73 @@ impl RepoProvider for AzDevOpsClient {
             .collect())
     }
 
-    async fn create_milestone(&self, _title: &str, _description: &str) -> Result<CreateOutcome> {
-        anyhow::bail!("create_milestone is not supported for Azure DevOps")
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
+        let normalized = validate_title(title, "milestone title")?;
+        validate_body(description, "milestone description")?;
+        let today = today_utc();
+        let existing_json = self
+            .run_az(&[
+                "boards",
+                "iteration",
+                "project",
+                "list",
+                "--org",
+                &self.organization,
+                "--project",
+                &self.project,
+                "-o",
+                "json",
+            ])
+            .await?;
+        let existing = parse_iterations_json(&existing_json)?;
+
+        if let Some(iteration) = existing
+            .iter()
+            .find(|iteration| titles_equivalent(&iteration.title, &normalized))
+        {
+            return Ok(CreateOutcome::Existed {
+                number: iteration.number,
+                state: iteration_state(iteration, today),
+            });
+        }
+
+        let created_json = self
+            .run_az(&[
+                "boards",
+                "iteration",
+                "project",
+                "create",
+                "--name",
+                &normalized,
+                "--org",
+                &self.organization,
+                "--project",
+                &self.project,
+                "-o",
+                "json",
+            ])
+            .await?;
+        let created = parse_iteration_json(&created_json)?;
+
+        self.run_az(&[
+            "boards",
+            "iteration",
+            "project",
+            "update",
+            "--path",
+            &created.path,
+            "--description",
+            description,
+            "--org",
+            &self.organization,
+            "--project",
+            &self.project,
+            "-o",
+            "json",
+        ])
+        .await?;
+
+        Ok(CreateOutcome::Created(created.number))
     }
 
     async fn create_issue(
@@ -412,11 +534,30 @@ impl RepoProvider for AzDevOpsClient {
     ) -> Result<CreateOutcome> {
         let normalized_title = validate_title(title, "issue title")?;
         let iteration_path = if let Some(milestone_number) = milestone {
-            self.list_milestones("open")
-                .await?
-                .into_iter()
-                .find(|m| m.number == milestone_number)
-                .map(|m| m.title)
+            let json_str = self
+                .run_az(&[
+                    "boards",
+                    "iteration",
+                    "project",
+                    "list",
+                    "--org",
+                    &self.organization,
+                    "--project",
+                    &self.project,
+                    "-o",
+                    "json",
+                ])
+                .await?;
+            let iterations = parse_iterations_json(&json_str)?;
+            Some(
+                iteration_path_for_milestone_number(&iterations, milestone_number).ok_or_else(
+                    || {
+                        anyhow::anyhow!(
+                            "Azure DevOps iteration for milestone id {milestone_number} not found"
+                        )
+                    },
+                )?,
+            )
         } else {
             None
         };
