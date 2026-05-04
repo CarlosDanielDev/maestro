@@ -1,4 +1,4 @@
-use super::client::GitHubClient;
+use super::transport::GitHubClient;
 use super::types::GhIssue;
 use anyhow::Result;
 use std::time::Duration;
@@ -149,7 +149,7 @@ impl OrphanBranch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::github::client::mock::MockGitHubClient;
+    use crate::provider::github::transport::mock::MockGitHubClient;
 
     fn make_issue(number: u64) -> GhIssue {
         GhIssue {
