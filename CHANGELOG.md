@@ -7,6 +7,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-05-04
+
+### Added
+- chore(workflow): mechanize /pushup commit + PR scaffolding (#556)
+- chore(workflow): DOR linter + condensed issue summary in pre-check hook (#555)
+- chore(workflow): scripted milestone dependency-graph update for /pushup (#554)
+- feat(azdo): implement CI status and merge operations via az pipelines and az repos pr (#466)
+- feat(azdo): implement list_open_prs, get_pr, and submit_pr_review via az repos pr (#465)
+- feat(azdo): implement list_labels and create_label via work-item tags (#464)
+- feat(azdo): map create_milestone and list_milestones to AzDO Iterations (#463)
+- feat(azdo): implement create_issue via az boards work-item create (#462)
+
+### Fixed
+- fix(azdo): port proactive duplicate prevention from GitHub client (#467)
 ### Added
 - chore(workflow): add scripted milestone dependency-graph updater for `/pushup` (#554)
 - chore(workflow): add `/implement` DOR lint fast path and condensed issue summaries (#555)
