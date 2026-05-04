@@ -13,7 +13,6 @@ set -euo pipefail
 
 REPO="CarlosDanielDev/maestro"
 SNAPSHOTS_DIR="src/tui/snapshot_tests/snapshots"
-PR_POLL_INTERVAL=12   # seconds between gh pr checks polls
 
 # ── colours ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -30,122 +29,6 @@ confirm() {
   [[ "$ans" =~ ^[Yy]$ ]]
 }
 
-# ── Braille spinner ─────────────────────────────────────────────────────────────
-# with_spinner <msg> <cmd> [args...]
-#
-# Runs <cmd> in the background while showing a braille spinner on stderr.
-# Stdout from <cmd> is forwarded to the caller so it can be captured:
-#   VAR=$(with_spinner "Loading..." gh api ...)
-# On non-zero exit the command's combined output is printed to stderr.
-with_spinner() {
-  local msg="$1"; shift
-  local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-  local n=${#frames}
-  local i=0
-  local tmp
-  tmp=$(mktemp)
-
-  "$@" >"$tmp" 2>&1 &
-  local pid=$!
-
-  while kill -0 "$pid" 2>/dev/null; do
-    printf "\r  \033[36m%s\033[0m  %s" "${frames:$i:1}" "$msg" >&2
-    i=$(( (i + 1) % n ))
-    sleep 0.08
-  done
-  printf "\r\033[K" >&2   # erase spinner line
-
-  local rc=0
-  wait "$pid" || rc=$?
-  if [[ $rc -ne 0 ]]; then
-    cat "$tmp" >&2
-    rm -f "$tmp"
-    return $rc
-  fi
-  cat "$tmp"
-  rm -f "$tmp"
-}
-
-# ── PR watcher + auto-merge ─────────────────────────────────────────────────────
-# watch_and_merge_pr <pr_number> <pr_url>
-#
-# Polls gh pr checks with a braille spinner until all checks complete.
-# Green  → auto-merges the PR and deletes the branch.
-# Red    → prints a detailed failure report and exits non-zero.
-watch_and_merge_pr() {
-  local pr_number="$1"
-  local pr_url="$2"
-  local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-  local n=${#frames}
-  local i=0
-
-  echo ""
-  info "Watching PR #${pr_number} — polling every ${PR_POLL_INTERVAL}s..."
-
-  while true; do
-    local checks_json
-    checks_json=$(gh pr checks "$pr_number" --json name,state 2>/dev/null || echo "[]")
-
-    local total pending failing passing
-    total=$(  echo "$checks_json" | jq 'length')
-    pending=$(echo "$checks_json" | jq '[.[] | select(.state == "pending")] | length')
-    failing=$(echo "$checks_json" | jq '[.[] | select(.state == "fail")]    | length')
-    passing=$(echo "$checks_json" | jq '[.[] | select(.state == "pass" or .state == "skipping")] | length')
-
-    # Checks haven't appeared yet — keep waiting
-    if [[ "$total" -eq 0 ]]; then
-      printf "\r  \033[36m%s\033[0m  Waiting for checks to start on PR #%s..." \
-        "${frames:$i:1}" "$pr_number" >&2
-      i=$(( (i + 1) % n ))
-      sleep 5
-      continue
-    fi
-
-    # At least one check failed — report and bail
-    if [[ "$failing" -gt 0 ]]; then
-      printf "\r\033[K" >&2
-      echo -e "${RED}✖ CI checks failed on PR #${pr_number}:${RESET}"
-      echo ""
-      echo "$checks_json" | jq -r '
-        .[] | select(.state == "fail") |
-        "  ✗  \(.name)"
-      '
-      echo ""
-      echo -e "${CYAN}Full check list:${RESET}"
-      echo "$checks_json" | jq -r '
-        .[] |
-        (if .state == "pass" or .state == "skipping" then "\033[32m✔\033[0m"
-         elif .state == "fail"                        then "\033[31m✗\033[0m"
-         else                                              "\033[33m⧖\033[0m" end)
-        + "  \(.state | ascii_downcase | (. + spaces(9 - length)))  \(.name)"
-      ' | sed 's/spaces([0-9]*)//' || \
-      echo "$checks_json" | jq -r '.[] | "  [" + .state + "]  " + .name'
-      echo ""
-      echo -e "${YELLOW}Fix the failures and re-run the release script, or merge manually:${RESET}"
-      echo -e "  ${CYAN}${pr_url}${RESET}"
-      return 1
-    fi
-
-    # All done — no failures, no pending
-    if [[ "$pending" -eq 0 ]]; then
-      printf "\r\033[K" >&2
-      success "All ${passing} CI checks passed on PR #${pr_number}"
-      echo ""
-      info "Merging PR #${pr_number} into main..."
-      with_spinner "Merging and deleting branch..." \
-        gh pr merge "$pr_number" --merge --delete-branch
-      success "PR #${pr_number} merged — main is up to date"
-      return 0
-    fi
-
-    # Still running
-    printf "\r  \033[36m%s\033[0m  PR #%s — %d/%d checks done, %d pending..." \
-      "${frames:$i:1}" "$pr_number" "$passing" "$total" "$pending" >&2
-    i=$(( (i + 1) % n ))
-    sleep "$PR_POLL_INTERVAL"
-  done
-}
-
 # ── Step 1: Determine version ───────────────────────────────────────────────────
 MILESTONE_NAME=""
 RAW_VERSION=""
@@ -158,19 +41,20 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$MILESTONE_NAME" ]] && RAW_VERSION="$MILESTONE_NAME"
+if [[ -n "$MILESTONE_NAME" ]]; then
+  RAW_VERSION="$MILESTONE_NAME"
+fi
 
 strip_v() { echo "${1#v}"; }
 
 if [[ -z "$RAW_VERSION" ]]; then
-  COMPLETED=$(with_spinner "Detecting completed milestones..." \
-    gh api "repos/${REPO}/milestones" --jq \
-    '.[] | select(.open_issues == 0 and .closed_issues > 0) | .title' || true)
+  info "Auto-detecting version from fully-completed milestones..."
+  COMPLETED=$(gh api "repos/${REPO}/milestones" --jq \
+    '.[] | select(.open_issues == 0 and .closed_issues > 0) | .title' 2>/dev/null || true)
 
   if [[ -z "$COMPLETED" ]]; then
     warn "No fully-completed milestones found. Available milestones:"
-    with_spinner "Fetching milestones..." \
-      gh api "repos/${REPO}/milestones" --jq \
+    gh api "repos/${REPO}/milestones" --jq \
       '.[] | .title + " (" + (.closed_issues|tostring) + "/" + ((.open_issues + .closed_issues)|tostring) + " closed)"'
     die "Provide a version or --milestone."
   fi
@@ -225,12 +109,13 @@ cargo fmt -- --check 2>&1 || die "Formatting issues found. Run 'cargo fmt' first
 success "Formatting: clean"
 
 # ── Step 3: Gather changelog content ───────────────────────────────────────────
-ISSUES_JSON=$(with_spinner "Fetching closed issues for milestone '${TAG}'..." \
-  gh issue list \
-    --milestone "$TAG" \
-    --state closed \
-    --json number,title,labels \
-    --limit 200 || echo "[]")
+info "Fetching closed issues for milestone '${TAG}'..."
+
+ISSUES_JSON=$(gh issue list \
+  --milestone "$TAG" \
+  --state closed \
+  --json number,title,labels \
+  --limit 200 2>/dev/null || echo "[]")
 
 ISSUE_COUNT=$(echo "$ISSUES_JSON" | jq length)
 [[ "$ISSUE_COUNT" -eq 0 ]] && warn "No closed issues found for milestone '${TAG}'."
@@ -307,6 +192,7 @@ sed -i '' "s/^version = \"${CURRENT_VERSION}\"/version = \"${VERSION}\"/" Cargo.
 success "Cargo.toml: ${CURRENT_VERSION} → ${VERSION}"
 
 info "Updating CHANGELOG.md..."
+# Pass new section via env var to avoid stdin conflicts
 NEW_SECTION="$CHANGELOG_SECTION" python3 <<'PYEOF'
 import os, re
 
@@ -315,7 +201,7 @@ new_section = os.environ["NEW_SECTION"]
 with open("CHANGELOG.md", "r") as f:
     content = f.read()
 
-# If [Unreleased] has content, move it into the new section then clear it
+# If [Unreleased] has content, prepend it into the new section then clear it
 unreleased_pattern = re.compile(
     r'(## \[Unreleased\]\n)(.*?)((?=## \[))',
     re.DOTALL
@@ -327,6 +213,7 @@ if m:
         new_section = new_section + "\n" + unreleased_content
     content = unreleased_pattern.sub(r'\1\n', content)
 
+# Insert new section right after ## [Unreleased] + blank line
 insert_after = "## [Unreleased]\n\n"
 if insert_after not in content:
     insert_after = "## [Unreleased]\n"
@@ -343,6 +230,7 @@ success "CHANGELOG.md updated"
 # ── Step 4b: Post-bump test gate ────────────────────────────────────────────────
 info "Running post-bump test gate..."
 
+# Known-drift groups: these three groups fail every release due to version/changelog embedding
 KNOWN_DRIFT_GROUPS=(
   "tui::snapshot_tests::dashboard"
   "tui::snapshot_tests::landing"
@@ -355,22 +243,27 @@ KNOWN_DRIFT_PATTERNS=(
   "tui::snapshot_tests::agent_graph_dispatcher::agent_graph_dispatcher_"
 )
 
+# Capture full output; tolerate non-zero exit (failures are expected)
 TEST_OUTPUT=$(cargo test --bin maestro 2>&1 || true)
 
 if echo "$TEST_OUTPUT" | grep -qE "^test result: ok"; then
   success "Post-bump tests pass"
 else
+  # Parse failed test names from cargo output:  "test <name> ... FAILED"
   FAILURES=$(echo "$TEST_OUTPUT" | grep -E "^test .+ \.\.\. FAILED" | sed 's/^test \(.*\) \.\.\. FAILED$/\1/' || true)
 
   if [[ -z "$FAILURES" ]]; then
+    # Fallback: parse the "failures:" block
     FAILURES=$(echo "$TEST_OUTPUT" | awk '/^failures:/{found=1;next} found && /^    /{print $1} found && /^$/{exit}' || true)
   fi
 
   if [[ -z "$FAILURES" ]]; then
+    # Something else went wrong (compile error, etc.)
     echo "$TEST_OUTPUT" | tail -20
     die "Tests failed but no test names could be parsed. Check output above."
   fi
 
+  # Verify every failure belongs to a known-drift group
   UNKNOWN_FAILURES=""
   while IFS= read -r failure; do
     [[ -z "$failure" ]] && continue
@@ -381,7 +274,9 @@ else
         break
       fi
     done
-    [[ "$IS_KNOWN" == false ]] && UNKNOWN_FAILURES="${UNKNOWN_FAILURES}\n  ${failure}"
+    if [[ "$IS_KNOWN" == false ]]; then
+      UNKNOWN_FAILURES="${UNKNOWN_FAILURES}\n  ${failure}"
+    fi
   done <<< "$FAILURES"
 
   if [[ -n "$UNKNOWN_FAILURES" ]]; then
@@ -414,6 +309,7 @@ fi
 info "Staging files..."
 git add Cargo.toml CHANGELOG.md
 
+# Stage known-drift snapshots if they were updated
 git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__dashboard__home_screen_"*.snap 2>/dev/null || true
 git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__landing__landing_welcome_"*.snap 2>/dev/null || true
 git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__agent_graph_dispatcher__agent_graph_dispatcher_"*.snap 2>/dev/null || true
@@ -441,11 +337,8 @@ confirm "Push commit and tag to origin/main?" || die "Aborted by user. Commit an
 PUSH_FAILED=false
 git push origin main --tags 2>&1 || PUSH_FAILED=true
 
-PR_URL=""
-PR_NUMBER=""
-
 if [[ "$PUSH_FAILED" == true ]]; then
-  # Branch-protection may have blocked commit push but allowed tag push — verify
+  # Branch-protection may have blocked commit push but allowed tag push — check
   TAG_ON_REMOTE=$(git ls-remote origin "refs/tags/${TAG}" 2>/dev/null | awk '{print $1}')
   if [[ -z "$TAG_ON_REMOTE" ]]; then
     git push origin "$TAG" 2>/dev/null || true
@@ -457,20 +350,16 @@ if [[ "$PUSH_FAILED" == true ]]; then
   git checkout -b "$BRANCH_NAME"
   git push -u origin "$BRANCH_NAME"
 
-  PR_URL=$(with_spinner "Creating release PR..." \
-    gh pr create \
-      --base main \
-      --head "$BRANCH_NAME" \
-      --title "chore: release ${TAG}" \
-      --body "Release PR for ${TAG}. Tag already pushed; binaries are being built by release.yml. Merging this makes main reflect the release commit.")
+  PR_URL=$(gh pr create \
+    --base main \
+    --head "$BRANCH_NAME" \
+    --title "chore: release ${TAG}" \
+    --body "Release PR for ${TAG}. Tag already pushed; binaries are being built by release.yml. Merging this makes main reflect the release commit.")
 
-  PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
-
+  warn "Direct push to main was rejected by branch-protection."
   echo -e "${CYAN}Tag on remote:${RESET} ${TAG_ON_REMOTE:-not found (check manually)}"
-  echo -e "${CYAN}Release PR:${RESET}    ${PR_URL}"
-
-  # Watch checks and auto-merge (or report failures)
-  watch_and_merge_pr "$PR_NUMBER" "$PR_URL"
+  echo -e "${CYAN}Release PR:${RESET} ${PR_URL}"
+  echo -e "${YELLOW}Merge the PR once checks are green.${RESET}"
 else
   success "Pushed main + ${TAG} to origin"
 fi
@@ -488,13 +377,12 @@ else
 fi
 
 # ── Step 9: Close milestone ─────────────────────────────────────────────────────
-MILESTONE_NUMBER=$(with_spinner "Looking up milestone number..." \
-  gh api "repos/${REPO}/milestones" \
-  --jq ".[] | select(.title == \"${TAG}\") | .number" || true)
+MILESTONE_NUMBER=$(gh api "repos/${REPO}/milestones" \
+  --jq ".[] | select(.title == \"${TAG}\") | .number" 2>/dev/null || true)
 
 if [[ -n "$MILESTONE_NUMBER" ]]; then
-  with_spinner "Closing milestone ${TAG}..." \
-    gh api "repos/${REPO}/milestones/${MILESTONE_NUMBER}" -X PATCH -f state=closed > /dev/null
+  info "Closing milestone ${TAG} (#${MILESTONE_NUMBER})..."
+  gh api "repos/${REPO}/milestones/${MILESTONE_NUMBER}" -X PATCH -f state=closed > /dev/null
   success "Milestone ${TAG} closed"
 else
   warn "Milestone '${TAG}' not found on GitHub — skipping close."
@@ -510,7 +398,6 @@ echo -e "  ${BOLD}Tag:${RESET}       ${TAG}"
 echo -e "  ${BOLD}Commit:${RESET}    ${COMMIT_HASH}"
 echo -e "  ${BOLD}Milestone:${RESET} ${TAG} (closed)"
 echo -e "  ${BOLD}Issues:${RESET}    ${ISSUE_COUNT} issues included"
-[[ -n "$PR_URL" ]] && echo -e "  ${BOLD}PR:${RESET}        ${PR_URL} (merged)"
 if [[ -f ".github/workflows/release.yml" ]]; then
   echo -e "  ${BOLD}Release:${RESET}   building via release.yml"
 fi
