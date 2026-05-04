@@ -1,13 +1,13 @@
 use crate::commands::setup::setup_app_from_config;
 use crate::config::Config;
-use crate::provider::github::client::GhCliClient;
+use crate::provider::create_provider;
 use crate::session::types::Session;
 use crate::session::worktree::GitWorktreeManager;
 use crate::state::store::StateStore;
 
 pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
     let loaded = Config::find_and_load_with_path()?;
-    let repo = Some(loaded.config.project.repo.clone());
+    let provider_config = loaded.config.effective_provider_config();
     let store = StateStore::new(StateStore::default_path());
     let state = store.load()?;
     let repo_root = std::env::current_dir()?;
@@ -61,7 +61,7 @@ pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
         app.add_session(new_session).await?;
     }
 
-    app.github_client = Some(Box::new(GhCliClient::from_config_repo(repo)));
+    app.github_client = Some(create_provider(&provider_config)?);
 
     crate::tui::run(app).await
 }

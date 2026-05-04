@@ -1,18 +1,21 @@
 use super::app;
 use super::screens;
-use crate::provider::github::client::{GhCliClient, RepoProvider};
+use crate::config::ProviderConfig;
+use crate::provider::{create_provider, github::client::RepoProvider};
 
 pub(super) fn spawn_issue_fetch(
     tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>,
     config: screens::SessionConfig,
-    repo: Option<String>,
+    provider_config: ProviderConfig,
 ) {
     let custom_prompt = config.custom_prompt.clone();
     match config.issue_number {
         Some(issue_number) => {
             tokio::spawn(async move {
-                let client = GhCliClient::from_config_repo(repo);
-                let result = client.get_issue(issue_number).await;
+                let result = match create_provider(&provider_config) {
+                    Ok(client) => client.get_issue(issue_number).await,
+                    Err(e) => Err(e),
+                };
                 let _ = tx.send(app::TuiDataEvent::Issue(result, custom_prompt));
             });
         }

@@ -34,7 +34,8 @@ pub mod widgets;
 #[cfg(test)]
 mod snapshot_tests;
 
-use crate::provider::github::client::{GhCliClient, RepoProvider};
+use crate::config::ProviderConfig;
+use crate::provider::{create_provider, github::client::RepoProvider};
 use crate::tui::activity_log::LogLevel;
 use app::App;
 use background_tasks::{spawn_issue_fetch, spawn_version_check};
@@ -47,6 +48,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
+use std::future::Future;
 use std::io;
 use std::time::Duration;
 use summary::print_summary;
@@ -61,8 +63,20 @@ async fn run_claude_print_for_wizard(prompt: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-fn github_repo_from_app(app: &App) -> Option<String> {
-    app.config.as_ref().map(|c| c.project.repo.clone())
+fn provider_config_from_app(app: &App) -> ProviderConfig {
+    app.config
+        .as_ref()
+        .map(|c| c.effective_provider_config())
+        .unwrap_or_default()
+}
+
+async fn with_provider<T, F, Fut>(provider_config: ProviderConfig, f: F) -> anyhow::Result<T>
+where
+    F: FnOnce(Box<dyn RepoProvider>) -> Fut,
+    Fut: Future<Output = anyhow::Result<T>>,
+{
+    let client = create_provider(&provider_config)?;
+    f(client).await
 }
 
 pub(crate) fn enter_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
@@ -188,111 +202,106 @@ async fn event_loop(
             match cmd {
                 app::TuiCommand::FetchIssues => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let result = client.list_issues(&[]).await;
+                        let result = with_provider(provider_config, |client| async move {
+                            client.list_issues(&[]).await
+                        })
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::Issues(result));
                     });
                 }
                 app::TuiCommand::FetchSuggestionData => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let (ready_result, failed_result, milestones_result) = tokio::join!(
-                            client.list_issues(&["maestro:ready"]),
-                            client.list_issues(&["maestro:failed"]),
-                            client.list_milestones("open"),
-                        );
-                        let ready_count = ready_result.map(|v| v.len()).unwrap_or(0);
-                        let failed_count = failed_result.map(|v| v.len()).unwrap_or(0);
-                        let milestones_vec = milestones_result.unwrap_or_default();
-                        let open_issue_count: usize =
-                            milestones_vec.iter().map(|m| m.open_issues as usize).sum();
-                        let closed_issue_count: usize = milestones_vec
-                            .iter()
-                            .map(|m| m.closed_issues as usize)
-                            .sum();
-                        let milestones_data: Vec<_> = milestones_vec
-                            .iter()
-                            .map(|m| {
-                                let total = m.open_issues + m.closed_issues;
-                                (m.title.clone(), m.closed_issues, total)
-                            })
-                            .collect();
-                        let _ = tx.send(app::TuiDataEvent::SuggestionData(
-                            app::SuggestionDataPayload {
+                        let result = with_provider(provider_config, |client| async move {
+                            let (ready_result, failed_result, milestones_result) = tokio::join!(
+                                client.list_issues(&["maestro:ready"]),
+                                client.list_issues(&["maestro:failed"]),
+                                client.list_milestones("open"),
+                            );
+                            let ready_count = ready_result.map(|v| v.len()).unwrap_or(0);
+                            let failed_count = failed_result.map(|v| v.len()).unwrap_or(0);
+                            let milestones_vec = milestones_result.unwrap_or_default();
+                            let open_issue_count: usize =
+                                milestones_vec.iter().map(|m| m.open_issues as usize).sum();
+                            let closed_issue_count: usize = milestones_vec
+                                .iter()
+                                .map(|m| m.closed_issues as usize)
+                                .sum();
+                            let milestones_data: Vec<_> = milestones_vec
+                                .iter()
+                                .map(|m| {
+                                    let total = m.open_issues + m.closed_issues;
+                                    (m.title.clone(), m.closed_issues, total)
+                                })
+                                .collect();
+                            Ok(app::SuggestionDataPayload {
                                 ready_issue_count: ready_count,
                                 failed_issue_count: failed_count,
                                 milestones: milestones_data,
                                 open_issue_count,
                                 closed_issue_count,
-                            },
-                        ));
+                            })
+                        })
+                        .await;
+                        let _ = tx.send(app::TuiDataEvent::SuggestionData(result));
                     });
                 }
                 app::TuiCommand::FetchMilestones => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        match client.list_milestones("open").await {
-                            Ok(milestones) => {
-                                let futures: Vec<_> = milestones
-                                    .iter()
-                                    .map(|ms| client.list_issues_by_milestone(&ms.title))
-                                    .collect();
-                                let results = futures::future::join_all(futures).await;
-                                let entries = milestones
-                                    .into_iter()
-                                    .zip(results)
-                                    .map(|(ms, r)| (ms, r.unwrap_or_default()))
-                                    .collect();
-                                let _ = tx.send(app::TuiDataEvent::Milestones(Ok(entries)));
-                            }
-                            Err(e) => {
-                                let _ = tx.send(app::TuiDataEvent::Milestones(Err(e)));
-                            }
-                        }
+                        let result = with_provider(provider_config, |client| async move {
+                            let milestones = client.list_milestones("open").await?;
+                            let futures: Vec<_> = milestones
+                                .iter()
+                                .map(|ms| client.list_issues_by_milestone(&ms.title))
+                                .collect();
+                            let results = futures::future::join_all(futures).await;
+                            Ok(milestones
+                                .into_iter()
+                                .zip(results)
+                                .map(|(ms, r)| (ms, r.unwrap_or_default()))
+                                .collect())
+                        })
+                        .await;
+                        let _ = tx.send(app::TuiDataEvent::Milestones(result));
                     });
                 }
                 app::TuiCommand::LaunchSession(config) => {
-                    spawn_issue_fetch(app.data_tx.clone(), config, github_repo_from_app(app));
+                    spawn_issue_fetch(app.data_tx.clone(), config, provider_config_from_app(app));
                 }
                 app::TuiCommand::LaunchSessions(configs) => {
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     for config in configs {
-                        spawn_issue_fetch(app.data_tx.clone(), config, repo.clone());
+                        spawn_issue_fetch(app.data_tx.clone(), config, provider_config.clone());
                     }
                 }
                 app::TuiCommand::LaunchUnifiedSession(config) => {
                     let tx = app.data_tx.clone();
                     let issue_numbers: Vec<u64> = config.issues.iter().map(|(n, _)| *n).collect();
                     let custom_prompt = config.custom_prompt.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let futures: Vec<_> = issue_numbers
-                            .iter()
-                            .map(|num| client.get_issue(*num))
-                            .collect();
-                        let results = futures::future::join_all(futures).await;
-                        let mut issues = Vec::new();
-                        for result in results {
-                            match result {
-                                Ok(issue) => issues.push(issue),
-                                Err(e) => {
-                                    let _ = tx.send(app::TuiDataEvent::UnifiedIssues(
-                                        Err(e),
-                                        custom_prompt,
-                                    ));
-                                    return;
+                        let result = with_provider(provider_config, |client| async move {
+                            let futures: Vec<_> = issue_numbers
+                                .iter()
+                                .map(|num| client.get_issue(*num))
+                                .collect();
+                            let results = futures::future::join_all(futures).await;
+                            let mut issues = Vec::new();
+                            for result in results {
+                                match result {
+                                    Ok(issue) => issues.push(issue),
+                                    Err(e) => return Err(e),
                                 }
                             }
-                        }
-                        let _ =
-                            tx.send(app::TuiDataEvent::UnifiedIssues(Ok(issues), custom_prompt));
+                            Ok(issues)
+                        })
+                        .await;
+                        let _ = tx.send(app::TuiDataEvent::UnifiedIssues(result, custom_prompt));
                     });
                 }
                 app::TuiCommand::LaunchPromptSession(config) => {
@@ -330,10 +339,12 @@ async fn event_loop(
                 }
                 app::TuiCommand::FetchOpenPrs => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let result = client.list_open_prs().await;
+                        let result = with_provider(provider_config, |client| async move {
+                            client.list_open_prs().await
+                        })
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::PullRequests(result));
                     });
                 }
@@ -343,10 +354,12 @@ async fn event_loop(
                     body,
                 } => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let result = client.submit_pr_review(pr_number, event, &body).await;
+                        let result = with_provider(provider_config, |client| async move {
+                            client.submit_pr_review(pr_number, event, &body).await
+                        })
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::PrReviewSubmitted(result));
                     });
                 }
@@ -429,35 +442,41 @@ async fn event_loop(
                 }
                 app::TuiCommand::RunAdaptMaterialize(plan, report) => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
                         use crate::adapt::materializer::{GhMaterializer, PlanMaterializer};
-                        let github =
-                            crate::provider::github::client::GhCliClient::from_config_repo(repo);
-                        let materializer = GhMaterializer::new(github);
-                        let result = materializer.materialize(&plan, &report, false).await;
+                        let result = with_provider(provider_config, |github| async move {
+                            let materializer = GhMaterializer::new(github);
+                            materializer.materialize(&plan, &report, false).await
+                        })
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::AdaptMaterializeResult(result));
                     });
                 }
                 app::TuiCommand::CreateIssue(payload) => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
                         use crate::provider::github::client::CreateOutcome;
                         let body =
                             crate::tui::screens::issue_wizard::render_body_markdown(&payload);
                         let labels = crate::tui::screens::issue_wizard::render_labels(&payload);
-                        let client = GhCliClient::from_config_repo(repo);
-                        let result = client
-                            .create_issue(&payload.title, &body, &labels, payload.milestone)
-                            .await;
+                        let title = payload.title.clone();
+                        let create_title = title.clone();
+                        let milestone = payload.milestone;
+                        let result = with_provider(provider_config, |client| async move {
+                            client
+                                .create_issue(&create_title, &body, &labels, milestone)
+                                .await
+                        })
+                        .await;
                         let evt = match result {
                             Ok(CreateOutcome::Created(n)) => app::TuiDataEvent::IssueCreated(Ok(n)),
                             Ok(CreateOutcome::Existed { number, state }) => {
                                 app::TuiDataEvent::IssueAlreadyExists {
                                     number,
                                     state,
-                                    title: payload.title.clone(),
+                                    title,
                                 }
                             }
                             Err(e) => app::TuiDataEvent::IssueCreated(Err(e)),
@@ -467,10 +486,12 @@ async fn event_loop(
                 }
                 app::TuiCommand::FetchWizardDependencies => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let result = client.list_issues(&[]).await;
+                        let result = with_provider(provider_config, |client| async move {
+                            client.list_issues(&[]).await
+                        })
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::WizardDependencyIssues(result));
                     });
                 }
@@ -500,11 +521,13 @@ async fn event_loop(
                 }
                 app::TuiCommand::CreateMilestoneWithIssues(plan) => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let res =
-                            crate::tui::screens::milestone_wizard::materialize_plan(&plan, repo)
-                                .await;
+                        let res = crate::tui::screens::milestone_wizard::materialize_plan(
+                            &plan,
+                            provider_config,
+                        )
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::MilestonePlanCreated(res));
                     });
                 }
@@ -524,54 +547,60 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     let local_sessions: Vec<crate::session::types::Session> =
                         app.pool.all_sessions().into_iter().cloned().collect();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let (
-                            open_result,
-                            closed_result,
-                            ready_result,
-                            failed_result,
-                            done_result,
-                            milestones_result,
-                        ) = tokio::join!(
-                            client.list_issues(&[]),
-                            client.list_issues(&["state:closed"]),
-                            client.list_issues(&["maestro:ready"]),
-                            client.list_issues(&["maestro:failed"]),
-                            client.list_issues(&["maestro:done"]),
-                            client.list_milestones("open"),
-                        );
-                        let data = crate::tui::screens::project_stats::aggregate(
-                            open_result.ok().map(|v| v.len() as u32).unwrap_or(0),
-                            closed_result.ok().map(|v| v.len() as u32).unwrap_or(0),
-                            ready_result.ok().map(|v| v.len() as u32).unwrap_or(0),
-                            failed_result.ok().map(|v| v.len() as u32).unwrap_or(0),
-                            done_result.ok().map(|v| v.len() as u32).unwrap_or(0),
-                            milestones_result.unwrap_or_default(),
-                            &local_sessions,
-                        );
-                        let _ = tx.send(app::TuiDataEvent::ProjectStats(data));
+                        let result = with_provider(provider_config, |client| async move {
+                            let (
+                                open_result,
+                                closed_result,
+                                ready_result,
+                                failed_result,
+                                done_result,
+                                milestones_result,
+                            ) = tokio::join!(
+                                client.list_issues(&[]),
+                                client.list_issues(&["state:closed"]),
+                                client.list_issues(&["maestro:ready"]),
+                                client.list_issues(&["maestro:failed"]),
+                                client.list_issues(&["maestro:done"]),
+                                client.list_milestones("open"),
+                            );
+                            Ok(crate::tui::screens::project_stats::aggregate(
+                                open_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                                closed_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                                ready_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                                failed_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                                done_result.ok().map(|v| v.len() as u32).unwrap_or(0),
+                                milestones_result.unwrap_or_default(),
+                                &local_sessions,
+                            ))
+                        })
+                        .await;
+                        let _ = tx.send(app::TuiDataEvent::ProjectStats(result));
                     });
                 }
                 app::TuiCommand::SyncPrd => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let result = crate::prd::sync::GitHubPrdSyncer::new(Box::new(client))
-                            .fetch_current_state()
-                            .await;
+                        let result = with_provider(provider_config, |client| async move {
+                            crate::prd::sync::GitHubPrdSyncer::new(client)
+                                .fetch_current_state()
+                                .await
+                        })
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::PrdSyncResult(result));
                     });
                 }
                 app::TuiCommand::SyncRoadmap => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let result =
-                            crate::tui::screens::roadmap::loader::load_roadmap(&client).await;
+                        let result = with_provider(provider_config, |client| async move {
+                            crate::tui::screens::roadmap::loader::load_roadmap(client.as_ref())
+                                .await
+                        })
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::RoadmapResult(result));
                     });
                 }
@@ -590,13 +619,15 @@ async fn event_loop(
                 }
                 app::TuiCommand::FetchMilestoneHealthIssues { milestone } => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let result = client
-                            .list_issues_by_milestone(&milestone.title)
-                            .await
-                            .map(|issues| (milestone, issues));
+                        let result = with_provider(provider_config, |client| async move {
+                            client
+                                .list_issues_by_milestone(&milestone.title)
+                                .await
+                                .map(|issues| (milestone, issues))
+                        })
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::MilestoneHealthIssuesFetched(result));
                     });
                 }
@@ -605,12 +636,14 @@ async fn event_loop(
                     description,
                 } => {
                     let tx = app.data_tx.clone();
-                    let repo = github_repo_from_app(app);
+                    let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
-                        let client = GhCliClient::from_config_repo(repo);
-                        let result = client
-                            .patch_milestone_description(milestone_number, &description)
-                            .await;
+                        let result = with_provider(provider_config, |client| async move {
+                            client
+                                .patch_milestone_description(milestone_number, &description)
+                                .await
+                        })
+                        .await;
                         let _ = tx.send(app::TuiDataEvent::MilestoneHealthPatched(result));
                     });
                 }

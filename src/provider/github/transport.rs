@@ -170,3 +170,77 @@ impl<T: RepoProvider + ?Sized> RepoProvider for &T {
             .await
     }
 }
+
+/// Blanket impl: if T: RepoProvider, then Box<T> is also a RepoProvider.
+#[async_trait]
+impl<T: RepoProvider + ?Sized> RepoProvider for Box<T> {
+    async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
+        (**self).list_issues(labels).await
+    }
+    async fn list_issues_by_milestone(&self, milestone: &str) -> Result<Vec<Issue>> {
+        (**self).list_issues_by_milestone(milestone).await
+    }
+    async fn list_milestones(&self, state: &str) -> Result<Vec<Milestone>> {
+        (**self).list_milestones(state).await
+    }
+    async fn get_issue(&self, number: u64) -> Result<Issue> {
+        (**self).get_issue(number).await
+    }
+    async fn add_label(&self, issue_number: u64, label: &str) -> Result<()> {
+        (**self).add_label(issue_number, label).await
+    }
+    async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()> {
+        (**self).remove_label(issue_number, label).await
+    }
+    async fn create_pr(
+        &self,
+        issue_number: u64,
+        title: &str,
+        body: &str,
+        head_branch: &str,
+        base_branch: &str,
+    ) -> Result<u64> {
+        (**self)
+            .create_pr(issue_number, title, body, head_branch, base_branch)
+            .await
+    }
+    async fn list_prs_for_branch(&self, head_branch: &str) -> Result<Vec<u64>> {
+        (**self).list_prs_for_branch(head_branch).await
+    }
+    async fn create_milestone(&self, title: &str, description: &str) -> Result<CreateOutcome> {
+        (**self).create_milestone(title, description).await
+    }
+    async fn create_issue(
+        &self,
+        title: &str,
+        body: &str,
+        labels: &[String],
+        milestone: Option<u64>,
+    ) -> Result<CreateOutcome> {
+        (**self).create_issue(title, body, labels, milestone).await
+    }
+    async fn list_open_prs(&self) -> Result<Vec<PullRequest>> {
+        (**self).list_open_prs().await
+    }
+    async fn get_pr(&self, number: u64) -> Result<PullRequest> {
+        (**self).get_pr(number).await
+    }
+    async fn submit_pr_review(&self, pr_number: u64, event: ReviewEvent, body: &str) -> Result<()> {
+        (**self).submit_pr_review(pr_number, event, body).await
+    }
+    async fn list_labels(&self) -> Result<Vec<String>> {
+        (**self).list_labels().await
+    }
+    async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+        (**self).create_label(name, color).await
+    }
+    async fn patch_milestone_description(
+        &self,
+        milestone_number: u64,
+        description: &str,
+    ) -> Result<()> {
+        (**self)
+            .patch_milestone_description(milestone_number, description)
+            .await
+    }
+}

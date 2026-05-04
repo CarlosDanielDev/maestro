@@ -54,6 +54,9 @@ pub struct ProviderConfig {
     /// Provider type: "github" or "azure_devops". Default: github.
     #[serde(default)]
     pub kind: ProviderKind,
+    /// Optional repository slug (`owner/repo`) for providers that support it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
     /// Issue/work-item filter labels/tags.
     #[serde(default = "default_issue_labels")]
     pub issue_filter_labels: Vec<String>,
@@ -81,6 +84,7 @@ impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
             kind: ProviderKind::default(),
+            repo: None,
             issue_filter_labels: default_issue_labels(),
             auto_pr: true,
             auto_merge: false,

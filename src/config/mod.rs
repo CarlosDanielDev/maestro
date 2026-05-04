@@ -156,6 +156,16 @@ impl Config {
 
         Ok(())
     }
+
+    pub fn effective_provider_config(&self) -> ProviderConfig {
+        let mut provider = self.provider.clone();
+        if provider.repo.as_deref().unwrap_or("").trim().is_empty()
+            && !self.project.repo.trim().is_empty()
+        {
+            provider.repo = Some(self.project.repo.clone());
+        }
+        provider
+    }
 }
 
 /// A `Config` bundled with the filesystem path it was loaded from.

@@ -195,13 +195,13 @@ fn suggestion_data_event_clears_loading_flag_on_home_screen() {
     if let Some(ref mut screen) = app.screen_state.home_screen {
         screen.loading_suggestions = true;
     }
-    app.handle_data_event(TuiDataEvent::SuggestionData(SuggestionDataPayload {
+    app.handle_data_event(TuiDataEvent::SuggestionData(Ok(SuggestionDataPayload {
         ready_issue_count: 0,
         failed_issue_count: 0,
         milestones: vec![],
         open_issue_count: 0,
         closed_issue_count: 0,
-    }));
+    })));
     assert!(
         !app.screen_state
             .home_screen

@@ -98,10 +98,9 @@ pub fn level_buckets(issues: &[AiProposedIssue]) -> Vec<Vec<usize>> {
 /// step's background task (#297, duplicate-aware via #455).
 pub async fn materialize_plan(
     plan: &AiGeneratedPlan,
-    repo: Option<String>,
+    provider_config: crate::config::ProviderConfig,
 ) -> Result<MilestoneCreationResult, String> {
-    use crate::provider::github::client::GhCliClient;
-    let client = GhCliClient::from_config_repo(repo);
+    let client = crate::provider::create_provider(&provider_config).map_err(|e| e.to_string())?;
     materialize_plan_with_client(plan, &client).await
 }
 
