@@ -7,6 +7,7 @@ use super::*;
 const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n[github]\n[notifications]\n";
 
 mod core;
+mod experimental;
 mod notifications_views;
 mod roundtrip;
 mod sessions_layout;
