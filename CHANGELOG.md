@@ -7,6 +7,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-05-04
+
+### Chore
+- tech-debt: split prompt_input.rs into draw/types sub-modules (#401)
+- tech-debt: split config.rs into domain sub-modules (#400)
+- tech-debt: extract HTTP transport layer from provider/github/client.rs (#399)
+- tech-debt: split settings/mod.rs into per-tab sub-modules (#398)
+
 ## [0.18.0] - 2026-05-03
 
 ### Changed
