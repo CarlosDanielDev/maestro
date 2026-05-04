@@ -136,9 +136,12 @@ mod tests {
         let head_is_wip = app.backup_wip_before_gates(562, &PathBuf::from("/tmp/fake-wt-562-1"));
 
         assert!(head_is_wip, "fresh WIP creation must report WIP at HEAD");
-        let calls = backup_calls.lock().unwrap();
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].1, 562u64);
+        let (len, issue) = {
+            let calls = backup_calls.lock().unwrap();
+            (calls.len(), calls[0].1)
+        };
+        assert_eq!(len, 1);
+        assert_eq!(issue, 562u64);
     }
 
     #[test]
@@ -183,10 +186,13 @@ mod tests {
             true,
         );
 
-        let amend = amend_calls.lock().unwrap();
-        assert_eq!(amend.len(), 1);
-        assert_eq!(amend[0].1, "feat/issue-562");
-        assert_eq!(amend[0].2, "feat: implement changes for issue #562");
+        let (len, branch, message) = {
+            let amend = amend_calls.lock().unwrap();
+            (amend.len(), amend[0].1.clone(), amend[0].2.clone())
+        };
+        assert_eq!(len, 1);
+        assert_eq!(branch, "feat/issue-562");
+        assert_eq!(message, "feat: implement changes for issue #562");
         assert!(commit_and_push_calls.lock().unwrap().is_empty());
     }
 
@@ -204,9 +210,12 @@ mod tests {
             false,
         );
 
-        let cap = commit_and_push_calls.lock().unwrap();
-        assert_eq!(cap.len(), 1);
-        assert_eq!(cap[0].1, "feat/issue-562");
+        let (len, branch) = {
+            let cap = commit_and_push_calls.lock().unwrap();
+            (cap.len(), cap[0].1.clone())
+        };
+        assert_eq!(len, 1);
+        assert_eq!(branch, "feat/issue-562");
         assert!(amend_calls.lock().unwrap().is_empty());
     }
 }

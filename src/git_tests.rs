@@ -87,10 +87,13 @@ fn mock_git_ops_has_commits_ahead_propagates_should_fail() {
 fn mock_backup_wip_records_call() {
     let ops = MockGitOps::new();
     ops.backup_wip(Path::new("/tmp/wt-562a"), 562).unwrap();
-    let calls = ops.backup_wip_calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].0, Path::new("/tmp/wt-562a"));
-    assert_eq!(calls[0].1, 562u64);
+    let (len, path, issue) = {
+        let calls = ops.backup_wip_calls.lock().unwrap();
+        (calls.len(), calls[0].0.clone(), calls[0].1)
+    };
+    assert_eq!(len, 1);
+    assert_eq!(path, Path::new("/tmp/wt-562a"));
+    assert_eq!(issue, 562u64);
 }
 
 #[test]
@@ -126,11 +129,19 @@ fn mock_amend_clean_and_push_records_call() {
         "feat: implement #562",
     )
     .unwrap();
-    let calls = ops.amend_calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].0, Path::new("/tmp/wt-562b"));
-    assert_eq!(calls[0].1, "feat/issue-562");
-    assert_eq!(calls[0].2, "feat: implement #562");
+    let (len, path, branch, message) = {
+        let calls = ops.amend_calls.lock().unwrap();
+        (
+            calls.len(),
+            calls[0].0.clone(),
+            calls[0].1.clone(),
+            calls[0].2.clone(),
+        )
+    };
+    assert_eq!(len, 1);
+    assert_eq!(path, Path::new("/tmp/wt-562b"));
+    assert_eq!(branch, "feat/issue-562");
+    assert_eq!(message, "feat: implement #562");
 }
 
 #[test]

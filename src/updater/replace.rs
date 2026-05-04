@@ -175,6 +175,7 @@ impl ReplacerBehavior {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) struct ReplacerCall {
     pub target: PathBuf,
     pub bytes_len: usize,

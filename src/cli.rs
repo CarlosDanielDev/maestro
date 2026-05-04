@@ -386,7 +386,7 @@ mod tests {
         let cli = Cli::try_parse_from(["maestro", "mangen", "/tmp/man"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Commands::Mangen { out_dir }) if out_dir == PathBuf::from("/tmp/man")
+            Some(Commands::Mangen { out_dir }) if out_dir.as_path() == std::path::Path::new("/tmp/man")
         ));
     }
 

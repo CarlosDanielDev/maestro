@@ -128,7 +128,7 @@ mod tests {
         let v = vec![1.0, 2.0, 3.0, 4.0];
         let compressed = turbo_quantize(&v, 4);
         assert_eq!(compressed.strategy, QuantStrategy::TurboQuant);
-        assert!(compressed.polar.codes.len() > 0);
+        assert!(!compressed.polar.codes.is_empty());
         assert!(compressed.residual.projection_dim > 0);
     }
 
@@ -236,11 +236,7 @@ mod tests {
             QuantStrategy::PolarQuant,
             QuantStrategy::Qjl,
         ] {
-            let bits = if strategy == QuantStrategy::TurboQuant {
-                4
-            } else {
-                4
-            };
+            let bits = 4;
             let c = quantize_with_strategy(&v, strategy, bits);
             let _est = dot_product_with_strategy(&q, &c);
             // Just verify it doesn't panic

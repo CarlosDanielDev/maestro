@@ -144,9 +144,11 @@ mod pipeline_tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
 
-        let mut config = SanitizeConfig::default();
-        config.path = dir.path().to_path_buf();
-        config.skip_ai = true;
+        let config = SanitizeConfig {
+            path: dir.path().to_path_buf(),
+            skip_ai: true,
+            ..Default::default()
+        };
 
         let result = cmd_sanitize(config).await;
         assert!(result.is_ok());

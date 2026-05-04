@@ -127,7 +127,7 @@ mod tests {
     fn from_issue_collects_blockers_from_labels() {
         let issue = make_gh_issue(10, &["blocked-by:#3", "blocked-by:#7"], "");
         let item = WorkItem::from_issue(issue);
-        let mut blockers = item.blocked_by.clone();
+        let mut blockers = item.blocked_by;
         blockers.sort();
         assert_eq!(blockers, vec![3u64, 7u64]);
     }
@@ -136,7 +136,7 @@ mod tests {
     fn from_issue_collects_blockers_from_body() {
         let issue = make_gh_issue(10, &[], "blocked-by: #5\nblocked-by: #9");
         let item = WorkItem::from_issue(issue);
-        let mut blockers = item.blocked_by.clone();
+        let mut blockers = item.blocked_by;
         blockers.sort();
         assert_eq!(blockers, vec![5u64, 9u64]);
     }
@@ -145,7 +145,7 @@ mod tests {
     fn from_issue_deduplicates_blockers_from_labels_and_body() {
         let issue = make_gh_issue(10, &["blocked-by:#2"], "blocked-by: #2\nblocked-by: #4");
         let item = WorkItem::from_issue(issue);
-        let mut blockers = item.blocked_by.clone();
+        let mut blockers = item.blocked_by;
         blockers.sort();
         assert_eq!(blockers, vec![2u64, 4u64]);
     }

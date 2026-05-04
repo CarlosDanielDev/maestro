@@ -891,10 +891,13 @@ mod tests {
     fn parse_result_event_extracts_context_update() {
         let line = r#"{"type":"result","cost_usd":1.5,"usage":{"input_tokens":70000,"output_tokens":2000,"max_input_tokens":200000}}"#;
         let events = parse_stream_line(line);
-        let ctx = events
+        let ctx = match events
             .iter()
             .find(|e| matches!(e, StreamEvent::ContextUpdate { .. }))
-            .expect("Expected ContextUpdate from result event");
+        {
+            Some(ctx) => ctx,
+            None => panic!("Expected ContextUpdate from result event"),
+        };
         match ctx {
             StreamEvent::ContextUpdate { context_pct } => {
                 assert!((*context_pct - 0.35).abs() < 0.001);
@@ -933,10 +936,13 @@ mod tests {
     fn parse_assistant_event_extracts_context_from_cache_tokens() {
         let line = r#"{"type":"assistant","message":{"type":"text","text":"hello","usage":{"input_tokens":3,"cache_read_input_tokens":50000,"cache_creation_input_tokens":10000,"output_tokens":25}}}"#;
         let events = parse_stream_line(line);
-        let ctx = events
+        let ctx = match events
             .iter()
             .find(|e| matches!(e, StreamEvent::ContextUpdate { .. }))
-            .expect("Expected ContextUpdate from assistant event with cache tokens");
+        {
+            Some(ctx) => ctx,
+            None => panic!("Expected ContextUpdate from assistant event with cache tokens"),
+        };
         match ctx {
             StreamEvent::ContextUpdate { context_pct } => {
                 // total = 3 + 50000 + 10000 = 60003, max = 200000 (default)
@@ -966,10 +972,13 @@ mod tests {
     fn parse_assistant_event_opus_model_uses_1m_max() {
         let line = r#"{"type":"assistant","message":{"model":"claude-opus-4-6","type":"text","text":"hi","usage":{"input_tokens":3,"cache_read_input_tokens":50000,"cache_creation_input_tokens":10000,"output_tokens":25}}}"#;
         let events = parse_stream_line(line);
-        let ctx = events
+        let ctx = match events
             .iter()
             .find(|e| matches!(e, StreamEvent::ContextUpdate { .. }))
-            .expect("Expected ContextUpdate from opus assistant event");
+        {
+            Some(ctx) => ctx,
+            None => panic!("Expected ContextUpdate from opus assistant event"),
+        };
         match ctx {
             StreamEvent::ContextUpdate { context_pct } => {
                 // total = 60003, max = 1_000_000 (opus)
@@ -1099,7 +1108,9 @@ mod tests {
         let line = "{\"type\":\"assistant\",\"message\":{\"type\":\"tool_use\",\"name\":\"Agent\",\"input\":{\"subagent_type\":\"subagent-arch\\nitect\\u001b[31m\"}}}";
         match first_event(line) {
             StreamEvent::ToolUse { subagent_name, .. } => {
-                let name = subagent_name.expect("control chars must not collapse to None");
+                let Some(name) = subagent_name else {
+                    panic!("control chars must not collapse to None");
+                };
                 assert!(
                     !name.chars().any(char::is_control),
                     "control chars must be stripped, got {:?}",
@@ -1123,7 +1134,9 @@ mod tests {
         );
         match first_event(&line) {
             StreamEvent::ToolUse { subagent_name, .. } => {
-                let name = subagent_name.expect("oversized name should still produce Some");
+                let Some(name) = subagent_name else {
+                    panic!("oversized name should still produce Some");
+                };
                 assert!(
                     name.len() <= 80,
                     "name must be capped to 80, got {}",

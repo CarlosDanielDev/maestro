@@ -761,18 +761,10 @@ mod tests {
         let mut s = make_running_session();
         // 4 distinct messages, 50 repetitions each, NOT interleaved
         let mut msgs: Vec<&str> = Vec::new();
-        for _ in 0..50 {
-            msgs.push("Tool: Bash");
-        }
-        for _ in 0..50 {
-            msgs.push("Read: src/lib.rs");
-        }
-        for _ in 0..50 {
-            msgs.push("Tool: Bash");
-        }
-        for _ in 0..50 {
-            msgs.push("Tool: Grep");
-        }
+        msgs.extend(["Tool: Bash"; 50]);
+        msgs.extend(["Read: src/lib.rs"; 50]);
+        msgs.extend(["Tool: Bash"; 50]);
+        msgs.extend(["Tool: Grep"; 50]);
         push_entries(&mut s, &msgs);
         assert_eq!(s.activity_log.len(), 200);
         let report = adapter.compact_session_history(&mut s);
@@ -1217,7 +1209,7 @@ mod tests {
     fn compact_history_is_idempotent_on_already_compacted_log() {
         let adapter = ranker();
         let mut s = make_running_session();
-        push_entries(&mut s, &vec!["Tool: Bash"; 5]);
+        push_entries(&mut s, &["Tool: Bash"; 5]);
         adapter.compact_session_history(&mut s);
         let after_first = s.activity_log.clone();
         adapter.compact_session_history(&mut s);

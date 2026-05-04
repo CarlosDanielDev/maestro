@@ -73,11 +73,11 @@ harness = false
 unsafe_code = "deny"
 
 [lints.clippy]
-expect_used = "warn"
 dbg_macro = "deny"
 # Lints deliberately NOT enabled globally (documented in docs/RUST-GUARDRAILS.md §2, §11):
-#   unwrap_used, panic, todo: too many existing matches; opt-in per-module via
-#     `#![deny(clippy::unwrap_used)]` in new modules until the legacy is cleaned up.
+#   expect_used, unwrap_used, panic, todo: too many existing matches; opt-in
+#     per-module via `#![deny(clippy::unwrap_used)]` in new modules until the
+#     legacy is cleaned up.
 #   print_stdout, print_stderr: CLI commands legitimately print to stdout/stderr.
 #     Library code avoids them by convention; see guardrails §11.
 

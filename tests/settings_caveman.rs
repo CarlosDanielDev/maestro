@@ -14,8 +14,8 @@ fn write_fixture(path: &PathBuf, body: &str) {
 }
 
 fn read_value(path: &PathBuf) -> Value {
-    let raw = fs::read_to_string(path).expect("read");
-    serde_json::from_str(&raw).expect("parse json")
+    let raw = fs::read_to_string(path).unwrap();
+    serde_json::from_str(&raw).unwrap()
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn roundtrip_preserves_unknown_top_level_keys() {
     );
 
     let store = FsSettingsStore::new(&path);
-    store.save_caveman_mode(true).expect("save ok");
+    store.save_caveman_mode(true).unwrap();
 
     let value = read_value(&path);
     assert_eq!(value["behavior"]["caveman_mode"], serde_json::json!(true));
@@ -54,7 +54,7 @@ fn toggle_when_file_missing_creates_minimal_json() {
     assert!(!path.exists());
 
     let store = FsSettingsStore::new(&path);
-    store.save_caveman_mode(true).expect("save ok");
+    store.save_caveman_mode(true).unwrap();
 
     assert!(path.exists());
     let value = read_value(&path);
@@ -72,7 +72,7 @@ fn toggle_when_behavior_block_absent_adds_only_behavior() {
     write_fixture(&path, r#"{"mcpServers": {}}"#);
 
     let store = FsSettingsStore::new(&path);
-    store.save_caveman_mode(true).expect("save ok");
+    store.save_caveman_mode(true).unwrap();
 
     let value = read_value(&path);
     assert_eq!(value["behavior"]["caveman_mode"], serde_json::json!(true));
@@ -87,7 +87,7 @@ fn toggle_when_behavior_partial_preserves_other_behavior_keys() {
     write_fixture(&path, r#"{"behavior": {"other_flag": true}}"#);
 
     let store = FsSettingsStore::new(&path);
-    store.save_caveman_mode(true).expect("save ok");
+    store.save_caveman_mode(true).unwrap();
 
     let value = read_value(&path);
     assert_eq!(value["behavior"]["other_flag"], serde_json::json!(true));
@@ -170,12 +170,12 @@ fn symlink_followed_writes_target_keeps_symlink() {
     let real = dir.path().join("real.json");
     let link = dir.path().join("link.json");
     write_fixture(&real, r#"{"behavior":{"caveman_mode":false}}"#);
-    symlink(&real, &link).expect("symlink");
+    symlink(&real, &link).unwrap();
 
     let store = FsSettingsStore::new(&link);
-    store.save_caveman_mode(true).expect("save ok");
+    store.save_caveman_mode(true).unwrap();
 
-    let link_meta = fs::symlink_metadata(&link).expect("symlink meta");
+    let link_meta = fs::symlink_metadata(&link).unwrap();
     assert!(
         link_meta.file_type().is_symlink(),
         "symlink path must remain a symlink"
@@ -198,7 +198,7 @@ fn broken_symlink_returns_symlink_not_supported() {
     let dir = tempdir().unwrap();
     let link = dir.path().join("link.json");
     let broken_target = dir.path().join("nonexistent_target.json");
-    symlink(&broken_target, &link).expect("symlink");
+    symlink(&broken_target, &link).unwrap();
     assert!(!broken_target.exists());
 
     let store = FsSettingsStore::new(&link);

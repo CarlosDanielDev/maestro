@@ -346,6 +346,7 @@ impl MilestoneWizardScreen {
     /// the wizard itself — it exists so tests can set payload directly
     /// and still have the textareas render the same content.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn reseed_fields_from_payload(&mut self) {
         self.goal_field.set_text(&self.payload.goals);
         self.non_goals_field.set_text(&self.payload.non_goals);
@@ -882,7 +883,7 @@ mod tests {
         s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         assert_eq!(s.payload().doc_references.len(), 1);
         assert_eq!(s.payload().doc_references[0], "https://example.com");
-        assert_eq!(s.payload().doc_reference_valid[0], true);
+        assert!(s.payload().doc_reference_valid[0]);
         assert_eq!(s.doc_buffer(), "");
     }
 
