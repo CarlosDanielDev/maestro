@@ -1,14 +1,24 @@
-use crate::provider::github::client::RepoProvider;
+use crate::provider::github::client::{CreateOutcome, RepoProvider};
 use crate::provider::types::{
     CheckRun, CiStatus, Issue, MergeMethod, Milestone, PullRequest, ReviewEvent,
 };
+use crate::util::validate_title;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use std::sync::Arc;
+
+mod issues;
+
+use issues::{build_create_work_item_args, parse_created_work_item_id};
+
+#[cfg(test)]
+mod tests;
 
 /// Azure DevOps client using `az` CLI.
 pub struct AzDevOpsClient {
     organization: String,
     project: String,
+    runner: Arc<dyn AzRunner>,
 }
 
 impl AzDevOpsClient {
@@ -16,21 +26,59 @@ impl AzDevOpsClient {
         Self {
             organization,
             project,
+            runner: Arc::new(AzCliRunner),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_runner(organization: String, project: String, runner: Arc<dyn AzRunner>) -> Self {
+        Self {
+            organization,
+            project,
+            runner,
         }
     }
 
     async fn run_az(&self, args: &[&str]) -> Result<String> {
-        let output = tokio::process::Command::new("az")
-            .args(args)
-            .output()
-            .await
-            .context("Failed to run `az` CLI. Is it installed? Run `az login` to authenticate.")?;
+        let output =
+            self.runner.run(args).await.context(
+                "Failed to run `az` CLI. Is it installed? Run `az login` to authenticate.",
+            )?;
 
-        if !output.status.success() {
+        if !output.success {
             let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!("az command failed: {}", stderr.trim());
         }
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+}
+
+struct AzOutput {
+    success: bool,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+#[async_trait]
+trait AzRunner: Send + Sync {
+    async fn run(&self, args: &[&str]) -> Result<AzOutput>;
+}
+
+struct AzCliRunner;
+
+#[async_trait]
+impl AzRunner for AzCliRunner {
+    async fn run(&self, args: &[&str]) -> Result<AzOutput> {
+        let output = tokio::process::Command::new("az")
+            .args(args)
+            .output()
+            .await?;
+
+        Ok(AzOutput {
+            success: output.status.success(),
+            stdout: output.stdout,
+            stderr: output.stderr,
+        })
     }
 }
 
@@ -351,22 +399,39 @@ impl RepoProvider for AzDevOpsClient {
             .collect())
     }
 
-    async fn create_milestone(
-        &self,
-        _title: &str,
-        _description: &str,
-    ) -> Result<crate::provider::github::client::CreateOutcome> {
+    async fn create_milestone(&self, _title: &str, _description: &str) -> Result<CreateOutcome> {
         anyhow::bail!("create_milestone is not supported for Azure DevOps")
     }
 
     async fn create_issue(
         &self,
-        _title: &str,
-        _body: &str,
-        _labels: &[String],
-        _milestone: Option<u64>,
-    ) -> Result<crate::provider::github::client::CreateOutcome> {
-        anyhow::bail!("create_issue is not supported for Azure DevOps")
+        title: &str,
+        body: &str,
+        labels: &[String],
+        milestone: Option<u64>,
+    ) -> Result<CreateOutcome> {
+        let normalized_title = validate_title(title, "issue title")?;
+        let iteration_path = if let Some(milestone_number) = milestone {
+            self.list_milestones("open")
+                .await?
+                .into_iter()
+                .find(|m| m.number == milestone_number)
+                .map(|m| m.title)
+        } else {
+            None
+        };
+        let args = build_create_work_item_args(
+            &self.organization,
+            &self.project,
+            &normalized_title,
+            body,
+            labels,
+            iteration_path.as_deref(),
+        );
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let json_str = self.run_az(&arg_refs).await?;
+        let id = parse_created_work_item_id(&json_str)?;
+        Ok(CreateOutcome::Created(id))
     }
 
     async fn list_open_prs(&self) -> Result<Vec<PullRequest>> {
@@ -420,124 +485,5 @@ impl RepoProvider for AzDevOpsClient {
 
     async fn merge_pr(&self, _pr_number: u64, _method: MergeMethod) -> Result<()> {
         anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::provider::github::client::RepoProvider;
-
-    #[test]
-    fn parse_work_items_json_valid_single_item() {
-        let json = r#"[{
-            "id": 101,
-            "fields": {
-                "System.Title": "Fix login bug",
-                "System.Description": "Detailed description",
-                "System.State": "Active",
-                "System.Tags": "maestro:ready; priority:P1"
-            },
-            "url": "https://dev.azure.com/MyOrg/MyProject/_apis/wit/workItems/101"
-        }]"#;
-        let issues = parse_work_items_json(json).unwrap();
-        assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].number, 101);
-        assert_eq!(issues[0].title, "Fix login bug");
-        assert_eq!(issues[0].state, "open");
-    }
-
-    #[test]
-    fn parse_work_items_json_maps_labels_from_tags() {
-        let json = r#"[{
-            "id": 1,
-            "fields": {
-                "System.Title": "T",
-                "System.State": "Active",
-                "System.Tags": "maestro:ready; priority:P1"
-            },
-            "url": ""
-        }]"#;
-        let issues = parse_work_items_json(json).unwrap();
-        assert_eq!(issues[0].labels, vec!["maestro:ready", "priority:P1"]);
-    }
-
-    #[test]
-    fn parse_work_items_json_empty_tags_produces_empty_labels() {
-        let json = r#"[{
-            "id": 1,
-            "fields": {"System.Title": "T", "System.State": "Active", "System.Tags": ""},
-            "url": ""
-        }]"#;
-        let issues = parse_work_items_json(json).unwrap();
-        assert!(issues[0].labels.is_empty());
-    }
-
-    #[test]
-    fn parse_work_items_json_active_state_maps_to_open() {
-        let json = r#"[{"id":1,"fields":{"System.Title":"T","System.State":"Active"},"url":""}]"#;
-        let issues = parse_work_items_json(json).unwrap();
-        assert_eq!(issues[0].state, "open");
-    }
-
-    #[test]
-    fn parse_work_items_json_closed_state_maps_to_closed() {
-        let json = r#"[{"id":1,"fields":{"System.Title":"T","System.State":"Closed"},"url":""}]"#;
-        let issues = parse_work_items_json(json).unwrap();
-        assert_eq!(issues[0].state, "closed");
-    }
-
-    #[test]
-    fn parse_work_items_json_resolved_state_maps_to_closed() {
-        let json = r#"[{"id":1,"fields":{"System.Title":"T","System.State":"Resolved"},"url":""}]"#;
-        let issues = parse_work_items_json(json).unwrap();
-        assert_eq!(issues[0].state, "closed");
-    }
-
-    #[test]
-    fn parse_work_items_json_empty_array() {
-        let issues = parse_work_items_json("[]").unwrap();
-        assert!(issues.is_empty());
-    }
-
-    #[test]
-    fn parse_work_items_json_invalid_json_returns_err() {
-        assert!(parse_work_items_json("{not json}").is_err());
-    }
-
-    #[test]
-    fn parse_work_items_json_missing_id_returns_err() {
-        let json = r#"[{"fields":{"System.Title":"T","System.State":"Active"},"url":""}]"#;
-        assert!(parse_work_items_json(json).is_err());
-    }
-
-    #[test]
-    fn parse_work_items_json_captures_url() {
-        let json = r#"[{
-            "id": 42,
-            "fields": {"System.Title": "T", "System.State": "Active"},
-            "url": "https://dev.azure.com/MyOrg/MyProject/_apis/wit/workItems/42"
-        }]"#;
-        let issues = parse_work_items_json(json).unwrap();
-        assert_eq!(
-            issues[0].html_url,
-            "https://dev.azure.com/MyOrg/MyProject/_apis/wit/workItems/42"
-        );
-    }
-
-    #[tokio::test]
-    async fn merge_pr_stub_names_tracking_issue() {
-        let client = AzDevOpsClient::new(
-            "https://dev.azure.com/example".to_string(),
-            "Project".to_string(),
-        );
-
-        let err = client
-            .merge_pr(123, MergeMethod::Squash)
-            .await
-            .unwrap_err()
-            .to_string();
-
-        assert!(err.contains("v0.23.0 #B5"));
     }
 }
