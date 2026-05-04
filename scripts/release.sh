@@ -122,18 +122,14 @@ ISSUE_COUNT=$(echo "$ISSUES_JSON" | jq length)
 
 TODAY=$(date +%Y-%m-%d)
 
-# Group issues by label using python3 for robustness
-CHANGELOG_SECTION=$(python3 - "$VERSION" "$TODAY" <<'PYEOF'
+# Group issues by label — pass JSON via env var to avoid stdin conflicts
+CHANGELOG_SECTION=$(VERSION="$VERSION" TODAY="$TODAY" ISSUES_JSON="$ISSUES_JSON" python3 <<'PYEOF'
 import sys, json, os
 
-version = sys.argv[1]
-today   = sys.argv[2]
-
-raw = sys.stdin.read().strip()
-if not raw:
-    issues = []
-else:
-    issues = json.loads(raw)
+version     = os.environ["VERSION"]
+today       = os.environ["TODAY"]
+issues_raw  = os.environ.get("ISSUES_JSON", "[]")
+issues      = json.loads(issues_raw) if issues_raw.strip() else []
 
 LABEL_MAP = {
     "enhancement": "feat", "feature": "feat", "type:feature": "feat",
@@ -148,8 +144,8 @@ LABEL_MAP = {
 buckets = {"feat": [], "fix": [], "refactor": [], "docs": [], "ci": [], "perf": [], "test": [], "chore": []}
 
 for issue in issues:
-    num   = issue["number"]
-    title = issue["title"]
+    num    = issue["number"]
+    title  = issue["title"]
     labels = [l["name"] for l in issue.get("labels", [])]
     bucket = "chore"
     for lbl in labels:
@@ -179,7 +175,7 @@ for bucket, header in SECTION_TITLES.items():
 
 print("\n".join(lines).rstrip())
 PYEOF
-<<< "$ISSUES_JSON")
+)
 
 echo ""
 echo -e "${BOLD}Changelog section to be added:${RESET}"
@@ -196,28 +192,28 @@ sed -i '' "s/^version = \"${CURRENT_VERSION}\"/version = \"${VERSION}\"/" Cargo.
 success "Cargo.toml: ${CURRENT_VERSION} → ${VERSION}"
 
 info "Updating CHANGELOG.md..."
-python3 - "$CHANGELOG_SECTION" <<'PYEOF'
-import sys, re
+# Pass new section via env var to avoid stdin conflicts
+NEW_SECTION="$CHANGELOG_SECTION" python3 <<'PYEOF'
+import os, re
 
-new_section = sys.argv[1]
+new_section = os.environ["NEW_SECTION"]
 
 with open("CHANGELOG.md", "r") as f:
     content = f.read()
 
-# Move any content under [Unreleased] into the new section, then clear it
+# If [Unreleased] has content, prepend it into the new section then clear it
 unreleased_pattern = re.compile(
     r'(## \[Unreleased\]\n)(.*?)((?=## \[))',
     re.DOTALL
 )
 m = unreleased_pattern.search(content)
-unreleased_content = ""
 if m:
     unreleased_content = m.group(2).strip()
     if unreleased_content:
         new_section = new_section + "\n" + unreleased_content
     content = unreleased_pattern.sub(r'\1\n', content)
 
-# Insert new section after ## [Unreleased] + blank line
+# Insert new section right after ## [Unreleased] + blank line
 insert_after = "## [Unreleased]\n\n"
 if insert_after not in content:
     insert_after = "## [Unreleased]\n"
@@ -234,6 +230,7 @@ success "CHANGELOG.md updated"
 # ── Step 4b: Post-bump test gate ────────────────────────────────────────────────
 info "Running post-bump test gate..."
 
+# Known-drift groups: these three groups fail every release due to version/changelog embedding
 KNOWN_DRIFT_GROUPS=(
   "tui::snapshot_tests::dashboard"
   "tui::snapshot_tests::landing"
@@ -246,19 +243,27 @@ KNOWN_DRIFT_PATTERNS=(
   "tui::snapshot_tests::agent_graph_dispatcher::agent_graph_dispatcher_"
 )
 
+# Capture full output; tolerate non-zero exit (failures are expected)
 TEST_OUTPUT=$(cargo test --bin maestro 2>&1 || true)
 
-if echo "$TEST_OUTPUT" | grep -q "^test result: ok"; then
+if echo "$TEST_OUTPUT" | grep -qE "^test result: ok"; then
   success "Post-bump tests pass"
 else
-  FAILURES=$(echo "$TEST_OUTPUT" | grep "^FAILED" | awk '{print $2}' || true)
+  # Parse failed test names from cargo output:  "test <name> ... FAILED"
+  FAILURES=$(echo "$TEST_OUTPUT" | grep -E "^test .+ \.\.\. FAILED" | sed 's/^test \(.*\) \.\.\. FAILED$/\1/' || true)
 
   if [[ -z "$FAILURES" ]]; then
-    # cargo might print failures differently; try another pattern
-    FAILURES=$(echo "$TEST_OUTPUT" | grep "FAILED" | sed 's/FAILED //' || true)
+    # Fallback: parse the "failures:" block
+    FAILURES=$(echo "$TEST_OUTPUT" | awk '/^failures:/{found=1;next} found && /^    /{print $1} found && /^$/{exit}' || true)
   fi
 
-  # Check all failures belong to known-drift groups
+  if [[ -z "$FAILURES" ]]; then
+    # Something else went wrong (compile error, etc.)
+    echo "$TEST_OUTPUT" | tail -20
+    die "Tests failed but no test names could be parsed. Check output above."
+  fi
+
+  # Verify every failure belongs to a known-drift group
   UNKNOWN_FAILURES=""
   while IFS= read -r failure; do
     [[ -z "$failure" ]] && continue
@@ -284,8 +289,8 @@ else
 
   CARGO_INSTA="${HOME}/.cargo/bin/cargo-insta"
   [[ ! -x "$CARGO_INSTA" ]] && CARGO_INSTA="cargo-insta"
+  command -v "$CARGO_INSTA" > /dev/null 2>&1 || die "cargo-insta not found. Run: cargo install cargo-insta"
 
-  # Only accept groups that actually had failures
   for i in "${!KNOWN_DRIFT_GROUPS[@]}"; do
     GROUP="${KNOWN_DRIFT_GROUPS[$i]}"
     PATTERN="${KNOWN_DRIFT_PATTERNS[$i]}"
@@ -296,8 +301,6 @@ else
   done
 
   info "Re-running tests after snapshot acceptance..."
-  cargo test --bin maestro 2>&1 | tail -5
-  # If still failing, bail
   cargo test --bin maestro > /dev/null 2>&1 || die "Tests still failing after snapshot acceptance."
   success "Post-bump tests pass (after snapshot update)"
 fi
@@ -306,20 +309,16 @@ fi
 info "Staging files..."
 git add Cargo.toml Cargo.lock CHANGELOG.md
 
-# Stage known-drift snapshots if modified
+# Stage known-drift snapshots if they were updated
 git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__dashboard__home_screen_"*.snap 2>/dev/null || true
 git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__landing__landing_welcome_"*.snap 2>/dev/null || true
 git add "${SNAPSHOTS_DIR}/maestro__tui__snapshot_tests__agent_graph_dispatcher__agent_graph_dispatcher_"*.snap 2>/dev/null || true
 
-# Build a short release summary from the changelog section
-SUMMARY=$(echo "$CHANGELOG_SECTION" | grep -E '^\-' | head -3 | sed 's/^- //' | tr '\n' ';' | sed 's/;$//' | sed 's/;/; /')
+SUMMARY=$(echo "$CHANGELOG_SECTION" | grep -E '^- ' | head -3 | sed 's/^- //' | paste -sd '; ' -)
 
-git commit -m "$(cat <<EOF
-chore: release ${TAG}
+git commit -m "chore: release ${TAG}
 
-${SUMMARY}
-EOF
-)"
+${SUMMARY}"
 success "Committed version bump"
 
 # ── Step 6: Tag and push ────────────────────────────────────────────────────────
@@ -327,30 +326,23 @@ info "Creating annotated tag ${TAG}..."
 
 ISSUE_LIST=$(echo "$ISSUES_JSON" | jq -r '.[] | "  - " + .title + " (#" + (.number|tostring) + ")"' 2>/dev/null || echo "  (no issues)")
 
-git tag -a "$TAG" -m "$(cat <<EOF
-${TAG}
+git tag -a "$TAG" -m "${TAG}
 
 Includes:
-${ISSUE_LIST}
-EOF
-)"
+${ISSUE_LIST}"
 success "Tag ${TAG} created"
 
 confirm "Push commit and tag to origin/main?" || die "Aborted by user. Commit and tag exist locally."
 
-# Push — handle branch-protection gracefully
 PUSH_FAILED=false
-if ! git push origin main --tags 2>&1; then
-  PUSH_FAILED=true
-fi
+git push origin main --tags 2>&1 || PUSH_FAILED=true
 
 if [[ "$PUSH_FAILED" == true ]]; then
-  # Check if the tag made it (branch-protection may have blocked the commit push only)
-  TAG_ON_REMOTE=$(git ls-remote origin "refs/tags/${TAG}" | awk '{print $1}')
+  # Branch-protection may have blocked commit push but allowed tag push — check
+  TAG_ON_REMOTE=$(git ls-remote origin "refs/tags/${TAG}" 2>/dev/null | awk '{print $1}')
   if [[ -z "$TAG_ON_REMOTE" ]]; then
-    # Try tag-only push
     git push origin "$TAG" 2>/dev/null || true
-    TAG_ON_REMOTE=$(git ls-remote origin "refs/tags/${TAG}" | awk '{print $1}')
+    TAG_ON_REMOTE=$(git ls-remote origin "refs/tags/${TAG}" 2>/dev/null | awk '{print $1}')
   fi
 
   BRANCH_NAME="release/${TAG}"
@@ -375,8 +367,7 @@ fi
 # ── Step 7: Release workflow check ─────────────────────────────────────────────
 if [[ -f ".github/workflows/release.yml" ]]; then
   success "release.yml exists — GitHub Actions will build binaries automatically."
-  WORKFLOW_URL="https://github.com/${REPO}/actions/workflows/release.yml"
-  echo -e "${CYAN}Workflow:${RESET} ${WORKFLOW_URL}"
+  echo -e "${CYAN}Workflow:${RESET} https://github.com/${REPO}/actions/workflows/release.yml"
 else
   info "No release.yml found. Creating GitHub Release manually..."
   gh release create "$TAG" \
