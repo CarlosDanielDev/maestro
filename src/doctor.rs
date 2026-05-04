@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use crate::config::Config;
+use crate::config::{Config, ProviderConfig};
 use crate::provider::types::ProviderKind;
 
 /// Severity of a preflight check.
@@ -80,24 +80,30 @@ impl DoctorReport {
 
 /// Run all preflight checks and return a report.
 pub fn run_all_checks(config: Option<&Config>) -> DoctorReport {
+    let provider_kind = config.map(|cfg| cfg.provider.kind).unwrap_or_default();
     let mut checks = vec![
-        check_gh_installed(),
-        check_gh_authenticated(),
         check_git_installed(),
         check_git_user_config(),
         check_git_remote(),
-        check_config_exists(),
     ];
 
-    if let Some(cfg) = config
-        && cfg.provider.kind == ProviderKind::AzureDevops
-    {
-        checks.push(check_az_cli());
-        // Add Azure identity check only if az cli is available
-        if checks.iter().any(|c| c.name == "az cli" && c.passed) {
-            checks.push(check_az_identity());
+    match provider_kind {
+        ProviderKind::Github => {
+            checks.push(check_gh_installed());
+            checks.push(check_gh_authenticated());
+        }
+        ProviderKind::AzureDevops => {
+            checks.push(check_az_cli(CheckSeverity::Required));
+            checks.push(check_az_identity(CheckSeverity::Required));
+            if let Some(cfg) = config {
+                checks.push(check_azdo_config(&cfg.provider));
+            }
+            checks.push(check_azdo_remote());
         }
     }
+
+    checks.push(check_config_exists());
+
     if let Some(cfg) = config {
         checks.push(check_provider_matches_remote(cfg.provider.kind));
     }
@@ -105,7 +111,9 @@ pub fn run_all_checks(config: Option<&Config>) -> DoctorReport {
     checks.push(check_claude_cli());
 
     // Only check repo access if gh is authenticated
-    if checks.iter().any(|c| c.name == "gh auth" && c.passed) {
+    if provider_kind == ProviderKind::Github
+        && checks.iter().any(|c| c.name == "gh auth" && c.passed)
+    {
         checks.push(check_gh_repo_accessible());
     }
 
@@ -161,6 +169,12 @@ pub fn validate_preflight(report: &DoctorReport) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Validate provider-aware setup checks and return an error if required checks fail.
+pub fn validate_provider_setup(config: &Config) -> anyhow::Result<()> {
+    let report = run_all_checks(Some(config));
+    validate_preflight(&report)
+}
+
 /// Pure, testable core of the claude cli check.
 pub(crate) fn build_claude_cli_result(available: bool, version: &str) -> CheckResult {
     if available {
@@ -199,6 +213,98 @@ pub(crate) fn build_gh_auth_result(
         parts.push(format!("scopes: {}", s));
     }
     CheckResult::pass("gh auth", parts.join(", "), CheckSeverity::Required)
+}
+
+pub(crate) fn build_az_cli_result(available: bool, severity: CheckSeverity) -> CheckResult {
+    if available {
+        CheckResult::pass("az cli", "installed", severity)
+    } else {
+        CheckResult::fail(
+            "az cli",
+            "not installed — required for Azure DevOps provider",
+            severity,
+        )
+    }
+}
+
+pub(crate) fn build_az_identity_result(
+    authenticated: bool,
+    username: Option<&str>,
+    severity: CheckSeverity,
+) -> CheckResult {
+    if authenticated
+        && let Some(username) = username
+        && !username.trim().is_empty()
+    {
+        return CheckResult::pass(
+            "az identity",
+            format!("logged in as {}", username.trim()),
+            severity,
+        );
+    }
+
+    CheckResult::fail("az identity", "could not fetch identity", severity)
+}
+
+pub(crate) fn build_azdo_config_result(provider: &ProviderConfig) -> CheckResult {
+    let has_org = provider
+        .organization
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty());
+    let has_project = provider
+        .az_project
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty());
+
+    match (has_org, has_project) {
+        (true, true) => CheckResult::pass(
+            "azdo config",
+            "provider.organization and provider.az_project set",
+            CheckSeverity::Required,
+        ),
+        (false, false) => CheckResult::fail(
+            "azdo config",
+            "provider.organization and provider.az_project are required for Azure DevOps",
+            CheckSeverity::Required,
+        ),
+        (false, true) => CheckResult::fail(
+            "azdo config",
+            "provider.organization is required for Azure DevOps",
+            CheckSeverity::Required,
+        ),
+        (true, false) => CheckResult::fail(
+            "azdo config",
+            "provider.az_project is required for Azure DevOps",
+            CheckSeverity::Required,
+        ),
+    }
+}
+
+pub(crate) fn build_azdo_remote_result(remote_output: Option<&str>) -> CheckResult {
+    let Some(remote_output) = remote_output.map(str::trim).filter(|s| !s.is_empty()) else {
+        return CheckResult::fail(
+            "azdo remote",
+            "no git remote found — Azure DevOps provider requires a dev.azure.com remote",
+            CheckSeverity::Required,
+        );
+    };
+
+    let detected = crate::provider::detect_provider_from_remote(remote_output);
+    if detected == ProviderKind::AzureDevops {
+        CheckResult::pass(
+            "azdo remote",
+            "git remote points to Azure DevOps",
+            CheckSeverity::Required,
+        )
+    } else {
+        CheckResult::fail(
+            "azdo remote",
+            format!("git remote looks like {detected:?}, expected AzureDevops"),
+            CheckSeverity::Required,
+        )
+    }
 }
 
 // --- Individual check functions ---
@@ -371,45 +477,37 @@ fn check_claude_cli() -> CheckResult {
     }
 }
 
-fn check_az_cli() -> CheckResult {
+fn check_az_cli(severity: CheckSeverity) -> CheckResult {
     match Command::new("az").arg("--version").output() {
-        Ok(out) if out.status.success() => {
-            CheckResult::pass("az cli", "installed", CheckSeverity::Optional)
-        }
-        _ => CheckResult::fail(
-            "az cli",
-            "not installed — required for Azure DevOps provider",
-            CheckSeverity::Optional,
-        ),
+        Ok(out) if out.status.success() => build_az_cli_result(true, severity),
+        _ => build_az_cli_result(false, severity),
     }
 }
 
-fn check_az_identity() -> CheckResult {
+fn check_az_identity(severity: CheckSeverity) -> CheckResult {
     match Command::new("az")
         .args(["account", "show", "-o", "tsv", "--query", "user.name"])
         .output()
     {
         Ok(out) if out.status.success() => {
             let username = sanitize(String::from_utf8_lossy(&out.stdout).trim());
-            if username.is_empty() {
-                CheckResult::fail(
-                    "az identity",
-                    "could not fetch identity",
-                    CheckSeverity::Optional,
-                )
-            } else {
-                CheckResult::pass(
-                    "az identity",
-                    format!("logged in as {}", username),
-                    CheckSeverity::Optional,
-                )
-            }
+            build_az_identity_result(true, Some(&username), severity)
         }
-        _ => CheckResult::fail(
-            "az identity",
-            "could not fetch identity",
-            CheckSeverity::Optional,
-        ),
+        _ => build_az_identity_result(false, None, severity),
+    }
+}
+
+fn check_azdo_config(provider: &ProviderConfig) -> CheckResult {
+    build_azdo_config_result(provider)
+}
+
+fn check_azdo_remote() -> CheckResult {
+    match Command::new("git").args(["remote", "-v"]).output() {
+        Ok(out) if out.status.success() => {
+            let remote_output = String::from_utf8_lossy(&out.stdout);
+            build_azdo_remote_result(Some(&remote_output))
+        }
+        _ => build_azdo_remote_result(None),
     }
 }
 
@@ -738,5 +836,80 @@ mod tests {
             err.contains("claude cli"),
             "expected 'claude cli' in: {err}"
         );
+    }
+
+    #[test]
+    fn azdo_required_checks_happy_path_passes() {
+        let provider = ProviderConfig {
+            kind: ProviderKind::AzureDevops,
+            organization: Some("https://dev.azure.com/MyOrg".into()),
+            az_project: Some("MyProject".into()),
+            ..ProviderConfig::default()
+        };
+        let checks = vec![
+            build_az_cli_result(true, CheckSeverity::Required),
+            build_az_identity_result(true, Some("user@example.com"), CheckSeverity::Required),
+            build_azdo_config_result(&provider),
+            build_azdo_remote_result(Some(
+                "origin\thttps://MyOrg@dev.azure.com/MyOrg/MyProject/_git/MyRepo (fetch)",
+            )),
+        ];
+
+        for name in ["az cli", "az identity", "azdo config", "azdo remote"] {
+            let check = checks
+                .iter()
+                .find(|check| check.name == name)
+                .unwrap_or_else(|| panic!("missing required check {name}"));
+            assert!(check.passed, "{name} should pass: {}", check.message);
+            assert_eq!(check.severity, CheckSeverity::Required);
+        }
+    }
+
+    #[test]
+    fn azdo_config_fails_when_az_project_is_missing() {
+        let provider = ProviderConfig {
+            kind: ProviderKind::AzureDevops,
+            organization: Some("https://dev.azure.com/MyOrg".into()),
+            az_project: None,
+            ..ProviderConfig::default()
+        };
+
+        let result = build_azdo_config_result(&provider);
+
+        assert!(!result.passed);
+        assert_eq!(result.severity, CheckSeverity::Required);
+        assert!(result.message.contains("provider.az_project"));
+    }
+
+    #[test]
+    fn azdo_remote_fails_when_remote_is_missing() {
+        let result = build_azdo_remote_result(None);
+
+        assert!(!result.passed);
+        assert_eq!(result.severity, CheckSeverity::Required);
+        assert!(result.message.contains("no git remote"));
+    }
+
+    #[test]
+    fn azdo_remote_fails_when_remote_is_not_azure_devops() {
+        let result = build_azdo_remote_result(Some(
+            "origin\tgit@github.com:owner/repo.git (fetch)\norigin\tgit@github.com:owner/repo.git (push)",
+        ));
+
+        assert!(!result.passed);
+        assert_eq!(result.severity, CheckSeverity::Required);
+        assert!(result.message.contains("expected AzureDevops"));
+    }
+
+    #[test]
+    fn github_required_checks_remain_required_and_azdo_builders_are_not_needed() {
+        let gh_cli = CheckResult::pass("gh cli", "gh version 2.0.0", CheckSeverity::Required);
+        let gh_auth = build_gh_auth_result(true, Some("carlos"), None);
+        let gh_repo = CheckResult::pass("gh repo", "accessible (maestro)", CheckSeverity::Required);
+
+        for check in [&gh_cli, &gh_auth, &gh_repo] {
+            assert_eq!(check.severity, CheckSeverity::Required);
+            assert!(!check.name.starts_with("az"));
+        }
     }
 }
