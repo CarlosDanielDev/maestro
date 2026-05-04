@@ -3,11 +3,11 @@ use crate::provider::azure_devops::iterations::{
     filter_iterations_by_state, iteration_path_for_milestone_number, iterations_to_milestones,
     parse_iterations_json, stable_iteration_number,
 };
-use crate::provider::github::client::{CreateOutcome, RepoProvider};
+use crate::provider::github::client::RepoProvider;
 use chrono::NaiveDate;
 use std::sync::Arc;
 
-fn iterations_fixture() -> &'static str {
+pub(super) fn iterations_fixture() -> &'static str {
     r#"[
         {
             "identifier": "11111111-1111-1111-1111-111111111111",
@@ -147,6 +147,7 @@ fn parse_iterations_json_malformed_az_output_returns_err() {
 async fn create_issue_resolves_milestone_number_to_iteration_path() {
     let iteration_number = stable_iteration_number("Project\\Sprint Future");
     let runner = Arc::new(MockAzRunner::new(vec![
+        MockAzRunner::success("[]"),
         MockAzRunner::success(iterations_fixture()),
         MockAzRunner::success(r#"{"id":126}"#),
     ]));
@@ -158,14 +159,14 @@ async fn create_issue_resolves_milestone_number_to_iteration_path() {
         .unwrap();
 
     let calls = runner.calls();
-    assert_eq!(calls.len(), 2);
+    assert_eq!(calls.len(), 3);
     assert!(
-        calls[0]
+        calls[1]
             .windows(4)
             .any(|w| { w == ["boards", "iteration", "project", "list"] })
     );
     assert!(
-        calls[1]
+        calls[2]
             .windows(2)
             .any(|w| w == ["--iteration", "Project\\Sprint Future"])
     );
@@ -301,77 +302,6 @@ async fn list_milestones_malformed_az_output_returns_err() {
     let err = client.list_milestones("all").await.unwrap_err().to_string();
 
     assert!(err.contains("Failed to parse Azure DevOps iterations JSON"));
-}
-
-#[tokio::test]
-async fn create_milestone_duplicate_title_returns_existed_without_create() {
-    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success(
-        r#"[{
-            "name": "Sprint 2",
-            "path": "Project\\Sprint 2",
-            "attributes": { "finishDate": "2026-06-04T00:00:00Z" }
-        }]"#,
-    )]));
-    let client = test_client(runner.clone());
-
-    let outcome = client
-        .create_milestone("  sprint   2  ", "desc")
-        .await
-        .unwrap();
-
-    assert_eq!(
-        outcome,
-        CreateOutcome::Existed {
-            number: stable_iteration_number("Project\\Sprint 2"),
-            state: "open".to_string()
-        }
-    );
-    assert_eq!(runner.calls().len(), 1);
-    assert!(!runner.calls().iter().flatten().any(|arg| arg == "create"));
-}
-
-#[tokio::test]
-async fn create_milestone_creates_iteration_updates_description_and_returns_stable_id() {
-    let runner = Arc::new(MockAzRunner::new(vec![
-        MockAzRunner::success("[]"),
-        MockAzRunner::success(
-            r#"{
-                "name": "Sprint 2",
-                "path": "Project\\Sprint 2",
-                "attributes": { "finishDate": "2026-06-04T00:00:00Z" }
-            }"#,
-        ),
-        MockAzRunner::success(
-            r#"{
-                "name": "Sprint 2",
-                "path": "Project\\Sprint 2",
-                "attributes": { "finishDate": "2026-06-04T00:00:00Z" }
-            }"#,
-        ),
-    ]));
-    let client = test_client(runner.clone());
-
-    let outcome = client
-        .create_milestone("  Sprint   2  ", "desc")
-        .await
-        .unwrap();
-
-    assert_eq!(
-        outcome,
-        CreateOutcome::Created(stable_iteration_number("Project\\Sprint 2"))
-    );
-    let calls = runner.calls();
-    assert_eq!(calls.len(), 3);
-    assert_eq!(calls[0][0..4], ["boards", "iteration", "project", "list"]);
-    assert_eq!(calls[1][0..4], ["boards", "iteration", "project", "create"]);
-    assert!(calls[1].windows(2).any(|w| w == ["--name", "Sprint 2"]));
-    assert_eq!(calls[2][0..4], ["boards", "iteration", "project", "update"]);
-    assert!(
-        calls[2]
-            .windows(2)
-            .any(|w| w == ["--path", "Project\\Sprint 2"])
-    );
-    assert!(calls[2].windows(2).any(|w| w == ["--description", "desc"]));
 }
 
 #[test]

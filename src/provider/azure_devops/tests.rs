@@ -1,10 +1,11 @@
 use super::issues::{azure_tags_field, build_create_work_item_args, parse_created_work_item_id};
 use super::*;
-use crate::provider::github::client::RepoProvider;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 mod ci_merge;
+mod issue_creation;
+mod iteration_creation;
 mod iterations;
 mod pull_requests;
 mod tags;
@@ -233,112 +234,4 @@ fn build_create_work_item_args_omits_iteration_when_none() {
 #[test]
 fn parse_created_work_item_id_reads_id() {
     assert_eq!(parse_created_work_item_id(r#"{"id":321}"#).unwrap(), 321);
-}
-
-#[tokio::test]
-async fn create_issue_happy_path_returns_created_id() {
-    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success(
-        r#"{"id":123}"#,
-    )]));
-    let client = test_client(runner.clone());
-
-    let outcome = client
-        .create_issue("  New   story  ", "Body", &[], None)
-        .await
-        .unwrap();
-
-    assert_eq!(outcome, CreateOutcome::Created(123));
-    let calls = runner.calls();
-    assert_eq!(calls.len(), 1);
-    assert!(calls[0].windows(2).any(|w| w == ["--title", "New story"]));
-    assert!(calls[0].windows(2).any(|w| w == ["--description", "Body"]));
-    assert!(calls[0].windows(2).any(|w| w == ["--type", "User Story"]));
-    assert!(
-        calls[0]
-            .windows(2)
-            .any(|w| w == ["--org", "https://dev.azure.com/example"])
-    );
-    assert!(calls[0].windows(2).any(|w| w == ["--project", "Project"]));
-}
-
-#[tokio::test]
-async fn create_issue_sends_semicolon_joined_labels() {
-    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success(
-        r#"{"id":124}"#,
-    )]));
-    let client = test_client(runner.clone());
-    let labels = vec!["maestro:ready".to_string(), "priority:P1".to_string()];
-
-    client
-        .create_issue("Title", "Body", &labels, None)
-        .await
-        .unwrap();
-
-    assert!(
-        runner.calls()[0]
-            .windows(2)
-            .any(|w| w == ["--fields", "System.Tags=maestro:ready; priority:P1"])
-    );
-}
-
-#[tokio::test]
-async fn create_issue_errors_when_requested_milestone_is_missing() {
-    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success("[]")]));
-    let client = test_client(runner.clone());
-
-    let err = client
-        .create_issue("Title", "Body", &[], Some(99))
-        .await
-        .unwrap_err()
-        .to_string();
-
-    assert!(err.contains("Azure DevOps iteration for milestone id 99 not found"));
-    assert_eq!(runner.calls().len(), 1);
-}
-
-#[tokio::test]
-async fn create_issue_propagates_az_stderr() {
-    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::failure(
-        "VS403474: malformed field value",
-    )]));
-    let client = test_client(runner);
-
-    let err = client
-        .create_issue("Title", "Body", &[], None)
-        .await
-        .unwrap_err()
-        .to_string();
-
-    assert!(err.contains("VS403474: malformed field value"));
-}
-
-#[tokio::test]
-async fn create_issue_rejects_invalid_title_before_api_call() {
-    let runner = Arc::new(MockAzRunner::new(Vec::new()));
-    let client = test_client(runner.clone());
-
-    let err = client
-        .create_issue("   ", "Body", &[], None)
-        .await
-        .unwrap_err()
-        .to_string();
-
-    assert!(err.contains("issue title must not be empty"));
-    assert!(runner.calls().is_empty());
-}
-
-#[tokio::test]
-async fn create_issue_rejects_overlong_title_before_api_call() {
-    let runner = Arc::new(MockAzRunner::new(Vec::new()));
-    let client = test_client(runner.clone());
-    let title = "x".repeat(257);
-
-    let err = client
-        .create_issue(&title, "Body", &[], None)
-        .await
-        .unwrap_err()
-        .to_string();
-
-    assert!(err.contains("issue title too long"));
-    assert!(runner.calls().is_empty());
 }

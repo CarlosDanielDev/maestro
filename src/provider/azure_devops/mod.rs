@@ -238,6 +238,11 @@ fn duplicate_tag_error(stderr: &str) -> bool {
     stderr.to_ascii_lowercase().contains("tag already exists")
 }
 
+fn duplicate_create_error(stderr: &str) -> bool {
+    let normalized = stderr.to_ascii_lowercase();
+    normalized.contains("already exists") || normalized.contains("duplicate")
+}
+
 #[async_trait]
 impl RepoProvider for AzDevOpsClient {
     async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
@@ -535,22 +540,56 @@ impl RepoProvider for AzDevOpsClient {
             });
         }
 
-        let created_json = self
-            .run_az(&[
-                "boards",
-                "iteration",
-                "project",
-                "create",
-                "--name",
-                &normalized,
-                "--org",
-                &self.organization,
-                "--project",
-                &self.project,
-                "-o",
-                "json",
-            ])
-            .await?;
+        let create_args = [
+            "boards",
+            "iteration",
+            "project",
+            "create",
+            "--name",
+            &normalized,
+            "--org",
+            &self.organization,
+            "--project",
+            &self.project,
+            "-o",
+            "json",
+        ];
+        let output = self.run_az_output(&create_args).await?;
+        if !output.success {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if duplicate_create_error(&stderr) {
+                let existing_json = self
+                    .run_az(&[
+                        "boards",
+                        "iteration",
+                        "project",
+                        "list",
+                        "--org",
+                        &self.organization,
+                        "--project",
+                        &self.project,
+                        "-o",
+                        "json",
+                    ])
+                    .await?;
+                let existing = parse_iterations_json(&existing_json)?;
+                if let Some(iteration) = existing
+                    .iter()
+                    .find(|iteration| titles_equivalent(&iteration.title, &normalized))
+                {
+                    return Ok(CreateOutcome::Existed {
+                        number: iteration.number,
+                        state: iteration_state(iteration, today),
+                    });
+                }
+                anyhow::bail!(
+                    "Azure DevOps iteration '{}' already exists but was not found by title lookup",
+                    normalized
+                );
+            }
+            anyhow::bail!("az command failed: {}", stderr.trim());
+        }
+        let created_json = String::from_utf8_lossy(&output.stdout).to_string();
         let created = parse_iteration_json(&created_json)?;
 
         self.run_az(&[
@@ -582,6 +621,19 @@ impl RepoProvider for AzDevOpsClient {
         milestone: Option<u64>,
     ) -> Result<CreateOutcome> {
         let normalized_title = validate_title(title, "issue title")?;
+        validate_body(body, "issue body")?;
+
+        let existing_issues = self.list_issues(&[]).await?;
+        if let Some(issue) = existing_issues
+            .iter()
+            .find(|issue| titles_equivalent(&issue.title, &normalized_title))
+        {
+            return Ok(CreateOutcome::Existed {
+                number: issue.number,
+                state: issue.state.clone(),
+            });
+        }
+
         let iteration_path = if let Some(milestone_number) = milestone {
             let json_str = self
                 .run_az(&[
@@ -619,7 +671,28 @@ impl RepoProvider for AzDevOpsClient {
             iteration_path.as_deref(),
         );
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let json_str = self.run_az(&arg_refs).await?;
+        let output = self.run_az_output(&arg_refs).await?;
+        if !output.success {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if duplicate_create_error(&stderr) {
+                let existing_issues = self.list_issues(&[]).await?;
+                if let Some(issue) = existing_issues
+                    .iter()
+                    .find(|issue| titles_equivalent(&issue.title, &normalized_title))
+                {
+                    return Ok(CreateOutcome::Existed {
+                        number: issue.number,
+                        state: issue.state.clone(),
+                    });
+                }
+                anyhow::bail!(
+                    "Azure DevOps work item '{}' already exists but was not found by title lookup",
+                    normalized_title
+                );
+            }
+            anyhow::bail!("az command failed: {}", stderr.trim());
+        }
+        let json_str = String::from_utf8_lossy(&output.stdout).to_string();
         let id = parse_created_work_item_id(&json_str)?;
         Ok(CreateOutcome::Created(id))
     }
