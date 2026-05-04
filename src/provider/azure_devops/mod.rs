@@ -10,12 +10,14 @@ use std::sync::Arc;
 
 mod issues;
 mod iterations;
+mod pr;
 
 use issues::{build_create_work_item_args, parse_created_work_item_id};
 use iterations::{
     filter_iterations_by_state, iteration_path_for_milestone_number, iteration_state,
     iterations_to_milestones, parse_iteration_json, parse_iterations_json, today_utc,
 };
+use pr::{parse_pr_json, parse_prs_json};
 
 #[cfg(test)]
 mod tests;
@@ -619,20 +621,82 @@ impl RepoProvider for AzDevOpsClient {
     }
 
     async fn list_open_prs(&self) -> Result<Vec<PullRequest>> {
-        anyhow::bail!("list_open_prs is not supported for Azure DevOps")
+        let json_str = self
+            .run_az(&[
+                "repos",
+                "pr",
+                "list",
+                "--status",
+                "active",
+                "--org",
+                &self.organization,
+                "--project",
+                &self.project,
+                "-o",
+                "json",
+            ])
+            .await?;
+
+        parse_prs_json(&json_str)
     }
 
-    async fn get_pr(&self, _number: u64) -> Result<PullRequest> {
-        anyhow::bail!("get_pr is not supported for Azure DevOps")
+    async fn get_pr(&self, number: u64) -> Result<PullRequest> {
+        let number_str = number.to_string();
+        let json_str = self
+            .run_az(&[
+                "repos",
+                "pr",
+                "show",
+                "--id",
+                &number_str,
+                "--org",
+                &self.organization,
+                "-o",
+                "json",
+            ])
+            .await?;
+
+        parse_pr_json(&json_str)
     }
 
-    async fn submit_pr_review(
-        &self,
-        _pr_number: u64,
-        _event: ReviewEvent,
-        _body: &str,
-    ) -> Result<()> {
-        anyhow::bail!("submit_pr_review is not supported for Azure DevOps")
+    async fn submit_pr_review(&self, pr_number: u64, event: ReviewEvent, body: &str) -> Result<()> {
+        validate_body(body, "PR review body")?;
+        let pr_number_str = pr_number.to_string();
+
+        if let Some(vote) = pr::review_event_vote(event) {
+            self.run_az(&[
+                "repos",
+                "pr",
+                "set-vote",
+                "--id",
+                &pr_number_str,
+                "--vote",
+                vote,
+                "--org",
+                &self.organization,
+                "--project",
+                &self.project,
+            ])
+            .await?;
+        }
+
+        self.run_az(&[
+            "repos",
+            "pr",
+            "comment",
+            "add",
+            "--id",
+            &pr_number_str,
+            "--content",
+            body,
+            "--org",
+            &self.organization,
+            "--project",
+            &self.project,
+        ])
+        .await?;
+
+        Ok(())
     }
 
     async fn list_labels(&self) -> Result<Vec<String>> {
