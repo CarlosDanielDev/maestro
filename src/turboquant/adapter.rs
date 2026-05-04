@@ -245,13 +245,9 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
 
 /// Output of fork-handoff compression.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Reason: metrics surface exposed to the TUI activity log and tests
 pub struct CompressedHandoff {
     pub text: String,
     pub metrics: CompressionMetrics,
-    pub segments_total: usize,
-    pub segments_selected: usize,
-    pub truncated: bool,
 }
 
 impl TurboQuantAdapter {
@@ -274,15 +270,10 @@ impl TurboQuantAdapter {
                     compressed_tokens: 0,
                     compression_ratio: 1.0,
                 },
-                segments_total: 0,
-                segments_selected: 0,
-                truncated: false,
             };
         }
 
         let original_tokens = Self::estimate_tokens(history);
-        let segments: Vec<&str> = split_handoff_segments(history);
-        let segments_total = segments.len();
 
         if !self.enabled {
             return CompressedHandoff {
@@ -292,11 +283,10 @@ impl TurboQuantAdapter {
                     compressed_tokens: original_tokens,
                     compression_ratio: 1.0,
                 },
-                segments_total,
-                segments_selected: segments_total,
-                truncated: false,
             };
         }
+
+        let segments: Vec<&str> = split_handoff_segments(history);
 
         if token_budget == 0 {
             return CompressedHandoff {
@@ -310,16 +300,13 @@ impl TurboQuantAdapter {
                         original_tokens as f64
                     },
                 },
-                segments_total,
-                segments_selected: 0,
-                truncated: false,
             };
         }
 
         let ranked = self.rank_segments(&segments, task_prompt);
         let tb = crate::turboquant::budget::TokenBudget::new(token_budget as u64);
         let sel = tb.select(&ranked, |i| Self::estimate_tokens(segments[i]));
-        let mut kept = sel.indices.clone();
+        let mut kept = sel.indices;
         kept.sort_unstable();
         let text: String = kept
             .iter()
@@ -341,9 +328,6 @@ impl TurboQuantAdapter {
                 compressed_tokens,
                 compression_ratio,
             },
-            segments_total,
-            segments_selected: kept.len(),
-            truncated: sel.truncated_first,
         }
     }
 
@@ -912,8 +896,8 @@ mod tests {
         let a = ranker();
         let out = a.compress_handoff("", "any task", 4096);
         assert!(out.text.is_empty());
-        assert_eq!(out.segments_total, 0);
-        assert_eq!(out.segments_selected, 0);
+        assert_eq!(out.metrics.original_tokens, 0);
+        assert_eq!(out.metrics.compressed_tokens, 0);
     }
 
     #[test]
@@ -937,8 +921,8 @@ mod tests {
             ));
         }
         let out = a.compress_handoff(&history, "pick relevant work", 256);
-        assert!(out.text.len() / 4 <= 266);
-        assert!(out.segments_selected < out.segments_total);
+        assert!(out.metrics.compressed_tokens <= 256);
+        assert!(out.metrics.compressed_tokens < out.metrics.original_tokens);
     }
 
     #[test]
@@ -946,7 +930,7 @@ mod tests {
         let a = ranker();
         let out = a.compress_handoff("some history", "task", 0);
         assert!(out.text.is_empty());
-        assert_eq!(out.segments_selected, 0);
+        assert_eq!(out.metrics.compressed_tokens, 0);
     }
 
     #[test]
@@ -962,9 +946,7 @@ mod tests {
         let a = ranker();
         let history = "Tool: Bash\n$ echo hello";
         let out = a.compress_handoff(history, "run bash", 4096);
-        assert_eq!(out.segments_total, 1);
-        assert_eq!(out.segments_selected, 1);
-        assert!(out.text.contains("echo hello"));
+        assert_eq!(out.text, history);
     }
 
     #[test]
@@ -972,16 +954,18 @@ mod tests {
         let a = ranker();
         let history = "[Tool: Read]\nsrc/main.rs\n\n[Assistant]\nFile has 100 lines";
         let out = a.compress_handoff(history, "inspect file", 4096);
-        assert_eq!(out.segments_total, 2);
+        assert!(out.text.contains("[Tool: Read]"));
+        assert!(out.text.contains("[Assistant]"));
+        assert!(out.text.contains("\n\n"));
     }
 
     #[test]
-    fn compress_handoff_truncated_flag_set_when_first_segment_exceeds_budget() {
+    fn compress_handoff_keeps_single_oversized_segment() {
         let a = ranker();
         let big = "y".repeat(4000);
         let out = a.compress_handoff(&big, "task", 100);
-        assert!(out.truncated);
-        assert_eq!(out.segments_selected, 1);
+        assert_eq!(out.text, big);
+        assert_eq!(out.metrics.compressed_tokens, out.metrics.original_tokens);
     }
 
     #[test]
@@ -990,7 +974,6 @@ mod tests {
         let history = "I made a cup of tea today and read a book.\n\n\
                        cargo test suite ran with 200 tests passing in 3 seconds.";
         let out = a.compress_handoff(history, "cargo test suite results", 20);
-        assert!(out.segments_selected >= 1);
         assert!(out.text.contains("cargo") || out.text.contains("tests"));
     }
 
