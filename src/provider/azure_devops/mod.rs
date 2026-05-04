@@ -8,15 +8,19 @@ use async_trait::async_trait;
 use std::io::Write;
 use std::sync::Arc;
 
+mod ci;
 mod issues;
 mod iterations;
+mod merge;
 mod pr;
 
+use ci::{aggregate_pipeline_runs, parse_check_runs_json, parse_pipeline_runs_json};
 use issues::{build_create_work_item_args, parse_created_work_item_id};
 use iterations::{
     filter_iterations_by_state, iteration_path_for_milestone_number, iteration_state,
     iterations_to_milestones, parse_iteration_json, parse_iterations_json, today_utc,
 };
+use merge::merge_method_args;
 use pr::{parse_pr_json, parse_prs_json};
 
 #[cfg(test)]
@@ -783,23 +787,145 @@ impl RepoProvider for AzDevOpsClient {
         anyhow::bail!("patch_milestone_description is not supported for Azure DevOps")
     }
 
-    async fn ci_status_for_branch(&self, _branch: &str) -> Result<CiStatus> {
-        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    async fn ci_status_for_branch(&self, branch: &str) -> Result<CiStatus> {
+        crate::util::validate_gh_arg(branch, "branch")?;
+        let branch_ref = ci::refs_heads_branch(branch);
+        let json_str = self
+            .run_az(&[
+                "pipelines",
+                "runs",
+                "list",
+                "--branch",
+                &branch_ref,
+                "--top",
+                "20",
+                "--org",
+                &self.organization,
+                "--project",
+                &self.project,
+                "-o",
+                "json",
+            ])
+            .await?;
+        Ok(aggregate_pipeline_runs(parse_pipeline_runs_json(
+            &json_str,
+        )?))
     }
 
-    async fn ci_status_for_pr(&self, _pr_number: u64) -> Result<CiStatus> {
-        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    async fn ci_status_for_pr(&self, pr_number: u64) -> Result<CiStatus> {
+        let pr = self.get_pr(pr_number).await?;
+        self.ci_status_for_branch(&pr.head_branch).await
     }
 
-    async fn ci_check_runs_for_pr(&self, _pr_number: u64) -> Result<Vec<CheckRun>> {
-        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    async fn ci_check_runs_for_pr(&self, pr_number: u64) -> Result<Vec<CheckRun>> {
+        let pr = self.get_pr(pr_number).await?;
+        let branch_ref = ci::refs_heads_branch(&pr.head_branch);
+        let json_str = self
+            .run_az(&[
+                "pipelines",
+                "runs",
+                "list",
+                "--branch",
+                &branch_ref,
+                "--top",
+                "20",
+                "--org",
+                &self.organization,
+                "--project",
+                &self.project,
+                "-o",
+                "json",
+            ])
+            .await?;
+        parse_check_runs_json(&json_str)
     }
 
-    async fn ci_logs_for_check(&self, _check_id: &str) -> Result<String> {
-        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    async fn ci_logs_for_check(&self, check_id: &str) -> Result<String> {
+        crate::util::validate_gh_arg(check_id, "check_id")?;
+        self.run_az(&[
+            "pipelines",
+            "runs",
+            "show",
+            "--id",
+            check_id,
+            "--org",
+            &self.organization,
+            "-o",
+            "json",
+        ])
+        .await?;
+
+        let logs_output = self
+            .run_az_output(&[
+                "pipelines",
+                "runs",
+                "show",
+                "--id",
+                check_id,
+                "--query",
+                "logs",
+                "--org",
+                &self.organization,
+                "-o",
+                "json",
+            ])
+            .await?;
+
+        if logs_output.success {
+            return Ok(String::from_utf8_lossy(&logs_output.stdout).to_string());
+        }
+
+        let route_project = format!("project={}", self.project);
+        let route_build = format!("buildId={check_id}");
+        self.run_az(&[
+            "devops",
+            "invoke",
+            "--area",
+            "build",
+            "--resource",
+            "logs",
+            "--route-parameters",
+            &route_project,
+            &route_build,
+            "--org",
+            &self.organization,
+            "-o",
+            "json",
+        ])
+        .await
     }
 
-    async fn merge_pr(&self, _pr_number: u64, _method: MergeMethod) -> Result<()> {
-        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    async fn merge_pr(&self, pr_number: u64, method: MergeMethod) -> Result<()> {
+        let pr = self.get_pr(pr_number).await?;
+        if pr.draft {
+            anyhow::bail!(
+                "Azure DevOps PR #{} is a draft and cannot be completed",
+                pr_number
+            );
+        }
+        if pr.state != "active" {
+            anyhow::bail!(
+                "Azure DevOps PR #{} is '{}' and cannot be completed",
+                pr_number,
+                pr.state
+            );
+        }
+
+        let pr_number_str = pr_number.to_string();
+        let mut args = vec![
+            "repos",
+            "pr",
+            "update",
+            "--id",
+            &pr_number_str,
+            "--status",
+            "completed",
+            "--merge-commit-message-mode",
+            "default",
+        ];
+        args.extend(merge_method_args(method));
+        args.extend(["--org", &self.organization, "--project", &self.project]);
+        self.run_az(&args).await?;
+        Ok(())
     }
 }

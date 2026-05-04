@@ -4,6 +4,7 @@ use crate::provider::github::client::RepoProvider;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+mod ci_merge;
 mod iterations;
 mod pull_requests;
 mod tags;
@@ -340,20 +341,4 @@ async fn create_issue_rejects_overlong_title_before_api_call() {
 
     assert!(err.contains("issue title too long"));
     assert!(runner.calls().is_empty());
-}
-
-#[tokio::test]
-async fn merge_pr_stub_names_tracking_issue() {
-    let client = AzDevOpsClient::new(
-        "https://dev.azure.com/example".to_string(),
-        "Project".to_string(),
-    );
-
-    let err = client
-        .merge_pr(123, MergeMethod::Squash)
-        .await
-        .unwrap_err()
-        .to_string();
-
-    assert!(err.contains("v0.23.0 #B5"));
 }

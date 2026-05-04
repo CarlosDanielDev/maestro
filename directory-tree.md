@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-02 (UTC)
+> Last updated: 2026-05-04 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -164,16 +164,41 @@ maestro/
 │   │   └── runner.rs                      # Gate evaluation runner; all_required_gates_passed(); Command match arm
 │   ├── provider/                          # Multi-provider abstraction layer  [Issue #29]
 │   │   ├── mod.rs                         # create_provider factory, detect_provider_from_remote
-│   │   ├── types.rs                       # ProviderKind enum (Github, AzureDevops); re-exports Issue/Priority/MaestroLabel/SessionMode/Milestone  [Issue #31-33]
-│   │   └── azure_devops.rs               # AzDevOpsClient implementing GitHubClient trait; parse_work_items_json; stub list_milestones(); stub list_labels() and create_label() to satisfy GitHubClient trait; stub patch_milestone_description() returns bail!  [Issue #31-33, #47, #348, #500]
-│   ├── github/                            # GitHub API integration  [Phase 2]
-│   │   ├── mod.rs                         # Module exports
-│   │   ├── types.rs                       # GhIssue (+ milestone/assignees fields), GhMilestone, Priority, MaestroLabel, SessionMode; label/body blocker parsing; PendingPr struct (issue_number, branch, attempt, last_errors: VecDeque<String> cap-3, status, retry_after, manual_retry_count); `last_error` field removed — legacy state files migrate via `#[serde(from = "PendingPrLegacy")]` backward-compat shim; canonical awaiting_pending_pr fixture; PendingPrStatus enum (RetryScheduled, Retrying, AwaitingManualRetry, PermanentlyFailed)  [Issue #31-33, #159, #545]
-│   │   ├── client.rs                      # GitHubClient trait + list_milestones(); GhCliClient; GhCliClient::with_repo() builder (sets optional --repo flag on all 8 argv builders); MockGitHubClient (set_milestones()); parse_issues_json; parse_milestones_json; is_auth_error(); is_gh_auth_error(); auth error detection in run_gh() surfaces gh CLI authentication failures; list_prs_for_branch() on GitHubClient trait — returns open PR numbers for a given head branch; MockGitHubClient gains set_list_prs_for_branch() helper; list_labels() and create_label() on GitHubClient trait — enumerate and create repo labels; MockGitHubClient gains set_list_labels_error(), set_create_label_error(), list_labels_call_count(), create_label_calls() helpers; patch_milestone_description() on GitHubClient trait and GhCliClient impl (gh api ... --method PATCH); create_pr gains validate_body() (rejects empty title, enforces GH_BODY_MAX_BYTES limit); MockGitHubClient extended with new fields/setters/recorders; 3 round-trip tests  [Issue #31-33, #46-48, #158, #159, #348, #500, #545]
-│   │   ├── ci.rs                          # CiCheck trait (check_pr_status, check_pr_details, fetch_failure_log); CiChecker impl; CiStatus enum (Pending, Passed, Failed, NoneConfigured); CheckStatus enum (Queued, InProgress, Completed, Waiting, Pending, Requested, Unknown) with serde aliases; CheckConclusion enum (Success, Failure, Neutral, Cancelled, TimedOut, ActionRequired, Skipped, Stale, StartupFailure, None) with serde aliases; CheckRunDetail struct (name, status, conclusion, started_at, elapsed_secs); CiPollAction enum (Wait, SpawnFix, Abandon); PendingPrCheck (fix_attempt, awaiting_fix_ci); build_ci_fix_prompt(); truncate_log(); parse_ci_json(); parse_check_details(); decide_ci_action()  [Phase 3, Issue #41, #123]
-│   │   ├── labels.rs                      # LabelManager: ready→in-progress→done/failed lifecycle transitions
-│   │   ├── merge.rs                       # PrMergeCheck trait (mockable); PrMergeChecker impl using `gh pr view` + `git diff`; MergeState enum (Clean, Conflicting, Blocked, Unknown); PrConflictStatus struct; parse_merge_json(); parse_conflicting_files(); build_conflict_fix_prompt()
-│   │   └── pr.rs                          # PrCreator: build_pr_body, create_for_issue auto-PR creation; PrRetryPolicy (max_attempts, base_delay_secs, multiplier) with exponential back-off via delay_for_attempt(); OrphanBranch struct with from_branch_name() — parses issue number from maestro/issue-N branch names  [Issue #159]
+│   │   ├── types.rs                       # ProviderKind enum; provider-agnostic Issue, PullRequest, CiStatus, CheckRun, MergeMethod, ReviewEvent types
+│   │   ├── azure_devops/                  # Azure DevOps provider backed by `az` CLI
+│   │   │   ├── mod.rs                     # AzDevOpsClient implementation of RepoProvider; work items, iterations, PRs, tags, CI, logs, and merge dispatch
+│   │   │   ├── ci.rs                      # Azure Pipelines run parsing, per-definition CI aggregation, CheckRun mapping, branch ref normalization  [Issue #466]
+│   │   │   ├── issues.rs                  # Work item creation helpers and Azure tags field construction
+│   │   │   ├── iterations.rs              # Azure Boards iteration parsing, filtering, milestone conversion
+│   │   │   ├── merge.rs                   # MergeMethod → `az repos pr update` argument mapping  [Issue #466]
+│   │   │   ├── pr.rs                      # Azure PR JSON parsing and review vote mapping
+│   │   │   ├── tests.rs                   # Azure DevOps provider tests and MockAzRunner
+│   │   │   └── tests/                     # Split Azure DevOps test modules
+│   │   │       ├── ci_merge.rs
+│   │   │       ├── iterations.rs
+│   │   │       ├── pull_requests.rs
+│   │   │       └── tags.rs
+│   │   └── github/                        # GitHub provider backed by `gh` CLI
+│   │       ├── mod.rs                     # GitHub provider module exports
+│   │       ├── client.rs                  # Public GitHub client facade and stable re-exports
+│   │       ├── ci.rs                      # Legacy CiCheck helpers, CI parsing, CI fix prompt helpers
+│   │       ├── gh_argv.rs                 # Pure `gh` argv construction helpers and wire tests
+│   │       ├── labels.rs                  # LabelManager: ready→in-progress→done/failed lifecycle transitions
+│   │       ├── merge.rs                   # Legacy merge/conflict helpers
+│   │       ├── pr.rs                      # PR body creation, PR retry policy, orphan branch parsing
+│   │       ├── redaction.rs               # Secret redaction helpers for GitHub command output
+│   │       ├── transport.rs               # RepoProvider trait, GhCliClient core, transport dispatch
+│   │       ├── types.rs                   # GitHub issue, milestone, label, session-mode, and pending-PR types
+│   │       └── transport/                 # GitHub transport implementation and mocks
+│   │           ├── ci_merge.rs            # RepoProvider CI/log/merge methods for GhCliClient
+│   │           ├── cli.rs                 # GhCliClient constructor and command runner
+│   │           ├── cli_impl.rs            # Main GhCliClient RepoProvider implementation
+│   │           ├── cli_tests.rs           # GhCliClient tests
+│   │           ├── errors.rs              # gh auth/error classification
+│   │           ├── errors_tests.rs        # gh error classification tests
+│   │           ├── mock.rs                # Mock RepoProvider facade for tests
+│   │           ├── parsing.rs             # Shared GitHub JSON parsing helpers
+│   │           └── mock/                  # Mock provider implementation and focused test modules
 │   ├── mascot/                            # Pixel-art and ASCII mascot rendering subsystem  [Issue #473-476]
 │   │   ├── mod.rs                         # Module facade; MascotStyle enum (Sprite | Ascii) re-exported; pub mod sprites
 │   │   ├── animator.rs                    # Frame-advance animation timer for mascot sequences
