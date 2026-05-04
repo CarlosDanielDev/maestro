@@ -333,11 +333,9 @@ fn prompt_line(label: &str) -> Result<String> {
                 {
                     anyhow::bail!("maestro init aborted")
                 }
-                KeyCode::Backspace => {
-                    if value.pop().is_some() {
-                        eprint!("\u{8} \u{8}");
-                        std::io::stderr().flush().context("flushing prompt")?;
-                    }
+                KeyCode::Backspace if value.pop().is_some() => {
+                    eprint!("\u{8} \u{8}");
+                    std::io::stderr().flush().context("flushing prompt")?;
                 }
                 KeyCode::Char(c) => {
                     value.push(c);
