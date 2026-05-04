@@ -343,6 +343,9 @@ fn parse_result(v: &Value) -> Vec<StreamEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::types::SessionStatus;
+    use proptest::prelude::*;
+    use serde_json::json;
 
     /// Helper: get the first event of a specific type from parsed events.
     fn first_event(line: &str) -> StreamEvent {
@@ -355,6 +358,237 @@ mod tests {
             .into_iter()
             .find(|e| pred(e))
             .unwrap_or_else(|| panic!("No matching event found in: {:?}", parse_stream_line(line)))
+    }
+
+    #[derive(Debug, Clone)]
+    enum ValidStreamFragment {
+        AssistantText(String),
+        ToolUse { tool: String, file_path: String },
+        ToolResult { tool: String, is_error: bool },
+        Result { cost_cents: u32 },
+    }
+
+    impl ValidStreamFragment {
+        fn to_line(&self) -> String {
+            match self {
+                Self::AssistantText(text) => json!({
+                    "type": "assistant",
+                    "message": {
+                        "type": "text",
+                        "text": text,
+                    },
+                })
+                .to_string(),
+                Self::ToolUse { tool, file_path } => json!({
+                    "type": "assistant",
+                    "message": {
+                        "type": "tool_use",
+                        "name": tool,
+                        "input": {
+                            "file_path": file_path,
+                        },
+                    },
+                })
+                .to_string(),
+                Self::ToolResult { tool, is_error } => json!({
+                    "type": "tool_result",
+                    "tool_name": tool,
+                    "is_error": is_error,
+                })
+                .to_string(),
+                Self::Result { cost_cents } => json!({
+                    "type": "result",
+                    "cost_usd": f64::from(*cost_cents) / 100.0,
+                    "usage": {
+                        "input_tokens": 1000_u64,
+                        "output_tokens": 100_u64,
+                        "max_input_tokens": 200000_u64,
+                    },
+                })
+                .to_string(),
+            }
+        }
+    }
+
+    fn path_component_strategy() -> impl Strategy<Value = String> {
+        proptest::collection::vec(b'a'..=b'z', 1..=12)
+            .prop_map(|bytes| bytes.into_iter().map(char::from).collect())
+    }
+
+    fn file_path_strategy() -> impl Strategy<Value = String> {
+        (
+            path_component_strategy(),
+            proptest::collection::vec(path_component_strategy(), 0..=2),
+            proptest::collection::vec(b'a'..=b'z', 1..=4)
+                .prop_map(|bytes| bytes.into_iter().map(char::from).collect::<String>()),
+        )
+            .prop_map(|(first, rest, ext)| {
+                let mut path = first;
+                for component in rest {
+                    path.push('/');
+                    path.push_str(&component);
+                }
+                path.push('.');
+                path.push_str(&ext);
+                path
+            })
+    }
+
+    fn file_touching_tool_strategy() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("Read".to_string()),
+            Just("Edit".to_string()),
+            Just("Write".to_string()),
+            Just("Glob".to_string()),
+            Just("Grep".to_string()),
+        ]
+    }
+
+    fn valid_stream_fragment_strategy() -> impl Strategy<Value = ValidStreamFragment> {
+        let text = any::<String>().prop_map(ValidStreamFragment::AssistantText);
+        let tool_use = file_touching_tool_strategy().prop_flat_map(move |tool| {
+            file_path_strategy().prop_map(move |file_path| ValidStreamFragment::ToolUse {
+                tool: tool.clone(),
+                file_path,
+            })
+        });
+        let tool_result = file_touching_tool_strategy().prop_flat_map(|tool| {
+            any::<bool>().prop_map(move |is_error| ValidStreamFragment::ToolResult {
+                tool: tool.clone(),
+                is_error,
+            })
+        });
+        let result =
+            (0_u32..=100_000).prop_map(|cost_cents| ValidStreamFragment::Result { cost_cents });
+
+        prop_oneof![text, tool_use, tool_result, result]
+    }
+
+    #[derive(Debug)]
+    struct ParsedSessionState {
+        status: SessionStatus,
+        last_message: String,
+        files_touched: Vec<String>,
+        cost_usd: f64,
+    }
+
+    impl ParsedSessionState {
+        fn running() -> Self {
+            Self {
+                status: SessionStatus::Running,
+                last_message: String::new(),
+                files_touched: Vec::new(),
+                cost_usd: 0.0,
+            }
+        }
+
+        fn apply(&mut self, event: &StreamEvent) {
+            match event {
+                StreamEvent::AssistantMessage { text } if !text.is_empty() => {
+                    if !self.last_message.is_empty() {
+                        self.last_message.push('\n');
+                    }
+                    self.last_message.push_str(text);
+                    if self.last_message.len() > 10_000 {
+                        let start = self.last_message.len() - 8_000;
+                        let boundary = char_boundary(&self.last_message, start);
+                        self.last_message = self.last_message[boundary..].to_string();
+                    }
+                }
+                StreamEvent::ToolUse {
+                    tool, file_path, ..
+                } if matches!(tool.as_str(), "Read" | "Edit" | "Write" | "Glob" | "Grep") => {
+                    if let Some(path) = file_path
+                        && !self.files_touched.contains(path)
+                    {
+                        self.files_touched.push(path.clone());
+                    }
+                }
+                StreamEvent::Completed { cost_usd } => {
+                    if *cost_usd > 0.0 {
+                        self.cost_usd = *cost_usd;
+                    }
+                    self.status = SessionStatus::Completed;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn expected_last_message(sequence: &[ValidStreamFragment]) -> String {
+        sequence
+            .iter()
+            .filter_map(|fragment| match fragment {
+                ValidStreamFragment::AssistantText(text) if !text.is_empty() => Some(text),
+                _ => None,
+            })
+            .fold(String::new(), |mut acc, text| {
+                if !acc.is_empty() {
+                    acc.push('\n');
+                }
+                acc.push_str(text);
+                if acc.len() > 10_000 {
+                    let start = acc.len() - 8_000;
+                    let boundary = char_boundary(&acc, start);
+                    acc = acc[boundary..].to_string();
+                }
+                acc
+            })
+    }
+
+    fn expected_files_touched(sequence: &[ValidStreamFragment]) -> Vec<String> {
+        let mut files = Vec::new();
+        for fragment in sequence {
+            if let ValidStreamFragment::ToolUse { file_path, .. } = fragment
+                && !files.contains(file_path)
+            {
+                files.push(file_path.clone());
+            }
+        }
+        files
+    }
+
+    fn expected_cost_usd(sequence: &[ValidStreamFragment]) -> f64 {
+        sequence
+            .iter()
+            .rev()
+            .find_map(|fragment| match fragment {
+                ValidStreamFragment::Result { cost_cents } if *cost_cents > 0 => {
+                    Some(f64::from(*cost_cents) / 100.0)
+                }
+                _ => None,
+            })
+            .unwrap_or(0.0)
+    }
+
+    proptest! {
+        #[test]
+        fn parse_stream_line_never_panics_for_arbitrary_utf8(input in any::<String>()) {
+            let _ = parse_stream_line(&input);
+        }
+
+        #[test]
+        fn valid_stream_sequences_drive_expected_session_state(
+            sequence in proptest::collection::vec(valid_stream_fragment_strategy(), 0..25)
+        ) {
+            let mut state = ParsedSessionState::running();
+
+            for fragment in &sequence {
+                for event in parse_stream_line(&fragment.to_line()) {
+                    state.apply(&event);
+                }
+            }
+
+            prop_assert_eq!(state.last_message, expected_last_message(&sequence));
+            prop_assert_eq!(state.files_touched, expected_files_touched(&sequence));
+            prop_assert!((state.cost_usd - expected_cost_usd(&sequence)).abs() < f64::EPSILON);
+
+            if sequence.iter().any(|fragment| matches!(fragment, ValidStreamFragment::Result { .. })) {
+                prop_assert_eq!(state.status, SessionStatus::Completed);
+            } else {
+                prop_assert_eq!(state.status, SessionStatus::Running);
+            }
+        }
     }
 
     #[test]
