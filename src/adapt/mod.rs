@@ -116,7 +116,7 @@ pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
 
 pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     use analyzer::{ClaudeAnalyzer, ProjectAnalyzer};
-    use materializer::{GhMaterializer, PlanMaterializer};
+    use materializer::{PlanMaterializer, RepoMaterializer};
     use planner::{AdaptPlanner, ClaudePlanner};
     use scanner::{LocalProjectScanner, ProjectScanner};
 
@@ -272,14 +272,21 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         }
     };
 
-    // Phase 4: Materialize
-    eprintln!("Phase 4: Creating GitHub artifacts...");
     let provider_config = project_cfg
         .as_ref()
         .map(|c| c.effective_provider_config())
         .unwrap_or_default();
-    let github = crate::provider::create_provider(&provider_config)?;
-    let materializer = GhMaterializer::new(github);
+    let (milestone_term, issue_term, catalog_term, provider_term) = match provider_config.kind {
+        crate::provider::types::ProviderKind::Github => ("Milestones", "Issues", "issue", "GitHub"),
+        crate::provider::types::ProviderKind::AzureDevops => {
+            ("Iterations", "Work Items", "work item", "Azure DevOps")
+        }
+    };
+
+    // Phase 4: Materialize
+    eprintln!("Phase 4: Creating {} artifacts...", provider_term);
+    let provider = crate::provider::create_provider(&provider_config)?;
+    let materializer = RepoMaterializer::new(provider_config.kind, provider.as_ref());
     let result = materializer.materialize(&plan, &report, false).await?;
 
     let ms_created = result
@@ -292,11 +299,14 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         .iter()
         .filter(|m| m.reused)
         .count();
-    eprintln!("  Milestones: {} created, {} reused", ms_created, ms_reused);
+    eprintln!(
+        "  {}: {} created, {} reused",
+        milestone_term, ms_created, ms_reused
+    );
 
     let skipped = result.issues_skipped.len();
     if skipped == 0 {
-        eprintln!("  Issues:     {} created", result.issues_created.len());
+        eprintln!("  {}: {} created", issue_term, result.issues_created.len());
     } else {
         let numbers: Vec<String> = if skipped <= 10 {
             result
@@ -309,13 +319,15 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         };
         if numbers.is_empty() {
             eprintln!(
-                "  Issues:     {} created, {} skipped (duplicate titles)",
+                "  {}: {} created, {} skipped (duplicate titles)",
+                issue_term,
                 result.issues_created.len(),
                 skipped
             );
         } else {
             eprintln!(
-                "  Issues:     {} created, {} skipped (duplicate titles: {})",
+                "  {}: {} created, {} skipped (duplicate titles: {})",
+                issue_term,
                 result.issues_created.len(),
                 skipped,
                 numbers.join(", ")
@@ -323,7 +335,7 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         }
     }
     if let Some(ref td) = result.tech_debt_issue {
-        eprintln!("  Tech debt catalog: #{}", td.number);
+        eprintln!("  Tech debt catalog {}: #{}", catalog_term, td.number);
     }
 
     Ok(())
@@ -359,8 +371,8 @@ pub async fn detect_milestone_hint(
     let provider_config = project_cfg
         .map(|c| c.effective_provider_config())
         .unwrap_or_default();
-    let github = match crate::provider::create_provider(&provider_config) {
-        Ok(github) => github,
+    let provider = match crate::provider::create_provider(&provider_config) {
+        Ok(provider) => provider,
         Err(e) => {
             tracing::warn!("Failed to create provider for pattern detection: {e}");
             return None;
@@ -368,7 +380,7 @@ pub async fn detect_milestone_hint(
     };
     let mut titles: Vec<String> = Vec::new();
     for state in ["open", "closed"] {
-        match crate::provider::github::client::RepoProvider::list_milestones(&github, state).await {
+        match crate::provider::RepoProvider::list_milestones(&provider, state).await {
             Ok(ms) => titles.extend(ms.into_iter().map(|m| m.title)),
             Err(e) => {
                 tracing::warn!("Failed to list {state} milestones for pattern detection: {e}");

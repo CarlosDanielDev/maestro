@@ -89,6 +89,7 @@ pub struct CreatePrCallRecord {
 #[derive(Debug, Clone)]
 pub struct CreateIssueCallRecord {
     pub title: String,
+    #[allow(dead_code)] // Reason: shared test helper field used by selected test targets.
     pub body: String,
     pub labels: Vec<String>,
     pub milestone: Option<u64>,
@@ -175,22 +176,27 @@ impl MockGitHubClient {
         self.inner.lock().unwrap().create_issue_calls.clone()
     }
 
+    #[allow(dead_code)] // Reason: shared test helper used by materializer-style tests.
     pub fn set_labels(&self, labels: Vec<String>) {
         self.inner.lock().unwrap().labels = labels;
     }
 
+    #[allow(dead_code)] // Reason: shared test helper used by materializer-style tests.
     pub fn set_list_labels_error(&self, msg: &str) {
         self.inner.lock().unwrap().list_labels_error = Some(msg.to_string());
     }
 
+    #[allow(dead_code)] // Reason: shared test helper used by materializer-style tests.
     pub fn set_create_label_error(&self, msg: &str) {
         self.inner.lock().unwrap().create_label_error = Some(msg.to_string());
     }
 
+    #[allow(dead_code)] // Reason: shared test helper used by materializer-style tests.
     pub fn list_labels_call_count(&self) -> u32 {
         self.inner.lock().unwrap().list_labels_calls
     }
 
+    #[allow(dead_code)] // Reason: shared test helper used by materializer-style tests.
     pub fn create_label_calls(&self) -> Vec<(String, String)> {
         self.inner.lock().unwrap().create_label_calls.clone()
     }
