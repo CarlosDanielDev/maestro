@@ -157,11 +157,11 @@ mod tests {
 
     #[test]
     fn round_trip_single_element() {
-        let v = vec![3.14];
+        let v = vec![3.125];
         let q = polar_quantize(&v, 4);
         let r = polar_dequantize(&q);
         assert_eq!(r.len(), 1);
-        assert!((r[0] - 3.14).abs() < 1e-6);
+        assert!((r[0] - 3.125).abs() < 1e-6);
     }
 
     #[test]
