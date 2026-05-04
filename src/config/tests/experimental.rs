@@ -34,6 +34,8 @@ fn config_validate_accepts_azure_devops_with_experimental_opt_in() {
         r#"{MINIMAL_TOML}
 [provider]
 kind = "azure_devops"
+organization = "https://dev.azure.com/MyOrg"
+az_project = "MyProject"
 
 [experimental]
 azure_devops = true
@@ -46,6 +48,44 @@ azure_devops = true
     if let Err(err) = cfg.validate() {
         panic!("explicit opt-in must pass: {err}");
     }
+}
+
+#[test]
+fn config_validate_rejects_azure_devops_missing_fields() {
+    let toml_str = format!(
+        r#"{MINIMAL_TOML}
+[provider]
+kind = "azure_devops"
+
+[experimental]
+azure_devops = true
+"#
+    );
+    let cfg: Config = toml::from_str(&toml_str).expect("azure devops config parses");
+    let err = cfg
+        .validate()
+        .expect_err("azure devops fields are required");
+    assert!(err.to_string().contains("provider.organization"));
+}
+
+#[test]
+fn config_validate_rejects_azure_devops_invalid_organization() {
+    let toml_str = format!(
+        r#"{MINIMAL_TOML}
+[provider]
+kind = "azure_devops"
+organization = "https://dev.azure.com/MyOrg/Project"
+az_project = "MyProject"
+
+[experimental]
+azure_devops = true
+"#
+    );
+    let cfg: Config = toml::from_str(&toml_str).expect("azure devops config parses");
+    let err = cfg
+        .validate()
+        .expect_err("azure devops organization must be valid");
+    assert!(err.to_string().contains("provider.organization"));
 }
 
 #[test]

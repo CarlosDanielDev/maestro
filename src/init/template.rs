@@ -4,6 +4,7 @@
 //! `[gates].test_command` change with the detected stack.
 
 use super::DetectedStack;
+use crate::provider::types::ProviderKind;
 
 /// Per-stack default commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,6 +13,34 @@ pub struct StackDefaults {
     pub build_command: &'static str,
     pub test_command: &'static str,
     pub run_command: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderTemplate {
+    pub kind: ProviderKind,
+    pub organization: Option<String>,
+    pub az_project: Option<String>,
+    pub azure_devops_experimental: bool,
+}
+
+impl ProviderTemplate {
+    pub fn github() -> Self {
+        Self {
+            kind: ProviderKind::Github,
+            organization: None,
+            az_project: None,
+            azure_devops_experimental: false,
+        }
+    }
+
+    pub fn azure_devops(organization: String, az_project: String) -> Self {
+        Self {
+            kind: ProviderKind::AzureDevops,
+            organization: Some(organization),
+            az_project: Some(az_project),
+            azure_devops_experimental: true,
+        }
+    }
 }
 
 impl StackDefaults {
@@ -53,11 +82,17 @@ impl StackDefaults {
 ///
 /// Empty `stacks` produces a generic template with commented placeholders.
 pub fn render(stacks: &[DetectedStack]) -> String {
+    render_with_provider(stacks, &ProviderTemplate::github())
+}
+
+pub fn render_with_provider(stacks: &[DetectedStack], provider: &ProviderTemplate) -> String {
     let project_block = render_project_block(stacks);
     let gates_test_command = stacks
         .first()
         .map(|s| StackDefaults::for_stack(*s).test_command)
         .unwrap_or("");
+    let provider_block = render_provider_block(provider);
+    let experimental_block = render_experimental_block(provider);
 
     format!(
         r#"{project_block}
@@ -80,6 +115,8 @@ auto_pr = true
 auto_merge = false                      # Set to true to auto-merge PRs after CI + review pass
 merge_method = "squash"                 # Options: merge, squash, rebase
 cache_ttl_secs = 300
+
+{provider_block}{experimental_block}
 
 [gates]
 enabled = true
@@ -110,6 +147,53 @@ work_tick_interval_secs = 10
 # ci_auto_fix = false      # default: false
 "#
     )
+}
+
+fn render_provider_block(provider: &ProviderTemplate) -> String {
+    let kind = match provider.kind {
+        ProviderKind::Github => "github",
+        ProviderKind::AzureDevops => "azure_devops",
+    };
+    let mut block = format!(
+        "[provider]\n\
+         kind = \"{kind}\"\n\
+         issue_filter_labels = [\"maestro:ready\"]\n\
+         auto_pr = true\n\
+         auto_merge = false\n\
+         merge_method = \"squash\"\n\
+         cache_ttl_secs = 300\n"
+    );
+    if let Some(org) = provider.organization.as_deref() {
+        block.push_str(&format!("organization = {}\n", toml_basic_string(org)));
+    }
+    if let Some(project) = provider.az_project.as_deref() {
+        block.push_str(&format!("az_project = {}\n", toml_basic_string(project)));
+    }
+    block
+}
+
+fn toml_basic_string(value: &str) -> String {
+    let mut out = String::from("\"");
+    for c in value.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn render_experimental_block(provider: &ProviderTemplate) -> String {
+    if provider.azure_devops_experimental {
+        String::from("\n[experimental]\nazure_devops = true\n")
+    } else {
+        String::new()
+    }
 }
 
 fn render_project_block(stacks: &[DetectedStack]) -> String {
@@ -249,6 +333,32 @@ mod tests {
         let out = render(&[DetectedStack::Rust]);
         assert!(!out.contains("[experimental]"), "{out}");
         assert!(!out.contains("azure_devops"), "{out}");
+    }
+
+    #[test]
+    fn template_render_includes_github_provider_section() {
+        let out = render(&[DetectedStack::Rust]);
+        assert!(out.contains("[provider]"), "{out}");
+        assert!(out.contains("kind = \"github\""), "{out}");
+    }
+
+    #[test]
+    fn template_render_azure_devops_provider_includes_experimental_opt_in() {
+        let out = render_with_provider(
+            &[DetectedStack::Rust],
+            &ProviderTemplate::azure_devops(
+                "https://dev.azure.com/MyOrg".into(),
+                "MyProject".into(),
+            ),
+        );
+        assert!(out.contains("kind = \"azure_devops\""), "{out}");
+        assert!(
+            out.contains("organization = \"https://dev.azure.com/MyOrg\""),
+            "{out}"
+        );
+        assert!(out.contains("az_project = \"MyProject\""), "{out}");
+        assert!(out.contains("[experimental]"), "{out}");
+        assert!(out.contains("azure_devops = true"), "{out}");
     }
 
     #[test]

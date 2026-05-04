@@ -17,7 +17,7 @@ pub use dashboard::cmd_dashboard;
 pub use doctor::cmd_doctor;
 pub use init::cmd_init;
 #[cfg(test)]
-pub use init::cmd_init_inner;
+pub use init::{InitOptions, InitPrompter, cmd_init_inner, cmd_init_inner_with_options};
 pub use logs::cmd_logs;
 pub use queue::{cmd_add, cmd_queue};
 pub use resume::cmd_resume;

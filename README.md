@@ -115,7 +115,8 @@ Maestro checks for new versions on startup and shows an in-TUI banner — press 
 ## Quick Start
 
 ```bash
-maestro init                                              # generate maestro.toml
+maestro init                                              # interactive maestro.toml setup
+maestro init --non-interactive                            # headless GitHub defaults
 maestro doctor                                            # verify gh/az/claude/git
 maestro run --prompt "Refactor the auth module to async"  # ad-hoc session
 maestro run --issue 42                                    # session for a GitHub issue
@@ -127,7 +128,7 @@ For the full command catalogue see [Wiki › CLI Reference](https://github.com/C
 
 ## Configuration
 
-Maestro reads `maestro.toml` from the project root. Run `maestro init` to generate it — the command auto-detects your project's tech stack (Rust, Node, Python, Go, or polyglot) and fills in sensible defaults for `build_command`, `test_command`, and `run_command`. Run `maestro init --reset` to re-detect and merge results into an existing file (existing keys are preserved).
+Maestro reads `maestro.toml` from the project root. Run `maestro init` to generate it — the command auto-detects your project's tech stack (Rust, Node, Python, Go, or polyglot), detects the provider from `origin`, and prompts you to confirm GitHub or Azure DevOps. Azure DevOps setup asks for the organization URL and project name, then persists the required experimental opt-in. Use `maestro init --non-interactive` for headless/CI setup; it skips remote detection and prompts, and writes GitHub provider defaults. Run `maestro init --reset` to re-detect and merge results into an existing file (existing keys are preserved).
 
 A minimal `maestro.toml`:
 
@@ -148,7 +149,17 @@ alert_threshold_pct = 80      # warn at 80% of budget
 
 [github]
 auto_pr = true
+
+[provider]
+kind = "github"
+issue_filter_labels = ["maestro:ready"]
+auto_pr = true
+auto_merge = false
+merge_method = "squash"
+cache_ttl_secs = 300
 ```
+
+Azure DevOps init writes `kind = "azure_devops"`, `organization`, `az_project`, and `[experimental] azure_devops = true`.
 
 The full schema — completion gates, context-overflow tuning, TurboQuant, provider/Azure DevOps configuration, notifications, and feature flags — is documented in [Wiki › Configuration Reference](https://github.com/CarlosDanielDev/maestro/wiki/Configuration-Reference).
 

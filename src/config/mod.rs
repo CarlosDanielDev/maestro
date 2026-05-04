@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -148,10 +149,20 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.provider.kind == crate::provider::types::ProviderKind::AzureDevops
-            && !self.experimental.azure_devops
-        {
-            anyhow::bail!(Self::AZURE_DEVOPS_EXPERIMENTAL_ERROR);
+        if self.provider.kind == crate::provider::types::ProviderKind::AzureDevops {
+            if !self.experimental.azure_devops {
+                anyhow::bail!(Self::AZURE_DEVOPS_EXPERIMENTAL_ERROR);
+            }
+            let organization = self.provider.organization.as_deref().unwrap_or("").trim();
+            if !valid_azure_devops_organization_url(organization) {
+                anyhow::bail!(
+                    "provider.organization must be https://dev.azure.com/<org> or https://<org>.visualstudio.com for azure_devops"
+                );
+            }
+            let project = self.provider.az_project.as_deref().unwrap_or("").trim();
+            if project.is_empty() || project.chars().any(char::is_control) {
+                anyhow::bail!("provider.az_project is required for azure_devops");
+            }
         }
 
         Ok(())
@@ -166,6 +177,13 @@ impl Config {
         }
         provider
     }
+}
+
+fn valid_azure_devops_organization_url(input: &str) -> bool {
+    let dev_azure = Regex::new(r"^https://dev\.azure\.com/[^/]+$").expect("valid regex");
+    let visualstudio = Regex::new(r"^https://[^/]+\.visualstudio\.com$").expect("valid regex");
+    !input.chars().any(char::is_control)
+        && (dev_azure.is_match(input) || visualstudio.is_match(input))
 }
 
 /// A `Config` bundled with the filesystem path it was loaded from.
