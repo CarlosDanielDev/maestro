@@ -13,9 +13,6 @@ pub struct TokenBudget {
 #[derive(Debug, Clone)]
 pub struct BudgetSelection {
     pub indices: Vec<usize>,
-    #[allow(dead_code)] // Reason: surfaced by metrics callers and tests
-    pub tokens_used: u64,
-    pub truncated_first: bool,
 }
 
 impl TokenBudget {
@@ -30,13 +27,10 @@ impl TokenBudget {
     ) -> BudgetSelection {
         let mut picked = Vec::new();
         let mut used = 0u64;
-        let mut truncated_first = false;
         for &(i, _) in ranked {
             let c = token_cost(i);
             if picked.is_empty() && c > self.limit {
                 picked.push(i);
-                used = c;
-                truncated_first = true;
                 break;
             }
             if used + c > self.limit {
@@ -45,11 +39,7 @@ impl TokenBudget {
             picked.push(i);
             used += c;
         }
-        BudgetSelection {
-            indices: picked,
-            tokens_used: used,
-            truncated_first,
-        }
+        BudgetSelection { indices: picked }
     }
 }
 
@@ -62,18 +52,14 @@ mod tests {
         let budget = TokenBudget::new(100);
         let sel = budget.select(&[], |_| 10);
         assert!(sel.indices.is_empty());
-        assert_eq!(sel.tokens_used, 0);
-        assert!(!sel.truncated_first);
     }
 
     #[test]
-    fn single_oversized_segment_kept_with_truncated_flag() {
+    fn single_oversized_segment_is_kept() {
         let budget = TokenBudget::new(100);
         let ranked = vec![(0, 0.9), (1, 0.5)];
         let sel = budget.select(&ranked, |i| if i == 0 { 500 } else { 50 });
         assert_eq!(sel.indices, vec![0]);
-        assert_eq!(sel.tokens_used, 500);
-        assert!(sel.truncated_first);
     }
 
     #[test]
@@ -82,8 +68,6 @@ mod tests {
         let ranked = vec![(0, 0.9), (1, 0.8), (2, 0.7)];
         let sel = budget.select(&ranked, |_| 40);
         assert_eq!(sel.indices, vec![0, 1]);
-        assert_eq!(sel.tokens_used, 80);
-        assert!(!sel.truncated_first);
     }
 
     #[test]
@@ -92,7 +76,6 @@ mod tests {
         let ranked = vec![(0, 0.9), (1, 0.8), (2, 0.7)];
         let sel = budget.select(&ranked, |_| 30);
         assert_eq!(sel.indices, vec![0, 1, 2]);
-        assert_eq!(sel.tokens_used, 90);
     }
 
     #[test]
