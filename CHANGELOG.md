@@ -7,6 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+- chore(workflow): add scripted milestone dependency-graph updater for `/pushup` (#554)
+
 ## [0.22.0] - 2026-05-04
 
 ### Added
