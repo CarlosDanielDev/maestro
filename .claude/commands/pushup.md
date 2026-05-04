@@ -96,51 +96,19 @@ If the repo doesn't have that label, skip this step (don't fail).
 
 Update the milestone's dependency graph to mark this issue with ✅. **This step runs before the issue close so that a failure here leaves the issue open and `/pushup` can be safely re-run** — closing the issue first would orphan the milestone graph if this step blew up.
 
-1. **Fetch the issue's milestone:**
+1. Fetch the issue's milestone:
 ```bash
-gh issue view <issue-number> --json milestone --jq '.milestone.number'
+MILESTONE=$(gh issue view <issue-number> --json milestone --jq '.milestone.number')
 ```
 
-2. **If the issue has a milestone**, fetch its current description:
+2. If the issue has no milestone, log that no milestone graph exists and continue to Step 6.5.
+
+3. If the issue has a milestone, run the mechanical updater and treat its exit code as the gate:
 ```bash
-gh api repos/<owner>/<repo>/milestones/<milestone-number> --jq '.description'
+python3 scripts/update-milestone-graph.py --milestone "$MILESTONE" --issue "<issue-number>"
 ```
 
-3. **Idempotency check (MANDATORY before any string-replace):**
-
-   - If the description already contains `• ✅ #<issue-number>` (or `- ✅ #<issue-number>`) at the start of a bullet line, the issue is already marked complete. Log "issue already marked complete in milestone graph — skipping idempotent re-stamp" and SKIP to step 7 (do not PATCH).
-   - This keeps a re-run of `/pushup` safe.
-
-4. **Anchored bullet replace.** Update the issue's bullet entry from `• #<issue-number>` to `• ✅ #<issue-number>` — but ONLY when `#<issue-number>` appears at the start of a bullet item (preceded by start-of-line + `• ` or `- `). NEVER replace `#<issue-number>` tokens that appear inside prose.
-
-   Safe (DO replace):
-   ```
-   • #521 feat(tui): keybinding to manually trigger PR creation
-   - #521 feat(tui): keybinding to manually trigger PR creation
-   ```
-
-   Unsafe (DO NOT replace — these are prose, not bullet entries):
-   ```
-   Level 1 — depends on #521 (must merge first):
-   This blocks #521 because the AC4 preflight needs to land first.
-   See note in #521 about the architect's reconciliation.
-   ```
-
-   The model-driven PATCH must read the description, find the matching bullet line, replace ONLY that line, and leave every other occurrence of `#<issue-number>` untouched.
-
-5. **Level header roll-up.** If, after the replace in step 4, every bullet at the same indentation level inside its `Level N — …:` block is now prefixed with `✅`, append ` (COMPLETED ✅)` to that level header — but only if it is not already there (idempotent).
-
-6. **Sequence-line update.** The `Sequence:` line uses tokens like `#521 ∥ #520 ∥ #525` separated by `→` and `∥`. Replace only EXACT token matches: a `#<issue-number>` token bounded by whitespace, `(`, `)`, `→`, or `∥` — not a prefix-match. Example:
-
-   - Token `#52` must NOT match inside `#521`. Use word-boundary logic: `#52` is a different token than `#521`.
-   - When all bullets in a level are now ✅, the parenthesized group of that level in `Sequence:` becomes `✅(LN: #a ∥ #b ∥ ...)` (idempotent — if it is already in `✅(LN: …)` form, leave it alone).
-
-7. **PATCH the milestone (only if step 3's idempotency check passed):**
-```bash
-gh api repos/<owner>/<repo>/milestones/<milestone-number> -X PATCH -f description="<updated-description>"
-```
-
-8. **Verify the PATCH succeeded** by re-fetching `description` and asserting your edit is present. If verification fails, abort `/pushup` here — the issue is still open, so the run can be retried safely.
+The script handles idempotency, anchored bullet replacement, level-header roll-up, `Sequence:` token-boundary rewrites, PATCH, and post-PATCH verification. A re-run where the issue is already stamped exits 0 with an "already marked" log line.
 
 **This step is NON-NEGOTIABLE.** Every closed issue MUST be reflected in the milestone graph. If it fails, **STOP** — do not proceed to Step 6.5 (issue close).
 

@@ -523,13 +523,17 @@ maestro/
 │           ├── api-contract-validation/
 │           ├── project-patterns/
 │           └── security-patterns/
-├── scripts/                               # Project-level shell scripts and config for architecture, file-size, and coverage checks
+├── scripts/                               # Project-level shell scripts and config for architecture, file-size, coverage, and workflow automation
 │   ├── allowlist-large-files.txt          # Allowlist for large files exempted from size checks; src/tui/screens/milestone_health/state/tests/mod.rs added (deadline 2026-07-22, pending at(step) helper)  [Issue #500]
 │   ├── architecture-layers.yml            # Layer dependency rules for check-layers.sh
 │   ├── check-coverage-tiers.sh            # Validate test-coverage tier thresholds
 │   ├── check-file-size.sh                 # Enforce per-file LOC limits (500-line rule)
 │   ├── check-layers.sh                    # Enforce architecture layer boundaries
-│   └── coverage-tiers.yml                 # Coverage tier definitions
+│   ├── coverage-tiers.yml                 # Coverage tier definitions
+│   ├── update-milestone-graph.py          # Mechanical /pushup milestone dependency-graph updater with dry-run and post-PATCH verification  [Issue #554]
+│   └── tests/                             # Pytest coverage for workflow automation scripts
+│       ├── test_update_milestone_graph.py # Unit tests for idempotency, anchored replacement, roll-up, token boundaries, dry-run, and verification failure  [Issue #554]
+│       └── fixtures/                      # Markdown milestone graph fixtures for update-milestone-graph.py tests  [Issue #554]
 ├── benches/                               # Criterion benchmark crates
 │   ├── parser.rs                          # Benchmark: stream-json parser throughput  [Issue #19]
 │   └── turboquant.rs                      # Benchmark: TurboQuant quantization pipeline throughput
