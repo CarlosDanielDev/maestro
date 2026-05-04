@@ -1,0 +1,6 @@
+{
+  "title": "Add configurable retry policy",
+  "body": "## Overview\n\nSessions need a configurable retry policy for transient failures.\n\n## Expected Behavior\n\nTransient failures retry according to config; permanent failures do not retry.\n\n## Acceptance Criteria\n\n- [ ] Retry count is configurable\n- [ ] Permanent errors do not retry\n\n## Files to Modify\n\n- src/session/retry.rs\n- src/config/sessions.rs\n\n## Test Hints\n\nUnit-test retry classification with a fake clock.\n\n## Blocked By\n\n- #42\n\n## Definition of Done\n\n- [ ] Tests pass\n",
+  "labels": [{"name": "enhancement"}],
+  "state": "OPEN"
+}

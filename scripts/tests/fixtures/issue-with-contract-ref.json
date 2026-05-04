@@ -1,0 +1,6 @@
+{
+  "title": "Wire new API contract",
+  "body": "## Overview\n\nUse the schema in docs/api-contracts/review-comment.json.\n\n## Expected Behavior\n\nReview comments are validated before posting.\n\n## Acceptance Criteria\n\n- [ ] Contract validation runs before posting\n\n## Blocked By\n\n- None\n\n## Definition of Done\n\n- [ ] Tests pass\n",
+  "labels": [{"name": "enhancement"}],
+  "state": "OPEN"
+}

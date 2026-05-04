@@ -1,0 +1,6 @@
+{
+  "title": "Consume upstream retry policy",
+  "body": "## Overview\n\nUse retry policy defined in an upstream issue.\n\n## Expected Behavior\n\nSessions honor the upstream retry policy.\n\n## Acceptance Criteria\n\n- [ ] Retry limit is honored\n\n## Blocked By\n\n- #99\n\n## Definition of Done\n\n- [ ] Tests pass\n",
+  "labels": [{"name": "tech-debt"}],
+  "state": "OPEN"
+}
