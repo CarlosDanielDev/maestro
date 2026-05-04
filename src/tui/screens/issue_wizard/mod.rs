@@ -92,7 +92,7 @@ pub struct IssueWizardScreen {
     /// owns its 4 or 6 textareas, and non-text steps hold `empty()`.
     pub(super) fields: WizardFields,
     /// #295 Dependencies step state.
-    pub(super) dep_issues: Option<Vec<crate::provider::github::types::GhIssue>>,
+    pub(super) dep_issues: Option<Vec<crate::provider::types::Issue>>,
     pub(super) dep_loading: bool,
     pub(super) dep_selected: usize,
     pub(super) dep_checked: std::collections::BTreeSet<u64>,
@@ -563,7 +563,7 @@ impl IssueWizardScreen {
     }
 
     /// #295: apply the result of a `FetchIssues` background task.
-    pub fn apply_dep_issues(&mut self, issues: Vec<crate::provider::github::types::GhIssue>) {
+    pub fn apply_dep_issues(&mut self, issues: Vec<crate::provider::types::Issue>) {
         // Filter to open issues only — closed issues can't block anything.
         let open: Vec<_> = issues.into_iter().filter(|i| i.state == "open").collect();
         self.dep_selected = self.dep_selected.min(open.len().saturating_sub(1));
@@ -571,7 +571,7 @@ impl IssueWizardScreen {
         self.dep_loading = false;
     }
 
-    pub fn dep_issues(&self) -> Option<&[crate::provider::github::types::GhIssue]> {
+    pub fn dep_issues(&self) -> Option<&[crate::provider::types::Issue]> {
         self.dep_issues.as_deref()
     }
 
@@ -1509,8 +1509,8 @@ mod tests {
 
     // ---- #295 Dependencies step ----
 
-    fn make_open_issue(number: u64) -> crate::provider::github::types::GhIssue {
-        crate::provider::github::types::GhIssue {
+    fn make_open_issue(number: u64) -> crate::provider::types::Issue {
+        crate::provider::types::Issue {
             number,
             title: format!("Issue #{}", number),
             body: String::new(),

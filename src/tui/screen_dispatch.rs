@@ -1,6 +1,6 @@
 use super::app;
 use super::screens::{self, Screen, ScreenAction};
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 use crate::session::transition::TransitionReason;
 use crossterm::event::Event;
 
@@ -207,13 +207,13 @@ pub(super) fn dispatch_paste_to_active_screen(app: &mut app::App, text: &str) {
 }
 
 /// Returns milestone issues only when navigating from `MilestoneView`.
-fn milestone_issues_if_applicable(app: &app::App) -> Option<Vec<GhIssue>> {
+fn milestone_issues_if_applicable(app: &app::App) -> Option<Vec<Issue>> {
     if app.tui_mode != app::TuiMode::MilestoneView {
         return None;
     }
     app.screen_state.milestone_screen.as_ref().and_then(|ms| {
         ms.selected_milestone().and_then(|entry| {
-            let open_issues: Vec<GhIssue> = entry
+            let open_issues: Vec<Issue> = entry
                 .issues
                 .iter()
                 .filter(|i| i.state == "open")
@@ -800,7 +800,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 .iter()
                 .filter_map(|c| {
                     c.issue_number.map(|n| {
-                        WorkItem::from_issue(crate::provider::github::types::GhIssue {
+                        WorkItem::from_issue(crate::provider::types::Issue {
                             number: n,
                             title: c.title.clone(),
                             body: String::new(),

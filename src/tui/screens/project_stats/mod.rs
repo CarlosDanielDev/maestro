@@ -5,7 +5,7 @@ pub use types::{
     IssueCounts, MilestoneProgress, ProjectStatsData, RecentActivityRow, SessionMetrics,
 };
 
-use crate::provider::github::types::GhMilestone;
+use crate::provider::types::Milestone;
 use crate::session::types::{Session, SessionStatus};
 
 use super::{Screen, ScreenAction};
@@ -56,7 +56,7 @@ pub fn aggregate(
     ready_count: u32,
     failed_count: u32,
     done_count: u32,
-    milestones: Vec<GhMilestone>,
+    milestones: Vec<Milestone>,
     local_sessions: &[Session],
 ) -> ProjectStatsData {
     let milestone_progress = milestones

@@ -1,11 +1,11 @@
 use super::*;
-use crate::provider::github::transport::GitHubClient;
-use crate::provider::github::types::{GhIssue, GhMilestone};
+use crate::provider::github::transport::RepoProvider;
+use crate::provider::types::{Issue, Milestone};
 
 // -- Issue #453: CreateOutcome proactive pre-check --
 
-fn gh_issue(number: u64, title: &str, state: &str) -> GhIssue {
-    GhIssue {
+fn gh_issue(number: u64, title: &str, state: &str) -> Issue {
+    Issue {
         number,
         title: title.to_string(),
         body: String::new(),
@@ -17,8 +17,8 @@ fn gh_issue(number: u64, title: &str, state: &str) -> GhIssue {
     }
 }
 
-fn gh_milestone(number: u64, title: &str, state: &str) -> GhMilestone {
-    GhMilestone {
+fn gh_milestone(number: u64, title: &str, state: &str) -> Milestone {
+    Milestone {
         number,
         title: title.to_string(),
         description: String::new(),

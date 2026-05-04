@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use crate::milestone_health::graph::{compute_levels, parse_graph};
 use crate::milestone_health::types::GraphAnomaly;
-use crate::provider::github::types::{GhIssue, GhMilestone};
+use crate::provider::types::{Issue, Milestone};
 
 const GRAPH_HEADING: &str = "## Dependency Graph (Implementation Order)";
 
@@ -25,8 +25,8 @@ const GRAPH_HEADING: &str = "## Dependency Graph (Implementation Order)";
 /// - Annotates cycle members with a `(cycle)` warning suffix — they cannot
 ///   be placed at a deterministic level until the cycle is broken.
 pub fn generate_patch(
-    milestone: &GhMilestone,
-    issues: &[GhIssue],
+    milestone: &Milestone,
+    issues: &[Issue],
     anomalies: &[GraphAnomaly],
 ) -> String {
     let preamble = preamble_text(&milestone.description);
@@ -142,10 +142,10 @@ fn preamble_text(description: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::github::types::{GhIssue, GhMilestone};
+    use crate::provider::types::{Issue, Milestone};
 
-    fn ms(description: &str) -> GhMilestone {
-        GhMilestone {
+    fn ms(description: &str) -> Milestone {
+        Milestone {
             number: 1,
             title: "v1.0".to_string(),
             description: description.to_string(),
@@ -155,7 +155,7 @@ mod tests {
         }
     }
 
-    fn issue(number: u64, title: &str, blockers: &[u64]) -> GhIssue {
+    fn issue(number: u64, title: &str, blockers: &[u64]) -> Issue {
         let mut body = format!("## Overview\n\n{}\n\n## Blocked By\n\n", title);
         if blockers.is_empty() {
             body.push_str("- None\n");
@@ -164,7 +164,7 @@ mod tests {
                 body.push_str(&format!("- #{} placeholder\n", b));
             }
         }
-        GhIssue {
+        Issue {
             number,
             title: title.to_string(),
             body,

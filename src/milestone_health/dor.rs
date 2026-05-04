@@ -1,7 +1,7 @@
 //! DOR (Definition of Ready) checker for one issue (#500).
 
 use crate::milestone_health::types::{BlockedBySection, DorResult, IssueType, MissingField};
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 
 const FEATURE_SECTIONS: &[&str] = &[
     "Overview",
@@ -30,7 +30,7 @@ pub fn required_sections(t: IssueType) -> &'static [&'static str] {
     }
 }
 
-pub fn detect_issue_type(issue: &GhIssue) -> IssueType {
+pub fn detect_issue_type(issue: &Issue) -> IssueType {
     if issue.labels.iter().any(|l| l == "type:bug") {
         return IssueType::Bug;
     }
@@ -43,7 +43,7 @@ pub fn detect_issue_type(issue: &GhIssue) -> IssueType {
     IssueType::Feature
 }
 
-pub fn check_issue(issue: &GhIssue) -> DorResult {
+pub fn check_issue(issue: &Issue) -> DorResult {
     let issue_type = detect_issue_type(issue);
     let mut missing: Vec<MissingField> = Vec::new();
 
@@ -70,7 +70,7 @@ pub fn check_issue(issue: &GhIssue) -> DorResult {
     }
 }
 
-pub fn check_issues(issues: &[GhIssue]) -> Vec<DorResult> {
+pub fn check_issues(issues: &[Issue]) -> Vec<DorResult> {
     issues.iter().map(check_issue).collect()
 }
 

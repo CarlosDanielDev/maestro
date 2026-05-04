@@ -1,7 +1,7 @@
 use super::*;
 use crate::config::Config;
 use crate::models::ModelRouter;
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 use crate::work::assigner::WorkAssigner;
 use crate::work::types::{WorkItem, WorkStatus};
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ fn make_config_with_heavy(labels: &[&str], limit: usize) -> Config {
 }
 
 fn make_work_item(number: u64, labels: &[&str]) -> WorkItem {
-    WorkItem::from_issue(GhIssue {
+    WorkItem::from_issue(Issue {
         number,
         title: format!("Issue #{}", number),
         body: String::new(),

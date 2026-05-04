@@ -94,7 +94,7 @@ fn draw_picker(
     f: &mut Frame,
     area: Rect,
     theme: &Theme,
-    milestones: &[crate::provider::github::types::GhMilestone],
+    milestones: &[crate::provider::types::Milestone],
     selected: usize,
 ) {
     let items: Vec<ListItem> = milestones
@@ -163,7 +163,7 @@ fn draw_report(
     f: &mut Frame,
     area: Rect,
     theme: &Theme,
-    milestone: &crate::provider::github::types::GhMilestone,
+    milestone: &crate::provider::types::Milestone,
     screen: &MilestoneHealthScreen,
 ) {
     let mut lines: Vec<Line> = Vec::new();
@@ -220,7 +220,7 @@ fn draw_patch(
     f: &mut Frame,
     area: Rect,
     theme: &Theme,
-    milestone: &crate::provider::github::types::GhMilestone,
+    milestone: &crate::provider::types::Milestone,
     diff: &[DiffLine],
     scroll: u16,
 ) {
@@ -264,7 +264,7 @@ fn draw_confirm(
     f: &mut Frame,
     area: Rect,
     theme: &Theme,
-    milestone: &crate::provider::github::types::GhMilestone,
+    milestone: &crate::provider::types::Milestone,
 ) {
     let lines = vec![
         Line::from(Span::styled(
@@ -295,7 +295,7 @@ fn draw_result(
     f: &mut Frame,
     area: Rect,
     theme: &Theme,
-    milestone: &crate::provider::github::types::GhMilestone,
+    milestone: &crate::provider::types::Milestone,
     outcome: &PatchOutcome,
 ) {
     let (title, lines) = match outcome {

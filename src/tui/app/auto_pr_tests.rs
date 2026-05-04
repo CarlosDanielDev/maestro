@@ -7,13 +7,13 @@
 
 use super::App;
 use crate::provider::github::client::mock::MockGitHubClient;
-use crate::provider::github::types::{GhIssue, GhPullRequest};
+use crate::provider::types::{Issue, PullRequest};
 use crate::session::worktree::MockWorktreeManager;
 use crate::state::store::StateStore;
 use crate::tui::activity_log::LogLevel;
 
-fn make_issue(number: u64) -> GhIssue {
-    GhIssue {
+fn make_issue(number: u64) -> Issue {
+    Issue {
         number,
         title: format!("Test issue #{}", number),
         body: String::new(),
@@ -60,8 +60,8 @@ fn make_app_with_mock(mock: MockGitHubClient) -> App {
     app
 }
 
-fn make_pr(number: u64, head_branch: &str) -> GhPullRequest {
-    GhPullRequest {
+fn make_pr(number: u64, head_branch: &str) -> PullRequest {
+    PullRequest {
         number,
         title: format!("Existing PR #{}", number),
         body: String::new(),

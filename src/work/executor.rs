@@ -187,12 +187,12 @@ impl QueueExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::github::types::GhIssue;
+    use crate::provider::types::Issue;
     use crate::work::dependencies::DependencyGraph;
     use crate::work::types::WorkItem;
 
     fn make_item(number: u64) -> WorkItem {
-        WorkItem::from_issue(GhIssue {
+        WorkItem::from_issue(Issue {
             number,
             title: format!("Issue #{}", number),
             body: String::new(),

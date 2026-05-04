@@ -1,4 +1,5 @@
-use crate::provider::github::types::{GhIssue, PendingPr};
+use crate::provider::github::types::PendingPr;
+use crate::provider::types::Issue;
 use crate::session::types::Session;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -35,7 +36,7 @@ pub struct MaestroState {
     pub last_updated: Option<DateTime<Utc>>,
     /// Cached GitHub issue data to avoid repeated API calls.
     #[serde(default)]
-    pub issue_cache: HashMap<u64, GhIssue>,
+    pub issue_cache: HashMap<u64, Issue>,
     /// Fork lineage: maps child session ID to parent session ID.
     #[serde(default)]
     pub fork_lineage: HashMap<uuid::Uuid, uuid::Uuid>,

@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::provider::github::client::{GhCliClient, GitHubClient};
+use crate::provider::github::client::{GhCliClient, RepoProvider};
 use crate::work::assigner::WorkAssigner;
 use crate::work::types::WorkItem;
 

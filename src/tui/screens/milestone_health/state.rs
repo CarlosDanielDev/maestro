@@ -7,13 +7,13 @@ use crossterm::event::KeyCode;
 
 use crate::milestone_health::report::HealthReport;
 use crate::milestone_health::{analyze, check_issues, generate_patch};
-use crate::provider::github::types::{GhIssue, GhMilestone};
+use crate::provider::types::{Issue, Milestone};
 use crate::tui::screens::milestone_health::diff::{DiffLine, diff_lines};
 
 #[derive(Debug, Clone)]
 pub enum HealthStep {
     Picker {
-        milestones: Vec<GhMilestone>,
+        milestones: Vec<Milestone>,
         selected: usize,
     },
     Loading {
@@ -22,35 +22,35 @@ pub enum HealthStep {
         /// the picker — caches the user's selection so the dispatch layer
         /// can embed it in the `TuiCommand` instead of re-fetching the
         /// milestone list. `None` when loading the milestone list itself.
-        milestone: Option<GhMilestone>,
+        milestone: Option<Milestone>,
     },
     Empty {
-        milestone: GhMilestone,
+        milestone: Milestone,
     },
     Healthy {
-        milestone: GhMilestone,
+        milestone: Milestone,
     },
     Report {
-        milestone: GhMilestone,
-        issues: Vec<GhIssue>,
+        milestone: Milestone,
+        issues: Vec<Issue>,
     },
     Patch {
-        milestone: GhMilestone,
+        milestone: Milestone,
         proposed: String,
         /// Precomputed before/after diff so `draw_patch` doesn't recompute
         /// the LCS on every render frame.
         diff: Vec<DiffLine>,
     },
     Confirm {
-        milestone: GhMilestone,
+        milestone: Milestone,
         proposed: String,
     },
     Writing {
-        milestone: GhMilestone,
+        milestone: Milestone,
         last_proposed: String,
     },
     Result {
-        milestone: GhMilestone,
+        milestone: Milestone,
         outcome: PatchOutcome,
     },
     /// Terminal state for fetch-side errors (no milestone selected yet).
@@ -89,8 +89,8 @@ impl Default for HealthStep {
 #[derive(Debug)]
 pub enum HealthInput {
     Key(KeyCode),
-    MilestonesLoaded(anyhow::Result<Vec<GhMilestone>>),
-    DataFetched(anyhow::Result<(GhMilestone, Vec<GhIssue>)>),
+    MilestonesLoaded(anyhow::Result<Vec<Milestone>>),
+    DataFetched(anyhow::Result<(Milestone, Vec<Issue>)>),
     DataPatched(anyhow::Result<()>),
 }
 

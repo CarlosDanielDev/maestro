@@ -2,8 +2,8 @@
 
 use super::*;
 
-fn ms(n: u64, title: &str) -> GhMilestone {
-    GhMilestone {
+fn ms(n: u64, title: &str) -> Milestone {
+    Milestone {
         number: n,
         title: title.to_string(),
         description: String::new(),
@@ -13,8 +13,8 @@ fn ms(n: u64, title: &str) -> GhMilestone {
     }
 }
 
-fn issue(number: u64, body: &str) -> GhIssue {
-    GhIssue {
+fn issue(number: u64, body: &str) -> Issue {
+    Issue {
         number,
         title: format!("Issue #{}", number),
         body: body.to_string(),
@@ -56,7 +56,7 @@ fn full_feature_body(blockers: &[u64]) -> String {
     s
 }
 
-fn picker_with(milestones: Vec<GhMilestone>) -> HealthScreenState {
+fn picker_with(milestones: Vec<Milestone>) -> HealthScreenState {
     HealthScreenState {
         step: HealthStep::Picker {
             milestones,
@@ -136,7 +136,7 @@ fn loading_data_fetched_zero_issues_goes_to_empty() {
 #[test]
 fn loading_data_fetched_healthy_goes_to_healthy() {
     let mut s = loading();
-    let m = GhMilestone {
+    let m = Milestone {
         number: 1,
         title: "v1.0".to_string(),
         description: "Header.\n\n## Dependency Graph (Implementation Order)\n\nLevel 0 — no dependencies:\n• #1 first\n\nLevel 1 — depends on Level 0:\n• #2 second\n\nSequence: #1 → #2\n".to_string(),
@@ -390,7 +390,7 @@ fn full_happy_path_dispatches_patch_exactly_once() {
 #[test]
 fn healthy_path_never_reaches_patch_or_confirm() {
     let mut s = loading();
-    let m = GhMilestone {
+    let m = Milestone {
         number: 1,
         title: "v1.0".to_string(),
         description: "Header.\n\n## Dependency Graph (Implementation Order)\n\nLevel 0 — no dependencies:\n• #1 a\n\nSequence: #1\n".to_string(),

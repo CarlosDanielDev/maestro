@@ -1,6 +1,6 @@
 mod draw;
 use super::{Screen, ScreenAction, SessionConfig, sanitize_for_terminal};
-use crate::provider::github::types::GhIssue;
+use crate::provider::types::Issue;
 use crate::tui::marquee::MarqueeState;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
@@ -93,7 +93,7 @@ pub enum FilterMode {
 }
 
 pub struct IssueBrowserScreen {
-    pub(crate) issues: Vec<GhIssue>,
+    pub(crate) issues: Vec<Issue>,
     pub(crate) filtered_indices: Vec<usize>,
     pub(crate) selected: usize,
     scroll_offset: usize,
@@ -117,7 +117,7 @@ pub struct IssueBrowserScreen {
 }
 
 impl IssueBrowserScreen {
-    pub fn new(issues: Vec<GhIssue>) -> Self {
+    pub fn new(issues: Vec<Issue>) -> Self {
         let filtered_indices: Vec<usize> = (0..issues.len()).collect();
         Self {
             issues,
@@ -143,7 +143,7 @@ impl IssueBrowserScreen {
         self
     }
 
-    pub fn set_issues(&mut self, issues: Vec<GhIssue>) {
+    pub fn set_issues(&mut self, issues: Vec<Issue>) {
         self.issues = issues;
         self.selected = 0;
         self.scroll_offset = 0;
@@ -344,8 +344,8 @@ mod tests {
     use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    fn make_issue(number: u64, title: &str) -> GhIssue {
-        GhIssue {
+    fn make_issue(number: u64, title: &str) -> Issue {
+        Issue {
             number,
             title: title.to_string(),
             body: String::new(),
@@ -357,8 +357,8 @@ mod tests {
         }
     }
 
-    fn make_issue_with_milestone(number: u64, milestone_number: u64) -> GhIssue {
-        GhIssue {
+    fn make_issue_with_milestone(number: u64, milestone_number: u64) -> Issue {
+        Issue {
             number,
             title: format!("Issue #{}", number),
             body: String::new(),
@@ -370,7 +370,7 @@ mod tests {
         }
     }
 
-    fn make_three_issues() -> Vec<GhIssue> {
+    fn make_three_issues() -> Vec<Issue> {
         vec![
             make_issue(1, "Add login"),
             make_issue(2, "Fix crash"),
@@ -699,7 +699,7 @@ mod tests {
     fn milestone_filter_mode_typed_number_matches_by_milestone_not_title() {
         // All issues share the same title so a title-match bug would return all 3.
         let issues = vec![
-            GhIssue {
+            Issue {
                 number: 1,
                 title: "Same title".to_string(),
                 body: String::new(),
@@ -709,7 +709,7 @@ mod tests {
                 milestone: Some(42),
                 assignees: vec![],
             },
-            GhIssue {
+            Issue {
                 number: 2,
                 title: "Same title".to_string(),
                 body: String::new(),
@@ -719,7 +719,7 @@ mod tests {
                 milestone: Some(42),
                 assignees: vec![],
             },
-            GhIssue {
+            Issue {
                 number: 3,
                 title: "Same title".to_string(),
                 body: String::new(),

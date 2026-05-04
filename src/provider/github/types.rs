@@ -1,245 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::sync::OnceLock;
 
-static BLOCKED_BY_RE: OnceLock<regex::Regex> = OnceLock::new();
-
-fn blocked_by_regex() -> &'static regex::Regex {
-    BLOCKED_BY_RE.get_or_init(|| regex::Regex::new(r"(?i)blocked-by:\s*#(\d+)").unwrap())
-}
-
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
-pub enum Priority {
-    P0 = 0,
-    P1 = 1,
-    #[default]
-    P2 = 2,
-}
-
-impl Priority {
-    pub fn from_label(label: &str) -> Option<Self> {
-        match label {
-            "priority:P0" => Some(Self::P0),
-            "priority:P1" => Some(Self::P1),
-            "priority:P2" => Some(Self::P2),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MaestroLabel {
-    Ready,
-    InProgress,
-    Done,
-    Failed,
-}
-
-impl MaestroLabel {
-    #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "maestro:ready" => Some(Self::Ready),
-            "maestro:in-progress" => Some(Self::InProgress),
-            "maestro:done" => Some(Self::Done),
-            "maestro:failed" => Some(Self::Failed),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Ready => "maestro:ready",
-            Self::InProgress => "maestro:in-progress",
-            Self::Done => "maestro:done",
-            Self::Failed => "maestro:failed",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionMode {
-    Orchestrator,
-    Vibe,
-}
-
-impl SessionMode {
-    pub fn from_label(label: &str) -> Option<Self> {
-        match label {
-            "mode:orchestrator" => Some(Self::Orchestrator),
-            "mode:vibe" => Some(Self::Vibe),
-            _ => None,
-        }
-    }
-
-    pub fn as_config_str(&self) -> &'static str {
-        match self {
-            Self::Orchestrator => "orchestrator",
-            Self::Vibe => "vibe",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GhIssue {
-    pub number: u64,
-    pub title: String,
-    pub body: String,
-    pub labels: Vec<String>,
-    pub state: String,
-    pub html_url: String,
-    #[serde(default)]
-    pub milestone: Option<u64>,
-    #[serde(default)]
-    pub assignees: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GhMilestone {
-    pub number: u64,
-    pub title: String,
-    #[serde(default)]
-    pub description: String,
-    pub state: String,
-    #[serde(default)]
-    pub open_issues: u32,
-    #[serde(default)]
-    pub closed_issues: u32,
-}
-
-impl GhIssue {
-    /// Extract the priority from labels. Defaults to P2.
-    pub fn priority(&self) -> Priority {
-        self.labels
-            .iter()
-            .find_map(|l| Priority::from_label(l))
-            .unwrap_or_default()
-    }
-
-    /// Extract the maestro session mode from labels.
-    pub fn session_mode(&self) -> Option<SessionMode> {
-        self.labels.iter().find_map(|l| SessionMode::from_label(l))
-    }
-
-    /// Extract `blocked-by:#N` dependencies from labels.
-    pub fn blocked_by_from_labels(&self) -> Vec<u64> {
-        self.labels
-            .iter()
-            .filter_map(|l| {
-                l.strip_prefix("blocked-by:#")
-                    .and_then(|n| n.parse::<u64>().ok())
-            })
-            .collect()
-    }
-
-    /// Extract `blocked-by: #N` from issue body text (case-insensitive).
-    pub fn blocked_by_from_body(&self) -> Vec<u64> {
-        blocked_by_regex()
-            .captures_iter(&self.body)
-            .filter_map(|cap| cap[1].parse::<u64>().ok())
-            .collect()
-    }
-
-    /// All blocking issue numbers (union of labels + body, deduplicated).
-    pub fn all_blockers(&self) -> Vec<u64> {
-        let mut blockers = self.blocked_by_from_labels();
-        blockers.extend(self.blocked_by_from_body());
-        blockers.sort_unstable();
-        blockers.dedup();
-        blockers
-    }
-
-    #[allow(dead_code)]
-    pub fn has_maestro_label(&self, label: MaestroLabel) -> bool {
-        self.labels.iter().any(|l| l == label.as_str())
-    }
-
-    /// Build a prompt for an unattended Claude session working on this issue.
-    pub fn unattended_prompt(&self) -> String {
-        format!(
-            "Work on GitHub issue #{}.\n\nTitle: {}\n\nDescription:\n{}\n\n\
-             IMPORTANT: You are running in unattended mode (no human at the terminal). \
-             Do NOT use AskUserQuestion or ask for clarification — make your best judgment \
-             and proceed autonomously. Read relevant source files first, then implement \
-             the required changes.",
-            self.number, self.title, self.body
-        )
-    }
-}
-
-/// A pull request from the GitHub API.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GhPullRequest {
-    pub number: u64,
-    pub title: String,
-    pub body: String,
-    pub state: String,
-    pub html_url: String,
-    pub head_branch: String,
-    pub base_branch: String,
-    pub author: String,
-    #[serde(default)]
-    pub labels: Vec<String>,
-    #[serde(default)]
-    pub draft: bool,
-    #[serde(default)]
-    pub mergeable: bool,
-    #[serde(default)]
-    pub additions: u64,
-    #[serde(default)]
-    pub deletions: u64,
-    #[serde(default)]
-    pub changed_files: u64,
-}
-
-/// The type of review action to submit on a pull request.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum PrReviewEvent {
-    Approve,
-    RequestChanges,
-    #[default]
-    Comment,
-}
-
-impl PrReviewEvent {
-    pub fn as_gh_arg(&self) -> &'static str {
-        match self {
-            Self::Approve => "approve",
-            Self::RequestChanges => "request-changes",
-            Self::Comment => "comment",
-        }
-    }
-
-    #[allow(dead_code)] // Reason: used by PR review screen rendering
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Approve => "Approve",
-            Self::RequestChanges => "Request Changes",
-            Self::Comment => "Comment",
-        }
-    }
-
-    pub fn next(&self) -> Self {
-        match self {
-            Self::Comment => Self::Approve,
-            Self::Approve => Self::RequestChanges,
-            Self::RequestChanges => Self::Comment,
-        }
-    }
-
-    pub fn prev(&self) -> Self {
-        match self {
-            Self::Comment => Self::RequestChanges,
-            Self::Approve => Self::Comment,
-            Self::RequestChanges => Self::Approve,
-        }
-    }
-}
+#[cfg(test)]
+use crate::provider::types::{
+    Issue, MaestroLabel, Priority, PullRequest, ReviewEvent, SessionMode,
+};
 
 /// Most recent error messages a PendingPr will retain for correlation.
 ///
@@ -419,8 +185,8 @@ pub(crate) fn awaiting_pending_pr(issue_number: u64) -> PendingPr {
 mod tests {
     use super::*;
 
-    fn make_issue(number: u64, labels: &[&str], body: &str) -> GhIssue {
-        GhIssue {
+    fn make_issue(number: u64, labels: &[&str], body: &str) -> Issue {
+        Issue {
             number,
             title: format!("Issue #{}", number),
             body: body.to_string(),
@@ -725,7 +491,7 @@ mod tests {
         assert_eq!(SessionMode::from_label("bug"), None);
     }
 
-    // GhIssue::priority
+    // Issue::priority
 
     #[test]
     fn issue_priority_p0_from_labels() {
@@ -751,7 +517,7 @@ mod tests {
         assert_eq!(issue.priority(), Priority::P2);
     }
 
-    // GhIssue::session_mode
+    // Issue::session_mode
 
     #[test]
     fn issue_session_mode_orchestrator() {
@@ -771,7 +537,7 @@ mod tests {
         assert_eq!(issue.session_mode(), None);
     }
 
-    // GhIssue::blocked_by_from_labels
+    // Issue::blocked_by_from_labels
 
     #[test]
     fn blocked_by_from_labels_single() {
@@ -799,7 +565,7 @@ mod tests {
         assert!(issue.blocked_by_from_labels().is_empty());
     }
 
-    // GhIssue::blocked_by_from_body
+    // Issue::blocked_by_from_body
 
     #[test]
     fn blocked_by_from_body_single_reference() {
@@ -833,7 +599,7 @@ mod tests {
         assert_eq!(issue.blocked_by_from_body(), vec![99u64]);
     }
 
-    // GhIssue::all_blockers
+    // Issue::all_blockers
 
     #[test]
     fn all_blockers_union_of_labels_and_body() {
@@ -856,7 +622,7 @@ mod tests {
         assert_eq!(result[0], 7u64);
     }
 
-    // GhIssue::has_maestro_label
+    // Issue::has_maestro_label
 
     #[test]
     fn has_maestro_label_returns_true_when_present() {
@@ -876,62 +642,62 @@ mod tests {
         assert!(!issue.has_maestro_label(MaestroLabel::Done));
     }
 
-    // --- PrReviewEvent ---
+    // --- ReviewEvent ---
 
     #[test]
     fn pr_review_event_default_is_comment() {
-        assert_eq!(PrReviewEvent::default(), PrReviewEvent::Comment);
+        assert_eq!(ReviewEvent::default(), ReviewEvent::Comment);
     }
 
     #[test]
     fn pr_review_event_approve_as_gh_arg() {
-        assert_eq!(PrReviewEvent::Approve.as_gh_arg(), "approve");
+        assert_eq!(ReviewEvent::Approve.as_gh_arg(), "approve");
     }
 
     #[test]
     fn pr_review_event_request_changes_as_gh_arg() {
-        assert_eq!(PrReviewEvent::RequestChanges.as_gh_arg(), "request-changes");
+        assert_eq!(ReviewEvent::RequestChanges.as_gh_arg(), "request-changes");
     }
 
     #[test]
     fn pr_review_event_comment_as_gh_arg() {
-        assert_eq!(PrReviewEvent::Comment.as_gh_arg(), "comment");
+        assert_eq!(ReviewEvent::Comment.as_gh_arg(), "comment");
     }
 
     #[test]
     fn pr_review_event_label_approve() {
-        assert_eq!(PrReviewEvent::Approve.label(), "Approve");
+        assert_eq!(ReviewEvent::Approve.label(), "Approve");
     }
 
     #[test]
     fn pr_review_event_label_request_changes() {
-        assert_eq!(PrReviewEvent::RequestChanges.label(), "Request Changes");
+        assert_eq!(ReviewEvent::RequestChanges.label(), "Request Changes");
     }
 
     #[test]
     fn pr_review_event_label_comment() {
-        assert_eq!(PrReviewEvent::Comment.label(), "Comment");
+        assert_eq!(ReviewEvent::Comment.label(), "Comment");
     }
 
     #[test]
     fn pr_review_event_next_cycles_forward() {
-        assert_eq!(PrReviewEvent::Comment.next(), PrReviewEvent::Approve);
-        assert_eq!(PrReviewEvent::Approve.next(), PrReviewEvent::RequestChanges);
-        assert_eq!(PrReviewEvent::RequestChanges.next(), PrReviewEvent::Comment);
+        assert_eq!(ReviewEvent::Comment.next(), ReviewEvent::Approve);
+        assert_eq!(ReviewEvent::Approve.next(), ReviewEvent::RequestChanges);
+        assert_eq!(ReviewEvent::RequestChanges.next(), ReviewEvent::Comment);
     }
 
     #[test]
     fn pr_review_event_prev_cycles_backward() {
-        assert_eq!(PrReviewEvent::Comment.prev(), PrReviewEvent::RequestChanges);
-        assert_eq!(PrReviewEvent::Approve.prev(), PrReviewEvent::Comment);
-        assert_eq!(PrReviewEvent::RequestChanges.prev(), PrReviewEvent::Approve);
+        assert_eq!(ReviewEvent::Comment.prev(), ReviewEvent::RequestChanges);
+        assert_eq!(ReviewEvent::Approve.prev(), ReviewEvent::Comment);
+        assert_eq!(ReviewEvent::RequestChanges.prev(), ReviewEvent::Approve);
     }
 
-    // --- GhPullRequest ---
+    // --- PullRequest ---
 
     #[test]
     fn gh_pull_request_round_trips_via_serde() {
-        let pr = GhPullRequest {
+        let pr = PullRequest {
             number: 42,
             title: "Fix bug".to_string(),
             body: "## Summary\nFixes issue".to_string(),
@@ -948,7 +714,7 @@ mod tests {
             changed_files: 3,
         };
         let json = serde_json::to_string(&pr).unwrap();
-        let rt: GhPullRequest = serde_json::from_str(&json).unwrap();
+        let rt: PullRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(rt.number, 42);
         assert_eq!(rt.title, "Fix bug");
         assert_eq!(rt.head_branch, "fix/bug");

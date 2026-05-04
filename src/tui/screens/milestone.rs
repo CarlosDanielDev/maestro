@@ -1,5 +1,5 @@
 use super::{Screen, ScreenAction, SessionConfig, draw_keybinds_bar, sanitize_for_terminal};
-use crate::provider::github::types::{GhIssue, GhMilestone};
+use crate::provider::types::{Issue, Milestone};
 use crate::tui::app::TuiMode;
 use crate::tui::icons::{self, IconId};
 use crate::tui::navigation::InputMode;
@@ -24,11 +24,11 @@ pub struct MilestoneEntry {
     pub state: String,
     pub open_issues: u32,
     pub closed_issues: u32,
-    pub issues: Vec<GhIssue>,
+    pub issues: Vec<Issue>,
 }
 
-impl From<(GhMilestone, Vec<GhIssue>)> for MilestoneEntry {
-    fn from((ms, issues): (GhMilestone, Vec<GhIssue>)) -> Self {
+impl From<(Milestone, Vec<Issue>)> for MilestoneEntry {
+    fn from((ms, issues): (Milestone, Vec<Issue>)) -> Self {
         Self {
             number: ms.number,
             title: ms.title,
@@ -114,11 +114,11 @@ impl MilestoneScreen {
     /// `#NNN` references inside their `## Blocked By` section. Issues with
     /// no parsed dependencies sort first (Level 0). Ties break on issue
     /// number ascending.
-    pub fn sorted_issues(&self) -> Vec<&GhIssue> {
+    pub fn sorted_issues(&self) -> Vec<&Issue> {
         let Some(entry) = self.milestones.get(self.selected) else {
             return Vec::new();
         };
-        let mut with_levels: Vec<(usize, &GhIssue)> = entry
+        let mut with_levels: Vec<(usize, &Issue)> = entry
             .issues
             .iter()
             .map(|i| (count_blocked_by(&i.body), i))
@@ -464,8 +464,8 @@ impl MilestoneScreen {
 /// milestone. Picks the open issues at the deepest existing dependency
 /// level — typically a leaf of the current chain — so a new "next step"
 /// issue is wired up correctly without manual graph editing.
-pub fn suggest_blocked_by_for_new_issue(issues: &[GhIssue]) -> Vec<u64> {
-    let open: Vec<&GhIssue> = issues.iter().filter(|i| i.state == "open").collect();
+pub fn suggest_blocked_by_for_new_issue(issues: &[Issue]) -> Vec<u64> {
+    let open: Vec<&Issue> = issues.iter().filter(|i| i.state == "open").collect();
     if open.is_empty() {
         return Vec::new();
     }
@@ -751,8 +751,8 @@ mod tests {
     use crate::tui::screens::test_helpers::key_event;
     use crossterm::event::KeyCode;
 
-    fn make_issue(number: u64) -> GhIssue {
-        GhIssue {
+    fn make_issue(number: u64) -> Issue {
+        Issue {
             number,
             title: format!("Issue #{}", number),
             body: String::new(),
@@ -776,7 +776,7 @@ mod tests {
         }
     }
 
-    fn make_entry_with_issues(number: u64, issues: Vec<GhIssue>) -> MilestoneEntry {
+    fn make_entry_with_issues(number: u64, issues: Vec<Issue>) -> MilestoneEntry {
         let open = issues.len() as u32;
         MilestoneEntry {
             number,
@@ -791,7 +791,7 @@ mod tests {
 
     // ---- #325 compact view: tab switching and dependency sorting ----
 
-    fn make_issue_with_body(number: u64, body: &str) -> GhIssue {
+    fn make_issue_with_body(number: u64, body: &str) -> Issue {
         let mut i = make_issue(number);
         i.body = body.to_string();
         i

@@ -1,4 +1,4 @@
-use crate::provider::github::types::{GhIssue, Priority, SessionMode};
+use crate::provider::types::{Issue, Priority, SessionMode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -20,11 +20,11 @@ pub struct WorkItem {
     /// Cached blockers (computed once from issue labels + body).
     pub blocked_by: Vec<u64>,
     /// The original issue data.
-    pub issue: GhIssue,
+    pub issue: Issue,
 }
 
 impl WorkItem {
-    pub fn from_issue(issue: GhIssue) -> Self {
+    pub fn from_issue(issue: Issue) -> Self {
         let priority = issue.priority();
         let mode = issue.session_mode();
         let blocked_by = issue.all_blockers();
@@ -58,8 +58,8 @@ impl WorkItem {
 mod tests {
     use super::*;
 
-    fn make_gh_issue(number: u64, labels: &[&str], body: &str) -> GhIssue {
-        GhIssue {
+    fn make_gh_issue(number: u64, labels: &[&str], body: &str) -> Issue {
+        Issue {
             number,
             title: format!("Issue #{}", number),
             body: body.to_string(),

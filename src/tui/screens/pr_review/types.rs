@@ -1,4 +1,4 @@
-use crate::provider::github::types::PrReviewEvent;
+use crate::provider::types::ReviewEvent;
 
 /// State machine for the PR review screen.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -21,14 +21,14 @@ impl PrReviewStep {
 /// Form state for composing a PR review submission.
 #[derive(Debug, Clone)]
 pub struct ReviewForm {
-    pub event: PrReviewEvent,
+    pub event: ReviewEvent,
     pub body: String,
 }
 
 impl Default for ReviewForm {
     fn default() -> Self {
         Self {
-            event: PrReviewEvent::Comment,
+            event: ReviewEvent::Comment,
             body: String::new(),
         }
     }
@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn review_form_default_event_is_comment() {
         let form = ReviewForm::default();
-        assert_eq!(form.event, PrReviewEvent::Comment);
+        assert_eq!(form.event, ReviewEvent::Comment);
     }
 
     #[test]

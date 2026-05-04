@@ -14,7 +14,7 @@ pub use state::{HealthInput, HealthScreenState, HealthSideEffect, HealthStep};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{Frame, layout::Rect};
 
-use crate::provider::github::types::{GhIssue, GhMilestone};
+use crate::provider::types::{Issue, Milestone};
 use crate::tui::app::TuiCommand;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBindingGroup, KeymapProvider};
@@ -87,7 +87,7 @@ impl MilestoneHealthScreen {
 
     pub fn apply_milestones_loaded(
         &mut self,
-        result: anyhow::Result<Vec<GhMilestone>>,
+        result: anyhow::Result<Vec<Milestone>>,
     ) -> Option<TuiCommand> {
         let _ = self.state.transition(HealthInput::MilestonesLoaded(result));
         self.pending_command.take()
@@ -95,7 +95,7 @@ impl MilestoneHealthScreen {
 
     pub fn apply_issues_fetched(
         &mut self,
-        result: anyhow::Result<(GhMilestone, Vec<GhIssue>)>,
+        result: anyhow::Result<(Milestone, Vec<Issue>)>,
     ) -> Option<TuiCommand> {
         let _ = self.state.transition(HealthInput::DataFetched(result));
         self.pending_command.take()

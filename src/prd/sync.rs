@@ -10,8 +10,8 @@
 use crate::prd::discover::{DiscoveredPrd, discover_all};
 use crate::prd::ingest::{IngestedPrd, parse_markdown};
 use crate::prd::model::{CurrentState, TimelineMilestone, TimelineStatus};
-use crate::provider::github::client::GitHubClient;
-use crate::provider::github::types::GhIssue;
+use crate::provider::github::client::RepoProvider;
+use crate::provider::types::Issue;
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -44,11 +44,11 @@ pub trait PrdSyncer: Send + Sync {
 }
 
 pub struct GitHubPrdSyncer {
-    client: Box<dyn GitHubClient>,
+    client: Box<dyn RepoProvider>,
 }
 
 impl GitHubPrdSyncer {
-    pub fn new(client: Box<dyn GitHubClient>) -> Self {
+    pub fn new(client: Box<dyn RepoProvider>) -> Self {
         Self { client }
     }
 
@@ -135,7 +135,7 @@ impl PrdSyncer for GitHubPrdSyncer {
 
 /// Pure aggregation — used by the syncer and exposed for direct testing.
 pub fn aggregate(
-    open_issues: &[GhIssue],
+    open_issues: &[Issue],
     closed_issues: u32,
     open_milestones: u32,
     closed_milestones: u32,
@@ -164,10 +164,10 @@ pub fn aggregate(
 /// Build a timeline from the open + closed milestones combined. Sorted
 /// by milestone number ascending (creation order).
 pub fn compute_timeline(
-    open_milestones: &[crate::provider::github::types::GhMilestone],
-    closed_milestones: &[crate::provider::github::types::GhMilestone],
+    open_milestones: &[crate::provider::types::Milestone],
+    closed_milestones: &[crate::provider::types::Milestone],
 ) -> Vec<TimelineMilestone> {
-    let mut combined: Vec<&crate::provider::github::types::GhMilestone> = open_milestones
+    let mut combined: Vec<&crate::provider::types::Milestone> = open_milestones
         .iter()
         .chain(closed_milestones.iter())
         .collect();
@@ -200,9 +200,9 @@ pub fn compute_timeline(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::github::types::{GhIssue, GhMilestone};
+    use crate::provider::types::{Issue, Milestone};
 
-    fn issue(number: u64, blockers: &[u64]) -> GhIssue {
+    fn issue(number: u64, blockers: &[u64]) -> Issue {
         // Use the format the existing `blocked_by_from_body` regex parses:
         // `blocked-by: #N` (case-insensitive). The `## Blocked By` prose
         // section in real issues is parsed elsewhere; here we exercise the
@@ -216,7 +216,7 @@ mod tests {
                 .collect();
             lines.join("\n")
         };
-        GhIssue {
+        Issue {
             number,
             title: format!("Issue {number}"),
             body,
@@ -228,8 +228,8 @@ mod tests {
         }
     }
 
-    fn milestone(num: u64, title: &str, open: u32, closed: u32, state: &str) -> GhMilestone {
-        GhMilestone {
+    fn milestone(num: u64, title: &str, open: u32, closed: u32, state: &str) -> Milestone {
+        Milestone {
             number: num,
             title: title.into(),
             description: String::new(),

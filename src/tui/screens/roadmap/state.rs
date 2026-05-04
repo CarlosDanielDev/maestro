@@ -91,11 +91,11 @@ impl RoadmapScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::github::types::GhMilestone;
+    use crate::provider::types::Milestone;
 
     fn entry(num: u64, semver: SemVer) -> RoadmapEntry {
         RoadmapEntry {
-            milestone: GhMilestone {
+            milestone: Milestone {
                 number: num,
                 title: format!("v{}.{}.{}", semver.major, semver.minor, semver.patch),
                 description: String::new(),

@@ -1,5 +1,5 @@
-use super::{CreateOutcome, GhIssue, GhMilestone};
-use crate::provider::github::types::{GhPullRequest, PrReviewEvent};
+use super::CreateOutcome;
+use crate::provider::types::{Issue, Milestone, PullRequest, ReviewEvent};
 use std::sync::{Arc, Mutex};
 
 mod impl_client;
@@ -17,8 +17,8 @@ pub struct MockGitHubClient {
 
 #[derive(Default)]
 struct MockState {
-    issues: Vec<GhIssue>,
-    milestones: Vec<GhMilestone>,
+    issues: Vec<Issue>,
+    milestones: Vec<Milestone>,
     add_label_error: Option<String>,
     remove_label_error: Option<String>,
     create_pr_response: Option<u64>,
@@ -43,7 +43,7 @@ struct MockState {
     create_label_error: Option<String>,
 
     // PR review fields
-    pull_requests: Vec<GhPullRequest>,
+    pull_requests: Vec<PullRequest>,
     list_open_prs_error: Option<String>,
     get_pr_errors: std::collections::HashMap<u64, String>,
     submit_pr_review_error: Option<String>,
@@ -58,7 +58,7 @@ struct MockState {
 #[derive(Debug, Clone)]
 pub struct SubmitPrReviewCallRecord {
     pub pr_number: u64,
-    pub event: PrReviewEvent,
+    pub event: ReviewEvent,
     pub body: String,
 }
 
@@ -84,14 +84,14 @@ impl MockGitHubClient {
         Self::default()
     }
 
-    pub fn set_issues(&self, issues: Vec<GhIssue>) {
+    pub fn set_issues(&self, issues: Vec<Issue>) {
         let mut guard = self.inner.lock().unwrap();
         let max = issues.iter().map(|i| i.number).max().unwrap_or(0);
         guard.create_issue_counter = guard.create_issue_counter.max(max);
         guard.issues = issues;
     }
 
-    pub fn set_milestones(&self, milestones: Vec<GhMilestone>) {
+    pub fn set_milestones(&self, milestones: Vec<Milestone>) {
         let mut guard = self.inner.lock().unwrap();
         let max = milestones.iter().map(|m| m.number).max().unwrap_or(0);
         guard.create_milestone_counter = guard.create_milestone_counter.max(max);
@@ -99,12 +99,12 @@ impl MockGitHubClient {
     }
 
     /// Alias of `set_milestones` matching the naming requested in #453.
-    pub fn set_existing_milestones(&self, milestones: Vec<GhMilestone>) {
+    pub fn set_existing_milestones(&self, milestones: Vec<Milestone>) {
         self.set_milestones(milestones);
     }
 
     /// Alias of `set_issues` matching the naming requested in #453.
-    pub fn set_existing_issues(&self, issues: Vec<GhIssue>) {
+    pub fn set_existing_issues(&self, issues: Vec<Issue>) {
         self.set_issues(issues);
     }
 
@@ -180,7 +180,7 @@ impl MockGitHubClient {
         self.inner.lock().unwrap().create_label_calls.clone()
     }
 
-    pub fn set_pull_requests(&self, prs: Vec<GhPullRequest>) {
+    pub fn set_pull_requests(&self, prs: Vec<PullRequest>) {
         self.inner.lock().unwrap().pull_requests = prs;
     }
 

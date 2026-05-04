@@ -152,7 +152,7 @@ pub enum ScreenAction {
     /// Submit a PR review.
     SubmitPrReview {
         pr_number: u64,
-        event: crate::provider::github::types::PrReviewEvent,
+        event: crate::provider::types::ReviewEvent,
         body: String,
     },
     /// Open the Issue Wizard with the milestone pre-selected (#326).
