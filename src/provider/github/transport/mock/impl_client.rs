@@ -253,4 +253,65 @@ impl RepoProvider for MockGitHubClient {
         }
         Ok(())
     }
+
+    async fn ci_status_for_branch(&self, branch: &str) -> Result<CiStatus> {
+        let mut state = self.inner.lock().unwrap();
+        state.ci_status_for_branch_calls.push(branch.to_string());
+        if let Some(ref err) = state.ci_error {
+            anyhow::bail!("{}", err);
+        }
+        Ok(state
+            .ci_status_for_branch_responses
+            .get(branch)
+            .cloned()
+            .unwrap_or(CiStatus::NoneConfigured))
+    }
+
+    async fn ci_status_for_pr(&self, pr_number: u64) -> Result<CiStatus> {
+        let mut state = self.inner.lock().unwrap();
+        state.ci_status_for_pr_calls.push(pr_number);
+        if let Some(ref err) = state.ci_error {
+            anyhow::bail!("{}", err);
+        }
+        Ok(state
+            .ci_status_for_pr_responses
+            .get(&pr_number)
+            .cloned()
+            .unwrap_or(CiStatus::NoneConfigured))
+    }
+
+    async fn ci_check_runs_for_pr(&self, pr_number: u64) -> Result<Vec<CheckRun>> {
+        let mut state = self.inner.lock().unwrap();
+        state.ci_check_runs_for_pr_calls.push(pr_number);
+        if let Some(ref err) = state.ci_error {
+            anyhow::bail!("{}", err);
+        }
+        Ok(state
+            .ci_check_runs_for_pr_responses
+            .get(&pr_number)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    async fn ci_logs_for_check(&self, check_id: &str) -> Result<String> {
+        let mut state = self.inner.lock().unwrap();
+        state.ci_logs_for_check_calls.push(check_id.to_string());
+        if let Some(ref err) = state.ci_error {
+            anyhow::bail!("{}", err);
+        }
+        state
+            .ci_logs_for_check_responses
+            .get(check_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("mock: CI log {} not found", check_id))
+    }
+
+    async fn merge_pr(&self, pr_number: u64, method: MergeMethod) -> Result<()> {
+        let mut state = self.inner.lock().unwrap();
+        state.merge_pr_calls.push((pr_number, method));
+        if let Some(ref err) = state.merge_pr_error {
+            anyhow::bail!("{}", err);
+        }
+        Ok(())
+    }
 }

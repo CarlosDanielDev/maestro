@@ -4,7 +4,9 @@ use super::{
     parse_pr_number_from_create_output, parse_prs_json,
 };
 use crate::provider::github::gh_argv;
-use crate::provider::types::{Issue, Milestone, PullRequest, ReviewEvent};
+use crate::provider::types::{
+    CheckRun, CiStatus, Issue, MergeMethod, Milestone, PullRequest, ReviewEvent,
+};
 use crate::util::{titles_equivalent, validate_body, validate_gh_arg, validate_title};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -319,5 +321,25 @@ impl RepoProvider for GhCliClient {
             .await
             .with_context(|| format!("patching milestone #{} description", milestone_number))?;
         Ok(())
+    }
+
+    async fn ci_status_for_branch(&self, branch: &str) -> Result<CiStatus> {
+        super::ci_merge::ci_status_for_branch(self, branch).await
+    }
+
+    async fn ci_status_for_pr(&self, pr_number: u64) -> Result<CiStatus> {
+        super::ci_merge::ci_status_for_pr(self, pr_number).await
+    }
+
+    async fn ci_check_runs_for_pr(&self, pr_number: u64) -> Result<Vec<CheckRun>> {
+        super::ci_merge::ci_check_runs_for_pr(self, pr_number).await
+    }
+
+    async fn ci_logs_for_check(&self, check_id: &str) -> Result<String> {
+        super::ci_merge::ci_logs_for_check(self, check_id).await
+    }
+
+    async fn merge_pr(&self, pr_number: u64, method: MergeMethod) -> Result<()> {
+        super::ci_merge::merge_pr(self, pr_number, method).await
     }
 }

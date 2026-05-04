@@ -1,5 +1,7 @@
 use crate::provider::github::client::RepoProvider;
-use crate::provider::types::{Issue, Milestone, PullRequest, ReviewEvent};
+use crate::provider::types::{
+    CheckRun, CiStatus, Issue, MergeMethod, Milestone, PullRequest, ReviewEvent,
+};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
@@ -399,11 +401,32 @@ impl RepoProvider for AzDevOpsClient {
     ) -> Result<()> {
         anyhow::bail!("patch_milestone_description is not supported for Azure DevOps")
     }
+
+    async fn ci_status_for_branch(&self, _branch: &str) -> Result<CiStatus> {
+        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    }
+
+    async fn ci_status_for_pr(&self, _pr_number: u64) -> Result<CiStatus> {
+        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    }
+
+    async fn ci_check_runs_for_pr(&self, _pr_number: u64) -> Result<Vec<CheckRun>> {
+        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    }
+
+    async fn ci_logs_for_check(&self, _check_id: &str) -> Result<String> {
+        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    }
+
+    async fn merge_pr(&self, _pr_number: u64, _method: MergeMethod) -> Result<()> {
+        anyhow::bail!("not yet implemented — tracked in v0.23.0 #B5")
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::github::client::RepoProvider;
 
     #[test]
     fn parse_work_items_json_valid_single_item() {
@@ -500,5 +523,21 @@ mod tests {
             issues[0].html_url,
             "https://dev.azure.com/MyOrg/MyProject/_apis/wit/workItems/42"
         );
+    }
+
+    #[tokio::test]
+    async fn merge_pr_stub_names_tracking_issue() {
+        let client = AzDevOpsClient::new(
+            "https://dev.azure.com/example".to_string(),
+            "Project".to_string(),
+        );
+
+        let err = client
+            .merge_pr(123, MergeMethod::Squash)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("v0.23.0 #B5"));
     }
 }

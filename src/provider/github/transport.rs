@@ -1,7 +1,10 @@
-use crate::provider::types::{Issue, Milestone, PullRequest, ReviewEvent};
+use crate::provider::types::{
+    CheckRun, CiStatus, Issue, MergeMethod, Milestone, PullRequest, ReviewEvent,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 
+mod ci_merge;
 mod cli;
 mod cli_impl;
 mod errors;
@@ -95,6 +98,12 @@ pub trait RepoProvider: Send + Sync {
         milestone_number: u64,
         description: &str,
     ) -> Result<()>;
+    #[allow(dead_code)] // Reason: branch-level CI is provider surface for upcoming AzDO work.
+    async fn ci_status_for_branch(&self, branch: &str) -> Result<CiStatus>;
+    async fn ci_status_for_pr(&self, pr_number: u64) -> Result<CiStatus>;
+    async fn ci_check_runs_for_pr(&self, pr_number: u64) -> Result<Vec<CheckRun>>;
+    async fn ci_logs_for_check(&self, check_id: &str) -> Result<String>;
+    async fn merge_pr(&self, pr_number: u64, method: MergeMethod) -> Result<()>;
 }
 
 /// Blanket impl: if T: RepoProvider, then &T is also a RepoProvider.
@@ -169,6 +178,21 @@ impl<T: RepoProvider + ?Sized> RepoProvider for &T {
             .patch_milestone_description(milestone_number, description)
             .await
     }
+    async fn ci_status_for_branch(&self, branch: &str) -> Result<CiStatus> {
+        (**self).ci_status_for_branch(branch).await
+    }
+    async fn ci_status_for_pr(&self, pr_number: u64) -> Result<CiStatus> {
+        (**self).ci_status_for_pr(pr_number).await
+    }
+    async fn ci_check_runs_for_pr(&self, pr_number: u64) -> Result<Vec<CheckRun>> {
+        (**self).ci_check_runs_for_pr(pr_number).await
+    }
+    async fn ci_logs_for_check(&self, check_id: &str) -> Result<String> {
+        (**self).ci_logs_for_check(check_id).await
+    }
+    async fn merge_pr(&self, pr_number: u64, method: MergeMethod) -> Result<()> {
+        (**self).merge_pr(pr_number, method).await
+    }
 }
 
 /// Blanket impl: if T: RepoProvider, then Box<T> is also a RepoProvider.
@@ -242,5 +266,20 @@ impl<T: RepoProvider + ?Sized> RepoProvider for Box<T> {
         (**self)
             .patch_milestone_description(milestone_number, description)
             .await
+    }
+    async fn ci_status_for_branch(&self, branch: &str) -> Result<CiStatus> {
+        (**self).ci_status_for_branch(branch).await
+    }
+    async fn ci_status_for_pr(&self, pr_number: u64) -> Result<CiStatus> {
+        (**self).ci_status_for_pr(pr_number).await
+    }
+    async fn ci_check_runs_for_pr(&self, pr_number: u64) -> Result<Vec<CheckRun>> {
+        (**self).ci_check_runs_for_pr(pr_number).await
+    }
+    async fn ci_logs_for_check(&self, check_id: &str) -> Result<String> {
+        (**self).ci_logs_for_check(check_id).await
+    }
+    async fn merge_pr(&self, pr_number: u64, method: MergeMethod) -> Result<()> {
+        (**self).merge_pr(pr_number, method).await
     }
 }

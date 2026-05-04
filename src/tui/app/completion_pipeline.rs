@@ -411,7 +411,7 @@ impl App {
         }
 
         // Slow tier: CI status polling (every ~30s)
-        self.poll_ci_status();
+        self.poll_ci_status().await;
 
         // Try to promote queued sessions
         let promoted_ids = self.pool.try_promote();

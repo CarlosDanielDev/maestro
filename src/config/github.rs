@@ -1,24 +1,7 @@
 use crate::provider::types::ProviderKind;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MergeMethod {
-    Merge,
-    #[default]
-    Squash,
-    Rebase,
-}
-
-impl MergeMethod {
-    pub fn flag(&self) -> &'static str {
-        match self {
-            Self::Merge => "--merge",
-            Self::Squash => "--squash",
-            Self::Rebase => "--rebase",
-        }
-    }
-}
+pub use crate::provider::types::MergeMethod;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GithubConfig {
