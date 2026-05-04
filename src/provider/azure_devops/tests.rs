@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 mod iterations;
+mod pull_requests;
 mod tags;
 
 struct MockAzRunner {
