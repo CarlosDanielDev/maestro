@@ -40,8 +40,11 @@ fn parse_pr_value(v: &serde_json::Value) -> PullRequest {
             .unwrap_or("")
             .to_string(),
         labels: Vec::new(),
-        draft: false,
-        mergeable: false,
+        draft: v
+            .get("isDraft")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        mergeable: string_field(v, "mergeStatus").eq_ignore_ascii_case("succeeded"),
         additions: 0,
         deletions: 0,
         changed_files: 0,
