@@ -140,7 +140,13 @@ impl SessionPool {
             }
 
             // Build system prompt appendix from file claims + guardrails + knowledge base.
+            let mode_config = session.mode_config.clone();
             let mut components: Vec<String> = Vec::new();
+            if let Some(ref mode) = mode_config
+                && !mode.system_prompt.trim().is_empty()
+            {
+                components.push(mode.system_prompt.clone());
+            }
             if let Some(fc) = self.file_claims.build_system_prompt(session.id) {
                 components.push(fc);
             }
@@ -164,8 +170,13 @@ impl SessionPool {
             // Session remains Queued until ManagedSession::spawn() transitions it
             let mut managed =
                 ManagedSession::with_worktree(session, worktree_path, branch, system_prompt);
-            managed.permission_mode = Some(self.permission_mode.clone());
-            managed.allowed_tools = self.allowed_tools.clone();
+            managed.permission_mode = mode_config
+                .as_ref()
+                .and_then(|mode| mode.permission_mode.clone())
+                .or_else(|| Some(self.permission_mode.clone()));
+            managed.allowed_tools = mode_config
+                .map(|mode| mode.allowed_tools)
+                .unwrap_or_else(|| self.allowed_tools.clone());
             let id = managed.session.id;
             self.active.push(managed);
             promoted.push(id);
@@ -512,6 +523,49 @@ mod tests {
         assert_eq!(promoted.len(), 2);
         assert_eq!(pool.active_count(), 2);
         assert_eq!(pool.queued_count(), 0);
+    }
+
+    #[test]
+    fn try_promote_applies_mode_config_to_managed_session() {
+        let mut pool = make_pool(1);
+        pool.set_permission_mode("bypassPermissions".to_string());
+        pool.set_allowed_tools(vec!["Read".to_string(), "Write".to_string()]);
+        let session =
+            make_session("A").with_mode_config(Some(crate::session::types::SessionModeConfig {
+                system_prompt: "Vibe mode prompt".to_string(),
+                allowed_tools: vec!["Read".to_string()],
+                permission_mode: Some("plan".to_string()),
+            }));
+        pool.enqueue(session);
+
+        let promoted = pool.try_promote();
+        assert_eq!(promoted.len(), 1);
+        let managed = must_get_active_mut(&mut pool, promoted[0]);
+
+        assert_eq!(managed.permission_mode.as_deref(), Some("plan"));
+        assert_eq!(managed.allowed_tools, vec!["Read".to_string()]);
+        assert_eq!(must_get_appendix(managed), "Vibe mode prompt");
+    }
+
+    #[test]
+    fn try_promote_uses_default_spawn_settings_without_mode_config() {
+        let mut pool = make_pool(1);
+        pool.set_permission_mode("bypassPermissions".to_string());
+        pool.set_allowed_tools(vec!["Read".to_string(), "Write".to_string()]);
+        pool.enqueue(make_session("A"));
+
+        let promoted = pool.try_promote();
+        let managed = must_get_active_mut(&mut pool, promoted[0]);
+
+        assert_eq!(
+            managed.permission_mode.as_deref(),
+            Some("bypassPermissions")
+        );
+        assert_eq!(
+            managed.allowed_tools,
+            vec!["Read".to_string(), "Write".to_string()]
+        );
+        assert!(managed.system_prompt_appendix.is_none());
     }
 
     #[test]

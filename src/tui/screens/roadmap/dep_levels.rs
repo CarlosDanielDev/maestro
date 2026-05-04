@@ -107,6 +107,13 @@ pub fn dep_levels(inputs: &[(u64, Vec<u64>)]) -> Result<Vec<Vec<u64>>, DepLevelE
 mod tests {
     use super::*;
 
+    fn dep_levels_err(input: &[(u64, Vec<u64>)]) -> DepLevelError {
+        match dep_levels(input) {
+            Ok(levels) => panic!("expected dep level error, got {levels:?}"),
+            Err(err) => err,
+        }
+    }
+
     #[test]
     fn empty_input_returns_empty() {
         let levels = dep_levels(&[]).expect("ok");
@@ -140,7 +147,7 @@ mod tests {
     #[test]
     fn cycle_returns_cycle_error_with_members() {
         // 1 → 2 → 1
-        let err = dep_levels(&[(1, vec![2]), (2, vec![1])]).unwrap_err();
+        let err = dep_levels_err(&[(1, vec![2]), (2, vec![1])]);
         match err {
             DepLevelError::Cycle { members } => {
                 assert_eq!(members, vec![1u64, 2]);
@@ -151,13 +158,13 @@ mod tests {
 
     #[test]
     fn three_node_cycle_detected() {
-        let err = dep_levels(&[(1, vec![3]), (2, vec![1]), (3, vec![2])]).unwrap_err();
+        let err = dep_levels_err(&[(1, vec![3]), (2, vec![1]), (3, vec![2])]);
         assert!(matches!(err, DepLevelError::Cycle { .. }));
     }
 
     #[test]
     fn unknown_blocker_returns_error() {
-        let err = dep_levels(&[(1, vec![999])]).unwrap_err();
+        let err = dep_levels_err(&[(1, vec![999])]);
         match err {
             DepLevelError::UnknownBlocker { node, blocker } => {
                 assert_eq!(node, 1);

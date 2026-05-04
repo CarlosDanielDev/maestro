@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::models::ModelRouter;
 use crate::prompts::PromptBuilder;
+use crate::session::types::SessionModeConfig;
 use crate::work::assigner::WorkAssigner;
 
 /// A fully prepared session assignment ready for execution.
@@ -10,6 +11,7 @@ pub struct SessionAssignment {
     pub prompt: String,
     pub model: String,
     pub mode: String,
+    pub mode_config: Option<SessionModeConfig>,
 }
 
 /// Inputs the service needs to make assignment decisions.
@@ -67,10 +69,13 @@ impl WorkAssignmentTrait for WorkAssignmentService {
             }
 
             let prompt = PromptBuilder::build_issue_prompt(&item.issue, ctx.config);
-            let mode = item
-                .mode
-                .map(|m| m.as_config_str().to_string())
+            let mode = crate::modes::mode_from_labels(&item.issue.labels)
+                .or_else(|| {
+                    item.mode
+                        .map(|session_mode| session_mode.as_config_str().to_string())
+                })
                 .unwrap_or_else(|| ctx.config.sessions.default_mode.clone());
+            let mode_config = crate::modes::resolve_session_mode_config(&mode, Some(ctx.config));
             let model = ctx
                 .model_router
                 .map(|r| r.resolve(&item.issue).to_string())
@@ -86,6 +91,7 @@ impl WorkAssignmentTrait for WorkAssignmentService {
                 prompt,
                 model,
                 mode,
+                mode_config,
             });
         }
 
@@ -160,7 +166,8 @@ impl App {
                 assignment.mode,
                 Some(assignment.issue_number),
                 None,
-            );
+            )
+            .with_mode_config(assignment.mode_config);
             session.issue_title = Some(assignment.title);
 
             // Track in continuous mode

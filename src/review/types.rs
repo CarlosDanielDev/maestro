@@ -284,7 +284,10 @@ mod tests {
     fn transition_accepted_to_rejected_is_illegal() {
         let mut c = make_concern(Severity::Warning);
         c.transition(ConcernStatus::Accepted).expect("setup");
-        let err = c.transition(ConcernStatus::Rejected).unwrap_err();
+        let err = match c.transition(ConcernStatus::Rejected) {
+            Ok(()) => panic!("expected illegal transition"),
+            Err(err) => err,
+        };
         assert!(matches!(err, StatusTransitionError::Illegal { .. }));
     }
 

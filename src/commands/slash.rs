@@ -160,6 +160,13 @@ impl SlashDispatcher for DefaultSlashDispatcher {
 mod tests {
     use super::*;
 
+    fn parse_err(input: &str) -> SlashParseError {
+        match input.parse::<SlashCommand>() {
+            Ok(cmd) => panic!("expected parse error, got {cmd:?}"),
+            Err(err) => err,
+        }
+    }
+
     #[test]
     fn parse_help_command() {
         let cmd: SlashCommand = "/help".parse().expect("parse");
@@ -204,43 +211,43 @@ mod tests {
 
     #[test]
     fn parse_review_without_pr_number_errors() {
-        let err = "/review".parse::<SlashCommand>().unwrap_err();
+        let err = parse_err("/review");
         assert!(matches!(err, SlashParseError::MissingArgument { .. }));
     }
 
     #[test]
     fn parse_unknown_command_errors() {
-        let err = "/bogus".parse::<SlashCommand>().unwrap_err();
+        let err = parse_err("/bogus");
         assert!(matches!(err, SlashParseError::UnknownCommand(_)));
     }
 
     #[test]
     fn parse_non_slash_input_errors() {
-        let err = "review 42".parse::<SlashCommand>().unwrap_err();
+        let err = parse_err("review 42");
         assert_eq!(err, SlashParseError::NotASlashCommand);
     }
 
     #[test]
     fn parse_empty_input_errors() {
-        let err = "   ".parse::<SlashCommand>().unwrap_err();
+        let err = parse_err("   ");
         assert_eq!(err, SlashParseError::Empty);
     }
 
     #[test]
     fn parse_invalid_pr_number_errors() {
-        let err = "/review notanumber".parse::<SlashCommand>().unwrap_err();
+        let err = parse_err("/review notanumber");
         assert!(matches!(err, SlashParseError::InvalidArgument { .. }));
     }
 
     #[test]
     fn parse_review_rejects_branch_with_shell_metachars() {
-        let err = "/review 1 foo;rm".parse::<SlashCommand>().unwrap_err();
+        let err = parse_err("/review 1 foo;rm");
         assert!(matches!(err, SlashParseError::InvalidArgument { .. }));
     }
 
     #[test]
     fn parse_review_rejects_branch_with_double_dots() {
-        let err = "/review 1 feat/../etc".parse::<SlashCommand>().unwrap_err();
+        let err = parse_err("/review 1 feat/../etc");
         assert!(matches!(err, SlashParseError::InvalidArgument { .. }));
     }
 

@@ -2,7 +2,7 @@ use super::App;
 use super::types::TuiDataEvent;
 use crate::prd::model::{MergeReport, Prd};
 use crate::prd::sync::PrdSyncResult;
-use crate::session::types::Session;
+use crate::session::types::{Session, SessionModeConfig};
 use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::milestone::MilestoneEntry;
 
@@ -49,11 +49,15 @@ fn fold_ingest_into_prd(prd_slot: &mut Option<Prd>, sync: &PrdSyncResult) -> Opt
 
 impl App {
     /// Resolve model and mode from config and issue labels.
-    fn resolve_model_and_mode(&self, labels: &[String]) -> (String, String) {
+    fn resolve_model_and_mode(
+        &self,
+        labels: &[String],
+    ) -> (String, String, Option<SessionModeConfig>) {
         let model = self.session_config.default_model.clone();
         let default_mode = self.session_config.default_mode.clone();
-        let mode = crate::modes::mode_from_labels(labels).unwrap_or(default_mode);
-        (model, mode)
+        let (mode, mode_config) =
+            crate::modes::resolve_mode_for_labels(labels, &default_mode, self.config.as_ref());
+        (model, mode, mode_config)
     }
 
     /// Build a prompt from issue + optional custom instructions.
@@ -126,10 +130,12 @@ impl App {
                 }
             }
             TuiDataEvent::Issue(Ok(gh_issue), custom_prompt) => {
-                let (model, issue_mode) = self.resolve_model_and_mode(&gh_issue.labels);
+                let (model, issue_mode, mode_config) =
+                    self.resolve_model_and_mode(&gh_issue.labels);
                 let prompt = self.build_issue_prompt_with_custom(&gh_issue, &custom_prompt);
                 let issue_number = gh_issue.number;
-                let mut session = Session::new(prompt, model, issue_mode, Some(issue_number), None);
+                let mut session = Session::new(prompt, model, issue_mode, Some(issue_number), None)
+                    .with_mode_config(mode_config);
                 session.issue_title = Some(gh_issue.title.clone());
                 self.state.issue_cache.insert(issue_number, gh_issue);
                 self.pending_session_launches.push(session);
@@ -361,7 +367,7 @@ impl App {
                     .first()
                     .map(|i| i.labels.as_slice())
                     .unwrap_or(&[]);
-                let (model, issue_mode) = self.resolve_model_and_mode(first_labels);
+                let (model, issue_mode, mode_config) = self.resolve_model_and_mode(first_labels);
                 let issue_numbers: Vec<u64> = gh_issues.iter().map(|i| i.number).collect();
 
                 let mut combined_prompt = String::from(
@@ -382,7 +388,8 @@ impl App {
 
                 let primary_issue = issue_numbers.first().copied();
                 let mut session =
-                    Session::new(combined_prompt, model, issue_mode, primary_issue, None);
+                    Session::new(combined_prompt, model, issue_mode, primary_issue, None)
+                        .with_mode_config(mode_config);
                 session.issue_numbers = issue_numbers;
                 session.issue_title = Some(format!(
                     "Unified: {}",
@@ -567,5 +574,54 @@ impl App {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::github::types::GhIssue;
+
+    fn issue_with_labels(labels: &[&str]) -> GhIssue {
+        GhIssue {
+            number: 402,
+            title: "Wire mode resolver".to_string(),
+            body: String::new(),
+            labels: labels.iter().map(|label| label.to_string()).collect(),
+            state: "open".to_string(),
+            html_url: "https://github.com/owner/repo/issues/402".to_string(),
+            milestone: None,
+            assignees: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn issue_event_applies_labeled_vibe_mode_config() {
+        let mut app = crate::tui::make_test_app("issue-402-vibe-mode");
+
+        app.handle_data_event(TuiDataEvent::Issue(
+            Ok(issue_with_labels(&["maestro:mode:vibe"])),
+            None,
+        ));
+
+        let session = &app.pending_session_launches[0];
+        assert_eq!(session.mode, "vibe");
+        assert!(
+            session
+                .mode_config
+                .as_ref()
+                .is_some_and(|mode| mode.system_prompt.contains("vibe mode"))
+        );
+    }
+
+    #[test]
+    fn issue_event_uses_default_mode_when_label_absent() {
+        let mut app = crate::tui::make_test_app("issue-402-default-mode");
+
+        app.handle_data_event(TuiDataEvent::Issue(Ok(issue_with_labels(&[])), None));
+
+        let session = &app.pending_session_launches[0];
+        assert_eq!(session.mode, "orchestrator");
+        assert!(session.mode_config.is_some());
     }
 }

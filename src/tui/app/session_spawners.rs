@@ -78,6 +78,18 @@ impl App {
         )
     }
 
+    pub(super) fn default_model_mode_and_config(
+        &self,
+    ) -> (
+        String,
+        String,
+        Option<crate::session::types::SessionModeConfig>,
+    ) {
+        let (model, mode) = self.default_model_and_mode();
+        let mode_config = crate::modes::resolve_session_mode_config(&mode, self.config.as_ref());
+        (model, mode, mode_config)
+    }
+
     pub(super) fn spawn_ci_fix_session(
         &mut self,
         pr_number: u64,
@@ -86,7 +98,7 @@ impl App {
         attempt: u32,
         failure_log: &str,
     ) {
-        let (model, mode) = self.default_model_and_mode();
+        let (model, mode, mode_config) = self.default_model_mode_and_config();
         let session = create_ci_fix_session(
             &model,
             &mode,
@@ -95,7 +107,8 @@ impl App {
             &branch,
             attempt,
             failure_log,
-        );
+        )
+        .with_mode_config(mode_config);
         self.pending_session_launches.push(session);
     }
 
@@ -117,14 +130,15 @@ impl App {
             .take(2000)
             .collect();
 
-        let (default_model, mode) = self.default_model_and_mode();
+        let (default_model, mode, mode_config) = self.default_model_mode_and_config();
         let model = if failed_line.model.is_empty() {
             default_model
         } else {
             failed_line.model.clone()
         };
 
-        let session = create_gate_fix_session(&model, &mode, issue_number, &gate_failure_details);
+        let session = create_gate_fix_session(&model, &mode, issue_number, &gate_failure_details)
+            .with_mode_config(mode_config);
         self.pending_session_launches.push(session);
 
         self.activity_log.push_simple(
@@ -149,7 +163,7 @@ impl App {
             None => return,
         };
 
-        let (default_model, mode) = self.default_model_and_mode();
+        let (default_model, mode, mode_config) = self.default_model_mode_and_config();
         let model = if failed_line.model.is_empty() {
             default_model
         } else {
@@ -157,7 +171,8 @@ impl App {
         };
 
         let prompt = format!("/implement #{} --continue", issue_number);
-        let mut session = Session::new(prompt, model, mode, Some(issue_number), None);
+        let mut session = Session::new(prompt, model, mode, Some(issue_number), None)
+            .with_mode_config(mode_config);
         session.issue_title = Some(format!("Resume #{}", issue_number));
         // The session manager picks up `worktree_path` and skips creation
         // of a fresh worktree when it's already populated.
@@ -176,7 +191,7 @@ impl App {
         use crate::provider::github::merge::build_conflict_fix_prompt;
         use crate::session::types::ConflictFixContext;
 
-        let (model, mode) = self.default_model_and_mode();
+        let (model, mode, mode_config) = self.default_model_mode_and_config();
 
         let prompt = build_conflict_fix_prompt(
             config.pr_number,
@@ -185,7 +200,8 @@ impl App {
             &config.conflicting_files,
         );
 
-        let mut session = Session::new(prompt, model, mode, Some(config.issue_number), None);
+        let mut session = Session::new(prompt, model, mode, Some(config.issue_number), None)
+            .with_mode_config(mode_config);
         let _ = session.transition_to(
             SessionStatus::ConflictFix,
             TransitionReason::ConflictFixStarted,

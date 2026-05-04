@@ -104,6 +104,7 @@ pub async fn cmd_run(
     }
 
     if let Some(prompt_text) = prompt {
+        let mode_config = crate::modes::resolve_session_mode_config(&session_mode, Some(&config));
         let session = Session::new(
             prompt_text,
             model,
@@ -111,6 +112,7 @@ pub async fn cmd_run(
             None,
             role_override,
         )
+        .with_mode_config(mode_config)
         .with_image_paths(images.clone());
         app.add_session(session).await?;
     } else if let Some(milestone_name) = milestone {
@@ -145,13 +147,17 @@ pub async fn cmd_run(
                 .map_err(|_| anyhow::anyhow!("Invalid issue number: {}", num_str.trim()))?;
 
             let gh_issue = client.get_issue(num).await?;
-            let issue_mode = crate::modes::mode_from_labels(&gh_issue.labels)
-                .unwrap_or_else(|| session_mode.clone());
+            let (issue_mode, mode_config) = crate::modes::resolve_mode_for_labels(
+                &gh_issue.labels,
+                &session_mode,
+                Some(&config),
+            );
             let prompt = crate::prompts::PromptBuilder::build_issue_prompt_with_images(
                 &gh_issue, &config, &images,
             );
             let mut session =
                 Session::new(prompt, model.clone(), issue_mode, Some(num), role_override)
+                    .with_mode_config(mode_config)
                     .with_image_paths(images.clone());
             session.issue_title = Some(gh_issue.title.clone());
 

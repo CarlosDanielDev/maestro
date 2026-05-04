@@ -8,9 +8,9 @@
 //! take precedence over the built-in defaults (`orchestrator`, `vibe`, `review`).
 
 use crate::config::{Config, ModeConfig};
+use crate::session::types::SessionModeConfig;
 
 /// Built-in mode definitions. These are available even without config.
-#[allow(dead_code)] // wired via resolve_mode — not directly called outside this module yet
 pub fn builtin_modes() -> Vec<(&'static str, ModeConfig)> {
     vec![
         (
@@ -24,7 +24,9 @@ pub fn builtin_modes() -> Vec<(&'static str, ModeConfig)> {
         (
             "vibe",
             ModeConfig {
-                system_prompt: String::new(),
+                system_prompt: "You are operating in vibe mode. Move quickly, keep momentum, \
+                    and make pragmatic implementation decisions while preserving correctness."
+                    .into(),
                 allowed_tools: Vec::new(),
                 permission_mode: None,
             },
@@ -44,7 +46,6 @@ pub fn builtin_modes() -> Vec<(&'static str, ModeConfig)> {
 
 /// Resolve a mode name to its configuration.
 /// Priority: config-defined modes > built-in modes.
-#[allow(dead_code)] // to be wired via CLI --mode flag
 pub fn resolve_mode(name: &str, config: Option<&Config>) -> Option<ModeConfig> {
     // Check config-defined modes first
     if let Some(cfg) = config
@@ -60,11 +61,36 @@ pub fn resolve_mode(name: &str, config: Option<&Config>) -> Option<ModeConfig> {
         .map(|(_, m)| m)
 }
 
+/// Resolve a mode name into the session-owned mode config shape.
+pub fn resolve_session_mode_config(
+    name: &str,
+    config: Option<&Config>,
+) -> Option<SessionModeConfig> {
+    resolve_mode(name, config).map(|mode| SessionModeConfig {
+        system_prompt: mode.system_prompt,
+        allowed_tools: mode.allowed_tools,
+        permission_mode: mode.permission_mode,
+    })
+}
+
 /// Extract mode name from issue labels. Looks for `maestro:mode:<name>` labels.
 pub fn mode_from_labels(labels: &[String]) -> Option<String> {
-    labels
-        .iter()
-        .find_map(|l| l.strip_prefix("maestro:mode:").map(|s| s.to_string()))
+    labels.iter().find_map(|l| {
+        l.strip_prefix("maestro:mode:")
+            .or_else(|| l.strip_prefix("mode:"))
+            .map(|s| s.to_string())
+    })
+}
+
+/// Resolve the mode name and effective mode settings for issue labels.
+pub fn resolve_mode_for_labels(
+    labels: &[String],
+    default_mode: &str,
+    config: Option<&Config>,
+) -> (String, Option<SessionModeConfig>) {
+    let mode = mode_from_labels(labels).unwrap_or_else(|| default_mode.to_string());
+    let mode_config = resolve_session_mode_config(&mode, config);
+    (mode, mode_config)
 }
 
 #[cfg(test)]
@@ -91,6 +117,12 @@ mod tests {
     }
 
     #[test]
+    fn resolve_mode_finds_vibe_prompt() {
+        let mode = resolve_mode("vibe", None).unwrap();
+        assert!(mode.system_prompt.contains("vibe mode"));
+    }
+
+    #[test]
     fn resolve_mode_returns_none_for_unknown() {
         assert!(resolve_mode("nonexistent", None).is_none());
     }
@@ -106,8 +138,22 @@ mod tests {
     }
 
     #[test]
+    fn mode_from_labels_extracts_legacy_mode() {
+        let labels = vec!["bug".into(), "mode:vibe".into()];
+        assert_eq!(mode_from_labels(&labels), Some("vibe".into()));
+    }
+
+    #[test]
     fn mode_from_labels_returns_none_when_absent() {
         let labels = vec!["bug".into(), "priority:P1".into()];
         assert_eq!(mode_from_labels(&labels), None);
+    }
+
+    #[test]
+    fn resolve_mode_for_labels_uses_default_when_absent() {
+        let labels = vec!["bug".into()];
+        let (mode, mode_config) = resolve_mode_for_labels(&labels, "orchestrator", None);
+        assert_eq!(mode, "orchestrator");
+        assert!(mode_config.is_some());
     }
 }

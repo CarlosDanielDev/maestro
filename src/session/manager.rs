@@ -430,6 +430,7 @@ mod tests {
             issue_number: None,
             issue_numbers: vec![],
             mode: "print".to_string(),
+            mode_config: None,
             started_at: None,
             finished_at: None,
             cost_usd: 0.0,
