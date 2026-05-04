@@ -454,8 +454,12 @@ if [[ "$PUSH_FAILED" == true ]]; then
 
   BRANCH_NAME="release/${TAG}"
   info "Branch-protection blocked direct push to main. Creating PR branch..."
-  git checkout -b "$BRANCH_NAME"
-  git push -u origin "$BRANCH_NAME"
+  if git show-ref --verify --quiet "refs/heads/${BRANCH_NAME}"; then
+    git checkout "$BRANCH_NAME"
+  else
+    git checkout -b "$BRANCH_NAME"
+  fi
+  git push -u origin "HEAD:refs/heads/${BRANCH_NAME}"
 
   PR_URL=$(with_spinner "Creating release PR..." \
     gh pr create \

@@ -7,6 +7,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-05-04
+
+### Chore
+- test: split app/tests.rs into co-located module test blocks (#405)
+- test: add property-based tests for session/parser.rs (#406)
+
 ## [0.20.0] - 2026-05-04
 
 ### Added
