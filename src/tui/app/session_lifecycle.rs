@@ -150,3 +150,43 @@ impl App {
         entry.show_summary_popup = !entry.show_summary_popup;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    fn make_app() -> crate::tui::app::App {
+        crate::tui::make_test_app("maestro-tui-app-test")
+    }
+
+    #[test]
+    fn app_once_mode_defaults_to_false() {
+        let app = make_app();
+        assert!(!app.once_mode, "once_mode must default to false");
+    }
+
+    #[test]
+    fn app_completion_summary_defaults_to_none() {
+        let app = make_app();
+        assert!(
+            app.completion_summary.is_none(),
+            "completion_summary must default to None"
+        );
+    }
+
+    #[tokio::test]
+    async fn add_session_resets_dismissed_flag() {
+        let mut app = make_app();
+        app.completion_summary_dismissed = true;
+        let session = crate::session::types::Session::new(
+            "test".to_string(),
+            "opus".to_string(),
+            "orchestrator".to_string(),
+            None,
+            None,
+        );
+        let _ = app.add_session(session).await;
+        assert!(
+            !app.completion_summary_dismissed,
+            "add_session must reset completion_summary_dismissed to false"
+        );
+    }
+}

@@ -363,3 +363,7 @@ impl App {
         self.ci_poller.remove_completed(&completed_indices);
     }
 }
+
+#[cfg(test)]
+#[path = "ci_polling_app_tests.rs"]
+mod app_tests;

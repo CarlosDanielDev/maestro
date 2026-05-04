@@ -179,3 +179,16 @@ impl App {
         self.navigate_to_root();
     }
 }
+
+#[cfg(test)]
+#[path = "completion_summary_actions_tests.rs"]
+mod actions_tests;
+#[cfg(test)]
+#[path = "completion_summary_conflicts_tests.rs"]
+mod conflicts_tests;
+#[cfg(test)]
+#[path = "completion_summary_core_tests.rs"]
+mod core_tests;
+#[cfg(test)]
+#[path = "completion_summary_lines_tests.rs"]
+mod lines_tests;

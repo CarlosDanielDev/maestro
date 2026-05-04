@@ -391,3 +391,7 @@ max_cost_total = 10.0
         assert!(session.issue_title.unwrap().contains("Gate Fix"));
     }
 }
+
+#[cfg(test)]
+#[path = "session_spawners_gate_fix_tests.rs"]
+mod gate_fix_migrated_tests;
