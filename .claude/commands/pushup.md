@@ -25,17 +25,34 @@ Otherwise, detect the issue from:
 2. Run `git diff --staged` and `git diff` to understand what changed
 3. Run `git log --oneline -5` to match the repo's commit style
 4. Stage all relevant files (avoid secrets, .env, credentials)
-5. Create a **semantic commit** following [Conventional Commits](https://www.conventionalcommits.org/):
-   - `feat:` for new features
-   - `fix:` for bug fixes
-   - `refactor:` for refactoring
-   - `test:` for test additions/changes
-   - `docs:` for documentation
-   - `chore:` for maintenance tasks
-   - `style:` for formatting changes
-   - `perf:` for performance improvements
-6. The commit message body should reference the issue: `Closes #<issue-number>`
-7. Use HEREDOC format for the commit message
+5. Ensure a gate log directory exists for editable drafts:
+
+```bash
+: "${GATE_LOG_DIR:=$(mktemp -d)}"
+export GATE_LOG_DIR
+```
+
+6. Generate the mechanical commit draft:
+
+```bash
+scripts/commit-helper.sh <issue-number>
+```
+
+The helper chooses the Conventional Commits prefix from issue labels, writes
+`$GATE_LOG_DIR/commit-draft.txt`, and includes `Closes #<issue-number>`.
+
+7. Fill in only the first-line subject placeholder. Keep the helper-selected
+   prefix and `Closes #<issue-number>` body unchanged. Use the existing HEREDOC
+   pattern to overwrite the draft, then commit from the draft file:
+
+```bash
+cat > "$GATE_LOG_DIR/commit-draft.txt" <<'EOF'
+<prefix>: <filled subject>
+
+Closes #<issue-number>
+EOF
+git commit -F "$GATE_LOG_DIR/commit-draft.txt"
+```
 
 ### Step 3: Push to Remote
 
@@ -47,23 +64,20 @@ Otherwise, detect the issue from:
 
 1. Check if a PR already exists for this branch: `gh pr view --json number 2>/dev/null`
 2. If NO existing PR, create one:
-   - Title: Short, descriptive (under 70 chars), matching the semantic commit type
-   - Body format:
+   - Title: use the commit subject exactly
+   - Body: generate a skeleton, then fill in only 1-3 summary bullets
 
 ```
-gh pr create --title "<title>" --body "$(cat <<'EOF'
-## Summary
-<1-3 bullet points describing what this PR does>
-
-Closes #<issue-number>
-
-## Test plan
-- [ ] <testing checklist items>
-EOF
-)"
+commit_subject="$(git log -1 --pretty=%s)"
+: "${GATE_LOG_DIR:=$(mktemp -d)}"
+export GATE_LOG_DIR
+scripts/pr-skeleton.sh <issue-number> "$commit_subject"
+# Edit only $GATE_LOG_DIR/pr-draft.md summary bullets; keep Closes and Test plan.
+gh pr create --title "$commit_subject" --body-file "$GATE_LOG_DIR/pr-draft.md"
 ```
 
-3. If PR already exists, update it if needed: `gh pr edit <pr-number> --body "..."`
+3. If PR already exists, update it if needed after regenerating/filling the body:
+   `gh pr edit <pr-number> --body-file "$GATE_LOG_DIR/pr-draft.md"`
 
 4. **Surface the new PR to a running maestro TUI for auto-review (#545 P1).** After a successful `gh pr create`, write a single-line JSON marker to `~/.maestro/last-pr-created`. A running maestro instance polls this file once per `check_completions` tick; on a fresh write it enqueues `TuiCommand::PrCreated` and triggers `/review`.
 

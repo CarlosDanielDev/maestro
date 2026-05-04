@@ -10,6 +10,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 - chore(workflow): add scripted milestone dependency-graph updater for `/pushup` (#554)
 - chore(workflow): add `/implement` DOR lint fast path and condensed issue summaries (#555)
+- chore(workflow): add `/pushup` commit and PR draft helpers (#556)
 
 ## [0.22.0] - 2026-05-04
 
