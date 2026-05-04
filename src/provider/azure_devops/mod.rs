@@ -5,6 +5,7 @@ use crate::provider::types::{
 use crate::util::{titles_equivalent, validate_body, validate_title};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use std::io::Write;
 use std::sync::Arc;
 
 mod issues;
@@ -44,11 +45,16 @@ impl AzDevOpsClient {
         }
     }
 
-    async fn run_az(&self, args: &[&str]) -> Result<String> {
+    async fn run_az_output(&self, args: &[&str]) -> Result<AzOutput> {
         let output =
             self.runner.run(args).await.context(
                 "Failed to run `az` CLI. Is it installed? Run `az login` to authenticate.",
             )?;
+        Ok(output)
+    }
+
+    async fn run_az(&self, args: &[&str]) -> Result<String> {
+        let output = self.run_az_output(args).await?;
 
         if !output.success {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -187,6 +193,43 @@ pub fn parse_work_items_json(json_str: &str) -> Result<Vec<Issue>> {
         });
     }
     Ok(issues)
+}
+
+/// Parse Azure DevOps tag dictionary JSON into provider-agnostic label names.
+pub fn parse_tags_json(json_str: &str) -> Result<Vec<String>> {
+    if json_str.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let raw: serde_json::Value =
+        serde_json::from_str(json_str).context("Failed to parse Azure DevOps tags JSON")?;
+    let tags = match &raw {
+        serde_json::Value::Array(items) => items.as_slice(),
+        serde_json::Value::Object(map) => map
+            .get("value")
+            .and_then(|value| value.as_array())
+            .map(Vec::as_slice)
+            .unwrap_or(&[]),
+        _ => &[],
+    };
+
+    Ok(tags
+        .iter()
+        .filter_map(|tag| match tag {
+            serde_json::Value::String(name) => Some(name.as_str()),
+            serde_json::Value::Object(map) => map.get("name").and_then(|name| name.as_str()),
+            _ => None,
+        })
+        .map(str::to_string)
+        .collect())
+}
+
+fn azure_tags_route_parameter(project: &str) -> String {
+    format!("project={project}")
+}
+
+fn duplicate_tag_error(stderr: &str) -> bool {
+    stderr.to_ascii_lowercase().contains("tag already exists")
 }
 
 #[async_trait]
@@ -593,11 +636,79 @@ impl RepoProvider for AzDevOpsClient {
     }
 
     async fn list_labels(&self) -> Result<Vec<String>> {
-        anyhow::bail!("list_labels is not supported for Azure DevOps")
+        let route_project = azure_tags_route_parameter(&self.project);
+        let json_str = self
+            .run_az(&[
+                "devops",
+                "invoke",
+                "--area",
+                "wit",
+                "--resource",
+                "tags",
+                "--route-parameters",
+                &route_project,
+                "--org",
+                &self.organization,
+                "-o",
+                "json",
+            ])
+            .await?;
+
+        parse_tags_json(&json_str)
     }
 
-    async fn create_label(&self, _name: &str, _color: &str) -> Result<()> {
-        anyhow::bail!("create_label is not supported for Azure DevOps")
+    async fn create_label(&self, name: &str, color: &str) -> Result<()> {
+        tracing::debug!(
+            label = name,
+            color,
+            "Azure DevOps work-item tags do not support label colors; ignoring color"
+        );
+
+        let mut body_file =
+            tempfile::NamedTempFile::new().context("Failed to create Azure DevOps tag payload")?;
+        let body = serde_json::to_string(&serde_json::json!({ "name": name }))?;
+        body_file
+            .write_all(body.as_bytes())
+            .context("Failed to write Azure DevOps tag payload")?;
+        body_file
+            .flush()
+            .context("Failed to flush Azure DevOps tag payload")?;
+
+        let route_project = azure_tags_route_parameter(&self.project);
+        let body_path = body_file
+            .path()
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Azure DevOps tag payload path is not UTF-8"))?;
+        let output = self
+            .run_az_output(&[
+                "devops",
+                "invoke",
+                "--area",
+                "wit",
+                "--resource",
+                "tags",
+                "--route-parameters",
+                &route_project,
+                "--http-method",
+                "PATCH",
+                "--in-file",
+                body_path,
+                "--org",
+                &self.organization,
+                "-o",
+                "json",
+            ])
+            .await?;
+
+        if !output.success {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if duplicate_tag_error(&stderr) {
+                return Ok(());
+            }
+            anyhow::bail!("az command failed: {}", stderr.trim());
+        }
+
+        Ok(())
     }
 
     async fn patch_milestone_description(
