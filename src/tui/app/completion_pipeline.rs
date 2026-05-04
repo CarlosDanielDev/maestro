@@ -446,3 +446,50 @@ impl App {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tui::app::*;
+
+    fn make_app() -> crate::tui::app::App {
+        crate::tui::make_test_app("maestro-tui-app-test")
+    }
+
+    #[test]
+    fn dismissed_flag_prevents_summary_retrigger_scenario() {
+        // Simulate: completion summary was shown, user dismissed it,
+        // all sessions are still done → summary must NOT re-trigger.
+        let mut app = make_app();
+        // Set up a finished session
+        let session = crate::session::types::Session::new(
+            "done".to_string(),
+            "opus".to_string(),
+            "orchestrator".to_string(),
+            None,
+            None,
+        );
+        app.pool.enqueue(session);
+        let promoted = app.pool.try_promote();
+        for id in promoted {
+            app.pool.finalize_and_teardown(id);
+        }
+        assert!(app.pool.all_done(), "pool must be all_done");
+
+        // Dismiss the summary
+        app.completion_summary_dismissed = true;
+        app.completion_summary = None;
+        app.tui_mode = TuiMode::Overview;
+
+        // The auto-transition condition should NOT fire:
+        // all_done=true, continuous_mode=None, completion_summary=None,
+        // but completion_summary_dismissed=true → blocked
+        let should_trigger = app.pool.all_done()
+            && app.continuous_mode.is_none()
+            && app.completion_summary.is_none()
+            && !app.completion_summary_dismissed;
+        assert!(
+            !should_trigger,
+            "auto-transition must not fire when completion_summary_dismissed is true"
+        );
+    }
+}

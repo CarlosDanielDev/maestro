@@ -672,5 +672,543 @@ impl App {
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
-mod tests;
+mod tests {
+    use super::*;
+    use crate::flags::Flag;
+
+    fn make_app() -> crate::tui::app::App {
+        crate::tui::make_test_app("maestro-tui-app-test")
+    }
+
+    fn make_app_with_flags(flags: crate::flags::store::FeatureFlags) -> App {
+        let mut app = make_app();
+        app.flags = flags;
+        app
+    }
+
+    #[test]
+    fn app_flags_field_defaults_to_feature_flags_default() {
+        let app = make_app();
+        assert!(
+            app.flags.is_enabled(Flag::ContinuousMode),
+            "app.flags must default ContinuousMode to true"
+        );
+        assert!(
+            app.flags.is_enabled(Flag::AutoFork),
+            "app.flags must default AutoFork to true"
+        );
+        assert!(
+            !app.flags.is_enabled(Flag::CiAutoFix),
+            "app.flags must default CiAutoFix to false"
+        );
+    }
+
+    #[test]
+    fn app_flags_can_be_replaced_after_construction() {
+        let mut app = make_app();
+        let custom = crate::flags::store::FeatureFlags::new(
+            std::collections::HashMap::new(),
+            vec!["ci_auto_fix".to_string()],
+            vec![],
+        );
+        app.flags = custom;
+        assert!(
+            app.flags.is_enabled(Flag::CiAutoFix),
+            "app.flags must reflect newly assigned FeatureFlags"
+        );
+    }
+
+    #[test]
+    fn continuous_mode_not_set_when_flag_disabled() {
+        let flags = crate::flags::store::FeatureFlags::new(
+            std::collections::HashMap::new(),
+            vec![],
+            vec!["continuous_mode".to_string()],
+        );
+        let mut app = make_app_with_flags(flags);
+        // Simulate gating logic from cmd_run
+        let cli_continuous = true;
+        if app.flags.is_enabled(Flag::ContinuousMode) && cli_continuous {
+            app.continuous_mode = Some(ContinuousModeState::new());
+        }
+        assert!(
+            app.continuous_mode.is_none(),
+            "continuous_mode must remain None when Flag::ContinuousMode is disabled"
+        );
+    }
+
+    #[test]
+    fn continuous_mode_set_when_flag_enabled() {
+        let mut app = make_app();
+        let cli_continuous = true;
+        if app.flags.is_enabled(Flag::ContinuousMode) && cli_continuous {
+            app.continuous_mode = Some(ContinuousModeState::new());
+        }
+        assert!(
+            app.continuous_mode.is_some(),
+            "continuous_mode must be Some when Flag::ContinuousMode is enabled"
+        );
+    }
+
+    #[test]
+    fn check_context_overflow_skips_fork_when_auto_fork_flag_disabled() {
+        let flags = crate::flags::store::FeatureFlags::new(
+            std::collections::HashMap::new(),
+            vec![],
+            vec!["auto_fork".to_string()],
+        );
+        let mut app = make_app_with_flags(flags);
+        app.fork_policy = Some(crate::session::fork::ForkPolicy::new(5));
+        let dummy_id = uuid::Uuid::new_v4();
+        app.check_context_overflow(dummy_id);
+        assert!(
+            app.pending_session_launches.is_empty(),
+            "check_context_overflow must not fork when Flag::AutoFork is disabled"
+        );
+    }
+
+    fn make_app_with_views_toml(extra: &str) -> App {
+        let mut app = make_app();
+        let toml = format!(
+            "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\n\
+         per_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+         [github]\n[notifications]\n{extra}"
+        );
+        app.config = Some(toml::from_str(&toml).expect("test config parse"));
+        app
+    }
+
+    #[test]
+    fn navigate_to_agent_graph_with_toggle_off_redirects_to_overview() {
+        let mut app = make_app_with_views_toml("");
+        app.tui_mode = TuiMode::Overview;
+        app.navigate_to(TuiMode::AgentGraph);
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Overview,
+            "navigate_to(AgentGraph) with toggle OFF must redirect to Overview"
+        );
+    }
+
+    #[test]
+    fn navigate_to_agent_graph_with_toggle_on_succeeds() {
+        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+        app.tui_mode = TuiMode::Overview;
+        app.navigate_to(TuiMode::AgentGraph);
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::AgentGraph,
+            "navigate_to(AgentGraph) with toggle ON must land on AgentGraph"
+        );
+    }
+
+    #[test]
+    fn navigate_to_agent_graph_with_no_config_redirects_to_overview() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        app.navigate_to(TuiMode::AgentGraph);
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Overview,
+            "navigate_to(AgentGraph) with no config (None) must redirect to Overview"
+        );
+    }
+
+    // -- Issue #528: App::toggle_agent_graph ---------------------------------
+
+    #[test]
+    fn toggle_agent_graph_with_flag_off_is_noop() {
+        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = false\n");
+        app.tui_mode = TuiMode::Overview;
+        app.toggle_agent_graph();
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert!(app.nav_stack.is_empty());
+    }
+
+    #[test]
+    fn toggle_agent_graph_with_no_config_is_noop() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        app.toggle_agent_graph();
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+    }
+
+    #[test]
+    fn toggle_agent_graph_overview_to_graph_when_enabled() {
+        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+        app.tui_mode = TuiMode::Overview;
+        app.toggle_agent_graph();
+        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
+    }
+
+    #[test]
+    fn toggle_agent_graph_graph_to_overview_when_enabled() {
+        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+        app.tui_mode = TuiMode::AgentGraph;
+        app.toggle_agent_graph();
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+    }
+
+    #[test]
+    fn toggle_agent_graph_round_trip_returns_to_overview() {
+        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+        app.tui_mode = TuiMode::Overview;
+        app.toggle_agent_graph();
+        assert_eq!(app.tui_mode, TuiMode::AgentGraph);
+        app.toggle_agent_graph();
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+    }
+
+    #[test]
+    fn toggle_agent_graph_from_unrelated_mode_is_noop() {
+        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+        app.tui_mode = TuiMode::Settings;
+        app.toggle_agent_graph();
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Settings,
+            "toggle must only act on Overview/AgentGraph"
+        );
+    }
+
+    #[test]
+    fn toggle_agent_graph_does_not_push_nav_stack() {
+        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = true\n");
+        app.tui_mode = TuiMode::Overview;
+        let depth_before = app.nav_stack.depth();
+        app.toggle_agent_graph();
+        app.toggle_agent_graph();
+        assert_eq!(
+            app.nav_stack.depth(),
+            depth_before,
+            "toggle must not grow nav_stack — Esc should not pop back through toggle history"
+        );
+    }
+
+    mod pending_prs_persistence {
+        use super::*;
+        use crate::provider::github::types::PendingPr;
+        use crate::session::worktree::MockWorktreeManager;
+        use crate::state::store::StateStore;
+        use crate::state::types::MaestroState;
+        use crate::tui::activity_log::LogLevel;
+
+        fn make_pending_pr(issue_number: u64) -> PendingPr {
+            let mut p = crate::provider::github::types::awaiting_pending_pr(issue_number);
+            p.attempt = 1;
+            p.last_errors.push_back("boom".into());
+            p
+        }
+
+        fn build_app_with_seeded_state(state: MaestroState) -> App {
+            let path = std::env::temp_dir().join(format!(
+                "pending-prs-rehydrate-{}.json",
+                uuid::Uuid::new_v4()
+            ));
+            let store = StateStore::new(path);
+            store.save(&state).expect("seed save");
+            App::new(
+                store,
+                3,
+                Box::new(MockWorktreeManager::new()),
+                "bypassPermissions".into(),
+                vec![],
+            )
+        }
+
+        fn build_app_with_raw_state(contents: &[u8]) -> App {
+            let path = std::env::temp_dir()
+                .join(format!("state-load-error-{}.json", uuid::Uuid::new_v4()));
+            if let Err(e) = std::fs::write(&path, contents) {
+                panic!("raw state should be written: {e}");
+            }
+            App::new(
+                StateStore::new(path),
+                3,
+                Box::new(MockWorktreeManager::new()),
+                "bypassPermissions".into(),
+                vec![],
+            )
+        }
+
+        #[test]
+        fn app_new_rehydrates_pending_prs_from_persisted_state() {
+            let mut seed = MaestroState::default();
+            seed.pending_prs.push(make_pending_pr(7));
+            seed.pending_prs.push(make_pending_pr(11));
+
+            let app = build_app_with_seeded_state(seed);
+
+            assert_eq!(
+                app.pending_prs.len(),
+                2,
+                "App::new must rehydrate state.pending_prs (was lost previously)"
+            );
+            let issue_numbers: Vec<u64> = app.pending_prs.iter().map(|p| p.issue_number).collect();
+            assert!(issue_numbers.contains(&7));
+            assert!(issue_numbers.contains(&11));
+        }
+
+        #[test]
+        fn app_new_logs_warn_when_pending_prs_recovered() {
+            let mut seed = MaestroState::default();
+            seed.pending_prs.push(make_pending_pr(7));
+            seed.pending_prs.push(make_pending_pr(11));
+
+            let app = build_app_with_seeded_state(seed);
+
+            let warn =
+                app.activity_log.entries().iter().find(|e| {
+                    matches!(e.level, LogLevel::Warn) && e.message.contains("pending PR")
+                });
+            let warn = warn.expect("orphan-PR warn entry must be present");
+            assert!(
+                warn.message.contains("2 pending PR"),
+                "got: {}",
+                warn.message
+            );
+            assert!(
+                warn.message.contains("Shift+P"),
+                "the warn must mention Shift+P so users know how to recover"
+            );
+            assert_eq!(warn.session_label, "#orphan-prs");
+        }
+
+        #[test]
+        fn app_new_notifies_when_state_load_fails() {
+            let app = build_app_with_raw_state(b"{not valid json");
+
+            let error_log = app.activity_log.entries().iter().any(|e| {
+                matches!(e.level, LogLevel::Error)
+                    && e.session_label == "State"
+                    && e.message.contains("Failed to load persisted state")
+            });
+            assert!(
+                error_log,
+                "state load failure must be visible in the TUI log"
+            );
+            assert!(
+                app.notifications
+                    .active_banners()
+                    .iter()
+                    .any(|n| n.title == "State load failed"),
+                "state load failure must create a TUI notification banner"
+            );
+        }
+
+        #[test]
+        fn app_new_truncates_pending_prs_above_rehydrate_cap() {
+            use crate::provider::github::types::PENDING_PRS_REHYDRATE_CAP;
+            let mut seed = MaestroState::default();
+            for i in 0..(PENDING_PRS_REHYDRATE_CAP + 1) {
+                seed.pending_prs.push(make_pending_pr(i as u64));
+            }
+            let app = build_app_with_seeded_state(seed);
+
+            assert_eq!(
+                app.pending_prs.len(),
+                PENDING_PRS_REHYDRATE_CAP,
+                "App::new must truncate pending_prs to PENDING_PRS_REHYDRATE_CAP"
+            );
+            let truncate_warn = app.activity_log.entries().iter().any(|e| {
+                matches!(e.level, LogLevel::Warn) && e.message.contains("Truncated pending_prs")
+            });
+            assert!(
+                truncate_warn,
+                "App::new must emit a Warn log entry containing 'Truncated pending_prs' when the cap is exceeded",
+            );
+        }
+
+        #[test]
+        fn auth_recovery_hint_const_is_well_formed() {
+            use super::AUTH_RECOVERY_HINT;
+            assert!(!AUTH_RECOVERY_HINT.is_empty());
+            assert!(
+                AUTH_RECOVERY_HINT.contains("gh auth login"),
+                "AUTH_RECOVERY_HINT must reference `gh auth login` so users know how to recover"
+            );
+        }
+
+        // ── /pushup → maestro auto-review hand-off via marker file ──
+
+        fn marker_path(home: &std::path::Path) -> std::path::PathBuf {
+            home.join(".maestro").join("last-pr-created")
+        }
+
+        fn make_app_with_home(home: std::path::PathBuf) -> App {
+            let path =
+                std::env::temp_dir().join(format!("marker-test-{}.json", uuid::Uuid::new_v4()));
+            let store = StateStore::new(path);
+            App::new(
+                store,
+                3,
+                Box::new(MockWorktreeManager::new()),
+                "bypassPermissions".into(),
+                vec![],
+            )
+            .with_home_dir(home)
+        }
+
+        #[tokio::test]
+        async fn poll_pr_marker_fresh_enqueues_pr_created_and_deletes_file() {
+            let home = tempfile::tempdir().unwrap();
+            let marker = marker_path(home.path());
+            std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+            std::fs::write(
+                &marker,
+                r#"{"pr_number":42,"owner":"o","repo":"r","ts":"2026-04-30T00:00:00Z"}"#,
+            )
+            .unwrap();
+
+            let mut app = make_app_with_home(home.path().to_path_buf());
+            app.poll_last_pr_created_marker().await;
+
+            assert!(
+                !marker.exists(),
+                "fresh marker must be deleted after consume (consume-once semantics)"
+            );
+            let queued = app
+                .pending_commands
+                .iter()
+                .any(|c| matches!(c, TuiCommand::PrCreated { pr_number: 42, .. }));
+            assert!(queued, "fresh marker must enqueue TuiCommand::PrCreated");
+        }
+
+        #[tokio::test]
+        async fn poll_pr_marker_corrupt_json_warns_and_deletes() {
+            let home = tempfile::tempdir().unwrap();
+            let marker = marker_path(home.path());
+            std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+            std::fs::write(&marker, b"not valid json {{{").unwrap();
+
+            let mut app = make_app_with_home(home.path().to_path_buf());
+            let cmds_before = app.pending_commands.len();
+            app.poll_last_pr_created_marker().await;
+
+            assert!(!marker.exists(), "corrupt marker must be deleted");
+            assert_eq!(
+                app.pending_commands.len(),
+                cmds_before,
+                "corrupt marker must NOT enqueue a command"
+            );
+            let warn = app.activity_log.entries().iter().any(|e| {
+                matches!(e.level, LogLevel::Warn) && e.message.contains("last-pr-created")
+            });
+            assert!(
+                warn,
+                "corrupt marker must produce a Warn-level activity log entry"
+            );
+        }
+
+        #[tokio::test]
+        async fn poll_pr_marker_missing_is_noop() {
+            let home = tempfile::tempdir().unwrap();
+            let mut app = make_app_with_home(home.path().to_path_buf());
+            let cmds_before = app.pending_commands.len();
+            app.poll_last_pr_created_marker().await;
+            assert_eq!(
+                app.pending_commands.len(),
+                cmds_before,
+                "missing marker must be a silent no-op"
+            );
+        }
+
+        #[tokio::test]
+        async fn poll_pr_marker_refuses_symlink() {
+            // A same-user attacker could plant a symlink at
+            // ~/.maestro/last-pr-created. The reader must detect it (via
+            // symlink_metadata) and unlink the symlink without following
+            // it; the link target must stay untouched.
+            let home = tempfile::tempdir().unwrap();
+            let marker_dir = home.path().join(".maestro");
+            std::fs::create_dir_all(&marker_dir).unwrap();
+            let target = home.path().join("decoy.txt");
+            std::fs::write(&target, "decoy contents").unwrap();
+            let marker = marker_dir.join("last-pr-created");
+            std::os::unix::fs::symlink(&target, &marker).unwrap();
+
+            let mut app = make_app_with_home(home.path().to_path_buf());
+            app.poll_last_pr_created_marker().await;
+
+            assert!(!marker.exists(), "symlink at marker path must be unlinked");
+            assert!(target.exists(), "symlink target must NOT be deleted");
+            let warn = app
+                .activity_log
+                .entries()
+                .iter()
+                .any(|e| matches!(e.level, LogLevel::Warn) && e.message.contains("symlink"));
+            assert!(
+                warn,
+                "symlink must produce a Warn entry mentioning 'symlink'"
+            );
+            let queued = app
+                .pending_commands
+                .iter()
+                .any(|c| matches!(c, TuiCommand::PrCreated { .. }));
+            assert!(!queued, "symlink must NOT enqueue a PrCreated command");
+        }
+
+        #[tokio::test]
+        async fn poll_pr_marker_rejects_owner_with_path_traversal() {
+            // Marker owner/repo from JSON must not be a vehicle for argv
+            // injection or path traversal.
+            let home = tempfile::tempdir().unwrap();
+            let marker = marker_path(home.path());
+            std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+            std::fs::write(
+                &marker,
+                r#"{"pr_number":42,"owner":"../evil","repo":"r","ts":"2026-04-30T00:00:00Z"}"#,
+            )
+            .unwrap();
+
+            let mut app = make_app_with_home(home.path().to_path_buf());
+            app.poll_last_pr_created_marker().await;
+
+            assert!(!marker.exists(), "rejected marker must be deleted");
+            let queued = app
+                .pending_commands
+                .iter()
+                .any(|c| matches!(c, TuiCommand::PrCreated { .. }));
+            assert!(!queued, "owner with traversal must NOT enqueue PrCreated");
+        }
+
+        #[test]
+        fn app_new_emits_no_warn_when_state_has_no_pending_prs() {
+            let app = build_app_with_seeded_state(MaestroState::default());
+
+            let any_orphan_warn = app
+                .activity_log
+                .entries()
+                .iter()
+                .any(|e| e.session_label == "#orphan-prs");
+            assert!(
+                !any_orphan_warn,
+                "no orphan warn should be emitted on a clean restart"
+            );
+        }
+
+        #[test]
+        fn sync_state_mirrors_pending_prs_to_persisted_state() {
+            let mut app = crate::tui::make_test_app("pending-prs-sync");
+            assert!(app.state.pending_prs.is_empty(), "precondition");
+            app.pending_prs.push(make_pending_pr(42));
+            app.pending_prs.push(make_pending_pr(99));
+
+            app.sync_state();
+
+            assert_eq!(
+                app.state.pending_prs.len(),
+                2,
+                "sync_state must mirror in-memory pending_prs to persisted state"
+            );
+            let mirrored: Vec<u64> = app
+                .state
+                .pending_prs
+                .iter()
+                .map(|p| p.issue_number)
+                .collect();
+            assert!(mirrored.contains(&42));
+            assert!(mirrored.contains(&99));
+        }
+    }
+}

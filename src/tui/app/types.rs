@@ -718,3 +718,72 @@ mod tests {
         assert_eq!(result.unwrap().session_id, uuid::Uuid::from_u128(2));
     }
 }
+
+#[cfg(test)]
+mod session_summary_migrated_tests {
+    #[test]
+    fn session_summary_toggle_expand_adds_id() {
+        let mut state = crate::tui::app::types::SessionSummaryState::default();
+        let id = uuid::Uuid::new_v4();
+        state.toggle_expand(id);
+        assert!(state.expanded.contains(&id));
+    }
+
+    #[test]
+    fn session_summary_toggle_expand_removes_id_on_second_call() {
+        let mut state = crate::tui::app::types::SessionSummaryState::default();
+        let id = uuid::Uuid::new_v4();
+        state.toggle_expand(id);
+        state.toggle_expand(id);
+        assert!(!state.expanded.contains(&id));
+    }
+
+    #[test]
+    fn session_summary_toggle_expand_two_ids_independent() {
+        let mut state = crate::tui::app::types::SessionSummaryState::default();
+        let id_a = uuid::Uuid::new_v4();
+        let id_b = uuid::Uuid::new_v4();
+        state.toggle_expand(id_a);
+        state.toggle_expand(id_b);
+        state.toggle_expand(id_a);
+        assert!(!state.expanded.contains(&id_a));
+        assert!(state.expanded.contains(&id_b));
+    }
+
+    #[test]
+    fn session_summary_scroll_down_increments_offset() {
+        let mut state = crate::tui::app::types::SessionSummaryState::default();
+        assert_eq!(state.scroll_offset, 0);
+        state.scroll_down();
+        assert_eq!(state.scroll_offset, 1);
+        state.scroll_down();
+        assert_eq!(state.scroll_offset, 2);
+    }
+
+    #[test]
+    fn session_summary_scroll_up_decrements_offset() {
+        let mut state = crate::tui::app::types::SessionSummaryState::default();
+        state.scroll_down();
+        state.scroll_down();
+        state.scroll_up();
+        assert_eq!(state.scroll_offset, 1);
+    }
+
+    #[test]
+    fn session_summary_scroll_up_does_not_underflow() {
+        let mut state = crate::tui::app::types::SessionSummaryState::default();
+        state.scroll_up();
+        assert_eq!(state.scroll_offset, 0);
+    }
+
+    #[test]
+    fn tui_mode_session_summary_variant_exists() {
+        let mode = crate::tui::app::types::TuiMode::SessionSummary;
+        assert!(matches!(
+            mode,
+            crate::tui::app::types::TuiMode::SessionSummary
+        ));
+    }
+
+    // -- navigate_to defense-in-depth gate for AgentGraph (#527) --
+}
