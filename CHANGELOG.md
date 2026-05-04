@@ -7,6 +7,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-05-04
+
+### Added
+- feat(doctor): provider-aware validate_provider_setup with AzDO checks (#461)
+- feat(provider): extend RepoProvider trait with CI and Merge surfaces (#460)
+- refactor(provider): wire create_provider() at all call sites; remove hardcoded GhCliClient::new() (#459)
+- refactor(provider): rename GitHubClient trait to RepoProvider; neutralize shared types (#458)
+
 ## [0.21.0] - 2026-05-04
 
 ### Chore
