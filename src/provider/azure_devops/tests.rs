@@ -4,6 +4,8 @@ use crate::provider::github::client::RepoProvider;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+mod iterations;
+
 struct MockAzRunner {
     calls: Mutex<Vec<Vec<String>>>,
     outputs: Mutex<VecDeque<AzOutput>>,
@@ -262,18 +264,18 @@ async fn create_issue_sends_semicolon_joined_labels() {
 }
 
 #[tokio::test]
-async fn create_issue_omits_iteration_when_milestone_is_missing() {
-    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success(
-        r#"{"id":125}"#,
-    )]));
+async fn create_issue_errors_when_requested_milestone_is_missing() {
+    let runner = Arc::new(MockAzRunner::new(vec![MockAzRunner::success("[]")]));
     let client = test_client(runner.clone());
 
-    client
+    let err = client
         .create_issue("Title", "Body", &[], Some(99))
         .await
-        .unwrap();
+        .unwrap_err()
+        .to_string();
 
-    assert!(!runner.calls()[0].iter().any(|arg| arg == "--iteration"));
+    assert!(err.contains("Azure DevOps iteration for milestone id 99 not found"));
+    assert_eq!(runner.calls().len(), 1);
 }
 
 #[tokio::test]
