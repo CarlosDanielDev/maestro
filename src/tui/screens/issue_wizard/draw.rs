@@ -1,5 +1,6 @@
 use super::{FieldId, IssueType, IssueWizardScreen, IssueWizardStep};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::{WizardFrame, WizardFrameFooter, WizardFrameHeader};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -10,29 +11,32 @@ use ratatui::{
 
 impl IssueWizardScreen {
     pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(2),
-            ])
-            .split(area);
-
-        self.draw_header(f, chunks[0]);
-        match self.step() {
-            IssueWizardStep::TypeSelect => self.draw_type_select(f, chunks[1], theme),
-            IssueWizardStep::BasicInfo => self.draw_basic_info(f, chunks[1]),
-            IssueWizardStep::DorFields => self.draw_dor_fields(f, chunks[1]),
-            IssueWizardStep::Dependencies => self.draw_dependencies(f, chunks[1]),
-            IssueWizardStep::AiReview => self.draw_ai_review(f, chunks[1]),
-            IssueWizardStep::Preview => self.draw_preview(f, chunks[1]),
-            IssueWizardStep::Creating => self.draw_creating(f, chunks[1]),
-            IssueWizardStep::Complete => self.draw_complete(f, chunks[1]),
-            IssueWizardStep::Failed => self.draw_failed(f, chunks[1]),
-            _ => self.draw_stub(f, chunks[1]),
-        }
-        self.draw_footer(f, chunks[2]);
+        let step = self.step();
+        WizardFrame::draw(
+            f,
+            area,
+            theme,
+            WizardFrameHeader {
+                step_index: step.index(),
+                step_total: IssueWizardStep::total(),
+                step_label: step.label(),
+            },
+            WizardFrameFooter {
+                validation_error: self.validation_error(),
+            },
+            |f, body_area| match step {
+                IssueWizardStep::TypeSelect => self.draw_type_select(f, body_area, theme),
+                IssueWizardStep::BasicInfo => self.draw_basic_info(f, body_area),
+                IssueWizardStep::DorFields => self.draw_dor_fields(f, body_area),
+                IssueWizardStep::Dependencies => self.draw_dependencies(f, body_area),
+                IssueWizardStep::AiReview => self.draw_ai_review(f, body_area),
+                IssueWizardStep::Preview => self.draw_preview(f, body_area),
+                IssueWizardStep::Creating => self.draw_creating(f, body_area),
+                IssueWizardStep::Complete => self.draw_complete(f, body_area),
+                IssueWizardStep::Failed => self.draw_failed(f, body_area),
+                _ => self.draw_stub(f, body_area),
+            },
+        );
 
         // #455 — already-exists modal overlays everything else.
         if self.already_exists_modal().is_some() {
@@ -118,45 +122,6 @@ impl IssueWizardScreen {
         ];
 
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
-    }
-
-    fn draw_header(&self, f: &mut Frame, area: Rect) {
-        let step = self.step();
-        let header = Paragraph::new(Line::from(vec![
-            Span::styled(
-                format!("Step {}/{}: ", step.index(), IssueWizardStep::total()),
-                Style::default().add_modifier(Modifier::DIM),
-            ),
-            Span::styled(step.label(), Style::default().add_modifier(Modifier::BOLD)),
-        ]))
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::BOTTOM)
-                .title("Issue Wizard"),
-        );
-        f.render_widget(header, area);
-    }
-
-    fn draw_footer(&self, f: &mut Frame, area: Rect) {
-        let mut spans: Vec<Span> = Vec::new();
-        if let Some(err) = self.validation_error() {
-            spans.push(Span::styled(
-                err,
-                Style::default()
-                    .fg(Color::LightRed)
-                    .add_modifier(Modifier::BOLD),
-            ));
-        } else {
-            spans.push(Span::styled(
-                "Enter: next  Tab: cycle  Shift+Enter: newline  Esc: back",
-                Style::default().add_modifier(Modifier::DIM),
-            ));
-        }
-        f.render_widget(
-            Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
-            area,
-        );
     }
 
     fn draw_stub(&self, f: &mut Frame, area: Rect) {
