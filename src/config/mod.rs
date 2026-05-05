@@ -86,13 +86,16 @@ pub struct Config {
 }
 
 impl Config {
-    pub const AZURE_DEVOPS_EXPERIMENTAL_ERROR: &'static str = "Azure DevOps provider is experimental and not yet feature-complete. To opt in, set `[experimental] azure_devops = true` in maestro.toml. Otherwise set `provider.kind = \"github\"`.";
-
     pub fn load(path: &Path) -> Result<Self> {
         let content =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let config: Self =
             toml::from_str(&content).with_context(|| format!("parsing {}", path.display()))?;
+        if has_legacy_azure_devops_flag(&content)
+            && config.provider.kind != crate::provider::types::ProviderKind::AzureDevops
+        {
+            log_legacy_azure_devops_config(false);
+        }
         config.validate()?;
         Ok(config)
     }
@@ -150,9 +153,7 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         if self.provider.kind == crate::provider::types::ProviderKind::AzureDevops {
-            if !self.experimental.azure_devops {
-                anyhow::bail!(Self::AZURE_DEVOPS_EXPERIMENTAL_ERROR);
-            }
+            log_legacy_azure_devops_config(self.experimental.azure_devops);
             let organization = self.provider.organization.as_deref().unwrap_or("").trim();
             if !valid_azure_devops_organization_url(organization) {
                 anyhow::bail!(
@@ -176,6 +177,28 @@ impl Config {
             provider.repo = Some(self.project.repo.clone());
         }
         provider
+    }
+}
+
+fn has_legacy_azure_devops_flag(content: &str) -> bool {
+    let Ok(value) = content.parse::<toml::Value>() else {
+        return false;
+    };
+    matches!(
+        value
+            .get("experimental")
+            .and_then(|experimental| experimental.get("azure_devops"))
+            .and_then(toml::Value::as_bool),
+        Some(false)
+    )
+}
+
+fn log_legacy_azure_devops_config(azure_devops: bool) {
+    if !azure_devops {
+        tracing::debug!(
+            "`experimental.azure_devops = false` is retained for backward compatibility; \
+             Azure DevOps is stable and no startup gate is applied"
+        );
     }
 }
 

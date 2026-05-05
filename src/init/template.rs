@@ -20,7 +20,6 @@ pub struct ProviderTemplate {
     pub kind: ProviderKind,
     pub organization: Option<String>,
     pub az_project: Option<String>,
-    pub azure_devops_experimental: bool,
 }
 
 impl ProviderTemplate {
@@ -29,7 +28,6 @@ impl ProviderTemplate {
             kind: ProviderKind::Github,
             organization: None,
             az_project: None,
-            azure_devops_experimental: false,
         }
     }
 
@@ -38,7 +36,6 @@ impl ProviderTemplate {
             kind: ProviderKind::AzureDevops,
             organization: Some(organization),
             az_project: Some(az_project),
-            azure_devops_experimental: true,
         }
     }
 }
@@ -92,7 +89,6 @@ pub fn render_with_provider(stacks: &[DetectedStack], provider: &ProviderTemplat
         .map(|s| StackDefaults::for_stack(*s).test_command)
         .unwrap_or("");
     let provider_block = render_provider_block(provider);
-    let experimental_block = render_experimental_block(provider);
 
     format!(
         r#"{project_block}
@@ -116,7 +112,7 @@ auto_merge = false                      # Set to true to auto-merge PRs after CI
 merge_method = "squash"                 # Options: merge, squash, rebase
 cache_ttl_secs = 300
 
-{provider_block}{experimental_block}
+{provider_block}
 
 [gates]
 enabled = true
@@ -186,14 +182,6 @@ fn toml_basic_string(value: &str) -> String {
     }
     out.push('"');
     out
-}
-
-fn render_experimental_block(provider: &ProviderTemplate) -> String {
-    if provider.azure_devops_experimental {
-        String::from("\n[experimental]\nazure_devops = true\n")
-    } else {
-        String::new()
-    }
 }
 
 fn render_project_block(stacks: &[DetectedStack]) -> String {
@@ -343,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn template_render_azure_devops_provider_includes_experimental_opt_in() {
+    fn template_render_azure_devops_provider_omits_experimental_opt_in() {
         let out = render_with_provider(
             &[DetectedStack::Rust],
             &ProviderTemplate::azure_devops(
@@ -357,8 +345,8 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("az_project = \"MyProject\""), "{out}");
-        assert!(out.contains("[experimental]"), "{out}");
-        assert!(out.contains("azure_devops = true"), "{out}");
+        assert!(!out.contains("[experimental]"), "{out}");
+        assert!(!out.contains("azure_devops = true"), "{out}");
     }
 
     #[test]

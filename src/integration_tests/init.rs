@@ -181,8 +181,8 @@ fn cmd_init_detects_azdo_remote_and_reprompts_invalid_organization() {
         "{body}"
     );
     assert!(body.contains("az_project = \"MyProject\""), "{body}");
-    assert!(body.contains("[experimental]"), "{body}");
-    assert!(body.contains("azure_devops = true"), "{body}");
+    assert!(!body.contains("[experimental]"), "{body}");
+    assert!(!body.contains("azure_devops = true"), "{body}");
 
     let loaded = crate::config::Config::load(&dir.path().join("maestro.toml")).unwrap();
     assert_eq!(loaded.provider.kind, ProviderKind::AzureDevops);

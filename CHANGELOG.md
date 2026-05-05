@@ -8,6 +8,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- feat(config): mark Azure DevOps stable by default and retire the `experimental.azure_devops` startup gate (#471)
 - feat(init): add interactive provider detection with Azure DevOps prompts and `--non-interactive` GitHub defaults (#468)
 
 ## [0.23.0] - 2026-05-04
