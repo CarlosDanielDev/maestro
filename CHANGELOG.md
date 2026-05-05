@@ -7,6 +7,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-05-05
+
+### Documentation
+- docs: replace distorted README hero with snapshot-based render (#653)
+
 ## [0.24.0] - 2026-05-05
 
 ### Added
