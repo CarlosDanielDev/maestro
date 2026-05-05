@@ -13,4 +13,6 @@ pub mod input;
 pub mod state;
 
 #[allow(unused_imports)]
-pub use state::{EditTarget, PrdAction, PrdSaveStatus, PrdScreen, PrdSection, PrdSyncStatus};
+pub use state::{
+    EditTarget, PrdAction, PrdPane, PrdSaveStatus, PrdScreen, PrdSection, PrdSyncStatus,
+};

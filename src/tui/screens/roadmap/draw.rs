@@ -8,12 +8,13 @@ use crate::tui::screens::roadmap::dep_levels::dep_levels;
 use crate::tui::screens::roadmap::state::RoadmapScreen;
 use crate::tui::screens::roadmap::types::{Filters, RoadmapEntry, StatusFilter};
 use crate::tui::theme::Theme;
-use crate::tui::widgets::EmptyState;
+use crate::tui::widgets::{EmptyState, focused_selection_style};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use unicode_width::UnicodeWidthStr;
 
 pub fn draw(
     f: &mut Frame,
@@ -101,14 +102,21 @@ fn draw_body(
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent_identifier))
         .title(" Milestones (descending semver) ");
-    let visible_rows = block.inner(area).height as usize;
+    let inner = block.inner(area);
+    let visible_rows = inner.height as usize;
     screen.clamp_offset_to_cursor(visible_rows);
     let offset = screen.offset;
 
     let mut items: Vec<ListItem> = Vec::new();
     for (idx, entry) in screen.entries.iter().enumerate() {
         let is_focused = idx == screen.cursor;
-        items.push(milestone_row(entry, is_focused, &screen.filters, theme));
+        items.push(milestone_row(
+            entry,
+            is_focused,
+            &screen.filters,
+            inner.width,
+            theme,
+        ));
         if screen.is_expanded(entry.milestone.number) {
             for line in expanded_issue_lines(entry, &screen.filters, theme) {
                 items.push(line);
@@ -124,6 +132,7 @@ fn milestone_row<'a>(
     entry: &'a RoadmapEntry,
     focused: bool,
     filters: &Filters,
+    width: u16,
     theme: &Theme,
 ) -> ListItem<'a> {
     let total = entry.milestone.open_issues + entry.milestone.closed_issues;
@@ -145,39 +154,50 @@ fn milestone_row<'a>(
     } else {
         theme.accent_warning
     };
-    let prefix = if focused { "▶ " } else { "  " };
     let filter_marker = if filters.is_empty() {
         ""
     } else {
         " (filtered)"
     };
+    let row_style = if focused {
+        focused_selection_style(theme)
+    } else {
+        Style::default().fg(theme.text_primary)
+    };
+    let status_style = if focused {
+        focused_selection_style(theme)
+    } else {
+        Style::default().fg(status_color)
+    };
+    let count_text = format!("{}/{}{filter_marker}", entry.milestone.closed_issues, total);
+    let row_text = format!("  {} {bar} {count_text}", entry.milestone.title);
+    let trailing = if focused {
+        width.saturating_sub(row_text.width() as u16) as usize
+    } else {
+        0
+    };
     let mut spans = Vec::new();
-    spans.push(Span::styled(
-        prefix,
-        Style::default().fg(theme.text_primary),
-    ));
+    spans.push(Span::styled("  ", row_style));
     spans.push(Span::styled(
         format!("{} ", entry.milestone.title),
-        Style::default()
-            .fg(if focused {
-                theme.accent_success
-            } else {
-                theme.text_primary
-            })
-            .add_modifier(if focused {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            }),
+        if focused {
+            row_style
+        } else {
+            row_style.add_modifier(Modifier::BOLD)
+        },
     ));
+    spans.push(Span::styled(format!("{bar} "), status_style));
     spans.push(Span::styled(
-        format!("{bar} "),
-        Style::default().fg(status_color),
+        count_text,
+        if focused {
+            row_style
+        } else {
+            Style::default().fg(theme.text_secondary)
+        },
     ));
-    spans.push(Span::styled(
-        format!("{}/{}{filter_marker}", entry.milestone.closed_issues, total),
-        Style::default().fg(theme.text_secondary),
-    ));
+    if trailing > 0 {
+        spans.push(Span::styled(" ".repeat(trailing), row_style));
+    }
     ListItem::new(Line::from(spans))
 }
 
@@ -236,7 +256,7 @@ fn draw_hints(f: &mut Frame, area: Rect, screen: &RoadmapScreen, theme: &Theme) 
     let hint = if screen.editing_filter.is_some() {
         "[Enter] apply  [Esc] cancel  type to filter"
     } else {
-        "[↑↓] move  [Enter] expand/collapse  [r] refresh  [/] filter label  [a] filter assignee  [o] open-only  [c] closed-only  [x] clear filters  [Esc] back"
+        "[j/k] move  [Enter] expand/collapse  [r] refresh  [/] filter label  [a] filter assignee  [o] open-only  [c] closed-only  [x] clear filters  [Esc] back"
     };
     f.render_widget(
         Paragraph::new(hint)

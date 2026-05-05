@@ -5,14 +5,16 @@ use crate::tui::markdown::render_markdown;
 use crate::tui::marquee::{MarqueeConfig, needs_scroll, visible_slice};
 use crate::tui::screens::{ScreenAction, draw_keybinds_bar};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::focused_selection_style;
 use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Clear, Paragraph, Wrap},
 };
+use unicode_width::UnicodeWidthStr;
 
 impl IssueBrowserScreen {
     pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -268,10 +270,7 @@ impl IssueBrowserScreen {
                 };
 
                 let style = if is_selected {
-                    Style::default()
-                        .fg(theme.selection_fg)
-                        .bg(theme.selection_bg)
-                        .add_modifier(Modifier::BOLD)
+                    focused_selection_style(theme)
                 } else if is_multi {
                     Style::default().fg(theme.accent_success)
                 } else {
@@ -279,7 +278,7 @@ impl IssueBrowserScreen {
                 };
 
                 let title = sanitize_for_terminal(&issue.title);
-                let title_text =
+                let mut title_text =
                     if is_selected && needs_scroll(title.chars().count(), title_max_width) {
                         visible_slice(&title, self.marquee.offset, title_max_width)
                     } else if title.chars().count() > title_max_width && title_max_width > 3 {
@@ -288,6 +287,12 @@ impl IssueBrowserScreen {
                     } else {
                         title
                     };
+                if is_selected {
+                    let title_width = UnicodeWidthStr::width(title_text.as_str());
+                    if title_width < title_max_width {
+                        title_text.push_str(&" ".repeat(title_max_width - title_width));
+                    }
+                }
 
                 Line::from(vec![
                     Span::styled(format!("{}{} ", cursor, marker), style),

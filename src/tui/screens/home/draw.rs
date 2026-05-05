@@ -3,8 +3,8 @@ use super::{HomeScreen, QUICK_ACTIONS};
 use crate::tui::icons::{self, IconId};
 use crate::tui::screens::ScreenAction;
 use crate::tui::theme::Theme;
-use crate::tui::widgets::EmptyState;
 use crate::tui::widgets::stats_bar::{StatsBar, StatsBarData};
+use crate::tui::widgets::{EmptyState, focused_selection_style};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -12,6 +12,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use unicode_width::UnicodeWidthStr;
 
 impl HomeScreen {
     pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -185,6 +186,7 @@ impl HomeScreen {
             return;
         }
 
+        let inner_width = block.inner(area).width;
         let mut lines = Vec::new();
         for (idx, suggestion) in self.suggestions.iter().enumerate() {
             let is_selected = is_focused && idx == self.selected_suggestion;
@@ -201,16 +203,27 @@ impl HomeScreen {
                 SuggestionKind::FailedIssues { .. } => theme.accent_error,
             };
             let style = if is_selected {
-                Style::default()
-                    .fg(theme.branding_fg)
-                    .bg(color)
-                    .add_modifier(Modifier::BOLD)
+                focused_selection_style(theme)
             } else {
                 Style::default().fg(theme.text_primary)
             };
+            let icon_style = if is_selected {
+                focused_selection_style(theme)
+            } else {
+                Style::default().fg(color)
+            };
+            let prefix = format!("  {} ", icon);
+            let mut message = suggestion.message.clone();
+            if is_selected {
+                let row_width = prefix.width() + message.width();
+                let trailing = inner_width.saturating_sub(row_width as u16) as usize;
+                if trailing > 0 {
+                    message.push_str(&" ".repeat(trailing));
+                }
+            }
             lines.push(Line::from(vec![
-                Span::styled(format!("  {} ", icon), Style::default().fg(color)),
-                Span::styled(&suggestion.message, style),
+                Span::styled(prefix, icon_style),
+                Span::styled(message, style),
             ]));
         }
 

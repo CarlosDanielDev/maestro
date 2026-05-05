@@ -249,6 +249,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::MilestoneView => {
             if let Some(ref mut screen) = app.screen_state.milestone_screen {
+                screen.set_spinner_context(spinner_tick);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -363,7 +364,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     &theme,
                 );
             } else if let Some(ref mut screen) = app.screen_state.pr_review_screen {
-                screen.tick();
+                screen.set_spinner_context(spinner_tick);
                 screen.draw(f, chunks[1], &theme);
             }
         }

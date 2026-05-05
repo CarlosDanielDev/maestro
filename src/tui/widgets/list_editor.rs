@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::tui::theme::Theme;
 
-use super::WidgetAction;
+use super::{WidgetAction, focused_selection_style};
 
 pub struct ListEditor {
     pub label: String,
@@ -112,9 +112,7 @@ impl ListEditor {
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
         let label_style = if focused {
-            Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD)
+            focused_selection_style(theme)
         } else {
             Style::default().fg(theme.text_primary)
         };
@@ -132,9 +130,7 @@ impl ListEditor {
                 "  ".to_string()
             };
             let style = if is_selected {
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD)
+                focused_selection_style(theme)
             } else {
                 Style::default().fg(theme.text_primary)
             };

@@ -729,9 +729,9 @@ fn draw_release_mix(f: &mut Frame, area: Rect, theme: &Theme, mode: RenderMode) 
 }
 
 fn draw_pr_trace(f: &mut Frame, area: Rect, theme: &Theme, mode: RenderMode) {
-    let data = release_issue_trace();
+    let data = release_ref_trend();
     let max = data.iter().copied().max().unwrap_or(1).max(1);
-    let block = chart_block("PR Trace", theme, mode);
+    let block = chart_block("Ref Trend", theme, mode);
     let style = if mode.styled {
         Style::default()
             .fg(theme.accent_warning)
@@ -742,7 +742,7 @@ fn draw_pr_trace(f: &mut Frame, area: Rect, theme: &Theme, mode: RenderMode) {
 
     let sparkline = Sparkline::default()
         .block(block)
-        .data(data)
+        .data(&data)
         .max(max)
         .style(style);
     f.render_widget(sparkline, area);
@@ -842,32 +842,43 @@ fn release_category_counts() -> [(&'static str, u64); 5] {
     ]
 }
 
-fn release_issue_trace() -> Vec<u64> {
-    let Some(entry) = changelog::current_version() else {
-        return vec![1, 2, 3, 2, 1];
-    };
-
-    let mut points: Vec<u64> = entry
-        .sections
+fn release_ref_trend() -> Vec<u64> {
+    let mut points: Vec<u64> = changelog::changelog()
+        .entries
         .iter()
-        .flat_map(|section| section.items.iter())
-        .flat_map(|item| item.issue_numbers.iter().copied())
-        .take(32)
-        .map(|n| n % 10 + 1)
+        .take(24)
+        .map(|entry| {
+            entry
+                .sections
+                .iter()
+                .flat_map(|section| section.items.iter())
+                .map(|item| item.issue_numbers.len() as u64)
+                .sum::<u64>()
+        })
         .collect();
 
-    if points.is_empty() {
-        points = entry
-            .sections
-            .iter()
-            .map(|section| section.items.len() as u64)
-            .filter(|count| *count > 0)
-            .collect();
+    points.reverse();
+    if points.iter().any(|count| *count > 0) {
+        return points;
     }
-    if points.is_empty() {
-        points.push(1);
+
+    let mut item_counts: Vec<u64> = changelog::changelog()
+        .entries
+        .iter()
+        .take(24)
+        .map(|entry| {
+            entry
+                .sections
+                .iter()
+                .map(|section| section.items.len() as u64)
+                .sum::<u64>()
+        })
+        .collect();
+    item_counts.reverse();
+    if item_counts.is_empty() {
+        item_counts.push(1);
     }
-    points
+    item_counts
 }
 
 fn whats_new_highlights() -> Vec<(ChangeCategory, &'static ChangeItem)> {

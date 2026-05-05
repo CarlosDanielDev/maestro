@@ -3,7 +3,7 @@ source: src/tui/snapshot_tests/milestone.rs
 expression: terminal.backend()
 ---
 "╔════════════[ 󰐱 Milestones ]════════════╗[1] Issues  [2] Preview                                                       "
-"║  Loading...                            ║                                                                              "
+"║⠋ Loading milestones...                 ║                                                                              "
 "║                                        ║╔═════════════════════════════════[ Issues ]═════════════════════════════════╗"
 "║                                        ║║  Select a milestone                                                        ║"
 "║                                        ║║                                                                            ║"

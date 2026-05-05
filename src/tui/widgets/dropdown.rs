@@ -2,14 +2,14 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
 };
 
 use crate::tui::theme::Theme;
 
-use super::WidgetAction;
+use super::{WidgetAction, focused_selection_style};
 
 pub struct Dropdown {
     pub label: String,
@@ -64,27 +64,22 @@ impl Dropdown {
 
     pub fn draw(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
         let label_style = if focused {
-            Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD)
+            focused_selection_style(theme)
         } else {
             Style::default().fg(theme.text_primary)
         };
 
         let value = self.options.get(self.selected).map_or("", |s| s.as_str());
         let value_style = if focused {
-            Style::default()
-                .fg(theme.selection_fg)
-                .bg(theme.selection_bg)
-                .add_modifier(Modifier::BOLD)
+            focused_selection_style(theme)
         } else {
             Style::default().fg(theme.text_secondary)
         };
 
-        let arrow_color = if focused {
-            theme.accent_success
+        let arrow_style = if focused {
+            focused_selection_style(theme)
         } else {
-            theme.text_muted
+            Style::default().fg(theme.text_muted)
         };
 
         let line = Line::from(vec![
@@ -95,7 +90,7 @@ impl Dropdown {
                 } else {
                     "< "
                 }, // nf chevron_left
-                Style::default().fg(arrow_color),
+                arrow_style,
             ),
             Span::styled(value, value_style),
             Span::styled(
@@ -104,7 +99,7 @@ impl Dropdown {
                 } else {
                     " >"
                 }, // nf chevron_right
-                Style::default().fg(arrow_color),
+                arrow_style,
             ),
         ]);
         f.render_widget(Paragraph::new(line), area);

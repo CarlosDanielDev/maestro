@@ -6,6 +6,7 @@ use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::panels::compact_gauge_bar_counts;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::{BrailleSpinner, focused_selection_style};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     Frame,
@@ -14,6 +15,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -85,6 +87,7 @@ pub struct MilestoneScreen {
     pub active_tab: MilestoneTab,
     /// Focused issue index within the right-pane Issue List tab (#325).
     pub focused_issue: usize,
+    spinner_tick: usize,
 }
 
 impl MilestoneScreen {
@@ -97,7 +100,12 @@ impl MilestoneScreen {
             last_visible_slots: 6,
             active_tab: MilestoneTab::default(),
             focused_issue: 0,
+            spinner_tick: 0,
         }
+    }
+
+    pub fn set_spinner_context(&mut self, spinner_tick: usize) {
+        self.spinner_tick = spinner_tick;
     }
 
     /// Cycle to the next right-pane tab. Returns the new tab.
@@ -220,25 +228,42 @@ impl MilestoneScreen {
             .take(inner.height as usize)
             .enumerate()
             .map(|(i, issue)| {
+                let is_focused = i == focused;
                 let (symbol, symbol_color) = if issue.state == "closed" {
                     (icons::get(IconId::IssueClosed), theme.accent_success)
                 } else {
                     (icons::get(IconId::IssueOpened), theme.accent_warning)
                 };
-                let cursor = if i == focused { ">" } else { " " };
+                let cursor = if is_focused { ">" } else { " " };
+                let row_style = if is_focused {
+                    focused_selection_style(theme)
+                } else {
+                    Style::default().fg(theme.text_secondary)
+                };
+                let issue_style = if is_focused {
+                    focused_selection_style(theme)
+                } else {
+                    Style::default()
+                        .fg(theme.accent_identifier)
+                        .add_modifier(Modifier::BOLD)
+                };
+                let symbol_style = if is_focused {
+                    focused_selection_style(theme)
+                } else {
+                    Style::default().fg(symbol_color)
+                };
+                let prefix = format!("{} {} #{} ", cursor, symbol, issue.number);
+                let title_width = inner.width.saturating_sub(prefix.width() as u16) as usize;
+                let mut title = sanitize_for_terminal(&issue.title);
+                let current_width = UnicodeWidthStr::width(title.as_str());
+                if is_focused && current_width < title_width {
+                    title.push_str(&" ".repeat(title_width - current_width));
+                }
                 Line::from(vec![
-                    Span::raw(format!("{} ", cursor)),
-                    Span::styled(format!("{} ", symbol), Style::default().fg(symbol_color)),
-                    Span::styled(
-                        format!("#{} ", issue.number),
-                        Style::default()
-                            .fg(theme.accent_identifier)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        sanitize_for_terminal(&issue.title),
-                        Style::default().fg(theme.text_secondary),
-                    ),
+                    Span::styled(format!("{} ", cursor), row_style),
+                    Span::styled(format!("{} ", symbol), symbol_style),
+                    Span::styled(format!("#{} ", issue.number), issue_style),
+                    Span::styled(title, row_style),
                 ])
             })
             .collect();
@@ -287,7 +312,9 @@ impl MilestoneScreen {
 
     #[allow(dead_code)]
     #[allow(clippy::needless_pass_by_ref_mut)] // Reason: &mut reserved for future tick-driven state mutations
-    pub fn tick(&mut self) {}
+    pub fn tick(&mut self) {
+        self.spinner_tick = self.spinner_tick.wrapping_add(1);
+    }
 
     pub fn selected_milestone(&self) -> Option<&MilestoneEntry> {
         self.milestones.get(self.selected)
@@ -345,9 +372,14 @@ impl MilestoneScreen {
             .border_style(Style::default().fg(theme.border_active));
 
         if self.loading {
-            let para = Paragraph::new("  Loading...")
-                .style(Style::default().fg(theme.accent_warning))
-                .block(block);
+            let para = Paragraph::new(BrailleSpinner::render(
+                self.spinner_tick,
+                "Loading milestones...",
+                true,
+                theme,
+            ))
+            .style(Style::default().fg(theme.accent_warning))
+            .block(block);
             f.render_widget(para, area);
             return;
         }
@@ -387,20 +419,25 @@ impl MilestoneScreen {
             };
 
             let title_style = if is_selected {
-                Style::default()
-                    .fg(theme.selection_fg)
-                    .bg(theme.selection_bg)
-                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
+                focused_selection_style(theme)
             } else {
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD)
             };
 
+            let prefix = format!("{}{} ", cursor, icons::get(IconId::Milestone));
+            let title_width = inner.width.saturating_sub(prefix.width() as u16) as usize;
+            let mut title = sanitize_for_terminal(&entry.title);
+            let current_width = UnicodeWidthStr::width(title.as_str());
+            if is_selected && current_width < title_width {
+                title.push_str(&" ".repeat(title_width - current_width));
+            }
+
             let title_line = Line::from(vec![
                 Span::styled(cursor, title_style),
                 Span::styled(format!("{} ", icons::get(IconId::Milestone)), title_style),
-                Span::styled(sanitize_for_terminal(&entry.title), title_style),
+                Span::styled(title, title_style),
             ]);
             let title_area = Rect::new(inner.x, y, inner.width, 1);
             f.render_widget(Paragraph::new(title_line), title_area);

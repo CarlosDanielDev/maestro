@@ -22,10 +22,21 @@ pub use toggle::Toggle;
 pub use wizard_frame::{WizardFrame, WizardFrameFooter, WizardFrameHeader};
 
 use crossterm::event::KeyEvent;
-use ratatui::{Frame, layout::Rect};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Modifier, Style},
+};
 
 use crate::tui::screens::settings::validation::ValidationFeedback;
 use crate::tui::theme::Theme;
+
+pub(crate) fn focused_selection_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme.selection_fg)
+        .bg(theme.selection_bg)
+        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+}
 
 /// Action returned by a form widget after handling input.
 #[derive(Debug, Clone, PartialEq, Eq)]

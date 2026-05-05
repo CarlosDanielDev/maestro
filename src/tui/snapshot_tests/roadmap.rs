@@ -51,7 +51,7 @@ fn roadmap_scrolls_to_cursor_at_bottom_of_visible_window() {
 
     let output = buffer_text(&terminal);
     assert!(
-        output.contains("▶ v0.0.25"),
+        output.contains("  v0.0.25"),
         "focused roadmap row should be visible:\n{output}"
     );
     assert_snapshot!(terminal.backend());

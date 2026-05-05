@@ -10,11 +10,13 @@
 
 use crate::review::types::{ConcernStatus, ReviewReport, Severity};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::focused_selection_style;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem};
+use unicode_width::UnicodeWidthStr;
 
 pub fn draw(f: &mut Frame, area: Rect, report: &ReviewReport, cursor: usize, theme: &Theme) {
     let (critical, warning, suggestion) = report.severity_counts();
@@ -27,6 +29,7 @@ pub fn draw(f: &mut Frame, area: Rect, report: &ReviewReport, cursor: usize, the
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent_identifier))
         .title(title);
+    let inner = block.inner(area);
 
     if report.concerns.is_empty() {
         f.render_widget(
@@ -44,7 +47,7 @@ pub fn draw(f: &mut Frame, area: Rect, report: &ReviewReport, cursor: usize, the
         .enumerate()
         .map(|(i, c)| {
             let focused = i == cursor;
-            let prefix = if focused { "▶ " } else { "  " };
+            let prefix = "  ".to_string();
             let sev_color = match c.severity {
                 Severity::Critical => Color::Red,
                 Severity::Warning => Color::Yellow,
@@ -57,31 +60,40 @@ pub fn draw(f: &mut Frame, area: Rect, report: &ReviewReport, cursor: usize, the
                 ConcernStatus::Applied => "[✓]",
             };
             let line_ref = c.line.map(|l| format!(":{l}")).unwrap_or_default();
+            let status = format!("{status_label} ");
+            let severity = format!("[{}] ", c.severity.label());
+            let location = format!("{}{line_ref} — ", c.file.display());
+            let message = c.message.clone();
+            let row_style = if focused {
+                focused_selection_style(theme)
+            } else {
+                Style::default().fg(theme.text_primary)
+            };
+            let muted_style = if focused {
+                row_style
+            } else {
+                Style::default().fg(theme.text_secondary)
+            };
+            let severity_style = if focused {
+                row_style
+            } else {
+                Style::default().fg(sev_color).add_modifier(Modifier::BOLD)
+            };
+            let content_width = prefix.width()
+                + status.as_str().width()
+                + severity.as_str().width()
+                + location.as_str().width()
+                + message.as_str().width();
+            let trailing = inner.width.saturating_sub(content_width as u16) as usize;
             let mut spans = Vec::new();
-            spans.push(Span::styled(
-                prefix,
-                Style::default().fg(theme.text_primary),
-            ));
-            spans.push(Span::styled(
-                format!("{status_label} "),
-                Style::default().fg(theme.text_secondary),
-            ));
-            spans.push(Span::styled(
-                format!("[{}] ", c.severity.label()),
-                Style::default().fg(sev_color).add_modifier(Modifier::BOLD),
-            ));
-            spans.push(Span::styled(
-                format!("{}{line_ref} — ", c.file.display()),
-                Style::default().fg(theme.text_secondary),
-            ));
-            spans.push(Span::styled(
-                c.message.clone(),
-                Style::default().fg(if focused {
-                    theme.accent_success
-                } else {
-                    theme.text_primary
-                }),
-            ));
+            spans.push(Span::styled(prefix, row_style));
+            spans.push(Span::styled(status, muted_style));
+            spans.push(Span::styled(severity, severity_style));
+            spans.push(Span::styled(location, muted_style));
+            spans.push(Span::styled(message, row_style));
+            if trailing > 0 {
+                spans.push(Span::styled(" ".repeat(trailing), row_style));
+            }
             ListItem::new(Line::from(spans))
         })
         .collect();
