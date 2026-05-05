@@ -52,8 +52,19 @@ impl PluginRunner {
         let start = std::time::Instant::now();
 
         let result = tokio::time::timeout(self.timeout, async {
-            let mut cmd = Command::new("sh");
-            cmd.args(["-c", &plugin.run]);
+            // CWE-78 fix: execute structured argv instead of sh -c.
+            // Shell features (pipes, redirections, $VAR expansion) are not
+            // supported by design — plugins must use absolute paths or
+            // commands available on PATH with explicit arguments.
+            let parts: Vec<&str> = plugin.run.split_whitespace().collect();
+            if parts.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Empty plugin command",
+                ));
+            }
+            let mut cmd = Command::new(parts[0]);
+            cmd.args(&parts[1..]);
 
             // Defense-in-depth: re-validate env vars at execution time.
             // HookContext::with_var() validates at insertion, but ctx.vars
@@ -156,10 +167,13 @@ mod tests {
 
     #[tokio::test]
     async fn fire_passes_env_vars() {
+        // Use printenv instead of 'echo $VAR' — structured execution does not
+        // expand shell variables in arguments; the env var is still set on the
+        // child process and printenv reads it directly.
         let plugins = vec![make_plugin(
             "env-test",
             "session_started",
-            "echo $MAESTRO_SESSION_ID",
+            "printenv MAESTRO_SESSION_ID",
         )];
         let runner = PluginRunner::new(plugins, 5);
         let ctx = HookContext::new().with_session("test-id-123", None);
@@ -182,7 +196,8 @@ mod tests {
 
     #[tokio::test]
     async fn fire_handles_failed_command() {
-        let plugins = vec![make_plugin("fail", "session_completed", "exit 1")];
+        // 'exit' is a shell builtin; use 'false' (external command) instead.
+        let plugins = vec![make_plugin("fail", "session_completed", "false")];
         let runner = PluginRunner::new(plugins, 5);
         let ctx = HookContext::new();
         let results = runner.fire(HookPoint::SessionCompleted, &ctx).await;
@@ -192,7 +207,10 @@ mod tests {
 
     #[tokio::test]
     async fn fire_rejects_non_maestro_env_vars() {
-        let plugins = vec![make_plugin("env-test", "session_started", "echo $PATH")];
+        // Use 'printenv PATH' to actually read the PATH value seen by the
+        // child process; shell variable expansion ($PATH) is not available
+        // with structured execution.
+        let plugins = vec![make_plugin("env-test", "session_started", "printenv PATH")];
         let runner = PluginRunner::new(plugins, 5);
         let mut ctx = HookContext::new();
         // Manually inject a dangerous env var (bypassing with_var validation)
