@@ -7,6 +7,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-05-05
+
+### Added
+- feat(tui): rich EmptyState widget with action-oriented hints across all screens (#639)
+- feat(tui): add shared BrailleSpinner widget for async loading states (#637)
+- feat(tui): extract shared WizardFrame widget for design-system consistency (#636)
+- feat(config): flip experimental.azure_devops default ON and retire the startup gate (#471)
+- feat(tui): wizard label polymorphism — Iteration vs Milestone based on provider (#470)
+- feat(adapt): iteration-path vs milestone branching in materializer for AzDO (#469)
+- feat(init): interactive maestro init with provider auto-detection and AzDO prompts (#468)
+
+### Fixed
+- fix(roadmap): keep selected milestone in view when expanding/collapsing details (#638)
 ### Added
 - feat(config): mark Azure DevOps stable by default and retire the `experimental.azure_devops` startup gate (#471)
 - feat(init): add interactive provider detection with Azure DevOps prompts and `--non-interactive` GitHub defaults (#468)
