@@ -20,5 +20,5 @@ expression: terminal.backend()
 "                   [h]  Milestone Review                    "
 "                   [q]  Quit                                "
 "                                                            "
-"                   <q> quit                                 "
+"                   <q> quit  <n> notes                      "
 "                                                            "

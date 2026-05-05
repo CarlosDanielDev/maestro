@@ -3,12 +3,16 @@ use crate::provider::github::transport::RepoProvider;
 use crate::provider::types::{Issue, Milestone};
 
 fn make_issue(number: u64, labels: &[&str]) -> Issue {
+    make_issue_with_state(number, labels, "open")
+}
+
+fn make_issue_with_state(number: u64, labels: &[&str], state: &str) -> Issue {
     Issue {
         number,
         title: format!("Issue #{}", number),
         body: String::new(),
         labels: labels.iter().map(|s| s.to_string()).collect(),
-        state: "open".to_string(),
+        state: state.to_string(),
         html_url: format!("https://github.com/owner/repo/issues/{}", number),
         milestone: None,
         assignees: vec![],
@@ -36,6 +40,20 @@ async fn mock_list_issues_filters_by_label() {
         make_issue(2, &["bug"]),
     ]);
     let issues = client.list_issues(&["maestro:ready"]).await.unwrap();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].number, 1);
+}
+
+#[tokio::test]
+async fn mock_list_issues_filters_by_state_token() {
+    let client = MockGitHubClient::new();
+    client.set_issues(vec![
+        make_issue_with_state(1, &["maestro:done"], "closed"),
+        make_issue_with_state(2, &["maestro:ready"], "open"),
+    ]);
+
+    let issues = client.list_issues(&["state:closed"]).await.unwrap();
+
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].number, 1);
 }

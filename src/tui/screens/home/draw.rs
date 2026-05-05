@@ -1,10 +1,10 @@
 use super::types::{Suggestion, SuggestionKind};
 use super::{HomeScreen, QUICK_ACTIONS};
-use crate::changelog::{self, ChangeCategory, ChangeItem};
 use crate::tui::icons::{self, IconId};
 use crate::tui::screens::ScreenAction;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::stats_bar::{StatsBar, StatsBarData};
+use crate::tui::widgets::{EmptyState, focused_selection_style};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -12,6 +12,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use unicode_width::UnicodeWidthStr;
 
 impl HomeScreen {
     pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -21,20 +22,12 @@ impl HomeScreen {
             (self.warnings.len() as u16 + 2).min(6)
         };
 
-        let whats_new_items = Self::whats_new_highlights();
-        let whats_new_height = if whats_new_items.is_empty() {
-            0
-        } else {
-            (whats_new_items.len() as u16 + 2).min(6)
-        };
-
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),                // stats bar
-                Constraint::Length(warning_height),   // warnings (0 if none)
-                Constraint::Length(whats_new_height), // what's new (0 if none)
-                Constraint::Min(8),                   // quick actions + recent sessions
+                Constraint::Length(3),              // stats bar
+                Constraint::Length(warning_height), // warnings (0 if none)
+                Constraint::Min(8),                 // quick actions + recent sessions
             ])
             .split(area);
 
@@ -76,10 +69,6 @@ impl HomeScreen {
             self.draw_warnings(f, chunks[1], theme);
         }
 
-        if !whats_new_items.is_empty() {
-            Self::draw_whats_new(f, chunks[2], theme, &whats_new_items);
-        }
-
         let bottom = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -87,7 +76,7 @@ impl HomeScreen {
                 Constraint::Percentage(35),
                 Constraint::Percentage(35),
             ])
-            .split(chunks[3]);
+            .split(chunks[2]);
 
         self.draw_quick_actions(f, bottom[0], theme);
         self.draw_suggestions(f, bottom[1], theme);
@@ -137,62 +126,14 @@ impl HomeScreen {
         f.render_widget(para, area);
     }
 
-    fn whats_new_highlights() -> Vec<(ChangeCategory, &'static ChangeItem)> {
-        let version = env!("CARGO_PKG_VERSION");
-        changelog::changelog().highlights_with_category(version, 4)
-    }
-
-    fn draw_whats_new(
-        f: &mut Frame,
-        area: Rect,
-        theme: &Theme,
-        items: &[(ChangeCategory, &ChangeItem)],
-    ) {
-        let version = env!("CARGO_PKG_VERSION");
-        let whats_new_title = format!("What's New in v{}", version);
-        let block = theme
-            .styled_block(&whats_new_title, false)
-            .title_bottom(Line::from(" Press [n] for full release notes ").centered())
-            .border_style(Style::default().fg(theme.accent_info));
-
-        let inner_width = area.width.saturating_sub(2) as usize;
-
-        let lines: Vec<Line> = items
-            .iter()
-            .map(|(cat, item)| {
-                let prefix = format!("  [{}] ", cat.label());
-                let max_text = inner_width.saturating_sub(prefix.len());
-                let text = if item.text.chars().count() > max_text {
-                    let truncated: String =
-                        item.text.chars().take(max_text.saturating_sub(3)).collect();
-                    format!("{}...", truncated)
-                } else {
-                    item.text.clone()
-                };
-                Line::from(vec![
-                    Span::styled(
-                        prefix,
-                        Style::default()
-                            .fg(theme.accent_success)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(text, Style::default().fg(theme.text_primary)),
-                ])
-            })
-            .collect();
-
-        let para = Paragraph::new(lines).block(block);
-        f.render_widget(para, area);
-    }
-
     fn draw_quick_actions(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let is_focused = self.is_quick_actions_focused();
         let block = theme.styled_block("Quick Actions", is_focused);
 
         let selected_style = Style::default()
-            .fg(theme.branding_fg)
-            .bg(theme.accent_success)
-            .add_modifier(Modifier::BOLD);
+            .fg(theme.selection_fg)
+            .bg(theme.selection_bg)
+            .add_modifier(Modifier::BOLD | Modifier::REVERSED);
 
         let mut lines = Vec::new();
         for (idx, (label, key, _)) in QUICK_ACTIONS.iter().enumerate() {
@@ -205,7 +146,7 @@ impl HomeScreen {
             let key_style = if is_selected {
                 selected_style
             } else {
-                Style::default().fg(theme.accent_success)
+                Style::default().fg(theme.text_secondary)
             };
             lines.push(Line::from(vec![
                 Span::styled(format!("  [{}]  ", key), key_style),
@@ -237,6 +178,15 @@ impl HomeScreen {
             return;
         }
 
+        if self.suggestions.len() == 1
+            && matches!(self.suggestions[0].kind, SuggestionKind::IdleSessions)
+        {
+            EmptyState::idle("Suggestions", "No sessions running.", "Press [r] to start.")
+                .render(f, area, theme);
+            return;
+        }
+
+        let inner_width = block.inner(area).width;
         let mut lines = Vec::new();
         for (idx, suggestion) in self.suggestions.iter().enumerate() {
             let is_selected = is_focused && idx == self.selected_suggestion;
@@ -253,16 +203,27 @@ impl HomeScreen {
                 SuggestionKind::FailedIssues { .. } => theme.accent_error,
             };
             let style = if is_selected {
-                Style::default()
-                    .fg(theme.branding_fg)
-                    .bg(color)
-                    .add_modifier(Modifier::BOLD)
+                focused_selection_style(theme)
             } else {
                 Style::default().fg(theme.text_primary)
             };
+            let icon_style = if is_selected {
+                focused_selection_style(theme)
+            } else {
+                Style::default().fg(color)
+            };
+            let prefix = format!("  {} ", icon);
+            let mut message = suggestion.message.clone();
+            if is_selected {
+                let row_width = prefix.width() + message.width();
+                let trailing = inner_width.saturating_sub(row_width as u16) as usize;
+                if trailing > 0 {
+                    message.push_str(&" ".repeat(trailing));
+                }
+            }
             lines.push(Line::from(vec![
-                Span::styled(format!("  {} ", icon), Style::default().fg(color)),
-                Span::styled(&suggestion.message, style),
+                Span::styled(prefix, icon_style),
+                Span::styled(message, style),
             ]));
         }
 
@@ -274,10 +235,12 @@ impl HomeScreen {
         let block = theme.styled_block("Recent Activity", false);
 
         if self.recent_sessions.is_empty() {
-            let para = Paragraph::new("  No recent sessions")
-                .style(Style::default().fg(theme.text_secondary))
-                .block(block);
-            f.render_widget(para, area);
+            EmptyState::idle(
+                "Recent Activity",
+                "No recent sessions.",
+                "Press [r] to launch one.",
+            )
+            .render(f, area, theme);
             return;
         }
 

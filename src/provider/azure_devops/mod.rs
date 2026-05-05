@@ -246,11 +246,29 @@ fn duplicate_create_error(stderr: &str) -> bool {
 #[async_trait]
 impl RepoProvider for AzDevOpsClient {
     async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
-        let mut wiql = String::from(
-            "SELECT [System.Id] FROM WorkItems WHERE [System.State] <> 'Closed' \
-             AND [System.State] <> 'Removed'",
-        );
+        let mut issue_state = "open";
+        let mut tag_filters = Vec::new();
         for label in labels {
+            if let Some(state) = label.strip_prefix("state:") {
+                match state {
+                    "open" | "closed" | "all" => issue_state = state,
+                    _ => anyhow::bail!(
+                        "Invalid issue state: {:?}. Must be open, closed, or all",
+                        state
+                    ),
+                }
+            } else {
+                tag_filters.push(*label);
+            }
+        }
+
+        let state_clause = match issue_state {
+            "closed" => "[System.State] = 'Closed'",
+            "all" => "[System.State] <> 'Removed'",
+            _ => "[System.State] <> 'Closed' AND [System.State] <> 'Removed'",
+        };
+        let mut wiql = format!("SELECT [System.Id] FROM WorkItems WHERE {state_clause}");
+        for label in tag_filters {
             wiql.push_str(&format!(" AND [System.Tags] CONTAINS '{}'", label));
         }
 

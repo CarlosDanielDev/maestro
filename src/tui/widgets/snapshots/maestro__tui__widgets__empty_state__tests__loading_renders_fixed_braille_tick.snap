@@ -1,0 +1,13 @@
+---
+source: src/tui/widgets/empty_state.rs
+assertion_line: 134
+expression: output
+---
+"╔═════════════[ Roadmap ]══════════════╗"
+"║                                      ║"
+"║                                      ║"
+"║         ⠸ Fetching milestones        ║"
+"║                                      ║"
+"║                                      ║"
+"║                                      ║"
+"╚══════════════════════════════════════╝"

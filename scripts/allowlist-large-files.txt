@@ -57,6 +57,11 @@ src/tui/screens/issue_browser/mod.rs # deadline: 2026-07-22, owner: @carlos, tic
 src/tui/screens/issue_browser/draw.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split per-section draw helpers
 src/tui/screens/prompt_input.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split input-buffer management from draw from history
 src/tui/screens/milestone.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split milestone-list state from draw
+src/tui/screens/landing/draw.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split dashboard widgets, release charts, and layout sections into landing/draw/* modules
+src/tui/screens/landing/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split landing state, project metadata, and suggestion actions into focused submodules
+src/tui/screens/milestone_health/draw.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split health summary, issue list, and footer rendering into milestone_health/draw/* modules
+src/tui/screens/issue_wizard/draw.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split wizard step renderers into issue_wizard/draw/* modules
+src/tui/screens/milestone_wizard/draw.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split wizard step renderers into milestone_wizard/draw/* modules
 src/tui/screens/queue_confirmation.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split confirmation-dialog rendering from queue-state summary
 src/tui/screens/adapt/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split adapt-screen state from draw; extract sub-screens (scan-preview, materialize-preview)
 src/tui/screens/pr_review/mod.rs # deadline: 2026-07-22, owner: @carlos, ticket: #TBD, plan: split PR-browsing state from diff-rendering; draw already partially split into draw.rs

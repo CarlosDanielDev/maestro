@@ -107,6 +107,7 @@ fn handle_view(app: &mut App, code: KeyCode) -> ScreenAction {
             }
         }
         KeyCode::Char('r') => {
+            screen.is_loading = true;
             app.pending_commands
                 .push(crate::tui::app::TuiCommand::SyncRoadmap);
             ScreenAction::None
@@ -137,7 +138,9 @@ fn handle_view(app: &mut App, code: KeyCode) -> ScreenAction {
 
 pub fn ensure_loaded(app: &mut App) {
     if app.screen_state.roadmap_screen.is_none() {
-        app.screen_state.roadmap_screen = Some(RoadmapScreen::new());
+        let mut screen = RoadmapScreen::new();
+        screen.is_loading = true;
+        app.screen_state.roadmap_screen = Some(screen);
         app.pending_commands
             .push(crate::tui::app::TuiCommand::SyncRoadmap);
     }

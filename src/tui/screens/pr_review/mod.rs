@@ -39,8 +39,13 @@ impl PrReviewScreen {
         }
     }
 
+    #[allow(dead_code)] // Reason: retained for focused screen tests and legacy animation callers.
     pub fn tick(&mut self) {
         self.spinner_tick = self.spinner_tick.wrapping_add(1);
+    }
+
+    pub fn set_spinner_context(&mut self, spinner_tick: usize) {
+        self.spinner_tick = spinner_tick;
     }
 
     pub fn set_prs(&mut self, prs: Vec<PullRequest>) {

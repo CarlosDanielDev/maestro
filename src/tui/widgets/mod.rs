@@ -2,6 +2,7 @@ mod braille_spinner;
 pub mod bypass_indicator;
 mod ci_monitor;
 mod dropdown;
+mod empty_state;
 mod list_editor;
 mod number_stepper;
 pub mod stats_bar;
@@ -13,6 +14,7 @@ pub mod wizard_frame;
 pub use braille_spinner::BrailleSpinner;
 pub use ci_monitor::CiMonitorWidget;
 pub use dropdown::Dropdown;
+pub use empty_state::EmptyState;
 pub use list_editor::ListEditor;
 pub use number_stepper::NumberStepper;
 pub use text_input::TextInput;
@@ -20,10 +22,21 @@ pub use toggle::Toggle;
 pub use wizard_frame::{WizardFrame, WizardFrameFooter, WizardFrameHeader};
 
 use crossterm::event::KeyEvent;
-use ratatui::{Frame, layout::Rect};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Modifier, Style},
+};
 
 use crate::tui::screens::settings::validation::ValidationFeedback;
 use crate::tui::theme::Theme;
+
+pub(crate) fn focused_selection_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme.selection_fg)
+        .bg(theme.selection_bg)
+        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+}
 
 /// Action returned by a form widget after handling input.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -540,14 +540,20 @@ impl App {
             TuiDataEvent::RoadmapResult(result) => match result {
                 Ok(entries) => {
                     if let Some(s) = self.screen_state.roadmap_screen.as_mut() {
+                        s.is_loading = false;
                         s.set_entries(entries);
                     }
                 }
-                Err(e) => self.activity_log.push_simple(
-                    "Roadmap".into(),
-                    format!("Roadmap fetch failed: {e}"),
-                    LogLevel::Error,
-                ),
+                Err(e) => {
+                    if let Some(s) = self.screen_state.roadmap_screen.as_mut() {
+                        s.is_loading = false;
+                    }
+                    self.activity_log.push_simple(
+                        "Roadmap".into(),
+                        format!("Roadmap fetch failed: {e}"),
+                        LogLevel::Error,
+                    );
+                }
             },
             TuiDataEvent::ReviewCycleResult { pr_number, result } => match result {
                 Ok(report) => {

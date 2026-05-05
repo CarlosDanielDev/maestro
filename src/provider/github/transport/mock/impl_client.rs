@@ -6,14 +6,34 @@ use async_trait::async_trait;
 #[async_trait]
 impl RepoProvider for MockGitHubClient {
     async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
-        let label_set: std::collections::HashSet<&str> = labels.iter().copied().collect();
+        let mut state_filter = None;
+        let mut label_filters = Vec::new();
+        for label in labels {
+            if let Some(state) = label.strip_prefix("state:") {
+                match state {
+                    "open" | "closed" => state_filter = Some(state),
+                    "all" => state_filter = None,
+                    _ => anyhow::bail!(
+                        "Invalid issue state: {:?}. Must be open, closed, or all",
+                        state
+                    ),
+                }
+            } else {
+                label_filters.push(*label);
+            }
+        }
+        let label_set: std::collections::HashSet<&str> = label_filters.into_iter().collect();
         let filtered = {
             let state = self.inner.lock().unwrap();
             state
                 .issues
                 .iter()
                 .filter(|i| {
-                    label_set.is_empty() || i.labels.iter().any(|l| label_set.contains(l.as_str()))
+                    let state_matches =
+                        state_filter.map(|wanted| i.state == wanted).unwrap_or(true);
+                    let labels_match = label_set.is_empty()
+                        || i.labels.iter().any(|l| label_set.contains(l.as_str()));
+                    state_matches && labels_match
                 })
                 .cloned()
                 .collect()

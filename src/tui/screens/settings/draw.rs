@@ -22,6 +22,21 @@ fn active_flash_message(slot: &Option<(String, std::time::Instant)>) -> Option<S
             crate::tui::ui::truncate_str(&sanitize_for_terminal(first), 80).into_owned()
         })
 }
+
+fn focused_row_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme.selection_fg)
+        .bg(theme.selection_bg)
+        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+}
+
+fn render_focused_row_bg(f: &mut Frame, area: Rect, theme: &Theme) {
+    if area.height == 0 || area.width == 0 {
+        return;
+    }
+    f.render_widget(Paragraph::new("").style(focused_row_style(theme)), area);
+}
+
 impl SettingsScreen {
     fn draw_tab_bar(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let mut spans = Vec::new();
@@ -100,6 +115,16 @@ impl SettingsScreen {
                 width: area.width,
                 height: h,
             };
+            if focused {
+                render_focused_row_bg(
+                    f,
+                    Rect {
+                        height: 1,
+                        ..field_area
+                    },
+                    theme,
+                );
+            }
             if active_tab == SettingsTab::Advanced && field.widget.label() == CAVEMAN_LABEL {
                 caveman_row::render_caveman_row(f, field_area, caveman_state, focused, theme);
             } else {
@@ -140,7 +165,10 @@ impl SettingsScreen {
                 break;
             }
             let focused = i == self.flags_selected;
-            let (state_label, state_style) = if *enabled {
+            let (state_label, state_style) = if focused {
+                let label = if *enabled { "+ ON " } else { "- OFF" };
+                (label, focused_row_style(theme))
+            } else if *enabled {
                 ("+ ON ", Style::default().fg(theme.accent_success))
             } else {
                 ("- OFF", Style::default().fg(theme.text_muted))
@@ -151,9 +179,7 @@ impl SettingsScreen {
                 FlagSource::Cli => "CLI",
             };
             let row_style = if focused {
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD)
+                focused_row_style(theme)
             } else if *enabled {
                 Style::default().fg(theme.text_primary)
             } else {
@@ -176,6 +202,9 @@ impl SettingsScreen {
                 height: 1,
                 ..data_area
             };
+            if focused {
+                render_focused_row_bg(f, row_area, theme);
+            }
             f.render_widget(Paragraph::new(line), row_area);
         }
     }

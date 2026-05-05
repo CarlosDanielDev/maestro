@@ -4,7 +4,7 @@
 
 use crate::prd::model::{Prd, TimelineStatus};
 use crate::tui::screens::prd::chips::{save_chip, sync_chip};
-use crate::tui::screens::prd::state::{EditTarget, PrdScreen, PrdSection};
+use crate::tui::screens::prd::state::{EditTarget, PrdPane, PrdScreen, PrdSection};
 use crate::tui::theme::Theme;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -45,7 +45,7 @@ fn draw_intro(f: &mut Frame, area: Rect, theme: &Theme) {
         .border_style(Style::default().fg(theme.accent_info))
         .title(" 👋 Welcome to your PRD ");
     let line = Line::from(Span::styled(
-        "Live document for your project. [Tab] cycles sections, [n] adds items, [y] syncs from GitHub, [s] saves, [Esc] exits.",
+        "Live document for your project. [Tab] switches pane, [j/k] moves rows, [n] adds items, [y] syncs, [s] saves, [Esc] exits.",
         Style::default().fg(theme.text_secondary),
     ));
     f.render_widget(Paragraph::new(line).block(block), area);
@@ -97,23 +97,20 @@ fn draw_section_list(f: &mut Frame, area: Rect, screen: &PrdScreen, theme: &Them
         .iter()
         .map(|section| {
             let selected = *section == screen.focus;
-            let style = if selected {
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(theme.text_primary)
-            };
-            let prefix = if selected { "▶ " } else { "  " };
-            ListItem::new(Line::from(Span::styled(
-                format!("{prefix}{}", section.label()),
-                style,
-            )))
+            let style = selection_style(theme, selected, theme.text_primary);
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", style),
+                Span::styled(section.label(), style),
+            ]))
         })
         .collect();
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.text_secondary))
+        .border_style(Style::default().fg(if screen.pane == PrdPane::Sections {
+            theme.accent_identifier
+        } else {
+            theme.text_secondary
+        }))
         .title(" Sections ");
     f.render_widget(List::new(items).block(block), area);
 }
@@ -121,7 +118,11 @@ fn draw_section_list(f: &mut Frame, area: Rect, screen: &PrdScreen, theme: &Them
 fn draw_focused_section(f: &mut Frame, area: Rect, screen: &PrdScreen, prd: &Prd, theme: &Theme) {
     let body = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent_identifier))
+        .border_style(Style::default().fg(if screen.pane == PrdPane::Content {
+            theme.accent_identifier
+        } else {
+            theme.text_secondary
+        }))
         .title(format!(" {} ", screen.focus.label()));
 
     match screen.focus {
@@ -172,25 +173,19 @@ fn draw_goals(
         .iter()
         .enumerate()
         .map(|(i, g)| {
+            let selected = i == screen.goal_cursor;
             let mark = if g.done { "[x]" } else { "[ ]" };
-            let prefix = if i == screen.goal_cursor {
-                "▶ "
+            let default_fg = if g.done {
+                theme.text_secondary
             } else {
-                "  "
+                theme.text_primary
             };
-            let style = if i == screen.goal_cursor {
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD)
-            } else if g.done {
-                Style::default().fg(theme.text_secondary)
-            } else {
-                Style::default().fg(theme.text_primary)
-            };
-            ListItem::new(Line::from(Span::styled(
-                format!("{prefix}{mark} {}", g.text),
-                style,
-            )))
+            let style = selection_style(theme, selected, default_fg);
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", style),
+                Span::styled(format!("{mark} "), style),
+                Span::styled(g.text.clone(), style),
+            ]))
         })
         .collect();
 
@@ -229,19 +224,13 @@ fn draw_non_goals(
         .iter()
         .enumerate()
         .map(|(i, ng)| {
-            let prefix = if i == screen.non_goal_cursor {
-                "▶ "
-            } else {
-                "  "
-            };
-            let style = if i == screen.non_goal_cursor {
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(theme.text_primary)
-            };
-            ListItem::new(Line::from(Span::styled(format!("{prefix}- {ng}"), style)))
+            let selected = i == screen.non_goal_cursor;
+            let style = selection_style(theme, selected, theme.text_primary);
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", style),
+                Span::styled("- ", style),
+                Span::styled(ng.clone(), style),
+            ]))
         })
         .collect();
 
@@ -368,12 +357,14 @@ fn draw_hints(f: &mut Frame, area: Rect, screen: &PrdScreen, theme: &Theme) {
     } else {
         match screen.focus {
             PrdSection::Goals => {
-                "[↑↓] move  [n] new goal  [Space] done  [d] delete  [Tab] next  [s] save  [e] export  [y] sync  [o] explore  [R] reset  [Esc] back"
+                "[Tab] pane  [j/k] move  [n] new goal  [Space] done  [d] delete  [s] save  [e] export  [y] sync  [o] explore  [R] reset  [Esc] back"
             }
             PrdSection::NonGoals => {
-                "[↑↓] move  [n] new non-goal  [d] delete  [Tab] next  [s] save  [e] export  [y] sync  [o] explore  [R] reset  [Esc] back"
+                "[Tab] pane  [j/k] move  [n] new non-goal  [d] delete  [s] save  [e] export  [y] sync  [o] explore  [R] reset  [Esc] back"
             }
-            _ => "[Tab] next  [s] save  [e] export  [y] sync  [o] explore  [R] reset  [Esc] back",
+            _ => {
+                "[Tab] pane  [j/k] section  [s] save  [e] export  [y] sync  [o] explore  [R] reset  [Esc] back"
+            }
         }
     };
     f.render_widget(
@@ -386,4 +377,15 @@ fn draw_hints(f: &mut Frame, area: Rect, screen: &PrdScreen, theme: &Theme) {
             ),
         area,
     );
+}
+
+fn selection_style(theme: &Theme, selected: bool, default_fg: ratatui::style::Color) -> Style {
+    if selected {
+        Style::default()
+            .fg(theme.selection_fg)
+            .bg(theme.selection_bg)
+            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+    } else {
+        Style::default().fg(default_fg)
+    }
 }

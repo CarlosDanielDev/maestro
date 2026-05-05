@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{List, ListItem, Paragraph, Wrap},
 };
 
 use crate::tui::screens::milestone_health::MilestoneHealthScreen;
@@ -14,6 +14,7 @@ use crate::tui::screens::milestone_health::format::{anomaly as format_anomaly, m
 use crate::tui::screens::milestone_health::state::{HealthStep, PatchOutcome};
 use crate::tui::screens::sanitize_for_terminal as san;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::EmptyState;
 
 const BEFORE_AFTER_HEADER: &str = "Before / After";
 
@@ -22,7 +23,7 @@ pub fn draw(
     area: Rect,
     theme: &Theme,
     screen: &MilestoneHealthScreen,
-    _spinner_tick: usize,
+    spinner_tick: usize,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -34,17 +35,18 @@ pub fn draw(
             milestones,
             selected,
         } => draw_picker(f, chunks[0], theme, milestones, *selected),
-        HealthStep::Loading { label, .. } => draw_loading(f, chunks[0], theme, label),
-        HealthStep::Empty { milestone } => draw_simple_message(
-            f,
-            chunks[0],
-            theme,
-            &format!(
+        HealthStep::Loading { label, .. } => {
+            draw_loading(f, chunks[0], theme, "Milestone Health", label, spinner_tick)
+        }
+        HealthStep::Empty { milestone } => EmptyState::idle(
+            "Milestone Health",
+            format!(
                 "No open issues to review for milestone '{}'.",
                 san(&milestone.title)
             ),
-            "Press any key to return to the picker.",
-        ),
+            "Press any key to return.",
+        )
+        .render(f, chunks[0], theme),
         HealthStep::Healthy { milestone } => {
             let summary = screen
                 .state
@@ -68,12 +70,13 @@ pub fn draw(
             milestone, diff, ..
         } => draw_patch(f, chunks[0], theme, milestone, diff, screen.scroll),
         HealthStep::Confirm { milestone, .. } => draw_confirm(f, chunks[0], theme, milestone),
-        HealthStep::Writing { milestone, .. } => draw_simple_message(
+        HealthStep::Writing { milestone, .. } => draw_loading(
             f,
             chunks[0],
             theme,
+            "Milestone Health",
             &format!("Updating milestone '{}'…", san(&milestone.title)),
-            "Writing in progress — please wait.",
+            spinner_tick,
         ),
         HealthStep::Result { milestone, outcome } => {
             draw_result(f, chunks[0], theme, milestone, outcome)
@@ -101,31 +104,44 @@ fn draw_picker(
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            let prefix = if i == selected { "▶ " } else { "  " };
-            let label = format!(
-                "{}#{} {} ({} open / {} closed)",
-                prefix,
-                m.number,
-                san(&m.title),
-                m.open_issues,
-                m.closed_issues
-            );
             let style = if i == selected {
                 Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD)
+                    .fg(theme.selection_fg)
+                    .bg(theme.selection_bg)
+                    .add_modifier(Modifier::BOLD | Modifier::REVERSED)
             } else {
                 Style::default()
             };
-            ListItem::new(Line::from(Span::styled(label, style)))
+            let count = format!(" ({} open / {} closed)", m.open_issues, m.closed_issues);
+            let line = if i == selected {
+                Line::from(vec![
+                    Span::styled("  ", style),
+                    Span::styled(format!("#{}  ", m.number), style),
+                    Span::styled(san(&m.title), style),
+                    Span::styled(count, style),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(
+                        format!("#{}  ", m.number),
+                        Style::default().fg(theme.accent_info),
+                    ),
+                    Span::styled(san(&m.title), Style::default().fg(theme.text_primary)),
+                    Span::styled(count, Style::default().fg(theme.text_secondary)),
+                ])
+            };
+            ListItem::new(line)
         })
         .collect();
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Milestone Review — pick a milestone ");
+    let block = theme.styled_block("Milestone Review - pick a milestone", false);
     if items.is_empty() {
-        let para = Paragraph::new("(no open milestones)").block(block);
+        let para = Paragraph::new(Span::styled(
+            "(no open milestones)",
+            Style::default().fg(theme.text_secondary),
+        ))
+        .block(block);
         f.render_widget(para, area);
     } else {
         let list = List::new(items).block(block);
@@ -133,29 +149,27 @@ fn draw_picker(
     }
 }
 
-fn draw_loading(f: &mut Frame, area: Rect, _theme: &Theme, label: &str) {
-    let para = Paragraph::new(label).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Milestone Review "),
-    );
-    f.render_widget(para, area);
+fn draw_loading(f: &mut Frame, area: Rect, theme: &Theme, title: &str, label: &str, tick: usize) {
+    EmptyState::loading(title, label.to_string(), tick).render(f, area, theme);
 }
 
-fn draw_simple_message(f: &mut Frame, area: Rect, _theme: &Theme, title_msg: &str, hint: &str) {
+fn draw_simple_message(f: &mut Frame, area: Rect, theme: &Theme, title_msg: &str, hint: &str) {
     let lines = vec![
-        Line::from(Span::raw(title_msg.to_string())),
+        Line::from(Span::styled(
+            title_msg.to_string(),
+            Style::default().fg(theme.text_primary),
+        )),
         Line::from(Span::raw("")),
         Line::from(Span::styled(
             hint.to_string(),
-            Style::default().add_modifier(Modifier::DIM),
+            Style::default()
+                .fg(theme.text_secondary)
+                .add_modifier(Modifier::DIM),
         )),
     ];
-    let para = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Milestone Review "),
-    );
+    let para = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(theme.styled_block("Milestone Review", false));
     f.render_widget(para, area);
 }
 
@@ -171,7 +185,9 @@ fn draw_report(
     if let Some(report) = screen.state.report.as_ref() {
         lines.push(Line::from(Span::styled(
             report.summary_line(),
-            Style::default().add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.text_primary)
+                .add_modifier(Modifier::BOLD),
         )));
         lines.push(Line::from(Span::raw("")));
 
@@ -188,8 +204,11 @@ fn draw_report(
             };
             lines.push(Line::from(vec![
                 Span::styled(label_text, Style::default().fg(color)),
-                Span::raw(format!("  #{} ", r.issue_number)),
-                Span::raw(suffix),
+                Span::styled(
+                    format!("  #{} ", r.issue_number),
+                    Style::default().fg(theme.accent_info),
+                ),
+                Span::styled(suffix, Style::default().fg(theme.text_secondary)),
             ]));
         }
 
@@ -197,7 +216,9 @@ fn draw_report(
             lines.push(Line::from(Span::raw("")));
             lines.push(Line::from(Span::styled(
                 "Graph anomalies:",
-                Style::default().add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.text_primary)
+                    .add_modifier(Modifier::BOLD),
             )));
             for a in &report.anomalies {
                 lines.push(Line::from(format_anomaly(a)));
@@ -205,14 +226,11 @@ fn draw_report(
         }
     }
 
+    let title = format!("Health Report - {}", san(&milestone.title));
     let para = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
         .scroll((screen.scroll, 0))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" Health Report — {} ", san(&milestone.title))),
-        );
+        .block(theme.styled_block(&title, false));
     f.render_widget(para, area);
 }
 
@@ -227,12 +245,17 @@ fn draw_patch(
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(Span::styled(
         BEFORE_AFTER_HEADER.to_string(),
-        Style::default().add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(theme.text_primary)
+            .add_modifier(Modifier::BOLD),
     )));
     for d in diff {
         match d {
             DiffLine::Same(s) => {
-                lines.push(Line::from(Span::raw(format!("  {}", san(s)))));
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", san(s)),
+                    Style::default().fg(theme.text_secondary),
+                )));
             }
             DiffLine::Removed(s) => {
                 lines.push(Line::from(Span::styled(
@@ -249,14 +272,11 @@ fn draw_patch(
         }
     }
 
+    let title = format!("Patch Proposal - {}", san(&milestone.title));
     let para = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" Patch Proposal — {} ", san(&milestone.title))),
-        );
+        .block(theme.styled_block(&title, false));
     f.render_widget(para, area);
 }
 
@@ -274,20 +294,28 @@ fn draw_confirm(
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::raw("")),
-        Line::from(Span::raw(format!(
-            "Milestone: #{} {}",
-            milestone.number,
-            san(&milestone.title)
-        ))),
+        Line::from(vec![
+            Span::styled("Milestone: ", Style::default().fg(theme.text_secondary)),
+            Span::styled(
+                format!("#{} ", milestone.number),
+                Style::default().fg(theme.accent_info),
+            ),
+            Span::styled(
+                san(&milestone.title),
+                Style::default().fg(theme.text_primary),
+            ),
+        ]),
         Line::from(Span::raw("")),
         Line::from(Span::styled(
             "Press Enter to confirm.  Esc to abort.",
-            Style::default().add_modifier(Modifier::DIM),
+            Style::default()
+                .fg(theme.text_secondary)
+                .add_modifier(Modifier::DIM),
         )),
     ];
     let para = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title(" Confirm "));
+        .block(theme.styled_block("Confirm", false));
     f.render_widget(para, area);
 }
 
@@ -300,7 +328,7 @@ fn draw_result(
 ) {
     let (title, lines) = match outcome {
         PatchOutcome::Success => (
-            " Updated ",
+            "Updated",
             vec![
                 Line::from(Span::styled(
                     "Milestone description updated.",
@@ -308,17 +336,23 @@ fn draw_result(
                         .fg(theme.accent_success)
                         .add_modifier(Modifier::BOLD),
                 )),
-                Line::from(Span::raw(format!(
-                    "Milestone: #{} {}",
-                    milestone.number,
-                    san(&milestone.title)
-                ))),
+                Line::from(vec![
+                    Span::styled("Milestone: ", Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        format!("#{} ", milestone.number),
+                        Style::default().fg(theme.accent_info),
+                    ),
+                    Span::styled(
+                        san(&milestone.title),
+                        Style::default().fg(theme.text_primary),
+                    ),
+                ]),
             ],
         ),
         PatchOutcome::Error {
             message, retryable, ..
         } => (
-            " Update failed ",
+            "Update failed",
             vec![
                 Line::from(Span::styled(
                     "Failed to update milestone description.",
@@ -326,7 +360,10 @@ fn draw_result(
                         .fg(theme.accent_warning)
                         .add_modifier(Modifier::BOLD),
                 )),
-                Line::from(Span::raw(message.clone())),
+                Line::from(Span::styled(
+                    message.clone(),
+                    Style::default().fg(theme.text_primary),
+                )),
                 Line::from(Span::styled(
                     if *retryable {
                         "Press r to retry, Esc to cancel."
@@ -334,14 +371,16 @@ fn draw_result(
                         "Press Esc to cancel."
                     }
                     .to_string(),
-                    Style::default().add_modifier(Modifier::DIM),
+                    Style::default()
+                        .fg(theme.text_secondary)
+                        .add_modifier(Modifier::DIM),
                 )),
             ],
         ),
     };
     let para = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title(title));
+        .block(theme.styled_block(title, false));
     f.render_widget(para, area);
 }
 

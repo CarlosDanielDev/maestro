@@ -2,14 +2,14 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
 };
 
 use crate::tui::theme::Theme;
 
-use super::WidgetAction;
+use super::{WidgetAction, focused_selection_style};
 
 pub struct Toggle {
     pub label: String,
@@ -43,24 +43,18 @@ impl Toggle {
         });
         let check_color = if self.value {
             theme.accent_success
+        } else if focused {
+            theme.text_primary
         } else {
-            if focused {
-                theme.text_primary
-            } else {
-                theme.text_muted
-            }
+            theme.text_muted
         };
         let check_style = if focused {
-            Style::default()
-                .fg(check_color)
-                .add_modifier(Modifier::BOLD)
+            focused_selection_style(theme)
         } else {
             Style::default().fg(check_color)
         };
         let label_style = if focused {
-            Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD)
+            focused_selection_style(theme)
         } else {
             Style::default().fg(theme.text_primary)
         };

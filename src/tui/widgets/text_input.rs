@@ -10,7 +10,7 @@ use ratatui::{
 use crate::tui::screens::settings::validation::{ValidationFeedback, ValidationSeverity};
 use crate::tui::theme::Theme;
 
-use super::WidgetAction;
+use super::{WidgetAction, focused_selection_style};
 
 pub struct TextInput {
     pub label: String,
@@ -106,9 +106,7 @@ impl TextInput {
             Some(ValidationSeverity::Warning) => Style::default()
                 .fg(theme.accent_warning)
                 .add_modifier(Modifier::BOLD),
-            _ if focused => Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD),
+            _ if focused => focused_selection_style(theme),
             _ => Style::default().fg(theme.text_primary),
         };
 
@@ -136,7 +134,7 @@ impl TextInput {
             f.render_widget(Paragraph::new(line), area);
         } else {
             let value_style = if focused {
-                Style::default().fg(theme.text_primary)
+                focused_selection_style(theme)
             } else {
                 Style::default().fg(theme.text_secondary)
             };

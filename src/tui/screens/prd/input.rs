@@ -3,7 +3,7 @@
 #![deny(clippy::unwrap_used)]
 
 use crate::prd::model::Prd;
-use crate::tui::screens::prd::state::{EditTarget, PrdAction, PrdScreen, PrdSection};
+use crate::tui::screens::prd::state::{EditTarget, PrdAction, PrdPane, PrdScreen, PrdSection};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_key(screen: &mut PrdScreen, prd: &mut Prd, key: KeyEvent) -> PrdAction {
@@ -79,20 +79,30 @@ fn handle_edit_key(
 fn handle_view_key(key: KeyEvent, screen: &mut PrdScreen, prd: &mut Prd) -> PrdAction {
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => PrdAction::Back,
-        KeyCode::Tab | KeyCode::Char('l') => {
-            screen.focus_next();
+        KeyCode::Tab | KeyCode::BackTab => {
+            screen.toggle_pane();
             PrdAction::None
         }
-        KeyCode::BackTab | KeyCode::Char('h') => {
-            screen.focus_prev();
+        KeyCode::Right | KeyCode::Char('l') => {
+            screen.focus_content_pane();
+            PrdAction::None
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            screen.focus_sections_pane();
             PrdAction::None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            screen.cursor_down_in_focus(prd);
+            match screen.pane {
+                PrdPane::Sections => screen.focus_next(),
+                PrdPane::Content => screen.cursor_down_in_focus(prd),
+            }
             PrdAction::None
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            screen.cursor_up_in_focus();
+            match screen.pane {
+                PrdPane::Sections => screen.focus_prev(),
+                PrdPane::Content => screen.cursor_up_in_focus(),
+            }
             PrdAction::None
         }
         KeyCode::Char('s') => PrdAction::Save,
@@ -173,12 +183,35 @@ mod tests {
     }
 
     #[test]
-    fn tab_advances_focus_and_returns_none() {
+    fn tab_switches_to_content_pane_and_returns_none() {
         let mut s = PrdScreen::new();
         let mut p = Prd::new();
         let action = handle_key(&mut s, &mut p, key(KeyCode::Tab));
         assert_eq!(action, PrdAction::None);
+        assert_eq!(s.pane, PrdPane::Content);
+        assert_eq!(s.focus, PrdSection::Vision);
+    }
+
+    #[test]
+    fn down_in_sections_pane_advances_focus() {
+        let mut s = PrdScreen::new();
+        let mut p = Prd::new();
+        let action = handle_key(&mut s, &mut p, key(KeyCode::Down));
+        assert_eq!(action, PrdAction::None);
         assert_eq!(s.focus, PrdSection::Goals);
+    }
+
+    #[test]
+    fn j_in_content_pane_moves_goal_cursor() {
+        let mut s = PrdScreen::new();
+        s.focus = PrdSection::Goals;
+        s.pane = PrdPane::Content;
+        let mut p = Prd::new();
+        p.add_goal("a");
+        p.add_goal("b");
+        let action = handle_key(&mut s, &mut p, key(KeyCode::Char('j')));
+        assert_eq!(action, PrdAction::None);
+        assert_eq!(s.goal_cursor, 1);
     }
 
     #[test]

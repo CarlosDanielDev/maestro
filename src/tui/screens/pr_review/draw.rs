@@ -3,8 +3,8 @@ use super::types::PrReviewStep;
 use crate::tui::icons::{self, IconId};
 use crate::tui::markdown::render_markdown;
 use crate::tui::screens::{draw_keybinds_bar, sanitize_for_terminal};
-use crate::tui::spinner::spinner_frame;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::{BrailleSpinner, focused_selection_style};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -12,6 +12,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
+use unicode_width::UnicodeWidthStr;
 
 pub fn draw_pr_review_screen(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Theme) {
     let chunks = Layout::default()
@@ -44,16 +45,14 @@ fn draw_loading(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Them
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let spinner = spinner_frame(screen.spinner_tick);
     let mut lines = vec![
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                format!(" {} ", spinner),
-                Style::default().fg(theme.accent_info),
-            ),
-            Span::raw("Fetching open pull requests..."),
-        ]),
+        BrailleSpinner::render(
+            screen.spinner_tick,
+            "Fetching open pull requests...",
+            true,
+            theme,
+        ),
     ];
 
     if let Some(ref err) = screen.error {
@@ -114,43 +113,56 @@ fn draw_pr_list(screen: &PrReviewScreen, f: &mut Frame, area: Rect, theme: &Them
         let row_area = Rect::new(inner.x, y, inner.width, 1);
         let is_selected = i == screen.selected;
 
-        let marker = if is_selected {
-            format!("{} ", icons::get(IconId::ChevronRight))
-        } else {
-            "  ".to_string()
-        };
+        let prefix = "  ".to_string();
         let draft_tag = if pr.draft { " [DRAFT]" } else { "" };
         let title = sanitize_for_terminal(&pr.title);
 
-        let style = if is_selected {
-            Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD)
+        let row_style = if is_selected {
+            focused_selection_style(theme)
         } else {
             Style::default().fg(theme.text_primary)
         };
+        let number_style = if is_selected {
+            row_style
+        } else {
+            Style::default().fg(theme.accent_info)
+        };
+        let muted_style = if is_selected {
+            row_style
+        } else {
+            Style::default().fg(theme.text_secondary)
+        };
+        let draft_style = if is_selected {
+            row_style
+        } else {
+            Style::default().fg(theme.accent_warning)
+        };
+        let number = format!("#{}", pr.number);
+        let author = format!(" @{}", sanitize_for_terminal(&pr.author));
+        let stats = format!(" +{} -{}", pr.additions, pr.deletions);
+        let draft = draft_tag.to_string();
+        let content_width = prefix.width()
+            + number.as_str().width()
+            + 1
+            + title.as_str().width()
+            + author.as_str().width()
+            + stats.as_str().width()
+            + draft.as_str().width();
+        let trailing = inner.width.saturating_sub(content_width as u16) as usize;
 
-        let line = Line::from(vec![
-            Span::styled(marker, style),
-            Span::styled(
-                format!("#{}", pr.number),
-                Style::default().fg(theme.accent_info),
-            ),
-            Span::raw(" "),
-            Span::styled(title, style),
-            Span::styled(
-                format!(" @{}", sanitize_for_terminal(&pr.author)),
-                Style::default().fg(theme.text_secondary),
-            ),
-            Span::styled(
-                format!(" +{} -{}", pr.additions, pr.deletions),
-                Style::default().fg(theme.text_secondary),
-            ),
-            Span::styled(
-                draft_tag.to_string(),
-                Style::default().fg(theme.accent_warning),
-            ),
-        ]);
+        let mut spans = vec![
+            Span::styled(prefix, row_style),
+            Span::styled(number, number_style),
+            Span::styled(" ", row_style),
+            Span::styled(title, row_style),
+            Span::styled(author, muted_style),
+            Span::styled(stats, muted_style),
+            Span::styled(draft, draft_style),
+        ];
+        if trailing > 0 {
+            spans.push(Span::styled(" ".repeat(trailing), row_style));
+        }
+        let line = Line::from(spans);
         f.render_widget(Paragraph::new(line), row_area);
     }
 

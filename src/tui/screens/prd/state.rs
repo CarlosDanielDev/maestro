@@ -70,6 +70,21 @@ impl PrdSection {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrdPane {
+    Sections,
+    Content,
+}
+
+impl PrdPane {
+    pub fn toggle(self) -> Self {
+        match self {
+            Self::Sections => Self::Content,
+            Self::Content => Self::Sections,
+        }
+    }
+}
+
 /// Currently-edited target. `None` means view-mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditTarget {
@@ -92,6 +107,7 @@ pub enum PrdAction {
 }
 
 pub struct PrdScreen {
+    pub pane: PrdPane,
     pub focus: PrdSection,
     pub edit: Option<EditTarget>,
     pub goal_cursor: usize,
@@ -115,6 +131,7 @@ impl Default for PrdScreen {
 impl PrdScreen {
     pub fn new() -> Self {
         Self {
+            pane: PrdPane::Sections,
             focus: PrdSection::Vision,
             edit: None,
             goal_cursor: 0,
@@ -124,6 +141,18 @@ impl PrdScreen {
             save_status: PrdSaveStatus::default(),
             first_view: true,
         }
+    }
+
+    pub fn toggle_pane(&mut self) {
+        self.pane = self.pane.toggle();
+    }
+
+    pub fn focus_sections_pane(&mut self) {
+        self.pane = PrdPane::Sections;
+    }
+
+    pub fn focus_content_pane(&mut self) {
+        self.pane = PrdPane::Content;
     }
 
     pub fn focus_next(&mut self) {

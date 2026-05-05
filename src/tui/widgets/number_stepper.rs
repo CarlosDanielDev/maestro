@@ -10,7 +10,7 @@ use ratatui::{
 use crate::tui::screens::settings::validation::{ValidationFeedback, ValidationSeverity};
 use crate::tui::theme::Theme;
 
-use super::WidgetAction;
+use super::{WidgetAction, focused_selection_style};
 
 pub struct NumberStepper {
     pub label: String,
@@ -75,35 +75,23 @@ impl NumberStepper {
             Some(ValidationSeverity::Warning) => Style::default()
                 .fg(theme.accent_warning)
                 .add_modifier(Modifier::BOLD),
-            _ if focused => Style::default()
-                .fg(theme.accent_success)
-                .add_modifier(Modifier::BOLD),
+            _ if focused => focused_selection_style(theme),
             _ => Style::default().fg(theme.text_primary),
         };
 
-        let left_dim = self.value <= self.min;
-        let right_dim = self.value >= self.max;
-
-        let arrow_color = if focused {
-            theme.accent_success
+        let left_arrow = if focused {
+            focused_selection_style(theme)
         } else {
-            theme.text_muted
-        };
-        let left_arrow = if left_dim {
             Style::default().fg(theme.text_muted)
-        } else {
-            Style::default().fg(arrow_color)
         };
-        let right_arrow = if right_dim {
-            Style::default().fg(theme.text_muted)
+        let right_arrow = if focused {
+            focused_selection_style(theme)
         } else {
-            Style::default().fg(arrow_color)
+            Style::default().fg(theme.text_muted)
         };
 
         let value_style = if focused {
-            Style::default()
-                .fg(theme.text_primary)
-                .add_modifier(Modifier::BOLD)
+            focused_selection_style(theme)
         } else {
             Style::default().fg(theme.text_secondary)
         };

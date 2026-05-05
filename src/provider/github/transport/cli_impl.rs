@@ -14,16 +14,38 @@ use async_trait::async_trait;
 #[async_trait]
 impl RepoProvider for GhCliClient {
     async fn list_issues(&self, labels: &[&str]) -> Result<Vec<Issue>> {
+        let mut issue_state = "open";
+        let mut label_filters = Vec::new();
         for label in labels {
-            validate_gh_arg(label, "label")?;
+            if let Some(state) = label.strip_prefix("state:") {
+                match state {
+                    "open" | "closed" | "all" => issue_state = state,
+                    _ => anyhow::bail!(
+                        "Invalid issue state: {:?}. Must be open, closed, or all",
+                        state
+                    ),
+                }
+            } else {
+                validate_gh_arg(label, "label")?;
+                label_filters.push(*label);
+            }
         }
-        let label_arg = labels.join(",");
+        let label_arg = label_filters.join(",");
         let labels_csv = if label_arg.is_empty() {
             None
         } else {
             Some(label_arg.as_str())
         };
-        let argv = gh_argv::build_list_issues_argv(labels_csv, self.repo_arg());
+        let argv = if issue_state == "open" {
+            gh_argv::build_list_issues_argv(labels_csv, self.repo_arg())
+        } else {
+            gh_argv::build_list_issues_with_state_argv(
+                labels_csv,
+                issue_state,
+                1000,
+                self.repo_arg(),
+            )
+        };
         let json_str = self.run_gh(&argv_refs(&argv)).await?;
         parse_issues_json(&json_str)
     }
