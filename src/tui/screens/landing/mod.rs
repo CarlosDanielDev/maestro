@@ -5,11 +5,27 @@ pub use types::{LandingTarget, MENU_ITEMS};
 
 use super::{Screen, ScreenAction};
 use crate::mascot::{MascotState, MascotStyle};
+use crate::tui::app::TuiMode;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{Frame, layout::Rect};
+
+const NETWORK_MEASURE_TICKS: usize = 240;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum NetworkMeasureState {
+    Standby,
+    Measuring { tick: usize },
+    Last { tick: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct NetworkRates {
+    pub down_kib_s: f64,
+    pub up_bytes_s: usize,
+}
 
 /// Persistent landing screen — replaces the timed splash. Shows mascot +
 /// logo + version, with a 5-item menu underneath that routes the user
@@ -19,6 +35,10 @@ pub struct LandingScreen {
     pub(super) mascot_state: MascotState,
     pub(super) mascot_frame: usize,
     pub(super) mascot_style: MascotStyle,
+    pub(super) animation_tick: usize,
+    pub(super) network_measure_started: Option<usize>,
+    pub(super) last_network_measure_tick: Option<usize>,
+    pub(super) network_peak_rates: Option<NetworkRates>,
 }
 
 impl LandingScreen {
@@ -28,6 +48,10 @@ impl LandingScreen {
             mascot_state: MascotState::Idle,
             mascot_frame: 0,
             mascot_style: MascotStyle::default(),
+            animation_tick: 0,
+            network_measure_started: None,
+            last_network_measure_tick: None,
+            network_peak_rates: None,
         }
     }
 
@@ -37,10 +61,79 @@ impl LandingScreen {
         self.mascot_style = style;
     }
 
+    pub fn set_animation_context(&mut self, tick: usize) {
+        self.animation_tick = tick;
+        if let Some(started) = self.network_measure_started {
+            let elapsed = self.animation_tick.saturating_sub(started);
+            if elapsed < NETWORK_MEASURE_TICKS {
+                self.record_network_range(elapsed);
+                self.last_network_measure_tick = Some(elapsed);
+            } else {
+                self.network_measure_started = None;
+            }
+        }
+    }
+
+    pub fn trigger_network_measurement(&mut self) {
+        self.network_measure_started = Some(self.animation_tick);
+        self.last_network_measure_tick = Some(0);
+        self.network_peak_rates = Some(network_rates(0));
+    }
+
+    pub(super) fn network_measure_state(&self) -> NetworkMeasureState {
+        if let Some(started) = self.network_measure_started {
+            let elapsed = self.animation_tick.saturating_sub(started);
+            if elapsed < NETWORK_MEASURE_TICKS {
+                return NetworkMeasureState::Measuring { tick: elapsed };
+            }
+        }
+        if let Some(tick) = self.last_network_measure_tick {
+            return NetworkMeasureState::Last { tick };
+        }
+        NetworkMeasureState::Standby
+    }
+
+    pub(super) fn network_peak_rates(&self) -> Option<NetworkRates> {
+        self.network_peak_rates
+    }
+
+    fn record_network_rates(&mut self, rates: NetworkRates) {
+        self.network_peak_rates = Some(match self.network_peak_rates {
+            Some(peaks) => NetworkRates {
+                down_kib_s: peaks.down_kib_s.max(rates.down_kib_s),
+                up_bytes_s: peaks.up_bytes_s.max(rates.up_bytes_s),
+            },
+            None => rates,
+        });
+    }
+
+    fn record_network_range(&mut self, elapsed: usize) {
+        let Some(last_tick) = self.last_network_measure_tick else {
+            self.record_network_rates(network_rates(elapsed));
+            return;
+        };
+
+        if elapsed <= last_tick {
+            self.record_network_rates(network_rates(elapsed));
+            return;
+        }
+
+        for tick in last_tick + 1..=elapsed {
+            self.record_network_rates(network_rates(tick));
+        }
+    }
+
     fn dispatch_index(&self, idx: usize) -> ScreenAction {
         match MENU_ITEMS[idx].target {
             LandingTarget::Push(mode) => ScreenAction::Push(mode),
         }
+    }
+}
+
+pub(super) fn network_rates(tick: usize) -> NetworkRates {
+    NetworkRates {
+        down_kib_s: 5.25 + (tick % 9) as f64 * 0.19,
+        up_bytes_s: 560 + (tick % 7) * 17,
     }
 }
 
@@ -68,8 +161,16 @@ impl KeymapProvider for LandingScreen {
                     description: "Activate selected",
                 },
                 KeyBinding {
-                    key: "d/i/m/s/q",
+                    key: "d/i/m/s/p/r/h/q",
                     description: "Direct shortcuts",
+                },
+                KeyBinding {
+                    key: "n",
+                    description: "Release notes",
+                },
+                KeyBinding {
+                    key: "w",
+                    description: "Measure network",
                 },
             ],
         }]
@@ -85,6 +186,15 @@ impl Screen for LandingScreen {
         }) = event
         {
             if mode == InputMode::Insert {
+                return ScreenAction::None;
+            }
+
+            if matches!(code, KeyCode::Char('n')) {
+                return ScreenAction::Push(TuiMode::ReleaseNotes);
+            }
+
+            if matches!(code, KeyCode::Char('w') | KeyCode::Char('W')) {
+                self.trigger_network_measurement();
                 return ScreenAction::None;
             }
 
@@ -213,6 +323,89 @@ mod tests {
         let mut s = LandingScreen::new();
         let action = s.handle_input(&key_event(KeyCode::Char('q')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Push(TuiMode::ConfirmExit));
+    }
+
+    #[test]
+    fn shortcut_n_pushes_release_notes() {
+        let mut s = LandingScreen::new();
+        let action = s.handle_input(&key_event(KeyCode::Char('n')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Push(TuiMode::ReleaseNotes));
+    }
+
+    #[test]
+    fn shortcut_w_starts_network_measurement() {
+        let mut s = LandingScreen::new();
+        s.set_animation_context(42);
+        let action = s.handle_input(&key_event(KeyCode::Char('w')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        assert_eq!(
+            s.network_measure_state(),
+            NetworkMeasureState::Measuring { tick: 0 }
+        );
+        s.set_animation_context(45);
+        assert_eq!(
+            s.network_measure_state(),
+            NetworkMeasureState::Measuring { tick: 3 }
+        );
+        assert_eq!(s.network_peak_rates(), Some(network_rates(3)));
+    }
+
+    #[test]
+    fn shortcut_uppercase_w_starts_network_measurement() {
+        let mut s = LandingScreen::new();
+        let action = s.handle_input(&key_event(KeyCode::Char('W')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        assert_eq!(
+            s.network_measure_state(),
+            NetworkMeasureState::Measuring { tick: 0 }
+        );
+    }
+
+    #[test]
+    fn network_measurement_expiry_keeps_last_sample() {
+        let mut s = LandingScreen::new();
+        s.set_animation_context(10);
+        s.trigger_network_measurement();
+        s.set_animation_context(10 + NETWORK_MEASURE_TICKS - 1);
+        assert_eq!(
+            s.network_measure_state(),
+            NetworkMeasureState::Measuring {
+                tick: NETWORK_MEASURE_TICKS - 1
+            }
+        );
+        s.set_animation_context(10 + NETWORK_MEASURE_TICKS);
+        assert_eq!(
+            s.network_measure_state(),
+            NetworkMeasureState::Last {
+                tick: NETWORK_MEASURE_TICKS - 1
+            }
+        );
+        assert_eq!(
+            s.network_peak_rates(),
+            Some(NetworkRates {
+                down_kib_s: network_rates(8).down_kib_s,
+                up_bytes_s: network_rates(6).up_bytes_s,
+            })
+        );
+    }
+
+    #[test]
+    fn network_measurement_restart_resets_peak_rates() {
+        let mut s = LandingScreen::new();
+        s.set_animation_context(0);
+        s.trigger_network_measurement();
+        s.set_animation_context(8);
+        assert_eq!(
+            s.network_peak_rates(),
+            Some(NetworkRates {
+                down_kib_s: network_rates(8).down_kib_s,
+                up_bytes_s: network_rates(6).up_bytes_s,
+            })
+        );
+
+        s.set_animation_context(20);
+        s.trigger_network_measurement();
+        assert_eq!(s.network_peak_rates(), Some(network_rates(0)));
     }
 
     // I-1: milestone health entry point (#500).

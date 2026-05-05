@@ -11,9 +11,43 @@ fn render_landing(
     use_nerd_font: bool,
     styled: bool,
 ) -> Terminal<TestBackend> {
+    render_landing_with_tick(width, height, use_nerd_font, styled, 0)
+}
+
+fn render_landing_with_tick(
+    width: u16,
+    height: u16,
+    use_nerd_font: bool,
+    styled: bool,
+    animation_tick: usize,
+) -> Terminal<TestBackend> {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     let theme = Theme::dark();
-    let screen = LandingScreen::new();
+    let mut screen = LandingScreen::new();
+    screen.set_animation_context(animation_tick);
+
+    terminal
+        .draw(|f| {
+            screen.draw_impl_for_test(f, f.area(), &theme, use_nerd_font, styled);
+        })
+        .unwrap();
+
+    terminal
+}
+
+fn render_landing_measuring(
+    width: u16,
+    height: u16,
+    use_nerd_font: bool,
+    styled: bool,
+    animation_tick: usize,
+) -> Terminal<TestBackend> {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    let theme = Theme::dark();
+    let mut screen = LandingScreen::new();
+    screen.set_animation_context(0);
+    screen.trigger_network_measurement();
+    screen.set_animation_context(animation_tick);
 
     terminal
         .draw(|f| {
@@ -46,6 +80,34 @@ fn landing_welcome_120x40_ascii() {
 fn landing_welcome_120x40_nerd_font() {
     let terminal = render_landing(120, 40, true, true);
     assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn landing_welcome_180x48_nerd_font() {
+    let terminal = render_landing(180, 48, true, true);
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn landing_welcome_network_monitor_idle_is_stable_by_tick() {
+    let tick_0 = render_landing_with_tick(180, 48, true, true, 0);
+    let tick_8 = render_landing_with_tick(180, 48, true, true, 8);
+    assert_eq!(
+        format!("{:?}", tick_0.backend()),
+        format!("{:?}", tick_8.backend()),
+        "idle welcome network monitor should not sample between manual measurements"
+    );
+}
+
+#[test]
+fn landing_welcome_network_monitor_measurement_animates_by_tick() {
+    let tick_0 = render_landing_measuring(180, 48, true, true, 0);
+    let tick_8 = render_landing_measuring(180, 48, true, true, 8);
+    assert_ne!(
+        format!("{:?}", tick_0.backend()),
+        format!("{:?}", tick_8.backend()),
+        "active welcome network measurement should change when animation tick changes"
+    );
 }
 
 #[test]

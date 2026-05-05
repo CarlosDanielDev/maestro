@@ -2,7 +2,7 @@ use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -19,6 +19,7 @@ pub struct WizardFrameHeader<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct WizardFrameFooter<'a> {
     pub validation_error: Option<&'a str>,
+    pub hints: Option<&'a str>,
 }
 
 pub struct WizardFrame;
@@ -45,7 +46,7 @@ impl WizardFrame {
 
         Self::draw_header(f, chunks[0], theme, header);
         body_callback(f, chunks[1]);
-        Self::draw_footer(f, chunks[2], footer);
+        Self::draw_footer(f, chunks[2], theme, footer);
     }
 
     fn draw_header(f: &mut Frame, area: Rect, theme: &Theme, header: WizardFrameHeader<'_>) {
@@ -57,21 +58,32 @@ impl WizardFrame {
         f.render_widget(Paragraph::new("").block(block), area);
     }
 
-    fn draw_footer(f: &mut Frame, area: Rect, footer: WizardFrameFooter<'_>) {
-        let line = if let Some(err) = footer.validation_error {
-            Line::from(Span::styled(
-                err,
-                Style::default()
-                    .fg(Color::LightRed)
-                    .add_modifier(Modifier::BOLD),
-            ))
+    fn draw_footer(f: &mut Frame, area: Rect, theme: &Theme, footer: WizardFrameFooter<'_>) {
+        let hint = footer.hints.unwrap_or(FOOTER_HINTS);
+        let lines = if let Some(err) = footer.validation_error {
+            vec![
+                Line::from(Span::styled(
+                    err,
+                    Style::default()
+                        .fg(theme.accent_error)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(
+                    hint,
+                    Style::default()
+                        .fg(theme.text_secondary)
+                        .add_modifier(Modifier::DIM),
+                )),
+            ]
         } else {
-            Line::from(Span::styled(
-                FOOTER_HINTS,
-                Style::default().add_modifier(Modifier::DIM),
-            ))
+            vec![Line::from(Span::styled(
+                hint,
+                Style::default()
+                    .fg(theme.text_secondary)
+                    .add_modifier(Modifier::DIM),
+            ))]
         };
-        f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
+        f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
     }
 }
 
@@ -100,7 +112,10 @@ mod tests {
                     step_total: 10,
                     step_label: "Type Select",
                 },
-                WizardFrameFooter { validation_error },
+                WizardFrameFooter {
+                    validation_error,
+                    hints: None,
+                },
                 |f, area| {
                     f.render_widget(
                         Paragraph::new("Body slot").block(Block::default().borders(Borders::ALL)),
@@ -120,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn validation_error_replaces_hints() -> Result<(), Box<dyn std::error::Error>> {
+    fn validation_error_preserves_hints() -> Result<(), Box<dyn std::error::Error>> {
         let terminal = render_frame(Some("Title is required"))?;
         assert_snapshot!(terminal.backend());
 
@@ -133,7 +148,7 @@ mod tests {
             text.push('\n');
         }
         assert!(text.contains("Title is required"));
-        assert!(!text.contains("[Enter] next"));
+        assert!(text.contains("[Enter] next"));
         Ok(())
     }
 }

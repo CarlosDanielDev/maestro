@@ -20,7 +20,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders},
 };
 
@@ -724,17 +724,19 @@ impl IssueWizardScreen {
     /// Paint focused/unfocused border styles onto each textarea's
     /// internal `Block`. Called from `Screen::draw` (the only mutable
     /// entry point) so `draw_impl` can stay `&self`.
-    pub(super) fn refresh_field_blocks(&mut self) {
+    pub(super) fn refresh_field_blocks(&mut self, theme: &Theme) {
         let step_fields = self.step_fields();
         let focused_idx = self.fields.focus();
         for (i, field_id) in step_fields.iter().enumerate() {
             let focused = i == focused_idx;
             let border_style = if focused {
                 Style::default()
-                    .fg(Color::LightCyan)
+                    .fg(theme.border_focused)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().add_modifier(Modifier::DIM)
+                Style::default()
+                    .fg(theme.border_inactive)
+                    .add_modifier(Modifier::DIM)
             };
             let block = Block::default()
                 .borders(Borders::ALL)
@@ -1093,7 +1095,7 @@ impl Screen for IssueWizardScreen {
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         self.fields.refresh_focus_styles();
-        self.refresh_field_blocks();
+        self.refresh_field_blocks(theme);
         self.draw_impl(f, area, theme);
     }
 

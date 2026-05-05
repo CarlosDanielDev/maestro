@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/dashboard.rs
-assertion_line: 46
 expression: terminal.backend()
 ---
 "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────"
@@ -9,12 +8,6 @@ expression: terminal.backend()
 "╔═════════════════════════════════════════════════════[ Warnings ]═════════════════════════════════════════════════════╗"
 "║  ! Budget 90% consumed                                                                                               ║"
 "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝"
-"╔══════════════════════════════════════════════[ What's New in v0.23.0 ]═══════════════════════════════════════════════╗"
-"║  [Added] chore(workflow): mechanize /pushup commit + PR scaffolding (#556)                                           ║"
-"║  [Added] chore(workflow): DOR linter + condensed issue summary in pre-check hook (#555)                              ║"
-"║  [Added] chore(workflow): scripted milestone dependency-graph update for /pushup (#554)                              ║"
-"║  [Added] feat(azdo): implement CI status and merge operations via az pipelines and az repos pr (#466)                ║"
-"╚══════════════════════════════════════════ Press [n] for full release notes ══════════════════════════════════════════╝"
 "╔════════[ Quick Actions ]═════════╗╔════════════[ Suggestions ]═════════════╗╔══════════[ Recent Activity ]═══════════╗"
 "║  [i]  Browse Issues              ║║  No suggestions — everything looks good║║                                        ║"
 "║  [m]  Browse Milestones          ║║                                        ║║                                        ║"
@@ -28,8 +21,14 @@ expression: terminal.backend()
 "║  [Q]  TurboQuant Savings         ║║                                        ║║                                        ║"
 "║  [S]  Settings                   ║║                                        ║║                                        ║"
 "║  [u]  Update Maestro             ║║                                        ║║                                        ║"
-"║  [q]  Quit                       ║║                                        ║║           No recent sessions.          ║"
+"║  [q]  Quit                       ║║                                        ║║                                        ║"
+"║                                  ║║                                        ║║                                        ║"
+"║                                  ║║                                        ║║                                        ║"
+"║                                  ║║                                        ║║           No recent sessions.          ║"
 "║                                  ║║                                        ║║        Press [r] to launch one.        ║"
+"║                                  ║║                                        ║║                                        ║"
+"║                                  ║║                                        ║║                                        ║"
+"║                                  ║║                                        ║║                                        ║"
 "║                                  ║║                                        ║║                                        ║"
 "║                                  ║║                                        ║║                                        ║"
 "║                                  ║║                                        ║║                                        ║"

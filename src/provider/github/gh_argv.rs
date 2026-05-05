@@ -187,13 +187,22 @@ pub(crate) fn build_patch_milestone_description_argv(milestone_number: u64) -> V
 }
 
 pub(crate) fn build_list_issues_argv(labels_csv: Option<&str>, repo: Option<&str>) -> Vec<String> {
+    build_list_issues_with_state_argv(labels_csv, "open", 100, repo)
+}
+
+pub(crate) fn build_list_issues_with_state_argv(
+    labels_csv: Option<&str>,
+    state: &str,
+    limit: u16,
+    repo: Option<&str>,
+) -> Vec<String> {
     let mut argv = vec![
         "issue".into(),
         "list".into(),
         "--state".into(),
-        "open".into(),
+        state.into(),
         "--limit".into(),
-        "100".into(),
+        limit.to_string(),
         "--json".into(),
         "number,title,body,labels,state,url,milestone".into(),
     ];
@@ -494,6 +503,23 @@ mod tests {
         assert_eq!(
             argv.last().unwrap(),
             "number,title,body,labels,state,url,milestone"
+        );
+    }
+
+    #[test]
+    fn list_issues_argv_with_closed_state_and_higher_limit() {
+        assert_eq!(
+            build_list_issues_with_state_argv(None, "closed", 1000, None),
+            s(&[
+                "issue",
+                "list",
+                "--state",
+                "closed",
+                "--limit",
+                "1000",
+                "--json",
+                "number,title,body,labels,state,url,milestone",
+            ])
         );
     }
 

@@ -97,18 +97,11 @@ fn draw_section_list(f: &mut Frame, area: Rect, screen: &PrdScreen, theme: &Them
         .iter()
         .map(|section| {
             let selected = *section == screen.focus;
-            let style = if selected {
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(theme.text_primary)
-            };
-            let prefix = if selected { "▶ " } else { "  " };
-            ListItem::new(Line::from(Span::styled(
-                format!("{prefix}{}", section.label()),
-                style,
-            )))
+            let style = selection_style(theme, selected, theme.text_primary);
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", style),
+                Span::styled(section.label(), style),
+            ]))
         })
         .collect();
     let block = Block::default()
@@ -172,25 +165,19 @@ fn draw_goals(
         .iter()
         .enumerate()
         .map(|(i, g)| {
+            let selected = i == screen.goal_cursor;
             let mark = if g.done { "[x]" } else { "[ ]" };
-            let prefix = if i == screen.goal_cursor {
-                "▶ "
+            let default_fg = if g.done {
+                theme.text_secondary
             } else {
-                "  "
+                theme.text_primary
             };
-            let style = if i == screen.goal_cursor {
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD)
-            } else if g.done {
-                Style::default().fg(theme.text_secondary)
-            } else {
-                Style::default().fg(theme.text_primary)
-            };
-            ListItem::new(Line::from(Span::styled(
-                format!("{prefix}{mark} {}", g.text),
-                style,
-            )))
+            let style = selection_style(theme, selected, default_fg);
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", style),
+                Span::styled(format!("{mark} "), style),
+                Span::styled(g.text.clone(), style),
+            ]))
         })
         .collect();
 
@@ -229,19 +216,13 @@ fn draw_non_goals(
         .iter()
         .enumerate()
         .map(|(i, ng)| {
-            let prefix = if i == screen.non_goal_cursor {
-                "▶ "
-            } else {
-                "  "
-            };
-            let style = if i == screen.non_goal_cursor {
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(theme.text_primary)
-            };
-            ListItem::new(Line::from(Span::styled(format!("{prefix}- {ng}"), style)))
+            let selected = i == screen.non_goal_cursor;
+            let style = selection_style(theme, selected, theme.text_primary);
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", style),
+                Span::styled("- ", style),
+                Span::styled(ng.clone(), style),
+            ]))
         })
         .collect();
 
@@ -386,4 +367,15 @@ fn draw_hints(f: &mut Frame, area: Rect, screen: &PrdScreen, theme: &Theme) {
             ),
         area,
     );
+}
+
+fn selection_style(theme: &Theme, selected: bool, default_fg: ratatui::style::Color) -> Style {
+    if selected {
+        Style::default()
+            .fg(theme.selection_fg)
+            .bg(theme.selection_bg)
+            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+    } else {
+        Style::default().fg(default_fg)
+    }
 }

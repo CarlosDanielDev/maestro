@@ -220,6 +220,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     app.mascot_animator.frame_index(),
                     app.mascot_style,
                 );
+                screen.set_animation_context(spinner_tick);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -231,6 +232,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::ProjectStats => {
             if let Some(ref mut screen) = app.screen_state.project_stats_screen {
+                screen.set_spinner_context(spinner_tick);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -424,6 +426,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                             app.mascot_animator.frame_index(),
                             app.mascot_style,
                         );
+                        screen.set_animation_context(spinner_tick);
                         screen.draw(f, chunks[1], &app.theme);
                     }
                 }

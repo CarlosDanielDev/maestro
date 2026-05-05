@@ -7,31 +7,31 @@ use crate::provider::github::client::RepoProvider;
 use crate::provider::types::Issue;
 use crate::tui::screens::roadmap::types::{RoadmapEntry, SemVer};
 use anyhow::Result;
+use futures::{StreamExt, stream};
 
-/// Concurrent fetch: first list all open + closed milestones, then for
-/// each pull its issues. Returns entries unsorted; the screen state sorts
-/// them by descending semver on `set_entries`.
+const MAX_CONCURRENT_ISSUE_FETCHES: usize = 8;
+
+/// Fetch all milestones, then pull milestone issues with bounded
+/// concurrency. Returns entries unsorted; the screen state sorts them by
+/// descending semver on `set_entries`.
 pub async fn load_roadmap(client: &dyn RepoProvider) -> Result<Vec<RoadmapEntry>> {
-    let (open_ms, closed_ms) = tokio::join!(
-        client.list_milestones("open"),
-        client.list_milestones("closed"),
-    );
-    let mut milestones = open_ms?;
-    milestones.extend(closed_ms?);
-
-    let mut entries = Vec::with_capacity(milestones.len());
-    for m in milestones {
+    let milestones = client.list_milestones("all").await?;
+    let entries = stream::iter(milestones.into_iter().map(|m| async move {
         let issues: Vec<Issue> = client
             .list_issues_by_milestone(&m.title)
             .await
             .unwrap_or_default();
         let semver = SemVer::parse_or_zero(&m.title);
-        entries.push(RoadmapEntry {
+        RoadmapEntry {
             milestone: m,
             semver,
             issues,
-        });
-    }
+        }
+    }))
+    .buffer_unordered(MAX_CONCURRENT_ISSUE_FETCHES)
+    .collect()
+    .await;
+
     Ok(entries)
 }
 

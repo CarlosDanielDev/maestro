@@ -19,6 +19,7 @@ pub struct ProjectStatsScreen {
     pub loading: bool,
     pub data: ProjectStatsData,
     pub(super) scroll_offset: usize,
+    spinner_tick: usize,
 }
 
 impl ProjectStatsScreen {
@@ -27,7 +28,16 @@ impl ProjectStatsScreen {
             loading: true,
             data: ProjectStatsData::default(),
             scroll_offset: 0,
+            spinner_tick: 0,
         }
+    }
+
+    pub fn set_spinner_context(&mut self, spinner_tick: usize) {
+        self.spinner_tick = spinner_tick;
+    }
+
+    pub(super) fn spinner_tick(&self) -> usize {
+        self.spinner_tick
     }
 
     pub fn set_data(&mut self, data: ProjectStatsData) {

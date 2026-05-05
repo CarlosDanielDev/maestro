@@ -13,4 +13,4 @@ expression: terminal.backend()
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
 "                                Title is required                               "
-"                                                                                "
+"         [Enter] next   [Tab] cycle   [Shift+Enter] newline   [Esc] back        "

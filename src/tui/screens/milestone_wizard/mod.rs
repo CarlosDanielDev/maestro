@@ -215,7 +215,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders},
 };
 
@@ -672,9 +672,9 @@ impl MilestoneWizardScreen {
     /// Refresh the border style on the active textarea to match focus
     /// visuals (focused = LightCyan + BOLD). Called from `Screen::draw`
     /// before rendering so `draw_impl` can stay `&self`.
-    pub(super) fn refresh_field_blocks(&mut self) {
+    pub(super) fn refresh_field_blocks(&mut self, theme: &Theme) {
         let border_style = Style::default()
-            .fg(Color::LightCyan)
+            .fg(theme.border_focused)
             .add_modifier(Modifier::BOLD);
         let block = |title: &'static str| {
             Block::default()
@@ -829,7 +829,7 @@ impl Screen for MilestoneWizardScreen {
     }
 
     fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        self.refresh_field_blocks();
+        self.refresh_field_blocks(theme);
         self.draw_impl(f, area, theme);
     }
 
