@@ -16,6 +16,7 @@ mod landing;
 mod milestone;
 mod milestone_wizard;
 mod overview;
+mod roadmap;
 mod turboquant_dashboard;
 
 use chrono::{TimeZone, Utc};

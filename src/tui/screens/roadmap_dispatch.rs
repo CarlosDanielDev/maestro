@@ -8,6 +8,8 @@ use crate::tui::screens::roadmap::types::StatusFilter;
 use crate::tui::screens::roadmap::{FilterField, RoadmapScreen};
 use crossterm::event::{Event, KeyCode};
 
+const DEFAULT_VISIBLE_ROWS: usize = 10;
+
 pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
     let Event::Key(key) = event else {
         return ScreenAction::None;
@@ -72,14 +74,27 @@ fn handle_view(app: &mut App, code: KeyCode) -> ScreenAction {
         KeyCode::Esc | KeyCode::Char('q') => ScreenAction::Pop,
         KeyCode::Down | KeyCode::Char('j') => {
             screen.cursor_down();
+            screen.clamp_offset_to_cursor(DEFAULT_VISIBLE_ROWS);
             ScreenAction::None
         }
         KeyCode::Up | KeyCode::Char('k') => {
             screen.cursor_up();
+            screen.clamp_offset_to_cursor(DEFAULT_VISIBLE_ROWS);
+            ScreenAction::None
+        }
+        KeyCode::PageDown => {
+            screen.page_down(DEFAULT_VISIBLE_ROWS);
+            screen.clamp_offset_to_cursor(DEFAULT_VISIBLE_ROWS);
+            ScreenAction::None
+        }
+        KeyCode::PageUp => {
+            screen.page_up(DEFAULT_VISIBLE_ROWS);
+            screen.clamp_offset_to_cursor(DEFAULT_VISIBLE_ROWS);
             ScreenAction::None
         }
         KeyCode::Enter | KeyCode::Char(' ') => {
             screen.toggle_expand();
+            screen.clamp_offset_to_cursor(DEFAULT_VISIBLE_ROWS);
             ScreenAction::None
         }
         KeyCode::Char('D') => {
