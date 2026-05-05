@@ -45,7 +45,7 @@ fn roadmap_scrolls_to_cursor_at_bottom_of_visible_window() {
 
     terminal
         .draw(|f| {
-            crate::tui::screens::roadmap::draw(f, f.area(), &mut screen, &theme);
+            crate::tui::screens::roadmap::draw(f, f.area(), &mut screen, &theme, 0);
         })
         .unwrap();
 
@@ -55,4 +55,24 @@ fn roadmap_scrolls_to_cursor_at_bottom_of_visible_window() {
         "focused roadmap row should be visible:\n{output}"
     );
     assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn roadmap_loading_empty_state_uses_spinner() -> anyhow::Result<()> {
+    let mut terminal = Terminal::new(TestBackend::new(80, 18))?;
+    let theme = Theme::dark();
+    let mut screen = RoadmapScreen::new();
+    screen.is_loading = true;
+
+    terminal.draw(|f| {
+        crate::tui::screens::roadmap::draw(f, f.area(), &mut screen, &theme, 3);
+    })?;
+
+    let output = buffer_text(&terminal);
+    assert!(
+        output.contains("⠸ Fetching milestones from GitHub…"),
+        "roadmap loading state should render the tick 3 braille frame:\n{output}"
+    );
+    assert_snapshot!(terminal.backend());
+    Ok(())
 }

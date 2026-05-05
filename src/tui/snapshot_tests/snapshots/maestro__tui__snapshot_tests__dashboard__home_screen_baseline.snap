@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/dashboard.rs
+assertion_line: 27
 expression: terminal.backend()
 ---
 "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────"
@@ -12,7 +13,7 @@ expression: terminal.backend()
 "║  [Added] feat(azdo): implement CI status and merge operations via az pipelines and az repos pr (#466)                ║"
 "╚══════════════════════════════════════════ Press [n] for full release notes ══════════════════════════════════════════╝"
 "╔════════[ Quick Actions ]═════════╗╔════════════[ Suggestions ]═════════════╗╔══════════[ Recent Activity ]═══════════╗"
-"║  [i]  Browse Issues              ║║  No suggestions — everything looks good║║  No recent sessions                    ║"
+"║  [i]  Browse Issues              ║║  No suggestions — everything looks good║║                                        ║"
 "║  [m]  Browse Milestones          ║║                                        ║║                                        ║"
 "║  [M]  Review Milestone           ║║                                        ║║                                        ║"
 "║  [r]  Run Prompt                 ║║                                        ║║                                        ║"
@@ -25,8 +26,8 @@ expression: terminal.backend()
 "║  [S]  Settings                   ║║                                        ║║                                        ║"
 "║  [u]  Update Maestro             ║║                                        ║║                                        ║"
 "║  [q]  Quit                       ║║                                        ║║                                        ║"
-"║                                  ║║                                        ║║                                        ║"
-"║                                  ║║                                        ║║                                        ║"
+"║                                  ║║                                        ║║           No recent sessions.          ║"
+"║                                  ║║                                        ║║        Press [r] to launch one.        ║"
 "║                                  ║║                                        ║║                                        ║"
 "║                                  ║║                                        ║║                                        ║"
 "║                                  ║║                                        ║║                                        ║"

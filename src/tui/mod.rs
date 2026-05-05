@@ -595,6 +595,9 @@ async fn event_loop(
                     });
                 }
                 app::TuiCommand::SyncRoadmap => {
+                    if let Some(screen) = app.screen_state.roadmap_screen.as_mut() {
+                        screen.is_loading = true;
+                    }
                     let tx = app.data_tx.clone();
                     let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {

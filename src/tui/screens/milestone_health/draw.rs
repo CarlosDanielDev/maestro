@@ -14,6 +14,7 @@ use crate::tui::screens::milestone_health::format::{anomaly as format_anomaly, m
 use crate::tui::screens::milestone_health::state::{HealthStep, PatchOutcome};
 use crate::tui::screens::sanitize_for_terminal as san;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::EmptyState;
 
 const BEFORE_AFTER_HEADER: &str = "Before / After";
 
@@ -35,16 +36,15 @@ pub fn draw(
             selected,
         } => draw_picker(f, chunks[0], theme, milestones, *selected),
         HealthStep::Loading { label, .. } => draw_loading(f, chunks[0], theme, label),
-        HealthStep::Empty { milestone } => draw_simple_message(
-            f,
-            chunks[0],
-            theme,
-            &format!(
+        HealthStep::Empty { milestone } => EmptyState::idle(
+            "Milestone Health",
+            format!(
                 "No open issues to review for milestone '{}'.",
                 san(&milestone.title)
             ),
-            "Press any key to return to the picker.",
-        ),
+            "Press any key to return.",
+        )
+        .render(f, chunks[0], theme),
         HealthStep::Healthy { milestone } => {
             let summary = screen
                 .state

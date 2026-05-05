@@ -4,6 +4,7 @@ use crate::changelog::{self, ChangeCategory, ChangeItem};
 use crate::tui::icons::{self, IconId};
 use crate::tui::screens::ScreenAction;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::EmptyState;
 use crate::tui::widgets::stats_bar::{StatsBar, StatsBarData};
 use ratatui::{
     Frame,
@@ -237,6 +238,14 @@ impl HomeScreen {
             return;
         }
 
+        if self.suggestions.len() == 1
+            && matches!(self.suggestions[0].kind, SuggestionKind::IdleSessions)
+        {
+            EmptyState::idle("Suggestions", "No sessions running.", "Press [r] to start.")
+                .render(f, area, theme);
+            return;
+        }
+
         let mut lines = Vec::new();
         for (idx, suggestion) in self.suggestions.iter().enumerate() {
             let is_selected = is_focused && idx == self.selected_suggestion;
@@ -274,10 +283,12 @@ impl HomeScreen {
         let block = theme.styled_block("Recent Activity", false);
 
         if self.recent_sessions.is_empty() {
-            let para = Paragraph::new("  No recent sessions")
-                .style(Style::default().fg(theme.text_secondary))
-                .block(block);
-            f.render_widget(para, area);
+            EmptyState::idle(
+                "Recent Activity",
+                "No recent sessions.",
+                "Press [r] to launch one.",
+            )
+            .render(f, area, theme);
             return;
         }
 

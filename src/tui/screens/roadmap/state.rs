@@ -22,6 +22,7 @@ pub struct RoadmapScreen {
     pub offset: usize,
     pub filters: Filters,
     pub editing_filter: Option<FilterField>,
+    pub is_loading: bool,
 }
 
 impl Default for RoadmapScreen {
@@ -39,6 +40,7 @@ impl RoadmapScreen {
             offset: 0,
             filters: Filters::default(),
             editing_filter: None,
+            is_loading: false,
         }
     }
 

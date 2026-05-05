@@ -436,7 +436,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 }
                 Some(&TuiMode::Roadmap) => {
                     if let Some(screen) = app.screen_state.roadmap_screen.as_mut() {
-                        crate::tui::screens::roadmap::draw(f, chunks[1], screen, &theme);
+                        crate::tui::screens::roadmap::draw(
+                            f,
+                            chunks[1],
+                            screen,
+                            &theme,
+                            spinner_tick,
+                        );
                     }
                 }
                 Some(&TuiMode::CostDashboard) => {
@@ -564,7 +570,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         TuiMode::Roadmap => {
             crate::tui::screens::roadmap_dispatch::ensure_loaded(app);
             if let Some(screen) = app.screen_state.roadmap_screen.as_mut() {
-                crate::tui::screens::roadmap::draw(f, chunks[1], screen, &theme);
+                crate::tui::screens::roadmap::draw(f, chunks[1], screen, &theme, spinner_tick);
             }
         }
         TuiMode::BypassWarning => {

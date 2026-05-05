@@ -8,13 +8,20 @@ use crate::tui::screens::roadmap::dep_levels::dep_levels;
 use crate::tui::screens::roadmap::state::RoadmapScreen;
 use crate::tui::screens::roadmap::types::{Filters, RoadmapEntry, StatusFilter};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::EmptyState;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
-pub fn draw(f: &mut Frame, area: Rect, screen: &mut RoadmapScreen, theme: &Theme) {
+pub fn draw(
+    f: &mut Frame,
+    area: Rect,
+    screen: &mut RoadmapScreen,
+    theme: &Theme,
+    spinner_tick: usize,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -25,7 +32,7 @@ pub fn draw(f: &mut Frame, area: Rect, screen: &mut RoadmapScreen, theme: &Theme
         .split(area);
 
     draw_header(f, chunks[0], screen, theme);
-    draw_body(f, chunks[1], screen, theme);
+    draw_body(f, chunks[1], screen, theme, spinner_tick);
     draw_hints(f, chunks[2], screen, theme);
 }
 
@@ -68,17 +75,25 @@ fn draw_header(f: &mut Frame, area: Rect, screen: &RoadmapScreen, theme: &Theme)
     );
 }
 
-fn draw_body(f: &mut Frame, area: Rect, screen: &mut RoadmapScreen, theme: &Theme) {
+fn draw_body(
+    f: &mut Frame,
+    area: Rect,
+    screen: &mut RoadmapScreen,
+    theme: &Theme,
+    spinner_tick: usize,
+) {
     if screen.entries.is_empty() {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.text_secondary));
-        f.render_widget(
-            Paragraph::new("No milestones loaded — press [r] to refresh from GitHub.")
-                .style(Style::default().fg(theme.text_secondary))
-                .block(block),
-            area,
-        );
+        if screen.is_loading {
+            EmptyState::loading("Roadmap", "Fetching milestones from GitHub…", spinner_tick)
+                .render(f, area, theme);
+        } else {
+            EmptyState::idle(
+                "Roadmap",
+                "No milestones yet.",
+                "Press [r] to refresh, [m] to create one.",
+            )
+            .render(f, area, theme);
+        }
         return;
     }
 

@@ -1,5 +1,6 @@
 use super::ProjectStatsScreen;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::EmptyState;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -9,7 +10,7 @@ use ratatui::{
 };
 
 impl ProjectStatsScreen {
-    pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, _theme: &Theme) {
+    pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         if self.loading {
             let msg = Paragraph::new(vec![
                 Line::from(""),
@@ -51,7 +52,7 @@ impl ProjectStatsScreen {
         self.draw_milestones(f, chunks[1]);
         self.draw_issues(f, chunks[2]);
         self.draw_sessions(f, chunks[3]);
-        self.draw_recent(f, chunks[4]);
+        self.draw_recent(f, chunks[4], theme);
     }
 
     fn milestones_height(&self) -> u16 {
@@ -147,21 +148,23 @@ impl ProjectStatsScreen {
         );
     }
 
-    fn draw_recent(&self, f: &mut Frame, area: Rect) {
+    fn draw_recent(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = Block::default()
             .borders(Borders::ALL)
             .title("Recent activity");
         let inner = block.inner(area);
-        f.render_widget(block, area);
 
         if self.data.recent_activity.is_empty() {
-            f.render_widget(
-                Paragraph::new("No recent sessions.").alignment(Alignment::Center),
-                inner,
-            );
+            EmptyState::idle(
+                "Recent activity",
+                "No recent sessions.",
+                "Press [r] to launch one.",
+            )
+            .render(f, area, theme);
             return;
         }
 
+        f.render_widget(block, area);
         let visible_height = inner.height as usize;
         let rows: Vec<Line> = self
             .data
