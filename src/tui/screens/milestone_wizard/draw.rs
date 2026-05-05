@@ -1,6 +1,6 @@
 use super::{MilestoneWizardScreen, MilestoneWizardStep};
 use crate::tui::theme::Theme;
-use crate::tui::widgets::{WizardFrame, WizardFrameFooter, WizardFrameHeader};
+use crate::tui::widgets::{BrailleSpinner, WizardFrame, WizardFrameFooter, WizardFrameHeader};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -36,7 +36,9 @@ impl MilestoneWizardScreen {
                 MilestoneWizardStep::GoalDefinition => self.draw_goal_step(f, body_area),
                 MilestoneWizardStep::NonGoals => self.draw_non_goals_step(f, body_area),
                 MilestoneWizardStep::DocReferences => self.draw_doc_refs_step(f, body_area),
-                MilestoneWizardStep::AiStructuring => self.draw_ai_structuring_step(f, body_area),
+                MilestoneWizardStep::AiStructuring => {
+                    self.draw_ai_structuring_step(f, body_area, theme);
+                }
                 MilestoneWizardStep::ReviewPlan => self.draw_review_step(f, body_area),
                 MilestoneWizardStep::Preview => self.draw_preview_step(f, body_area),
                 MilestoneWizardStep::Materializing => self.draw_materializing_step(f, body_area),
@@ -143,27 +145,32 @@ impl MilestoneWizardScreen {
         );
     }
 
-    fn draw_ai_structuring_step(&self, f: &mut Frame, area: Rect) {
+    fn draw_ai_structuring_step(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let block = Block::default()
             .borders(Borders::ALL)
             .title("AI structuring");
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let label = if self.is_planning_in_flight() {
-            "AI is working on the plan…"
+        let line = if self.is_planning_in_flight() {
+            BrailleSpinner::render(
+                self.spinner_tick(),
+                "AI is structuring your goals…",
+                self.use_nerd_font(),
+                theme,
+            )
         } else if self.has_generated_plan() {
-            "Plan ready — Enter to continue to Review."
-        } else {
-            "Press Enter to launch the AI planner."
-        };
-        let lines = vec![
-            Line::from(""),
             Line::from(Span::styled(
-                label,
+                "Plan ready — Enter to continue to Review.",
                 Style::default().add_modifier(Modifier::BOLD),
-            )),
-        ];
+            ))
+        } else {
+            Line::from(Span::styled(
+                "Press Enter to launch the AI planner.",
+                Style::default().add_modifier(Modifier::BOLD),
+            ))
+        };
+        let lines = vec![Line::from(""), line];
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
     }
 

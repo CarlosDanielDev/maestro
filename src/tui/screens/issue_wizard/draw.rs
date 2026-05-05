@@ -29,7 +29,7 @@ impl IssueWizardScreen {
                 IssueWizardStep::BasicInfo => self.draw_basic_info(f, body_area),
                 IssueWizardStep::DorFields => self.draw_dor_fields(f, body_area),
                 IssueWizardStep::Dependencies => self.draw_dependencies(f, body_area),
-                IssueWizardStep::AiReview => self.draw_ai_review(f, body_area),
+                IssueWizardStep::AiReview => self.draw_ai_review(f, body_area, theme),
                 IssueWizardStep::Preview => self.draw_preview(f, body_area),
                 IssueWizardStep::Creating => self.draw_creating(f, body_area),
                 IssueWizardStep::Complete => self.draw_complete(f, body_area),

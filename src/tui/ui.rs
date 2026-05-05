@@ -225,6 +225,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::IssueWizard => {
             if let Some(ref mut screen) = app.screen_state.issue_wizard_screen {
+                screen.set_spinner_context(spinner_tick, crate::icon_mode::use_nerd_font());
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -235,6 +236,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::MilestoneWizard => {
             if let Some(ref mut screen) = app.screen_state.milestone_wizard_screen {
+                screen.set_spinner_context(spinner_tick, crate::icon_mode::use_nerd_font());
                 screen.draw(f, chunks[1], &app.theme);
             }
         }

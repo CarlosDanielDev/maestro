@@ -128,6 +128,8 @@ pub struct IssueWizardScreen {
     /// #455 Blocking modal surfaced when `create_issue` returns
     /// `CreateOutcome::Existed` — user must pick Edit or Cancel.
     pub(super) already_exists_modal: Option<AlreadyExistsModal>,
+    spinner_tick: usize,
+    use_nerd_font: bool,
 }
 
 /// #455 Info needed to render the "issue already exists" blocking modal.
@@ -168,7 +170,22 @@ impl IssueWizardScreen {
             created_issue_number: None,
             create_error: None,
             already_exists_modal: None,
+            spinner_tick: 0,
+            use_nerd_font: false,
         }
+    }
+
+    pub fn set_spinner_context(&mut self, spinner_tick: usize, use_nerd_font: bool) {
+        self.spinner_tick = spinner_tick;
+        self.use_nerd_font = use_nerd_font;
+    }
+
+    pub(super) fn spinner_tick(&self) -> usize {
+        self.spinner_tick
+    }
+
+    pub(super) fn use_nerd_font(&self) -> bool {
+        self.use_nerd_font
     }
 
     /// Insert a pasted payload into the focused textarea. `TextAreaField`
