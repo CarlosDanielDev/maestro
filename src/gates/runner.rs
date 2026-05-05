@@ -94,7 +94,8 @@ fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
 
             // CWE-78 fix: execute structured argv instead of sh -c.
             // Shell features (pipes, redirections, $VAR expansion) are not
-            // supported by design — use the TestsPass gate for complex commands.
+            // supported by design in this gate; commands must be provided as
+            // a program plus arguments rather than shell syntax.
             let parts: Vec<&str> = command.split_whitespace().collect();
             if parts.is_empty() {
                 return GateResult::fail(name, "Empty command");
