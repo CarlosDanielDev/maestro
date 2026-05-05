@@ -14,7 +14,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
-pub fn draw(f: &mut Frame, area: Rect, screen: &RoadmapScreen, theme: &Theme) {
+pub fn draw(f: &mut Frame, area: Rect, screen: &mut RoadmapScreen, theme: &Theme) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -68,7 +68,7 @@ fn draw_header(f: &mut Frame, area: Rect, screen: &RoadmapScreen, theme: &Theme)
     );
 }
 
-fn draw_body(f: &mut Frame, area: Rect, screen: &RoadmapScreen, theme: &Theme) {
+fn draw_body(f: &mut Frame, area: Rect, screen: &mut RoadmapScreen, theme: &Theme) {
     if screen.entries.is_empty() {
         let block = Block::default()
             .borders(Borders::ALL)
@@ -82,6 +82,14 @@ fn draw_body(f: &mut Frame, area: Rect, screen: &RoadmapScreen, theme: &Theme) {
         return;
     }
 
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent_identifier))
+        .title(" Milestones (descending semver) ");
+    let visible_rows = block.inner(area).height as usize;
+    screen.clamp_offset_to_cursor(visible_rows);
+    let offset = screen.offset;
+
     let mut items: Vec<ListItem> = Vec::new();
     for (idx, entry) in screen.entries.iter().enumerate() {
         let is_focused = idx == screen.cursor;
@@ -93,10 +101,7 @@ fn draw_body(f: &mut Frame, area: Rect, screen: &RoadmapScreen, theme: &Theme) {
         }
     }
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent_identifier))
-        .title(" Milestones (descending semver) ");
+    let items = items.into_iter().skip(offset).collect::<Vec<_>>();
     f.render_widget(List::new(items).block(block), area);
 }
 

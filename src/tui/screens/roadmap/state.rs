@@ -3,6 +3,7 @@
 #![deny(clippy::unwrap_used)]
 #![allow(dead_code)]
 
+use crate::tui::screens::roadmap::dep_levels::dep_levels;
 use crate::tui::screens::roadmap::types::{Filters, RoadmapEntry, SemVer};
 use std::collections::HashSet;
 
@@ -18,6 +19,7 @@ pub struct RoadmapScreen {
     pub entries: Vec<RoadmapEntry>,
     pub expanded: HashSet<u64>,
     pub cursor: usize,
+    pub offset: usize,
     pub filters: Filters,
     pub editing_filter: Option<FilterField>,
 }
@@ -34,6 +36,7 @@ impl RoadmapScreen {
             entries: Vec::new(),
             expanded: HashSet::new(),
             cursor: 0,
+            offset: 0,
             filters: Filters::default(),
             editing_filter: None,
         }
@@ -51,6 +54,11 @@ impl RoadmapScreen {
         self.entries = entries;
         if self.cursor >= max {
             self.cursor = max.saturating_sub(1);
+        }
+        if max == 0 {
+            self.offset = 0;
+        } else {
+            self.offset = self.offset.min(self.rendered_row_count().saturating_sub(1));
         }
     }
 
@@ -75,6 +83,68 @@ impl RoadmapScreen {
         self.cursor = self.cursor.saturating_sub(1);
     }
 
+    pub fn page_down(&mut self, rows: usize) {
+        if self.entries.is_empty() {
+            self.cursor = 0;
+            return;
+        }
+        self.cursor = (self.cursor + rows).min(self.entries.len() - 1);
+    }
+
+    pub fn page_up(&mut self, rows: usize) {
+        self.cursor = self.cursor.saturating_sub(rows);
+    }
+
+    pub fn clamp_offset(&mut self, visible_rows: usize, total_rows: usize) {
+        let focused_row = self.cursor.min(total_rows.saturating_sub(1));
+        self.clamp_offset_to_row(focused_row, visible_rows, total_rows);
+    }
+
+    pub fn clamp_offset_to_cursor(&mut self, visible_rows: usize) {
+        self.clamp_offset_to_row(
+            self.focused_rendered_row(),
+            visible_rows,
+            self.rendered_row_count(),
+        );
+    }
+
+    pub fn clamp_offset_to_row(
+        &mut self,
+        focused_row: usize,
+        visible_rows: usize,
+        total_rows: usize,
+    ) {
+        if visible_rows == 0 || total_rows <= visible_rows {
+            self.offset = 0;
+            return;
+        }
+
+        let focused_row = focused_row.min(total_rows.saturating_sub(1));
+        if focused_row < self.offset {
+            self.offset = focused_row;
+        } else if focused_row >= self.offset.saturating_add(visible_rows) {
+            self.offset = focused_row + 1 - visible_rows;
+        }
+
+        let max_offset = total_rows.saturating_sub(visible_rows);
+        self.offset = self.offset.min(max_offset);
+    }
+
+    pub fn rendered_row_count(&self) -> usize {
+        self.entries
+            .iter()
+            .map(|entry| 1 + self.expanded_row_count(entry))
+            .sum()
+    }
+
+    pub fn focused_rendered_row(&self) -> usize {
+        self.entries
+            .iter()
+            .take(self.cursor)
+            .map(|entry| 1 + self.expanded_row_count(entry))
+            .sum()
+    }
+
     pub fn focused_milestone(&self) -> Option<&RoadmapEntry> {
         self.entries.get(self.cursor)
     }
@@ -85,6 +155,38 @@ impl RoadmapScreen {
 
     pub fn is_expanded(&self, milestone_number: u64) -> bool {
         self.expanded.contains(&milestone_number)
+    }
+
+    fn expanded_row_count(&self, entry: &RoadmapEntry) -> usize {
+        if !self.is_expanded(entry.milestone.number) {
+            return 0;
+        }
+
+        let visible: Vec<_> = entry
+            .issues
+            .iter()
+            .filter(|issue| self.filters.matches(issue))
+            .collect();
+        if visible.is_empty() {
+            return 1;
+        }
+
+        let visible_set: HashSet<u64> = visible.iter().map(|issue| issue.number).collect();
+        let inputs: Vec<_> = visible
+            .iter()
+            .map(|issue| {
+                (
+                    issue.number,
+                    issue
+                        .all_blockers()
+                        .into_iter()
+                        .filter(|blocker| visible_set.contains(blocker))
+                        .collect(),
+                )
+            })
+            .collect();
+        let level_count = dep_levels(&inputs).map(|levels| levels.len()).unwrap_or(1);
+        level_count + visible.len()
     }
 }
 
@@ -191,6 +293,39 @@ mod tests {
         let mut s = RoadmapScreen::new();
         s.cursor_up();
         assert_eq!(s.cursor, 0);
+    }
+
+    #[test]
+    fn clamp_offset_shifts_down_when_cursor_below_visible_window() {
+        let mut s = RoadmapScreen::new();
+        s.cursor = 12;
+        s.offset = 0;
+
+        s.clamp_offset(10, 30);
+
+        assert_eq!(s.offset, 3);
+    }
+
+    #[test]
+    fn clamp_offset_shifts_up_when_cursor_above_visible_window() {
+        let mut s = RoadmapScreen::new();
+        s.cursor = 4;
+        s.offset = 10;
+
+        s.clamp_offset(10, 30);
+
+        assert_eq!(s.offset, 4);
+    }
+
+    #[test]
+    fn clamp_offset_stays_zero_when_total_rows_fit() {
+        let mut s = RoadmapScreen::new();
+        s.cursor = 4;
+        s.offset = 3;
+
+        s.clamp_offset(10, 8);
+
+        assert_eq!(s.offset, 0);
     }
 
     #[test]
