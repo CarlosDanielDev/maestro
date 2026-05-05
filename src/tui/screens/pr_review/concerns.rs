@@ -85,12 +85,13 @@ pub fn draw(f: &mut Frame, area: Rect, report: &ReviewReport, cursor: usize, the
                 + location.as_str().width()
                 + message.as_str().width();
             let trailing = inner.width.saturating_sub(content_width as u16) as usize;
-            let mut spans = Vec::new();
-            spans.push(Span::styled(prefix, row_style));
-            spans.push(Span::styled(status, muted_style));
-            spans.push(Span::styled(severity, severity_style));
-            spans.push(Span::styled(location, muted_style));
-            spans.push(Span::styled(message, row_style));
+            let mut spans = vec![
+                Span::styled(prefix, row_style),
+                Span::styled(status, muted_style),
+                Span::styled(severity, severity_style),
+                Span::styled(location, muted_style),
+                Span::styled(message, row_style),
+            ];
             if trailing > 0 {
                 spans.push(Span::styled(" ".repeat(trailing), row_style));
             }

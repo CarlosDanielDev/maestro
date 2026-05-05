@@ -115,29 +115,19 @@ impl SettingsScreen {
                 width: area.width,
                 height: h,
             };
+            if focused {
+                render_focused_row_bg(
+                    f,
+                    Rect {
+                        height: 1,
+                        ..field_area
+                    },
+                    theme,
+                );
+            }
             if active_tab == SettingsTab::Advanced && field.widget.label() == CAVEMAN_LABEL {
-                if focused {
-                    render_focused_row_bg(
-                        f,
-                        Rect {
-                            height: 1,
-                            ..field_area
-                        },
-                        theme,
-                    );
-                }
                 caveman_row::render_caveman_row(f, field_area, caveman_state, focused, theme);
             } else {
-                if focused {
-                    render_focused_row_bg(
-                        f,
-                        Rect {
-                            height: 1,
-                            ..field_area
-                        },
-                        theme,
-                    );
-                }
                 let validation = self.feedback_for(tab, field_idx).cloned();
                 field
                     .widget
