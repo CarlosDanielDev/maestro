@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SNAPSHOT="$ROOT_DIR/src/tui/snapshot_tests/snapshots/maestro__tui__snapshot_tests__landing__landing_welcome_180x48_nerd_font.snap"
 OUTPUT="$ROOT_DIR/docs/assets/readme-hero.svg"
-FONT_FILE="/System/Library/Fonts/SFNSMono.ttf"
+FONT_FILE="$HOME/Library/Fonts/HackNerdFontMono-Regular.ttf"
 FONT_ARGS=()
 if [[ -f "$FONT_FILE" ]]; then
   FONT_ARGS=(--font.file "$FONT_FILE")
@@ -25,8 +25,10 @@ if ! command -v freeze >/dev/null 2>&1; then
 fi
 
 TMP_INPUT="$(mktemp)"
+TMP_PNG="$(mktemp).png"
+TMP_EMBED_PNG="$(mktemp).png"
 cleanup() {
-  rm -f "$TMP_INPUT"
+  rm -f "$TMP_INPUT" "$TMP_PNG" "$TMP_EMBED_PNG"
 }
 trap cleanup EXIT
 
@@ -237,9 +239,9 @@ PY
 
 freeze "$TMP_INPUT" \
   --language ansi \
-  --output "$OUTPUT" \
+  --output "$TMP_PNG" \
   --background "#202431" \
-  --padding "10,6" \
+  --padding "10,18" \
   --margin 0 \
   --border.radius 0 \
   --border.width 0 \
@@ -247,3 +249,30 @@ freeze "$TMP_INPUT" \
   "${FONT_ARGS[@]}" \
   --font.size 12 \
   --line-height 1.15
+
+if command -v magick >/dev/null 2>&1; then
+  magick "$TMP_PNG" -resize 1400x "$TMP_EMBED_PNG"
+else
+  cp "$TMP_PNG" "$TMP_EMBED_PNG"
+fi
+
+python3 - "$TMP_EMBED_PNG" "$OUTPUT" <<'PY'
+import base64
+import sys
+from pathlib import Path
+from struct import unpack
+
+png = Path(sys.argv[1])
+output = Path(sys.argv[2])
+data = png.read_bytes()
+width, height = unpack(">II", data[16:24])
+encoded = base64.b64encode(data).decode("ascii")
+output.write_text(
+    f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+    f'viewBox="0 0 {width} {height}" role="img" aria-label="Maestro TUI welcome screen">'
+    f'<image href="data:image/png;base64,{encoded}" width="{width}" height="{height}" />'
+    f'</svg>\n',
+    encoding="utf-8",
+)
+print(f" WROTE  {output}")
+PY
