@@ -1,4 +1,5 @@
 pub mod analyzer;
+mod command_config;
 pub mod knowledge;
 pub mod materializer;
 pub mod milestone_pattern;
@@ -10,40 +11,10 @@ pub mod prompts;
 pub mod scaffolder;
 pub mod scanner;
 pub mod suggestions;
+mod terminal_terms;
 pub mod types;
 
-/// Configuration for the `maestro adapt` command.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AdaptConfig {
-    pub path: std::path::PathBuf,
-    pub dry_run: bool,
-    pub no_issues: bool,
-    pub scan_only: bool,
-    pub model: Option<String>,
-    pub prd_source: prd_source::PrdSource,
-}
-
-impl Default for AdaptConfig {
-    fn default() -> Self {
-        Self {
-            path: std::path::PathBuf::from("."),
-            dry_run: false,
-            no_issues: false,
-            scan_only: false,
-            model: None,
-            prd_source: prd_source::PrdSource::default(),
-        }
-    }
-}
-
-/// Configuration for the `maestro prd` standalone command.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PrdConfig {
-    pub path: std::path::PathBuf,
-    pub model: Option<String>,
-    pub force: bool,
-    pub source: prd_source::PrdSource,
-}
+pub use command_config::{AdaptConfig, PrdConfig};
 
 pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
     use analyzer::{ClaudeAnalyzer, ProjectAnalyzer};
@@ -194,6 +165,11 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     // future session receives a dense, budget-bounded project brief.
     eprintln!("Phase 2.6: Compressing project knowledge...");
     let project_cfg = crate::config::Config::find_and_load_in(&config.path).ok();
+    let provider_config = project_cfg
+        .as_ref()
+        .map(|c| c.effective_provider_config())
+        .unwrap_or_default();
+    let terms = terminal_terms::AdaptTerminalTerms::from_provider_kind(provider_config.kind);
     let knowledge_budget = project_cfg
         .as_ref()
         .map(|c| c.turboquant.knowledge_budget)
@@ -222,12 +198,21 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     let milestone_hint = detect_milestone_hint(&profile.root, project_cfg.as_ref()).await;
     if let Some(ref hint) = milestone_hint {
         let preview: String = hint.chars().take(120).collect();
-        eprintln!("Phase 2.7: Milestone pattern → {}…", preview);
+        eprintln!(
+            "Phase 2.7: {} pattern → {}…",
+            terms.milestone_label, preview
+        );
     } else {
-        eprintln!("Phase 2.7: No milestone pattern detected (will defer to planner).");
+        eprintln!(
+            "Phase 2.7: No {} pattern detected (will defer to planner).",
+            terms.milestone_label_lowercase
+        );
     }
 
-    eprintln!("Phase 3: Planning milestones and issues...");
+    eprintln!(
+        "Phase 3: Planning {} and {}...",
+        terms.milestone_label_plural_lowercase, terms.issue_label_plural_lowercase
+    );
     let planner = ClaudePlanner::new(model.clone());
     let plan = planner
         .plan(
@@ -238,12 +223,14 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         )
         .await?;
     eprintln!(
-        "  {} milestones, {} issues",
+        "  {} {}, {} {}",
         plan.milestones.len(),
+        terms.milestone_label_plural_lowercase,
         plan.milestones
             .iter()
             .map(|m| m.issues.len())
-            .sum::<usize>()
+            .sum::<usize>(),
+        terms.issue_label_plural_lowercase
     );
 
     if config.dry_run {
@@ -267,18 +254,7 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         }
     };
 
-    let provider_config = project_cfg
-        .as_ref()
-        .map(|c| c.effective_provider_config())
-        .unwrap_or_default();
-    let terms = match provider_config.kind {
-        crate::provider::types::ProviderKind::Github => ("Milestones", "Issues", "issue", "GitHub"),
-        crate::provider::types::ProviderKind::AzureDevops => {
-            ("Iterations", "Work Items", "work item", "Azure DevOps")
-        }
-    };
-
-    eprintln!("Phase 4: Creating {} artifacts...", terms.3);
+    eprintln!("Phase 4: Creating {} artifacts...", terms.provider_name);
     let provider = crate::provider::create_provider(&provider_config)?;
     let materializer = RepoMaterializer::new(provider_config.kind, provider.as_ref());
     let result = materializer.materialize(&plan, &report, false).await?;
@@ -295,12 +271,16 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         .count();
     eprintln!(
         "  {}: {} created, {} reused",
-        terms.0, ms_created, ms_reused
+        terms.milestone_label_plural, ms_created, ms_reused
     );
 
     let skipped = result.issues_skipped.len();
     if skipped == 0 {
-        eprintln!("  {}: {} created", terms.1, result.issues_created.len());
+        eprintln!(
+            "  {}: {} created",
+            terms.issue_label_plural,
+            result.issues_created.len()
+        );
     } else {
         let numbers: Vec<String> = if skipped <= 10 {
             result
@@ -314,14 +294,14 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         if numbers.is_empty() {
             eprintln!(
                 "  {}: {} created, {} skipped (duplicate titles)",
-                terms.1,
+                terms.issue_label_plural,
                 result.issues_created.len(),
                 skipped
             );
         } else {
             eprintln!(
                 "  {}: {} created, {} skipped (duplicate titles: {})",
-                terms.1,
+                terms.issue_label_plural,
                 result.issues_created.len(),
                 skipped,
                 numbers.join(", ")
@@ -329,7 +309,10 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
         }
     }
     if let Some(ref td) = result.tech_debt_issue {
-        eprintln!("  Tech debt catalog {}: #{}", terms.2, td.number);
+        eprintln!(
+            "  Tech debt catalog {}: #{}",
+            terms.issue_label_lowercase, td.number
+        );
     }
 
     Ok(())

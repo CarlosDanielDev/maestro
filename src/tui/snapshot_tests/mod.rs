@@ -13,6 +13,7 @@ mod fullscreen;
 mod issue_browser;
 mod landing;
 mod milestone;
+mod milestone_wizard;
 mod overview;
 mod turboquant_dashboard;
 

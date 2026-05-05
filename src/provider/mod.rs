@@ -1,5 +1,6 @@
 pub mod azure_devops;
 pub mod github;
+pub mod terms;
 pub mod types;
 
 pub use self::github::client::{CreateOutcome, RepoProvider};
