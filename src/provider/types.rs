@@ -19,7 +19,7 @@ fn blocked_by_regex() -> &'static regex::Regex {
 pub enum ProviderKind {
     #[default]
     Github,
-    /// Experimental until v0.24.0; requires `experimental.azure_devops = true`.
+    /// Azure DevOps provider.
     AzureDevops,
 }
 
