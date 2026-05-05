@@ -4,16 +4,18 @@
 
 use super::IssueWizardScreen;
 use super::draw_diff::build_diff_lines;
+use crate::tui::theme::Theme;
+use crate::tui::widgets::BrailleSpinner;
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 impl IssueWizardScreen {
-    pub(super) fn draw_ai_review(&self, f: &mut Frame, area: Rect) {
+    pub(super) fn draw_ai_review(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         // Improve sub-state takes precedence over the default review
         // view — loading, error, and diff are exclusive with each other
         // and with the underlying review text.
@@ -25,10 +27,12 @@ impl IssueWizardScreen {
             f.render_widget(block, area);
             let lines = vec![
                 Line::from(""),
-                Line::from(Span::styled(
+                BrailleSpinner::render(
+                    self.spinner_tick(),
                     "AI is rewriting your issue using its own feedback…",
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
+                    self.use_nerd_font(),
+                    theme,
+                ),
             ];
             f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
             return;
@@ -52,7 +56,12 @@ impl IssueWizardScreen {
                 Line::from(""),
                 Line::from("r: retry    Esc: back to review"),
             ];
-            f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
+            f.render_widget(
+                Paragraph::new(lines)
+                    .alignment(Alignment::Center)
+                    .wrap(Wrap { trim: false }),
+                inner,
+            );
             return;
         }
 
@@ -94,10 +103,12 @@ impl IssueWizardScreen {
         if self.review_loading() {
             let lines = vec![
                 Line::from(""),
-                Line::from(Span::styled(
+                BrailleSpinner::render(
+                    self.spinner_tick(),
                     "AI is reviewing your issue…",
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
+                    self.use_nerd_font(),
+                    theme,
+                ),
             ];
             f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), inner);
             return;

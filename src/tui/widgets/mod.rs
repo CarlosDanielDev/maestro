@@ -1,3 +1,4 @@
+mod braille_spinner;
 pub mod bypass_indicator;
 mod ci_monitor;
 mod dropdown;
@@ -9,6 +10,7 @@ mod toggle;
 pub mod unified_pr_toggle;
 pub mod wizard_frame;
 
+pub use braille_spinner::BrailleSpinner;
 pub use ci_monitor::CiMonitorWidget;
 pub use dropdown::Dropdown;
 pub use list_editor::ListEditor;

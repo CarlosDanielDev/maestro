@@ -251,6 +251,8 @@ pub struct MilestoneWizardScreen {
     pub(super) milestone_reused: bool,
     /// Numbers of pre-existing issues that were skipped during materialization.
     pub(super) skipped_issue_numbers: Vec<u64>,
+    spinner_tick: usize,
+    use_nerd_font: bool,
 }
 
 impl MilestoneWizardScreen {
@@ -288,7 +290,22 @@ impl MilestoneWizardScreen {
             created_milestone_number: None,
             milestone_reused: false,
             skipped_issue_numbers: Vec::new(),
+            spinner_tick: 0,
+            use_nerd_font: false,
         }
+    }
+
+    pub fn set_spinner_context(&mut self, spinner_tick: usize, use_nerd_font: bool) {
+        self.spinner_tick = spinner_tick;
+        self.use_nerd_font = use_nerd_font;
+    }
+
+    pub(super) fn spinner_tick(&self) -> usize {
+        self.spinner_tick
+    }
+
+    pub(super) fn use_nerd_font(&self) -> bool {
+        self.use_nerd_font
     }
 
     pub fn milestone_label(&self) -> &'static str {
@@ -520,6 +537,11 @@ impl MilestoneWizardScreen {
 
     pub fn step(&self) -> MilestoneWizardStep {
         self.step
+    }
+
+    #[cfg(test)]
+    pub fn set_step_for_tests(&mut self, step: MilestoneWizardStep) {
+        self.step = step;
     }
 
     pub fn payload(&self) -> &MilestonePlanPayload {

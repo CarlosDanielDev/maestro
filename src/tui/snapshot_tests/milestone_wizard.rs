@@ -6,7 +6,7 @@ use crate::provider::types::ProviderKind;
 use crate::tui::screens::Screen;
 use crate::tui::screens::adapt::{AdaptScreen, AdaptStep};
 use crate::tui::screens::milestone_wizard::{
-    AiGeneratedPlan, MilestoneCreationResult, MilestoneWizardScreen,
+    AiGeneratedPlan, MilestoneCreationResult, MilestoneWizardScreen, MilestoneWizardStep,
 };
 use crate::tui::theme::Theme;
 use insta::assert_snapshot;
@@ -50,6 +50,23 @@ fn draw_wizard_complete(kind: ProviderKind) -> ratatui::Terminal<ratatui::backen
         .unwrap();
 
     terminal
+}
+
+fn draw_wizard_ai_structuring_loading(
+    kind: ProviderKind,
+) -> Result<ratatui::Terminal<ratatui::backend::TestBackend>, Box<dyn std::error::Error>> {
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut screen = MilestoneWizardScreen::with_provider_kind(kind);
+    screen.set_step_for_tests(MilestoneWizardStep::AiStructuring);
+    screen.set_spinner_context(3, true);
+    screen.start_planning();
+
+    terminal.draw(|f| {
+        screen.draw(f, f.area(), &theme);
+    })?;
+
+    Ok(terminal)
 }
 
 fn adapt_screen(kind: ProviderKind) -> AdaptScreen {
@@ -123,6 +140,14 @@ fn milestone_wizard_complete_github() {
 fn milestone_wizard_complete_azdo() {
     let terminal = draw_wizard_complete(ProviderKind::AzureDevops);
     assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn milestone_wizard_ai_structuring_loading_uses_braille_spinner()
+-> Result<(), Box<dyn std::error::Error>> {
+    let terminal = draw_wizard_ai_structuring_loading(ProviderKind::Github)?;
+    assert_snapshot!(terminal.backend());
+    Ok(())
 }
 
 #[test]
