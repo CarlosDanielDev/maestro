@@ -7,6 +7,7 @@ pub mod stats_bar;
 mod text_input;
 mod toggle;
 pub mod unified_pr_toggle;
+pub mod wizard_frame;
 
 pub use ci_monitor::CiMonitorWidget;
 pub use dropdown::Dropdown;
@@ -14,6 +15,7 @@ pub use list_editor::ListEditor;
 pub use number_stepper::NumberStepper;
 pub use text_input::TextInput;
 pub use toggle::Toggle;
+pub use wizard_frame::{WizardFrame, WizardFrameFooter, WizardFrameHeader};
 
 use crossterm::event::KeyEvent;
 use ratatui::{Frame, layout::Rect};

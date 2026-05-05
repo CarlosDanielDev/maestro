@@ -1,5 +1,6 @@
 use super::{MilestoneWizardScreen, MilestoneWizardStep};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::{WizardFrame, WizardFrameFooter, WizardFrameHeader};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -17,64 +18,32 @@ const NON_GOAL_PROMPT_SUFFIX: &str =
     " explicitly NOT include? Listing non-goals up front prevents scope creep.";
 
 impl MilestoneWizardScreen {
-    pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, _theme: &Theme) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(2),
-            ])
-            .split(area);
-
-        self.draw_header(f, chunks[0]);
-        match self.step() {
-            MilestoneWizardStep::GoalDefinition => self.draw_goal_step(f, chunks[1]),
-            MilestoneWizardStep::NonGoals => self.draw_non_goals_step(f, chunks[1]),
-            MilestoneWizardStep::DocReferences => self.draw_doc_refs_step(f, chunks[1]),
-            MilestoneWizardStep::AiStructuring => self.draw_ai_structuring_step(f, chunks[1]),
-            MilestoneWizardStep::ReviewPlan => self.draw_review_step(f, chunks[1]),
-            MilestoneWizardStep::Preview => self.draw_preview_step(f, chunks[1]),
-            MilestoneWizardStep::Materializing => self.draw_materializing_step(f, chunks[1]),
-            MilestoneWizardStep::Complete => self.draw_complete_step(f, chunks[1]),
-            MilestoneWizardStep::Failed => self.draw_failed_step(f, chunks[1]),
-        }
-        self.draw_footer(f, chunks[2]);
-    }
-
-    fn draw_header(&self, f: &mut Frame, area: Rect) {
+    pub(super) fn draw_impl(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let step = self.step();
-        let header = Paragraph::new(Line::from(vec![
-            Span::styled(
-                format!("Step {}/{}: ", step.index(), MilestoneWizardStep::total()),
-                Style::default().add_modifier(Modifier::DIM),
-            ),
-            Span::styled(step.label(), Style::default().add_modifier(Modifier::BOLD)),
-        ]))
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::BOTTOM)
-                .title(format!("{} Wizard", self.milestone_label())),
+        WizardFrame::draw(
+            f,
+            area,
+            theme,
+            WizardFrameHeader {
+                step_index: step.index(),
+                step_total: MilestoneWizardStep::total(),
+                step_label: step.label(),
+            },
+            WizardFrameFooter {
+                validation_error: self.validation_error(),
+            },
+            |f, body_area| match step {
+                MilestoneWizardStep::GoalDefinition => self.draw_goal_step(f, body_area),
+                MilestoneWizardStep::NonGoals => self.draw_non_goals_step(f, body_area),
+                MilestoneWizardStep::DocReferences => self.draw_doc_refs_step(f, body_area),
+                MilestoneWizardStep::AiStructuring => self.draw_ai_structuring_step(f, body_area),
+                MilestoneWizardStep::ReviewPlan => self.draw_review_step(f, body_area),
+                MilestoneWizardStep::Preview => self.draw_preview_step(f, body_area),
+                MilestoneWizardStep::Materializing => self.draw_materializing_step(f, body_area),
+                MilestoneWizardStep::Complete => self.draw_complete_step(f, body_area),
+                MilestoneWizardStep::Failed => self.draw_failed_step(f, body_area),
+            },
         );
-        f.render_widget(header, area);
-    }
-
-    fn draw_footer(&self, f: &mut Frame, area: Rect) {
-        let line = if let Some(err) = self.validation_error() {
-            Line::from(Span::styled(
-                err,
-                Style::default()
-                    .fg(Color::LightRed)
-                    .add_modifier(Modifier::BOLD),
-            ))
-        } else {
-            Line::from(Span::styled(
-                "Enter: next  Shift+Enter: newline  Esc: back",
-                Style::default().add_modifier(Modifier::DIM),
-            ))
-        };
-        f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
     }
 
     fn draw_goal_step(&self, f: &mut Frame, area: Rect) {

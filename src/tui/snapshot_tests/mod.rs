@@ -11,6 +11,7 @@ mod dashboard;
 mod detail;
 mod fullscreen;
 mod issue_browser;
+mod issue_wizard;
 mod landing;
 mod milestone;
 mod milestone_wizard;

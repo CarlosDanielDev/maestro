@@ -433,6 +433,7 @@ mod tests {
             let state = self.state.lock().unwrap();
             let mut issues = state.existing_issues.clone();
             issues.extend(state.created_issues.clone());
+            drop(state);
             Ok(issues)
         }
 
@@ -444,6 +445,7 @@ mod tests {
             let state = self.state.lock().unwrap();
             let mut milestones = state.existing_milestones.clone();
             milestones.extend(state.created_milestones.clone());
+            drop(state);
             Ok(milestones)
         }
 
@@ -506,6 +508,7 @@ mod tests {
                 open_issues: 0,
                 closed_issues: 0,
             });
+            drop(state);
             Ok(CreateOutcome::Created(number))
         }
 
@@ -544,6 +547,7 @@ mod tests {
                 milestone,
                 assignees: Vec::new(),
             });
+            drop(state);
             Ok(CreateOutcome::Created(number))
         }
 
@@ -584,6 +588,7 @@ mod tests {
             if !state.labels.iter().any(|label| label == name) {
                 state.labels.push(name.to_string());
             }
+            drop(state);
             Ok(())
         }
 
