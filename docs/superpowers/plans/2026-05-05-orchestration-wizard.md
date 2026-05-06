@@ -6,7 +6,7 @@
 
 **Architecture:** Three layers. L3 (Rust, in `src/orchestration/`) is the cross-issue scheduler that reads `## Blocked By` from selected issues, builds a topological plan, and dispatches issue-level runs respecting concurrency and dependencies. L2 is a per-issue Claude session with a tightly-scoped system prompt that delegates work via `Task()` tool calls (Claude-only in v1). L1 (in maestro) intercepts each Task call, looks up the team's role→agent binding, and spawns the bound provider session via the v0.25.0 `ManagedSession` pipeline. Teams are TOML presets stored in three tiers (built-in binary-embedded, user `~/.config/maestro/teams/`, project `.maestro/teams/`) with `extends`-based inheritance.
 
-**Tech Stack:** Rust 1.89+, tokio, ratatui, serde + serde_json, toml crate, `directories` crate (new dep — cross-platform user-config-path resolution), `insta` for snapshot tests, `wiremock` for HTTP test doubles. Builds on v0.25.0's `AgentProvider` trait and `[agents.*]` config.
+**Tech Stack:** Rust 1.89+, tokio, ratatui, serde + serde_json, toml crate, `directories` crate (new dep — cross-platform user-config-path resolution), `insta` for snapshot tests. Builds on v0.25.0's `AgentProvider` trait and `[agents.*]` config. Test doubles are written by hand (fake `AgentProvider` impls in `src/integration_tests/`) — no HTTP-mock crate is needed in v1 because L1 dispatch tests use canned `StreamEvent`s rather than real HTTP traffic.
 
 **Spec reference:** `docs/superpowers/specs/2026-05-05-orchestration-wizard-design.md`.
 
@@ -21,7 +21,7 @@
 | Path | Chunk | Responsibility |
 |------|-------|----------------|
 | `src/orchestration/mod.rs` | 1 | Module root, re-exports |
-| `src/orchestration/types.rs` | 1 | `Primitive`, `TeamInput`, `TeamOutput`, `Role` enums |
+| `src/orchestration/types.rs` | 1 | `Primitive`, `TeamInput`, `TeamOutput`, `TeamRole` enums |
 | `src/orchestration/contracts.rs` | 1 | `SubagentResult`, `SubagentError`, `Finding`, `ReviewVerdict`, `NewIssueDraft` |
 | `src/orchestration/team.rs` | 1 | `TeamConfig`, `RoleBinding`, `RoleOverride` (TOML schema) |
 | `src/orchestration/loader.rs` | 1 | Three-tier loader, `extends` resolution, cycle detection |
@@ -67,7 +67,10 @@
 | `tests/fixtures/blocked_by/missing.md` | 2 | Section absent |
 | `tests/fixtures/team_runs/in_flight.json` | 2 | Restart-reconciliation fixture |
 | `tests/fixtures/team_runs/all_done.json` | 2 | Completed run fixture |
-| `tests/orchestration/mock_task.rs` | 3 | Mock `Task()` test helper |
+| `src/integration_tests/orchestration_mock_task.rs` | 3 | Mock `Task()` test helper (existing project pattern: integration tests live under `src/integration_tests/`, NOT a top-level `tests/` directory) |
+| `src/integration_tests/orchestration_pipeline.rs` | 3 | End-to-end pipeline test using mock `Task()` |
+| `src/integration_tests/orchestration_dispatch.rs` | 4 | End-to-end L1 dispatch test using a fake `AgentProvider` |
+| `src/integration_tests/orchestration_smoke.rs` | 6 | End-to-end smoke test |
 
 ### Modified files
 
@@ -115,6 +118,60 @@ Each chunk → one PR (per user's isolation rule). Chunks 3 and 4 can land in pa
 - Create: `src/orchestration/builtins/mod.rs` + 5 TOML files
 - Modify: `Cargo.toml`, `src/lib.rs`, `src/config/mod.rs`
 - Tests: inline `#[cfg(test)]` modules per file + `tests/fixtures/teams/`
+
+### Task 1.0: Investigate state-store versioning (BLOCKING for Chunk 6)
+
+**Why this is in Chunk 1:** Task 6.3 (state-store migration) was originally written assuming a `STATE_VERSION` constant exists. The reviewer caught that this is unverified. If versioning doesn't exist, Chunk 6 balloons into "design + implement versioning + migrate," potentially blocking the whole plan from closing. Determine the answer up-front, in a 30-minute spike, so Chunk 6's scope is known.
+
+**Files:**
+- (read-only investigation) `src/state/types.rs`, `src/state/store.rs`
+
+- [ ] **Step 1: Search for any version field**
+
+```bash
+grep -rn 'STATE_VERSION\|state_version\|version.*:.*u\|schema_version' src/state/
+```
+
+- [ ] **Step 2: Inspect the `Store` struct and its load path**
+
+```bash
+sed -n '1,60p' src/state/store.rs
+sed -n '1,60p' src/state/types.rs
+```
+
+- [ ] **Step 3: Record the finding inline in this plan file**
+
+Open `docs/superpowers/plans/2026-05-05-orchestration-wizard.md` and replace this paragraph with one of:
+
+> **Finding (BRANCH A — versioning exists):** The state store carries a `version: u32` field at … . Task 6.3 proceeds as written. CURRENT_STATE_VERSION value: `<N>`. Bump to `<N+1>` in Task 6.3.
+
+OR
+
+> **Finding (BRANCH B — no versioning):** No version field exists. A new Task 2.0 is added (see below) to introduce versioning before any TeamRun-bearing state is persisted. Task 6.3 then degrades to "bump version + verify migration path." See Task 2.0.
+
+If BRANCH B applies, also insert this Task 2.0 before Task 2.1 (immediately under the Chunk 2 heading):
+
+```markdown
+### Task 2.0: Introduce state-store versioning (BLOCKING — only if Task 1.0 found Branch B)
+
+**Files:**
+- Modify: `src/state/types.rs` (add `pub version: u32`, `const CURRENT_STATE_VERSION: u32 = 1;`)
+- Modify: `src/state/store.rs` (migration dispatch in `Store::load`)
+- Create: `tests/fixtures/state/v0_pre_team_run.json` (round-trip fixture)
+
+- [ ] Step 1: Add `version` field to top-level state struct (`#[serde(default)]`).
+- [ ] Step 2: Add `const CURRENT_STATE_VERSION: u32 = 1;`.
+- [ ] Step 3: In `Store::load`, after deserialization, run `migrate_if_needed(&mut state)` which dispatches by `state.version`. v0 → v1 migration is a no-op for `team_runs` (defaults to empty Vec via serde default).
+- [ ] Step 4: Write a v0 fixture (no `version` field) + a round-trip test asserting it loads, gets bumped to v1 in memory, and saves out with `"version": 1`.
+- [ ] Step 5: Commit.
+```
+
+- [ ] **Step 4: Commit the finding**
+
+```bash
+git add docs/superpowers/plans/2026-05-05-orchestration-wizard.md
+git commit -m "docs(plan): record state-versioning investigation finding"
+```
 
 ### Task 1.1: Add `directories` crate dependency
 
@@ -257,7 +314,7 @@ pub enum TeamOutput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Role {
+pub enum TeamRole {
     Implementer,
     Reviewer,
     Docs,
@@ -272,13 +329,13 @@ pub enum Role {
 
 ```rust
 impl Primitive {
-    /// Which `Role`s a given primitive requires bound for a team to be valid.
-    pub fn required_roles(self) -> &'static [Role] {
+    /// Which `TeamRole`s a given primitive requires bound for a team to be valid.
+    pub fn required_roles(self) -> &'static [TeamRole] {
         match self {
-            Self::Pipeline => &[Role::Implementer, Role::Reviewer, Role::Docs],
-            Self::FanOut => &[Role::Reviewer], // at minimum; team can bind more
+            Self::Pipeline => &[TeamRole::Implementer, TeamRole::Reviewer, TeamRole::Docs],
+            Self::FanOut => &[TeamRole::Reviewer], // at minimum; team can bind more
             Self::SinglePass => &[], // any single role allowed; validator picks
-            Self::VerdictOnly => &[Role::Reviewer],
+            Self::VerdictOnly => &[TeamRole::Reviewer],
         }
     }
 }
@@ -291,9 +348,9 @@ mod required_roles_tests {
     fn pipeline_requires_three_roles() {
         let roles = Primitive::Pipeline.required_roles();
         assert_eq!(roles.len(), 3);
-        assert!(roles.contains(&Role::Implementer));
-        assert!(roles.contains(&Role::Reviewer));
-        assert!(roles.contains(&Role::Docs));
+        assert!(roles.contains(&TeamRole::Implementer));
+        assert!(roles.contains(&TeamRole::Reviewer));
+        assert!(roles.contains(&TeamRole::Docs));
     }
 
     #[test]
@@ -308,7 +365,7 @@ mod required_roles_tests {
 ```bash
 cargo test -p maestro --lib orchestration::types
 git add src/lib.rs src/orchestration/
-git commit -m "feat(orchestration): add Primitive, TeamInput, TeamOutput, Role enums"
+git commit -m "feat(orchestration): add Primitive, TeamInput, TeamOutput, TeamRole enums"
 ```
 
 ### Task 1.3: `SubagentResult` contract enum
@@ -325,7 +382,7 @@ Create `src/orchestration/contracts.rs`:
 //! Subagent output contracts. L1 enforces; L2 trusts.
 //! See spec §4 "Role output contracts" for derivation.
 
-use crate::orchestration::types::Role;
+use crate::orchestration::types::TeamRole;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use thiserror::Error;
@@ -396,7 +453,7 @@ pub enum SubagentError {
     Provider(String),
     #[error("subagent returned a payload that did not match role {role:?}: expected {expected}, got {got}")]
     ResultShapeMismatch {
-        role: Role,
+        role: TeamRole,
         expected: String,
         got: String,
     },
@@ -408,7 +465,7 @@ pub enum SubagentError {
     Other(String),
 }
 
-impl Role {
+impl TeamRole {
     /// Which `SubagentResult` variants this role is allowed to produce.
     /// Validator uses this to map L1's parsed output to the right variant.
     pub fn allowed_results(self) -> &'static [&'static str] {
@@ -446,7 +503,7 @@ mod tests {
 
     #[test]
     fn role_allowed_results_implementer() {
-        assert_eq!(Role::Implementer.allowed_results(), &["code-change"]);
+        assert_eq!(TeamRole::Implementer.allowed_results(), &["code-change"]);
     }
 }
 ```
@@ -461,7 +518,7 @@ pub mod contracts;
 pub use contracts::{
     Finding, FindingSeverity, NewIssueDraft, ReviewVerdict, SubagentError, SubagentResult,
 };
-pub use types::{Primitive, Role, TeamInput, TeamOutput};
+pub use types::{Primitive, TeamRole, TeamInput, TeamOutput};
 ```
 
 - [ ] **Step 3: Run tests**
@@ -492,7 +549,7 @@ Create `src/orchestration/team.rs`:
 ```rust
 //! Team preset TOML schema — see spec §4.
 
-use crate::orchestration::types::{Primitive, Role};
+use crate::orchestration::types::{Primitive, TeamRole};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -537,7 +594,7 @@ pub struct ResolvedTeam {
     pub name: String,
     pub primitive: Primitive,
     pub min_agents: Vec<String>,
-    pub bindings: HashMap<Role, RoleBinding>,
+    pub bindings: HashMap<TeamRole, RoleBinding>,
     pub source_tier: SourceTier,
 }
 
@@ -852,8 +909,8 @@ reviewer = "opencode""#,
     let loader = Loader::new(Some(user.path().to_path_buf()), None);
     let resolved = loader.resolve().unwrap();
     let child = resolved.get("child").unwrap();
-    assert_eq!(child.bindings.get(&Role::Reviewer).unwrap().agent, "opencode");
-    assert_eq!(child.bindings.get(&Role::Implementer).unwrap().agent, "claude");
+    assert_eq!(child.bindings.get(&TeamRole::Reviewer).unwrap().agent, "opencode");
+    assert_eq!(child.bindings.get(&TeamRole::Implementer).unwrap().agent, "claude");
 }
 
 #[test]
@@ -879,7 +936,7 @@ implementer = "claude""#,
 }
 ```
 
-(Add `use crate::orchestration::types::Role;` to the test module imports if needed.)
+(Add `use crate::orchestration::types::TeamRole;` to the test module imports if needed.)
 
 - [ ] **Step 2: Implement `resolve()`**
 
@@ -889,7 +946,7 @@ Add to `Loader`:
 impl Loader {
     pub fn resolve(&self) -> Result<HashMap<String, ResolvedTeam>> {
         use crate::orchestration::team::{ResolvedTeam, RoleBinding};
-        use crate::orchestration::types::Role;
+        use crate::orchestration::types::TeamRole;
 
         let raw = self.load_raw()?;
         let mut resolved: HashMap<String, ResolvedTeam> = HashMap::new();
@@ -943,16 +1000,16 @@ impl Loader {
                 anyhow!("team {name:?}: primitive not set anywhere in extends chain")
             })?;
 
-            let mut bindings: HashMap<Role, RoleBinding> = HashMap::new();
+            let mut bindings: HashMap<TeamRole, RoleBinding> = HashMap::new();
             for (k, agent) in &bindings_str {
                 let role = match k.as_str() {
-                    "implementer" => Role::Implementer,
-                    "reviewer" => Role::Reviewer,
-                    "docs" => Role::Docs,
-                    "devops" => Role::Devops,
-                    "orchestrator" => Role::Orchestrator,
-                    "triager" => Role::Triager,
-                    "researcher" => Role::Researcher,
+                    "implementer" => TeamRole::Implementer,
+                    "reviewer" => TeamRole::Reviewer,
+                    "docs" => TeamRole::Docs,
+                    "devops" => TeamRole::Devops,
+                    "orchestrator" => TeamRole::Orchestrator,
+                    "triager" => TeamRole::Triager,
+                    "researcher" => TeamRole::Researcher,
                     other => return Err(anyhow!("team {name:?}: unknown role binding {other:?}")),
                 };
                 let ovr = overrides.get(k);
@@ -1008,7 +1065,7 @@ Create `src/orchestration/validation.rs`:
 //! Load-time validation per spec §4 "Validation rules".
 
 use crate::orchestration::team::ResolvedTeam;
-use crate::orchestration::types::Role;
+use crate::orchestration::types::TeamRole;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -1016,20 +1073,20 @@ pub enum ValidationError {
     #[error("team {team:?}: missing required role {role:?} for primitive {primitive:?}")]
     MissingRequiredRole {
         team: String,
-        role: Role,
+        role: TeamRole,
         primitive: String,
     },
     #[error("team {team:?}: agent {agent:?} (referenced by role {role:?}) is not configured in [agents.*]")]
     AgentNotConfigured {
         team: String,
         agent: String,
-        role: Role,
+        role: TeamRole,
     },
     #[error("team {team:?}: mode {mode:?} (role {role:?}) is not configured in [modes.*]")]
     ModeNotConfigured {
         team: String,
         mode: String,
-        role: Role,
+        role: TeamRole,
     },
     #[error("team {team:?}: claude must be in min_agents (L2 provider constraint, see spec §3)")]
     ClaudeNotInMinAgents { team: String },
@@ -1104,8 +1161,8 @@ mod tests {
     #[test]
     fn pipeline_missing_reviewer_fails() {
         let mut bindings = HashMap::new();
-        bindings.insert(Role::Implementer, binding("claude"));
-        bindings.insert(Role::Docs, binding("claude"));
+        bindings.insert(TeamRole::Implementer, binding("claude"));
+        bindings.insert(TeamRole::Docs, binding("claude"));
         let team = ResolvedTeam {
             name: "broken".into(),
             primitive: Primitive::Pipeline,
@@ -1114,13 +1171,13 @@ mod tests {
             source_tier: SourceTier::User,
         };
         let errs = validate(&team, &["claude".into()], &[]).unwrap_err();
-        assert!(errs.iter().any(|e| matches!(e, ValidationError::MissingRequiredRole { role: Role::Reviewer, .. })));
+        assert!(errs.iter().any(|e| matches!(e, ValidationError::MissingRequiredRole { role: TeamRole::Reviewer, .. })));
     }
 
     #[test]
     fn unknown_agent_fails() {
         let mut bindings = HashMap::new();
-        bindings.insert(Role::Reviewer, binding("ghost"));
+        bindings.insert(TeamRole::Reviewer, binding("ghost"));
         let team = ResolvedTeam {
             name: "ghost-team".into(),
             primitive: Primitive::SinglePass,
@@ -1135,7 +1192,7 @@ mod tests {
     #[test]
     fn missing_claude_in_min_agents_fails() {
         let mut bindings = HashMap::new();
-        bindings.insert(Role::Reviewer, binding("ollama"));
+        bindings.insert(TeamRole::Reviewer, binding("ollama"));
         let team = ResolvedTeam {
             name: "no-claude".into(),
             primitive: Primitive::SinglePass,
@@ -1988,13 +2045,13 @@ pub fn preflight_sync(
 mod tests {
     use super::*;
     use crate::orchestration::team::{RoleBinding, SourceTier};
-    use crate::orchestration::types::{Primitive, Role};
+    use crate::orchestration::types::{Primitive, TeamRole};
     use std::collections::HashMap;
 
     #[test]
     fn passes_for_valid_team() {
         let mut bindings = HashMap::new();
-        bindings.insert(Role::Reviewer, RoleBinding {
+        bindings.insert(TeamRole::Reviewer, RoleBinding {
             agent: "claude".into(),
             mode: None, model_override: None, prompt_addendum: None, fallback_agent: None,
         });
@@ -2114,11 +2171,11 @@ impl Scheduler {
 mod tests {
     use super::*;
     use crate::orchestration::team::{RoleBinding, SourceTier};
-    use crate::orchestration::types::{Primitive, Role};
+    use crate::orchestration::types::{Primitive, TeamRole};
 
     fn solo_team() -> ResolvedTeam {
         let mut bindings = HashMap::new();
-        bindings.insert(Role::Reviewer, RoleBinding {
+        bindings.insert(TeamRole::Reviewer, RoleBinding {
             agent: "claude".into(),
             mode: None, model_override: None, prompt_addendum: None, fallback_agent: None,
         });
@@ -2272,7 +2329,7 @@ git commit -m "feat(state): pessimistic restart reconciliation for TeamRun InFli
 //! Primitive state machines. One file per primitive.
 
 use crate::orchestration::contracts::SubagentResult;
-use crate::orchestration::types::{Primitive, Role, TeamOutput};
+use crate::orchestration::types::{Primitive, TeamRole, TeamOutput};
 use crate::state::types::IssueNumber;
 
 pub mod pipeline;
@@ -2284,14 +2341,14 @@ pub mod verdict_only;
 /// step as a Task() call and feeds the result back via `advance`.
 #[derive(Debug, Clone)]
 pub enum NextStep {
-    Dispatch { role: Role, instructions: String },
+    Dispatch { role: TeamRole, instructions: String },
     Done { output: TeamOutput },
     Fail { reason: String },
 }
 
 pub trait PrimitiveMachine: Send {
     fn next(&mut self) -> NextStep;
-    fn advance(&mut self, role: Role, result: Result<SubagentResult, crate::orchestration::contracts::SubagentError>);
+    fn advance(&mut self, role: TeamRole, result: Result<SubagentResult, crate::orchestration::contracts::SubagentError>);
 }
 
 pub fn make_machine(
@@ -2316,7 +2373,7 @@ Example `pipeline.rs`:
 ```rust
 use super::{NextStep, PrimitiveMachine};
 use crate::orchestration::contracts::{SubagentError, SubagentResult};
-use crate::orchestration::types::Role;
+use crate::orchestration::types::TeamRole;
 use crate::state::types::IssueNumber;
 
 pub struct PipelineMachine {
@@ -2344,18 +2401,18 @@ impl PrimitiveMachine for PipelineMachine {
     fn next(&mut self) -> NextStep {
         match &self.step {
             PipelineStep::Implementer => NextStep::Dispatch {
-                role: Role::Implementer,
+                role: TeamRole::Implementer,
                 instructions: format!("Implement issue #{}.", self.issue),
             },
             PipelineStep::Reviewer { implementer_summary } => NextStep::Dispatch {
-                role: Role::Reviewer,
+                role: TeamRole::Reviewer,
                 instructions: format!(
                     "Review the implementer's diff for issue #{}. Implementer summary: {}",
                     self.issue, implementer_summary
                 ),
             },
             PipelineStep::Docs { reviewer_verdict } => NextStep::Dispatch {
-                role: Role::Docs,
+                role: TeamRole::Docs,
                 instructions: format!(
                     "Update docs for issue #{}. Review verdict was: {}",
                     self.issue, reviewer_verdict
@@ -2371,19 +2428,19 @@ impl PrimitiveMachine for PipelineMachine {
         }
     }
 
-    fn advance(&mut self, role: Role, result: Result<SubagentResult, SubagentError>) {
+    fn advance(&mut self, role: TeamRole, result: Result<SubagentResult, SubagentError>) {
         match (role, result, &self.step) {
-            (Role::Implementer, Ok(SubagentResult::CodeChange { summary, commit_sha, .. }), _) => {
+            (TeamRole::Implementer, Ok(SubagentResult::CodeChange { summary, commit_sha, .. }), _) => {
                 self.last_summary = summary.clone();
                 self.step = PipelineStep::Reviewer { implementer_summary: summary };
                 let _ = commit_sha; // use later for PR creation
             }
-            (Role::Reviewer, Ok(SubagentResult::ReviewFindings { verdict, .. }), _) => {
+            (TeamRole::Reviewer, Ok(SubagentResult::ReviewFindings { verdict, .. }), _) => {
                 self.step = PipelineStep::Docs {
                     reviewer_verdict: format!("{verdict:?}"),
                 };
             }
-            (Role::Docs, Ok(SubagentResult::DocsChange { .. }), _) => {
+            (TeamRole::Docs, Ok(SubagentResult::DocsChange { .. }), _) => {
                 // PR creation happens in L2 driver; here we just signal Done.
                 self.step = PipelineStep::Done {
                     branch: format!("feat/{}", self.issue),
@@ -2422,11 +2479,11 @@ mod tests {
         let mut m = SinglePassMachine::new(123);
         // First call: dispatch.
         match m.next() {
-            NextStep::Dispatch { role, .. } => assert_eq!(role, Role::Reviewer),
+            NextStep::Dispatch { role, .. } => assert_eq!(role, TeamRole::Reviewer),
             _ => panic!(),
         }
         // Advance with success.
-        m.advance(Role::Reviewer, Ok(SubagentResult::ReviewFindings {
+        m.advance(TeamRole::Reviewer, Ok(SubagentResult::ReviewFindings {
             verdict: ReviewVerdict::Approved,
             findings: vec![],
         }));
@@ -2483,12 +2540,12 @@ Forbidden: Read, Edit, Write, Bash, Grep — all delegated to subagents."#
 mod tests {
     use super::*;
     use crate::orchestration::team::{RoleBinding, SourceTier};
-    use crate::orchestration::types::Role;
+    use crate::orchestration::types::TeamRole;
     use std::collections::HashMap;
 
     fn pipeline_team() -> ResolvedTeam {
         let mut bindings = HashMap::new();
-        for r in [Role::Implementer, Role::Reviewer, Role::Docs] {
+        for r in [TeamRole::Implementer, TeamRole::Reviewer, TeamRole::Docs] {
             bindings.insert(r, RoleBinding {
                 agent: "claude".into(),
                 mode: None, model_override: None, prompt_addendum: None, fallback_agent: None,
@@ -2533,10 +2590,15 @@ git commit -m "feat(orchestration): add L2 system-prompt template"
 ### Task 3.3: Mock `Task()` test infrastructure
 
 **Files:**
-- Create: `tests/orchestration/mock_task.rs`
-- Create: `tests/orchestration/mod.rs`
+- Create: `src/integration_tests/orchestration_mock_task.rs`
+- Create: `src/integration_tests/orchestration_pipeline.rs` (Step 3 lands here)
+- Modify: `src/integration_tests/mod.rs` (declare the two new modules)
+
+> **Note on test layout:** the existing project keeps integration tests under `src/integration_tests/` (declared as `mod integration_tests;` in `src/lib.rs`), NOT a top-level `tests/` directory. Earlier review caught this. All `cargo test` targeting these tests uses the regular `cargo test -p maestro` (or `cargo test -p maestro integration_tests::orchestration_*`) — not `cargo test --test orchestration`.
 
 - [ ] **Step 1: Write the mock module**
+
+Path: `src/integration_tests/orchestration_mock_task.rs`. Note: when in `integration_tests/`, refer to crate types as `crate::orchestration::*` (NOT `maestro::orchestration::*` — that path is only valid for top-level `tests/`).
 
 ```rust
 //! Mock Task() for integration tests. See spec §9 mock-ownership note.
@@ -2544,8 +2606,8 @@ git commit -m "feat(orchestration): add L2 system-prompt template"
 //! Replaces the L2 session's tool-result channel with canned payloads,
 //! so tests don't spawn a real Claude binary.
 
-use maestro::orchestration::contracts::{SubagentError, SubagentResult};
-use maestro::orchestration::types::Role;
+use crate::orchestration::contracts::{SubagentError, SubagentResult};
+use crate::orchestration::types::TeamRole;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
@@ -2555,7 +2617,7 @@ pub struct MockTaskQueue {
 
 #[derive(Debug, Clone)]
 pub struct MockResponse {
-    pub role: Role,
+    pub role: TeamRole,
     pub result: Result<SubagentResult, SubagentError>,
 }
 
@@ -2564,7 +2626,7 @@ impl MockTaskQueue {
         Self { inner: Mutex::new(queue.into()) }
     }
 
-    pub fn next(&self, expected_role: Role) -> Option<Result<SubagentResult, SubagentError>> {
+    pub fn next(&self, expected_role: TeamRole) -> Option<Result<SubagentResult, SubagentError>> {
         let mut q = self.inner.lock().unwrap();
         let front = q.pop_front()?;
         assert_eq!(front.role, expected_role,
@@ -2575,24 +2637,33 @@ impl MockTaskQueue {
 }
 ```
 
-- [ ] **Step 2: Add `tests/orchestration/mod.rs`**
+- [ ] **Step 2: Wire the modules into `src/integration_tests/mod.rs`**
+
+Add to the existing `src/integration_tests/mod.rs`:
 
 ```rust
-pub mod mock_task;
+pub mod orchestration_mock_task;
+mod orchestration_pipeline;
 ```
+
+(`pub mod` for the mock so other integration tests in this directory can `use crate::integration_tests::orchestration_mock_task::*`.)
 
 - [ ] **Step 3: Add an integration test that exercises the pipeline machine end-to-end with the mock**
 
+Path: `src/integration_tests/orchestration_pipeline.rs`.
+
 ```rust
+use crate::integration_tests::orchestration_mock_task::{MockResponse, MockTaskQueue};
+use crate::orchestration::contracts::{ReviewVerdict, SubagentResult};
+use crate::orchestration::primitives::{make_machine, NextStep};
+use crate::orchestration::types::{Primitive, TeamRole};
+
 #[test]
 fn pipeline_drives_to_done_with_mock() {
-    use maestro::orchestration::primitives::{make_machine, NextStep};
-    use maestro::orchestration::types::Primitive;
-    use maestro::orchestration::contracts::{SubagentResult, ReviewVerdict};
 
     let queue = MockTaskQueue::new(vec![
         MockResponse {
-            role: Role::Implementer,
+            role: TeamRole::Implementer,
             result: Ok(SubagentResult::CodeChange {
                 files_touched: vec!["src/foo.rs".into()],
                 summary: "added foo".into(),
@@ -2600,14 +2671,14 @@ fn pipeline_drives_to_done_with_mock() {
             }),
         },
         MockResponse {
-            role: Role::Reviewer,
+            role: TeamRole::Reviewer,
             result: Ok(SubagentResult::ReviewFindings {
                 verdict: ReviewVerdict::Approved,
                 findings: vec![],
             }),
         },
         MockResponse {
-            role: Role::Docs,
+            role: TeamRole::Docs,
             result: Ok(SubagentResult::DocsChange {
                 files_touched: vec!["docs/foo.md".into()],
                 summary: "doc updated".into(),
@@ -2632,8 +2703,8 @@ fn pipeline_drives_to_done_with_mock() {
 - [ ] **Step 4: Run + commit**
 
 ```bash
-cargo test --test orchestration
-git add tests/
+cargo test -p maestro integration_tests::orchestration_pipeline
+git add src/integration_tests/
 git commit -m "test(orchestration): add MockTaskQueue and pipeline integration test"
 ```
 
@@ -2699,7 +2770,7 @@ use crate::agent_provider::types::{AgentProvider, AgentRequest, StreamEvent};
 use crate::config::Config;
 use crate::orchestration::contracts::{SubagentError, SubagentResult};
 use crate::orchestration::team::{ResolvedTeam, RoleBinding};
-use crate::orchestration::types::Role;
+use crate::orchestration::types::TeamRole;
 use anyhow::{Context, Result};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -2713,7 +2784,7 @@ pub struct DispatchContext<'a> {
 
 pub async fn dispatch_subagent(
     ctx: &DispatchContext<'_>,
-    role: Role,
+    role: TeamRole,
     instructions: String,
 ) -> Result<SubagentResult, SubagentError> {
     let binding = ctx.team.bindings.get(&role)
@@ -2769,7 +2840,7 @@ fn compose_prompt(ctx: &DispatchContext, binding: &RoleBinding, instructions: &s
     parts.join("\n\n")
 }
 
-fn parse_result(role: Role, raw: &str) -> Result<SubagentResult, SubagentError> {
+fn parse_result(role: TeamRole, raw: &str) -> Result<SubagentResult, SubagentError> {
     // Try JSON parse first (subagents may output structured JSON in the role's
     // declared shape). On failure, wrap in `Generic` if role allows it; else
     // return ResultShapeMismatch.
@@ -2797,7 +2868,7 @@ mod tests {
     #[test]
     fn parse_review_findings_from_json() {
         let raw = r#"{"kind":"review-findings","verdict":"approved","findings":[]}"#;
-        let r = parse_result(Role::Reviewer, raw).unwrap();
+        let r = parse_result(TeamRole::Reviewer, raw).unwrap();
         match r {
             SubagentResult::ReviewFindings { verdict, .. } => assert_eq!(verdict, ReviewVerdict::Approved),
             _ => panic!(),
@@ -2806,18 +2877,99 @@ mod tests {
 
     #[test]
     fn implementer_plain_text_returns_shape_mismatch() {
-        let err = parse_result(Role::Implementer, "just some text").unwrap_err();
+        let err = parse_result(TeamRole::Implementer, "just some text").unwrap_err();
         assert!(matches!(err, SubagentError::ResultShapeMismatch { .. }));
     }
 }
 ```
 
-- [ ] **Step 2: Run + commit**
+- [ ] **Step 2: Run unit tests + commit**
 
 ```bash
 cargo test -p maestro --lib orchestration::dispatch
 git add src/orchestration/
 git commit -m "feat(orchestration): add L1 subagent dispatch"
+```
+
+- [ ] **Step 3: Add an end-to-end dispatch integration test**
+
+Path: `src/integration_tests/orchestration_dispatch.rs`. The unit tests above cover `parse_result()` in isolation; this test exercises the full `dispatch_subagent()` path (build provider, compose prompt, spawn, aggregate stream, parse) using a fake `AgentProvider` that returns canned `StreamEvent::AssistantText` containing valid JSON.
+
+```rust
+use crate::agent_provider::types::{AgentProvider, AgentRequest, StreamEvent};
+use crate::config::Config;
+use crate::orchestration::dispatch::{dispatch_subagent, DispatchContext};
+use crate::orchestration::team::{ResolvedTeam, RoleBinding, SourceTier};
+use crate::orchestration::types::{Primitive, TeamRole};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+
+struct FakeProvider {
+    canned: String,
+}
+
+#[async_trait::async_trait]
+impl AgentProvider for FakeProvider {
+    fn id(&self) -> &str { "fake" }
+    fn kind(&self) -> crate::agent_provider::types::AgentKind { /* whatever variant fits */ unimplemented!() }
+    async fn health_check(&self) -> Result<(), crate::agent_provider::types::AgentError> { Ok(()) }
+    async fn run(
+        &self,
+        _req: AgentRequest,
+        events: mpsc::UnboundedSender<StreamEvent>,
+        _cancel: CancellationToken,
+    ) -> Result<(), crate::agent_provider::types::AgentError> {
+        let _ = events.send(StreamEvent::AssistantText(self.canned.clone()));
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn dispatch_e2e_review_findings_round_trip() {
+    // Build a minimal team with reviewer bound to "fake".
+    let mut bindings = HashMap::new();
+    bindings.insert(TeamRole::Reviewer, RoleBinding {
+        agent: "fake".into(),
+        mode: None, model_override: None, prompt_addendum: None, fallback_agent: None,
+    });
+    let team = ResolvedTeam {
+        name: "test".into(),
+        primitive: Primitive::SinglePass,
+        min_agents: vec!["claude".into()],
+        bindings,
+        source_tier: SourceTier::User,
+    };
+
+    // Build a stub Config that has the "fake" agent registered. The factory
+    // must be wired so build_provider() returns the FakeProvider when given
+    // an "fake" agent_id. In v1, this is achieved by extending the dispatch
+    // module with a #[cfg(test)] hook that takes a provider override.
+    // (Plan author note: implement the cfg(test) override in Task 4.2 Step 2;
+    //  this test depends on it.)
+
+    // ... assemble DispatchContext, call dispatch_subagent(...).
+    // ... assert returned SubagentResult::ReviewFindings { verdict: Approved, .. }
+}
+```
+
+> **Note for the implementer:** the fake-provider injection point should be a `#[cfg(test)]`-only function (`dispatch::set_test_provider_factory`) that swaps the factory out for the test. This keeps production code path unchanged.
+
+- [ ] **Step 4: Wire the new integration module**
+
+Add to `src/integration_tests/mod.rs`:
+
+```rust
+mod orchestration_dispatch;
+```
+
+- [ ] **Step 5: Run + commit**
+
+```bash
+cargo test -p maestro integration_tests::orchestration_dispatch
+git add src/integration_tests/ src/orchestration/
+git commit -m "test(orchestration): add end-to-end dispatch integration test"
 ```
 
 ### Task 4.3: Cost estimate
@@ -2875,13 +3027,13 @@ pub fn estimate_cost_usd(team: &ResolvedTeam, num_issues: u32, avg_role_prompt_t
 mod tests {
     use super::*;
     use crate::orchestration::team::{RoleBinding, SourceTier};
-    use crate::orchestration::types::Role;
+    use crate::orchestration::types::TeamRole;
     use std::collections::HashMap;
 
     #[test]
     fn estimate_grows_with_issue_count() {
         let mut bindings = HashMap::new();
-        bindings.insert(Role::Reviewer, RoleBinding {
+        bindings.insert(TeamRole::Reviewer, RoleBinding {
             agent: "claude".into(),
             mode: None, model_override: None, prompt_addendum: None, fallback_agent: None,
         });
@@ -2900,7 +3052,7 @@ mod tests {
     #[test]
     fn ollama_costs_zero() {
         let mut bindings = HashMap::new();
-        bindings.insert(Role::Reviewer, RoleBinding {
+        bindings.insert(TeamRole::Reviewer, RoleBinding {
             agent: "ollama".into(),
             mode: None, model_override: None, prompt_addendum: None, fallback_agent: None,
         });
@@ -2929,6 +3081,19 @@ git commit -m "feat(orchestration): lock cost-estimate formula"
 ## Chunk 5: TUI Wizard
 
 **Goal:** Implement the team_wizard TUI screen mirroring the existing `issue_wizard` / `milestone_wizard` pattern. Compose flow, launch flow, manage flow, plan-preview rendering, and entry-point keybindings on issue browser + milestone screen.
+
+> **Mandatory references for the implementer of this chunk** (Tasks 5.2–5.6 below are intentionally outline-only because they mirror established patterns; do NOT attempt them without first reading the reference code):
+>
+> - **Wizard pattern reference:** `src/tui/screens/milestone_wizard/{mod.rs,draw.rs,types.rs,ai_planning.rs}` and `src/tui/screens/issue_wizard/`. Each step in those files corresponds to a variant on a `*WizardStep` enum, drawn by a `match` in `draw.rs`. Mirror this structure file-for-file in `src/tui/screens/team_wizard/`.
+> - **Wizard fields wrapper:** `src/tui/screens/wizard_fields.rs` (textarea + input handling). Reuse, do NOT re-implement.
+> - **Snapshot policy (mandatory per spec §9):** every wizard screen state gets THREE insta snapshots — 80×24, 60×20 (narrow), and 120×40 (wide). Use the existing snapshot test pattern in `src/tui/snapshot_tests/milestone_wizard.rs`. Snapshots are committed; review with `cargo insta review` before accepting.
+> - **TUI keybinding hint surface:** `src/tui/screens/copy_keybinding_hint.rs` (existing) — extend with the team wizard's `c/l/m/Tab/Enter/b/n/q` set.
+> - **Snapshot test file naming:** `src/tui/snapshot_tests/team_wizard.rs` — mirrors the existing test files for other wizards.
+> - **Test command pattern for any Chunk 5 task:**
+>   ```bash
+>   cargo test -p maestro --lib tui::snapshot_tests::team_wizard
+>   cargo insta review     # accept new snapshots
+>   ```
 
 ### Task 5.1: Wizard module skeleton
 
@@ -3076,7 +3241,14 @@ use clap::Subcommand;
 pub enum TeamCmd {
     List,
     New { name: String, #[arg(long)] extends: Option<String> },
-    Launch { preset: String, #[arg(long)] issue: Option<u64>, #[arg(long)] milestone: Option<u64> },
+    Launch {
+        preset: String,
+        #[arg(long)] issue: Option<u64>,
+        #[arg(long)] milestone: Option<u64>,
+        /// Skip the TUI confirmation step and execute immediately.
+        /// Used by CI and scripted launches.
+        #[arg(long)] yes: bool,
+    },
     Manage,
     Explain { name: String },
 }
@@ -3085,10 +3257,38 @@ pub enum TeamCmd {
 - [ ] **Step 3: Wire each subcommand**:
   - `list` — `Loader::resolve()` → tabular output
   - `new` — opens TUI compose flow (or interactive prompts in headless mode)
-  - `launch` — opens TUI launch flow at confirm step (or fully headless via `--yes` flag)
+  - `launch` — opens TUI launch flow at confirm step; with `--yes`, runs the scheduler headless without rendering the wizard
   - `manage` — opens TUI manage flow
   - `explain <name>` — prints the resolved bindings with provenance per field (mitigation for §12 risk #2)
-- [ ] **Step 4: Test each subcommand** with a tempdir for project / user tiers.
+
+- [ ] **Step 4: Test each subcommand** with a tempdir for project / user tiers, including these specific cases:
+
+```rust
+#[test]
+fn list_prints_all_resolved_teams() {
+    // Use a tempdir as user_dir, no project_dir; loader resolves built-ins only;
+    // assert stdout contains all 5 default-* names with their tier and primitive.
+}
+
+#[test]
+fn explain_traces_provenance_across_extends_chain() {
+    // Build a 2-step chain (cheap-coder extends default-coder); assert
+    // `team explain cheap-coder` output names default-coder for inherited
+    // fields and cheap-coder for overridden fields.
+}
+
+#[tokio::test]
+async fn launch_yes_runs_headless_without_tui() {
+    // Use a stub Scheduler (returning a synthetic TeamRun with all Succeeded states);
+    // run `maestro team launch default-reviewer --issue 547 --yes`;
+    // assert exit code 0 and stdout contains "TeamRun complete".
+    // The scheduler stub injects via #[cfg(test)] override (same pattern as
+    // dispatch's test-provider hook in Task 4.2 Step 3).
+}
+```
+
+This third test is mandatory — the headless path is what CI calls, and silent regressions there are how production breaks.
+
 - [ ] **Step 5: Commit.**
 
 ### Task 6.2: Per-built-in docs
@@ -3118,27 +3318,118 @@ If pre-team-run state files lack the `team_runs` field, the migration adds an em
 ### Task 6.4: End-to-end smoke test
 
 **Files:**
-- Create: `tests/orchestration/smoke.rs`
+- Create: `src/integration_tests/orchestration_smoke.rs`
+- Modify: `src/integration_tests/mod.rs` (declare the new module)
+
+> **TDD enforcement note:** the smoke test is the final integration gate for Chunk 6. The implementer MUST write the assertions concretely (not as `// TODO` comments) and run it RED → GREEN before committing.
 
 - [ ] **Step 1: Write the smoke test**
 
+Path: `src/integration_tests/orchestration_smoke.rs`.
+
 ```rust
-//! End-to-end: load default-coder, build a 2-issue plan from a stub gh
-//! response, run with mocked Task() outputs, assert TeamRun reaches
-//! all-Succeeded.
+//! End-to-end: load default-coder, build a 2-issue plan from stub
+//! IssueMeta, run with mocked Task() outputs via MockTaskQueue,
+//! assert TeamRun reaches all-Succeeded.
+
+use crate::integration_tests::orchestration_mock_task::{MockResponse, MockTaskQueue};
+use crate::orchestration::contracts::{ReviewVerdict, SubagentResult};
+use crate::orchestration::dag::{IssueMeta, IssueState};
+use crate::orchestration::loader::Loader;
+use crate::orchestration::primitives::{make_machine, NextStep};
+use crate::orchestration::scheduler::Scheduler;
+use crate::orchestration::types::{TeamInput, TeamRole};
+use crate::state::types::IssueRunState;
+use std::collections::HashMap;
 
 #[tokio::test]
 async fn smoke_pipeline_two_issues() {
-    // [Stub gh, build scheduler from default-coder + 2 issues with edges,
-    // drive each via MockTaskQueue, assert run.state == all Succeeded.]
+    // 1. Load built-ins; pick default-coder.
+    let loader = Loader::new(None, None);
+    let resolved = loader.resolve().expect("builtins must resolve");
+    let team = resolved.get("default-coder").expect("default-coder built-in").clone();
+
+    // 2. Build a 2-issue stub graph: 547 (no deps), 549 (blocked by 547).
+    let mut metas = HashMap::new();
+    metas.insert(547, IssueMeta {
+        number: 547, state: IssueState::Open, milestone: Some(49), blocked_by: vec![],
+    });
+    metas.insert(549, IssueMeta {
+        number: 549, state: IssueState::Open, milestone: Some(49), blocked_by: vec![547],
+    });
+
+    let mut scheduler = Scheduler::from_input(
+        team,
+        TeamInput::IssueSet { primary_milestone: Some(49), issues: vec![547, 549] },
+        metas,
+        3,
+    ).unwrap();
+
+    // 3. Drive each issue via the mock queue. Pipeline = 3 dispatches per issue.
+    fn build_queue() -> MockTaskQueue {
+        MockTaskQueue::new(vec![
+            MockResponse {
+                role: TeamRole::Implementer,
+                result: Ok(SubagentResult::CodeChange {
+                    files_touched: vec!["src/foo.rs".into()],
+                    summary: "stub".into(),
+                    commit_sha: Some("abc".into()),
+                }),
+            },
+            MockResponse {
+                role: TeamRole::Reviewer,
+                result: Ok(SubagentResult::ReviewFindings {
+                    verdict: ReviewVerdict::Approved,
+                    findings: vec![],
+                }),
+            },
+            MockResponse {
+                role: TeamRole::Docs,
+                result: Ok(SubagentResult::DocsChange {
+                    files_touched: vec!["docs/foo.md".into()],
+                    summary: "doc".into(),
+                }),
+            },
+        ])
+    }
+
+    for issue in [547u64, 549u64] {
+        let queue = build_queue();
+        let mut machine = make_machine(scheduler.team.primitive, issue);
+        let output = loop {
+            match machine.next() {
+                NextStep::Dispatch { role, .. } => {
+                    let r = queue.next(role).expect("queue empty");
+                    machine.advance(role, r);
+                }
+                NextStep::Done { output } => break output,
+                NextStep::Fail { reason } => panic!("unexpected fail at #{issue}: {reason}"),
+            }
+        };
+        scheduler.run.state.insert(issue, IssueRunState::Succeeded { output });
+    }
+
+    // 4. Assert all issues are Succeeded.
+    for issue in [547u64, 549u64] {
+        assert!(matches!(scheduler.run.state.get(&issue), Some(IssueRunState::Succeeded { .. })),
+            "issue #{issue} did not reach Succeeded");
+    }
 }
 ```
 
-- [ ] **Step 2: Run + commit**
+- [ ] **Step 2: Wire the module and run**
 
 ```bash
-cargo test --test orchestration smoke
-git add tests/orchestration/smoke.rs
+echo 'mod orchestration_smoke;' >> src/integration_tests/mod.rs   # if not already added
+cargo test -p maestro integration_tests::orchestration_smoke
+```
+
+Expected: 1 passed.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/integration_tests/
 git commit -m "test(orchestration): add end-to-end pipeline smoke test"
 ```
 
@@ -3170,7 +3461,7 @@ git commit -m "test(orchestration): add end-to-end pipeline smoke test"
 - STEP 4 same-milestone OPEN-EXTERNAL auto-add stays as default (with 2x bound + visual diff).
 - L2 is Claude-only in v1; future `[orchestrator]` config key is v2.
 - `OpenAiCompatibleSseParser` consumed from v0.25.0 #652, not duplicated here.
-- `model_override` validation against agent's known model list: TBD by plan author at implementation time per round-2 review note.
+- **`model_override` validation — v1 decision: accept any string at load time; runtime-only validation.** Spec §4 validation rule mentions checking against the agent's known model list "when the agent declares one." In v1 we do NOT enforce this at load — the cost of maintaining accurate per-agent model lists outweighs the benefit when most agents accept open-string model identifiers (OpenCode is the canonical case). The provider's runtime layer surfaces a clear error when an unknown model is requested. The `ValidationError` enum therefore does NOT gain an `InvalidModelOverride` variant; runtime errors flow through `SubagentError::Provider(...)` instead. Revisit in v2 if real-world usage shows this trades too much safety for flexibility.
 
 ## What the implementer can ignore for v1
 
