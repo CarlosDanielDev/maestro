@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 
 mod adapt;
@@ -90,6 +91,8 @@ pub struct Config {
     pub agents: AgentsConfig,
     #[serde(default, skip_serializing_if = "ExperimentalConfig::is_default")]
     pub experimental: ExperimentalConfig,
+    #[serde(default)]
+    pub teams: HashMap<String, crate::orchestration::team::TeamConfig>,
 }
 
 impl Config {

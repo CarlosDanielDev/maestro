@@ -1,0 +1,7 @@
+extends = ""
+primitive = "single-pass"
+min_agents = ["claude"]
+reviewer = "claude"
+
+[role_overrides.reviewer]
+mode = "ghost-mode"

@@ -1,0 +1,6 @@
+extends = ""
+primitive = "pipeline"
+min_agents = ["claude"]
+implementer = "claude"
+reviewer = "claude"
+docs = "claude"

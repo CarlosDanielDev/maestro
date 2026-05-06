@@ -143,10 +143,6 @@ sed -n '1,60p' src/state/types.rs
 
 Open `docs/superpowers/plans/2026-05-05-orchestration-wizard.md` and replace this paragraph with one of:
 
-> **Finding (BRANCH A — versioning exists):** The state store carries a `version: u32` field at … . Task 6.3 proceeds as written. CURRENT_STATE_VERSION value: `<N>`. Bump to `<N+1>` in Task 6.3.
-
-OR
-
 > **Finding (BRANCH B — no versioning):** No version field exists. A new Task 2.0 is added (see below) to introduce versioning before any TeamRun-bearing state is persisted. Task 6.3 then degrades to "bump version + verify migration path." See Task 2.0.
 
 If BRANCH B applies, also insert this Task 2.0 before Task 2.1 (immediately under the Chunk 2 heading):
@@ -1503,6 +1499,19 @@ git commit -m "feat(config): add [concurrency.team_max_parallel] and inline [tea
 ## Chunk 2: L3 Cross-Issue Scheduler
 
 **Goal:** Implement the cross-issue scheduler — DAG construction from `## Blocked By`, edge classification, topo levels, the auto-add expansion, and the `TeamRun` lifecycle in the state store. After this chunk, given a `TeamInput::IssueSet` and a `ResolvedTeam`, the scheduler produces a launch plan and persists a `TeamRun` (without yet executing it).
+
+### Task 2.0: Introduce state-store versioning (BLOCKING — only if Task 1.0 found Branch B)
+
+**Files:**
+- Modify: `src/state/types.rs` (add `pub version: u32`, `const CURRENT_STATE_VERSION: u32 = 1;`)
+- Modify: `src/state/store.rs` (migration dispatch in `Store::load`)
+- Create: `tests/fixtures/state/v0_pre_team_run.json` (round-trip fixture)
+
+- [ ] Step 1: Add `version` field to top-level state struct (`#[serde(default)]`).
+- [ ] Step 2: Add `const CURRENT_STATE_VERSION: u32 = 1;`.
+- [ ] Step 3: In `Store::load`, after deserialization, run `migrate_if_needed(&mut state)` which dispatches by `state.version`. v0 → v1 migration is a no-op for `team_runs` (defaults to empty Vec via serde default).
+- [ ] Step 4: Write a v0 fixture (no `version` field) + a round-trip test asserting it loads, gets bumped to v1 in memory, and saves out with `"version": 1`.
+- [ ] Step 5: Commit.
 
 ### Task 2.1: `TeamRun` and `IssueRunState` in state store
 

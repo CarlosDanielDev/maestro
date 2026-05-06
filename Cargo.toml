@@ -49,6 +49,7 @@ tar = "0.4"
 tempfile = "3"
 thiserror = "2"
 shlex = "1"
+directories = "5"
 
 [build-dependencies]
 clap = { version = "4", features = ["derive"] }

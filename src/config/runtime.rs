@@ -8,6 +8,9 @@ pub struct ConcurrencyConfig {
     /// Maximum number of heavy tasks that can run concurrently.
     #[serde(default = "default_heavy_task_limit")]
     pub heavy_task_limit: usize,
+    /// Maximum parallel team runs (optional cap, defaults to None → use global).
+    #[serde(default)]
+    pub team_max_parallel: Option<u32>,
 }
 
 impl Default for ConcurrencyConfig {
@@ -15,6 +18,7 @@ impl Default for ConcurrencyConfig {
         Self {
             heavy_task_labels: Vec::new(),
             heavy_task_limit: default_heavy_task_limit(),
+            team_max_parallel: None,
         }
     }
 }

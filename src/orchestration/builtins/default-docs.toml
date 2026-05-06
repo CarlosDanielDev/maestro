@@ -1,0 +1,4 @@
+extends = ""
+primitive = "single-pass"
+min_agents = ["claude"]
+docs = "claude"
