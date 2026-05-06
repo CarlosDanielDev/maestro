@@ -72,20 +72,38 @@ fn default_permission_mode_does_not_emit_yolo() {
 async fn run_streams_events_from_mock_codex_cli_and_records_process_context() {
     let temp = tempfile::tempdir().expect("tempdir");
     let worktree = tempfile::tempdir().expect("worktree");
-    let codex = temp.path().join("codex");
-    std::fs::write(
-        &codex,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"{}\"\npwd > \"{}\"\nprintf '%s\\n' 'codex stderr line' >&2\ncat <<'EOF'\n{}\nEOF\n",
-            temp.path().join("argv.txt").display(),
-            temp.path().join("cwd.txt").display(),
-            codex_fixture_jsonl()
-        ),
-    )
-    .expect("write codex mock");
+    let codex = mock_codex_path();
     make_executable(&codex);
+    let stdout = temp.path().join("stdout.jsonl");
+    std::fs::write(&stdout, codex_fixture_jsonl()).expect("write codex stdout fixture");
 
-    let provider = CodexProvider::new(codex.to_string_lossy().to_string());
+    let provider = CodexProvider::with_config(
+        codex.to_string_lossy().to_string(),
+        None,
+        None,
+        None,
+        BTreeMap::new(),
+        Vec::new(),
+        BTreeMap::from([
+            (
+                "MAESTRO_MOCK_CODEX_ARGV".to_string(),
+                temp.path().join("argv.txt").display().to_string(),
+            ),
+            (
+                "MAESTRO_MOCK_CODEX_CWD".to_string(),
+                temp.path().join("cwd.txt").display().to_string(),
+            ),
+            (
+                "MAESTRO_MOCK_CODEX_STDERR".to_string(),
+                "codex stderr line".to_string(),
+            ),
+            (
+                "MAESTRO_MOCK_CODEX_STDOUT_FILE".to_string(),
+                stdout.display().to_string(),
+            ),
+        ]),
+        None,
+    );
     let mut request = request();
     request.cwd = Some(worktree.path().to_path_buf());
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -156,16 +174,25 @@ async fn run_streams_events_from_mock_codex_cli_and_records_process_context() {
 
 #[tokio::test]
 async fn run_returns_session_error_on_nonzero_exit() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let codex = temp.path().join("codex");
-    std::fs::write(
-        &codex,
-        "#!/bin/sh\nprintf '%s\\n' 'auth failed' >&2\nexit 42\n",
-    )
-    .expect("write codex mock");
+    let codex = mock_codex_path();
     make_executable(&codex);
 
-    let provider = CodexProvider::new(codex.to_string_lossy().to_string());
+    let provider = CodexProvider::with_config(
+        codex.to_string_lossy().to_string(),
+        None,
+        None,
+        None,
+        BTreeMap::new(),
+        Vec::new(),
+        BTreeMap::from([
+            (
+                "MAESTRO_MOCK_CODEX_STDERR".to_string(),
+                "auth failed".to_string(),
+            ),
+            ("MAESTRO_MOCK_CODEX_EXIT".to_string(), "42".to_string()),
+        ]),
+        None,
+    );
     let (tx, _rx) = mpsc::unbounded_channel();
     let mut request = request();
     request.cwd = None;
@@ -184,18 +211,28 @@ async fn run_returns_session_error_on_nonzero_exit() {
 #[tokio::test]
 async fn health_check_runs_version_and_json_preflight() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let codex = temp.path().join("codex");
-    std::fs::write(
-        &codex,
-        format!(
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'codex 1.2.3'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"{}\"\nexit 0\n",
-            temp.path().join("health-argv.txt").display()
-        ),
-    )
-    .expect("write codex mock");
+    let codex = mock_codex_path();
     make_executable(&codex);
 
-    let provider = CodexProvider::new(codex.to_string_lossy().to_string());
+    let provider = CodexProvider::with_config(
+        codex.to_string_lossy().to_string(),
+        None,
+        None,
+        None,
+        BTreeMap::new(),
+        Vec::new(),
+        BTreeMap::from([
+            (
+                "MAESTRO_MOCK_CODEX_ARGV".to_string(),
+                temp.path().join("health-argv.txt").display().to_string(),
+            ),
+            (
+                "MAESTRO_MOCK_CODEX_VERSION".to_string(),
+                "codex 1.2.3".to_string(),
+            ),
+        ]),
+        None,
+    );
     let health = provider.health_check().await.expect("health check");
 
     assert!(health.available);
@@ -210,6 +247,10 @@ fn codex_fixture_jsonl() -> &'static str {
     r#"{"type":"thread.started","thread_id":"t1"}
 {"type":"item.completed","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}}
 {"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}"#
+}
+
+fn mock_codex_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-codex-cli.sh")
 }
 
 #[cfg(unix)]
