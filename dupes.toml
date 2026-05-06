@@ -1,0 +1,17 @@
+[dupes]
+# Only analyze functions with enough substance to be meaningful duplicates.
+min-nodes = 15
+min-lines = 5
+
+# Similarity score for near-duplicate detection (0.0–1.0). 0.85 avoids noise
+# from trivially similar small functions while catching real structural duplication.
+threshold = 0.85
+
+# Skip test functions and cfg(test) modules — intentional duplication of
+# setup/teardown patterns is expected and acceptable in tests.
+exclude-tests = true
+
+# Skip generated or fixture-heavy paths.
+exclude = [
+  "src/integration_tests/**",
+]

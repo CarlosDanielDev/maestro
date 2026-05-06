@@ -144,6 +144,24 @@ jobs:
       - name: Check coverage tiers
         run: bash scripts/check-coverage-tiers.sh coverage.lcov
 
+  duplication:
+    # Wave stats — report mode during baseline phase.
+    # The job always exits 0 (cargo dupes stats never fails). It prints the
+    # full JSON duplication report for visibility and trend tracking.
+    # Activation path: once baseline is stable, replace 'stats' with
+    #   cargo dupes check --max-exact-percent <X> --max-near-percent <Y>
+    # and remove this comment block. Each threshold activation is a dedicated PR.
+    name: Code Duplication
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-dupes
+        run: cargo install cargo-dupes --locked --version 0.2.1
+      - name: Duplication report (baseline metrics)
+        run: cargo dupes stats --format json
+
   layers:
     # Wave 2.3 — layer violation enforcement.
     # Blocking by default (no continue-on-error). Existing violations
