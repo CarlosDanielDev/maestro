@@ -3,6 +3,7 @@ pub mod codex;
 pub mod minimax;
 pub mod ollama;
 pub mod openai_compat;
+pub mod opencode;
 pub mod qwen;
 mod qwen_parser;
 #[cfg(test)]
@@ -19,6 +20,8 @@ pub use codex::CodexProvider;
 pub use minimax::MinimaxProvider;
 #[allow(unused_imports)]
 pub use ollama::OllamaProvider;
+#[allow(unused_imports)]
+pub use opencode::OpenCodeProvider;
 #[allow(unused_imports)]
 pub use qwen::QwenProvider;
 #[allow(unused_imports)]

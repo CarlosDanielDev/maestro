@@ -131,6 +131,29 @@ fn factory_accepts_codex_provider() {
 }
 
 #[test]
+fn factory_accepts_opencode_provider() {
+    let factory = AgentProviderFactory::from_config(AgentProvidersConfig {
+        default_provider: "opencode".to_string(),
+        providers: vec![AgentProviderDefinition {
+            id: "opencode".to_string(),
+            provider: "opencode".to_string(),
+            binary: Some("opencode".to_string()),
+            base_url: None,
+            model: Some("anthropic/claude-sonnet-4-5".to_string()),
+            request_timeout_secs: None,
+            api_key_env: None,
+        }],
+    })
+    .unwrap();
+
+    assert_eq!(factory.default_provider().id(), "opencode");
+    assert_eq!(
+        factory.default_provider().kind(),
+        AgentProviderKind::Subprocess
+    );
+}
+
+#[test]
 fn factory_accepts_ollama_provider() {
     let factory = AgentProviderFactory::from_config(AgentProvidersConfig {
         default_provider: "ollama".to_string(),

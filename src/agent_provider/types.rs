@@ -231,6 +231,14 @@ impl AgentProviderFactory {
                     )),
                 })
             }
+            Some(provider) if provider.provider == "opencode" || provider.id == "opencode" => {
+                let binary = provider.binary.as_deref().unwrap_or("opencode");
+                Ok(Self {
+                    default_provider: Arc::new(
+                        crate::agent_provider::opencode::OpenCodeProvider::new(binary),
+                    ),
+                })
+            }
             Some(provider) if provider.provider == "ollama" || provider.id == "ollama" => {
                 let model = provider.model.clone().ok_or_else(|| {
                     AgentError::Config(format!("agent provider `{}` requires model", provider.id))

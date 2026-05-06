@@ -103,6 +103,7 @@ pub async fn cmd_run(
         crate::config::AgentKind::Claude
             | crate::config::AgentKind::Codex
             | crate::config::AgentKind::Qwen
+            | crate::config::AgentKind::Opencode
     ) {
         app.pool.set_permission_mode(
             resolved_agent
@@ -263,6 +264,16 @@ fn provider_for_agent(
                 ),
             ))
         }
+        crate::config::AgentKind::Opencode => {
+            let command = resolved.config.command.as_deref().unwrap_or("opencode");
+            Ok(std::sync::Arc::new(
+                crate::agent_provider::OpenCodeProvider::with_config(
+                    command,
+                    resolved.config.extra_args.clone(),
+                    resolved.config.env.clone(),
+                ),
+            ))
+        }
         crate::config::AgentKind::Ollama => {
             let model = resolved
                 .config
@@ -313,10 +324,5 @@ fn provider_for_agent(
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?,
             ))
         }
-        other => anyhow::bail!(
-            "agent `{}` uses `{}` provider, but that provider runtime is not implemented yet",
-            resolved.id,
-            other.as_str()
-        ),
     }
 }
