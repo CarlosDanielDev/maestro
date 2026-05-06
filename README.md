@@ -47,7 +47,7 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 → [Wiki › Multi-Provider (GitHub & Azure)](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Multi-Provider-GitHub-Azure) · [PR Review Automation](https://github.com/CarlosDanielDev/maestro/wiki/Feature-PR-Review-Automation) · [Issue and Milestone Wizards](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Issue-and-Milestone-Wizards)
 
 ### Quality & autonomy
-- `maestro doctor` preflight checks — verifies `claude`, `gh`/`az`, `git` are installed and authenticated before spending API credits
+- `maestro doctor` preflight checks — verifies enabled agent providers, `gh`/`az`, and `git` before spending API credits
 - Configurable completion gates (fmt / clippy / test or any custom command) run after every session; failures of required gates block PR creation
 - Language-aware session prompt guardrails (Rust / TS / Python / Go) auto-injected, overridable via `guardrail_prompt`
 - Continuous mode (`--continuous` / `-C`) auto-advances through ready issues with a pause overlay on failure
@@ -65,10 +65,18 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 
 → [Wiki › TurboQuant Compression](https://github.com/CarlosDanielDev/maestro/wiki/Feature-TurboQuant-Compression) · [Cost and Token Dashboards](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Cost-and-Token-Dashboards) · [Self-Upgrade](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Self-Upgrade) · [Notifications](https://github.com/CarlosDanielDev/maestro/wiki/Feature-Notifications-Desktop-and-Slack)
 
+### Agent providers
+- Multi-agent runtime — Claude, Codex, Qwen, OpenCode, Ollama, and MiniMax can be configured side by side in `[agents]`
+- Subprocess providers — Claude, Codex, Qwen, and OpenCode run local CLIs
+- HTTP providers — Ollama and MiniMax stream through HTTP APIs
+- Claude remains the default when `[agents]` is omitted
+
+→ [Docs › Agent Providers](docs/agents/mod.md) · [Configuration Reference](docs/configuration.md) · [Example multi-agent config](examples/multi-agent/maestro.toml)
+
 ## Requirements
 
 - **Rust 1.89+** (edition 2024)
-- **Claude Code CLI** (`claude`) installed and on your `PATH`
+- **At least one agent provider**: Claude Code CLI (`claude`) by default, or another configured provider from `[agents]`
 - **GitHub CLI** (`gh`) — required when using the GitHub provider (default)
 - **Azure CLI** (`az`) — required when using the Azure DevOps provider; run `az login` to authenticate
 - macOS, Linux, or WSL
@@ -158,31 +166,75 @@ merge_method = "squash"
 cache_ttl_secs = 300
 ```
 
-To run sessions with Qwen Code instead of Claude Code, add a Qwen agent and
-select it with `--agent qwen`:
+### Multi-agent setup
+
+Claude is still the default when `[agents]` is absent. To add explicit agent
+providers, define `[agents]` and one table per provider. Use `--agent <id>` for
+one run or change `[agents].default` for the project.
 
 ```toml
 [agents]
-default = "qwen"
+default = "claude"
+
+[agents.claude]
+kind = "claude"
+enabled = true
+command = "claude"
+model = "opus"
+
+[agents.codex]
+kind = "codex"
+enabled = false
+command = "codex"
+model = "gpt-5.4-codex"
+sandbox = "workspace-write"
+json = true
 
 [agents.qwen]
 kind = "qwen"
+enabled = false
 command = "qwen"
 model = "qwen-test"
 extra_args = ["--auth-type", "openai"]
 
-[agents.qwen.env]
-OPENAI_BASE_URL = "https://api.example.com/v1"
+[agents.opencode]
+kind = "opencode"
+enabled = false
+command = "opencode"
+model = "openrouter/deepseek/deepseek-chat"
+
+[agents.ollama]
+kind = "ollama"
+enabled = false
+model = "qwen3"
+base_url = "http://localhost:11434"
+request_timeout_secs = 120
+
+[agents.minimax]
+kind = "minimax"
+enabled = false
+model = "MiniMax-M2.7"
+base_url = "https://api.minimax.io/v1"
+request_timeout_secs = 120
+api_key_env = "MINIMAX_API_KEY"
 ```
 
-Maestro invokes Qwen in non-interactive JSONL mode with
-`qwen --bare --output-format stream-json --include-partial-messages`.
-Set `OPENAI_API_KEY` in your shell, `.env`, or Qwen settings rather than in
-argv; direct CLI key flags may be visible in process listings.
+Subprocess providers (`claude`, `codex`, `qwen`, `opencode`) require a local
+CLI `command`. HTTP providers (`ollama`, `minimax`) require `base_url` and use
+`request_timeout_secs` for API calls.
+
+```bash
+maestro run --prompt "Refactor the auth module to async" --agent codex
+maestro run --issue 42 --agent ollama
+maestro doctor
+```
+
+See [Docs › Agent Providers](docs/agents/mod.md) for setup guides, migration
+notes, and troubleshooting for all supported providers.
 
 Azure DevOps init writes `kind = "azure_devops"`, `organization`, `az_project`, and `[experimental] azure_devops = true`.
 
-The full schema — completion gates, context-overflow tuning, TurboQuant, provider/Azure DevOps configuration, notifications, and feature flags — is documented in [Wiki › Configuration Reference](https://github.com/CarlosDanielDev/maestro/wiki/Configuration-Reference).
+The full schema — agent providers, completion gates, context-overflow tuning, TurboQuant, provider/Azure DevOps configuration, notifications, and feature flags — is documented in [Docs › Configuration Reference](docs/configuration.md) and [Wiki › Configuration Reference](https://github.com/CarlosDanielDev/maestro/wiki/Configuration-Reference).
 
 ## Architecture
 
