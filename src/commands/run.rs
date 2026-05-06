@@ -45,12 +45,18 @@ pub async fn cmd_run(
 
     if !skip_doctor {
         let config_ref = config.clone();
-        let report =
-            tokio::task::spawn_blocking(move || crate::doctor::run_all_checks(Some(&config_ref)))
-                .await?;
+        let report_agent = agent.clone();
+        let report = tokio::task::spawn_blocking(move || {
+            crate::doctor::run_all_checks_for_agent(Some(&config_ref), report_agent.as_deref())
+        })
+        .await?;
         let validation_config = config.clone();
+        let validation_agent = agent.clone();
         let validation = tokio::task::spawn_blocking(move || {
-            crate::doctor::validate_provider_setup(&validation_config)
+            crate::doctor::validate_provider_setup_for_agent(
+                &validation_config,
+                validation_agent.as_deref(),
+            )
         })
         .await?;
         if let Err(e) = validation {
@@ -277,6 +283,32 @@ fn provider_for_agent(
                     model,
                     resolved.config.request_timeout_secs.unwrap_or(120),
                     resolved.config.api_key_env.clone(),
+                )
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?,
+            ))
+        }
+        crate::config::AgentKind::Minimax => {
+            let model = resolved
+                .config
+                .model
+                .clone()
+                .filter(|model| !model.trim().is_empty())
+                .unwrap_or_else(|| "MiniMax-M2.7".to_string());
+            Ok(std::sync::Arc::new(
+                crate::agent_provider::MinimaxProvider::new(
+                    resolved.id.clone(),
+                    resolved
+                        .config
+                        .base_url
+                        .clone()
+                        .unwrap_or_else(|| "https://api.minimax.io/v1".to_string()),
+                    model,
+                    resolved.config.request_timeout_secs.unwrap_or(120),
+                    resolved
+                        .config
+                        .api_key_env
+                        .clone()
+                        .or_else(|| Some("MINIMAX_API_KEY".to_string())),
                 )
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?,
             ))

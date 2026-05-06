@@ -252,6 +252,31 @@ impl AgentProviderFactory {
                     ),
                 })
             }
+            Some(provider) if provider.provider == "minimax" || provider.id == "minimax" => {
+                let model = provider
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| "MiniMax-M2.7".to_string());
+                let base_url = provider
+                    .base_url
+                    .clone()
+                    .unwrap_or_else(|| "https://api.minimax.io/v1".to_string());
+                Ok(Self {
+                    default_provider: Arc::new(
+                        crate::agent_provider::minimax::MinimaxProvider::new(
+                            provider.id.clone(),
+                            base_url,
+                            model,
+                            provider.request_timeout_secs.unwrap_or(120),
+                            provider
+                                .api_key_env
+                                .clone()
+                                .or_else(|| Some("MINIMAX_API_KEY".to_string())),
+                        )
+                        .map_err(crate::agent_provider::minimax::MinimaxError::into_agent_error)?,
+                    ),
+                })
+            }
             Some(provider) => Err(AgentError::Config(format!(
                 "unsupported default agent provider `{}`",
                 provider.provider
