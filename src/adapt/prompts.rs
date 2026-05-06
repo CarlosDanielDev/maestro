@@ -308,30 +308,16 @@ pub async fn run_claude_print(
     prompt: &str,
     cwd: &std::path::Path,
 ) -> anyhow::Result<String> {
-    let output = tokio::process::Command::new("claude")
-        .args([
-            "--print",
-            "--output-format",
-            "text",
-            "--model",
-            model,
-            "-p",
-            prompt,
-        ])
-        .current_dir(cwd)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
+    let output = crate::agent_provider::ClaudeProvider::default()
+        .run_text(model, prompt, Some(cwd))
         .await
         .map_err(|e| anyhow::anyhow!("Failed to spawn claude CLI: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Claude CLI failed: {}", stderr.trim());
+    if !output.status_success {
+        anyhow::bail!("Claude CLI failed: {}", output.stderr.trim());
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(output.stdout)
 }
 
 /// Extract and parse a JSON block from Claude's response.

@@ -5,6 +5,7 @@
 #![warn(clippy::path_buf_push_overwrite)]
 #![warn(clippy::branches_sharing_code)]
 
+pub mod agent_provider;
 mod budget;
 mod changelog;
 mod cli;

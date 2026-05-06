@@ -1,12 +1,13 @@
-use super::parser::parse_stream_line;
 use super::types::{Session, SessionStatus, StreamEvent};
-use anyhow::{Context, Result};
+use crate::agent_provider::{
+    AgentError, AgentProvider, AgentProviderEvent, AgentRequest, ClaudeProvider,
+};
+use anyhow::{Result, anyhow};
 use chrono::Utc;
 use std::path::PathBuf;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
+use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 /// Events sent from a session back to the coordinator/TUI.
 #[derive(Debug, Clone)]
@@ -17,7 +18,8 @@ pub struct SessionEvent {
 
 pub struct ManagedSession {
     pub session: Session,
-    child: Option<Child>,
+    provider: Arc<dyn AgentProvider>,
+    cancel_token: Option<CancellationToken>,
     /// Path to the git worktree for this session (Phase 1).
     pub worktree_path: Option<PathBuf>,
     /// Branch name for this session's worktree (e.g., "maestro/issue-42").
@@ -28,7 +30,6 @@ pub struct ManagedSession {
     pub permission_mode: Option<String>,
     /// Allowed tools whitelist.
     pub allowed_tools: Vec<String>,
-    claude_binary: String,
     last_tool_start: Option<std::time::Instant>,
     thinking_start: Option<std::time::Instant>,
 }
@@ -38,13 +39,13 @@ impl ManagedSession {
     pub fn new(session: Session) -> Self {
         Self {
             session,
-            child: None,
+            provider: Arc::new(ClaudeProvider::default()),
+            cancel_token: None,
             worktree_path: None,
             branch_name: None,
             system_prompt_appendix: None,
             permission_mode: None,
             allowed_tools: Vec::new(),
-            claude_binary: "claude".to_string(),
             last_tool_start: None,
             thinking_start: None,
         }
@@ -59,13 +60,13 @@ impl ManagedSession {
     ) -> Self {
         Self {
             session,
-            child: None,
+            provider: Arc::new(ClaudeProvider::default()),
+            cancel_token: None,
             worktree_path,
             branch_name,
             system_prompt_appendix,
             permission_mode: None,
             allowed_tools: Vec::new(),
-            claude_binary: "claude".to_string(),
             last_tool_start: None,
             thinking_start: None,
         }
@@ -73,51 +74,22 @@ impl ManagedSession {
 
     #[cfg(test)]
     fn set_claude_binary_for_test(&mut self, binary: impl Into<String>) {
-        self.claude_binary = binary.into();
+        self.provider = Arc::new(ClaudeProvider::new(binary));
     }
 
-    /// Build the CLI arguments for spawning the Claude process.
-    /// Extracted for testability — tests can inspect args without spawning.
-    fn build_args(&self) -> Vec<String> {
-        let mut args = vec![
-            "--print".to_string(),
-            "--verbose".to_string(),
-            "--output-format".to_string(),
-            "stream-json".to_string(),
-        ];
-
-        // Model selection
-        args.push("--model".to_string());
-        args.push(self.session.model.clone());
-
-        // Permission mode (default: bypassPermissions for unattended sessions)
-        if let Some(ref mode) = self.permission_mode
-            && !mode.is_empty()
-            && mode != "default"
-        {
-            args.push("--permission-mode".to_string());
-            args.push(mode.clone());
-        }
-
-        // Allowed tools whitelist
-        if !self.allowed_tools.is_empty() {
-            args.push("--allowedTools".to_string());
-            args.push(self.allowed_tools.join(","));
-        }
-
-        // Inject file claims via --append-system-prompt
-        if let Some(ref appendix) = self.system_prompt_appendix {
-            args.push("--append-system-prompt".to_string());
-            args.push(appendix.clone());
-        }
-
-        // Prompt is a positional argument (must be last)
-        args.push(self.session.prompt.clone());
-
-        args
+    fn build_request(&self) -> AgentRequest {
+        let mut request =
+            AgentRequest::stream_json(self.session.prompt.clone(), self.session.model.clone());
+        request.cwd.clone_from(&self.worktree_path);
+        request.permission_mode.clone_from(&self.permission_mode);
+        request.allowed_tools.clone_from(&self.allowed_tools);
+        request
+            .system_prompt_appendix
+            .clone_from(&self.system_prompt_appendix);
+        request
     }
 
-    /// Spawn the Claude CLI process and start streaming events.
+    /// Start the configured agent provider and stream events back to Maestro.
     pub async fn spawn(&mut self, tx: mpsc::UnboundedSender<SessionEvent>) -> Result<()> {
         use crate::session::transition::TransitionReason;
         let _ = self
@@ -125,26 +97,28 @@ impl ManagedSession {
             .transition_to(SessionStatus::Spawning, TransitionReason::Promoted);
         self.session.started_at = Some(Utc::now());
 
-        let mut cmd = Command::new(&self.claude_binary);
-        cmd.args(self.build_args());
+        let request = self.build_request();
+        let provider = Arc::clone(&self.provider);
+        let provider_id = provider.id().to_string();
+        let cancel = CancellationToken::new();
+        self.cancel_token = Some(cancel.clone());
+        let (provider_tx, mut provider_rx) = mpsc::unbounded_channel();
 
-        // Set working directory to worktree if available
-        if let Some(ref wt_path) = self.worktree_path {
-            cmd.current_dir(wt_path);
-        }
+        tokio::spawn(async move {
+            if let Err(err) = provider.run(request, provider_tx.clone(), cancel).await {
+                if matches!(err, AgentError::Cancelled { .. }) {
+                    return;
+                }
+                let _ = provider_tx.send(AgentProviderEvent::Stream(StreamEvent::Error {
+                    message: err.to_string(),
+                }));
+            }
+        });
 
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = match cmd.spawn().with_context(|| {
-            format!(
-                "Failed to spawn Claude CLI using binary '{}'",
-                self.claude_binary
-            )
-        }) {
-            Ok(child) => child,
-            Err(err) => {
+        let first_event = match provider_rx.recv().await {
+            Some(event) => event,
+            None => {
+                let err = anyhow!("{provider_id} provider exited before startup");
                 let _ = self
                     .session
                     .transition_to(SessionStatus::Errored, TransitionReason::StreamError);
@@ -153,72 +127,44 @@ impl ManagedSession {
             }
         };
 
-        let pid = child.id().unwrap_or(0);
-        self.session.pid = Some(pid);
+        let started = match first_event {
+            AgentProviderEvent::Started(started) => started,
+            AgentProviderEvent::Stream(StreamEvent::Error { message }) => {
+                let err = anyhow!(message);
+                let _ = self
+                    .session
+                    .transition_to(SessionStatus::Errored, TransitionReason::StreamError);
+                self.session.log_activity(format!("Spawn failed: {err}"));
+                return Err(err);
+            }
+            AgentProviderEvent::Stream(event) => {
+                let _ = tx.send(SessionEvent {
+                    session_id: self.session.id,
+                    event,
+                });
+                crate::agent_provider::AgentRunStarted { process_id: None }
+            }
+        };
+
+        self.session.pid = started.process_id;
         let _ = self
             .session
             .transition_to(SessionStatus::Running, TransitionReason::Spawned);
-        self.session
-            .log_activity(format!("Session spawned (pid: {})", pid));
+        match started.process_id {
+            Some(pid) => self
+                .session
+                .log_activity(format!("Session spawned (pid: {})", pid)),
+            None => self.session.log_activity("Session spawned".into()),
+        }
 
-        let stdout = child.stdout.take().context("No stdout from claude CLI")?;
-        let stderr = child.stderr.take();
         let session_id = self.session.id;
-
-        // Stream reader task (stdout)
-        let tx2 = tx.clone();
         tokio::spawn(async move {
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
-            let mut got_result = false;
-
-            while let Ok(Some(line)) = lines.next_line().await {
-                let events = parse_stream_line(&line);
-                for event in events {
-                    if matches!(event, StreamEvent::Completed { .. }) {
-                        got_result = true;
-                    }
+            while let Some(event) = provider_rx.recv().await {
+                if let AgentProviderEvent::Stream(event) = event {
                     let _ = tx.send(SessionEvent { session_id, event });
                 }
             }
-
-            // Only send fallback completion if we didn't get a real result event
-            if !got_result {
-                let _ = tx.send(SessionEvent {
-                    session_id,
-                    event: StreamEvent::Completed { cost_usd: 0.0 },
-                });
-            }
         });
-
-        // Stderr reader task — capture errors from Claude CLI
-        if let Some(stderr) = stderr {
-            tokio::spawn(async move {
-                let reader = BufReader::new(stderr);
-                let mut lines = reader.lines();
-                let mut stderr_buf = String::new();
-
-                while let Ok(Some(line)) = lines.next_line().await {
-                    if !line.trim().is_empty() {
-                        if !stderr_buf.is_empty() {
-                            stderr_buf.push('\n');
-                        }
-                        stderr_buf.push_str(&line);
-                    }
-                }
-
-                if !stderr_buf.is_empty() {
-                    let _ = tx2.send(SessionEvent {
-                        session_id,
-                        event: StreamEvent::Error {
-                            message: stderr_buf,
-                        },
-                    });
-                }
-            });
-        }
-
-        self.child = Some(child);
         Ok(())
     }
 
@@ -255,8 +201,8 @@ impl ManagedSession {
 
     /// Kill the child process.
     pub async fn kill(&mut self) -> Result<()> {
-        if let Some(ref mut child) = self.child {
-            child.kill().await.context("Failed to kill session")?;
+        if let Some(cancel) = self.cancel_token.take() {
+            cancel.cancel();
         }
         let _ = self.session.transition_to(
             SessionStatus::Killed,
@@ -471,7 +417,7 @@ mod tests {
     #[test]
     fn spawn_args_do_not_include_bare_flag() {
         let ms = make_managed("do something");
-        let args = ms.build_args();
+        let args = ClaudeProvider::default().build_stream_args(&ms.build_request());
         assert!(
             !args.iter().any(|a| a == "--bare"),
             "args must NOT contain --bare (breaks OAuth); got: {:?}",
@@ -482,7 +428,7 @@ mod tests {
     #[test]
     fn spawn_args_include_required_base_flags() {
         let ms = make_managed("test prompt");
-        let args = ms.build_args();
+        let args = ClaudeProvider::default().build_stream_args(&ms.build_request());
         for flag in &["--print", "--verbose", "--output-format", "stream-json"] {
             assert!(
                 args.iter().any(|a| a == flag),
@@ -497,7 +443,7 @@ mod tests {
     fn spawn_args_with_permission_mode_includes_permission_flag() {
         let mut ms = make_managed("test");
         ms.permission_mode = Some("bypassPermissions".to_string());
-        let args = ms.build_args();
+        let args = ClaudeProvider::default().build_stream_args(&ms.build_request());
         assert!(args.iter().any(|a| a == "--permission-mode"));
         assert!(args.iter().any(|a| a == "bypassPermissions"));
     }
@@ -506,7 +452,7 @@ mod tests {
     fn spawn_args_default_permission_mode_is_excluded() {
         let mut ms = make_managed("test");
         ms.permission_mode = Some("default".to_string());
-        let args = ms.build_args();
+        let args = ClaudeProvider::default().build_stream_args(&ms.build_request());
         assert!(
             !args.iter().any(|a| a == "--permission-mode"),
             "permission_mode=default must not emit --permission-mode flag"

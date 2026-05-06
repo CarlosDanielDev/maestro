@@ -14,6 +14,8 @@ pub mod icon_mode;
 pub mod icons;
 pub mod turboquant;
 
+pub mod agent_provider;
+
 #[path = "util"]
 pub mod util {
     pub mod formatting;
