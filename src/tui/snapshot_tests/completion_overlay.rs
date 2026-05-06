@@ -39,6 +39,7 @@ fn line_for(session: &Session) -> CompletionSessionLine {
         worktree_path: session.worktree_path.clone(),
         issue_number: session.issue_number,
         model: session.model.clone(),
+        agent_id: session.agent_id.clone(),
     }
 }
 

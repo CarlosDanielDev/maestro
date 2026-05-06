@@ -3,7 +3,7 @@ source: src/tui/snapshot_tests/overview.rs
 expression: terminal.backend()
 ---
 "╔═══════[ #1 — Add login flow ]════════╗╔═════[ #2 — Fix database crash ]══════╗╔═════[ #3 — Add logout endpoint ]═════╗"
-"║ RUNNING 2m30s  $0.12                ║║ COMPLETED 2m30s  $0.50              ║║ ERRORED 2m30s  $0.03                ║"
+"║ RUNNING 2m30s  agent:claude  $0.12  ║║ COMPLETED 2m30s  agent:claude  $0.50║║ ERRORED 2m30s  agent:claude  $0.03  ║"
 "║ctx: [▓▓▓▓░░░░░░] 35%                 ║║ctx: [▓▓▓▓░░░░░░] 35%                 ║║ctx: [▓▓▓▓░░░░░░] 35%                 ║"
 "║tok: ---                              ║║tok: ---                              ║║tok: ---                              ║"
 "║0 files                               ║║0 files                               ║║0 files                               ║"

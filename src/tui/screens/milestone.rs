@@ -355,6 +355,7 @@ impl MilestoneScreen {
                     issue_number: Some(i.number),
                     title: i.title.clone(),
                     custom_prompt: None,
+                    agent_id: None,
                 })
                 .collect();
             if configs.is_empty() {

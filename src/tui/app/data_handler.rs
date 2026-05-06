@@ -52,8 +52,16 @@ impl App {
     fn resolve_model_and_mode(
         &self,
         labels: &[String],
+        agent_id: Option<&str>,
     ) -> (String, String, Option<SessionModeConfig>) {
-        let model = self.session_config.default_model.clone();
+        let model = agent_id
+            .and_then(|id| {
+                self.config
+                    .as_ref()
+                    .and_then(|c| c.resolve_agent(Some(id)).ok())
+                    .and_then(|resolved| resolved.config.model)
+            })
+            .unwrap_or_else(|| self.session_config.default_model.clone());
         let default_mode = self.session_config.default_mode.clone();
         let (mode, mode_config) =
             crate::modes::resolve_mode_for_labels(labels, &default_mode, self.config.as_ref());
@@ -129,18 +137,20 @@ impl App {
                     screen.loading = false;
                 }
             }
-            TuiDataEvent::Issue(Ok(gh_issue), custom_prompt) => {
+            TuiDataEvent::Issue(Ok(gh_issue), custom_prompt, agent_id) => {
+                let agent_id = agent_id.unwrap_or_else(|| self.selected_agent_id());
                 let (model, issue_mode, mode_config) =
-                    self.resolve_model_and_mode(&gh_issue.labels);
+                    self.resolve_model_and_mode(&gh_issue.labels, Some(&agent_id));
                 let prompt = self.build_issue_prompt_with_custom(&gh_issue, &custom_prompt);
                 let issue_number = gh_issue.number;
                 let mut session = Session::new(prompt, model, issue_mode, Some(issue_number), None)
-                    .with_mode_config(mode_config);
+                    .with_mode_config(mode_config)
+                    .with_agent_id(Some(agent_id));
                 session.issue_title = Some(gh_issue.title.clone());
                 self.state.issue_cache.insert(issue_number, gh_issue);
                 self.pending_session_launches.push(session);
             }
-            TuiDataEvent::Issue(Err(e), _) => {
+            TuiDataEvent::Issue(Err(e), _, _) => {
                 self.activity_log.push_simple(
                     "Session".into(),
                     format!("Failed to fetch issue: {}", e),
@@ -369,12 +379,14 @@ impl App {
                     }
                 }
             }
-            TuiDataEvent::UnifiedIssues(Ok(gh_issues), custom_prompt) => {
+            TuiDataEvent::UnifiedIssues(Ok(gh_issues), custom_prompt, agent_id) => {
+                let agent_id = agent_id.unwrap_or_else(|| self.selected_agent_id());
                 let first_labels = gh_issues
                     .first()
                     .map(|i| i.labels.as_slice())
                     .unwrap_or(&[]);
-                let (model, issue_mode, mode_config) = self.resolve_model_and_mode(first_labels);
+                let (model, issue_mode, mode_config) =
+                    self.resolve_model_and_mode(first_labels, Some(&agent_id));
                 let issue_numbers: Vec<u64> = gh_issues.iter().map(|i| i.number).collect();
 
                 let mut combined_prompt = String::from(
@@ -396,7 +408,8 @@ impl App {
                 let primary_issue = issue_numbers.first().copied();
                 let mut session =
                     Session::new(combined_prompt, model, issue_mode, primary_issue, None)
-                        .with_mode_config(mode_config);
+                        .with_mode_config(mode_config)
+                        .with_agent_id(Some(agent_id));
                 session.issue_numbers = issue_numbers;
                 session.issue_title = Some(format!(
                     "Unified: {}",
@@ -413,7 +426,7 @@ impl App {
 
                 self.pending_session_launches.push(session);
             }
-            TuiDataEvent::UnifiedIssues(Err(e), _) => {
+            TuiDataEvent::UnifiedIssues(Err(e), _, _) => {
                 self.activity_log.push_simple(
                     "Session".into(),
                     format!("Failed to fetch issues for unified PR: {}", e),
@@ -622,6 +635,7 @@ mod tests {
         app.handle_data_event(TuiDataEvent::Issue(
             Ok(issue_with_labels(&["maestro:mode:vibe"])),
             None,
+            None,
         ));
 
         let session = &app.pending_session_launches[0];
@@ -638,11 +652,27 @@ mod tests {
     fn issue_event_uses_default_mode_when_label_absent() {
         let mut app = crate::tui::make_test_app("issue-402-default-mode");
 
-        app.handle_data_event(TuiDataEvent::Issue(Ok(issue_with_labels(&[])), None));
+        app.handle_data_event(TuiDataEvent::Issue(Ok(issue_with_labels(&[])), None, None));
 
         let session = &app.pending_session_launches[0];
         assert_eq!(session.mode, "orchestrator");
         assert!(session.mode_config.is_some());
+    }
+
+    #[test]
+    fn issue_event_persists_selected_agent_id() {
+        let mut app = crate::tui::make_test_app("issue-402-agent-id");
+
+        app.handle_data_event(TuiDataEvent::Issue(
+            Ok(issue_with_labels(&[])),
+            None,
+            Some("codex".to_string()),
+        ));
+
+        assert_eq!(
+            app.pending_session_launches[0].agent_id.as_deref(),
+            Some("codex")
+        );
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::session::types::Session;
 use crate::state::progress::ProgressTracker;
+use crate::tui::agent_badge::{agent_color, agent_label};
 use crate::tui::markdown::render_markdown;
 use crate::tui::spinner;
 use crate::tui::theme::Theme;
@@ -69,6 +70,11 @@ fn draw_session_header(f: &mut Frame, session: &Session, area: Rect, theme: &The
         Span::styled(
             format!("mode: {}", session.mode),
             Style::default().fg(theme.text_secondary),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            format!("agent: {}", agent_label(session.agent_id.as_deref())),
+            Style::default().fg(agent_color(session.agent_id.as_deref())),
         ),
     ]);
 

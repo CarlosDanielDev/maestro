@@ -5,7 +5,7 @@ mod init;
 mod logs;
 mod queue;
 mod resume;
-mod run;
+pub(crate) mod run;
 pub(crate) mod setup;
 mod slack;
 pub mod slash;

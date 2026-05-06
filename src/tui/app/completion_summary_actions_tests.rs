@@ -42,6 +42,7 @@ fn completion_session_line_gate_failures_defaults_to_empty() {
         worktree_path: None,
         issue_number: Some(42),
         model: "opus".to_string(),
+        agent_id: None,
     };
     assert!(line.gate_failures.is_empty());
 }
@@ -63,6 +64,7 @@ fn completion_session_line_holds_gate_failures() {
         worktree_path: None,
         issue_number: Some(7),
         model: "opus".to_string(),
+        agent_id: None,
     };
     assert_eq!(line.gate_failures.len(), 1);
     assert_eq!(line.gate_failures[0].gate, "tests");
@@ -95,6 +97,7 @@ fn has_needs_review_returns_false_when_all_completed() {
             worktree_path: None,
             issue_number: Some(1),
             model: "opus".to_string(),
+            agent_id: None,
         }],
         total_cost_usd: 0.0,
         session_count: 1,
@@ -122,6 +125,7 @@ fn has_needs_review_returns_true_when_one_session_needs_review() {
             worktree_path: None,
             issue_number: Some(2),
             model: "opus".to_string(),
+            agent_id: None,
         }],
         total_cost_usd: 0.0,
         session_count: 1,
@@ -147,6 +151,7 @@ fn has_needs_review_returns_true_when_mixed_statuses() {
                 worktree_path: None,
                 issue_number: Some(1),
                 model: "opus".to_string(),
+                agent_id: None,
             },
             CompletionSessionLine {
                 session_id: uuid::Uuid::nil(),
@@ -163,6 +168,7 @@ fn has_needs_review_returns_true_when_mixed_statuses() {
                 worktree_path: None,
                 issue_number: Some(2),
                 model: "opus".to_string(),
+                agent_id: None,
             },
         ],
         total_cost_usd: 0.0,

@@ -130,12 +130,14 @@ impl Screen for PromptInputScreen {
                                     super::UnifiedSessionConfig {
                                         issues,
                                         custom_prompt: Some(text),
+                                        agent_id: None,
                                     },
                                 );
                             }
                             return ScreenAction::LaunchPromptSession(PromptSessionConfig {
                                 prompt: text,
                                 image_paths: self.image_paths.clone(),
+                                agent_id: None,
                             });
                         }
                     }

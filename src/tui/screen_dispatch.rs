@@ -640,24 +640,32 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             }
         }
         ScreenAction::LaunchUnifiedSession(config) => {
+            let config = config.with_agent_id(app.selected_agent_id());
             app.pending_commands
                 .push(app::TuiCommand::LaunchUnifiedSession(config));
             app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchSession(config) => {
+            let config = config.with_agent_id(app.selected_agent_id());
             app.pending_commands
                 .push(app::TuiCommand::LaunchSession(config));
             app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchSessions(configs) => {
+            let agent_id = app.selected_agent_id();
+            let configs = configs
+                .into_iter()
+                .map(|config| config.with_agent_id(agent_id.clone()))
+                .collect();
             app.pending_commands
                 .push(app::TuiCommand::LaunchSessions(configs));
             app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchPromptSession(config) => {
+            let config = config.with_agent_id(app.selected_agent_id());
             app.screen_state.prompt_input_screen = None;
             app.screen_state.adapt_follow_up_screen = None;
             app.pending_commands
@@ -804,6 +812,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             use crate::work::executor::QueueExecutor;
             use crate::work::queue::WorkQueue;
             use crate::work::types::WorkItem;
+
+            let agent_id = app.selected_agent_id();
+            let configs: Vec<_> = configs
+                .into_iter()
+                .map(|config| config.with_agent_id(agent_id.clone()))
+                .collect();
 
             // Build a WorkQueue from the session configs for the executor
             let issue_numbers: Vec<u64> = configs.iter().filter_map(|c| c.issue_number).collect();

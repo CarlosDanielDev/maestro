@@ -50,6 +50,11 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return KeyAction::Consumed;
     }
 
+    if key.code == KeyCode::Char('A') && !is_text_input_mode(app) {
+        app.cycle_selected_agent();
+        return KeyAction::Consumed;
+    }
+
     // 'q' triggers confirm exit (except in text input modes)
     if key.code == KeyCode::Char('q') && !is_text_input_mode(app) {
         app.navigate_to(app::TuiMode::ConfirmExit);
@@ -1688,6 +1693,7 @@ mod tests {
                 worktree_path: worktree.map(PathBuf::from),
                 issue_number: Some(560),
                 model: "opus".to_string(),
+                agent_id: None,
             }],
             total_cost_usd: 0.0,
             session_count: 1,
@@ -1710,6 +1716,7 @@ mod tests {
                 worktree_path: None,
                 issue_number: Some(560),
                 model: "opus".to_string(),
+                agent_id: None,
             }],
             total_cost_usd: 0.0,
             session_count: 1,

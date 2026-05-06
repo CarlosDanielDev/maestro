@@ -360,7 +360,7 @@ pub enum TuiDataEvent {
         Result<crate::tui::screens::milestone_wizard::MilestoneCreationResult, String>,
     ),
     Milestones(anyhow::Result<Vec<(Milestone, Vec<Issue>)>>),
-    Issue(anyhow::Result<Issue>, Option<String>),
+    Issue(anyhow::Result<Issue>, Option<String>, Option<String>),
     SuggestionData(anyhow::Result<SuggestionDataPayload>),
     VersionCheckResult(Option<crate::updater::ReleaseInfo>),
     UpgradeResult(Result<String, String>),
@@ -370,7 +370,7 @@ pub enum TuiDataEvent {
     AdaptPlanResult(anyhow::Result<AdaptPlan>),
     AdaptScaffoldResult(anyhow::Result<ScaffoldResult>),
     AdaptMaterializeResult(anyhow::Result<MaterializeResult>),
-    UnifiedIssues(anyhow::Result<Vec<Issue>>, Option<String>),
+    UnifiedIssues(anyhow::Result<Vec<Issue>>, Option<String>, Option<String>),
     PullRequests(anyhow::Result<Vec<crate::provider::types::PullRequest>>),
     PrReviewSubmitted(anyhow::Result<()>),
     /// Result of `SyncPrd` (#321) — fold into the live PRD's current_state.
@@ -432,6 +432,7 @@ pub struct CompletionSessionLine {
     pub worktree_path: Option<std::path::PathBuf>,
     pub issue_number: Option<u64>,
     pub model: String,
+    pub agent_id: Option<String>,
 }
 
 impl CompletionSummaryData {
@@ -653,6 +654,7 @@ mod tests {
             worktree_path: None,
             issue_number: Some(id as u64),
             model: "opus".to_string(),
+            agent_id: None,
         }
     }
 

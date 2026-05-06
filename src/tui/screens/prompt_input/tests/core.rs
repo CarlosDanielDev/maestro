@@ -95,6 +95,7 @@ fn prompt_input_enter_with_prompt_returns_launch_prompt_session() {
         ScreenAction::LaunchPromptSession(PromptSessionConfig {
             prompt: "fix the bug".to_string(),
             image_paths: vec![],
+            agent_id: None,
         })
     );
 }
@@ -109,6 +110,7 @@ fn prompt_input_enter_with_prompt_and_images_includes_image_paths() {
         ScreenAction::LaunchPromptSession(PromptSessionConfig {
             prompt: "describe this".to_string(),
             image_paths: vec!["/tmp/a.png".to_string(), "/tmp/b.png".to_string()],
+            agent_id: None,
         })
     );
 }
@@ -317,6 +319,7 @@ fn prompt_session_config_stores_prompt_and_images() {
     let cfg = PromptSessionConfig {
         prompt: "hello".to_string(),
         image_paths: vec!["/img.png".to_string()],
+        agent_id: None,
     };
     assert_eq!(cfg.prompt, "hello");
     assert_eq!(cfg.image_paths, vec!["/img.png".to_string()]);
@@ -327,6 +330,7 @@ fn prompt_session_config_clone_is_independent() {
     let mut original = PromptSessionConfig {
         prompt: "hello".to_string(),
         image_paths: vec![],
+        agent_id: None,
     };
     let cloned = original.clone();
     original.prompt.push_str(" extra");

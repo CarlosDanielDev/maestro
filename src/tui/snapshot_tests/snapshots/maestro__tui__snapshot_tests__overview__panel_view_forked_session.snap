@@ -3,7 +3,7 @@ source: src/tui/snapshot_tests/overview.rs
 expression: terminal.backend()
 ---
 "╔══════════════════════════════════════════[ #42 — Add login flow [fork:2] ]═══════════════════════════════════════════╗"
-"║ RUNNING 2m30s  $0.12                                                                                                ║"
+"║ RUNNING 2m30s  agent:claude  $0.12                                                                                  ║"
 "║ctx: [▓▓▓▓░░░░░░] 35%                                                                                                 ║"
 "║tok: ---                                                                                                              ║"
 "║0 files                                                                                                               ║"
