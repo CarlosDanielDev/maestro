@@ -154,6 +154,27 @@ model = "openrouter/deepseek/deepseek-coder-v2"
 }
 
 #[test]
+fn agents_config_parses_qwen_default_command() {
+    let cfg: AgentsConfig = toml::from_str(
+        r#"
+default = "qwen"
+
+[qwen]
+kind = "qwen"
+model = "qwen-test"
+extra_args = ["--auth-type", "openai"]
+"#,
+    )
+    .expect("parse failed");
+
+    let qwen = cfg.entries.get("qwen").expect("qwen agent");
+    assert_eq!(qwen.kind, AgentKind::Qwen);
+    assert_eq!(qwen.command.as_deref(), Some("qwen"));
+    assert_eq!(qwen.model.as_deref(), Some("qwen-test"));
+    assert_eq!(qwen.extra_args, ["--auth-type", "openai"]);
+}
+
+#[test]
 fn config_validate_rejects_unknown_default_agent() {
     let err = load_config(&format!(
         r#"{MINIMAL_TOML}

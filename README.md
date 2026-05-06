@@ -158,6 +158,28 @@ merge_method = "squash"
 cache_ttl_secs = 300
 ```
 
+To run sessions with Qwen Code instead of Claude Code, add a Qwen agent and
+select it with `--agent qwen`:
+
+```toml
+[agents]
+default = "qwen"
+
+[agents.qwen]
+kind = "qwen"
+command = "qwen"
+model = "qwen-test"
+extra_args = ["--auth-type", "openai"]
+
+[agents.qwen.env]
+OPENAI_BASE_URL = "https://api.example.com/v1"
+```
+
+Maestro invokes Qwen in non-interactive JSONL mode with
+`qwen --bare --output-format stream-json --include-partial-messages`.
+Set `OPENAI_API_KEY` in your shell, `.env`, or Qwen settings rather than in
+argv; direct CLI key flags may be visible in process listings.
+
 Azure DevOps init writes `kind = "azure_devops"`, `organization`, `az_project`, and `[experimental] azure_devops = true`.
 
 The full schema — completion gates, context-overflow tuning, TurboQuant, provider/Azure DevOps configuration, notifications, and feature flags — is documented in [Wiki › Configuration Reference](https://github.com/CarlosDanielDev/maestro/wiki/Configuration-Reference).

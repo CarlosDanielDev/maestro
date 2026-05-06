@@ -92,7 +92,10 @@ pub async fn cmd_run(
         bypass_review,
     );
     app.pool.set_provider(selected_provider);
-    if resolved_agent.config.kind == crate::config::AgentKind::Claude {
+    if matches!(
+        resolved_agent.config.kind,
+        crate::config::AgentKind::Claude | crate::config::AgentKind::Qwen
+    ) {
         app.pool.set_permission_mode(
             resolved_agent
                 .config
@@ -225,6 +228,16 @@ fn provider_for_agent(
             let command = resolved.config.command.as_deref().unwrap_or("claude");
             Ok(std::sync::Arc::new(
                 crate::agent_provider::ClaudeProvider::new(command),
+            ))
+        }
+        crate::config::AgentKind::Qwen => {
+            let command = resolved.config.command.as_deref().unwrap_or("qwen");
+            Ok(std::sync::Arc::new(
+                crate::agent_provider::QwenProvider::with_config(
+                    command,
+                    resolved.config.extra_args.clone(),
+                    resolved.config.env.clone(),
+                ),
             ))
         }
         other => anyhow::bail!(
