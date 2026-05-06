@@ -69,6 +69,22 @@ def test_level_rollup_at_boundary_and_idempotent_second_run():
     assert result.description.count("(COMPLETED ✅)") == 1
 
 
+def test_sequence_standalone_issue_token_rolls_up_level():
+    before = (
+        "Level 2 — parser adapters:\n"
+        "• #552 feat: parser adapters\n\n"
+        "Level 3 — follow-up:\n"
+        "• #553 docs\n\n"
+        "Sequence: ✅(L1: #548 ∥ #589) → #552 → #553\n"
+    )
+
+    result = update_milestone_graph.update_description(before, 552)
+
+    assert "Level 2 — parser adapters: (COMPLETED ✅)" in result.description
+    assert "• ✅ #552 feat: parser adapters" in result.description
+    assert "Sequence: ✅(L1: #548 ∥ #589) → ✅(L2: #552) → #553" in result.description
+
+
 def test_sequence_token_boundary_does_not_match_52_inside_521():
     before = fixture("milestone-token-boundary.md")
 

@@ -145,6 +145,19 @@ def update_sequence_line(sequence: str, issue: int, level: int) -> str:
         prefix = "" if already_done else "✅"
         return f"{sequence[:start]}{prefix}{updated_group}{sequence[end:]}"
 
+    needle = f"#{issue}"
+    start = 0
+    while True:
+        idx = sequence.find(needle, start)
+        if idx == -1:
+            break
+        before = sequence[idx - 1] if idx > 0 else None
+        after_idx = idx + len(needle)
+        after = sequence[after_idx] if after_idx < len(sequence) else None
+        if is_token_char_allowed_before(before) and is_token_char_allowed_after(after):
+            return f"{sequence[:idx]}✅(L{level}: {needle}){sequence[after_idx:]}"
+        start = idx + len(needle)
+
     raise MilestoneGraphError(f"failed to find #{issue} token in Sequence line")
 
 
