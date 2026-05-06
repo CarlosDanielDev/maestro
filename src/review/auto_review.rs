@@ -14,7 +14,6 @@ use crate::review::dispatch::ReviewDispatcher;
 use crate::review::parse::{parse_review_comment, render_review_comment};
 use crate::review::types::{PrNumber, ReviewReport};
 use anyhow::{Context, Result};
-use tokio::process::Command;
 
 pub async fn run_review_cycle(pr_number: u64, _owner: &str, _repo: &str) -> Result<ReviewReport> {
     let raw = run_claude_review(pr_number).await?;
@@ -31,14 +30,13 @@ pub async fn run_review_cycle(pr_number: u64, _owner: &str, _repo: &str) -> Resu
 /// Invoke `claude --print "/review <pr>"`. Falls back to an empty stub if
 /// the CLI isn't on PATH so the rest of the pipeline keeps working.
 async fn run_claude_review(pr_number: u64) -> Result<String> {
-    let output = Command::new("claude")
-        .args(["--print", &format!("/review {pr_number}")])
-        .output()
+    let output = crate::agent_provider::ClaudeProvider::default()
+        .run_text("", &format!("/review {pr_number}"), None)
         .await
         .with_context(|| "spawn claude --print /review");
     match output {
-        Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).into_owned()),
-        Ok(o) => Ok(String::from_utf8_lossy(&o.stderr).into_owned()),
+        Ok(o) if o.status_success => Ok(o.stdout),
+        Ok(o) => Ok(o.stderr),
         Err(_) => Ok(String::new()),
     }
 }

@@ -1,7 +1,7 @@
-use std::process::Command;
-
+use crate::agent_provider::ClaudeProvider;
 use crate::config::{Config, ProviderConfig};
 use crate::provider::types::ProviderKind;
+use std::process::Command;
 
 /// Severity of a preflight check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -468,13 +468,9 @@ fn check_config_exists() -> CheckResult {
 }
 
 fn check_claude_cli() -> CheckResult {
-    match Command::new("claude").arg("--version").output() {
-        Ok(out) if out.status.success() => {
-            let version = sanitize(String::from_utf8_lossy(&out.stdout).trim());
-            build_claude_cli_result(true, &version)
-        }
-        _ => build_claude_cli_result(false, ""),
-    }
+    let health = ClaudeProvider::default().health_check_blocking();
+    let version = health.version.unwrap_or(health.message);
+    build_claude_cli_result(health.available, &sanitize(&version))
 }
 
 fn check_az_cli(severity: CheckSeverity) -> CheckResult {

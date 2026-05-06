@@ -33,23 +33,16 @@ impl SmellAnalyzer for ClaudeAnalyzer {
     ) -> anyhow::Result<AnalysisResult> {
         let prompt = build_prompt(scan, source_files).await?;
 
-        let output = tokio::process::Command::new("claude")
-            .args(["--print", "--output-format", "text", "--model", &self.model])
-            .arg(&prompt)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
+        let output = crate::agent_provider::ClaudeProvider::default()
+            .run_text(&self.model, &prompt, None)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to spawn claude CLI: {}", e))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::warn!("Claude CLI exited with non-zero status: {}", stderr);
+        if !output.status_success {
+            tracing::warn!("Claude CLI exited with non-zero status: {}", output.stderr);
         }
 
-        let raw_text = String::from_utf8_lossy(&output.stdout);
-        let findings = parse_response(&raw_text);
+        let findings = parse_response(&output.stdout);
 
         Ok(AnalysisResult { findings })
     }
