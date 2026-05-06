@@ -5,7 +5,7 @@ use ratatui::{
 };
 use uuid::Uuid;
 
-use super::draw_agent_graph;
+use super::{GraphRenderOptions, draw_agent_graph};
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::agent_graph::model::build_graph;
 
@@ -32,7 +32,18 @@ fn render_buffer(
     let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
     terminal
         .draw(|f| {
-            draw_agent_graph(f, f.area(), &nodes, &edges, use_nerd_font, tick, sessions);
+            draw_agent_graph(
+                f,
+                f.area(),
+                &nodes,
+                &edges,
+                GraphRenderOptions {
+                    use_nerd_font,
+                    tick,
+                    sessions,
+                    theme: &crate::tui::theme::Theme::dark(),
+                },
+            );
         })
         .unwrap();
     terminal.backend().buffer().clone()
@@ -77,9 +88,14 @@ fn has_reversed_for_color(buffer: &ratatui::buffer::Buffer, fg: Color) -> bool {
 }
 
 #[test]
-fn file_style_is_neutral_color() {
-    let (color, _) = super::file_style();
-    assert_eq!(color, Color::Cyan);
+fn file_labels_use_theme_info_accent() {
+    let session = make_session_with(0, 101, SessionStatus::Running, &["src/main.rs"]);
+    let refs = vec![&session];
+    let buffer = render_buffer(&refs, 0, false);
+    assert!(buffer_has_color(
+        &buffer,
+        crate::tui::theme::Theme::dark().accent_info
+    ));
 }
 
 #[test]
@@ -87,7 +103,18 @@ fn too_small_message_contains_dimensions() {
     let mut terminal = Terminal::new(TestBackend::new(79, 23)).unwrap();
     terminal
         .draw(|f| {
-            draw_agent_graph(f, f.area(), &[], &[], false, 0, &[]);
+            draw_agent_graph(
+                f,
+                f.area(),
+                &[],
+                &[],
+                GraphRenderOptions {
+                    use_nerd_font: false,
+                    tick: 0,
+                    sessions: &[],
+                    theme: &crate::tui::theme::Theme::dark(),
+                },
+            );
         })
         .unwrap();
     let rendered = format!("{:?}", terminal.backend().buffer());

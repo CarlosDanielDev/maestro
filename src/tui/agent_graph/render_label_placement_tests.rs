@@ -5,7 +5,7 @@
 use ratatui::{Terminal, backend::TestBackend};
 use uuid::Uuid;
 
-use super::draw_agent_graph;
+use super::{GraphRenderOptions, draw_agent_graph};
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::agent_graph::model::build_graph;
 
@@ -32,7 +32,18 @@ fn render_buffer(
     let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
     terminal
         .draw(|f| {
-            draw_agent_graph(f, f.area(), &nodes, &edges, use_nerd_font, tick, sessions);
+            draw_agent_graph(
+                f,
+                f.area(),
+                &nodes,
+                &edges,
+                GraphRenderOptions {
+                    use_nerd_font,
+                    tick,
+                    sessions,
+                    theme: &crate::tui::theme::Theme::dark(),
+                },
+            );
         })
         .unwrap();
     terminal.backend().buffer().clone()

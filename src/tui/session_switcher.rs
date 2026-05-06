@@ -1,5 +1,6 @@
-use crate::session::types::Session;
+use crate::session::types::{Session, SessionStatus};
 use crate::tui::icons::{self, IconId};
+use crate::tui::spinner::graph_node_frame;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -63,7 +64,15 @@ impl SessionSwitcher {
     }
 
     /// Draw the switcher as a centered overlay.
-    pub fn draw(&self, f: &mut Frame, area: Rect, sessions: &[&Session], theme: &Theme) {
+    pub fn draw(
+        &self,
+        f: &mut Frame,
+        area: Rect,
+        sessions: &[&Session],
+        theme: &Theme,
+        spinner_tick: usize,
+        use_nerd_font: bool,
+    ) {
         // Overlay: 60% width, 70% height, centered
         let overlay_width = (area.width as f32 * 0.6).max(40.0) as u16;
         let overlay_height = (area.height as f32 * 0.7).max(10.0) as u16;
@@ -105,7 +114,8 @@ impl SessionSwitcher {
                 "  ".to_string()
             };
 
-            let status_symbol = session.status.symbol();
+            let status_symbol =
+                session_switcher_status_symbol(session.status, spinner_tick, use_nerd_font);
             let label = if let Some(num) = session.issue_number {
                 format!(
                     "#{} {}",
@@ -157,6 +167,26 @@ impl SessionSwitcher {
             Span::raw(" Close"),
         ]);
         f.render_widget(Paragraph::new(footer), chunks[1]);
+    }
+}
+
+fn session_switcher_status_symbol(
+    status: SessionStatus,
+    spinner_tick: usize,
+    use_nerd_font: bool,
+) -> String {
+    if matches!(
+        status,
+        SessionStatus::Running
+            | SessionStatus::Spawning
+            | SessionStatus::Retrying
+            | SessionStatus::GatesRunning
+            | SessionStatus::CiFix
+            | SessionStatus::ConflictFix
+    ) {
+        graph_node_frame(spinner_tick, use_nerd_font).to_string()
+    } else {
+        status.symbol().to_string()
     }
 }
 
@@ -301,5 +331,33 @@ mod tests {
         };
         sw.move_down(3);
         assert_eq!(sw.selected_index, 2);
+    }
+
+    #[test]
+    fn active_status_symbol_uses_braille_spinner_when_nerd_font_enabled() {
+        assert_eq!(
+            session_switcher_status_symbol(SessionStatus::Running, 3, true),
+            "⠸"
+        );
+        assert_eq!(
+            session_switcher_status_symbol(SessionStatus::Spawning, 0, true),
+            "⠋"
+        );
+    }
+
+    #[test]
+    fn active_status_symbol_uses_ascii_spinner_without_nerd_font() {
+        assert_eq!(
+            session_switcher_status_symbol(SessionStatus::Running, 1, false),
+            "/"
+        );
+    }
+
+    #[test]
+    fn terminal_status_symbol_keeps_status_icon() {
+        assert_eq!(
+            session_switcher_status_symbol(SessionStatus::Completed, 3, true),
+            SessionStatus::Completed.symbol().to_string()
+        );
     }
 }

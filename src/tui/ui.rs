@@ -159,9 +159,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     chunks[1],
                     &nodes,
                     &edges,
-                    crate::icon_mode::use_nerd_font(),
-                    spinner_tick,
-                    &sessions,
+                    agent_graph::render::GraphRenderOptions {
+                        use_nerd_font: crate::icon_mode::use_nerd_font(),
+                        tick: spinner_tick,
+                        sessions: &sessions,
+                        theme: &theme,
+                    },
                 );
             } else {
                 app.panel_view.draw_with_claims(
@@ -342,7 +345,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             );
             if let Some(ref sw) = app.screen_state.session_switcher {
                 let sessions = app.pool.all_sessions();
-                sw.draw(f, chunks[1], &sessions, &theme);
+                sw.draw(
+                    f,
+                    chunks[1],
+                    &sessions,
+                    &theme,
+                    spinner_tick,
+                    crate::icon_mode::use_nerd_font(),
+                );
             }
         }
         TuiMode::AdaptWizard => {
