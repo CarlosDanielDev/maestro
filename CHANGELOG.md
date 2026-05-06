@@ -7,6 +7,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-05-06
+
+### Added
+- ci(quality): add cargo-dupes code duplication gate to CI pipeline (#620)
+
+### Fixed
+- fix: make release script resilient to protected-branch release PR edge cases (#685)
+
 ## [0.25.0] - 2026-05-06
 
 ### Added
