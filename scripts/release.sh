@@ -13,7 +13,10 @@ set -euo pipefail
 
 REPO="CarlosDanielDev/maestro"
 SNAPSHOTS_DIR="src/tui/snapshot_tests/snapshots"
-PR_POLL_INTERVAL=12   # seconds between gh pr checks polls
+PR_POLL_INTERVAL=${PR_POLL_INTERVAL:-12}   # seconds between gh pr checks polls
+ALLOW_MILESTONE_CLOSE=false
+PR_MERGE_OUTCOME=""
+MILESTONE_STATUS="pending"
 
 # ── colours ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -128,14 +131,13 @@ watch_and_merge_pr() {
 
     # All done — no failures, no pending
     if [[ "$pending" -eq 0 ]]; then
+      local completed_checks="$total"
       printf "\r\033[K" >&2
-      success "All ${passing} CI checks passed on PR #${pr_number}"
+      success "All ${completed_checks} CI checks passed on PR #${pr_number}"
       echo ""
       info "Merging PR #${pr_number} into main..."
-      with_spinner "Merging and deleting branch..." \
-        gh pr merge "$pr_number" --merge --delete-branch
-      success "PR #${pr_number} merged — main is up to date"
-      return 0
+      merge_pr_with_policy_fallback "$pr_number" "$pr_url"
+      return $?
     fi
 
     # Still running
@@ -145,6 +147,60 @@ watch_and_merge_pr() {
     sleep "$PR_POLL_INTERVAL"
   done
 }
+
+merge_pr_with_policy_fallback() {
+  local pr_number="$1"
+  local pr_url="$2"
+
+  local merge_output merge_rc=0
+  set +e
+  merge_output=$(with_spinner "Merging and deleting branch..." \
+    gh pr merge "$pr_number" --merge --delete-branch 2>&1)
+  merge_rc=$?
+  set -e
+
+  if [[ "$merge_rc" -eq 0 ]]; then
+    PR_MERGE_OUTCOME="merged"
+    ALLOW_MILESTONE_CLOSE=true
+    success "PR #${pr_number} merged — main is up to date"
+    return 0
+  fi
+
+  echo "$merge_output" >&2
+
+  if echo "$merge_output" | grep -qiE "prohibits the merge|add the --auto flag|require(s)? auto-?merge"; then
+    warn "Branch policy blocks immediate merge; enabling auto-merge instead."
+    local auto_output auto_rc=0
+    set +e
+    auto_output=$(with_spinner "Enabling auto-merge..." \
+      gh pr merge "$pr_number" --auto --delete-branch 2>&1)
+    auto_rc=$?
+    set -e
+
+    if [[ "$auto_rc" -eq 0 ]]; then
+      PR_MERGE_OUTCOME="auto"
+      ALLOW_MILESTONE_CLOSE=false
+      success "Auto-merge enabled for PR #${pr_number}. GitHub will merge when allowed."
+      return 0
+    fi
+
+    echo "$auto_output" >&2
+    echo -e "${YELLOW}Enable auto-merge manually if needed:${RESET}"
+    echo -e "  gh pr merge ${pr_number} --auto --delete-branch"
+    return 1
+  fi
+
+  warn "Merge failed. Merge manually with:"
+  echo -e "  gh pr merge ${pr_number} --merge --delete-branch"
+  PR_MERGE_OUTCOME="failed"
+  ALLOW_MILESTONE_CLOSE=false
+  return "$merge_rc"
+}
+
+# Allow sourcing the helper functions in tests without running the full script
+if [[ "${MAESTRO_RELEASE_LIB_ONLY:-}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 # ── Step 1: Determine version ───────────────────────────────────────────────────
 MILESTONE_NAME=""
@@ -445,6 +501,8 @@ PR_URL=""
 PR_NUMBER=""
 
 if [[ "$PUSH_FAILED" == true ]]; then
+  # Branch-protection fallback: reuse deterministic release branch/PR and let
+  # GitHub auto-merge when policy requires it.
   # Branch-protection may have blocked commit push but allowed tag push — verify
   TAG_ON_REMOTE=$(git ls-remote origin "refs/tags/${TAG}" 2>/dev/null | awk '{print $1}')
   if [[ -z "$TAG_ON_REMOTE" ]]; then
@@ -453,22 +511,36 @@ if [[ "$PUSH_FAILED" == true ]]; then
   fi
 
   BRANCH_NAME="release/${TAG}"
-  info "Branch-protection blocked direct push to main. Creating PR branch..."
+  info "Branch-protection blocked direct push to main. Creating or reusing release branch..."
+
   if git show-ref --verify --quiet "refs/heads/${BRANCH_NAME}"; then
+    git checkout "$BRANCH_NAME"
+  elif git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
+    git fetch origin "$BRANCH_NAME:${BRANCH_NAME}"
     git checkout "$BRANCH_NAME"
   else
     git checkout -b "$BRANCH_NAME"
   fi
-  git push -u origin "HEAD:refs/heads/${BRANCH_NAME}"
 
-  PR_URL=$(with_spinner "Creating release PR..." \
-    gh pr create \
-      --base main \
-      --head "$BRANCH_NAME" \
-      --title "chore: release ${TAG}" \
-      --body "Release PR for ${TAG}. Tag already pushed; binaries are being built by release.yml. Merging this makes main reflect the release commit.")
+  git push -u origin "HEAD:refs/heads/${BRANCH_NAME}" 2>/dev/null || \
+    git push -u origin "HEAD:refs/heads/${BRANCH_NAME}" --force-with-lease
 
-  PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
+  EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state open --json number,url --limit 1 2>/dev/null || echo "[]")
+  PR_NUMBER=$(echo "$EXISTING_PR" | jq -r '.[0].number // empty')
+  PR_URL=$(echo "$EXISTING_PR" | jq -r '.[0].url // empty')
+
+  if [[ -z "$PR_NUMBER" ]]; then
+    PR_URL=$(with_spinner "Creating release PR..." \
+      gh pr create \
+        --base main \
+        --head "$BRANCH_NAME" \
+        --title "chore: release ${TAG}" \
+        --body "Release PR for ${TAG}. Tag already pushed; binaries are being built by release.yml. Merging this makes main reflect the release commit.")
+
+    PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
+  else
+    info "Reusing existing release PR #${PR_NUMBER}"
+  fi
 
   echo -e "${CYAN}Tag on remote:${RESET} ${TAG_ON_REMOTE:-not found (check manually)}"
   echo -e "${CYAN}Release PR:${RESET}    ${PR_URL}"
@@ -477,6 +549,8 @@ if [[ "$PUSH_FAILED" == true ]]; then
   watch_and_merge_pr "$PR_NUMBER" "$PR_URL"
 else
   success "Pushed main + ${TAG} to origin"
+  PR_MERGE_OUTCOME="direct"
+  ALLOW_MILESTONE_CLOSE=true
 fi
 
 # ── Step 7: Release workflow check ─────────────────────────────────────────────
@@ -496,12 +570,17 @@ MILESTONE_NUMBER=$(with_spinner "Looking up milestone number..." \
   gh api "repos/${REPO}/milestones" \
   --jq ".[] | select(.title == \"${TAG}\") | .number" || true)
 
-if [[ -n "$MILESTONE_NUMBER" ]]; then
+if [[ "$ALLOW_MILESTONE_CLOSE" != true ]]; then
+  warn "Skipping milestone close until release commit is on main. Close manually after merge."
+  MILESTONE_STATUS="pending (waiting for merge)"
+elif [[ -n "$MILESTONE_NUMBER" ]]; then
   with_spinner "Closing milestone ${TAG}..." \
     gh api "repos/${REPO}/milestones/${MILESTONE_NUMBER}" -X PATCH -f state=closed > /dev/null
   success "Milestone ${TAG} closed"
+  MILESTONE_STATUS="closed"
 else
   warn "Milestone '${TAG}' not found on GitHub — skipping close."
+  MILESTONE_STATUS="not found"
 fi
 
 # ── Step 10: Summary ────────────────────────────────────────────────────────────
@@ -512,11 +591,23 @@ echo ""
 echo -e "  ${BOLD}Version:${RESET}   ${TAG}"
 echo -e "  ${BOLD}Tag:${RESET}       ${TAG}"
 echo -e "  ${BOLD}Commit:${RESET}    ${COMMIT_HASH}"
-echo -e "  ${BOLD}Milestone:${RESET} ${TAG} (closed)"
+echo -e "  ${BOLD}Milestone:${RESET} ${TAG} (${MILESTONE_STATUS})"
 echo -e "  ${BOLD}Issues:${RESET}    ${ISSUE_COUNT} issues included"
-[[ -n "$PR_URL" ]] && echo -e "  ${BOLD}PR:${RESET}        ${PR_URL} (merged)"
 if [[ -f ".github/workflows/release.yml" ]]; then
   echo -e "  ${BOLD}Release:${RESET}   building via release.yml"
+fi
+if [[ -n "$PR_URL" ]]; then
+  case "$PR_MERGE_OUTCOME" in
+    merged)
+      echo -e "  ${BOLD}PR:${RESET}        ${PR_URL} (merged)"
+      ;;
+    auto)
+      echo -e "  ${BOLD}PR:${RESET}        ${PR_URL} (auto-merge enabled)"
+      ;;
+    *)
+      echo -e "  ${BOLD}PR:${RESET}        ${PR_URL} (manual follow-up required)"
+      ;;
+  esac
 fi
 echo ""
 echo -e "${BOLD}Changelog:${RESET}"
