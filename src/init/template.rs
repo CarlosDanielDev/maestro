@@ -102,7 +102,6 @@ allowed_tools = []                      # Empty = all tools. Example: ["Bash", "
 
 # [agents]
 # default = "claude"
-#
 # [agents.claude]
 # kind = "claude"
 # enabled = true
@@ -110,7 +109,6 @@ allowed_tools = []                      # Empty = all tools. Example: ["Bash", "
 # model = "opus"
 # permission_mode = "bypassPermissions"
 # allowed_tools = []
-#
 # [agents.codex]
 # kind = "codex"
 # enabled = false
@@ -120,20 +118,17 @@ allowed_tools = []                      # Empty = all tools. Example: ["Bash", "
 # json = true
 # ephemeral = false
 # extra_args = []
-#
 # [agents.opencode]
 # kind = "opencode"
 # enabled = false
 # model = "anthropic/claude-sonnet-4-5"
 # extra_args = []
-#
 # [agents.ollama]
 # kind = "ollama"
 # enabled = false
 # model = "qwen3"
 # base_url = "http://localhost:11434"
 # request_timeout_secs = 120
-#
 # [agents.minimax]
 # kind = "minimax"
 # enabled = false
