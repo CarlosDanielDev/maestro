@@ -15,6 +15,7 @@ feature-depth = 1
 
 [advisories]
 version = 2
+unused-ignored-advisory = "allow"
 ignore = [
     # Transitive via `syntect` — bincode 1.x is considered complete by the
     # bincode maintainers and has no known vulnerability. Upstream syntect
@@ -60,6 +61,7 @@ ignore = [
 
 [licenses]
 version = 2
+unused-allowed-license = "allow"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -102,6 +104,9 @@ skip = [
     { name = "redox_syscall", version = "0.5", reason = "parking_lot 0.12 pins v0.5; newer libredox uses v0.7 — no upgrade path" },
     # getrandom: rand (0.8) uses 0.2.17; uuid uses 0.4.2.
     { name = "getrandom", version = "0.2", reason = "rand 0.8 pins v0.2.17; newer uuid uses v0.4 — no upgrade path" },
+    # thiserror: redox_users (via directories) pins 1.x; maestro/syntect use 2.x.
+    { name = "thiserror", version = "1", reason = "redox_users via directories pins v1; workspace and syntect use v2 — no upgrade path without replacing directories/redox_users" },
+    { name = "thiserror-impl", version = "1", reason = "proc-macro pair for thiserror v1 pulled by redox_users via directories" },
     # windows-core (sysinfo via 0.57); iana-time-zone/chrono use 0.62.2.
     { name = "windows-core", version = "0.57", reason = "sysinfo pins v0.57; iana-time-zone/chrono use v0.62 — no upgrade path" },
     # windows-implement: windows v0.57 (sysinfo) uses 0.57.0; iana-time-zone uses v0.60.2.
