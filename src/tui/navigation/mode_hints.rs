@@ -331,29 +331,39 @@ pub fn mode_keymap(
             FKeyVis::Minimal,
             &[
                 InlineHint {
+                    key: "o",
+                    action: "Open PR",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "s",
+                    action: "Dismiss",
+                    priority: 1,
+                },
+                InlineHint {
                     key: "i",
                     action: "Browse",
-                    priority: 0,
+                    priority: 2,
                 },
                 InlineHint {
                     key: "r",
                     action: "New Prompt",
-                    priority: 1,
+                    priority: 3,
                 },
                 InlineHint {
                     key: "l",
                     action: "Logs",
-                    priority: 2,
+                    priority: 4,
                 },
                 InlineHint {
                     key: "d",
                     action: "Dashboard",
-                    priority: 3,
+                    priority: 5,
                 },
                 InlineHint {
                     key: "q",
                     action: "Quit",
-                    priority: 4,
+                    priority: 6,
                 },
             ],
         ),

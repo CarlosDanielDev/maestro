@@ -53,12 +53,13 @@ impl ReviewDispatcher {
             .replace("{pr_number}", &pr_number.to_string())
             .replace("{branch}", branch);
 
-        let parts: Vec<&str> = command.split_whitespace().collect();
+        let parts = shlex::split(&command)
+            .ok_or_else(|| anyhow::anyhow!("Invalid review command quoting"))?;
         if parts.is_empty() {
             anyhow::bail!("Empty review command");
         }
 
-        let output = Command::new(parts[0]).args(&parts[1..]).output()?;
+        let output = Command::new(&parts[0]).args(&parts[1..]).output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -216,6 +217,17 @@ mod tests {
         let result = dispatcher.dispatch(1, "main").unwrap();
         assert!(result.success);
         assert!(result.output.contains("review-output-marker"));
+    }
+
+    #[test]
+    fn dispatch_preserves_quoted_review_body_as_one_arg() {
+        let dispatcher = ReviewDispatcher::new(ReviewConfig {
+            enabled: true,
+            command: "printf '%s' 'Automated review by Maestro'".into(),
+        });
+        let result = dispatcher.dispatch(1, "main").unwrap();
+        assert!(result.success);
+        assert_eq!(result.output, "Automated review by Maestro");
     }
 
     #[test]

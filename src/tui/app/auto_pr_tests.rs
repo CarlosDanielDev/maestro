@@ -151,6 +151,14 @@ async fn auto_pr_skips_creation_when_pr_already_exists_for_branch() {
         has_existing_log,
         "activity log must reference the existing PR URL (AC4)"
     );
+    let pending = app
+        .ci_poller
+        .pending_pr_checks
+        .iter()
+        .find(|check| check.pr_number == 55)
+        .expect("existing PR must be registered for CI polling and completion summary");
+    assert_eq!(pending.issue_number, 42);
+    assert_eq!(pending.branch, "maestro/issue-42");
 }
 
 #[tokio::test]

@@ -148,13 +148,12 @@ allowed_tools = []
 kind = "codex"
 enabled = true
 command = "codex"
-model = "gpt-5.5"
+model = "gpt-5.1-codex-max"
 permission_mode = "yolo"
 sandbox = "workspace-write"
 json = true
 ephemeral = false
-profile = "work"
-extra_args = ["--reasoning-effort", "high"]
+extra_args = []
 
 [agents.minimax]
 kind = "minimax"

@@ -12,7 +12,7 @@ expression: term.backend()
 "            ║                                                      ║            "
 "            ║  Total: $0.12  (1 session)                           ║            "
 "            ║                                                      ║            "
-"            ║  [i] Browse  [r] New Prompt  [l] Logs  [d] Dashboard ║            "
+"            ║  [o] Open PR  [s] Dismiss  [i] Browse  [r] New Prompt║            "
 "            ║                                                      ║            "
 "            ║                                                      ║            "
 "            ║                                                      ║            "
