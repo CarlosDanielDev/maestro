@@ -123,6 +123,10 @@ pub struct AgentProviderDefinition {
     pub id: String,
     pub provider: String,
     pub binary: Option<String>,
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+    pub request_timeout_secs: Option<u64>,
+    pub api_key_env: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +229,27 @@ impl AgentProviderFactory {
                     default_provider: Arc::new(crate::agent_provider::codex::CodexProvider::new(
                         binary,
                     )),
+                })
+            }
+            Some(provider) if provider.provider == "ollama" || provider.id == "ollama" => {
+                let model = provider.model.clone().ok_or_else(|| {
+                    AgentError::Config(format!("agent provider `{}` requires model", provider.id))
+                })?;
+                let base_url = provider
+                    .base_url
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:11434".to_string());
+                Ok(Self {
+                    default_provider: Arc::new(
+                        crate::agent_provider::ollama::OllamaProvider::new(
+                            provider.id.clone(),
+                            base_url,
+                            model,
+                            provider.request_timeout_secs.unwrap_or(120),
+                            provider.api_key_env.clone(),
+                        )
+                        .map_err(crate::agent_provider::ollama::OllamaError::into_agent_error)?,
+                    ),
                 })
             }
             Some(provider) => Err(AgentError::Config(format!(
@@ -351,6 +376,10 @@ mod tests {
                 id: "qwen".to_string(),
                 provider: "qwen".to_string(),
                 binary: Some("qwen".to_string()),
+                base_url: None,
+                model: None,
+                request_timeout_secs: None,
+                api_key_env: None,
             }],
         })
         .unwrap();
@@ -366,10 +395,34 @@ mod tests {
                 id: "codex".to_string(),
                 provider: "codex".to_string(),
                 binary: Some("codex".to_string()),
+                base_url: None,
+                model: None,
+                request_timeout_secs: None,
+                api_key_env: None,
             }],
         })
         .unwrap();
 
         assert_eq!(factory.default_provider().id(), "codex");
+    }
+
+    #[test]
+    fn factory_accepts_ollama_provider() {
+        let factory = AgentProviderFactory::from_config(AgentProvidersConfig {
+            default_provider: "ollama".to_string(),
+            providers: vec![AgentProviderDefinition {
+                id: "ollama".to_string(),
+                provider: "ollama".to_string(),
+                binary: None,
+                base_url: Some("http://localhost:11434".to_string()),
+                model: Some("llama3.2".to_string()),
+                request_timeout_secs: Some(5),
+                api_key_env: None,
+            }],
+        })
+        .unwrap();
+
+        assert_eq!(factory.default_provider().id(), "ollama");
+        assert_eq!(factory.default_provider().kind(), AgentProviderKind::Http);
     }
 }

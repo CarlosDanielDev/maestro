@@ -1,5 +1,7 @@
 pub mod claude;
 pub mod codex;
+pub mod ollama;
+pub mod openai_compat;
 pub mod qwen;
 mod qwen_parser;
 #[cfg(test)]
@@ -10,6 +12,8 @@ pub mod types;
 pub use claude::ClaudeProvider;
 #[allow(unused_imports)]
 pub use codex::CodexProvider;
+#[allow(unused_imports)]
+pub use ollama::OllamaProvider;
 #[allow(unused_imports)]
 pub use qwen::QwenProvider;
 #[allow(unused_imports)]

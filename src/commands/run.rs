@@ -257,6 +257,30 @@ fn provider_for_agent(
                 ),
             ))
         }
+        crate::config::AgentKind::Ollama => {
+            let model = resolved
+                .config
+                .model
+                .clone()
+                .filter(|model| !model.trim().is_empty())
+                .ok_or_else(|| {
+                    anyhow::anyhow!("agents.{}.model is required for ollama", resolved.id)
+                })?;
+            Ok(std::sync::Arc::new(
+                crate::agent_provider::OllamaProvider::new(
+                    resolved.id.clone(),
+                    resolved
+                        .config
+                        .base_url
+                        .clone()
+                        .unwrap_or_else(|| "http://localhost:11434".to_string()),
+                    model,
+                    resolved.config.request_timeout_secs.unwrap_or(120),
+                    resolved.config.api_key_env.clone(),
+                )
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?,
+            ))
+        }
         other => anyhow::bail!(
             "agent `{}` uses `{}` provider, but that provider runtime is not implemented yet",
             resolved.id,
