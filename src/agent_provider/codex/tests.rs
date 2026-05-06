@@ -33,6 +33,7 @@ fn stream_args_match_codex_exec_contract() {
     let args = provider.build_stream_args(&request());
     assert_eq!(args[0], "exec");
     assert!(args.iter().any(|arg| arg == "--json"));
+    assert!(args.iter().any(|arg| arg == "--yolo"));
     assert!(args.windows(2).any(|w| w == ["--model", "gpt-5.4-codex"]));
     assert!(
         args.windows(2)
@@ -121,6 +122,7 @@ async fn run_streams_events_from_mock_codex_cli_and_records_process_context() {
     let argv = std::fs::read_to_string(temp.path().join("argv.txt")).expect("argv");
     assert!(argv.contains("exec\n"));
     assert!(argv.contains("--json\n"));
+    assert!(argv.contains("--yolo\n"));
     assert!(argv.contains("--model\ngpt-5.4-codex"));
     assert!(argv.contains("--sandbox\nworkspace-write"));
     assert!(argv.contains("--cd\n"));
