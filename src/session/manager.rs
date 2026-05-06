@@ -72,6 +72,10 @@ impl ManagedSession {
         }
     }
 
+    pub fn set_provider(&mut self, provider: Arc<dyn AgentProvider>) {
+        self.provider = provider;
+    }
+
     #[cfg(test)]
     fn set_claude_binary_for_test(&mut self, binary: impl Into<String>) {
         self.provider = Arc::new(ClaudeProvider::new(binary));

@@ -100,6 +100,48 @@ default_mode = "orchestrator"
 permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
 allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
 
+# [agents]
+# default = "claude"
+#
+# [agents.claude]
+# kind = "claude"
+# enabled = true
+# command = "claude"
+# model = "opus"
+# permission_mode = "bypassPermissions"
+# allowed_tools = []
+#
+# [agents.codex]
+# kind = "codex"
+# enabled = false
+# command = "codex"
+# model = "gpt-5.4-codex"
+# sandbox = "workspace-write"
+# json = true
+# ephemeral = false
+# extra_args = []
+#
+# [agents.opencode]
+# kind = "opencode"
+# enabled = false
+# model = "anthropic/claude-sonnet-4-5"
+# extra_args = []
+#
+# [agents.ollama]
+# kind = "ollama"
+# enabled = false
+# model = "qwen3"
+# base_url = "http://localhost:11434"
+# request_timeout_secs = 120
+#
+# [agents.minimax]
+# kind = "minimax"
+# enabled = false
+# model = "MiniMax-M2.7"
+# base_url = "https://api.minimax.io/v1"
+# request_timeout_secs = 120
+# api_key_env = "MINIMAX_API_KEY"
+
 [budget]
 per_session_usd = 5.0
 total_usd = 50.0

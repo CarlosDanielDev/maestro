@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 mod adapt;
+mod agents;
 mod budget;
 mod experimental;
 mod flags;
@@ -22,6 +23,7 @@ mod turboquant;
 mod views;
 
 pub use adapt::{AdaptSettings, MilestoneNaming};
+pub use agents::{AgentConfig, AgentKind, AgentsConfig};
 pub use budget::BudgetConfig;
 pub use experimental::ExperimentalConfig;
 pub use flags::FlagsConfig;
@@ -81,6 +83,8 @@ pub struct Config {
     pub adapt: AdaptSettings,
     #[serde(default)]
     pub views: ViewsConfig,
+    #[serde(default, skip_serializing_if = "AgentsConfig::is_default")]
+    pub agents: AgentsConfig,
     #[serde(default, skip_serializing_if = "ExperimentalConfig::is_default")]
     pub experimental: ExperimentalConfig,
 }
@@ -166,7 +170,52 @@ impl Config {
             }
         }
 
+        self.agents.validate()?;
+
         Ok(())
+    }
+
+    pub fn resolve_agent(&self, agent_id: Option<&str>) -> Result<ResolvedAgentConfig> {
+        let id = agent_id.unwrap_or(self.agents.default.as_str());
+        if self.agents.entries.is_empty() {
+            if id != "claude" {
+                anyhow::bail!("agent `{id}` is not configured; no [agents] table is present");
+            }
+            return Ok(ResolvedAgentConfig {
+                id: "claude".to_string(),
+                config: AgentConfig::builtin_claude(
+                    self.sessions.default_model.clone(),
+                    self.sessions.permission_mode.clone(),
+                    self.sessions.allowed_tools.clone(),
+                ),
+            });
+        }
+
+        let Some(agent) = self.agents.entries.get(id) else {
+            anyhow::bail!("agent `{id}` is not configured");
+        };
+        if !agent.enabled {
+            anyhow::bail!("agent `{id}` is disabled");
+        }
+        agent.validate(id)?;
+
+        let mut config = agent.clone();
+        if config.model.as_deref().unwrap_or("").trim().is_empty()
+            && config.kind == AgentKind::Claude
+        {
+            config.model = Some(self.sessions.default_model.clone());
+        }
+        if config.permission_mode.is_none() && config.kind == AgentKind::Claude {
+            config.permission_mode = Some(self.sessions.permission_mode.clone());
+        }
+        if config.allowed_tools.is_empty() && config.kind == AgentKind::Claude {
+            config.allowed_tools = self.sessions.allowed_tools.clone();
+        }
+
+        Ok(ResolvedAgentConfig {
+            id: id.to_string(),
+            config,
+        })
     }
 
     pub fn effective_provider_config(&self) -> ProviderConfig {
@@ -178,6 +227,12 @@ impl Config {
         }
         provider
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedAgentConfig {
+    pub id: String,
+    pub config: AgentConfig,
 }
 
 fn has_legacy_azure_devops_flag(content: &str) -> bool {

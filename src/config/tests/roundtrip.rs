@@ -88,6 +88,42 @@ azure_devops = true
 }
 
 #[test]
+fn config_save_round_trip_with_agents() {
+    use std::io::Write;
+
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    write!(
+        f,
+        r#"{MINIMAL_TOML}
+[agents]
+default = "claude"
+
+[agents.claude]
+kind = "claude"
+enabled = true
+command = "claude"
+model = "opus"
+permission_mode = "bypassPermissions"
+allowed_tools = ["Read"]
+
+[agents.ollama]
+kind = "ollama"
+model = "qwen3"
+"#
+    )
+    .unwrap();
+
+    let original = Config::load(f.path()).expect("load failed");
+    let out = tempfile::NamedTempFile::new().unwrap();
+    original.save(out.path()).expect("save failed");
+    let reloaded = Config::load(out.path()).expect("reload failed");
+
+    assert_eq!(original, reloaded);
+    assert_eq!(reloaded.agents.default, "claude");
+    assert!(reloaded.agents.entries.contains_key("ollama"));
+}
+
+#[test]
 fn config_save_round_trip_with_github_provider_omits_default_experimental() {
     use crate::provider::types::ProviderKind;
     use std::io::Write;

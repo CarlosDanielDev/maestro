@@ -83,6 +83,10 @@ pub enum Commands {
         #[arg(short, long)]
         model: Option<String>,
 
+        /// Named agent from [agents] to use for spawned sessions
+        #[arg(long)]
+        agent: Option<String>,
+
         /// Session mode (orchestrator, vibe, review, or custom)
         #[arg(long)]
         mode: Option<String>,
@@ -545,6 +549,18 @@ mod tests {
             assert!(once);
             assert_eq!(model.as_deref(), Some("haiku"));
             assert!(resume);
+        } else {
+            panic!("Expected Commands::Run");
+        }
+    }
+
+    #[test]
+    fn run_agent_override_parses_value() {
+        let cli =
+            Cli::try_parse_from(["maestro", "run", "--prompt", "hello", "--agent", "opencode"])
+                .unwrap();
+        if let Some(Commands::Run { agent, .. }) = cli.command {
+            assert_eq!(agent.as_deref(), Some("opencode"));
         } else {
             panic!("Expected Commands::Run");
         }
