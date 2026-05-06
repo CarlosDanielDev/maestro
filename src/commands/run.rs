@@ -98,6 +98,7 @@ pub async fn cmd_run(
         bypass_review,
     );
     app.pool.set_provider(selected_provider);
+    app.selected_agent_id = resolved_agent.id.clone();
     if matches!(
         resolved_agent.config.kind,
         crate::config::AgentKind::Claude
@@ -147,6 +148,7 @@ pub async fn cmd_run(
             role_override,
         )
         .with_mode_config(mode_config)
+        .with_agent_id(Some(resolved_agent.id.clone()))
         .with_image_paths(images.clone());
         app.add_session(session).await?;
     } else if let Some(milestone_name) = milestone {
@@ -194,6 +196,7 @@ pub async fn cmd_run(
             let mut session =
                 Session::new(prompt, model.clone(), issue_mode, Some(num), role_override)
                     .with_mode_config(mode_config)
+                    .with_agent_id(Some(resolved_agent.id.clone()))
                     .with_image_paths(images.clone());
             session.issue_title = Some(gh_issue.title.clone());
 
@@ -229,7 +232,7 @@ pub async fn cmd_run(
     crate::tui::run(app).await
 }
 
-fn provider_for_agent(
+pub(crate) fn provider_for_agent(
     resolved: &crate::config::ResolvedAgentConfig,
 ) -> anyhow::Result<std::sync::Arc<dyn crate::agent_provider::AgentProvider>> {
     match resolved.config.kind {

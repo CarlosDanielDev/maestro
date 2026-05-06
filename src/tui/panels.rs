@@ -1,5 +1,6 @@
 use crate::session::types::Session;
 use crate::state::file_claims::FileClaimManager;
+use crate::tui::agent_badge::{agent_color, agent_label};
 use crate::tui::icons::{self, IconId};
 use crate::tui::markdown::render_markdown;
 use crate::tui::spinner;
@@ -430,6 +431,17 @@ fn draw_single_panel(
             ),
             Span::raw("  "),
             Span::styled(
+                format!(
+                    "agent:{}",
+                    crate::util::truncate_with_ellipsis(
+                        &agent_label(session.agent_id.as_deref()),
+                        12
+                    )
+                ),
+                Style::default().fg(agent_color(session.agent_id.as_deref())),
+            ),
+            Span::raw("  "),
+            Span::styled(
                 format!("${:.2}", session.cost_usd),
                 Style::default().fg(theme.accent_warning),
             ),
@@ -501,6 +513,14 @@ fn draw_single_panel(
         header_spans.push(Span::styled(
             session.elapsed_display(),
             Style::default().fg(theme.text_primary),
+        ));
+        header_spans.push(Span::raw("  "));
+        header_spans.push(Span::styled(
+            format!(
+                "agent:{}",
+                crate::util::truncate_with_ellipsis(&agent_label(session.agent_id.as_deref()), 18)
+            ),
+            Style::default().fg(agent_color(session.agent_id.as_deref())),
         ));
         header_spans.push(Span::raw("  "));
         header_spans.push(Span::styled(

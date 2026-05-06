@@ -259,6 +259,7 @@ impl Screen for QueueConfirmationScreen {
                             issue_number: Some(e.issue_number),
                             title: e.title.clone(),
                             custom_prompt: None,
+                            agent_id: None,
                         })
                         .collect();
                     return ScreenAction::LaunchQueue(configs);

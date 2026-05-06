@@ -25,6 +25,7 @@ fn completion_session_line_fields_are_accessible() {
         worktree_path: None,
         issue_number: Some(42),
         model: "opus".to_string(),
+        agent_id: None,
     };
     assert_eq!(line.label, "#42");
     assert_eq!(line.status, crate::session::types::SessionStatus::Completed);

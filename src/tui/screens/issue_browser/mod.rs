@@ -224,6 +224,7 @@ impl Screen for IssueBrowserScreen {
                             issue_number: Some(number),
                             title,
                             custom_prompt,
+                            agent_id: None,
                         });
                     }
 
@@ -231,6 +232,7 @@ impl Screen for IssueBrowserScreen {
                         return ScreenAction::LaunchUnifiedSession(super::UnifiedSessionConfig {
                             issues: selected_issues,
                             custom_prompt,
+                            agent_id: None,
                         });
                     }
 
@@ -240,6 +242,7 @@ impl Screen for IssueBrowserScreen {
                             issue_number: Some(number),
                             title,
                             custom_prompt: custom_prompt.clone(),
+                            agent_id: None,
                         })
                         .collect();
                     return ScreenAction::LaunchSessions(configs);

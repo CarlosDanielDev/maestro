@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -25,6 +25,8 @@ pub struct SessionPool {
     allowed_tools: Vec<String>,
     /// Agent provider used for newly promoted sessions.
     provider: Arc<dyn AgentProvider>,
+    /// Agent providers keyed by configured `[agents.*]` id.
+    agent_providers: HashMap<String, Arc<dyn AgentProvider>>,
     /// Guardrail prompt appended to every session's system prompt.
     guardrail_prompt: Option<String>,
     /// TurboQuant adapter used to compact the system-prompt appendix.
@@ -52,6 +54,7 @@ impl SessionPool {
             permission_mode: "bypassPermissions".to_string(),
             allowed_tools: Vec::new(),
             provider: Arc::new(ClaudeProvider::default()),
+            agent_providers: HashMap::new(),
             guardrail_prompt: None,
             turboquant_adapter: None,
             system_prompt_budget: 0,
@@ -95,6 +98,11 @@ impl SessionPool {
     /// Set the agent provider for newly promoted sessions.
     pub fn set_provider(&mut self, provider: Arc<dyn AgentProvider>) {
         self.provider = provider;
+    }
+
+    /// Set provider registry for per-session agent selection.
+    pub fn set_agent_providers(&mut self, providers: HashMap<String, Arc<dyn AgentProvider>>) {
+        self.agent_providers = providers;
     }
 
     /// Enqueue a session. It will be promoted when capacity allows.
@@ -180,7 +188,13 @@ impl SessionPool {
             // Session remains Queued until ManagedSession::spawn() transitions it
             let mut managed =
                 ManagedSession::with_worktree(session, worktree_path, branch, system_prompt);
-            managed.set_provider(Arc::clone(&self.provider));
+            let provider = managed
+                .session
+                .agent_id
+                .as_ref()
+                .and_then(|id| self.agent_providers.get(id))
+                .unwrap_or(&self.provider);
+            managed.set_provider(Arc::clone(provider));
             managed.permission_mode = mode_config
                 .as_ref()
                 .and_then(|mode| mode.permission_mode.clone())

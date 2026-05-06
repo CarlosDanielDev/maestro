@@ -82,6 +82,7 @@ impl App {
                 worktree_path: s.worktree_path.clone(),
                 issue_number: s.issue_number,
                 model: s.model.clone(),
+                agent_id: s.agent_id.clone(),
             });
         }
 

@@ -1,4 +1,5 @@
 pub mod activity_log;
+pub(crate) mod agent_badge;
 pub(crate) mod agent_graph;
 pub mod app;
 mod background_tasks;
@@ -283,6 +284,7 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     let issue_numbers: Vec<u64> = config.issues.iter().map(|(n, _)| *n).collect();
                     let custom_prompt = config.custom_prompt.clone();
+                    let agent_id = config.agent_id.clone();
                     let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
                         let result = with_provider(provider_config, |client| async move {
@@ -301,11 +303,24 @@ async fn event_loop(
                             Ok(issues)
                         })
                         .await;
-                        let _ = tx.send(app::TuiDataEvent::UnifiedIssues(result, custom_prompt));
+                        let _ = tx.send(app::TuiDataEvent::UnifiedIssues(
+                            result,
+                            custom_prompt,
+                            agent_id,
+                        ));
                     });
                 }
                 app::TuiCommand::LaunchPromptSession(config) => {
-                    let model = app.session_config.default_model.clone();
+                    let agent_id = config
+                        .agent_id
+                        .clone()
+                        .unwrap_or_else(|| app.selected_agent_id());
+                    let model = app
+                        .config
+                        .as_ref()
+                        .and_then(|c| c.resolve_agent(Some(&agent_id)).ok())
+                        .and_then(|resolved| resolved.config.model)
+                        .unwrap_or_else(|| app.session_config.default_model.clone());
                     let mode = app.session_config.default_mode.clone();
                     let mode_config =
                         crate::modes::resolve_session_mode_config(&mode, app.config.as_ref());
@@ -324,7 +339,8 @@ async fn event_loop(
 
                     let session =
                         crate::session::types::Session::new(prompt, model, mode, None, None)
-                            .with_mode_config(mode_config);
+                            .with_mode_config(mode_config)
+                            .with_agent_id(Some(agent_id));
 
                     // Record in prompt history
                     app.prompt_history

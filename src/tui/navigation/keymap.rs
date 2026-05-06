@@ -92,6 +92,10 @@ pub fn global_keybindings() -> &'static [KeyBindingGroup] {
                         description: "Manually retry PR creation for selected session",
                     },
                     KeyBinding {
+                        key: "A",
+                        description: "Cycle agent for new sessions",
+                    },
+                    KeyBinding {
                         key: "d",
                         description: "Toggle activity log",
                     },

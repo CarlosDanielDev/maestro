@@ -20,6 +20,7 @@ fn completion_session_line_pr_link_defaults_to_empty() {
         worktree_path: None,
         issue_number: Some(1),
         model: "opus".to_string(),
+        agent_id: None,
     };
     assert!(line.pr_link.is_empty());
 }
@@ -38,6 +39,7 @@ fn completion_session_line_holds_pr_link_value() {
         worktree_path: None,
         issue_number: Some(42),
         model: "opus".to_string(),
+        agent_id: None,
     };
     assert_eq!(line.pr_link, "https://github.com/org/repo/pull/42");
 }
@@ -56,6 +58,7 @@ fn completion_session_line_holds_error_summary_value() {
         worktree_path: None,
         issue_number: Some(7),
         model: "opus".to_string(),
+        agent_id: None,
     };
     assert_eq!(line.error_summary, "Error: process exited with code 1");
 }

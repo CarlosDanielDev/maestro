@@ -43,6 +43,7 @@ fn spawn_gate_fix_session_queues_pending_launch() {
         worktree_path: None,
         issue_number: Some(55),
         model: "opus".to_string(),
+        agent_id: None,
     };
 
     app.spawn_gate_fix_session(&line);
@@ -70,6 +71,7 @@ fn spawn_gate_fix_session_does_nothing_when_no_issue_number() {
         worktree_path: None,
         issue_number: None,
         model: "opus".to_string(),
+        agent_id: None,
     };
 
     app.spawn_gate_fix_session(&line);

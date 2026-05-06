@@ -167,7 +167,8 @@ impl App {
                 Some(assignment.issue_number),
                 None,
             )
-            .with_mode_config(assignment.mode_config);
+            .with_mode_config(assignment.mode_config)
+            .with_agent_id(Some(self.selected_agent_id()));
             session.issue_title = Some(assignment.title);
 
             // Track in continuous mode

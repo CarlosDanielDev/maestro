@@ -108,7 +108,8 @@ impl App {
             attempt,
             failure_log,
         )
-        .with_mode_config(mode_config);
+        .with_mode_config(mode_config)
+        .with_agent_id(Some(self.selected_agent_id()));
         self.pending_session_launches.push(session);
     }
 
@@ -138,7 +139,8 @@ impl App {
         };
 
         let session = create_gate_fix_session(&model, &mode, issue_number, &gate_failure_details)
-            .with_mode_config(mode_config);
+            .with_mode_config(mode_config)
+            .with_agent_id(Some(self.selected_agent_id()));
         self.pending_session_launches.push(session);
 
         self.activity_log.push_simple(
@@ -172,7 +174,8 @@ impl App {
 
         let prompt = format!("/implement #{} --continue", issue_number);
         let mut session = Session::new(prompt, model, mode, Some(issue_number), None)
-            .with_mode_config(mode_config);
+            .with_mode_config(mode_config)
+            .with_agent_id(Some(self.selected_agent_id()));
         session.issue_title = Some(format!("Resume #{}", issue_number));
         // The session manager picks up `worktree_path` and skips creation
         // of a fresh worktree when it's already populated.
@@ -201,7 +204,8 @@ impl App {
         );
 
         let mut session = Session::new(prompt, model, mode, Some(config.issue_number), None)
-            .with_mode_config(mode_config);
+            .with_mode_config(mode_config)
+            .with_agent_id(Some(self.selected_agent_id()));
         let _ = session.transition_to(
             SessionStatus::ConflictFix,
             TransitionReason::ConflictFixStarted,
@@ -315,8 +319,6 @@ max_cost_total = 10.0
         assert_eq!(session.status, SessionStatus::CiFix);
     }
 
-    // ── Issue #560: spawn_resume_implement_session ───────────────────
-
     fn make_failed_line(issue: Option<u64>, worktree: Option<&str>) -> CompletionSessionLine {
         CompletionSessionLine {
             session_id: uuid::Uuid::nil(),
@@ -330,6 +332,7 @@ max_cost_total = 10.0
             worktree_path: worktree.map(std::path::PathBuf::from),
             issue_number: issue,
             model: "claude-opus-4-5".to_string(),
+            agent_id: None,
         }
     }
 

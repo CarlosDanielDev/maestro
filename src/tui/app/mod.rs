@@ -60,6 +60,44 @@ use tokio::sync::mpsc;
 /// phrasings and drifts over time.
 pub(crate) const AUTH_RECOVERY_HINT: &str = "Run `gh auth login` then press Shift+P to retry.";
 
+fn enabled_agent_ids(config: &Config) -> Vec<String> {
+    if config.agents.entries.is_empty() {
+        return vec!["claude".to_string()];
+    }
+    config
+        .agents
+        .entries
+        .iter()
+        .filter(|(_, agent)| agent.enabled)
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+fn default_enabled_agent_id(config: &Config) -> String {
+    let ids = enabled_agent_ids(config);
+    if ids.iter().any(|id| id == &config.agents.default) {
+        config.agents.default.clone()
+    } else {
+        ids.into_iter()
+            .next()
+            .unwrap_or_else(|| "claude".to_string())
+    }
+}
+
+fn build_agent_provider_map(
+    config: &Config,
+) -> std::collections::HashMap<String, std::sync::Arc<dyn crate::agent_provider::AgentProvider>> {
+    let mut providers = std::collections::HashMap::new();
+    for id in enabled_agent_ids(config) {
+        if let Ok(resolved) = config.resolve_agent(Some(&id))
+            && let Ok(provider) = crate::commands::run::provider_for_agent(&resolved)
+        {
+            providers.insert(id, provider);
+        }
+    }
+    providers
+}
+
 pub struct App {
     pub pool: SessionPool,
     pub activity_log: ActivityLog,
@@ -102,6 +140,8 @@ pub struct App {
     pub fork_policy: Option<ForkPolicy>,
     pub screen_state: ScreenState,
     pub session_config: crate::tui::app::types::SessionConfig,
+    /// Agent id selected for newly launched TUI sessions.
+    pub selected_agent_id: String,
     pub pending_commands: Vec<TuiCommand>,
     pub pending_session_launches: Vec<Session>,
     pub data_tx: mpsc::UnboundedSender<TuiDataEvent>,
@@ -284,6 +324,7 @@ impl App {
             fork_policy: None,
             screen_state: ScreenState::default(),
             session_config,
+            selected_agent_id: "claude".to_string(),
             pending_commands: Vec::new(),
             pending_session_launches: Vec::new(),
             data_tx,
@@ -464,6 +505,9 @@ impl App {
         if self.bypass_active {
             self.session_config.permission_mode = "bypassPermissions".to_string();
         }
+        self.selected_agent_id = default_enabled_agent_id(&config);
+        self.pool
+            .set_agent_providers(build_agent_provider_map(&config));
 
         // Shared adapter so fork and pool observe the same enabled state.
         let tq_adapter = if config.turboquant.enabled {
@@ -520,6 +564,39 @@ impl App {
             self.flags.set_enabled(crate::flags::Flag::TurboQuant, true);
         }
         self.config = Some(config);
+    }
+
+    pub fn selected_agent_id(&self) -> String {
+        if self.selected_agent_id.trim().is_empty() {
+            self.config
+                .as_ref()
+                .map(default_enabled_agent_id)
+                .unwrap_or_else(|| "claude".to_string())
+        } else {
+            self.selected_agent_id.clone()
+        }
+    }
+
+    pub fn cycle_selected_agent(&mut self) {
+        let options = self.enabled_agent_ids();
+        if options.len() <= 1 {
+            return;
+        }
+        let current = self.selected_agent_id();
+        let idx = options.iter().position(|id| id == &current).unwrap_or(0);
+        self.selected_agent_id = options[(idx + 1) % options.len()].clone();
+        self.activity_log.push_simple(
+            "Agent".into(),
+            format!("New sessions will use agent `{}`", self.selected_agent_id),
+            LogLevel::Info,
+        );
+    }
+
+    fn enabled_agent_ids(&self) -> Vec<String> {
+        self.config
+            .as_ref()
+            .map(enabled_agent_ids)
+            .unwrap_or_else(|| vec!["claude".to_string()])
     }
 
     /// Record the filesystem path the config was loaded from, so the Settings
@@ -716,6 +793,59 @@ mod tests {
             app.flags.is_enabled(Flag::CiAutoFix),
             "app.flags must reflect newly assigned FeatureFlags"
         );
+    }
+
+    #[test]
+    fn enabled_agent_ids_filters_disabled_agents() {
+        let config: Config = toml::from_str(
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+[github]
+[notifications]
+[agents]
+default = "codex"
+[agents.codex]
+kind = "codex"
+enabled = true
+[agents.qwen]
+kind = "qwen"
+enabled = false
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(enabled_agent_ids(&config), vec!["codex".to_string()]);
+        assert_eq!(default_enabled_agent_id(&config), "codex");
+    }
+
+    #[test]
+    fn default_enabled_agent_falls_back_when_default_disabled() {
+        let config: Config = toml::from_str(
+            r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+[github]
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+enabled = false
+command = "claude"
+[agents.qwen]
+kind = "qwen"
+enabled = true
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(enabled_agent_ids(&config), vec!["qwen".to_string()]);
+        assert_eq!(default_enabled_agent_id(&config), "qwen");
     }
 
     #[test]
