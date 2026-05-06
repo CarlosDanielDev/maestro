@@ -85,6 +85,7 @@ impl ManagedSession {
         let mut request =
             AgentRequest::stream_json(self.session.prompt.clone(), self.session.model.clone());
         request.cwd.clone_from(&self.worktree_path);
+        request.images.clone_from(&self.session.image_paths);
         request.permission_mode.clone_from(&self.permission_mode);
         request.allowed_tools.clone_from(&self.allowed_tools);
         request

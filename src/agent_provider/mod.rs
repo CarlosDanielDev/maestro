@@ -1,4 +1,5 @@
 pub mod claude;
+pub mod codex;
 pub mod qwen;
 mod qwen_parser;
 #[cfg(test)]
@@ -7,6 +8,8 @@ pub mod types;
 
 #[allow(unused_imports)]
 pub use claude::ClaudeProvider;
+#[allow(unused_imports)]
+pub use codex::CodexProvider;
 #[allow(unused_imports)]
 pub use qwen::QwenProvider;
 #[allow(unused_imports)]

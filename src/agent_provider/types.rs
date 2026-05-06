@@ -58,6 +58,7 @@ pub struct AgentRequest {
     pub prompt: String,
     pub model: String,
     pub cwd: Option<PathBuf>,
+    pub images: Vec<PathBuf>,
     pub output_format: AgentOutputFormat,
     pub permission_mode: Option<String>,
     pub allowed_tools: Vec<String>,
@@ -70,6 +71,7 @@ impl AgentRequest {
             prompt,
             model,
             cwd: None,
+            images: Vec::new(),
             output_format: AgentOutputFormat::StreamJson,
             permission_mode: None,
             allowed_tools: Vec::new(),
@@ -82,6 +84,7 @@ impl AgentRequest {
             prompt: prompt.into(),
             model: model.into(),
             cwd,
+            images: Vec::new(),
             output_format: AgentOutputFormat::Text,
             permission_mode: None,
             allowed_tools: Vec::new(),
@@ -216,6 +219,14 @@ impl AgentProviderFactory {
                     )),
                 })
             }
+            Some(provider) if provider.provider == "codex" || provider.id == "codex" => {
+                let binary = provider.binary.as_deref().unwrap_or("codex");
+                Ok(Self {
+                    default_provider: Arc::new(crate::agent_provider::codex::CodexProvider::new(
+                        binary,
+                    )),
+                })
+            }
             Some(provider) => Err(AgentError::Config(format!(
                 "unsupported default agent provider `{}`",
                 provider.provider
@@ -345,5 +356,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(factory.default_provider().id(), "qwen");
+    }
+
+    #[test]
+    fn factory_accepts_codex_provider() {
+        let factory = AgentProviderFactory::from_config(AgentProvidersConfig {
+            default_provider: "codex".to_string(),
+            providers: vec![AgentProviderDefinition {
+                id: "codex".to_string(),
+                provider: "codex".to_string(),
+                binary: Some("codex".to_string()),
+            }],
+        })
+        .unwrap();
+
+        assert_eq!(factory.default_provider().id(), "codex");
     }
 }

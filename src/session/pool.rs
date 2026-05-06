@@ -135,11 +135,12 @@ impl SessionPool {
                 && !session.image_paths.is_empty()
             {
                 match copy_images_to_worktree(&session.image_paths, wt_path) {
-                    Ok(_) => {
+                    Ok(relative_paths) => {
                         session.log_activity(format!(
                             "Copied {} image(s) to worktree",
                             session.image_paths.len()
                         ));
+                        session.image_paths = relative_paths;
                     }
                     Err(e) => {
                         tracing::warn!("Failed to copy images to worktree: {}", e);

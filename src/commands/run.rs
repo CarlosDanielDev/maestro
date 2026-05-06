@@ -240,6 +240,21 @@ fn provider_for_agent(
                 ),
             ))
         }
+        crate::config::AgentKind::Codex => {
+            let command = resolved.config.command.as_deref().unwrap_or("codex");
+            Ok(std::sync::Arc::new(
+                crate::agent_provider::CodexProvider::with_config(
+                    command,
+                    resolved.config.sandbox.clone(),
+                    resolved.config.ephemeral,
+                    resolved.config.profile.clone(),
+                    resolved.config.config_overrides.clone(),
+                    resolved.config.extra_args.clone(),
+                    resolved.config.env.clone(),
+                    resolved.config.json,
+                ),
+            ))
+        }
         other => anyhow::bail!(
             "agent `{}` uses `{}` provider, but that provider runtime is not implemented yet",
             resolved.id,
