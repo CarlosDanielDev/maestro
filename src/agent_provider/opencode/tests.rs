@@ -263,6 +263,56 @@ async fn missing_binary_surfaces_install_instructions() {
     );
 }
 
+#[tokio::test]
+async fn health_check_requires_auth_file_after_version_passes() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let opencode = temp.path().join("opencode");
+    std::fs::write(
+        &opencode,
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'opencode 0.9.0'; exit 0; fi\nexit 0\n",
+    )
+    .expect("write opencode mock");
+    make_executable(&opencode);
+
+    let provider = OpenCodeProvider::new(opencode.to_string_lossy().to_string())
+        .with_auth_path(temp.path().join("opencode/auth.json"));
+
+    let health = provider.health_check().await.expect("health check");
+
+    assert!(!health.available);
+    assert_eq!(health.version.as_deref(), Some("opencode 0.9.0"));
+    assert!(
+        health
+            .message
+            .contains("run `opencode /connect` to authenticate with a provider")
+    );
+}
+
+#[tokio::test]
+async fn health_check_passes_when_auth_file_exists() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let bin_dir = temp.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("bin dir");
+    let opencode = bin_dir.join("opencode");
+    let auth_path = temp.path().join("opencode/auth.json");
+    std::fs::create_dir_all(auth_path.parent().expect("auth parent")).expect("auth dir");
+    std::fs::write(&auth_path, "{}").expect("auth file");
+    std::fs::write(
+        &opencode,
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'opencode 0.9.0'; exit 0; fi\nexit 0\n",
+    )
+    .expect("write opencode mock");
+    make_executable(&opencode);
+
+    let provider =
+        OpenCodeProvider::new(opencode.to_string_lossy().to_string()).with_auth_path(auth_path);
+
+    let health = provider.health_check().await.expect("health check");
+
+    assert!(health.available);
+    assert_eq!(health.message, "opencode 0.9.0");
+}
+
 fn opencode_fixture_jsonl() -> &'static str {
     r#"{"type":"step_start","part":{"type":"step-start"}}
 {"type":"text","part":{"type":"text","text":"Done."}}

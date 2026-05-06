@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::process::Stdio;
+use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -185,11 +186,57 @@ impl AgentProvider for CodexProvider {
         match Command::new(&self.binary).arg("--version").output().await {
             Ok(out) if out.status.success() => {
                 let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                let request = AgentRequest::stream_json(
+                    "Maestro doctor preflight. Respond with OK only.".to_string(),
+                    String::new(),
+                );
+                let mut preflight = Command::new(&self.binary);
+                preflight.args(self.build_stream_args(&request));
+                preflight.envs(&self.env);
+                preflight
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .kill_on_drop(true);
+
+                match tokio::time::timeout(Duration::from_secs(10), preflight.output()).await {
+                    Ok(Ok(preflight_out)) if preflight_out.status.success() => {}
+                    Ok(Ok(preflight_out)) => {
+                        let stderr = String::from_utf8_lossy(&preflight_out.stderr)
+                            .trim()
+                            .to_string();
+                        return Ok(AgentHealthCheck {
+                            provider_id: AgentProviderId::new(self.id()),
+                            available: false,
+                            version: Some(version),
+                            message: if stderr.is_empty() {
+                                "codex exec --json preflight failed".to_string()
+                            } else {
+                                stderr
+                            },
+                        });
+                    }
+                    Ok(Err(source)) => {
+                        return Err(AgentError::Spawn {
+                            provider_id: self.id().to_string(),
+                            source,
+                        });
+                    }
+                    Err(_) => {
+                        return Ok(AgentHealthCheck {
+                            provider_id: AgentProviderId::new(self.id()),
+                            available: false,
+                            version: Some(version),
+                            message: "codex exec --json preflight timed out after 10s".to_string(),
+                        });
+                    }
+                }
+
                 Ok(AgentHealthCheck {
                     provider_id: AgentProviderId::new(self.id()),
                     available: true,
                     version: Some(version.clone()),
-                    message: version,
+                    message: format!("{version}; exec --json preflight passed"),
                 })
             }
             Ok(out) => Ok(AgentHealthCheck {

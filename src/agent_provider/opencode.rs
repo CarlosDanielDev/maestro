@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::process::Stdio;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -26,6 +27,7 @@ pub struct OpenCodeProvider {
     binary: String,
     extra_args: Vec<String>,
     env: BTreeMap<String, String>,
+    auth_path: Option<PathBuf>,
 }
 
 impl OpenCodeProvider {
@@ -34,6 +36,7 @@ impl OpenCodeProvider {
             binary: binary.into(),
             extra_args: Vec::new(),
             env: BTreeMap::new(),
+            auth_path: None,
         }
     }
 
@@ -46,7 +49,14 @@ impl OpenCodeProvider {
             binary: binary.into(),
             extra_args,
             env,
+            auth_path: None,
         }
+    }
+
+    #[cfg(test)]
+    fn with_auth_path(mut self, auth_path: PathBuf) -> Self {
+        self.auth_path = Some(auth_path);
+        self
     }
 
     pub fn build_stream_args(&self, request: &AgentRequest) -> Vec<String> {
@@ -72,7 +82,7 @@ impl OpenCodeProvider {
         {
             Ok(out) if out.status.success() => {
                 let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                let auth_path = opencode_auth_path();
+                let auth_path = self.auth_path();
                 if auth_path.exists() {
                     AgentHealthCheck {
                         provider_id: AgentProviderId::new(self.id()),
@@ -118,6 +128,10 @@ impl OpenCodeProvider {
         args.extend(self.extra_args.iter().cloned());
         args.push(opencode_prompt(request));
     }
+
+    fn auth_path(&self) -> PathBuf {
+        self.auth_path.clone().unwrap_or_else(opencode_auth_path)
+    }
 }
 
 impl Default for OpenCodeProvider {
@@ -147,7 +161,7 @@ impl AgentProvider for OpenCodeProvider {
         match Command::new(&self.binary).arg("--version").output().await {
             Ok(out) if out.status.success() => {
                 let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                let auth_path = opencode_auth_path();
+                let auth_path = self.auth_path();
                 if auth_path.exists() {
                     Ok(AgentHealthCheck {
                         provider_id: AgentProviderId::new(self.id()),

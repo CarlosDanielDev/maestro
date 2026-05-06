@@ -181,6 +181,31 @@ async fn run_returns_session_error_on_nonzero_exit() {
     assert!(err.to_string().contains("codex exited with status"));
 }
 
+#[tokio::test]
+async fn health_check_runs_version_and_json_preflight() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let codex = temp.path().join("codex");
+    std::fs::write(
+        &codex,
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'codex 1.2.3'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"{}\"\nexit 0\n",
+            temp.path().join("health-argv.txt").display()
+        ),
+    )
+    .expect("write codex mock");
+    make_executable(&codex);
+
+    let provider = CodexProvider::new(codex.to_string_lossy().to_string());
+    let health = provider.health_check().await.expect("health check");
+
+    assert!(health.available);
+    assert_eq!(health.version.as_deref(), Some("codex 1.2.3"));
+    assert!(health.message.contains("exec --json preflight passed"));
+    let argv = std::fs::read_to_string(temp.path().join("health-argv.txt")).expect("argv");
+    assert!(argv.contains("exec\n"));
+    assert!(argv.contains("--json\n"));
+}
+
 fn codex_fixture_jsonl() -> &'static str {
     r#"{"type":"thread.started","thread_id":"t1"}
 {"type":"item.completed","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}}
