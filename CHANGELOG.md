@@ -7,6 +7,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-05-06
+
+### Added
+- feat: extract OpenAiCompatibleSseParser at Level 1 (#652)
+- spike: OpenCode `--format json` schema research (#651)
+- spike: Qwen Code CLI output format (#650)
+- feat(agent): add OpenCodeProvider for 75+ AI backend sessions (#617)
+- feat(agent): add MinimaxProvider for cloud cheap-model sessions (#616)
+- feat(agent): add OllamaProvider for local cheap-model sessions (#612)
+- feat(agent): add Codex CLI provider implementation (#589)
+- Implement parser adapters for different agent output formats (#552)
+- Add per-session agent selector in TUI (#551)
+- Update doctor command for multi-agent validation (#550)
+- Extend configuration system for multi-agent support (#549)
+- Add Qwen Code provider implementation (#548)
+- Implement AgentProvider trait for multi-agent support (#547)
+
+### Documentation
+- Document multi-agent setup and usage (#553)
+
 ## [0.24.1] - 2026-05-05
 
 ### Documentation
