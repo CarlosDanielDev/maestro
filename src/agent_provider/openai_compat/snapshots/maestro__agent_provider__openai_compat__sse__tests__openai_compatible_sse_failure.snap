@@ -1,0 +1,15 @@
+---
+source: src/agent_provider/openai_compat/sse.rs
+expression: events
+---
+[
+    Error {
+        message: "quota exceeded",
+    },
+    Unknown {
+        raw: "{\"choices\": [}",
+    },
+    Unknown {
+        raw: "unexpected finish_reason: length",
+    },
+]

@@ -117,22 +117,19 @@ impl MinimaxClient {
 
             while let Some(next) = stream.next().await {
                 match next {
-                    Ok(bytes) => {
-                        let text = String::from_utf8_lossy(&bytes);
-                        match parser.push_chunk(&text) {
-                            Ok(events) => {
-                                for event in events {
-                                    if tx.send(Ok(event)).await.is_err() {
-                                        return;
-                                    }
+                    Ok(bytes) => match parser.push_bytes(&bytes) {
+                        Ok(events) => {
+                            for event in events {
+                                if tx.send(Ok(event)).await.is_err() {
+                                    return;
                                 }
                             }
-                            Err(err) => {
-                                let _ = tx.send(Err(MinimaxError::MalformedSse(err))).await;
-                                return;
-                            }
                         }
-                    }
+                        Err(err) => {
+                            let _ = tx.send(Err(MinimaxError::MalformedSse(err))).await;
+                            return;
+                        }
+                    },
                     Err(err) if err.is_timeout() => {
                         let _ = tx
                             .send(Err(MinimaxError::Timeout {

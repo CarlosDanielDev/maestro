@@ -1,0 +1,12 @@
+---
+source: src/agent_provider/openai_compat/sse.rs
+expression: events
+---
+[
+    AssistantMessage {
+        text: "hello",
+    },
+    Completed {
+        cost_usd: 0.0,
+    },
+]
