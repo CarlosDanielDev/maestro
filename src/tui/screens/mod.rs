@@ -143,6 +143,9 @@ pub enum ScreenAction {
     /// keys. Triggered by the "Reset Settings" action on Settings →
     /// Project (#505).
     ResetSettingsFromDetection,
+    /// Add or normalize the `[agents]` section in `maestro.toml` using
+    /// the same upgrade plan reported by `maestro doctor`.
+    NormalizeAgentConfig,
     /// Preview a theme temporarily (reverted on discard).
     PreviewTheme(Option<crate::tui::theme::ThemeConfig>),
     /// Start the adapt pipeline from the wizard screen.

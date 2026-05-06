@@ -115,9 +115,8 @@ impl Screen for SettingsScreen {
                 if self.active_tab() == SettingsTab::Flags {
                     return ScreenAction::None;
                 }
-                // Special-case the "Reset Settings" row on the Project tab
-                // — Enter/Space triggers re-detection rather than the
-                // toggle's normal behaviour.
+                // Special-case Project action rows: Enter/Space triggers
+                // file operations rather than the toggle's normal behaviour.
                 if self.active_tab() == SettingsTab::Project
                     && matches!(*code, KeyCode::Enter | KeyCode::Char(' '))
                 {
@@ -128,6 +127,9 @@ impl Screen for SettingsScreen {
                         .unwrap_or("");
                     if label.starts_with("Reset Settings") {
                         return ScreenAction::ResetSettingsFromDetection;
+                    }
+                    if label.starts_with("Normalize Agent Config") {
+                        return ScreenAction::NormalizeAgentConfig;
                     }
                 }
                 // Delegate to active widget for non-navigation keys

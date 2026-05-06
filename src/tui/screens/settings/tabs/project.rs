@@ -18,5 +18,9 @@ pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
             "Reset Settings (re-detect project stack)",
             false,
         ))),
+        field(WidgetKind::Toggle(Toggle::new(
+            "Normalize Agent Config (add [agents])",
+            false,
+        ))),
     ]
 }

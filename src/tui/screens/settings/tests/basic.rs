@@ -68,6 +68,34 @@ fn reset_settings_row_returns_action_on_enter() {
 }
 
 #[test]
+fn project_tab_contains_normalize_agent_config_label() {
+    let screen = SettingsScreen::new(make_config(), make_flags());
+    let labels: Vec<&str> = screen.fields_per_tab[0]
+        .iter()
+        .map(|f| f.widget.label())
+        .collect();
+    assert!(
+        labels
+            .iter()
+            .any(|l| l.starts_with("Normalize Agent Config")),
+        "Project tab must include a 'Normalize Agent Config' action; got {:?}",
+        labels
+    );
+}
+
+#[test]
+fn normalize_agent_config_row_returns_action_on_enter() {
+    let mut screen = SettingsScreen::new(make_config(), make_flags());
+    let normalize_idx = screen.fields_per_tab[0]
+        .iter()
+        .position(|f| f.widget.label().starts_with("Normalize Agent Config"))
+        .expect("Normalize Agent Config row exists");
+    screen.field_index = normalize_idx;
+    let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(action, ScreenAction::NormalizeAgentConfig);
+}
+
+#[test]
 fn esc_returns_pop() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
