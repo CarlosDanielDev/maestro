@@ -40,16 +40,96 @@ fn stream_args_match_opencode_run_contract() {
 }
 
 #[test]
-fn json_parser_captures_stdout_and_emits_unknown() {
+fn json_parser_captures_stdout_and_maps_known_events() {
     let mut parser = OpenCodeJsonParser::default();
 
-    let events = parser.parse_line(r#"{"type":"session.started","id":"s1"}"#);
+    let events = parser.parse_line(r#"{"type":"text","part":{"type":"text","text":"Done."}}"#);
 
-    assert!(matches!(events.as_slice(), [StreamEvent::Unknown { .. }]));
+    assert!(matches!(
+        events.as_slice(),
+        [StreamEvent::AssistantMessage { text }] if text == "Done."
+    ));
     assert_eq!(
         parser.stdout_bytes(),
-        b"{\"type\":\"session.started\",\"id\":\"s1\"}\n"
+        b"{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done.\"}}\n"
     );
+}
+
+#[test]
+fn json_parser_maps_success_fixture() {
+    let mut parser = OpenCodeJsonParser::default();
+    let events: Vec<StreamEvent> =
+        include_str!("../../../tests/fixtures/opencode_output_sample.jsonl")
+            .lines()
+            .flat_map(|line| parser.parse_line(line))
+            .collect();
+
+    assert!(events.iter().any(
+        |event| matches!(event, StreamEvent::AssistantMessage { text } if text.contains("Reading note.txt"))
+    ));
+    assert!(events.iter().any(|event| {
+        matches!(
+            event,
+            StreamEvent::ToolUse {
+                tool,
+                file_path: Some(path),
+                ..
+            } if tool == "read" && path.ends_with("note.txt")
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            event,
+            StreamEvent::ToolUse {
+                tool,
+                file_path: Some(path),
+                ..
+            } if tool == "apply_patch" && path == "result.txt"
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(event, StreamEvent::TokenUpdate { usage } if usage.input_tokens == 217 && usage.output_tokens == 16 && usage.cache_read_tokens == 10368)
+    }));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, StreamEvent::Completed { cost_usd } if *cost_usd == 0.0))
+    );
+}
+
+#[test]
+fn json_parser_maps_error_fixture() {
+    let mut parser = OpenCodeJsonParser::default();
+    let events: Vec<StreamEvent> =
+        include_str!("../../../tests/fixtures/opencode_error_sample.jsonl")
+            .lines()
+            .flat_map(|line| parser.parse_line(line))
+            .collect();
+
+    assert!(matches!(
+        events.as_slice(),
+        [StreamEvent::Error { message }] if message == "Model not found: anthropic/claude-sonnet-4-5."
+    ));
+}
+
+#[test]
+fn json_parser_handles_malformed_and_unknown() {
+    let mut parser = OpenCodeJsonParser::default();
+
+    assert!(matches!(
+        parser.parse_line("{not-json").as_slice(),
+        [StreamEvent::Unknown { raw }] if raw == "{not-json"
+    ));
+    assert!(matches!(
+        parser
+            .parse_line(r#"{"type":"session.started","id":"s1"}"#)
+            .as_slice(),
+        [StreamEvent::Unknown { raw }] if raw.contains("session.started")
+    ));
+    assert!(matches!(
+        parser.parse_line(r#"{"type":"text"}"#).as_slice(),
+        [StreamEvent::Unknown { raw }] if raw.contains("\"text\"")
+    ));
 }
 
 #[tokio::test]
@@ -90,15 +170,15 @@ async fn run_streams_events_from_mock_opencode_cli_and_records_process_context()
         }))
     ));
 
-    let mut saw_unknown = false;
+    let mut saw_message = false;
     let mut saw_stderr = false;
     let mut saw_completed = false;
     while let Some(event) = rx.recv().await {
         match event {
-            AgentProviderEvent::Stream(StreamEvent::Unknown { raw })
-                if raw.contains("session.started") =>
+            AgentProviderEvent::Stream(StreamEvent::AssistantMessage { text })
+                if text == "Done." =>
             {
-                saw_unknown = true;
+                saw_message = true;
             }
             AgentProviderEvent::Stream(StreamEvent::Error { message })
                 if message == "opencode stderr line" =>
@@ -110,12 +190,12 @@ async fn run_streams_events_from_mock_opencode_cli_and_records_process_context()
             }
             _ => {}
         }
-        if saw_unknown && saw_stderr && saw_completed {
+        if saw_message && saw_stderr && saw_completed {
             break;
         }
     }
 
-    assert!(saw_unknown);
+    assert!(saw_message);
     assert!(saw_stderr);
     assert!(saw_completed);
 
@@ -184,8 +264,9 @@ async fn missing_binary_surfaces_install_instructions() {
 }
 
 fn opencode_fixture_jsonl() -> &'static str {
-    r#"{"type":"session.started","id":"s1"}
-{"type":"message.delta","text":"Done."}"#
+    r#"{"type":"step_start","part":{"type":"step-start"}}
+{"type":"text","part":{"type":"text","text":"Done."}}
+{"type":"step_finish","part":{"type":"step-finish","reason":"stop","tokens":{"input":1,"output":1,"cache":{"read":0,"write":0}},"cost":0}}"#
 }
 
 #[cfg(unix)]

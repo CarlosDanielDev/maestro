@@ -6,7 +6,7 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-mod parser;
+pub(crate) mod parser;
 
 use super::types::{
     AgentError, AgentHealthCheck, AgentOutputFormat, AgentProvider, AgentProviderEvent,

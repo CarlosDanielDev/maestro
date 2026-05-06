@@ -534,7 +534,7 @@ impl Session {
     }
 }
 
-/// Events emitted by the Claude CLI JSON stream that we care about.
+/// Provider-neutral events emitted by agent output parsers.
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     /// Assistant started producing a message

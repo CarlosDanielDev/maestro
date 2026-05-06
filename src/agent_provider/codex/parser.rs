@@ -5,12 +5,12 @@ use serde_json::Value;
 use crate::session::types::{StreamEvent, TokenUsage};
 
 #[derive(Debug, Default)]
-pub(super) struct CodexStreamParser {
+pub(crate) struct CodexStreamParser {
     tool_names_by_id: HashMap<String, String>,
 }
 
 impl CodexStreamParser {
-    pub(super) fn parse_line(&mut self, line: &str) -> Vec<StreamEvent> {
+    pub(crate) fn parse_line(&mut self, line: &str) -> Vec<StreamEvent> {
         let line = line.trim();
         if line.is_empty() {
             return vec![StreamEvent::Unknown { raw: String::new() }];
@@ -26,6 +26,9 @@ impl CodexStreamParser {
             Some("thread.started") | Some("turn.started") | Some("item.started") => Vec::new(),
             Some("item.completed") => self.parse_item_completed(&v),
             Some("turn.completed") => self.parse_turn_completed(&v),
+            Some("turn.failed") => vec![StreamEvent::Error {
+                message: extract_error_message(&v).unwrap_or_else(|| "codex turn failed".into()),
+            }],
             Some("error") => vec![StreamEvent::Error {
                 message: extract_error_message(&v).unwrap_or_else(|| "codex run failed".into()),
             }],
@@ -38,7 +41,7 @@ impl CodexStreamParser {
     fn parse_item_completed(&mut self, v: &Value) -> Vec<StreamEvent> {
         let item = v.get("item").unwrap_or(v);
         match item.get("type").and_then(Value::as_str) {
-            Some("message") => parse_codex_message(item),
+            Some("message") | Some("agent_message") => parse_codex_message(item),
             Some("function_call") | Some("tool_call") => {
                 let id = item
                     .get("call_id")
@@ -108,7 +111,11 @@ impl CodexStreamParser {
 }
 
 fn parse_codex_message(item: &Value) -> Vec<StreamEvent> {
-    if item.get("role").and_then(Value::as_str) != Some("assistant") {
+    if item
+        .get("role")
+        .and_then(Value::as_str)
+        .is_some_and(|role| role != "assistant")
+    {
         return Vec::new();
     }
     let text = item
@@ -128,6 +135,11 @@ fn parse_codex_message(item: &Value) -> Vec<StreamEvent> {
             })
         })
         .or_else(|| item.get("text").and_then(Value::as_str).map(str::to_string))
+        .or_else(|| {
+            item.get("message")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
         .unwrap_or_default();
 
     if text.is_empty() {
@@ -197,6 +209,9 @@ fn extract_command_preview(input: &Value) -> Option<String> {
 fn extract_error_message(v: &Value) -> Option<String> {
     v.get("message")
         .or_else(|| v.pointer("/error/message"))
+        .or_else(|| v.pointer("/error/data/message"))
+        .or_else(|| v.pointer("/turn/error/message"))
+        .or_else(|| v.pointer("/turn/error/data/message"))
         .or_else(|| v.get("error"))
         .and_then(Value::as_str)
         .map(str::to_string)
@@ -258,5 +273,25 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, StreamEvent::Completed { .. }))
         );
+    }
+
+    #[test]
+    fn parser_maps_agent_message_and_turn_failed() {
+        let mut parser = CodexStreamParser::default();
+
+        let message = parser.parse_line(
+            r#"{"type":"item.completed","item":{"type":"agent_message","text":"Hello"}}"#,
+        );
+        assert!(matches!(
+            message.as_slice(),
+            [StreamEvent::AssistantMessage { text }] if text == "Hello"
+        ));
+
+        let failed =
+            parser.parse_line(r#"{"type":"turn.failed","error":{"message":"model failed"}}"#);
+        assert!(matches!(
+            failed.as_slice(),
+            [StreamEvent::Error { message }] if message == "model failed"
+        ));
     }
 }

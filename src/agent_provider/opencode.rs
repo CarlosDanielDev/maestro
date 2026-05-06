@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::process::Stdio;
 
-use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
@@ -13,6 +12,9 @@ use super::types::{
     ParserBinding,
 };
 use crate::session::types::StreamEvent;
+
+mod parser;
+pub use parser::OpenCodeJsonParser;
 
 const OPENCODE_INSTALL_MESSAGE: &str = "opencode CLI not found; install with `brew install anomalyco/tap/opencode`, \
      `curl -fsSL https://opencode.ai/install | bash`, or `npm install -g opencode-ai`";
@@ -136,7 +138,7 @@ impl AgentProvider for OpenCodeProvider {
 
     fn parser_binding(&self) -> ParserBinding {
         ParserBinding {
-            name: "opencode-json-stub".to_string(),
+            name: "opencode-json".to_string(),
             output_format: AgentOutputFormat::StreamJson,
         }
     }
@@ -298,39 +300,6 @@ impl AgentProvider for OpenCodeProvider {
         Ok(AgentRunResult {
             exit_code: status.code(),
         })
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct OpenCodeJsonParser {
-    stdout_bytes: Vec<u8>,
-}
-
-impl OpenCodeJsonParser {
-    pub fn parse_line(&mut self, line: &str) -> Vec<StreamEvent> {
-        self.stdout_bytes.extend_from_slice(line.as_bytes());
-        self.stdout_bytes.push(b'\n');
-
-        let line = line.trim();
-        if line.is_empty() {
-            return vec![StreamEvent::Unknown { raw: String::new() }];
-        }
-
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            return vec![StreamEvent::Unknown {
-                raw: line.to_string(),
-            }];
-        };
-
-        match value.get("type").and_then(Value::as_str) {
-            Some(_) | None => vec![StreamEvent::Unknown {
-                raw: line.to_string(),
-            }],
-        }
-    }
-
-    pub fn stdout_bytes(&self) -> &[u8] {
-        &self.stdout_bytes
     }
 }
 

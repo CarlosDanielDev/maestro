@@ -66,7 +66,7 @@ async fn trait_supports_http_provider_without_subprocess_state() {
             CancellationToken::new(),
         )
         .await
-        .unwrap();
+        .expect("stub provider run should succeed");
 
     assert!(matches!(
         rx.recv().await,
@@ -88,7 +88,8 @@ fn factory_defaults_to_claude_provider() {
 
 #[test]
 fn factory_accepts_empty_config_as_legacy_claude() {
-    let factory = AgentProviderFactory::from_config(AgentProvidersConfig::default()).unwrap();
+    let factory = AgentProviderFactory::from_config(AgentProvidersConfig::default())
+        .expect("empty config should create legacy claude factory");
     assert_eq!(factory.default_provider().id(), "claude");
 }
 
@@ -106,7 +107,7 @@ fn factory_accepts_qwen_provider() {
             api_key_env: None,
         }],
     })
-    .unwrap();
+    .expect("qwen provider config should build factory");
 
     assert_eq!(factory.default_provider().id(), "qwen");
 }
@@ -125,7 +126,7 @@ fn factory_accepts_codex_provider() {
             api_key_env: None,
         }],
     })
-    .unwrap();
+    .expect("codex provider config should build factory");
 
     assert_eq!(factory.default_provider().id(), "codex");
 }
@@ -144,7 +145,7 @@ fn factory_accepts_opencode_provider() {
             api_key_env: None,
         }],
     })
-    .unwrap();
+    .expect("opencode provider config should build factory");
 
     assert_eq!(factory.default_provider().id(), "opencode");
     assert_eq!(
@@ -167,7 +168,7 @@ fn factory_accepts_ollama_provider() {
             api_key_env: None,
         }],
     })
-    .unwrap();
+    .expect("ollama provider config should build factory");
 
     assert_eq!(factory.default_provider().id(), "ollama");
     assert_eq!(factory.default_provider().kind(), AgentProviderKind::Http);
@@ -187,7 +188,7 @@ fn factory_accepts_minimax_provider() {
             api_key_env: Some("MINIMAX_API_KEY".to_string()),
         }],
     })
-    .unwrap();
+    .expect("minimax provider config should build factory");
 
     assert_eq!(factory.default_provider().id(), "minimax");
     assert_eq!(factory.default_provider().kind(), AgentProviderKind::Http);

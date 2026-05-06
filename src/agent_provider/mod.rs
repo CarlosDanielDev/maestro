@@ -4,6 +4,7 @@ pub mod minimax;
 pub mod ollama;
 pub mod openai_compat;
 pub mod opencode;
+pub mod parser;
 pub mod qwen;
 mod qwen_parser;
 #[cfg(test)]
