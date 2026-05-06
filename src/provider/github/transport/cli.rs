@@ -17,6 +17,12 @@ pub struct GhCliClient {
     repo: Option<String>,
 }
 
+impl Default for GhCliClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GhCliClient {
     pub fn new() -> Self {
         Self { repo: None }

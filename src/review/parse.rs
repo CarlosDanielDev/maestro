@@ -3,11 +3,11 @@
 //! Contract: `docs/api-contracts/review-comment.json`. The comment contains
 //! a fenced code block:
 //!
-//! ```text
+//! ````text
 //! ```json maestro-review
 //! { "version": 1, "pr_number": ..., "concerns": [...] }
 //! ```
-//! ```
+//! ````
 //!
 //! Anything outside the fence is treated as decorative human prose.
 

@@ -134,6 +134,12 @@ impl MockWorktreeManager {
     }
 }
 
+impl Default for MockWorktreeManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WorktreeManager for MockWorktreeManager {
     fn create(&self, slug: &str) -> Result<PathBuf> {
         validate_slug(slug)?;

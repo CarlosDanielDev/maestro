@@ -5,6 +5,38 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use uuid::Uuid;
+
+pub type IssueNumber = u64;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum IssueRunState {
+    Queued,
+    InFlight {
+        session_id: Uuid,
+        started_at: DateTime<Utc>,
+    },
+    Succeeded {
+        output: crate::orchestration::types::TeamOutput,
+    },
+    Failed {
+        reason: String,
+        attempts: u8,
+    },
+    Blocked {
+        blocking: Vec<IssueNumber>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamRun {
+    pub id: Uuid,
+    pub team_name: String,
+    pub started_at: DateTime<Utc>,
+    pub plan: Vec<Vec<IssueNumber>>, // topo-sorted levels
+    pub state: HashMap<IssueNumber, IssueRunState>,
+}
 
 /// A session-end event awaiting auto-PR processing. Persisted in
 /// `MaestroState::pending_completions` so a maestro shutdown between
@@ -49,6 +81,9 @@ pub struct MaestroState {
     /// Backward compatible — older state files default to an empty vec.
     #[serde(default)]
     pub pending_completions: Vec<PendingIssueCompletion>,
+    /// Team orchestrator runs. Defaults to empty for backward compatibility.
+    #[serde(default)]
+    pub team_runs: Vec<TeamRun>,
 }
 
 impl MaestroState {
@@ -194,6 +229,49 @@ mod tests {
         state.record_fork(Uuid::new_v4(), Uuid::new_v4());
         state.update_total_cost();
         assert!((state.total_cost_usd - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn team_run_serde_round_trip() {
+        use crate::orchestration::types::TeamOutput;
+
+        let mut state = HashMap::new();
+        state.insert(
+            547,
+            IssueRunState::Succeeded {
+                output: TeamOutput::Pr {
+                    number: 714,
+                    branch: "feat/547".into(),
+                },
+            },
+        );
+
+        let run = TeamRun {
+            id: Uuid::new_v4(),
+            team_name: "default-coder".into(),
+            started_at: Utc::now(),
+            plan: vec![vec![547]],
+            state,
+        };
+
+        let json = serde_json::to_string(&run).unwrap();
+        let back: TeamRun = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.team_name, "default-coder");
+        assert_eq!(back.plan.len(), 1);
+        assert!(back.state.contains_key(&547));
+    }
+
+    #[test]
+    fn maestro_state_team_runs_defaults_to_empty_vec() {
+        let state = MaestroState::default();
+        assert!(state.team_runs.is_empty());
+    }
+
+    #[test]
+    fn maestro_state_team_runs_deserializes_when_absent() {
+        let json = r#"{"sessions":[],"total_cost_usd":0.0,"file_claims":{},"last_updated":null}"#;
+        let state: MaestroState = serde_json::from_str(json).unwrap();
+        assert!(state.team_runs.is_empty());
     }
 
     // --- Issue #159: MaestroState::pending_prs persistence ---

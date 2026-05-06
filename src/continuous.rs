@@ -96,6 +96,12 @@ impl ContinuousModeState {
     }
 }
 
+impl Default for ContinuousModeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

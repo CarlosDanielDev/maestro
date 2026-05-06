@@ -13,7 +13,7 @@ use ratatui::{
 use crate::tui::theme::Theme;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum CopyToastKind {
+pub enum CopyToastKind {
     Success,
     Error,
 }

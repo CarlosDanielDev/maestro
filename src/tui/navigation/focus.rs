@@ -30,6 +30,7 @@ impl FocusRing {
     }
 
     /// Cycle to the next pane (wraps around). Returns the new focus.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> FocusId {
         if !self.panes.is_empty() {
             self.current = (self.current + 1) % self.panes.len();

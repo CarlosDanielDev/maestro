@@ -100,6 +100,12 @@ impl MarqueeState {
     }
 }
 
+impl Default for MarqueeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Return the visible substring of `text` starting at char-`offset`
 /// and spanning `viewport_width` characters.
 ///

@@ -20,6 +20,12 @@ impl RustScanner {
     }
 }
 
+impl Default for RustScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl CodeScanner for RustScanner {
     async fn scan(&self, path: &Path) -> anyhow::Result<ScanResult> {

@@ -59,6 +59,12 @@ impl HelpOverlayState {
     }
 }
 
+impl Default for HelpOverlayState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Filter keybinding groups by a search query (case-insensitive).
 /// Returns only groups that have matching bindings, with non-matching bindings removed.
 pub fn filter_bindings(groups: &[KeyBindingGroup], query: &str) -> Vec<KeyBindingGroup> {

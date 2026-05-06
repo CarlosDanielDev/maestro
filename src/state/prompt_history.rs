@@ -85,6 +85,11 @@ impl PromptHistoryStore {
         self.entries.len()
     }
 
+    #[allow(dead_code)] // Reason: convenience helper parallel to len()
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     pub fn update_outcome(&mut self, session_id: uuid::Uuid, outcome: PromptOutcome) {
         if let Some(entry) = self
             .entries

@@ -6,7 +6,11 @@
 
 pub(crate) mod builtins;
 pub mod contracts;
+pub mod dag;
 pub mod loader;
+pub mod preflight;
+pub mod run;
+pub mod scheduler;
 pub mod team;
 pub mod types;
 pub mod validation;

@@ -30,7 +30,7 @@ impl HookPoint {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_str_opt(s: &str) -> Option<Self> {
         match s {
             "session_started" => Some(Self::SessionStarted),
             "session_completed" => Some(Self::SessionCompleted),
@@ -42,6 +42,14 @@ impl HookPoint {
             "context_overflow" => Some(Self::ContextOverflow),
             _ => None,
         }
+    }
+}
+
+impl std::str::FromStr for HookPoint {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_str_opt(s).ok_or(())
     }
 }
 
@@ -117,13 +125,13 @@ mod tests {
             HookPoint::ContextOverflow,
         ];
         for point in points {
-            assert_eq!(HookPoint::from_str(point.as_str()), Some(point));
+            assert_eq!(HookPoint::from_str_opt(point.as_str()), Some(point));
         }
     }
 
     #[test]
     fn hook_point_from_str_unknown() {
-        assert_eq!(HookPoint::from_str("unknown"), None);
+        assert_eq!(HookPoint::from_str_opt("unknown"), None);
     }
 
     #[test]

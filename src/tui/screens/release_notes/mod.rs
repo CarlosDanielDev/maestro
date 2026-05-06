@@ -39,6 +39,12 @@ impl ReleaseNotesScreen {
     }
 }
 
+impl Default for ReleaseNotesScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeymapProvider for ReleaseNotesScreen {
     fn keybindings(&self) -> Vec<KeyBindingGroup> {
         vec![
