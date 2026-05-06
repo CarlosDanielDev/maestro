@@ -94,7 +94,9 @@ pub async fn cmd_run(
     app.pool.set_provider(selected_provider);
     if matches!(
         resolved_agent.config.kind,
-        crate::config::AgentKind::Claude | crate::config::AgentKind::Qwen
+        crate::config::AgentKind::Claude
+            | crate::config::AgentKind::Codex
+            | crate::config::AgentKind::Qwen
     ) {
         app.pool.set_permission_mode(
             resolved_agent

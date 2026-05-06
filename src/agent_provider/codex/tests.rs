@@ -10,6 +10,7 @@ fn request() -> AgentRequest {
     let mut request = AgentRequest::stream_json("test prompt".into(), "gpt-5.4-codex".into());
     request.cwd = Some(PathBuf::from("/tmp/worktree"));
     request.images = vec![PathBuf::from("a.png"), PathBuf::from("b.jpg")];
+    request.permission_mode = Some("bypassPermissions".to_string());
     request.system_prompt_appendix = Some("appendix".to_string());
     request
 }
@@ -54,6 +55,17 @@ fn stream_args_match_codex_exec_contract() {
         args.last().map(String::as_str),
         Some("Maestro session context:\nappendix\n\nUser task:\ntest prompt")
     );
+}
+
+#[test]
+fn default_permission_mode_does_not_emit_yolo() {
+    let provider = CodexProvider::default();
+    let mut request = request();
+    request.permission_mode = Some("default".to_string());
+
+    let args = provider.build_stream_args(&request);
+
+    assert!(!args.iter().any(|arg| arg == "--yolo"));
 }
 
 #[tokio::test]

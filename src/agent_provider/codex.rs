@@ -113,7 +113,9 @@ impl CodexProvider {
     }
 
     fn push_common_args(&self, args: &mut Vec<String>, request: &AgentRequest) {
-        args.push("--yolo".to_string());
+        if codex_yolo_enabled(request.permission_mode.as_deref()) {
+            args.push("--yolo".to_string());
+        }
 
         if !request.model.trim().is_empty() {
             args.push("--model".to_string());
@@ -335,6 +337,13 @@ fn codex_prompt(request: &AgentRequest) -> String {
 
 fn codex_config_value(value: &toml::Value) -> String {
     value.to_string()
+}
+
+fn codex_yolo_enabled(mode: Option<&str>) -> bool {
+    matches!(
+        mode.map(str::trim).filter(|mode| !mode.is_empty()),
+        Some("bypassPermissions" | "yolo")
+    )
 }
 
 #[cfg(test)]

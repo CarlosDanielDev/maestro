@@ -114,6 +114,7 @@ allowed_tools = []                      # Empty = all tools. Example: ["Bash", "
 # enabled = false
 # command = "codex"
 # model = "gpt-5.4-codex"
+# permission_mode = "yolo"
 # sandbox = "workspace-write"
 # json = true
 # ephemeral = false

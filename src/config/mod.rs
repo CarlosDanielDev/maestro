@@ -205,7 +205,12 @@ impl Config {
         {
             config.model = Some(self.sessions.default_model.clone());
         }
-        if config.permission_mode.is_none() && config.kind == AgentKind::Claude {
+        if config.permission_mode.is_none()
+            && matches!(
+                config.kind,
+                AgentKind::Claude | AgentKind::Codex | AgentKind::Qwen
+            )
+        {
             config.permission_mode = Some(self.sessions.permission_mode.clone());
         }
         if config.allowed_tools.is_empty() && config.kind == AgentKind::Claude {
