@@ -82,6 +82,7 @@ sandbox = "workspace-write"
 json = true
 ephemeral = false
 profile = "work"
+permission_mode = "yolo"
 extra_args = ["--reasoning-effort", "high"]
 
 [codex.config_overrides]
@@ -95,10 +96,45 @@ approval_policy = "never"
     assert_eq!(codex.json, Some(true));
     assert_eq!(codex.ephemeral, Some(false));
     assert_eq!(codex.profile.as_deref(), Some("work"));
+    assert_eq!(codex.permission_mode.as_deref(), Some("yolo"));
     assert_eq!(codex.extra_args, ["--reasoning-effort", "high"]);
     assert_eq!(
         codex.config_overrides.get("approval_policy"),
         Some(&toml::Value::String("never".to_string()))
+    );
+}
+
+#[test]
+fn codex_agent_inherits_session_permission_mode_when_unset() {
+    let cfg = load_config(
+        r#"[project]
+repo = "owner/repo"
+[sessions]
+default_model = "sonnet"
+permission_mode = "bypassPermissions"
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[provider]
+kind = "github"
+[notifications]
+[agents]
+default = "codex"
+[agents.codex]
+kind = "codex"
+command = "codex"
+model = "gpt-5.4-codex"
+"#,
+    )
+    .expect("load failed");
+
+    let resolved = cfg.resolve_agent(None).expect("codex agent resolves");
+
+    assert_eq!(resolved.config.kind, AgentKind::Codex);
+    assert_eq!(
+        resolved.config.permission_mode.as_deref(),
+        Some("bypassPermissions")
     );
 }
 
