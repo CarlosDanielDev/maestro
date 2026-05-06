@@ -7,6 +7,7 @@ use super::image::copy_images_to_worktree;
 use super::manager::{ManagedSession, SessionEvent};
 use super::types::{Session, SessionStatus};
 use super::worktree::WorktreeManager;
+use crate::agent_provider::{AgentProvider, ClaudeProvider};
 use crate::state::file_claims::FileClaimManager;
 use crate::turboquant::adapter::TurboQuantAdapter;
 
@@ -22,6 +23,8 @@ pub struct SessionPool {
     permission_mode: String,
     /// Allowed tools whitelist passed to Claude CLI sessions.
     allowed_tools: Vec<String>,
+    /// Agent provider used for newly promoted sessions.
+    provider: Arc<dyn AgentProvider>,
     /// Guardrail prompt appended to every session's system prompt.
     guardrail_prompt: Option<String>,
     /// TurboQuant adapter used to compact the system-prompt appendix.
@@ -48,6 +51,7 @@ impl SessionPool {
             event_tx,
             permission_mode: "bypassPermissions".to_string(),
             allowed_tools: Vec::new(),
+            provider: Arc::new(ClaudeProvider::default()),
             guardrail_prompt: None,
             turboquant_adapter: None,
             system_prompt_budget: 0,
@@ -86,6 +90,11 @@ impl SessionPool {
     /// Set the allowed tools whitelist for new sessions.
     pub fn set_allowed_tools(&mut self, tools: Vec<String>) {
         self.allowed_tools = tools;
+    }
+
+    /// Set the agent provider for newly promoted sessions.
+    pub fn set_provider(&mut self, provider: Arc<dyn AgentProvider>) {
+        self.provider = provider;
     }
 
     /// Enqueue a session. It will be promoted when capacity allows.
@@ -170,6 +179,7 @@ impl SessionPool {
             // Session remains Queued until ManagedSession::spawn() transitions it
             let mut managed =
                 ManagedSession::with_worktree(session, worktree_path, branch, system_prompt);
+            managed.set_provider(Arc::clone(&self.provider));
             managed.permission_mode = mode_config
                 .as_ref()
                 .and_then(|mode| mode.permission_mode.clone())

@@ -14,6 +14,7 @@ pub async fn cmd_run(
     issue: Option<String>,
     milestone: Option<String>,
     model: Option<String>,
+    agent: Option<String>,
     mode: Option<String>,
     max_concurrent_override: Option<usize>,
     resume: bool,
@@ -29,6 +30,8 @@ pub async fn cmd_run(
 ) -> anyhow::Result<()> {
     let loaded = Config::find_and_load_with_path()?;
     let config = loaded.config.clone();
+    let resolved_agent = config.resolve_agent(agent.as_deref())?;
+    let selected_provider = provider_for_agent(&resolved_agent)?;
 
     let feature_flags = crate::flags::store::FeatureFlags::new(
         config.flags.entries.clone(),
@@ -63,7 +66,9 @@ pub async fn cmd_run(
         crate::session::image::validate_image_path(img)?;
     }
 
-    let model = model.unwrap_or(config.sessions.default_model.clone());
+    let model = model
+        .or_else(|| resolved_agent.config.model.clone())
+        .unwrap_or(config.sessions.default_model.clone());
     let session_mode = mode.unwrap_or(config.sessions.default_mode.clone());
 
     let store = StateStore::new(StateStore::default_path());
@@ -86,6 +91,18 @@ pub async fn cmd_run(
         effective_max_concurrent,
         bypass_review,
     );
+    app.pool.set_provider(selected_provider);
+    if resolved_agent.config.kind == crate::config::AgentKind::Claude {
+        app.pool.set_permission_mode(
+            resolved_agent
+                .config
+                .permission_mode
+                .clone()
+                .unwrap_or_else(|| config.sessions.permission_mode.clone()),
+        );
+        app.pool
+            .set_allowed_tools(resolved_agent.config.allowed_tools.clone());
+    }
     app.flags = feature_flags;
 
     if resume {
@@ -198,4 +215,22 @@ pub async fn cmd_run(
     app.no_splash = no_splash;
 
     crate::tui::run(app).await
+}
+
+fn provider_for_agent(
+    resolved: &crate::config::ResolvedAgentConfig,
+) -> anyhow::Result<std::sync::Arc<dyn crate::agent_provider::AgentProvider>> {
+    match resolved.config.kind {
+        crate::config::AgentKind::Claude => {
+            let command = resolved.config.command.as_deref().unwrap_or("claude");
+            Ok(std::sync::Arc::new(
+                crate::agent_provider::ClaudeProvider::new(command),
+            ))
+        }
+        other => anyhow::bail!(
+            "agent `{}` uses `{}` provider, but that provider runtime is not implemented yet",
+            resolved.id,
+            other.as_str()
+        ),
+    }
 }
