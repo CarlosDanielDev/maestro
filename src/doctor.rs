@@ -1,5 +1,6 @@
 use crate::agent_provider::{
-    AgentProvider, ClaudeProvider, CodexProvider, MinimaxProvider, OllamaProvider, QwenProvider,
+    AgentProvider, ClaudeProvider, CodexProvider, MinimaxProvider, OllamaProvider,
+    OpenCodeProvider, QwenProvider,
 };
 use crate::config::{AgentKind, Config, ProviderConfig, ResolvedAgentConfig};
 use crate::provider::types::ProviderKind;
@@ -499,13 +500,13 @@ fn check_agent_runtime_for_agent(config: Option<&Config>, agent_id: Option<&str>
                 QwenProvider::new(resolved.config.command.as_deref().unwrap_or("qwen"))
                     .health_check_blocking(),
             ),
+            AgentKind::Opencode => check_subprocess_agent(
+                "opencode cli",
+                OpenCodeProvider::new(resolved.config.command.as_deref().unwrap_or("opencode"))
+                    .health_check_blocking(),
+            ),
             AgentKind::Ollama => check_ollama_agent(resolved),
             AgentKind::Minimax => check_minimax_agent(resolved),
-            other => CheckResult::fail(
-                format!("{} agent", other.as_str()),
-                "provider runtime is not implemented yet",
-                CheckSeverity::Required,
-            ),
         },
         Err(err) => CheckResult::fail("agent config", err.to_string(), CheckSeverity::Required),
     }

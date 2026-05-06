@@ -122,6 +122,7 @@ allowed_tools = []                      # Empty = all tools. Example: ["Bash", "
 # [agents.opencode]
 # kind = "opencode"
 # enabled = false
+# command = "opencode"
 # model = "anthropic/claude-sonnet-4-5"
 # extra_args = []
 # [agents.ollama]
