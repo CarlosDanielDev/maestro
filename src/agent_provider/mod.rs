@@ -7,6 +7,8 @@ mod qwen_parser;
 #[cfg(test)]
 mod qwen_tests;
 pub mod types;
+#[cfg(test)]
+mod types_tests;
 
 #[allow(unused_imports)]
 pub use claude::ClaudeProvider;
