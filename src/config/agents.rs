@@ -199,7 +199,7 @@ impl From<AgentConfigRaw> for AgentConfig {
             AgentKind::Minimax => Some("MiniMax-M2.7".to_string()),
             _ => None,
         });
-        let request_timeout_secs = raw.request_timeout_secs.or_else(|| match raw.kind {
+        let request_timeout_secs = raw.request_timeout_secs.or(match raw.kind {
             AgentKind::Ollama | AgentKind::Minimax => Some(120),
             _ => None,
         });
