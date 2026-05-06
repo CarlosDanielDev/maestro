@@ -198,6 +198,42 @@ mod tests {
         assert!(err.to_string().contains("run 'ollama pull missing-model'"));
     }
 
+    #[tokio::test]
+    async fn health_check_fetches_version_and_verifies_model_tag() {
+        let base_url = spawn_test_server_sequence(vec![
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n\
+             {\"version\":\"0.5.7\"}",
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n\
+             {\"models\":[{\"name\":\"llama3.2\"}]}",
+        ])
+        .await;
+        let provider =
+            OllamaProvider::new("ollama", base_url, "llama3.2", 5, None).expect("provider");
+
+        let health = provider.health_check().await.expect("health check");
+
+        assert!(health.available);
+        assert_eq!(health.version.as_deref(), Some("0.5.7"));
+        assert!(health.message.contains("model `llama3.2` available"));
+    }
+
+    #[tokio::test]
+    async fn health_check_reports_model_pull_hint_when_tag_is_missing() {
+        let base_url = spawn_test_server_sequence(vec![
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n\
+             {\"version\":\"0.5.7\"}",
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n\
+             {\"models\":[{\"name\":\"other\"}]}",
+        ])
+        .await;
+        let provider =
+            OllamaProvider::new("ollama", base_url, "missing-model", 5, None).expect("provider");
+
+        let err = provider.health_check().await.expect_err("missing model");
+
+        assert!(err.to_string().contains("ollama pull missing-model"));
+    }
+
     async fn spawn_test_server(response: &'static str) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
@@ -206,6 +242,21 @@ mod tests {
                 let mut request = vec![0_u8; 2048];
                 let _ = socket.read(&mut request).await;
                 let _ = socket.write_all(response.as_bytes()).await;
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    async fn spawn_test_server_sequence(responses: Vec<&'static str>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            for response in responses {
+                if let Ok((mut socket, _)) = listener.accept().await {
+                    let mut request = vec![0_u8; 2048];
+                    let _ = socket.read(&mut request).await;
+                    let _ = socket.write_all(response.as_bytes()).await;
+                }
             }
         });
         format!("http://{addr}")

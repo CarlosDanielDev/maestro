@@ -265,6 +265,52 @@ mod tests {
         assert!(!rendered.contains("secret-value"));
     }
 
+    #[tokio::test]
+    async fn health_check_passes_when_models_endpoint_is_reachable() {
+        let base_url = spawn_test_server(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{\"data\":[]}",
+        )
+        .await;
+        let provider = MinimaxProvider::new_with_api_key_lookup(
+            "minimax",
+            base_url,
+            "MiniMax-M2.7",
+            5,
+            Some("MINIMAX_API_KEY".to_string()),
+            |_| Some("test-key".to_string()),
+        )
+        .expect("provider");
+
+        let health = provider.health_check().await.expect("health check");
+
+        assert!(health.available);
+        assert!(health.message.contains("models endpoint reachable"));
+    }
+
+    #[tokio::test]
+    async fn health_check_maps_unauthorized_without_exposing_key_value() {
+        let base_url = spawn_test_server(
+            "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\n\r\n\
+             {\"error\":\"invalid key\"}",
+        )
+        .await;
+        let provider = MinimaxProvider::new_with_api_key_lookup(
+            "minimax",
+            base_url,
+            "MiniMax-M2.7",
+            5,
+            Some("MINIMAX_API_KEY".to_string()),
+            |_| Some("secret-value".to_string()),
+        )
+        .expect("provider");
+
+        let err = provider.health_check().await.expect_err("401");
+        let rendered = err.to_string();
+
+        assert!(rendered.contains("invalid MINIMAX_API_KEY"));
+        assert!(!rendered.contains("secret-value"));
+    }
+
     async fn spawn_test_server(response: &'static str) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");

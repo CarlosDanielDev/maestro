@@ -103,6 +103,11 @@ pub fn print_report(report: &DoctorReport) {
         println!("  {:<16} {} {}", check.name, status, check.message);
     }
 
+    if let Some((configured, healthy)) = agent_health_counts(report) {
+        println!();
+        println!("  Summary: {healthy}/{configured} agents healthy ({configured} configured)");
+    }
+
     println!();
     if report.has_failures() {
         println!("  \x1b[31mSome required checks failed. Maestro may not work correctly.\x1b[0m");
@@ -119,6 +124,23 @@ pub fn print_report(report: &DoctorReport) {
 /// Strip control characters from subprocess output for safe terminal display.
 fn sanitize(s: &str) -> String {
     s.chars().filter(|c| !c.is_control()).collect()
+}
+
+fn agent_health_counts(report: &DoctorReport) -> Option<(usize, usize)> {
+    let configured = report
+        .checks
+        .iter()
+        .filter(|check| check.name.starts_with("agent "))
+        .count();
+    if configured == 0 {
+        return None;
+    }
+    let healthy = report
+        .checks
+        .iter()
+        .filter(|check| check.name.starts_with("agent ") && check.passed)
+        .count();
+    Some((configured, healthy))
 }
 
 /// Validate preflight checks and return an error if required checks fail.
@@ -173,7 +195,11 @@ pub fn run_all_checks_for_agent(config: Option<&Config>, agent_id: Option<&str>)
         checks.push(check_provider_matches_remote(cfg.provider.kind));
     }
 
-    checks.push(check_agent_runtime_for_agent(config, agent_id));
+    if let (Some(cfg), None) = (config, agent_id) {
+        checks.extend(check_configured_agent_runtimes(cfg));
+    } else {
+        checks.push(check_agent_runtime_for_agent(config, agent_id));
+    }
 
     if provider_kind == ProviderKind::Github
         && checks.iter().any(|c| c.name == "gh auth" && c.passed)
@@ -488,43 +514,116 @@ fn check_agent_runtime_for_agent(config: Option<&Config>, agent_id: Option<&str>
     };
 
     match config.resolve_agent(agent_id) {
-        Ok(resolved) => match resolved.config.kind {
-            AgentKind::Claude => check_claude_cli(),
-            AgentKind::Codex => check_subprocess_agent(
-                "codex cli",
-                CodexProvider::new(resolved.config.command.as_deref().unwrap_or("codex"))
-                    .health_check_blocking(),
-            ),
-            AgentKind::Qwen => check_subprocess_agent(
-                "qwen cli",
-                QwenProvider::new(resolved.config.command.as_deref().unwrap_or("qwen"))
-                    .health_check_blocking(),
-            ),
-            AgentKind::Opencode => check_subprocess_agent(
-                "opencode cli",
-                OpenCodeProvider::new(resolved.config.command.as_deref().unwrap_or("opencode"))
-                    .health_check_blocking(),
-            ),
-            AgentKind::Ollama => check_ollama_agent(resolved),
-            AgentKind::Minimax => check_minimax_agent(resolved),
-        },
+        Ok(resolved) => check_resolved_agent_runtime(resolved, CheckSeverity::Required),
         Err(err) => CheckResult::fail("agent config", err.to_string(), CheckSeverity::Required),
     }
 }
 
-fn check_subprocess_agent(
-    name: impl Into<String>,
-    health: crate::agent_provider::AgentHealthCheck,
+fn check_configured_agent_runtimes(config: &Config) -> Vec<CheckResult> {
+    if config.agents.entries.is_empty() {
+        return vec![check_agent_runtime_for_agent(Some(config), None)];
+    }
+
+    config
+        .agents
+        .entries
+        .iter()
+        .filter(|(_, agent)| agent.enabled)
+        .map(|(id, _)| match config.resolve_agent(Some(id)) {
+            Ok(resolved) => {
+                let severity = if resolved.id == config.agents.default {
+                    CheckSeverity::Required
+                } else {
+                    CheckSeverity::Optional
+                };
+                check_resolved_agent_runtime(resolved, severity)
+            }
+            Err(err) => CheckResult::fail(
+                format!("agent {id}"),
+                err.to_string(),
+                if id == &config.agents.default {
+                    CheckSeverity::Required
+                } else {
+                    CheckSeverity::Optional
+                },
+            ),
+        })
+        .collect()
+}
+
+fn check_resolved_agent_runtime(
+    resolved: ResolvedAgentConfig,
+    severity: CheckSeverity,
 ) -> CheckResult {
-    let version = health.version.unwrap_or(health.message);
-    if health.available {
-        CheckResult::pass(name, sanitize(&version), CheckSeverity::Required)
-    } else {
-        CheckResult::fail(name, sanitize(&version), CheckSeverity::Required)
+    match resolved.config.kind {
+        AgentKind::Claude => check_agent_health(
+            format!("agent {}", resolved.id),
+            ClaudeProvider::new(resolved.config.command.as_deref().unwrap_or("claude"))
+                .health_check_blocking(),
+            severity,
+        ),
+        AgentKind::Codex => check_subprocess_agent(
+            &resolved.id,
+            CodexProvider::with_config(
+                resolved.config.command.as_deref().unwrap_or("codex"),
+                resolved.config.sandbox.clone(),
+                resolved.config.ephemeral,
+                resolved.config.profile.clone(),
+                resolved.config.config_overrides.clone(),
+                resolved.config.extra_args.clone(),
+                resolved.config.env.clone(),
+                resolved.config.json,
+            ),
+            severity,
+        ),
+        AgentKind::Qwen => check_subprocess_agent(
+            &resolved.id,
+            QwenProvider::with_config(
+                resolved.config.command.as_deref().unwrap_or("qwen"),
+                resolved.config.extra_args.clone(),
+                resolved.config.env.clone(),
+            ),
+            severity,
+        ),
+        AgentKind::Opencode => check_subprocess_agent(
+            &resolved.id,
+            OpenCodeProvider::with_config(
+                resolved.config.command.as_deref().unwrap_or("opencode"),
+                resolved.config.extra_args.clone(),
+                resolved.config.env.clone(),
+            ),
+            severity,
+        ),
+        AgentKind::Ollama => check_ollama_agent(resolved, severity),
+        AgentKind::Minimax => check_minimax_agent(resolved, severity),
     }
 }
 
-fn check_ollama_agent(resolved: ResolvedAgentConfig) -> CheckResult {
+fn check_subprocess_agent<P>(id: &str, provider: P, severity: CheckSeverity) -> CheckResult
+where
+    P: AgentProvider + Send + 'static,
+{
+    run_agent_health_check(format!("agent {id}"), provider, severity)
+}
+
+fn check_agent_health(
+    name: impl Into<String>,
+    health: crate::agent_provider::AgentHealthCheck,
+    severity: CheckSeverity,
+) -> CheckResult {
+    if health.available {
+        let message = if health.message.trim().is_empty() {
+            health.version.unwrap_or_else(|| "ready".to_string())
+        } else {
+            health.message
+        };
+        CheckResult::pass(name, sanitize(&message), severity)
+    } else {
+        CheckResult::fail(name, sanitize(&health.message), severity)
+    }
+}
+
+fn check_ollama_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) -> CheckResult {
     let model = match resolved
         .config
         .model
@@ -534,33 +633,34 @@ fn check_ollama_agent(resolved: ResolvedAgentConfig) -> CheckResult {
         Some(model) => model,
         None => {
             return CheckResult::fail(
-                "ollama",
+                format!("agent {}", resolved.id),
                 format!("agents.{}.model is required for ollama", resolved.id),
-                CheckSeverity::Required,
+                severity,
             );
         }
     };
 
+    let id = resolved.id.clone();
     let provider = match OllamaProvider::new(
-        resolved.id,
+        id.clone(),
         resolved
             .config
             .base_url
             .unwrap_or_else(|| "http://localhost:11434".to_string()),
         model,
-        resolved.config.request_timeout_secs.unwrap_or(120),
+        2,
         resolved.config.api_key_env,
     ) {
         Ok(provider) => provider,
         Err(err) => {
-            return CheckResult::fail("ollama", err.to_string(), CheckSeverity::Required);
+            return CheckResult::fail(format!("agent {}", resolved.id), err.to_string(), severity);
         }
     };
 
-    run_agent_health_check("ollama", provider)
+    run_agent_health_check(format!("agent {id}"), provider, severity)
 }
 
-fn check_minimax_agent(resolved: ResolvedAgentConfig) -> CheckResult {
+fn check_minimax_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) -> CheckResult {
     let model = resolved
         .config
         .model
@@ -568,14 +668,15 @@ fn check_minimax_agent(resolved: ResolvedAgentConfig) -> CheckResult {
         .filter(|model| !model.trim().is_empty())
         .unwrap_or_else(|| "MiniMax-M2.7".to_string());
 
+    let id = resolved.id.clone();
     let provider = match MinimaxProvider::new(
-        resolved.id,
+        id.clone(),
         resolved
             .config
             .base_url
             .unwrap_or_else(|| "https://api.minimax.io/v1".to_string()),
         model,
-        resolved.config.request_timeout_secs.unwrap_or(120),
+        2,
         resolved
             .config
             .api_key_env
@@ -583,17 +684,23 @@ fn check_minimax_agent(resolved: ResolvedAgentConfig) -> CheckResult {
     ) {
         Ok(provider) => provider,
         Err(err) => {
-            return CheckResult::fail("minimax", err.to_string(), CheckSeverity::Required);
+            return CheckResult::fail(format!("agent {}", resolved.id), err.to_string(), severity);
         }
     };
 
-    run_agent_health_check("minimax", provider)
+    run_agent_health_check(format!("agent {id}"), provider, severity)
 }
 
-fn run_agent_health_check<P>(name: &'static str, provider: P) -> CheckResult
+fn run_agent_health_check<P>(
+    name: impl Into<String>,
+    provider: P,
+    severity: CheckSeverity,
+) -> CheckResult
 where
     P: AgentProvider + Send + 'static,
 {
+    let name = name.into();
+    let panic_name = name.clone();
     std::thread::spawn(move || {
         let runtime = match tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -601,19 +708,17 @@ where
         {
             Ok(runtime) => runtime,
             Err(err) => {
-                return CheckResult::fail(name, err.to_string(), CheckSeverity::Required);
+                return CheckResult::fail(name, err.to_string(), severity);
             }
         };
 
         match runtime.block_on(provider.health_check()) {
-            Ok(health) => {
-                CheckResult::pass(name, sanitize(&health.message), CheckSeverity::Required)
-            }
-            Err(err) => CheckResult::fail(name, err.to_string(), CheckSeverity::Required),
+            Ok(health) => check_agent_health(name, health, severity),
+            Err(err) => CheckResult::fail(name, err.to_string(), severity),
         }
     })
     .join()
-    .unwrap_or_else(|_| CheckResult::fail(name, "health check panicked", CheckSeverity::Required))
+    .unwrap_or_else(|_| CheckResult::fail(panic_name, "health check panicked", severity))
 }
 
 fn check_az_cli(severity: CheckSeverity) -> CheckResult {
@@ -959,6 +1064,132 @@ mod tests {
     fn validate_preflight_returns_ok_on_empty_report() {
         let report = DoctorReport { checks: vec![] };
         assert!(validate_preflight(&report).is_ok());
+    }
+
+    #[test]
+    fn agent_health_counts_reports_configured_and_healthy_agents() {
+        let report = DoctorReport {
+            checks: vec![
+                CheckResult::pass("git", "ok", CheckSeverity::Required),
+                CheckResult::pass("agent claude", "ready", CheckSeverity::Required),
+                CheckResult::fail("agent qwen", "not installed", CheckSeverity::Optional),
+            ],
+        };
+
+        assert_eq!(agent_health_counts(&report), Some((2, 1)));
+    }
+
+    #[test]
+    fn optional_agent_failure_does_not_fail_report() {
+        let report = DoctorReport {
+            checks: vec![
+                CheckResult::pass("agent claude", "ready", CheckSeverity::Required),
+                CheckResult::fail("agent qwen", "not installed", CheckSeverity::Optional),
+            ],
+        };
+
+        assert!(!report.has_failures());
+        assert!(report.has_warnings());
+    }
+
+    #[test]
+    fn default_agent_failure_fails_report() {
+        let report = DoctorReport {
+            checks: vec![
+                CheckResult::fail("agent claude", "not installed", CheckSeverity::Required),
+                CheckResult::pass("agent qwen", "ready", CheckSeverity::Optional),
+            ],
+        };
+
+        assert!(report.has_failures());
+    }
+
+    #[test]
+    fn failed_agent_health_preserves_actionable_message_when_version_exists() {
+        let result = check_agent_health(
+            "agent opencode",
+            crate::agent_provider::AgentHealthCheck {
+                provider_id: crate::agent_provider::AgentProviderId::new("opencode"),
+                available: false,
+                version: Some("opencode 1.0.0".to_string()),
+                message: "run `opencode /connect` to authenticate with a provider".to_string(),
+            },
+            CheckSeverity::Optional,
+        );
+
+        assert!(!result.passed);
+        assert!(result.message.contains("opencode /connect"));
+        assert!(!result.message.contains("1.0.0"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn configured_agent_runtime_checks_iterate_enabled_agents_only() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let claude = fake_binary(temp.path(), "fake-claude", "claude 1.0.0");
+        let qwen = fake_binary(temp.path(), "fake-qwen", "qwen 0.9.0");
+        let config_path = temp.path().join("maestro.toml");
+        std::fs::write(
+            &config_path,
+            format!(
+                r#"[project]
+repo = "owner/repo"
+[sessions]
+default_model = "sonnet"
+permission_mode = "acceptEdits"
+[budget]
+[provider]
+kind = "github"
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+command = "{}"
+[agents.qwen]
+kind = "qwen"
+command = "{}"
+[agents.opencode]
+kind = "opencode"
+enabled = false
+command = "missing-opencode"
+"#,
+                claude.display(),
+                qwen.display()
+            ),
+        )
+        .expect("write config");
+        let config = Config::load(&config_path).expect("load config");
+
+        let checks = check_configured_agent_runtimes(&config);
+
+        assert_eq!(checks.len(), 2);
+        assert!(checks.iter().any(|check| check.name == "agent claude"
+            && check.passed
+            && check.severity == CheckSeverity::Required));
+        assert!(checks.iter().any(|check| check.name == "agent qwen"
+            && check.passed
+            && check.severity == CheckSeverity::Optional));
+        assert!(!checks.iter().any(|check| check.name == "agent opencode"));
+    }
+
+    #[cfg(unix)]
+    fn fake_binary(dir: &std::path::Path, name: &str, version: &str) -> std::path::PathBuf {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = dir.join(name);
+        let mut file = std::fs::File::create(&path).expect("create fake binary");
+        writeln!(file, "#!/bin/sh").expect("write shebang");
+        writeln!(file, "if [ \"$1\" = \"--version\" ]; then").expect("write branch");
+        writeln!(file, "  echo '{version}'").expect("write version");
+        writeln!(file, "  exit 0").expect("write exit");
+        writeln!(file, "fi").expect("write fi");
+        writeln!(file, "exit 0").expect("write default");
+        let mut perms = std::fs::metadata(&path).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).expect("chmod");
+        path
     }
 
     #[test]
