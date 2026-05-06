@@ -1,3 +1,4 @@
+use crate::tui::agent_badge::{agent_color, agent_label};
 use crate::tui::app::types::{CompletionSummaryData, SessionSummaryState};
 use crate::tui::icons::{self, IconId};
 use crate::tui::theme::Theme;
@@ -85,6 +86,11 @@ pub fn draw_session_summary(
                 sl.elapsed.clone(),
                 Style::default().fg(theme.text_secondary),
             ),
+            Span::raw("  "),
+            Span::styled(
+                format!("agent:{}", agent_label(sl.agent_id.as_deref())),
+                Style::default().fg(agent_color(sl.agent_id.as_deref())),
+            ),
         ]));
 
         if is_expanded {
@@ -94,6 +100,10 @@ pub fn draw_session_summary(
                     Style::default().fg(theme.text_secondary),
                 )));
             }
+            lines.push(Line::from(Span::styled(
+                format!("   Agent: {}", agent_label(sl.agent_id.as_deref())),
+                Style::default().fg(agent_color(sl.agent_id.as_deref())),
+            )));
             if !sl.pr_link.is_empty() {
                 lines.push(Line::from(Span::styled(
                     format!("   PR: {}", sl.pr_link),

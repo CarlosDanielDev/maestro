@@ -232,6 +232,9 @@ pub struct Session {
     pub issue_numbers: Vec<u64>,
     pub model: String,
     pub mode: String,
+    /// Configured agent id selected when this session was created.
+    #[serde(default)]
+    pub agent_id: Option<String>,
     /// Resolved mode settings captured when the session was created.
     #[serde(default)]
     pub mode_config: Option<SessionModeConfig>,
@@ -381,6 +384,7 @@ impl Session {
             issue_numbers: Vec::new(),
             model,
             mode,
+            agent_id: None,
             mode_config: None,
             started_at: None,
             finished_at: None,
@@ -463,6 +467,11 @@ impl Session {
 
     pub fn with_mode_config(mut self, mode_config: Option<SessionModeConfig>) -> Self {
         self.mode_config = mode_config;
+        self
+    }
+
+    pub fn with_agent_id(mut self, agent_id: Option<String>) -> Self {
+        self.agent_id = agent_id;
         self
     }
 

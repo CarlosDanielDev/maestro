@@ -9,6 +9,7 @@ pub(super) fn spawn_issue_fetch(
     provider_config: ProviderConfig,
 ) {
     let custom_prompt = config.custom_prompt.clone();
+    let agent_id = config.agent_id.clone();
     match config.issue_number {
         Some(issue_number) => {
             tokio::spawn(async move {
@@ -16,7 +17,7 @@ pub(super) fn spawn_issue_fetch(
                     Ok(client) => client.get_issue(issue_number).await,
                     Err(e) => Err(e),
                 };
-                let _ = tx.send(app::TuiDataEvent::Issue(result, custom_prompt));
+                let _ = tx.send(app::TuiDataEvent::Issue(result, custom_prompt, agent_id));
             });
         }
         None => {
@@ -25,6 +26,7 @@ pub(super) fn spawn_issue_fetch(
                     "Cannot launch session without an issue number"
                 )),
                 custom_prompt,
+                agent_id,
             ));
         }
     }

@@ -381,6 +381,7 @@ mod tests {
             issue_number: None,
             issue_numbers: vec![],
             mode: "print".to_string(),
+            agent_id: None,
             mode_config: None,
             started_at: None,
             finished_at: None,

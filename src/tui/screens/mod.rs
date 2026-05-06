@@ -180,6 +180,15 @@ pub struct SessionConfig {
     pub title: String,
     /// Optional custom prompt to append to the issue prompt.
     pub custom_prompt: Option<String>,
+    /// Configured agent id to use for the new session. `None` means app default.
+    pub agent_id: Option<String>,
+}
+
+impl SessionConfig {
+    pub fn with_agent_id(mut self, agent_id: String) -> Self {
+        self.agent_id = Some(agent_id);
+        self
+    }
 }
 
 /// Configuration for launching a unified (multi-issue, single-PR) session.
@@ -189,6 +198,15 @@ pub struct UnifiedSessionConfig {
     pub issues: Vec<(u64, String)>,
     /// Optional custom prompt.
     pub custom_prompt: Option<String>,
+    /// Configured agent id to use for the new session. `None` means app default.
+    pub agent_id: Option<String>,
+}
+
+impl UnifiedSessionConfig {
+    pub fn with_agent_id(mut self, agent_id: String) -> Self {
+        self.agent_id = Some(agent_id);
+        self
+    }
 }
 
 /// Configuration for launching a prompt-based session (no GitHub issue).
@@ -196,6 +214,15 @@ pub struct UnifiedSessionConfig {
 pub struct PromptSessionConfig {
     pub prompt: String,
     pub image_paths: Vec<String>,
+    /// Configured agent id to use for the new session. `None` means app default.
+    pub agent_id: Option<String>,
+}
+
+impl PromptSessionConfig {
+    pub fn with_agent_id(mut self, agent_id: String) -> Self {
+        self.agent_id = Some(agent_id);
+        self
+    }
 }
 
 #[cfg(test)]
