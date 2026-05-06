@@ -1,5 +1,6 @@
 pub mod claude;
 pub mod codex;
+pub mod minimax;
 pub mod ollama;
 pub mod openai_compat;
 pub mod qwen;
@@ -14,6 +15,8 @@ mod types_tests;
 pub use claude::ClaudeProvider;
 #[allow(unused_imports)]
 pub use codex::CodexProvider;
+#[allow(unused_imports)]
+pub use minimax::MinimaxProvider;
 #[allow(unused_imports)]
 pub use ollama::OllamaProvider;
 #[allow(unused_imports)]

@@ -149,3 +149,23 @@ fn factory_accepts_ollama_provider() {
     assert_eq!(factory.default_provider().id(), "ollama");
     assert_eq!(factory.default_provider().kind(), AgentProviderKind::Http);
 }
+
+#[test]
+fn factory_accepts_minimax_provider() {
+    let factory = AgentProviderFactory::from_config(AgentProvidersConfig {
+        default_provider: "minimax".to_string(),
+        providers: vec![AgentProviderDefinition {
+            id: "minimax".to_string(),
+            provider: "minimax".to_string(),
+            binary: None,
+            base_url: Some("https://api.minimax.io/v1".to_string()),
+            model: Some("MiniMax-M2.7".to_string()),
+            request_timeout_secs: Some(5),
+            api_key_env: Some("MINIMAX_API_KEY".to_string()),
+        }],
+    })
+    .unwrap();
+
+    assert_eq!(factory.default_provider().id(), "minimax");
+    assert_eq!(factory.default_provider().kind(), AgentProviderKind::Http);
+}

@@ -1,5 +1,5 @@
 use crate::agent_provider::{
-    AgentProvider, ClaudeProvider, CodexProvider, OllamaProvider, QwenProvider,
+    AgentProvider, ClaudeProvider, CodexProvider, MinimaxProvider, OllamaProvider, QwenProvider,
 };
 use crate::config::{AgentKind, Config, ProviderConfig, ResolvedAgentConfig};
 use crate::provider::types::ProviderKind;
@@ -82,44 +82,7 @@ impl DoctorReport {
 
 /// Run all preflight checks and return a report.
 pub fn run_all_checks(config: Option<&Config>) -> DoctorReport {
-    let provider_kind = config.map(|cfg| cfg.provider.kind).unwrap_or_default();
-    let mut checks = vec![
-        check_git_installed(),
-        check_git_user_config(),
-        check_git_remote(),
-    ];
-
-    match provider_kind {
-        ProviderKind::Github => {
-            checks.push(check_gh_installed());
-            checks.push(check_gh_authenticated());
-        }
-        ProviderKind::AzureDevops => {
-            checks.push(check_az_cli(CheckSeverity::Required));
-            checks.push(check_az_identity(CheckSeverity::Required));
-            if let Some(cfg) = config {
-                checks.push(check_azdo_config(&cfg.provider));
-            }
-            checks.push(check_azdo_remote());
-        }
-    }
-
-    checks.push(check_config_exists());
-
-    if let Some(cfg) = config {
-        checks.push(check_provider_matches_remote(cfg.provider.kind));
-    }
-
-    checks.push(check_agent_runtime(config));
-
-    // Only check repo access if gh is authenticated
-    if provider_kind == ProviderKind::Github
-        && checks.iter().any(|c| c.name == "gh auth" && c.passed)
-    {
-        checks.push(check_gh_repo_accessible());
-    }
-
-    DoctorReport { checks }
+    run_all_checks_for_agent(config, None)
 }
 
 /// Print a formatted report to stdout.
@@ -172,9 +135,52 @@ pub fn validate_preflight(report: &DoctorReport) -> anyhow::Result<()> {
 }
 
 /// Validate provider-aware setup checks and return an error if required checks fail.
-pub fn validate_provider_setup(config: &Config) -> anyhow::Result<()> {
-    let report = run_all_checks(Some(config));
+pub fn validate_provider_setup_for_agent(
+    config: &Config,
+    agent_id: Option<&str>,
+) -> anyhow::Result<()> {
+    let report = run_all_checks_for_agent(Some(config), agent_id);
     validate_preflight(&report)
+}
+
+pub fn run_all_checks_for_agent(config: Option<&Config>, agent_id: Option<&str>) -> DoctorReport {
+    let provider_kind = config.map(|cfg| cfg.provider.kind).unwrap_or_default();
+    let mut checks = vec![
+        check_git_installed(),
+        check_git_user_config(),
+        check_git_remote(),
+    ];
+
+    match provider_kind {
+        ProviderKind::Github => {
+            checks.push(check_gh_installed());
+            checks.push(check_gh_authenticated());
+        }
+        ProviderKind::AzureDevops => {
+            checks.push(check_az_cli(CheckSeverity::Required));
+            checks.push(check_az_identity(CheckSeverity::Required));
+            if let Some(cfg) = config {
+                checks.push(check_azdo_config(&cfg.provider));
+            }
+            checks.push(check_azdo_remote());
+        }
+    }
+
+    checks.push(check_config_exists());
+
+    if let Some(cfg) = config {
+        checks.push(check_provider_matches_remote(cfg.provider.kind));
+    }
+
+    checks.push(check_agent_runtime_for_agent(config, agent_id));
+
+    if provider_kind == ProviderKind::Github
+        && checks.iter().any(|c| c.name == "gh auth" && c.passed)
+    {
+        checks.push(check_gh_repo_accessible());
+    }
+
+    DoctorReport { checks }
 }
 
 /// Pure, testable core of the claude cli check.
@@ -475,12 +481,12 @@ fn check_claude_cli() -> CheckResult {
     build_claude_cli_result(health.available, &sanitize(&version))
 }
 
-fn check_agent_runtime(config: Option<&Config>) -> CheckResult {
+fn check_agent_runtime_for_agent(config: Option<&Config>, agent_id: Option<&str>) -> CheckResult {
     let Some(config) = config else {
         return check_claude_cli();
     };
 
-    match config.resolve_agent(None) {
+    match config.resolve_agent(agent_id) {
         Ok(resolved) => match resolved.config.kind {
             AgentKind::Claude => check_claude_cli(),
             AgentKind::Codex => check_subprocess_agent(
@@ -494,6 +500,7 @@ fn check_agent_runtime(config: Option<&Config>) -> CheckResult {
                     .health_check_blocking(),
             ),
             AgentKind::Ollama => check_ollama_agent(resolved),
+            AgentKind::Minimax => check_minimax_agent(resolved),
             other => CheckResult::fail(
                 format!("{} agent", other.as_str()),
                 "provider runtime is not implemented yet",
@@ -550,6 +557,36 @@ fn check_ollama_agent(resolved: ResolvedAgentConfig) -> CheckResult {
     };
 
     run_agent_health_check("ollama", provider)
+}
+
+fn check_minimax_agent(resolved: ResolvedAgentConfig) -> CheckResult {
+    let model = resolved
+        .config
+        .model
+        .clone()
+        .filter(|model| !model.trim().is_empty())
+        .unwrap_or_else(|| "MiniMax-M2.7".to_string());
+
+    let provider = match MinimaxProvider::new(
+        resolved.id,
+        resolved
+            .config
+            .base_url
+            .unwrap_or_else(|| "https://api.minimax.io/v1".to_string()),
+        model,
+        resolved.config.request_timeout_secs.unwrap_or(120),
+        resolved
+            .config
+            .api_key_env
+            .or_else(|| Some("MINIMAX_API_KEY".to_string())),
+    ) {
+        Ok(provider) => provider,
+        Err(err) => {
+            return CheckResult::fail("minimax", err.to_string(), CheckSeverity::Required);
+        }
+    };
+
+    run_agent_health_check("minimax", provider)
 }
 
 fn run_agent_health_check<P>(name: &'static str, provider: P) -> CheckResult
