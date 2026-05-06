@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use super::types::{
@@ -21,6 +23,8 @@ const OPENCODE_INSTALL_MESSAGE: &str = "opencode CLI not found; install with `br
      `curl -fsSL https://opencode.ai/install | bash`, or `npm install -g opencode-ai`";
 const OPENCODE_AUTH_MESSAGE: &str =
     "opencode auth not found; run `opencode /connect` to authenticate with a provider";
+const OPENCODE_ETXTBSY_RETRIES: usize = 3;
+const OPENCODE_ETXTBSY_RETRY_DELAY: Duration = Duration::from_millis(10);
 
 #[derive(Debug, Clone)]
 pub struct OpenCodeProvider {
@@ -132,6 +136,56 @@ impl OpenCodeProvider {
     fn auth_path(&self) -> PathBuf {
         self.auth_path.clone().unwrap_or_else(opencode_auth_path)
     }
+
+    async fn version_output(&self) -> std::io::Result<std::process::Output> {
+        let mut attempts = 0;
+        loop {
+            match Command::new(&self.binary).arg("--version").output().await {
+                Err(source)
+                    if is_executable_file_busy(&source) && attempts < OPENCODE_ETXTBSY_RETRIES =>
+                {
+                    attempts += 1;
+                    sleep(OPENCODE_ETXTBSY_RETRY_DELAY).await;
+                }
+                result => return result,
+            }
+        }
+    }
+
+    fn run_command(&self, request: &AgentRequest) -> Command {
+        let mut cmd = Command::new(&self.binary);
+        match request.output_format {
+            AgentOutputFormat::StreamJson => {
+                cmd.args(self.build_stream_args(request));
+            }
+            AgentOutputFormat::Text => {
+                cmd.args(self.build_text_args(request));
+            }
+        }
+        cmd.envs(&self.env);
+        if let Some(cwd) = request.cwd.as_ref() {
+            cmd.current_dir(cwd);
+        }
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        cmd
+    }
+
+    async fn spawn_run_command(&self, request: &AgentRequest) -> std::io::Result<Child> {
+        let mut attempts = 0;
+        loop {
+            match self.run_command(request).spawn() {
+                Err(source)
+                    if is_executable_file_busy(&source) && attempts < OPENCODE_ETXTBSY_RETRIES =>
+                {
+                    attempts += 1;
+                    sleep(OPENCODE_ETXTBSY_RETRY_DELAY).await;
+                }
+                result => return result,
+            }
+        }
+    }
 }
 
 impl Default for OpenCodeProvider {
@@ -158,7 +212,7 @@ impl AgentProvider for OpenCodeProvider {
     }
 
     async fn health_check(&self) -> Result<AgentHealthCheck, AgentError> {
-        match Command::new(&self.binary).arg("--version").output().await {
+        match self.version_output().await {
             Ok(out) if out.status.success() => {
                 let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 let auth_path = self.auth_path();
@@ -200,32 +254,18 @@ impl AgentProvider for OpenCodeProvider {
         events: mpsc::UnboundedSender<AgentProviderEvent>,
         cancel: CancellationToken,
     ) -> Result<AgentRunResult, AgentError> {
-        let mut cmd = Command::new(&self.binary);
-        match request.output_format {
-            AgentOutputFormat::StreamJson => {
-                cmd.args(self.build_stream_args(&request));
-            }
-            AgentOutputFormat::Text => {
-                cmd.args(self.build_text_args(&request));
-            }
-        }
-        cmd.envs(&self.env);
-        if let Some(cwd) = request.cwd.as_ref() {
-            cmd.current_dir(cwd);
-        }
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = cmd.spawn().map_err(|source| match source.kind() {
-            std::io::ErrorKind::NotFound => {
-                AgentError::Config(OPENCODE_INSTALL_MESSAGE.to_string())
-            }
-            _ => AgentError::Spawn {
-                provider_id: self.id().to_string(),
-                source,
-            },
-        })?;
+        let mut child =
+            self.spawn_run_command(&request)
+                .await
+                .map_err(|source| match source.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        AgentError::Config(OPENCODE_INSTALL_MESSAGE.to_string())
+                    }
+                    _ => AgentError::Spawn {
+                        provider_id: self.id().to_string(),
+                        source,
+                    },
+                })?;
         let process_id = child.id();
         let stdout = child
             .stdout
@@ -314,6 +354,18 @@ impl AgentProvider for OpenCodeProvider {
         Ok(AgentRunResult {
             exit_code: status.code(),
         })
+    }
+}
+
+fn is_executable_file_busy(source: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        source.raw_os_error() == Some(26)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = source;
+        false
     }
 }
 

@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::agent_graph::model::build_graph;
-use crate::tui::agent_graph::render::draw_agent_graph;
+use crate::tui::agent_graph::render::{GraphRenderOptions, draw_agent_graph};
 use crate::tui::snapshot_tests::{fixed_end, fixed_start};
 
 fn make_session(
@@ -77,7 +77,18 @@ fn render_with(
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
         .draw(|f| {
-            draw_agent_graph(f, f.area(), &nodes, &edges, use_nerd_font, tick, &refs);
+            draw_agent_graph(
+                f,
+                f.area(),
+                &nodes,
+                &edges,
+                GraphRenderOptions {
+                    use_nerd_font,
+                    tick,
+                    sessions: &refs,
+                    theme: &crate::tui::theme::Theme::dark(),
+                },
+            );
         })
         .unwrap();
     terminal

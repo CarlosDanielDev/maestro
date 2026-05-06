@@ -8,7 +8,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     symbols::Marker,
     text::Line,
     widgets::{
@@ -24,6 +24,7 @@ use super::model::{GraphEdge, GraphNode, NodeId, NodeKind};
 use super::personalities::{Sprite, glyph_for_role, role_abbrev, role_color};
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::spinner::graph_node_frame;
+use crate::tui::theme::Theme;
 
 /// Radial distance for the ASCII-mode `[ROLE] #NNN` label. The agent glyph
 /// is a 1×1 cell rectangle, so a small offset suffices.
@@ -37,17 +38,22 @@ const SPRITE_LABEL_BUFFER_CELLS: f64 = 1.5;
 const MIN_WIDTH: u16 = 80;
 const MIN_HEIGHT: u16 = 24;
 
+pub(crate) struct GraphRenderOptions<'a> {
+    pub(crate) use_nerd_font: bool,
+    pub(crate) tick: usize,
+    pub(crate) sessions: &'a [&'a Session],
+    pub(crate) theme: &'a Theme,
+}
+
 pub(crate) fn draw_agent_graph(
     f: &mut Frame,
     area: Rect,
     nodes: &[GraphNode],
     edges: &[GraphEdge],
-    use_nerd_font: bool,
-    tick: usize,
-    sessions: &[&Session],
+    options: GraphRenderOptions<'_>,
 ) {
     if area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
-        draw_too_small(f, area);
+        draw_too_small(f, area, options.theme);
         return;
     }
     let agent_count = nodes
@@ -63,14 +69,14 @@ pub(crate) fn draw_agent_graph(
     // file edges is still a meaningful graph (agent at center, files in the
     // outer ring) and is more informative than the placeholder card.
     if agent_count == 0 || (agent_count == 1 && file_count == 0) {
-        draw_single_agent_card(f, area, nodes);
+        draw_single_agent_card(f, area, nodes, options.theme);
         return;
     }
 
     let layout = ConcentricLayout;
     let positions = layout.position(nodes, edges);
 
-    let marker = if use_nerd_font {
+    let marker = if options.use_nerd_font {
         Marker::Braille
     } else {
         Marker::Block
@@ -81,17 +87,18 @@ pub(crate) fn draw_agent_graph(
     let positions_for_paint = positions;
     let inner_cols = area.width.saturating_sub(2);
     let inner_rows = area.height.saturating_sub(2);
-    let session_infos: Vec<SessionRenderInfo> = sessions
+    let session_infos: Vec<SessionRenderInfo> = options
+        .sessions
         .iter()
         .map(|s| SessionRenderInfo::from_session(s))
         .collect();
+    let file_color = options.theme.accent_info;
+    let graph_block = graph_block(options.theme);
+    let tick = options.tick;
+    let use_nerd_font = options.use_nerd_font;
 
     let canvas = Canvas::default()
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" agent graph "),
-        )
+        .block(graph_block)
         .marker(marker)
         .x_bounds([-1.0, 1.0])
         .y_bounds([-1.0, 1.0])
@@ -179,8 +186,7 @@ pub(crate) fn draw_agent_graph(
                     }
                     NodeKind::File => {
                         // Label anchored at the edge endpoint; any y-offset reintroduces the gap. See ADR #569.
-                        let (color, modifier) = file_style();
-                        let style = Style::default().fg(color).add_modifier(modifier);
+                        let style = Style::default().fg(file_color);
                         let pt = CanvasPoint { x: p.x, y: p.y };
                         let (lx, rendered) = place_file_label(pt, &label, inner_cols);
                         ctx.print(lx, p.y, Line::styled(rendered, style));
@@ -237,18 +243,19 @@ fn find_session<'a>(
     sessions.iter().find(|s| s.id == *uuid)
 }
 
-fn draw_too_small(f: &mut Frame, area: Rect) {
+fn draw_too_small(f: &mut Frame, area: Rect, theme: &Theme) {
     let msg = format!(
         "Agent graph requires {MIN_WIDTH}×{MIN_HEIGHT} (current: {}×{}). Press [g] for panels.",
         area.width, area.height
     );
     let para = Paragraph::new(msg)
+        .style(Style::default().fg(theme.text_secondary))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
+        .block(graph_block(theme));
     f.render_widget(para, area);
 }
 
-fn draw_single_agent_card(f: &mut Frame, area: Rect, nodes: &[GraphNode]) {
+fn draw_single_agent_card(f: &mut Frame, area: Rect, nodes: &[GraphNode], theme: &Theme) {
     let label = nodes
         .iter()
         .find(|n| matches!(n.kind, NodeKind::Agent { .. }))
@@ -261,22 +268,35 @@ fn draw_single_agent_card(f: &mut Frame, area: Rect, nodes: &[GraphNode]) {
         .collect();
 
     let body = vec![
-        Line::from(format!("▶  {label}  RUNNING")),
-        Line::from(format!("    Files: {}", files.join(", "))),
+        Line::styled(
+            format!("▶  {label}  RUNNING"),
+            Style::default().fg(theme.status_color(SessionStatus::Running)),
+        ),
+        Line::styled(
+            format!("    Files: {}", files.join(", ")),
+            Style::default().fg(theme.text_secondary),
+        ),
         Line::from(""),
-        Line::from("1 agent, no files touched yet — graph activates on first file edit"),
+        Line::styled(
+            "1 agent, no files touched yet — graph activates on first file edit",
+            Style::default().fg(theme.text_secondary),
+        ),
     ];
 
-    let para = Paragraph::new(body).alignment(Alignment::Center).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" agent graph "),
-    );
+    let para = Paragraph::new(body)
+        .alignment(Alignment::Center)
+        .block(graph_block(theme));
     f.render_widget(para, area);
 }
 
-fn file_style() -> (Color, Modifier) {
-    (Color::Cyan, Modifier::empty())
+fn graph_block(theme: &Theme) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border_inactive))
+        .title(Line::styled(
+            " agent graph ",
+            Style::default().fg(theme.title_accent),
+        ))
 }
 
 /// Status modifier layered on top of an agent's role color.

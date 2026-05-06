@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::session::role::Role;
 use crate::session::types::{Session, SessionStatus};
 use crate::tui::agent_graph::model::build_graph;
-use crate::tui::agent_graph::render::draw_agent_graph;
+use crate::tui::agent_graph::render::{GraphRenderOptions, draw_agent_graph};
 use crate::tui::snapshot_tests::{fixed_end, fixed_start};
 
 /// Build a session with an explicit role override (bypasses `derive_role`).
@@ -50,7 +50,18 @@ fn render_for_role(
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal
         .draw(|f| {
-            draw_agent_graph(f, f.area(), &nodes, &edges, use_nerd_font, 0, &refs);
+            draw_agent_graph(
+                f,
+                f.area(),
+                &nodes,
+                &edges,
+                GraphRenderOptions {
+                    use_nerd_font,
+                    tick: 0,
+                    sessions: &refs,
+                    theme: &crate::tui::theme::Theme::dark(),
+                },
+            );
         })
         .unwrap();
     terminal
