@@ -132,3 +132,56 @@ milestone_naming = "ai"
 
 [views]
 agent_graph_enabled = true
+
+[agents]
+default = "codex"
+
+[agents.claude]
+kind = "claude"
+enabled = true
+command = "claude"
+model = "opus"
+permission_mode = "bypassPermissions"
+allowed_tools = []
+
+[agents.codex]
+kind = "codex"
+enabled = true
+command = "codex"
+model = "gpt-5.5"
+permission_mode = "yolo"
+sandbox = "workspace-write"
+json = true
+ephemeral = false
+profile = "work"
+extra_args = ["--reasoning-effort", "high"]
+
+[agents.minimax]
+kind = "minimax"
+enabled = true
+model = "MiniMax-M2.7"
+base_url = "https://api.minimax.io/v1"
+request_timeout_secs = 120
+api_key_env = "MINIMAX_API_KEY"
+
+[agents.ollama]
+kind = "ollama"
+enabled = true
+model = "qwen3"
+base_url = "http://localhost:11434"
+request_timeout_secs = 120
+
+[agents.opencode]
+kind = "opencode"
+enabled = true
+command = "opencode"
+model = "openrouter/deepseek/deepseek-chat"
+extra_args = []
+
+[agents.qwen]
+kind = "qwen"
+enabled = true
+command = "qwen"
+model = "qwen-test"
+permission_mode = "bypassPermissions"
+extra_args = ["--auth-type", "openai"]

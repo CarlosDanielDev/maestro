@@ -4,6 +4,7 @@ use crate::agent_provider::{
 };
 use crate::config::{AgentKind, Config, ProviderConfig, ResolvedAgentConfig};
 use crate::provider::types::ProviderKind;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Severity of a preflight check.
@@ -108,6 +109,8 @@ pub fn print_report(report: &DoctorReport) {
         println!("  Summary: {healthy}/{configured} agents healthy ({configured} configured)");
     }
 
+    print_agent_config_upgrade_hint();
+
     println!();
     if report.has_failures() {
         println!("  \x1b[31mSome required checks failed. Maestro may not work correctly.\x1b[0m");
@@ -194,6 +197,8 @@ pub fn run_all_checks_for_agent(config: Option<&Config>, agent_id: Option<&str>)
     if let Some(cfg) = config {
         checks.push(check_provider_matches_remote(cfg.provider.kind));
     }
+
+    checks.push(check_agent_config_schema());
 
     if let (Some(cfg), None) = (config, agent_id) {
         checks.extend(check_configured_agent_runtimes(cfg));
@@ -499,6 +504,83 @@ fn check_config_exists() -> CheckResult {
             "not found — run `maestro init`",
             CheckSeverity::Required,
         )
+    }
+}
+
+fn check_agent_config_schema() -> CheckResult {
+    let Some(path) = find_config_path(Path::new(".")) else {
+        return CheckResult::fail(
+            "agent config",
+            "no config file found; run `maestro init` first",
+            CheckSeverity::Optional,
+        );
+    };
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(err) => {
+            return CheckResult::fail(
+                "agent config",
+                format!("could not read {}: {err}", path.display()),
+                CheckSeverity::Optional,
+            );
+        }
+    };
+
+    match crate::config::plan_agent_config_upgrade(&content) {
+        Ok(plan) if plan.needs_update => CheckResult::fail(
+            "agent config",
+            format!(
+                "{} schema; add {} missing key(s). Use Settings > Project > Normalize Agent Config or paste the suggested block below.",
+                plan.version.label(),
+                plan.keys_added.len()
+            ),
+            CheckSeverity::Optional,
+        ),
+        Ok(plan) => CheckResult::pass(
+            "agent config",
+            format!("{} schema", plan.version.label()),
+            CheckSeverity::Optional,
+        ),
+        Err(err) => CheckResult::fail(
+            "agent config",
+            format!("could not inspect [agents]: {err}"),
+            CheckSeverity::Optional,
+        ),
+    }
+}
+
+fn find_config_path(base: &Path) -> Option<PathBuf> {
+    ["maestro.toml", ".maestro/config.toml"]
+        .into_iter()
+        .map(|candidate| base.join(candidate))
+        .find(|path| path.exists())
+}
+
+fn print_agent_config_upgrade_hint() {
+    let Some(path) = find_config_path(Path::new(".")) else {
+        return;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(plan) = crate::config::plan_agent_config_upgrade(&content) else {
+        return;
+    };
+    if !plan.needs_update {
+        return;
+    }
+
+    println!();
+    println!(
+        "  Suggested [agents] normalization for {} ({})",
+        path.display(),
+        plan.version.label()
+    );
+    println!("  Apply from Settings > Project > Normalize Agent Config, or insert:");
+    println!();
+    for line in plan.snippet.trim_end().lines() {
+        println!("    {line}");
     }
 }
 

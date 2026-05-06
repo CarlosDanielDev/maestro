@@ -5,6 +5,7 @@ use std::path::Path;
 
 mod adapt;
 mod agents;
+mod agents_upgrade;
 mod budget;
 mod experimental;
 mod flags;
@@ -24,6 +25,8 @@ mod views;
 
 pub use adapt::{AdaptSettings, MilestoneNaming};
 pub use agents::{AgentConfig, AgentKind, AgentsConfig};
+#[allow(unused_imports)]
+pub use agents_upgrade::{AgentConfigUpgradePlan, AgentConfigVersion, plan_agent_config_upgrade};
 pub use budget::BudgetConfig;
 pub use experimental::ExperimentalConfig;
 pub use flags::FlagsConfig;

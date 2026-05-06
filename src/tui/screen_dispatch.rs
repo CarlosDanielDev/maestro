@@ -330,6 +330,120 @@ fn handle_reset_settings_from_detection(app: &mut app::App) {
     );
 }
 
+/// Normalize the `[agents]` section in `maestro.toml` with the same
+/// insertion plan surfaced by `maestro doctor`.
+fn handle_normalize_agent_config(app: &mut app::App) {
+    use crate::init::walk;
+    use crate::tui::activity_log::LogLevel;
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let target = match app.config_path.clone() {
+        Some(p) => p,
+        None => walk::find_project_root(&cwd).join("maestro.toml"),
+    };
+
+    if !target.exists() {
+        app.activity_log.push_simple(
+            "Settings".into(),
+            format!(
+                "Agent config normalization failed: no maestro.toml at {}.",
+                target.display()
+            ),
+            LogLevel::Warn,
+        );
+        return;
+    }
+
+    let existing = match std::fs::read_to_string(&target) {
+        Ok(s) => s,
+        Err(e) => {
+            app.activity_log.push_simple(
+                "Settings".into(),
+                format!(
+                    "Agent config normalization failed reading {}: {}",
+                    target.display(),
+                    e
+                ),
+                LogLevel::Error,
+            );
+            return;
+        }
+    };
+
+    let plan = match crate::config::plan_agent_config_upgrade(&existing) {
+        Ok(plan) => plan,
+        Err(e) => {
+            app.activity_log.push_simple(
+                "Settings".into(),
+                format!("Agent config normalization failed: {e}"),
+                LogLevel::Error,
+            );
+            return;
+        }
+    };
+
+    if !plan.needs_update {
+        if let Some(s) = app.screen_state.settings_screen.as_mut() {
+            s.show_caveman_status(format!(
+                "Agent config already normalized ({})",
+                plan.version.label()
+            ));
+        }
+        app.activity_log.push_simple(
+            "Settings".into(),
+            format!("Agent config already normalized ({})", plan.version.label()),
+            LogLevel::Info,
+        );
+        return;
+    }
+
+    if let Err(e) = std::fs::write(&target, &plan.normalized_toml) {
+        app.activity_log.push_simple(
+            "Settings".into(),
+            format!(
+                "Agent config normalization failed writing {}: {}",
+                target.display(),
+                e
+            ),
+            LogLevel::Error,
+        );
+        return;
+    }
+
+    let cfg = match crate::config::Config::load(&target) {
+        Ok(c) => c,
+        Err(e) => {
+            app.activity_log.push_simple(
+                "Settings".into(),
+                format!("Agent config normalization wrote file but reload failed: {e}"),
+                LogLevel::Error,
+            );
+            return;
+        }
+    };
+
+    if let Some(s) = app.screen_state.settings_screen.as_mut() {
+        *s = crate::tui::screens::SettingsScreen::new(cfg.clone(), app.flags.clone())
+            .with_config_path(target.clone());
+        s.show_caveman_status(format!(
+            "Normalized agent config from {}; +{} key(s).",
+            plan.version.label(),
+            plan.keys_added.len()
+        ));
+    }
+    app.config = Some(cfg);
+    app.activity_log.push_simple(
+        "Settings".into(),
+        format!(
+            "Agent config normalized at {} from {}; +{} key(s). This uses the v0.25 [agents] schema consumed by v0.27 teams.",
+            target.display(),
+            plan.version.label(),
+            plan.keys_added.len()
+        ),
+        LogLevel::Info,
+    );
+}
+
 /// Process a ScreenAction returned by a screen's input handler.
 pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
     match action {
@@ -629,6 +743,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
         }
         ScreenAction::ResetSettingsFromDetection => {
             handle_reset_settings_from_detection(app);
+        }
+        ScreenAction::NormalizeAgentConfig => {
+            handle_normalize_agent_config(app);
         }
         ScreenAction::PreviewTheme(theme_config) => {
             if let Some(tc) = theme_config {
