@@ -70,6 +70,19 @@ Three layers:
 - v0.25.0 `[agents.*]` — teams consume `agent_id` from there; no schema overlap.
 - Worktree lifecycle — one worktree per issue; cross-issue worktrees isolated; existing cleanup rules apply.
 
+### L2 provider constraint (load-bearing)
+
+**L2 MUST run on a provider that supports structured tool-call dispatch.** In v1, this means **Claude only** — `Task()` is a Claude Code primitive, not a generic LLM API concept. Codex / Qwen / OpenCode / Ollama / MiniMax cannot host L2 in v1; they can host subagents (L1) freely.
+
+L2's provider is independent of the team's role bindings. A team can bind every subagent role to a non-Claude provider, but L2 itself always spawns a Claude session.
+
+Concrete rules:
+
+- Every built-in preset declares `min_agents = ["claude", ...]` — Claude is mandatory for any team to be runnable.
+- `doctor` reports "team system unavailable" if no `claude` agent is healthy, and the team wizard refuses to enter the launch flow.
+- The pre-flight failure taxonomy (Section 8) gains: `L2ProviderUnavailable` — surfaced when no Claude agent is healthy.
+- A future `[orchestrator]` config key (out of v1 scope, see §13) will allow configuring L2's provider once a non-Claude provider with comparable tool-call semantics ships.
+
 ## 4. Data model
 
 ### Primitives (Rust, closed enum)
@@ -85,9 +98,14 @@ pub enum Primitive {
 
 pub enum TeamInput {
     Issue { number: u64 },
-    MilestoneSlice { milestone: u64, issues: Vec<u64> },
+    /// Set of issues, possibly spanning multiple milestones. The scheduler fetches
+    /// each issue's milestone at edge-classification time (Section 5 STEP 2) to
+    /// classify deps as same-milestone vs cross-milestone. The `primary_milestone`
+    /// field is the milestone the user *selected from* in the wizard — it's the
+    /// reference point for "same-milestone" auto-add behavior in STEP 4.
+    IssueSet { primary_milestone: Option<u64>, issues: Vec<u64> },
     IdeaInbox,
-    FileSet(Vec<PathBuf>),
+    // FileSet variant deferred to v2 (see §13).
 }
 
 pub enum TeamOutput {
@@ -101,6 +119,42 @@ pub enum TeamOutput {
 ```
 
 Each primitive declares which `TeamInput` and `TeamOutput` variants it accepts. Layer 2 receives a state machine derived from the primitive — that's how the LLM orchestrator's scope stays bounded.
+
+### Role output contracts (load-bearing)
+
+Each role produces a typed return value when its `Task()` call completes. L1 enforces the contract; L2 trusts it. Without these contracts the "Task() returns ≤ 300 token structured summary" cost discipline and the "L1 SubagentError when payload doesn't match shape" failure class are both undefined.
+
+```rust
+// src/orchestration/contracts.rs
+pub enum SubagentResult {
+    /// Implementer produced a code change.
+    CodeChange {
+        files_touched: Vec<PathBuf>,
+        summary: String,        // ≤ 200 tokens
+        commit_sha: Option<String>,
+    },
+    /// Reviewer produced findings on a diff or PR.
+    ReviewFindings {
+        verdict: ReviewVerdict, // Approved | RequestChanges | Comment
+        findings: Vec<Finding>, // each ≤ 50 tokens; total cap = 8 findings
+    },
+    /// Docs produced documentation changes.
+    DocsChange {
+        files_touched: Vec<PathBuf>,
+        summary: String,        // ≤ 100 tokens
+    },
+    /// Triager / Researcher returned a verdict.
+    Verdict {
+        decision: String,       // primitive defines the enum (e.g., promote|park|archive)
+        rationale: String,      // ≤ 150 tokens
+        new_issues: Vec<NewIssueDraft>,  // optional; empty = no new issues
+    },
+    /// Generic single-pass result that doesn't fit the above.
+    Generic { json: serde_json::Value },  // schema validated against role's declared shape
+}
+```
+
+Each `Role` declares which `SubagentResult` variants it can produce. L1 returns `SubagentError::ResultShapeMismatch { expected, got }` if the provider's output cannot be parsed into the declared variants for that role. The full schema lives at `src/orchestration/contracts.rs`; this enum is the v1 surface and may grow as new primitives are added.
 
 ### Team preset schema (TOML)
 
@@ -133,14 +187,28 @@ extends     = "default-coder"
 implementer = "ollama"
 ```
 
+**Built-in (binary-embedded), shown for reference:**
+```toml
+# include_str!("teams/default-coder.toml")
+extends     = ""              # no parent — built-in is a root
+primitive   = "pipeline"
+min_agents  = ["claude"]      # team-system-wide: every team needs claude (L2)
+                              # plus the built-in's actual binding agents
+implementer = "claude"
+reviewer    = "claude"
+docs        = "claude"
+```
+
+`min_agents` must include `"claude"` on every built-in (and is enforced for user/project teams too, per §3 L2 constraint). Additional entries declare which subagent agents must also be healthy for the team to be runnable.
+
 ### Tier resolution
 
 1. Load built-ins from binary-embedded TOML (`include_str!`).
 2. Load user tier: `~/.config/maestro/teams/*.toml` (alphabetical; last-wins per-name within tier).
 3. Load project tier: `.maestro/teams/*.toml` ∪ `[teams.*]` in `maestro.toml`.
-4. Resolution priority on duplicate names: project > user > built-in.
+4. Resolution priority on duplicate names: project > user > built-in. **Name collision is whole-entry replacement, not field-level merge** — when two tiers define the same preset name, the higher-priority tier wins entirely; the lower-priority entry is discarded *before* `extends` resolution. The winning entry's `extends` chain then resolves against the post-collision name map. There is no field-level merge across tiers on collision.
 5. `extends` chains must form a DAG (cycle → hard error at load time).
-6. Cross-tier extension is allowed (project file extends a built-in by name).
+6. Cross-tier extension is allowed (project file extends a built-in by name). Resolution of `extends = "X"` uses the post-collision name map: the `X` that wins under rule 4 is the one used.
 7. Result: `HashMap<String, ResolvedTeam>` where every binding is merged through its `extends` chain and validated against its primitive's contract.
 
 ### Built-in seed list (v1, ship 5)
@@ -181,20 +249,40 @@ Snapshot test asserts the resolver picks the right path per OS.
 INPUT:  TeamInput (typically MilestoneSlice or single Issue)
         + Team { name, primitive, role_bindings, ... }
 
-STEP 1  Fetch each issue's body via gh; parse `## Blocked By` section.
-STEP 2  Edge classification:
-          IN-SLICE         → real edge in DAG
-          CLOSED-EXTERNAL  → drop (dep already satisfied)
-          OPEN-EXTERNAL    → block; surface to user
+STEP 1  Fetch each selected issue's body AND milestone via
+        `gh issue view <n> --json body,milestone`. Parse `## Blocked By`.
+STEP 2  Edge classification. For each dep `d`:
+          - if `d` ∈ selected set        → IN-SLICE (real edge in DAG)
+          - else fetch `d` via gh issue view → milestone + state. Then:
+              - state = CLOSED            → CLOSED-EXTERNAL (drop edge)
+              - state = OPEN, milestone == primary_milestone
+                                          → SAME-MILESTONE-OPEN-EXTERNAL
+              - state = OPEN, milestone != primary_milestone (or no milestone)
+                                          → CROSS-MILESTONE-OPEN-EXTERNAL
 STEP 3  Cycle check (Tarjan SCC). Any SCC > 1 node → hard error.
-STEP 4  OPEN-EXTERNAL handling. Default: same-milestone → auto-add to selection;
-        cross-milestone → cancel and ask.
+STEP 4  OPEN-EXTERNAL handling:
+          - SAME-MILESTONE-OPEN-EXTERNAL  → default: auto-expand the selection
+            to include `d`. The expansion is shown to the user in the plan
+            preview as a diff: "selected 3 issues, run will execute 5 (auto-added
+            #X #Y as same-milestone deps)."
+          - CROSS-MILESTONE-OPEN-EXTERNAL → cancel-and-ask (no silent expansion
+            across milestones).
+        Auto-expansion is bounded: if expansion adds > 2x the original selection
+        count, the wizard surfaces a confirmation prompt instead of expanding
+        silently. Expansion does NOT recurse — auto-added issues are not
+        re-fetched for their own deps; user must re-run if they want transitive
+        closure. Re-fetching is cheap (one gh call per added issue) but the
+        recursion bound prevents balloon scenarios.
 STEP 5  Topological levels (Kahn's algorithm).
-STEP 6  Concurrency packing (default cap = 3, configurable via
-        [concurrency.team_max_parallel]).
+STEP 6  Concurrency model — simple semaphore (NOT bin-packing). The cap
+        `[concurrency.team_max_parallel]` (default 3) is the maximum number of
+        in-flight Layer-2 runs at any moment. Within a level, issues launch as
+        slots free. The plan preview renders levels purely for dependency
+        visualization; actual execution is "as-soon-as-allowed" within the cap.
 STEP 7  Render plan in wizard preview. User confirms.
-STEP 8  For each level: spawn ≤ cap Layer-2 runs. On Layer-2 result:
-          Success → mark issue done; if level done → unlock next level.
+STEP 8  For each level (in order), spawn issues into the global semaphore.
+        On Layer-2 result:
+          Success → mark issue done; if all peers in level done → unlock next.
           Failure → mark issue failed; downstream stays blocked.
 STEP 9  Persist a single TeamRun record with sub-records per issue.
 ```
@@ -241,9 +329,20 @@ When L2 calls `Task(role=Reviewer, instructions=...)`:
 7. Return to L2 as the Task() return value.
 ```
 
-**Subagent isolation:** each subagent session sees only its own system prompt + L2's instructions for that one Task() call. Subagents do NOT see other subagents' prompts or outputs. L2 is the only thing with the "whole picture" — and it's bounded to one issue.
+**Subagent isolation (refined claim):** each subagent session sees only its own system prompt + L2's instructions for that one Task() call. Subagent sessions do NOT see each other's prompts or raw outputs directly. **However, L2 may include a brief structured summary of prior subagent results in the next subagent's instructions** (e.g., "Implementer's diff touched files X, Y, Z; review with focus on Z's regex"). This is necessary to make pipelines work. The summary is bounded by the role's `SubagentResult` contract — typically a `summary: String ≤ 200 tokens` field — and never includes raw issue bodies, diffs, or other subagent prompts. Net effect: subagents are sandboxed but not fully blind; L2 is the only entity with the whole picture, and even it never reads issue bodies directly.
 
 **Provider transparency:** L2 never knows what provider Reviewer ran on; Task() returns are normalized.
+
+### IdeaInbox runtime model (`subagent-idea-triager` interop)
+
+The existing `subagent-idea-triager` lives in `.claude/agents/` — it's a Claude Code subagent definition, not a v0.25.0 `[agents.*]` provider entry. These are two different runtime models:
+
+- v0.25.0 `[agents.<id>]` is a process/HTTP target (`claude` binary, Ollama HTTP, etc.).
+- `.claude/agents/<name>.md` is a Claude Code system-prompt agent loaded at runtime by a Claude session.
+
+When `default-triager` runs with `TeamInput::IdeaInbox`, L1 dispatch resolves the bound agent for the triager role (typically `claude`), then **the spawned Claude session is responsible for invoking the `.claude/agents/subagent-idea-triager` definition via Claude Code's existing subagent mechanism**. The team layer does NOT directly load `.claude/agents/` markdown files; that remains Claude Code's domain.
+
+This means: `default-triager` requires `claude` in `min_agents` not just because L2 is Claude (every team requires that), but because the triager subagent itself is Claude-Code-bound. Built-in presets that wrap existing `.claude/agents/` flows must declare this in their description.
 
 ## 6. Multi-issue dependency planning
 
@@ -257,7 +356,7 @@ See L3's STEP 1–6 above. Three notes:
 
 1. **STEP 4's default for same-milestone OPEN-EXTERNAL** is "auto-add to selection." Friendly but can balloon a "I picked 3 issues" launch into a 12-issue run via transitive deps. Conservative alternative: always cancel and ask. Default chosen for ergonomics.
 2. **Plan rendering** annotates issues: ✅ closed (informational), 🔒 waiting, ⚠ ignored OPEN-EXTERNAL, ❌ pre-flight fail. ❌ disables the confirm button until resolved.
-3. **The scheduler doesn't infer non-`Blocked By` deps** (file overlap, branch conflicts). Worktrees handle file isolation; PR queues handle branch ordering. The team layer trusts those existing mechanisms.
+3. **The scheduler doesn't infer non-`Blocked By` deps** (file overlap, branch conflicts). Worktrees handle *file* isolation at run time — each issue runs in its own worktree, so concurrent edits don't corrupt the working tree. **PR-merge sequencing is a separate concern.** Maestro's existing per-session PR queue is per-session; for team runs, PRs from the same level may conflict at merge time when GitHub auto-merge attempts to land them. v1 punts on this: all team-run PRs land via the existing per-session queue, which serializes them. If two PRs from the same level conflict, the second one fails CI and the user resolves manually. A team-aware merge-train scheduler is explicitly out of v1 scope (see §13).
 
 ## 7. Wizard UX
 
@@ -293,9 +392,25 @@ State machine steps:
 
 Edit / delete user-tier presets through the TUI. Could ship as v2 with v1 doing "edit by hand," but included for completeness — costs ~30% of the wizard TUI.
 
-### Cost estimate (in v1)
+### Cost estimate (in v1, formula locked)
 
-Internal "estimated tokens per primitive run" table per provider. Approximate; clearly labeled as such.
+```
+estimate_tokens(team, primitive, num_issues) =
+    num_issues * (
+        L2_system_prompt_tokens                                // ~200, computed at team resolution
+      + sum_over_roles(role_system_prompt_tokens)              // from [modes.*]; computed at resolution
+      + AVG_ISSUE_CONTEXT_TOKENS_PER_PROVIDER                  // static const, default 800
+      + 300 * num_required_roles * RECOVERY_BUDGET             // RECOVERY_BUDGET = 3 (max attempts)
+    )
+
+estimate_cost($) = sum_over_providers(
+    estimate_tokens_routed_to(provider) * COST_PER_TOKEN[provider]
+)
+```
+
+`COST_PER_TOKEN[provider]` is a static `HashMap<AgentKind, f64>` in source (one entry per v0.25.0 provider; Ollama is `0.0`; updated only on maestro release). The result is rendered in the plan preview as **"≈ $X.XX (rough estimate, ±50%)"** — explicitly labeled as approximate. No runtime fetching of provider pricing.
+
+Rationale: locking the formula now prevents the implementation from inventing one under time pressure and guarantees the displayed number has a documented derivation. The ±50% label is honest about variance without requiring real telemetry to refine.
 
 ### Empty state / first-run
 
@@ -359,14 +474,19 @@ pub enum IssueRunState {
 }
 ```
 
-On startup, maestro reads open TeamRuns, reconciles `InFlight` records with running session PIDs (existing pattern), and either resumes or marks orphans as `Failed`. Idempotency: a TeamRun in any state can be re-opened on the dashboard; verbs are always available.
+**Restart reconciliation — pessimistic.** On startup, maestro reads open TeamRuns. Any `InFlight` record is **immediately promoted to `Failed { reason: "process state lost across restart" }`**. We do NOT scan the OS for matching PIDs and we do NOT attempt to resume a session whose in-memory `ManagedSession` is gone.
+
+Rationale: `IssueRunState::InFlight` carries `session_id: Uuid`, not a PID, and `ManagedSession` (the runtime owner of the actual subprocess / HTTP client) is not persisted. Adding a `pid: Option<u32>` field plus a process scan would let us resume in some cases, but the failure modes (PID reused by an unrelated process, session hung in a non-recoverable state, partial worktree state) outweigh the resume benefit. The user gets a clear "the run was interrupted" surface and can hit `[r] retry` on the dashboard.
+
+Idempotency: a TeamRun in any state can be re-opened on the dashboard; verbs are always available. `Failed` is recoverable via `[r] retry`, which clears the state and re-spawns the issue from the queue.
 
 ### Pre-flight is sacred
 
 All validation runs before Layer 3 launches the first issue:
 - TOML cycle check.
-- Every `agent_id` resolves and is healthy (call `doctor` once).
+- Every `agent_id` resolves and is healthy. **Health checks are invoked as a library call, not as a `Command::new("maestro").arg("doctor")` subprocess.** Concretely: v0.25.0 #550's doctor module exposes `pub async fn run_health_check(providers: &[AgentProviderId]) -> Vec<AgentHealthCheck>` (the type already exists at `src/agent_provider/types.rs`). Pre-flight calls this directly. Rationale: subprocess-spawning would prevent reuse of already-resolved provider state, double the cold-start cost, and make the pre-flight untestable without process spawning. This adds a small reciprocal dependency on #550 which is acceptable since this work cannot land before v0.25.0 closes anyway.
 - Every `mode` resolves.
+- L2 provider is available (Claude is healthy; see §3 L2 constraint).
 - Every required role for the primitive is bound.
 - Every selected issue has parseable `## Blocked By` (or "None").
 - DAG is acyclic.
@@ -386,7 +506,7 @@ A pre-flight failure produces a single human-readable diagnostic with the offend
 | Tier loader | Unit + insta snapshot | Built-in TOML parses, user-tier path resolution per OS, `extends` chain merge, cycle detection rejects |
 | Primitives | Unit | Each primitive's state machine: success path, every recovery branch, max-iteration cap |
 | L3 scheduler | Unit + property | Topo-sort correctness over generated DAGs, OPEN-EXTERNAL classification, level packing under varying concurrency caps |
-| L2 orchestrator | Integration with mock providers | LLM orchestrator runs end-to-end against a fake `Task()` tool returning canned subagent results; assert state-machine transitions |
+| L2 orchestrator | Integration with mock providers | LLM orchestrator runs end-to-end against a fake `Task()` tool returning canned subagent results; assert state-machine transitions. **Mock ownership:** the fake `Task()` lives in `tests/orchestration/mock_task.rs` and intercepts at the Claude provider layer (since `Task()` is Claude Code's tool primitive) — it does NOT replace `AgentProvider` itself; it replaces the L2 session's tool-result channel with canned payloads, so the test doesn't spawn a real Claude binary. |
 | L1 dispatch | Integration | Mock provider sessions; verify mode resolution, prompt assembly, structured-result capture |
 | Wizard | TUI snapshot tests | All compose-flow steps, all launch-flow steps, every error inline, narrow-terminal truncation, Manage screen |
 | State store | Unit + insta | TeamRun JSON round-trip, `IssueRunState` transitions, restart reconciliation |
@@ -418,26 +538,45 @@ A pre-flight failure produces a single human-readable diagnostic with the offend
 
 ## 10. Dependencies on other work
 
-- **Hard:** v0.25.0 must close (or at least #547 + #549 + the providers used in built-ins) before this work can land. Built-in `default-coder` requires `[agents.claude]`, which is v0.25.0 #549.
-- **Soft:** v0.25.0 #550 (doctor) makes the wizard's "filter to enabled-and-healthy agents" step nicer; without it, the wizard would have to run health checks itself.
-- **None on v0.26.0** (CI quality gates).
+### v0.25.0 (multi-agent)
+
+- **Hard:** #547 (AgentProvider trait + ClaudeProvider) — L1 dispatch consumes this directly.
+- **Hard:** #549 (multi-agent config) — every team binding's `agent_id` resolves through `[agents.<id>]` defined here.
+- **Hard:** #550 (doctor) — pre-flight calls `run_health_check()` as a library function, not a subprocess. Promoted from soft to hard by review fix C4.
+- **Soft:** #551 (TUI per-session agent selector) — the team wizard's "filter to enabled-and-healthy agents" step ideally reuses the dropdown widget #551 ships, but can be re-implemented if #551 slips.
+- **Soft:** #552 / #652 (parser adapters) — L1 consumes whichever parser the bound agent uses; if any parser is stubbed at v0.25.0 close, the team that uses it inherits the stub.
+
+### Cargo.toml additions
+
+- `directories` — cross-platform user-config-path resolution (Linux XDG / macOS Application Support / Windows %APPDATA%). New dependency. Pin to a stable major version per Rust deps policy (no wildcards).
+
+### Internal Maestro
+
+- `[modes.*]` — referenced by team role bindings; no schema change.
+- `[concurrency]` — extended with optional `team_max_parallel` (default 3); backward-compatible.
+- `src/state/types.rs` — extended with `TeamRun` and `IssueRunState`; backward-compatible (new variants).
+
+### NOT depended on
+
+- v0.26.0 (CI quality gates) — independent.
+- v0.24.1 (README hero polish) — independent.
 
 ## 11. Decisions deferred
 
 The brainstorming session resolved six load-bearing forks. The following remain open and are explicitly deferred to the implementation plan:
 
 - **Naming conventions** for primitive verbs in L2's tool list (`Task` vs `Dispatch` vs `Delegate`). Bikeshed; pick during plan writing.
-- **Cost estimate computation** — exact formula and per-provider tables. Approximate; refine in implementation.
 - **`maestro team manage` UX details** — exact screen layout. Mirrors existing TUI patterns.
 - **Migration story** for users who already maintain `[modes.*]` configs and want to "lift" them into team presets. Likely an `assist` slash command in v2.
 - **Discord / external notification integration** for TeamRun status — out of v1 scope; reuse existing `notifications` system.
+- **Built-in version pinning syntax** (`extends = "default-coder@v1"`) — the upgrade-warning mitigation in §12 risk #4 mentions this, but the TOML syntax for the version suffix is not specified here. Deferred to v2; in v1, all `extends` references are unversioned and built-in changes are documented as breaking in CHANGELOG.
 
 ## 12. Risks
 
 1. **L2 cost discipline drifts** — if "minimal-context orchestrator" turns into "actually I read the issue body to make a decision," L2's token use balloons. Mitigation: tool-set restriction at the API level (no Read/Edit/Write/Bash/Grep), max-iteration cap, and a per-TeamRun cost telemetry that flags outliers.
 2. **`extends` chain debugging** — when a team behaves unexpectedly, tracing why a binding came out the way it did across three tiers and inheritance can be painful. Mitigation: `maestro team explain <name>` CLI command that prints the resolved table with provenance per field.
 3. **Cross-issue dep cascades** — STEP 4's auto-add default can balloon scope unexpectedly. Mitigation: plan preview always shows the final selection count vs the user's original count; visual delta.
-4. **Built-in drift on maestro upgrade** — if `default-coder` changes between releases, user presets that `extends = "default-coder"` may break silently. Mitigation: built-ins versioned (`default-coder@v1`); user presets pin a version; upgrade path warns when pin is stale.
+4. **Built-in drift on maestro upgrade** — if `default-coder` changes between releases, user presets that `extends = "default-coder"` may break silently. Mitigation in v1: built-in changes that affect downstream `extends` semantics MUST be flagged in CHANGELOG as breaking, and the loader emits a `tracing::warn!` on every load that uses a built-in (so users see "you are inheriting from default-coder" in logs and can audit). Versioned pinning syntax (`default-coder@v1`) is deferred to v2 — see §11.
 5. **Provider-specific failure modes leaking past L1** — e.g., Ollama returning `model_not_pulled` as a 404 vs Claude returning a tool-error format. L1 normalizes, but novel providers may surface unfamiliar errors. Mitigation: the `SubagentError` enum is exhaustive over known cases; `Other(String)` catches the rest with full preserved context for debugging.
 
 ## 13. Out of scope (v1)
