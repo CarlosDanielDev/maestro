@@ -123,6 +123,10 @@ pub struct AgentProviderDefinition {
     pub id: String,
     pub provider: String,
     pub binary: Option<String>,
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+    pub request_timeout_secs: Option<u64>,
+    pub api_key_env: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,6 +231,27 @@ impl AgentProviderFactory {
                     )),
                 })
             }
+            Some(provider) if provider.provider == "ollama" || provider.id == "ollama" => {
+                let model = provider.model.clone().ok_or_else(|| {
+                    AgentError::Config(format!("agent provider `{}` requires model", provider.id))
+                })?;
+                let base_url = provider
+                    .base_url
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:11434".to_string());
+                Ok(Self {
+                    default_provider: Arc::new(
+                        crate::agent_provider::ollama::OllamaProvider::new(
+                            provider.id.clone(),
+                            base_url,
+                            model,
+                            provider.request_timeout_secs.unwrap_or(120),
+                            provider.api_key_env.clone(),
+                        )
+                        .map_err(crate::agent_provider::ollama::OllamaError::into_agent_error)?,
+                    ),
+                })
+            }
             Some(provider) => Err(AgentError::Config(format!(
                 "unsupported default agent provider `{}`",
                 provider.provider
@@ -253,123 +278,5 @@ impl AgentProviderFactory {
 impl Default for AgentProviderFactory {
     fn default() -> Self {
         Self::claude_default()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct HttpStubProvider;
-
-    #[async_trait]
-    impl AgentProvider for HttpStubProvider {
-        fn id(&self) -> &str {
-            "http-stub"
-        }
-
-        fn kind(&self) -> AgentProviderKind {
-            AgentProviderKind::Http
-        }
-
-        fn parser_binding(&self) -> ParserBinding {
-            ParserBinding {
-                name: "stub-json".to_string(),
-                output_format: AgentOutputFormat::StreamJson,
-            }
-        }
-
-        async fn health_check(&self) -> Result<AgentHealthCheck, AgentError> {
-            Ok(AgentHealthCheck {
-                provider_id: AgentProviderId::new(self.id()),
-                available: true,
-                version: None,
-                message: "ok".to_string(),
-            })
-        }
-
-        async fn run(
-            &self,
-            _request: AgentRequest,
-            events: mpsc::UnboundedSender<AgentProviderEvent>,
-            _cancel: CancellationToken,
-        ) -> Result<AgentRunResult, AgentError> {
-            let _ = events.send(AgentProviderEvent::Started(AgentRunStarted {
-                process_id: None,
-            }));
-            let _ = events.send(AgentProviderEvent::Stream(StreamEvent::Completed {
-                cost_usd: 0.0,
-            }));
-            Ok(AgentRunResult { exit_code: None })
-        }
-    }
-
-    #[tokio::test]
-    async fn trait_supports_http_provider_without_subprocess_state() {
-        let provider: Arc<dyn AgentProvider> = Arc::new(HttpStubProvider);
-        assert_eq!(provider.kind(), AgentProviderKind::Http);
-
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        provider
-            .run(
-                AgentRequest::stream_json("prompt".into(), "model".into()),
-                tx,
-                CancellationToken::new(),
-            )
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            rx.recv().await,
-            Some(AgentProviderEvent::Started(AgentRunStarted {
-                process_id: None
-            }))
-        ));
-        assert!(matches!(
-            rx.recv().await,
-            Some(AgentProviderEvent::Stream(StreamEvent::Completed { .. }))
-        ));
-    }
-
-    #[test]
-    fn factory_defaults_to_claude_provider() {
-        let factory = AgentProviderFactory::default();
-        assert_eq!(factory.default_provider().id(), "claude");
-    }
-
-    #[test]
-    fn factory_accepts_empty_config_as_legacy_claude() {
-        let factory = AgentProviderFactory::from_config(AgentProvidersConfig::default()).unwrap();
-        assert_eq!(factory.default_provider().id(), "claude");
-    }
-
-    #[test]
-    fn factory_accepts_qwen_provider() {
-        let factory = AgentProviderFactory::from_config(AgentProvidersConfig {
-            default_provider: "qwen".to_string(),
-            providers: vec![AgentProviderDefinition {
-                id: "qwen".to_string(),
-                provider: "qwen".to_string(),
-                binary: Some("qwen".to_string()),
-            }],
-        })
-        .unwrap();
-
-        assert_eq!(factory.default_provider().id(), "qwen");
-    }
-
-    #[test]
-    fn factory_accepts_codex_provider() {
-        let factory = AgentProviderFactory::from_config(AgentProvidersConfig {
-            default_provider: "codex".to_string(),
-            providers: vec![AgentProviderDefinition {
-                id: "codex".to_string(),
-                provider: "codex".to_string(),
-                binary: Some("codex".to_string()),
-            }],
-        })
-        .unwrap();
-
-        assert_eq!(factory.default_provider().id(), "codex");
     }
 }

@@ -1,5 +1,7 @@
-use crate::agent_provider::ClaudeProvider;
-use crate::config::{Config, ProviderConfig};
+use crate::agent_provider::{
+    AgentProvider, ClaudeProvider, CodexProvider, OllamaProvider, QwenProvider,
+};
+use crate::config::{AgentKind, Config, ProviderConfig, ResolvedAgentConfig};
 use crate::provider::types::ProviderKind;
 use std::process::Command;
 
@@ -108,7 +110,7 @@ pub fn run_all_checks(config: Option<&Config>) -> DoctorReport {
         checks.push(check_provider_matches_remote(cfg.provider.kind));
     }
 
-    checks.push(check_claude_cli());
+    checks.push(check_agent_runtime(config));
 
     // Only check repo access if gh is authenticated
     if provider_kind == ProviderKind::Github
@@ -471,6 +473,109 @@ fn check_claude_cli() -> CheckResult {
     let health = ClaudeProvider::default().health_check_blocking();
     let version = health.version.unwrap_or(health.message);
     build_claude_cli_result(health.available, &sanitize(&version))
+}
+
+fn check_agent_runtime(config: Option<&Config>) -> CheckResult {
+    let Some(config) = config else {
+        return check_claude_cli();
+    };
+
+    match config.resolve_agent(None) {
+        Ok(resolved) => match resolved.config.kind {
+            AgentKind::Claude => check_claude_cli(),
+            AgentKind::Codex => check_subprocess_agent(
+                "codex cli",
+                CodexProvider::new(resolved.config.command.as_deref().unwrap_or("codex"))
+                    .health_check_blocking(),
+            ),
+            AgentKind::Qwen => check_subprocess_agent(
+                "qwen cli",
+                QwenProvider::new(resolved.config.command.as_deref().unwrap_or("qwen"))
+                    .health_check_blocking(),
+            ),
+            AgentKind::Ollama => check_ollama_agent(resolved),
+            other => CheckResult::fail(
+                format!("{} agent", other.as_str()),
+                "provider runtime is not implemented yet",
+                CheckSeverity::Required,
+            ),
+        },
+        Err(err) => CheckResult::fail("agent config", err.to_string(), CheckSeverity::Required),
+    }
+}
+
+fn check_subprocess_agent(
+    name: impl Into<String>,
+    health: crate::agent_provider::AgentHealthCheck,
+) -> CheckResult {
+    let version = health.version.unwrap_or(health.message);
+    if health.available {
+        CheckResult::pass(name, sanitize(&version), CheckSeverity::Required)
+    } else {
+        CheckResult::fail(name, sanitize(&version), CheckSeverity::Required)
+    }
+}
+
+fn check_ollama_agent(resolved: ResolvedAgentConfig) -> CheckResult {
+    let model = match resolved
+        .config
+        .model
+        .clone()
+        .filter(|model| !model.trim().is_empty())
+    {
+        Some(model) => model,
+        None => {
+            return CheckResult::fail(
+                "ollama",
+                format!("agents.{}.model is required for ollama", resolved.id),
+                CheckSeverity::Required,
+            );
+        }
+    };
+
+    let provider = match OllamaProvider::new(
+        resolved.id,
+        resolved
+            .config
+            .base_url
+            .unwrap_or_else(|| "http://localhost:11434".to_string()),
+        model,
+        resolved.config.request_timeout_secs.unwrap_or(120),
+        resolved.config.api_key_env,
+    ) {
+        Ok(provider) => provider,
+        Err(err) => {
+            return CheckResult::fail("ollama", err.to_string(), CheckSeverity::Required);
+        }
+    };
+
+    run_agent_health_check("ollama", provider)
+}
+
+fn run_agent_health_check<P>(name: &'static str, provider: P) -> CheckResult
+where
+    P: AgentProvider + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let runtime = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(err) => {
+                return CheckResult::fail(name, err.to_string(), CheckSeverity::Required);
+            }
+        };
+
+        match runtime.block_on(provider.health_check()) {
+            Ok(health) => {
+                CheckResult::pass(name, sanitize(&health.message), CheckSeverity::Required)
+            }
+            Err(err) => CheckResult::fail(name, err.to_string(), CheckSeverity::Required),
+        }
+    })
+    .join()
+    .unwrap_or_else(|_| CheckResult::fail(name, "health check panicked", CheckSeverity::Required))
 }
 
 fn check_az_cli(severity: CheckSeverity) -> CheckResult {
