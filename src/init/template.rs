@@ -99,7 +99,6 @@ default_model = "opus"
 default_mode = "orchestrator"
 permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
 allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
-
 # [agents]
 # default = "claude"
 # [agents.claude]
@@ -109,6 +108,7 @@ allowed_tools = []                      # Empty = all tools. Example: ["Bash", "
 # model = "opus"
 # permission_mode = "bypassPermissions"
 # allowed_tools = []
+
 # [agents.codex]
 # kind = "codex"
 # enabled = false
@@ -138,7 +138,6 @@ allowed_tools = []                      # Empty = all tools. Example: ["Bash", "
 # base_url = "https://api.minimax.io/v1"
 # request_timeout_secs = 120
 # api_key_env = "MINIMAX_API_KEY"
-
 [budget]
 per_session_usd = 5.0
 total_usd = 50.0
