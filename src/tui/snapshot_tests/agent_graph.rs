@@ -2,7 +2,7 @@ use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 use uuid::Uuid;
 
-use crate::session::types::{Session, SessionStatus};
+use crate::session::types::{ActivityEntry, Session, SessionStatus};
 use crate::tui::agent_graph::model::build_graph;
 use crate::tui::agent_graph::render::{GraphRenderOptions, draw_agent_graph};
 use crate::tui::snapshot_tests::{fixed_end, fixed_start};
@@ -135,9 +135,8 @@ fn agent_graph_renders_at_120x40() {
     assert_snapshot!(t.backend());
 }
 
-/// A session with no `files_touched` — exercises the only remaining fallback
-/// path (no edges to draw, just one node, so the card is still the right
-/// affordance).
+/// A session with no `files_touched` — exercises the live empty-state path
+/// before there are edges to draw.
 fn single_agent_no_files_session() -> Vec<Session> {
     vec![make_session(
         "Solo task with no files yet",
@@ -174,15 +173,40 @@ fn agent_graph_renders_single_agent_with_files_as_graph() {
     assert_snapshot!(t.backend());
 }
 
-/// The fallback card is still the right affordance when there is nothing
-/// edge-shaped to draw (1 agent, 0 files).
+/// Issue #692: one running agent with no touched files should still look alive:
+/// visible agent, spinner, phase text, and live activity area.
 #[test]
-fn agent_graph_falls_back_when_single_agent_has_no_files() {
+fn agent_graph_empty_state_single_agent_no_files_is_live() {
     let t = render_graph(&single_agent_no_files_session(), 80, 24);
     let text = buffer_text(&t);
     assert!(
-        text.contains("no files touched yet"),
-        "expected fallback card for 1 agent + 0 files:\n{text}"
+        text.contains("[IMP]") && text.contains("Phase: waiting for output"),
+        "expected live empty state for 1 agent + 0 files:\n{text}"
+    );
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_graph_empty_state_uses_braille_spinner_and_activity() {
+    let mut sessions = single_agent_no_files_session();
+    sessions[0].current_activity = "Thinking...".to_string();
+    sessions[0].is_thinking = true;
+    sessions[0].activity_log = vec![
+        ActivityEntry {
+            timestamp: fixed_start(),
+            message: "Session spawned (pid: 4242)".to_string(),
+        },
+        ActivityEntry {
+            timestamp: fixed_start(),
+            message: "Thinking...".to_string(),
+        },
+    ];
+
+    let t = render_with(&sessions, 80, 24, true, 0);
+    let text = buffer_text(&t);
+    assert!(
+        text.contains('⠋') && text.contains("Phase: thinking") && text.contains("Thinking..."),
+        "expected braille spinner and activity log in live empty state:\n{text}"
     );
     assert_snapshot!(t.backend());
 }
