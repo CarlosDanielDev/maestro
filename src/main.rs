@@ -22,6 +22,7 @@ mod init;
 mod models;
 mod modes;
 mod notifications;
+mod orchestration;
 mod plugins;
 mod prompts;
 mod provider;

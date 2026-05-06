@@ -15,6 +15,7 @@ pub mod icons;
 pub mod turboquant;
 
 pub mod agent_provider;
+pub mod orchestration;
 
 #[path = "util"]
 pub mod util {

@@ -1,0 +1,5 @@
+extends = ""
+primitive = "verdict-only"
+min_agents = ["claude"]
+implementer = "claude"
+reviewer = "claude"

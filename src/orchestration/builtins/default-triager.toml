@@ -1,0 +1,4 @@
+extends = ""
+primitive = "verdict-only"
+min_agents = ["claude"]
+triager = "claude"

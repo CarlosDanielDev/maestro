@@ -10,6 +10,7 @@ mod agents;
 mod core;
 mod experimental;
 mod notifications_views;
+mod orchestration;
 mod roundtrip;
 mod sessions_layout;
 mod turbo_adapt_paths;
