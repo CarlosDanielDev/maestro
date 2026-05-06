@@ -237,3 +237,9 @@ impl PromptInputScreen {
             .collect()
     }
 }
+
+impl Default for PromptInputScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}

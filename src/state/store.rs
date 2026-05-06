@@ -1,4 +1,4 @@
-use super::types::MaestroState;
+use super::types::{IssueRunState, MaestroState, TeamRun};
 use anyhow::{Context, Result};
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
@@ -47,12 +47,17 @@ impl StateStore {
 
     pub fn load(&self) -> Result<MaestroState> {
         let _lock = self.lock_file(false)?;
-        match std::fs::read_to_string(&self.path) {
+        let mut state = match std::fs::read_to_string(&self.path) {
             Ok(content) => serde_json::from_str(&content)
-                .with_context(|| format!("parsing state from {}", self.path.display())),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(MaestroState::default()),
-            Err(e) => Err(e).with_context(|| format!("reading state from {}", self.path.display())),
-        }
+                .with_context(|| format!("parsing state from {}", self.path.display()))?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => MaestroState::default(),
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("reading state from {}", self.path.display()));
+            }
+        };
+        reconcile_team_runs(&mut state.team_runs);
+        Ok(state)
     }
 
     pub fn save(&self, state: &MaestroState) -> Result<()> {
@@ -67,10 +72,27 @@ impl StateStore {
     }
 }
 
+pub fn reconcile_team_run(run: &mut TeamRun) {
+    for state in run.state.values_mut() {
+        if let IssueRunState::InFlight { .. } = state {
+            *state = IssueRunState::Failed {
+                reason: "process state lost across restart".into(),
+                attempts: 0,
+            };
+        }
+    }
+}
+
+fn reconcile_team_runs(runs: &mut [TeamRun]) {
+    for run in runs {
+        reconcile_team_run(run);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::types::MaestroState;
+    use crate::state::types::{IssueRunState, MaestroState, TeamRun};
     use std::sync::Arc;
 
     fn must<T, E: std::fmt::Display>(result: std::result::Result<T, E>, context: &str) -> T {
@@ -241,5 +263,49 @@ mod tests {
         // File must be valid JSON after all concurrent writes
         let loaded = must(store.load(), "state should load after concurrent saves");
         assert!(loaded.total_cost_usd >= 0.0);
+    }
+
+    #[test]
+    fn reconcile_promotes_inflight_to_failed_on_load() {
+        let (_dir, store) = make_store();
+        let mut state = MaestroState::default();
+
+        let mut run_state = std::collections::HashMap::new();
+        run_state.insert(
+            1u64,
+            IssueRunState::InFlight {
+                session_id: uuid::Uuid::new_v4(),
+                started_at: chrono::Utc::now(),
+            },
+        );
+        run_state.insert(
+            2u64,
+            IssueRunState::Succeeded {
+                output: crate::orchestration::types::TeamOutput::Pr {
+                    number: 1,
+                    branch: "x".into(),
+                },
+            },
+        );
+
+        state.team_runs.push(TeamRun {
+            id: uuid::Uuid::new_v4(),
+            team_name: "t".into(),
+            started_at: chrono::Utc::now(),
+            plan: vec![vec![1, 2]],
+            state: run_state,
+        });
+
+        must(store.save(&state), "state with inflight run should save");
+        let loaded = must(store.load(), "state should load with reconciliation");
+        let run = &loaded.team_runs[0];
+        assert!(matches!(
+            run.state.get(&1),
+            Some(IssueRunState::Failed { reason, attempts }) if reason.contains("process state lost") && *attempts == 0
+        ));
+        assert!(matches!(
+            run.state.get(&2),
+            Some(IssueRunState::Succeeded { .. })
+        ));
     }
 }

@@ -55,7 +55,7 @@ pub enum MaestroLabel {
 
 impl MaestroLabel {
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_str_opt(s: &str) -> Option<Self> {
         match s {
             "maestro:ready" => Some(Self::Ready),
             "maestro:in-progress" => Some(Self::InProgress),
@@ -72,6 +72,14 @@ impl MaestroLabel {
             Self::Done => "maestro:done",
             Self::Failed => "maestro:failed",
         }
+    }
+}
+
+impl std::str::FromStr for MaestroLabel {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_str_opt(s).ok_or(())
     }
 }
 

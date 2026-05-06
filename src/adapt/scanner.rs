@@ -49,6 +49,12 @@ impl LocalProjectScanner {
     }
 }
 
+impl Default for LocalProjectScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl ProjectScanner for LocalProjectScanner {
     async fn scan(&self, root: &Path) -> anyhow::Result<ProjectProfile> {

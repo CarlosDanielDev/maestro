@@ -187,6 +187,12 @@ impl GridState {
     }
 }
 
+impl Default for GridState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct PanelView {
     pub selected: Option<usize>,
     /// Scroll offset for the message area in agent panels.
@@ -314,6 +320,12 @@ impl PanelView {
                 ind_area,
             );
         }
+    }
+}
+
+impl Default for PanelView {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

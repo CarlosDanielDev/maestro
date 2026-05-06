@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn maestro_label_from_str_ready() {
         assert_eq!(
-            MaestroLabel::from_str("maestro:ready"),
+            MaestroLabel::from_str_opt("maestro:ready"),
             Some(MaestroLabel::Ready)
         );
     }
@@ -419,7 +419,7 @@ mod tests {
     #[test]
     fn maestro_label_from_str_in_progress() {
         assert_eq!(
-            MaestroLabel::from_str("maestro:in-progress"),
+            MaestroLabel::from_str_opt("maestro:in-progress"),
             Some(MaestroLabel::InProgress)
         );
     }
@@ -427,7 +427,7 @@ mod tests {
     #[test]
     fn maestro_label_from_str_done() {
         assert_eq!(
-            MaestroLabel::from_str("maestro:done"),
+            MaestroLabel::from_str_opt("maestro:done"),
             Some(MaestroLabel::Done)
         );
     }
@@ -435,19 +435,19 @@ mod tests {
     #[test]
     fn maestro_label_from_str_failed() {
         assert_eq!(
-            MaestroLabel::from_str("maestro:failed"),
+            MaestroLabel::from_str_opt("maestro:failed"),
             Some(MaestroLabel::Failed)
         );
     }
 
     #[test]
     fn maestro_label_from_str_unknown_returns_none() {
-        assert_eq!(MaestroLabel::from_str("bug"), None);
+        assert_eq!(MaestroLabel::from_str_opt("bug"), None);
     }
 
     #[test]
     fn maestro_label_from_str_empty_returns_none() {
-        assert_eq!(MaestroLabel::from_str(""), None);
+        assert_eq!(MaestroLabel::from_str_opt(""), None);
     }
 
     #[test]
@@ -459,7 +459,7 @@ mod tests {
             MaestroLabel::Failed,
         ];
         for v in variants {
-            assert_eq!(MaestroLabel::from_str(v.as_str()), Some(v));
+            assert_eq!(MaestroLabel::from_str_opt(v.as_str()), Some(v));
         }
     }
 

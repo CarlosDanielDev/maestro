@@ -43,6 +43,7 @@ pub use project::ProjectConfig;
 #[allow(unused_imports)]
 pub use review::{ReviewConfig, ReviewerEntry};
 pub use runtime::{ConcurrencyConfig, MonitoringConfig};
+#[allow(unused_imports)]
 pub(crate) use sessions::default_max_prompt_history;
 #[allow(unused_imports)]
 pub use sessions::{

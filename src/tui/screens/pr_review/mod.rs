@@ -288,6 +288,12 @@ impl Screen for PrReviewScreen {
     }
 }
 
+impl Default for PrReviewScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

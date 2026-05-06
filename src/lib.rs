@@ -14,28 +14,36 @@ pub mod icon_mode;
 pub mod icons;
 pub mod turboquant;
 
+pub mod adapt;
 pub mod agent_provider;
+pub mod budget;
+pub mod changelog;
+pub mod cli;
+pub mod commands;
+pub mod config;
+pub mod continuous;
+pub mod doctor;
+pub mod flags;
+pub mod gates;
+pub mod git;
+pub mod init;
+pub mod mascot;
+pub mod milestone_health;
+pub mod models;
+pub mod modes;
+pub mod notifications;
 pub mod orchestration;
-
-#[path = "util"]
-pub mod util {
-    pub mod formatting;
-    pub use formatting::*;
-}
-
-#[path = "session"]
-pub mod session {
-    pub mod intent;
-    pub mod parser;
-    pub mod role;
-    pub mod transition;
-    pub mod types;
-}
-
-#[path = "settings"]
-pub mod settings {
-    pub mod claude_settings;
-    pub use claude_settings::{
-        CavemanModeState, CavemanWriteError, FsSettingsStore, SettingsStore,
-    };
-}
+pub mod plugins;
+pub mod prd;
+pub mod prompts;
+pub mod provider;
+pub mod review;
+pub mod sanitize;
+pub mod session;
+pub mod settings;
+pub mod state;
+pub mod system;
+pub mod tui;
+pub mod updater;
+pub mod util;
+pub mod work;
