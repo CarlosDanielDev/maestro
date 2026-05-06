@@ -208,6 +208,14 @@ impl AgentProviderFactory {
                     )),
                 })
             }
+            Some(provider) if provider.provider == "qwen" || provider.id == "qwen" => {
+                let binary = provider.binary.as_deref().unwrap_or("qwen");
+                Ok(Self {
+                    default_provider: Arc::new(crate::agent_provider::qwen::QwenProvider::new(
+                        binary,
+                    )),
+                })
+            }
             Some(provider) => Err(AgentError::Config(format!(
                 "unsupported default agent provider `{}`",
                 provider.provider
@@ -322,5 +330,20 @@ mod tests {
     fn factory_accepts_empty_config_as_legacy_claude() {
         let factory = AgentProviderFactory::from_config(AgentProvidersConfig::default()).unwrap();
         assert_eq!(factory.default_provider().id(), "claude");
+    }
+
+    #[test]
+    fn factory_accepts_qwen_provider() {
+        let factory = AgentProviderFactory::from_config(AgentProvidersConfig {
+            default_provider: "qwen".to_string(),
+            providers: vec![AgentProviderDefinition {
+                id: "qwen".to_string(),
+                provider: "qwen".to_string(),
+                binary: Some("qwen".to_string()),
+            }],
+        })
+        .unwrap();
+
+        assert_eq!(factory.default_provider().id(), "qwen");
     }
 }

@@ -187,6 +187,7 @@ struct AgentConfigRaw {
 impl From<AgentConfigRaw> for AgentConfig {
     fn from(raw: AgentConfigRaw) -> Self {
         let command = raw.command.or_else(|| match raw.kind {
+            AgentKind::Qwen => Some("qwen".to_string()),
             AgentKind::Opencode => Some("opencode".to_string()),
             _ => None,
         });
