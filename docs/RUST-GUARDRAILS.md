@@ -399,6 +399,20 @@ CI fails when any deadline is in the past. Extensions require a PR bumping the d
 
 During Wave 1 implementation, `scripts/check-file-size.sh` was found to have a pre-existing silent-pass bug: its `wc -l` output parsing left `lines` as an empty string, which made the `(( lines > MAX_LINES ))` comparison evaluate to `0 > 500 → false` for every file. The 500 LOC cap had been cosmetic since its introduction. Fixed in the same PR; 23 previously-invisible violations surfaced and were pre-added to the allowlist with the same 14-day placeholder deadline.
 
+## Code duplication (Wave stats → Wave check)
+
+**Tool:** `cargo dupes` (code-dupes crate) pinned to `0.2.1`. Config: `dupes.toml` at repo root (`min-nodes = 15`, `min-lines = 5`, `threshold = 0.85`, `exclude-tests = true`, `exclude = ["src/integration_tests/**"]`).
+
+**Baseline (stats mode, 2026-05-06, cargo dupes 0.2.1):**
+- `exact_duplicate_percent`: 13.05%
+- `near_duplicate_percent`: 4.82%
+- Totals: `total_code_units = 7,555`; `exact_duplicate_groups = 678`; `near_duplicate_groups = 226`.
+
+**Activation path:**
+- **Wave stats (current):** CI job `duplication` runs `cargo dupes stats --format json` and prints the full JSON; non-blocking by design.
+- **Wave check (future):** switch the CI command to `cargo dupes check --max-exact-percent <X> --max-near-percent <Y>` once the baseline stabilizes. Initial thresholds should be baseline + 2% buffer (approx. exact ≤ 15.1%, near ≤ 6.9%) to avoid noise; long-term enforcement targets remain `--max-exact-percent 3.0` and `--max-near-percent 15.0` per the activation table.
+- **Scope:** `--exclude-tests` keeps `#[test]` and `#[cfg(test)]` modules out of the denominator; `src/integration_tests/**` is excluded to avoid fixture-heavy drift. Revisit excludes before tightening thresholds.
+
 **Pre-flight hook.**
 
 `.claude/hooks/preflight.sh` runs fast per-PR gates locally (fmt + clippy + file-size) so `/implement` catches regressions before a branch is created.
