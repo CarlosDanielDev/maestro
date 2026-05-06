@@ -235,6 +235,12 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
         (KeyCode::Enter, _) | (KeyCode::Esc, _) => {
             app.transition_to_dashboard();
         }
+        (KeyCode::Char('s'), _) => {
+            app.transition_to_dashboard();
+        }
+        (KeyCode::Char('o'), _) => {
+            open_first_completion_pr(app);
+        }
         (KeyCode::Char('i'), _) => {
             app.completion_summary = None;
             app.completion_summary_dismissed = true;
@@ -297,11 +303,75 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
     }
     if !matches!(
         key.code,
-        KeyCode::Up | KeyCode::Down | KeyCode::Char('k' | 'j')
+        KeyCode::Up | KeyCode::Down | KeyCode::Char('k' | 'j' | 'o')
     ) {
         app.completion_summary = None;
     }
     KeyAction::Consumed
+}
+
+fn open_first_completion_pr(app: &mut App) {
+    let pr_link = app.completion_summary.as_ref().and_then(|summary| {
+        summary
+            .sessions
+            .iter()
+            .find_map(|session| non_empty_url(&session.pr_link))
+    });
+
+    let Some(url) = pr_link else {
+        app.activity_log.push_simple(
+            "PR".into(),
+            "No PR link available for completed sessions".to_string(),
+            LogLevel::Warn,
+        );
+        return;
+    };
+
+    match open_url(&url) {
+        Ok(()) => {
+            app.activity_log
+                .push_simple("PR".into(), format!("Opened {}", url), LogLevel::Info)
+        }
+        Err(e) => app.activity_log.push_simple(
+            "PR".into(),
+            format!("Failed to open {}: {}", url, e),
+            LogLevel::Error,
+        ),
+    }
+}
+
+fn non_empty_url(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
+fn open_url(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("open");
+        command.arg(url);
+        command
+    };
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = std::process::Command::new("cmd");
+        command.args(["/C", "start", "", url]);
+        command
+    };
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(url);
+        command
+    };
+
+    command.spawn().map(|_| ())
 }
 
 /// Recovery-modal key dispatch. Unlike the success handler, this one
@@ -1992,7 +2062,7 @@ mod tests {
     }
 
     #[test]
-    fn completion_summary_s_key_does_nothing_when_no_failed_gates_session() {
+    fn completion_summary_s_key_dismisses_success_modal() {
         let calls: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
         let launcher = CapturingShellLauncher {
             calls: calls.clone(),
@@ -2004,7 +2074,45 @@ mod tests {
 
         handle_completion_summary(&mut app, &key('s'));
 
-        // Success modal does not bind `s`, so the launcher must not be called.
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+        assert!(app.completion_summary.is_none());
+        assert!(app.completion_summary_dismissed);
         assert!(calls.lock().expect("mutex").is_empty());
+    }
+
+    #[test]
+    fn completion_summary_o_key_without_pr_link_keeps_success_modal_open_and_logs_warning() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(completed_summary());
+
+        handle_completion_summary(&mut app, &key('o'));
+
+        assert_eq!(app.tui_mode, TuiMode::CompletionSummary);
+        assert!(
+            app.completion_summary.is_some(),
+            "[o] without a PR link should leave the modal open"
+        );
+        assert!(
+            app.activity_log.entries().iter().any(|entry| {
+                entry.message.contains("No PR link available")
+                    && matches!(entry.level, LogLevel::Warn)
+            }),
+            "[o] without a PR link should explain the missing URL in the activity log"
+        );
+    }
+
+    #[test]
+    fn non_empty_url_accepts_only_http_urls() {
+        assert_eq!(
+            non_empty_url(" https://github.com/owner/repo/pull/686 ").as_deref(),
+            Some("https://github.com/owner/repo/pull/686")
+        );
+        assert_eq!(
+            non_empty_url("http://example.test").as_deref(),
+            Some("http://example.test")
+        );
+        assert!(non_empty_url("").is_none());
+        assert!(non_empty_url("not a url").is_none());
     }
 }

@@ -116,6 +116,15 @@ impl App {
                     format!("PR already exists for branch {} — see {}", branch, url),
                     LogLevel::Info,
                 );
+                self.ci_poller.add_check(PendingPrCheck {
+                    pr_number: existing,
+                    issue_number,
+                    branch: branch.to_string(),
+                    created_at: Instant::now(),
+                    check_count: 0,
+                    fix_attempt: 0,
+                    awaiting_fix_ci: false,
+                });
                 return;
             }
             Ok(_) => {}

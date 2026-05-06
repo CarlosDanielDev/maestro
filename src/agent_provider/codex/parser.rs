@@ -24,7 +24,7 @@ impl CodexStreamParser {
 
         match v.get("type").and_then(Value::as_str) {
             Some("thread.started") | Some("turn.started") | Some("item.started") => Vec::new(),
-            Some("item.completed") => self.parse_item_completed(&v),
+            Some("item.completed") | Some("item.updated") => self.parse_item_event(&v),
             Some("turn.completed") => self.parse_turn_completed(&v),
             Some("turn.failed") => vec![StreamEvent::Error {
                 message: extract_error_message(&v).unwrap_or_else(|| "codex turn failed".into()),
@@ -38,7 +38,7 @@ impl CodexStreamParser {
         }
     }
 
-    fn parse_item_completed(&mut self, v: &Value) -> Vec<StreamEvent> {
+    fn parse_item_event(&mut self, v: &Value) -> Vec<StreamEvent> {
         let item = v.get("item").unwrap_or(v);
         match item.get("type").and_then(Value::as_str) {
             Some("message") | Some("agent_message") => parse_codex_message(item),
@@ -83,6 +83,9 @@ impl CodexStreamParser {
                     .unwrap_or(false);
                 vec![StreamEvent::ToolResult { tool, is_error }]
             }
+            Some("command_execution") => parse_command_execution(item),
+            Some("file_change") => parse_file_change(item),
+            Some("todo_list") => parse_todo_list(item),
             Some("reasoning") => item
                 .get("summary")
                 .or_else(|| item.get("text"))
@@ -108,6 +111,95 @@ impl CodexStreamParser {
         events.push(StreamEvent::Completed { cost_usd: 0.0 });
         events
     }
+}
+
+fn parse_command_execution(item: &Value) -> Vec<StreamEvent> {
+    let command = item
+        .get("command")
+        .and_then(Value::as_str)
+        .map(truncate_command_preview);
+    let is_error = item
+        .get("exit_code")
+        .and_then(Value::as_i64)
+        .is_some_and(|code| code != 0)
+        || item
+            .get("status")
+            .and_then(Value::as_str)
+            .is_some_and(|status| status == "failed" || status == "error");
+
+    vec![
+        StreamEvent::ToolUse {
+            tool: "Bash".to_string(),
+            file_path: None,
+            command_preview: command,
+            subagent_name: None,
+        },
+        StreamEvent::ToolResult {
+            tool: "Bash".to_string(),
+            is_error,
+        },
+    ]
+}
+
+fn parse_file_change(item: &Value) -> Vec<StreamEvent> {
+    let changes = item
+        .get("changes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten();
+
+    let mut events = Vec::new();
+    for change in changes {
+        let tool = match change.get("kind").and_then(Value::as_str) {
+            Some("add") | Some("create") => "Write",
+            Some("delete") | Some("remove") => "Edit",
+            _ => "Edit",
+        };
+        events.push(StreamEvent::ToolUse {
+            tool: tool.to_string(),
+            file_path: change
+                .get("path")
+                .or_else(|| change.get("file_path"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            command_preview: None,
+            subagent_name: None,
+        });
+        events.push(StreamEvent::ToolResult {
+            tool: tool.to_string(),
+            is_error: false,
+        });
+    }
+
+    if events.is_empty() {
+        events.push(StreamEvent::ToolUse {
+            tool: "Edit".to_string(),
+            file_path: None,
+            command_preview: None,
+            subagent_name: None,
+        });
+    }
+
+    events
+}
+
+fn parse_todo_list(item: &Value) -> Vec<StreamEvent> {
+    let is_error = item
+        .get("status")
+        .and_then(Value::as_str)
+        .is_some_and(|status| status == "failed" || status == "error");
+    vec![
+        StreamEvent::ToolUse {
+            tool: "TodoWrite".to_string(),
+            file_path: None,
+            command_preview: None,
+            subagent_name: None,
+        },
+        StreamEvent::ToolResult {
+            tool: "TodoWrite".to_string(),
+            is_error,
+        },
+    ]
 }
 
 fn parse_codex_message(item: &Value) -> Vec<StreamEvent> {
@@ -196,14 +288,16 @@ fn extract_command_preview(input: &Value) -> Option<String> {
         .get("command")
         .or_else(|| input.get("cmd"))
         .and_then(Value::as_str)
-        .map(|command| {
-            if command.len() > 60 {
-                let boundary = char_boundary(command, 60);
-                format!("{}...", &command[..boundary])
-            } else {
-                command.to_string()
-            }
-        })
+        .map(truncate_command_preview)
+}
+
+fn truncate_command_preview(command: &str) -> String {
+    if command.len() > 60 {
+        let boundary = char_boundary(command, 60);
+        format!("{}...", &command[..boundary])
+    } else {
+        command.to_string()
+    }
 }
 
 fn extract_error_message(v: &Value) -> Option<String> {
@@ -229,69 +323,5 @@ fn char_boundary(s: &str, max_bytes: usize) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parser_maps_codex_jsonl_to_stream_events() {
-        let mut parser = CodexStreamParser::default();
-        let events: Vec<StreamEvent> = [
-            r#"{"type":"thread.started","thread_id":"t1"}"#,
-            r#"{"type":"item.completed","item":{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{\"command\":\"cargo test\",\"path\":\"src/lib.rs\"}"}}"#,
-            r#"{"type":"item.completed","item":{"type":"function_call_output","call_id":"call_1","output":"ok"}}"#,
-            r#"{"type":"item.completed","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}}"#,
-            r#"{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5,"cached_input_tokens":2}}"#,
-        ]
-        .into_iter()
-        .flat_map(|line| parser.parse_line(line))
-        .collect();
-
-        assert!(events.iter().any(|event| {
-            matches!(
-                event,
-                StreamEvent::ToolUse {
-                    tool,
-                    file_path: Some(path),
-                    command_preview: Some(command),
-                    ..
-                } if tool == "shell" && path == "src/lib.rs" && command == "cargo test"
-            )
-        }));
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, StreamEvent::ToolResult { tool, is_error: false } if tool == "shell"))
-        );
-        assert!(events.iter().any(
-            |event| matches!(event, StreamEvent::AssistantMessage { text } if text == "Done.")
-        ));
-        assert!(events.iter().any(|event| {
-            matches!(event, StreamEvent::TokenUpdate { usage } if usage.input_tokens == 10 && usage.output_tokens == 5 && usage.cache_read_tokens == 2)
-        }));
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, StreamEvent::Completed { .. }))
-        );
-    }
-
-    #[test]
-    fn parser_maps_agent_message_and_turn_failed() {
-        let mut parser = CodexStreamParser::default();
-
-        let message = parser.parse_line(
-            r#"{"type":"item.completed","item":{"type":"agent_message","text":"Hello"}}"#,
-        );
-        assert!(matches!(
-            message.as_slice(),
-            [StreamEvent::AssistantMessage { text }] if text == "Hello"
-        ));
-
-        let failed =
-            parser.parse_line(r#"{"type":"turn.failed","error":{"message":"model failed"}}"#);
-        assert!(matches!(
-            failed.as_slice(),
-            [StreamEvent::Error { message }] if message == "model failed"
-        ));
-    }
-}
+#[path = "parser_tests.rs"]
+mod tests;
