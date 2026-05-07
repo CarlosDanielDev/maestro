@@ -75,6 +75,11 @@ pub enum TuiMode {
     /// check log and the planned local gate before launching a fix
     /// session (#695).
     CiErrorReview,
+    /// Team orchestration wizard. Three flows: Compose / Launch / Manage.
+    /// Reachable from the Landing menu (`[t] Teams`), the issue browser
+    /// (`t` jumps to Launch with the issue pre-selected), and the
+    /// milestone screen (`t` jumps to Launch with the milestone slice).
+    TeamWizard,
 }
 
 impl TuiMode {
@@ -119,6 +124,7 @@ impl TuiMode {
             Self::MilestoneHealth => "Milestone Health",
             Self::GateOutputViewer(_) => "Gate Output",
             Self::CiErrorReview => "CI Error Review",
+            Self::TeamWizard => "Teams",
         }
     }
 }
@@ -221,6 +227,7 @@ pub struct ScreenState {
     pub milestone_health_screen:
         Option<crate::tui::screens::milestone_health::MilestoneHealthScreen>,
     pub ci_error_review_screen: Option<crate::tui::screens::CiErrorReviewScreen>,
+    pub team_wizard_screen: Option<crate::tui::screens::TeamWizardScreen>,
 }
 
 /// Effective session defaults and limits used by TUI-launched sessions.

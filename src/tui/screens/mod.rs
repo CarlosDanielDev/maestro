@@ -23,6 +23,7 @@ pub mod release_notes;
 pub mod roadmap;
 pub mod roadmap_dispatch;
 pub mod settings;
+pub mod team_wizard;
 pub mod wizard_fields;
 pub mod wrap;
 
@@ -40,6 +41,7 @@ pub use prompt_input::PromptInputScreen;
 pub use queue_confirmation::QueueConfirmationScreen;
 pub use release_notes::ReleaseNotesScreen;
 pub use settings::SettingsScreen;
+pub use team_wizard::TeamWizardScreen;
 
 use crate::tui::app::TuiMode;
 use crate::tui::navigation::InputMode;
@@ -168,6 +170,15 @@ pub enum ScreenAction {
     OpenIssueWizardForMilestone {
         milestone: u64,
         suggested_blocked_by: Vec<u64>,
+    },
+    /// Open the Team Wizard with optional pre-selection. `TuiMode` is `Copy`,
+    /// so it can't carry the `String` payload — this carrier variant is
+    /// intercepted by the dispatcher and translated into a
+    /// `Push(TuiMode::TeamWizard)` plus screen instantiation with the
+    /// preselect applied.
+    PushTeamWizard {
+        mode: team_wizard::TeamWizardMode,
+        preselect: Option<team_wizard::TeamLaunchInput>,
     },
 }
 

@@ -2,7 +2,6 @@
 source: src/tui/snapshot_tests/landing.rs
 expression: terminal.backend()
 ---
-"                                                                                                                                                                                    "
 "                                                            ███╗   ███╗ █████╗ ███████╗███████╗████████╗██████╗  ██████╗                                                            "
 "                                                           ████╗ ████║██╔══██╗██╔════╝██╔════╝╚══██╔══╝██╔══██╗██╔═══██╗                                                            "
 "                                                           ██╔████╔██║███████║█████╗  ███████╗   ██║   ██████╔╝██║   ██║                                                            "
@@ -11,10 +10,11 @@ expression: terminal.backend()
 "                                                            ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝                                                            "
 "                                                                                      v0.25.1                                                                                       "
 "                                                                                                                                                                                    "
-"                                                                   [d]  Dashboard           [p]  PRD                                                                                "
-"                                                                   [i]  Create Issue        [r]  Roadmap                                                                            "
-"                                                                   [m]  Create Milestone    [h]  Milestone Review                                                                   "
+"                                                                   [d]  Dashboard           [r]  Roadmap                                                                            "
+"                                                                   [i]  Create Issue        [h]  Milestone Review                                                                   "
+"                                                                   [m]  Create Milestone    [t]  Teams                                                                              "
 "                                                                   [s]  Project Stats       [q]  Quit                                                                               "
+"                                                                   [p]  PRD                                                                                                         "
 "                                                                                                                                                                                    "
 "╔═══════════════════════════════════════════════════════════════════════════[ Release Console v0.25.1 ]════════════════════════════════════════════════════════════════════════════╗"
 "║ changes 2   refs 2   categories 2   date 2026-05-06                                                                                                                              ║"

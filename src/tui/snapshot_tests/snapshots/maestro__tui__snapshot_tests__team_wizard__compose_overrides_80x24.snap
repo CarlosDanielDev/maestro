@@ -1,0 +1,28 @@
+---
+source: src/tui/snapshot_tests/team_wizard.rs
+expression: t.backend()
+---
+"╔═══════════════════════════[ Step 4/7: Overrides ]════════════════════════════╗"
+"║                                                                              ║"
+"╚══════════════════════════════════════════════════════════════════════════════╝"
+"╔════════════════════════════════[ Overrides ]═════════════════════════════════╗"
+"║                                                                              ║"
+"║Optional per-role overrides (mode / model / prompt addendum).                 ║"
+"║Press Enter to skip — defaults preserve the binding's agent settings.         ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"╚══════════════════════════════════════════════════════════════════════════════╝"
+"                          [Enter] continue   [Esc] back                         "
+"                                                                                "

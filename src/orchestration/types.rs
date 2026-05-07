@@ -24,6 +24,16 @@ impl Primitive {
             Self::VerdictOnly => &[TeamRole::Reviewer],
         }
     }
+
+    /// Canonical kebab-case label, identical to the serde tag.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Pipeline => "pipeline",
+            Self::FanOut => "fan-out",
+            Self::SinglePass => "single-pass",
+            Self::VerdictOnly => "verdict-only",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

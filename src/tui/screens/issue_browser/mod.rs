@@ -316,6 +316,20 @@ impl Screen for IssueBrowserScreen {
                 KeyCode::Char('m') => {
                     self.filter_mode = FilterMode::Milestone;
                 }
+                KeyCode::Char('t') => {
+                    if let Some(&idx) = self.filtered_indices.get(self.selected) {
+                        let issue = &self.issues[idx];
+                        return ScreenAction::PushTeamWizard {
+                            mode: crate::tui::screens::team_wizard::TeamWizardMode::Launch,
+                            preselect: Some(
+                                crate::tui::screens::team_wizard::TeamLaunchInput::Issue {
+                                    number: issue.number,
+                                    title: issue.title.clone(),
+                                },
+                            ),
+                        };
+                    }
+                }
                 KeyCode::Enter => {
                     return self.handle_enter();
                 }

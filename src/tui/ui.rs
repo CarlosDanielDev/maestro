@@ -245,6 +245,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::TeamWizard => {
+            if let Some(ref mut screen) = app.screen_state.team_wizard_screen {
+                screen.set_spinner_context(spinner_tick, crate::icon_mode::use_nerd_font());
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
         TuiMode::IssueBrowser => {
             if let Some(ref mut screen) = app.screen_state.issue_browser_screen {
                 screen.draw(f, chunks[1], &app.theme);
@@ -761,6 +767,11 @@ pub(super) fn active_screen(app: &App) -> Option<&dyn Screen> {
         TuiMode::MilestoneWizard => app
             .screen_state
             .milestone_wizard_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::TeamWizard => app
+            .screen_state
+            .team_wizard_screen
             .as_ref()
             .map(|s| s as &dyn Screen),
         TuiMode::ProjectStats => app

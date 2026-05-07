@@ -181,6 +181,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::ReleaseNotes => app.screen_state.release_notes_screen.as_mut()?,
         app::TuiMode::MilestoneHealth => app.screen_state.milestone_health_screen.as_mut()?,
         app::TuiMode::CiErrorReview => app.screen_state.ci_error_review_screen.as_mut()?,
+        app::TuiMode::TeamWizard => app.screen_state.team_wizard_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -550,6 +551,16 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         Some(crate::tui::screens::milestone_health::MilestoneHealthScreen::new());
                     app.pending_commands.push(app::TuiCommand::FetchMilestones);
                 }
+                app::TuiMode::TeamWizard => {
+                    let provider_kind = app
+                        .config
+                        .as_ref()
+                        .map(|c| c.provider.kind)
+                        .unwrap_or_default();
+                    app.screen_state
+                        .team_wizard_screen
+                        .get_or_insert_with(|| screens::TeamWizardScreen::new(provider_kind));
+                }
                 _ => {}
             }
             app.navigate_to(mode);
@@ -568,6 +579,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::MilestoneWizard => {
                     app.screen_state.milestone_wizard_screen = None;
+                }
+                app::TuiMode::TeamWizard => {
+                    app.screen_state.team_wizard_screen = None;
                 }
                 app::TuiMode::MilestoneView => {
                     app.screen_state.milestone_screen = None;
@@ -873,6 +887,19 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             }
             app.screen_state.issue_wizard_screen = Some(wizard);
             app.navigate_to(app::TuiMode::IssueWizard);
+        }
+        ScreenAction::PushTeamWizard { mode, preselect } => {
+            let provider_kind = app
+                .config
+                .as_ref()
+                .map(|c| c.provider.kind)
+                .unwrap_or_default();
+            app.screen_state.team_wizard_screen = Some(screens::TeamWizardScreen::with_entry(
+                provider_kind,
+                mode,
+                preselect,
+            ));
+            app.navigate_to(app::TuiMode::TeamWizard);
         }
         ScreenAction::StartAdaptPipeline(config) => {
             if let Some(ref mut screen) = app.screen_state.adapt_screen {
