@@ -3,6 +3,7 @@
 
 #![allow(dead_code)]
 
+use crate::agent_provider::types::AgentError;
 use crate::orchestration::types::TeamRole;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -32,6 +33,19 @@ pub enum SubagentResult {
     Generic {
         json: serde_json::Value,
     },
+}
+
+impl SubagentResult {
+    /// Tag string matching `#[serde(tag = "kind")]` on this enum.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::CodeChange { .. } => "code-change",
+            Self::ReviewFindings { .. } => "review-findings",
+            Self::DocsChange { .. } => "docs-change",
+            Self::Verdict { .. } => "verdict",
+            Self::Generic { .. } => "generic",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -86,6 +100,17 @@ pub enum SubagentError {
     SubagentReported(String),
     #[error("other: {0}")]
     Other(String),
+}
+
+impl From<AgentError> for SubagentError {
+    fn from(err: AgentError) -> Self {
+        match err {
+            AgentError::Cancelled { provider_id } => {
+                SubagentError::Other(format!("{provider_id} cancelled"))
+            }
+            other => SubagentError::Provider(other.to_string()),
+        }
+    }
 }
 
 impl TeamRole {

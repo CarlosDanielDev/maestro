@@ -10,11 +10,15 @@ mod completion_pipeline;
 #[cfg(test)]
 mod concurrent_sessions;
 #[cfg(test)]
+mod doctor_run_health_check;
+#[cfg(test)]
 mod gate_failure_retention;
 #[cfg(test)]
 mod init;
 #[cfg(test)]
 mod milestone_health_wizard;
+#[cfg(test)]
+mod orchestration_dispatch;
 #[cfg(test)]
 mod orchestration_mock_task;
 #[cfg(test)]

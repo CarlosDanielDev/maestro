@@ -1,6 +1,6 @@
 mod clean;
 mod dashboard;
-mod doctor;
+pub mod doctor;
 mod init;
 mod logs;
 mod queue;

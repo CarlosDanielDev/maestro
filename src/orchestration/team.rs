@@ -49,7 +49,7 @@ pub struct ResolvedTeam {
     pub source_tier: SourceTier,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RoleBinding {
     pub agent: String,
     pub mode: Option<String>,

@@ -6,7 +6,9 @@
 
 pub(crate) mod builtins;
 pub mod contracts;
+pub mod cost;
 pub mod dag;
+pub mod dispatch;
 pub mod loader;
 pub mod orchestrator;
 pub mod preflight;
@@ -21,6 +23,13 @@ pub mod validation;
 pub use contracts::{
     Finding, FindingSeverity, NewIssueDraft, ReviewVerdict, SubagentError, SubagentResult,
 };
+#[allow(unused_imports)]
+pub use cost::{
+    AVG_ISSUE_CONTEXT_TOKENS_PER_PROVIDER, L2_SYSTEM_PROMPT_TOKENS, RECOVERY_BUDGET,
+    RECOVERY_TOKENS_PER_ROLE, estimate_cost_usd, estimate_tokens,
+};
+#[allow(unused_imports)]
+pub use dispatch::{DispatchContext, compose_prompt, dispatch_subagent, parse_result};
 #[allow(unused_imports)]
 pub use loader::Loader;
 #[allow(unused_imports)]
