@@ -36,6 +36,7 @@ pub(super) fn draw_single_agent_empty_state(
         NodeKind::Agent { status } => status,
         NodeKind::File => SessionStatus::Queued,
     };
+    let is_terminal = status.is_terminal();
     let role = session.map(|s| s.role).unwrap_or_default();
     let status_style = Style::default()
         .fg(theme.status_color(status))
@@ -45,8 +46,18 @@ pub(super) fn draw_single_agent_empty_state(
     let activity = session
         .map(|s| s.current_activity.trim())
         .filter(|s| !s.is_empty())
-        .unwrap_or("Waiting for output");
-    let frame = graph_node_frame(options.tick, options.use_nerd_font);
+        .unwrap_or({
+            if is_terminal {
+                "Session finished"
+            } else {
+                "Waiting for output"
+            }
+        });
+    let frame = if is_terminal {
+        terminal_status_marker(status, options.use_nerd_font).to_string()
+    } else {
+        graph_node_frame(options.tick, options.use_nerd_font).to_string()
+    };
     let phase = session
         .map(|s| phase_label(s.status, s.is_thinking, &s.current_activity))
         .unwrap_or_else(|| status.label().to_ascii_lowercase());
@@ -92,17 +103,23 @@ pub(super) fn draw_single_agent_empty_state(
     let sprite_para = Paragraph::new(sprite).alignment(Alignment::Center);
     f.render_widget(sprite_para, rows[0]);
 
+    let status_label = if is_terminal { "Status" } else { "Phase" };
+    let footer = if is_terminal {
+        "Press [g] for panels or [q] to quit"
+    } else {
+        "Waiting for first file edit"
+    };
     let phase_lines = vec![
         Line::from(vec![
             Span::styled(format!("{frame} "), status_style),
-            Span::styled(format!("Phase: {phase}"), status_style),
+            Span::styled(format!("{status_label}: {phase}"), status_style),
             Span::styled("  ·  ", secondary),
             Span::styled(
                 truncate_chars(activity, inner.width.saturating_sub(20) as usize),
                 secondary,
             ),
         ]),
-        Line::styled("Waiting for first file edit", secondary),
+        Line::styled(footer, secondary),
     ];
     f.render_widget(
         Paragraph::new(phase_lines).alignment(Alignment::Center),
@@ -158,6 +175,14 @@ fn phase_label(status: SessionStatus, is_thinking: bool, current_activity: &str)
         AnimationPhase::Idle if current_activity.trim().is_empty() => "waiting for output".into(),
         AnimationPhase::Idle => "running".into(),
         AnimationPhase::None => status.label().to_ascii_lowercase(),
+    }
+}
+
+fn terminal_status_marker(status: SessionStatus, use_nerd_font: bool) -> &'static str {
+    if use_nerd_font {
+        status.nerd_symbol()
+    } else {
+        status.ascii_symbol()
     }
 }
 
