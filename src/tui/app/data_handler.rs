@@ -606,6 +606,9 @@ impl App {
                     screen.apply_patch_result(result);
                 }
             }
+            TuiDataEvent::CiErrorReviewFetched { pr_number, result } => {
+                self.handle_ci_error_review_fetched(pr_number, result);
+            }
         }
     }
 }

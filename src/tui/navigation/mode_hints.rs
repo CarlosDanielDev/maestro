@@ -667,6 +667,27 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::CiErrorReview => (
+            "CI Error Review",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "Enter",
+                    action: "Launch fix",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "Esc",
+                    action: "Abort",
+                    priority: 1,
+                },
+                InlineHint {
+                    key: "j/k",
+                    action: "Scroll",
+                    priority: 2,
+                },
+            ],
+        ),
     };
 
     let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);

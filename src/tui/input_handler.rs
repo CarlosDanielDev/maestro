@@ -55,6 +55,18 @@ pub(super) async fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return KeyAction::Consumed;
     }
 
+    // [e] opens the manual CI Error Review popup when at least one CI
+    // check is currently failing (#695). Gate on text-input mode so the
+    // letter still types into editors.
+    if key.code == KeyCode::Char('e')
+        && !is_text_input_mode(app)
+        && app.tui_mode == app::TuiMode::Overview
+        && app.has_visible_ci_failure()
+    {
+        app.request_ci_error_review();
+        return KeyAction::Consumed;
+    }
+
     // 'q' triggers confirm exit (except in text input modes)
     if key.code == KeyCode::Char('q') && !is_text_input_mode(app) {
         app.navigate_to(app::TuiMode::ConfirmExit);

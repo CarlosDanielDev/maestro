@@ -71,6 +71,10 @@ pub enum TuiMode {
     /// Paged view of a `FailedGates` session's full gate stderr (#560).
     /// Reached via `[v]` on the failed-gates recovery modal.
     GateOutputViewer(uuid::Uuid),
+    /// CI Error Review popup — manual entry point that previews the failed
+    /// check log and the planned local gate before launching a fix
+    /// session (#695).
+    CiErrorReview,
 }
 
 impl TuiMode {
@@ -114,6 +118,7 @@ impl TuiMode {
             Self::BypassWarning => "Bypass Warning",
             Self::MilestoneHealth => "Milestone Health",
             Self::GateOutputViewer(_) => "Gate Output",
+            Self::CiErrorReview => "CI Error Review",
         }
     }
 }
@@ -215,6 +220,7 @@ pub struct ScreenState {
     pub roadmap_screen: Option<crate::tui::screens::roadmap::RoadmapScreen>,
     pub milestone_health_screen:
         Option<crate::tui::screens::milestone_health::MilestoneHealthScreen>,
+    pub ci_error_review_screen: Option<crate::tui::screens::CiErrorReviewScreen>,
 }
 
 /// Effective session defaults and limits used by TUI-launched sessions.
@@ -325,6 +331,11 @@ pub enum TuiCommand {
         milestone_number: u64,
         description: String,
     },
+    /// Fetch the failed-check log for the manual CI Error Review popup (#695).
+    FetchCiErrorReview {
+        pr_number: u64,
+        branch: String,
+    },
 }
 
 /// Data events delivered from background fetch tasks.
@@ -386,6 +397,13 @@ pub enum TuiDataEvent {
     MilestoneHealthIssuesFetched(anyhow::Result<(Milestone, Vec<Issue>)>),
     /// Result of `PatchMilestoneDescription` (#500).
     MilestoneHealthPatched(anyhow::Result<()>),
+    /// Result of `FetchCiErrorReview` (#695). `Ok(log)` populates the
+    /// review screen with the fetched log; `Err(reason)` records the
+    /// reason and lets the user proceed without log body.
+    CiErrorReviewFetched {
+        pr_number: u64,
+        result: Result<String, String>,
+    },
 }
 
 /// A merge conflict suggestion shown in the completion overlay.

@@ -180,6 +180,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::PrReview => app.screen_state.pr_review_screen.as_mut()?,
         app::TuiMode::ReleaseNotes => app.screen_state.release_notes_screen.as_mut()?,
         app::TuiMode::MilestoneHealth => app.screen_state.milestone_health_screen.as_mut()?,
+        app::TuiMode::CiErrorReview => app.screen_state.ci_error_review_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -583,6 +584,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app::TuiMode::AdaptFollowUp => {
                     app.screen_state.adapt_follow_up_screen = None;
                 }
+                app::TuiMode::CiErrorReview => {
+                    app.screen_state.ci_error_review_screen = None;
+                }
                 app::TuiMode::Sanitize => {
                     app.screen_state.sanitize_screen = None;
                 }
@@ -794,6 +798,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             app.spawn_conflict_fix_session(&config);
             app.completion_summary = None;
             app.nav_stack.clear();
+            app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::LaunchCiFix(config) => {
+            app.launch_ci_fix_from_review(&config);
+            app.screen_state.ci_error_review_screen = None;
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::RetryHollow(session_id) => {

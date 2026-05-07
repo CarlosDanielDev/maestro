@@ -671,6 +671,19 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::MilestoneHealthPatched(result));
                     });
                 }
+                app::TuiCommand::FetchCiErrorReview { pr_number, branch } => {
+                    let tx = app.data_tx.clone();
+                    let provider_config = provider_config_from_app(app);
+                    tokio::spawn(async move {
+                        let result = with_provider(provider_config, |client| async move {
+                            client.ci_logs_for_check(&branch).await
+                        })
+                        .await
+                        .map_err(|e| e.to_string());
+                        let _ =
+                            tx.send(app::TuiDataEvent::CiErrorReviewFetched { pr_number, result });
+                    });
+                }
             }
         }
 

@@ -523,6 +523,20 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::CiErrorReview => {
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &theme,
+                spinner_tick,
+            );
+            if let Some(ref mut screen) = app.screen_state.ci_error_review_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
         TuiMode::SessionSummary => {
             if let Some(ref summary) = app.completion_summary {
                 crate::tui::session_summary::draw_session_summary(
@@ -797,6 +811,11 @@ pub(super) fn active_screen(app: &App) -> Option<&dyn Screen> {
         TuiMode::ReleaseNotes => app
             .screen_state
             .release_notes_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::CiErrorReview => app
+            .screen_state
+            .ci_error_review_screen
             .as_ref()
             .map(|s| s as &dyn Screen),
         _ => None,
