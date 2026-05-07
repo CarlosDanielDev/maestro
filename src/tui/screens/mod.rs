@@ -2,6 +2,7 @@ pub mod adapt;
 pub mod adapt_follow_up;
 pub mod bypass_dispatch;
 pub mod bypass_warning;
+pub mod ci_error_review;
 pub mod gate_output_viewer;
 pub mod hollow_retry;
 pub mod home;
@@ -26,6 +27,7 @@ pub mod wizard_fields;
 pub mod wrap;
 
 pub use adapt_follow_up::AdaptFollowUpScreen;
+pub use ci_error_review::{CiErrorReviewScreen, CiErrorReviewState, FetchPhase};
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
 pub use issue_browser::IssueBrowserScreen;
@@ -132,6 +134,8 @@ pub enum ScreenAction {
     /// Launch a conflict-fix session for a PR with merge conflicts.
     #[allow(dead_code)] // Reason: conflict fix flow — to be wired into PR merge screen
     LaunchConflictFix(ConflictFixConfig),
+    /// Launch a CI fix session from the manual error-review popup (#695).
+    LaunchCiFix(CiFixConfig),
     /// Retry a hollow-completed session by ID.
     RetryHollow(uuid::Uuid),
     /// Trigger a version check and self-update.
@@ -174,6 +178,22 @@ pub struct ConflictFixConfig {
     pub issue_number: u64,
     pub branch: String,
     pub conflicting_files: Vec<String>,
+}
+
+/// Configuration for launching a CI fix session from the manual
+/// error-review popup (#695).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CiFixConfig {
+    pub pr_number: u64,
+    pub issue_number: u64,
+    pub branch: String,
+    /// The local gate command derived from the failed check name. Embedded
+    /// in the agent prompt as a "Before pushing, run `<cmd>`" clause.
+    pub local_gate_cmd: Option<String>,
+    /// The fetched failure log (or a placeholder when fetch failed).
+    pub failure_log: String,
+    /// Manual fix attempts start at 1; auto path increments separately.
+    pub attempt: u32,
 }
 
 /// Configuration for launching a session from a screen action.

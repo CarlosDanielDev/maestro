@@ -289,14 +289,63 @@ pub fn decide_ci_action(check: &PendingPrCheck, max_retries: u32, error_log: &st
     }
 }
 
-/// Build a prompt for a CI fix session.
+impl CheckRunDetail {
+    /// `Completed` + hard-failure conclusion (`Failure | TimedOut | StartupFailure`).
+    pub fn is_failure(&self) -> bool {
+        use CheckConclusion as C;
+        self.status == CheckStatus::Completed
+            && matches!(
+                self.conclusion,
+                C::Failure | C::TimedOut | C::StartupFailure
+            )
+    }
+}
+
+/// Map a GitHub Actions check name to the local command that mirrors it.
+/// Returns `None` for unknown names — caller falls back to "no gate" and
+/// the agent must use its own judgment. Substring matching is intentional
+/// — workflow names vary (e.g. `"Test (ubuntu-latest)"`, `"clippy / lint"`).
+pub(crate) fn local_gate_for_check(name: &str) -> Option<&'static str> {
+    let n = name.to_ascii_lowercase();
+    if n.contains("file size") || n.contains("file-size") {
+        Some("bash scripts/check-file-size.sh")
+    } else if n.contains("actionlint") || n.contains("workflow") {
+        Some("actionlint")
+    } else if n.contains("clippy") || n.contains("lint") {
+        Some("cargo clippy --workspace --all-targets -- -D warnings")
+    } else if n.contains("fmt") || n.contains("format") {
+        Some("cargo fmt --all -- --check")
+    } else if n.contains("audit") || n.contains("deny") {
+        Some("cargo deny check")
+    } else if n.contains("doc") {
+        Some("cargo doc --workspace --no-deps")
+    } else if n.contains("test") {
+        Some("cargo test --workspace")
+    } else if n.contains("build") || n.contains("compile") {
+        Some("cargo build --workspace --all-targets")
+    } else {
+        None
+    }
+}
+
+/// Build a prompt for a CI fix session. When `local_gate_cmd` is `Some`, an
+/// explicit "Before pushing, run `<cmd>`" clause is appended; `None`
+/// preserves the legacy auto-path output exactly.
 pub(crate) fn build_ci_fix_prompt(
     pr_number: u64,
     issue_number: u64,
     branch: &str,
     attempt: u32,
     failure_log: &str,
+    local_gate_cmd: Option<&str>,
 ) -> String {
+    let gate_clause = match local_gate_cmd {
+        Some(cmd) => format!(
+            "\n\nBefore pushing, run `{}` locally and only push if it succeeds.",
+            cmd
+        ),
+        None => String::new(),
+    };
     format!(
         "Fix the CI failure for PR #{pr_number} (issue #{issue_number}).\n\n\
          This is auto-fix attempt {attempt}.\n\n\
@@ -305,7 +354,7 @@ pub(crate) fn build_ci_fix_prompt(
          Do NOT use AskUserQuestion. \
          Read the failing code, fix the issue, then commit and push to the branch '{branch}'. \
          Run the failing command locally first to reproduce, then fix and verify. \
-         Keep the fix minimal — do NOT refactor unrelated code. Only fix the CI failure.",
+         Keep the fix minimal — do NOT refactor unrelated code. Only fix the CI failure.{gate_clause}",
     )
 }
 
@@ -510,7 +559,8 @@ mod tests {
 
     #[test]
     fn build_ci_fix_prompt_contains_pr_number_and_error_log() {
-        let prompt = build_ci_fix_prompt(42, 7, "feat/fix", 1, "error[E0308]: mismatched types");
+        let prompt =
+            build_ci_fix_prompt(42, 7, "feat/fix", 1, "error[E0308]: mismatched types", None);
         assert!(prompt.contains("PR #42"));
         assert!(prompt.contains("mismatched types"));
         assert!(prompt.contains("attempt 1"));
@@ -518,13 +568,113 @@ mod tests {
 
     #[test]
     fn build_ci_fix_prompt_includes_fix_scope_guard() {
-        let prompt = build_ci_fix_prompt(1, 1, "branch", 1, "test failed");
+        let prompt = build_ci_fix_prompt(1, 1, "branch", 1, "test failed", None);
         let lower = prompt.to_lowercase();
         assert!(
             lower.contains("do not") || lower.contains("only fix"),
             "Expected scope-limiting instruction in prompt, got: {}",
             prompt
         );
+    }
+
+    // ── Issue #695 — Area A: local_gate_for_check mapping ──────────────
+
+    #[test]
+    fn local_gate_for_clippy_returns_clippy_command() {
+        assert_eq!(
+            local_gate_for_check("clippy"),
+            Some("cargo clippy --workspace --all-targets -- -D warnings")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_fmt_returns_fmt_command() {
+        assert_eq!(
+            local_gate_for_check("rustfmt"),
+            Some("cargo fmt --all -- --check")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_test_returns_test_command() {
+        assert_eq!(
+            local_gate_for_check("Test (ubuntu-latest)"),
+            Some("cargo test --workspace")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_build_returns_build_command() {
+        assert_eq!(
+            local_gate_for_check("build"),
+            Some("cargo build --workspace --all-targets")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_doc_returns_doc_command() {
+        assert_eq!(
+            local_gate_for_check("docs"),
+            Some("cargo doc --workspace --no-deps")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_audit_returns_deny_command() {
+        assert_eq!(
+            local_gate_for_check("cargo audit"),
+            Some("cargo deny check")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_actionlint_returns_actionlint_command() {
+        assert_eq!(local_gate_for_check("actionlint"), Some("actionlint"));
+    }
+
+    #[test]
+    fn local_gate_for_file_size_returns_file_size_script() {
+        assert_eq!(
+            local_gate_for_check("File Size Lint"),
+            Some("bash scripts/check-file-size.sh")
+        );
+    }
+
+    #[test]
+    fn local_gate_for_unknown_returns_none() {
+        assert_eq!(local_gate_for_check("notacheck"), None);
+    }
+
+    // ── Issue #695 — Area B: build_ci_fix_prompt extension ─────────────
+
+    #[test]
+    fn build_ci_fix_prompt_with_none_gate_omits_gate_clause() {
+        let prompt = build_ci_fix_prompt(1, 1, "branch", 1, "log", None);
+        assert!(
+            !prompt.contains("Before pushing"),
+            "None gate must NOT inject a gate clause; got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn build_ci_fix_prompt_with_some_gate_includes_clause_once() {
+        let prompt = build_ci_fix_prompt(1, 1, "branch", 1, "log", Some("cargo test"));
+        let occurrences = prompt.matches("Before pushing").count();
+        assert_eq!(
+            occurrences, 1,
+            "Some gate must inject the clause exactly once; got {} occurrences in: {}",
+            occurrences, prompt
+        );
+        assert!(prompt.contains("cargo test"));
+    }
+
+    #[test]
+    fn build_ci_fix_prompt_some_gate_clause_is_idempotent_across_calls() {
+        let p1 = build_ci_fix_prompt(1, 1, "b", 1, "l", Some("cargo clippy"));
+        let p2 = build_ci_fix_prompt(2, 2, "b", 2, "l", Some("cargo clippy"));
+        assert_eq!(p1.matches("Before pushing").count(), 1);
+        assert_eq!(p2.matches("Before pushing").count(), 1);
     }
 
     // ── parse_check_details tests ────────────────────────────────────────

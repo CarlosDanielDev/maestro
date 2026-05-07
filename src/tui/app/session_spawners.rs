@@ -20,6 +20,7 @@ pub(crate) fn default_model_and_mode(config: Option<&crate::config::Config>) -> 
 }
 
 /// Create a CI fix session (does not enqueue — caller pushes to pending_session_launches).
+#[allow(clippy::too_many_arguments)] // 8 small params; struct wrapper would be churn for a private fn.
 pub(crate) fn create_ci_fix_session(
     model: &str,
     mode: &str,
@@ -28,11 +29,19 @@ pub(crate) fn create_ci_fix_session(
     branch: &str,
     attempt: u32,
     failure_log: &str,
+    local_gate_cmd: Option<&str>,
 ) -> Session {
     use crate::provider::github::ci::build_ci_fix_prompt;
     use crate::session::types::CiFixContext;
 
-    let prompt = build_ci_fix_prompt(pr_number, issue_number, branch, attempt, failure_log);
+    let prompt = build_ci_fix_prompt(
+        pr_number,
+        issue_number,
+        branch,
+        attempt,
+        failure_log,
+        local_gate_cmd,
+    );
     let mut session = Session::new(
         prompt,
         model.to_string(),
@@ -98,6 +107,28 @@ impl App {
         attempt: u32,
         failure_log: &str,
     ) {
+        self.spawn_ci_fix_session_with_gate(
+            pr_number,
+            issue_number,
+            branch,
+            attempt,
+            failure_log,
+            None,
+        );
+    }
+
+    /// Spawn a CI fix session with an optional local gate clause embedded
+    /// in the agent prompt. The auto path passes `None` (back-compat); the
+    /// manual review path passes `Some(cmd)` (#695).
+    pub(super) fn spawn_ci_fix_session_with_gate(
+        &mut self,
+        pr_number: u64,
+        issue_number: u64,
+        branch: String,
+        attempt: u32,
+        failure_log: &str,
+        local_gate_cmd: Option<&str>,
+    ) {
         let (model, mode, mode_config) = self.default_model_mode_and_config();
         let session = create_ci_fix_session(
             &model,
@@ -107,6 +138,7 @@ impl App {
             &branch,
             attempt,
             failure_log,
+            local_gate_cmd,
         )
         .with_mode_config(mode_config)
         .with_agent_id(Some(self.selected_agent_id()));
@@ -308,6 +340,7 @@ max_cost_total = 10.0
             "feat/fix",
             1,
             "CI error log",
+            None,
         );
         assert!(session.ci_fix_context.is_some());
         let ctx = session.ci_fix_context.unwrap();
@@ -319,81 +352,46 @@ max_cost_total = 10.0
         assert_eq!(session.status, SessionStatus::CiFix);
     }
 
-    fn make_failed_line(issue: Option<u64>, worktree: Option<&str>) -> CompletionSessionLine {
-        CompletionSessionLine {
-            session_id: uuid::Uuid::nil(),
-            label: "#560".to_string(),
-            status: SessionStatus::FailedGates,
-            cost_usd: 0.0,
-            elapsed: "0s".to_string(),
-            pr_link: String::new(),
-            error_summary: String::new(),
-            gate_failures: vec![],
-            worktree_path: worktree.map(std::path::PathBuf::from),
-            issue_number: issue,
-            model: "claude-opus-4-5".to_string(),
-            agent_id: None,
-        }
-    }
+    // ── Issue #695 — Area H: spawn_ci_fix_session with optional gate ───
 
     #[test]
-    fn spawn_resume_implement_session_pushes_session_with_continue_prompt() {
-        let mut app = crate::tui::make_test_app("issue-560-resume-prompt");
-        let line = make_failed_line(Some(560), Some(".maestro/worktrees/issue-560"));
-        app.spawn_resume_implement_session(&line);
+    fn spawn_ci_fix_session_none_gate_keeps_legacy_prompt() {
+        let mut app = crate::tui::make_test_app("issue-695-h1");
+        app.spawn_ci_fix_session(1, 2, "branch".to_string(), 1, "log");
         assert_eq!(app.pending_session_launches.len(), 1);
+        let prompt = &app.pending_session_launches[0].prompt;
         assert!(
-            app.pending_session_launches[0]
-                .prompt
-                .contains("/implement #560 --continue"),
-            "resume prompt must use /implement #N --continue, got: {}",
-            app.pending_session_launches[0].prompt
+            !prompt.contains("Before pushing"),
+            "legacy auto-path must NOT inject a gate clause; got: {}",
+            prompt
         );
     }
 
     #[test]
-    fn spawn_resume_implement_session_sets_worktree_path_on_new_session() {
-        let mut app = crate::tui::make_test_app("issue-560-resume-wt");
-        let line = make_failed_line(Some(560), Some(".maestro/worktrees/issue-560"));
-        app.spawn_resume_implement_session(&line);
+    fn spawn_ci_fix_session_with_gate_some_injects_clause_once() {
+        let mut app = crate::tui::make_test_app("issue-695-h2");
+        app.spawn_ci_fix_session_with_gate(
+            1,
+            2,
+            "branch".to_string(),
+            1,
+            "log",
+            Some("cargo test --workspace"),
+        );
+        let prompt = &app.pending_session_launches[0].prompt;
         assert_eq!(
-            app.pending_session_launches[0].worktree_path,
-            Some(std::path::PathBuf::from(".maestro/worktrees/issue-560")),
-            "resume session must inherit the failed session's worktree_path so the \
-             session manager re-uses the existing worktree"
+            prompt.matches("Before pushing").count(),
+            1,
+            "exactly one gate clause expected; got: {}",
+            prompt
         );
-    }
-
-    #[test]
-    fn spawn_resume_implement_session_does_nothing_when_issue_number_is_none() {
-        let mut app = crate::tui::make_test_app("issue-560-resume-no-issue");
-        let line = make_failed_line(None, Some(".maestro/worktrees/issue-560"));
-        app.spawn_resume_implement_session(&line);
-        assert!(
-            app.pending_session_launches.is_empty(),
-            "resume must not spawn a session for an unnamed line"
-        );
-    }
-
-    #[test]
-    fn spawn_resume_implement_session_does_nothing_when_worktree_path_is_none() {
-        let mut app = crate::tui::make_test_app("issue-560-resume-no-wt");
-        let line = make_failed_line(Some(560), None);
-        app.spawn_resume_implement_session(&line);
-        assert!(
-            app.pending_session_launches.is_empty(),
-            "resume must not spawn without a worktree_path — there's nothing to resume to"
-        );
-    }
-
-    #[test]
-    fn create_gate_fix_session_sets_correct_fields() {
-        let session =
-            create_gate_fix_session("opus", "orchestrator", 99, "- [clippy]: lint failed");
-        assert_eq!(session.issue_number, Some(99));
-        assert!(session.issue_title.unwrap().contains("Gate Fix"));
+        assert!(prompt.contains("cargo test --workspace"));
     }
 }
+
+#[cfg(test)]
+#[path = "session_spawners_resume_tests.rs"]
+mod resume_migrated_tests;
 
 #[cfg(test)]
 #[path = "session_spawners_gate_fix_tests.rs"]

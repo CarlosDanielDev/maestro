@@ -21,6 +21,7 @@ pub struct CiMonitorWidget<'a> {
     checks: &'a [CheckRunDetail],
     pr_number: Option<u64>,
     max_visible_rows: usize,
+    show_action_hint: bool,
     theme: &'a Theme,
 }
 
@@ -30,6 +31,7 @@ impl<'a> CiMonitorWidget<'a> {
             checks,
             pr_number: None,
             max_visible_rows: DEFAULT_MAX_VISIBLE_ROWS,
+            show_action_hint: true,
             theme,
         }
     }
@@ -41,6 +43,14 @@ impl<'a> CiMonitorWidget<'a> {
 
     pub fn max_visible_rows(mut self, max: usize) -> Self {
         self.max_visible_rows = max;
+        self
+    }
+
+    /// When `true` (default), render an `[e] Error Review` hint line below
+    /// the summary row whenever `summary.failed > 0` (#695). Tests use
+    /// `false` to assert summary-only output.
+    pub fn show_action_hint(mut self, show: bool) -> Self {
+        self.show_action_hint = show;
         self
     }
 }
@@ -102,12 +112,13 @@ impl Summary {
         let mut skipped = 0;
 
         for check in checks {
+            if check.is_failure() {
+                failed += 1;
+                continue;
+            }
             match (check.status, check.conclusion) {
                 (CheckStatus::Completed, CheckConclusion::Success)
                 | (CheckStatus::Completed, CheckConclusion::Neutral) => passed += 1,
-                (CheckStatus::Completed, CheckConclusion::Failure)
-                | (CheckStatus::Completed, CheckConclusion::TimedOut)
-                | (CheckStatus::Completed, CheckConclusion::StartupFailure) => failed += 1,
                 (CheckStatus::Completed, CheckConclusion::Skipped)
                 | (CheckStatus::Completed, CheckConclusion::Cancelled) => skipped += 1,
                 (CheckStatus::Completed, _) => passed += 1,
@@ -232,7 +243,24 @@ impl Widget for CiMonitorWidget<'_> {
         let mut summary_line = summary.to_line(self.theme);
         summary_line.spans.insert(0, Span::raw(" "));
 
+        let render_hint = self.show_action_hint && summary.failed > 0;
         lines.push(summary_line);
+
+        if render_hint {
+            lines.push(Line::from(vec![
+                Span::raw(" "),
+                Span::styled(
+                    "[e]",
+                    ratatui::style::Style::default()
+                        .fg(self.theme.accent_warning)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
+                Span::styled(
+                    " Error Review",
+                    ratatui::style::Style::default().fg(self.theme.text_secondary),
+                ),
+            ]));
+        }
 
         let paragraph = Paragraph::new(lines);
         paragraph.render(inner, buf);
@@ -291,6 +319,48 @@ mod tests {
         assert!(
             output.contains("No active CI checks"),
             "Expected 'No active CI checks' in output:\n{}",
+            output
+        );
+    }
+
+    // ── Issue #695 — Area I: footer hint ────────────────────────────────
+
+    #[test]
+    fn footer_hint_not_shown_when_all_checks_pass() {
+        let checks = vec![make_check(
+            "build",
+            CheckStatus::Completed,
+            CheckConclusion::Success,
+            Some(10),
+        )];
+        let output = render_widget(&checks, Some(7), 8);
+        assert!(
+            !output.contains("Error Review"),
+            "Hint must NOT appear when no failures; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn footer_hint_shown_when_at_least_one_check_failed() {
+        let checks = vec![
+            make_check(
+                "build",
+                CheckStatus::Completed,
+                CheckConclusion::Success,
+                Some(10),
+            ),
+            make_check(
+                "clippy",
+                CheckStatus::Completed,
+                CheckConclusion::Failure,
+                Some(5),
+            ),
+        ];
+        let output = render_widget(&checks, Some(7), 8);
+        assert!(
+            output.contains("[e]") && output.contains("Error Review"),
+            "Hint must appear when failed > 0; got:\n{}",
             output
         );
     }

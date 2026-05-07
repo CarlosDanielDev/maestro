@@ -1,6 +1,7 @@
 mod auto_pr;
 mod budget;
 mod bypass;
+mod ci_error_review;
 mod ci_polling;
 pub(crate) mod clipboard_action;
 mod completion_git;

@@ -75,6 +75,61 @@ async fn poll_ci_status_uses_provider_ci_status_once_per_tick() {
     assert_eq!(mock.ci_status_for_pr_calls(), vec![123]);
 }
 
+// --- Issue #695: auto-path back-compat (gate clause must be absent) ---
+
+#[tokio::test]
+async fn ci_auto_fix_path_prompt_has_no_gate_clause() {
+    use crate::provider::github::ci::PendingPrCheck;
+    use crate::provider::github::client::mock::MockGitHubClient;
+    use crate::provider::types::CiStatus;
+
+    let flags = crate::flags::store::FeatureFlags::new(
+        std::collections::HashMap::from([("ci_auto_fix".to_string(), true)]),
+        vec!["ci_auto_fix".to_string()],
+        vec![],
+    );
+    let mut app = make_app_with_flags(flags);
+
+    let mock = MockGitHubClient::new();
+    mock.set_ci_status_for_pr(
+        5,
+        CiStatus::Failed {
+            summary: "build broken".into(),
+        },
+    );
+    mock.set_ci_logs_for_check("feat/auto", "compile error: missing semicolon");
+    app.github_client = Some(Box::new(mock));
+
+    app.ci_poller.add_check(PendingPrCheck {
+        pr_number: 5,
+        issue_number: 5,
+        branch: "feat/auto".to_string(),
+        fix_attempt: 0,
+        check_count: 0,
+        awaiting_fix_ci: false,
+        created_at: Instant::now()
+            .checked_sub(Duration::from_secs(120))
+            .unwrap_or_else(Instant::now),
+    });
+    app.ci_poller.last_ci_poll = Instant::now()
+        .checked_sub(Duration::from_secs(120))
+        .unwrap_or_else(Instant::now);
+
+    app.poll_ci_status().await;
+
+    assert_eq!(
+        app.pending_session_launches.len(),
+        1,
+        "auto path with CiAutoFix=true must spawn one fix session"
+    );
+    let prompt = &app.pending_session_launches[0].prompt;
+    assert!(
+        !prompt.contains("Before pushing"),
+        "auto path must NOT inject the manual gate clause; got: {}",
+        prompt
+    );
+}
+
 // --- Issue #125: CI check details field ---
 
 #[test]
