@@ -1,7 +1,7 @@
 use insta::assert_snapshot;
 
 use crate::config::Config;
-use crate::session::types::{Session, SessionStatus};
+use crate::session::types::{ActivityEntry, Session, SessionStatus};
 use crate::tui::app::TuiMode;
 use crate::tui::snapshot_tests::{fixed_end, fixed_start, test_terminal};
 use crate::tui::{make_test_app, ui};
@@ -47,6 +47,28 @@ fn two_agent_sessions() -> (Session, Session) {
     (s1, s2)
 }
 
+fn completed_single_agent_no_files() -> Session {
+    use uuid::Uuid;
+
+    let mut s = Session::new(
+        "Complete no-file task".to_string(),
+        "claude-opus-4-5".to_string(),
+        "orchestrator".to_string(),
+        Some(694),
+        None,
+    );
+    s.id = Uuid::from_u128(694);
+    s.status = SessionStatus::Completed;
+    s.started_at = Some(fixed_start());
+    s.finished_at = Some(fixed_end());
+    s.current_activity = "Done".to_string();
+    s.activity_log = vec![ActivityEntry {
+        timestamp: fixed_end(),
+        message: "Session completed".to_string(),
+    }];
+    s
+}
+
 fn scrub_noise(app: &mut crate::tui::app::App) {
     app.show_mascot = false;
     app.show_activity_log = false;
@@ -84,6 +106,41 @@ fn agent_graph_dispatcher_toggle_on_renders_graph() {
         "toggle ON must render the graph canvas block title"
     );
     assert_snapshot!(t.backend());
+}
+
+#[test]
+fn agent_graph_dispatcher_completed_empty_agent_shows_terminal_state() {
+    let mut app = make_test_app("dispatcher-completed-empty-agent");
+    app.config = Some(make_config(true));
+
+    app.pool.enqueue(completed_single_agent_no_files());
+    app.tui_mode = TuiMode::AgentGraph;
+    scrub_noise(&mut app);
+
+    let mut t = test_terminal();
+    t.draw(|f| ui::draw(f, &mut app)).unwrap();
+
+    let output = format!("{}", t.backend());
+    assert!(
+        output.contains("Agent Graph") && output.contains("agent graph"),
+        "Agent Graph shell and graph block must remain visible"
+    );
+    assert!(
+        output.contains("COMPLETED") && output.contains("Status: completed"),
+        "completed status must be visible while Agent Graph is focused"
+    );
+    assert!(
+        output.contains("Session completed"),
+        "completed graph state must keep recent activity visible"
+    );
+    assert!(
+        output.contains("Press [g] for panels"),
+        "completed graph state must expose a clear way back to panels"
+    );
+    assert!(
+        !output.contains("Waiting for first file edit"),
+        "terminal graph state must not keep showing the live waiting affordance"
+    );
 }
 
 #[test]

@@ -145,11 +145,14 @@ async fn event_loop(
     spawn_version_check(app.data_tx.clone());
 
     loop {
-        terminal.draw(|f| ui::draw(f, app))?;
-
+        // Apply session stream updates before drawing. In particular, a
+        // Completed event must be visible before completion follow-up work
+        // can run gates/git operations on the UI thread.
         while let Ok(evt) = app.event_rx.try_recv() {
             app.handle_session_event(evt);
         }
+
+        terminal.draw(|f| ui::draw(f, app))?;
 
         app.check_completions().await?;
 
