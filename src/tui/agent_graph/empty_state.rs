@@ -46,7 +46,7 @@ pub(super) fn draw_single_agent_empty_state(
     let activity = session
         .map(|s| s.current_activity.trim())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| {
+        .unwrap_or({
             if is_terminal {
                 "Session finished"
             } else {
