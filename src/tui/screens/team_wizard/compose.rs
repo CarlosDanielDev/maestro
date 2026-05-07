@@ -2,10 +2,13 @@
 //!
 //! Step transitions and validation gates. Drawing lives in `draw.rs`.
 
-use super::types::{ComposeSource, ComposeStep, ComposeTier};
+use super::types::{ComposeSource, ComposeStep, ComposeTier, role_label};
 use super::{ScreenAction, TeamWizardMode, TeamWizardScreen};
+use crate::orchestration::loader::Loader;
+use crate::orchestration::team::TeamConfig;
 use crate::orchestration::types::Primitive;
 use crossterm::event::KeyCode;
+use std::collections::HashMap;
 
 const PRIMITIVES: &[Primitive] = &[
     Primitive::Pipeline,
@@ -226,14 +229,70 @@ impl TeamWizardScreen {
         };
     }
 
-    /// Attempt to save. Caller (dispatcher) is expected to actually write
-    /// the TOML; this method just checks validation and transitions state.
-    /// The `apply_save_result` setter finalises Success / Failed.
+    /// Validate, write the preset TOML to disk, and transition. Synchronous
+    /// disk IO is acceptable here because user-tier and project-tier dirs are
+    /// always local; on error we transition to `SaveFailed` and surface the
+    /// message in the UI rather than panicking.
     fn compose_attempt_save(&mut self) {
         if self.validate_save_name().is_some() {
             return;
         }
-        self.compose_step = ComposeStep::SaveSuccess;
+        match self.persist_compose() {
+            Ok(()) => self.apply_save_result(Ok(())),
+            Err(e) => self.apply_save_result(Err(e)),
+        }
+    }
+
+    fn persist_compose(&mut self) -> Result<(), String> {
+        let primitive = self
+            .compose
+            .primitive
+            .ok_or_else(|| "primitive not set".to_string())?;
+        let extends = match &self.compose.source {
+            None | Some(ComposeSource::Blank) => String::new(),
+            Some(ComposeSource::Extends(name)) => name.clone(),
+        };
+
+        let mut bindings: HashMap<String, toml::Value> = HashMap::new();
+        for (role, agent) in &self.compose.bindings {
+            bindings.insert(
+                role_label(*role).to_string(),
+                toml::Value::String(agent.clone()),
+            );
+        }
+        let team_config = TeamConfig {
+            extends,
+            primitive: Some(primitive),
+            min_agents: Some(vec!["claude".to_string()]),
+            bindings,
+            role_overrides: HashMap::new(),
+        };
+        let toml_text = toml::to_string_pretty(&team_config).map_err(|e| e.to_string())?;
+
+        let dir = match self.compose.tier {
+            ComposeTier::User => Loader::user_tier_default()
+                .ok_or_else(|| "cannot determine user config dir".to_string())?,
+            ComposeTier::Project => {
+                let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+                Loader::project_tier_default(&cwd)
+            }
+        };
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let name = self.compose.name.trim();
+        let path = dir.join(format!("{name}.toml"));
+        std::fs::write(&path, toml_text).map_err(|e| e.to_string())?;
+
+        // Refresh in-memory cache so the same wizard session sees the new
+        // preset on subsequent Source / Manage views.
+        let user_dir = Loader::user_tier_default();
+        let project_dir = std::env::current_dir()
+            .ok()
+            .map(|p| Loader::project_tier_default(&p));
+        let loader = Loader::new(user_dir, project_dir);
+        if let Ok(resolved) = loader.resolve() {
+            self.apply_resolved_teams(resolved.into_values().collect());
+        }
+        Ok(())
     }
 
     pub fn apply_save_result(&mut self, result: Result<(), String>) {

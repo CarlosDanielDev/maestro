@@ -2,6 +2,7 @@
 
 use super::types::{ManageStep, filter_by_tier};
 use super::{ScreenAction, TeamWizardMode, TeamWizardScreen};
+use crate::orchestration::loader::Loader;
 use crate::orchestration::team::{ResolvedTeam, SourceTier};
 use crossterm::event::KeyCode;
 
@@ -77,7 +78,25 @@ impl TeamWizardScreen {
     }
 
     fn manage_attempt_delete(&mut self) {
-        self.manage_step = ManageStep::DeleteSuccess;
+        let name = match self.manage.pending_delete.clone() {
+            Some(n) => n,
+            None => return,
+        };
+        match self.delete_preset_on_disk(&name) {
+            Ok(()) => self.apply_delete_result(Ok(())),
+            Err(e) => self.apply_delete_result(Err(e)),
+        }
+    }
+
+    fn delete_preset_on_disk(&mut self, name: &str) -> Result<(), String> {
+        let dir = Loader::user_tier_default()
+            .ok_or_else(|| "cannot determine user config dir".to_string())?;
+        let path = dir.join(format!("{name}.toml"));
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+        }
+        self.resolved_teams.remove(name);
+        Ok(())
     }
 
     fn manage_after_delete(&mut self) {
