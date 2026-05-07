@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-06 (UTC)
+> Last updated: 2026-05-07 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -90,10 +90,10 @@ maestro/
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; propagates once_mode from parsed CLI flag into App; forces max_concurrent=1 when --continuous is set; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests; declares mod updater; declares mod flags; propagates startup gh auth check result into App.gh_auth_ok; declares mod sanitize; constructs FeatureFlags from --enable-flag / --disable-flag CLI args merged with [flags] config  [Issue #15, #29, #49, #34, #36, #35, #52, #83, #85, #118, #141, #142, #143, #158]
 │   ├── cli.rs                             # CLI definition extracted from main.rs; Cli struct and Commands enum (clap derive); --once flag on Run subcommand (exits after all sessions complete, for CI/scripting); --continuous / -C flag on Run subcommand (auto-advance through issues, pause on failure); --enable-flag / --disable-flag repeatable args on Run subcommand for runtime feature flag overrides; --bypass-review global flag (session-only, skips review council); generate_completions() and cmd_completions() for shell tab-completion output; cmd_mangen() for roff man page generation; Completions and Mangen subcommands  [Issue #18, #83, #85, #143, #328]
 │   ├── commands/                          # Command handler modules (one per CLI subcommand)
-│   │   ├── mod.rs                         # Module re-exports
+│   │   ├── mod.rs                         # Module re-exports; `mod doctor` widened to `pub mod doctor` to allow integration-test access  [Issue #663]
 │   │   ├── clean.rs                       # cmd_clean(): prune orphaned worktrees and stale log files
 │   │   ├── dashboard.rs                   # cmd_dashboard(): launch the TUI dashboard
-│   │   ├── doctor.rs                      # cmd_doctor(): run preflight checks and print report
+│   │   ├── doctor.rs                      # cmd_doctor(): run preflight checks and print report; `pub async fn run_health_check(agent_ids: &[String]) -> Vec<AgentHealthCheck>` library entry point for orchestration pre-flight  [Issue #663]
 │   │   ├── init.rs                        # cmd_init(): scaffold maestro.toml; delegates to src/init/; accepts --reset flag  [Issue #505]
 │   │   ├── logs.rs                        # cmd_logs(): stream or tail session log files
 │   │   ├── queue.rs                       # cmd_queue(): interactive work-queue management
@@ -241,6 +241,29 @@ maestro/
 │   │   ├── dispatcher.rs                  # Notification dispatcher
 │   │   ├── desktop.rs                     # DesktopNotifier trait; NotifyError enum; OsascriptNotifier (macOS, /usr/bin/osascript via spawn_blocking); sanitize_applescript() (escapes \, ", \n, \r, \t; drops C0 controls); truncate() (title ≤128, body ≤256 chars); FakeNotifier (#[cfg(test)])  [Issue #487]
 │   │   └── slack.rs                       # Slack webhook notification sender
+│   ├── orchestration/                     # L1–L3 orchestration layer: team dispatch, cost estimation, and cross-issue scheduling  [Issue #663]
+│   │   ├── mod.rs                         # Module root; re-exports dispatch, cost, and core types
+│   │   ├── types.rs                       # `Primitive`, `TeamInput`, `TeamOutput`, `TeamRole` enums
+│   │   ├── contracts.rs                   # `SubagentResult`, `SubagentError`, `Finding`, `ReviewVerdict`, `NewIssueDraft`
+│   │   ├── team.rs                        # `TeamConfig`, `RoleBinding`, `RoleOverride` TOML schema; `#[derive(Default)]` on `RoleBinding`  [Issue #663]
+│   │   ├── loader.rs                      # Three-tier loader (built-in → user → project), `extends` resolution, cycle detection
+│   │   ├── validation.rs                  # Load-time validation rules
+│   │   ├── scheduler.rs                   # L3 cross-issue scheduler
+│   │   ├── dag.rs                         # DAG construction, edge classification, topo levels, cycle check
+│   │   ├── dag_tests.rs                   # Inline tests for DAG construction and topo sort
+│   │   ├── preflight.rs                   # Pre-flight validation pipeline
+│   │   ├── run.rs                         # `TeamRun`, `IssueRunState` lifecycle
+│   │   ├── orchestrator.rs                # L2 per-issue orchestrator (Claude session driver)
+│   │   ├── dispatch.rs                    # L1 subagent dispatch: `DispatchContext`, `dispatch_subagent`, `compose_prompt`, `parse_result`  [Issue #663]
+│   │   ├── dispatch_tests.rs              # Inline tests for dispatch module  [Issue #663]
+│   │   ├── cost.rs                        # Token + USD cost estimate: `estimate_tokens`, `estimate_cost_usd`, and 4 `pub const`s  [Issue #663]
+│   │   ├── adapt_pipeline.rs              # Adapt pipeline integration helpers
+│   │   └── primitives/                    # One Rust file per primitive; each owns a `run()` state machine
+│   │       ├── mod.rs                     # Primitive registry
+│   │       ├── pipeline.rs                # `pipeline` state machine
+│   │       ├── fan_out.rs                 # `fan-out` state machine
+│   │       ├── single_pass.rs             # `single-pass` state machine
+│   │       └── verdict_only.rs            # `verdict-only` state machine
 │   ├── plugins/                           # Plugin and hook execution system  [Phase 3]
 │   │   ├── mod.rs                         # Module exports
 │   │   ├── hooks.rs                       # HookPoint enum: SessionStarted, SessionCompleted, TestsPassed, ContextOverflow, etc.  [Issue #12]
@@ -459,17 +482,22 @@ maestro/
 │   │       ├── text_input.rs              # Single-line text input widget with cursor support
 │   │       └── toggle.rs                 # Boolean toggle widget for settings and forms; draw() routes through icons::get(IconId::CheckboxOn/Off) instead of hardcoded literals, eliminating the DRY drift that caused blank indicators on iTerm2 + some Nerd Font installs  [Issue #433]
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
-│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard added; mod wip_backup added  [Issue #500, #562]
-│   │   ├── session_lifecycle.rs           # 11 tests: enqueue/promote/complete lifecycle via handle_event()
-│   │   ├── stream_parsing.rs              # 22 tests: stream event parsing and parser round-trips
+│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, and doctor_run_health_check registered  [Issue #500, #562, #663]
+│   │   ├── adapt_pipeline.rs              # Integration tests for the adapt pipeline
 │   │   ├── completion_pipeline.rs         # 9 tests: label transitions and PR creation
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
+│   │   ├── doctor_run_health_check.rs     # Smoke tests for `run_health_check` library function: verifies return shape without asserting environment-dependent health state  [Issue #663]
 │   │   ├── gate_failure_retention.rs      # 8 tests: gate-failure worktree retention vs. teardown; 3 new pipeline tests added in #560 verify worktree_path persistence end-to-end; uses real git worktree commands (not MockWorktreeManager) to guard against the #558 regression  [Issue #558, #560]
+│   │   ├── init.rs                        # Integration tests for `maestro init` and `maestro init --reset`: fresh write, idempotent guard, merge-preserves-user-keys, polyglot detection  [Issue #505]
+│   │   ├── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
+│   │   ├── orchestration_dispatch.rs      # End-to-end L1 dispatch tests using `FakeProvider` with canned `StreamEvent::AssistantText` payloads; exercises full `dispatch_subagent()` path: mode resolution, prompt assembly, stream aggregation, structured-result capture  [Issue #663]
+│   │   ├── orchestration_mock_task.rs     # Mock `Task()` test helper for L2 orchestrator tests
+│   │   ├── orchestration_pipeline.rs      # End-to-end pipeline tests using mock `Task()` tool
+│   │   ├── session_lifecycle.rs           # 11 tests: enqueue/promote/complete lifecycle via handle_event()
+│   │   ├── stream_parsing.rs              # 22 tests: stream event parsing and parser round-trips
+│   │   ├── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
 │   │   ├── wip_backup.rs                  # Pipeline-level regression tests for the WIP backup commit step (Issue #562): real git in tempdir; covers backup_wip creates sentinel commit, amend_clean_and_push amends on success, head_is_wip_backup detects sentinel vs clean commit, gate failure leaves WIP commit in place, flag-injection rejected in commit_and_push  [Issue #562]
 │   │   ├── worktree_lifecycle.rs          # 8 tests: worktree create/cleanup and health monitoring
-│   │   ├── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
-│   │   ├── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
-│   │   └── init.rs                        # Integration tests for `maestro init` and `maestro init --reset`: fresh write, idempotent guard, merge-preserves-user-keys, polyglot detection  [Issue #505]
 │   ├── changelog/                         # CHANGELOG.md parser and model
 │   │   ├── mod.rs                         # Module facade; re-exports ChangelogParser and related types
 │   │   └── parser.rs                      # ChangelogParser: parses Keep a Changelog formatted CHANGELOG.md; used by release notes screen
@@ -659,6 +687,10 @@ maestro/
 | `src/provider/github/pr.rs` | Automated PR creation |
 | `src/modes/` | Session mode definitions: orchestrator, vibe, review (Phase 3) |
 | `src/notifications/` | Interruption system with Info/Warning/Critical/Blocker levels (Phase 3); `desktop.rs` adds `DesktopNotifier` trait + macOS `OsascriptNotifier` that fires on session Completed/Error events (Issue #487) |
+| `src/orchestration/` | L1–L3 orchestration layer: team dispatch, cost estimation, and cross-issue scheduling (Issue #663) |
+| `src/orchestration/dispatch.rs` | L1 subagent dispatch — `DispatchContext`, `dispatch_subagent`, `compose_prompt`, `parse_result`; translates `Task(role)` into a provider session via `ManagedSession` (Issue #663) |
+| `src/orchestration/dispatch_tests.rs` | Inline tests for dispatch: parse round-trips, shape-mismatch errors (Issue #663) |
+| `src/orchestration/cost.rs` | Locked cost-estimate formula — `estimate_tokens`, `estimate_cost_usd`, and 4 `pub const`s (`L2_SYSTEM_PROMPT_TOKENS`, `AVG_ISSUE_CONTEXT_TOKENS`, `RECOVERY_BUDGET`, `COST_PER_TOKEN`) (Issue #663) |
 | `src/plugins/` | Plugin and hook execution system (Phase 3) |
 | `src/plugins/hooks.rs` | HookPoint enum for plugin attachment points |
 | `src/plugins/runner.rs` | External plugin command execution per hook point |
@@ -793,6 +825,8 @@ maestro/
 | `src/tui/snapshot_tests/snapshots/` | Committed `.snap` files — insta ground-truth for TUI rendering regressions; includes 4 agent_graph baselines (`80x24`, `100x30`, `120x40`, original `single_agent_card`) added in Issue #526; the `single_agent_card` snap was retired in Issue #543 in favor of `single_agent_with_files_as_graph` + `falls_back_when_single_agent_has_no_files` (the fallback was narrowed to no-edges only); 2 agent_graph_dispatcher baselines (`toggle_on_renders_graph`, `toggle_off_renders_panels`) added in Issue #527; 11 agent_personalities snapshots added in Issue #539; several existing agent_graph snaps re-baselined in #539 (nodes now render as sprites/abbrevs); 12 activity_log_dispatch snapshots added in Issue #543 (chip renders per role × mode, guard cases, multi-dispatch composition); 2 completion_overlay snapshots added in Issue #560 (`completion_overlay_success_modal_80x24` and `completion_overlay_failed_gates_modal_80x24`) |
 | `src/integration_tests/` | End-to-end integration test suite; MockGitHubClient and MockWorktreeManager; no external process dependencies (Issue #15) |
 | `src/integration_tests/mod.rs` | Module declarations and shared helpers: `make_pool()`, `make_pool_with_worktree()`, `make_session()`, `make_session_with_issue()`, `make_gh_issue()` |
+| `src/integration_tests/doctor_run_health_check.rs` | Smoke tests for `run_health_check` library function (Issue #663) |
+| `src/integration_tests/orchestration_dispatch.rs` | End-to-end L1 dispatch tests with `FakeProvider`; exercises `dispatch_subagent()` path (Issue #663) |
 | `src/integration_tests/session_lifecycle.rs` | 11 tests covering enqueue, promote, and complete session lifecycle via `handle_event()` |
 | `src/integration_tests/stream_parsing.rs` | 22 tests covering stream event parsing and parser round-trips |
 | `src/integration_tests/completion_pipeline.rs` | 9 tests covering label transitions and PR creation |

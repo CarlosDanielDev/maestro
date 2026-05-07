@@ -7,6 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+- feat(orchestration): implement L1 subagent dispatch, cost-estimate formula, and `run_health_check` library function (#663)
+
 ## [0.25.1] - 2026-05-06
 
 ### Added

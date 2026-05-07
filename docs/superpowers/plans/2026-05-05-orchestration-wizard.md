@@ -2729,13 +2729,13 @@ git commit -m "test(orchestration): add MockTaskQueue and pipeline integration t
 - Modify: `src/commands/doctor.rs`
 - Modify: `src/agent_provider/types.rs` (verify `AgentHealthCheck` is `pub`)
 
-- [ ] **Step 1: Inspect current shape**
+- [x] **Step 1: Inspect current shape**
 
 ```bash
 grep -n 'health_check\|AgentHealthCheck' src/commands/doctor.rs src/agent_provider/types.rs | head -20
 ```
 
-- [ ] **Step 2: Extract the per-provider health-check loop into a library function**
+- [x] **Step 2: Extract the per-provider health-check loop into a library function**
 
 Add to `src/commands/doctor.rs`:
 
@@ -2754,11 +2754,11 @@ pub async fn run_health_check(agent_ids: &[String]) -> Vec<AgentHealthCheck> {
 
 Refactor the existing `doctor` command to call `run_health_check` internally.
 
-- [ ] **Step 3: Test the library function**
+- [x] **Step 3: Test the library function**
 
 Add a small integration test that calls `run_health_check(&["claude".into()])` and asserts the return shape (without asserting healthy/unhealthy — that depends on the test environment).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/commands/doctor.rs src/agent_provider/types.rs
@@ -2770,7 +2770,7 @@ git commit -m "feat(doctor): expose run_health_check as library function"
 **Files:**
 - Create: `src/orchestration/dispatch.rs`
 
-- [ ] **Step 1: Write failing test using a stub `AgentProvider`**
+- [x] **Step 1: Write failing test using a stub `AgentProvider`**
 
 ```rust
 //! L1 subagent dispatch. Spec §3 "L1 — Subagent dispatch".
@@ -2892,7 +2892,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run unit tests + commit**
+- [x] **Step 2: Run unit tests + commit**
 
 ```bash
 cargo test -p maestro --lib orchestration::dispatch
@@ -2900,7 +2900,7 @@ git add src/orchestration/
 git commit -m "feat(orchestration): add L1 subagent dispatch"
 ```
 
-- [ ] **Step 3: Add an end-to-end dispatch integration test**
+- [x] **Step 3: Add an end-to-end dispatch integration test**
 
 Path: `src/integration_tests/orchestration_dispatch.rs`. The unit tests above cover `parse_result()` in isolation; this test exercises the full `dispatch_subagent()` path (build provider, compose prompt, spawn, aggregate stream, parse) using a fake `AgentProvider` that returns canned `StreamEvent::AssistantText` containing valid JSON.
 
@@ -2965,7 +2965,7 @@ async fn dispatch_e2e_review_findings_round_trip() {
 
 > **Note for the implementer:** the fake-provider injection point should be a `#[cfg(test)]`-only function (`dispatch::set_test_provider_factory`) that swaps the factory out for the test. This keeps production code path unchanged.
 
-- [ ] **Step 4: Wire the new integration module**
+- [x] **Step 4: Wire the new integration module**
 
 Add to `src/integration_tests/mod.rs`:
 
@@ -2973,7 +2973,7 @@ Add to `src/integration_tests/mod.rs`:
 mod orchestration_dispatch;
 ```
 
-- [ ] **Step 5: Run + commit**
+- [x] **Step 5: Run + commit**
 
 ```bash
 cargo test -p maestro integration_tests::orchestration_dispatch
@@ -2986,7 +2986,7 @@ git commit -m "test(orchestration): add end-to-end dispatch integration test"
 **Files:**
 - Create: `src/orchestration/cost.rs`
 
-- [ ] **Step 1: Write failing test (verify formula constants are derivable)**
+- [x] **Step 1: Write failing test (verify formula constants are derivable)**
 
 ```rust
 //! Cost-estimate formula per spec §7.
@@ -3077,7 +3077,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run + commit**
+- [x] **Step 2: Run + commit**
 
 ```bash
 cargo test -p maestro --lib orchestration::cost
