@@ -16,6 +16,10 @@ mod init;
 #[cfg(test)]
 mod milestone_health_wizard;
 #[cfg(test)]
+mod orchestration_mock_task;
+#[cfg(test)]
+mod orchestration_pipeline;
+#[cfg(test)]
 mod session_lifecycle;
 #[cfg(test)]
 mod stream_parsing;

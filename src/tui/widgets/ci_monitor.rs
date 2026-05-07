@@ -49,6 +49,7 @@ impl<'a> CiMonitorWidget<'a> {
     /// When `true` (default), render an `[e] Error Review` hint line below
     /// the summary row whenever `summary.failed > 0` (#695). Tests use
     /// `false` to assert summary-only output.
+    #[allow(dead_code)]
     pub fn show_action_hint(mut self, show: bool) -> Self {
         self.show_action_hint = show;
         self

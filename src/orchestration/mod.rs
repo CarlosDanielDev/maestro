@@ -8,7 +8,9 @@ pub(crate) mod builtins;
 pub mod contracts;
 pub mod dag;
 pub mod loader;
+pub mod orchestrator;
 pub mod preflight;
+pub mod primitives;
 pub mod run;
 pub mod scheduler;
 pub mod team;
@@ -21,6 +23,10 @@ pub use contracts::{
 };
 #[allow(unused_imports)]
 pub use loader::Loader;
+#[allow(unused_imports)]
+pub use orchestrator::build_system_prompt;
+#[allow(unused_imports)]
+pub use primitives::{NextStep, PrimitiveMachine, PrimitiveOutput, make_machine};
 #[allow(unused_imports)]
 pub use team::{ResolvedTeam, RoleBinding, RoleOverride, SourceTier, TeamConfig};
 #[allow(unused_imports)]
