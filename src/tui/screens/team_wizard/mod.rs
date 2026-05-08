@@ -58,6 +58,10 @@ pub struct TeamWizardScreen {
     pub(super) spinner_tick: usize,
     pub(super) use_nerd_font: bool,
     pub(super) failure_reason: Option<String>,
+    /// True when the user entered Compose via Manage `[e]`. Save-success
+    /// returns to the Manage list instead of popping the wizard, preserving
+    /// the navigation context the user came from.
+    pub(super) editing_existing: bool,
 }
 
 impl TeamWizardScreen {
@@ -96,6 +100,7 @@ impl TeamWizardScreen {
             spinner_tick: 0,
             use_nerd_font: false,
             failure_reason: None,
+            editing_existing: false,
         }
     }
 
@@ -150,6 +155,10 @@ impl TeamWizardScreen {
 
     pub fn failure_reason(&self) -> Option<&str> {
         self.failure_reason.as_deref()
+    }
+
+    pub fn is_editing_existing(&self) -> bool {
+        self.editing_existing
     }
 
     pub fn initial_input(&self) -> Option<&TeamLaunchInput> {
@@ -309,30 +318,35 @@ impl TeamWizardScreen {
 
     /// Pre-fill Compose with an existing preset's values so the user can
     /// edit it in place. Save writes back to the same file when the name
-    /// is unchanged. Issue body called this "Extends(self)" but that
-    /// surprised users — true edit semantics match the [e] label.
+    /// is unchanged.
     pub fn jump_to_edit(&mut self, parent_name: &str) {
-        let Some(team) = self.resolved_teams.get(parent_name).cloned() else {
+        let Some(team) = self.resolved_teams.get(parent_name) else {
             return;
         };
-        let mut bindings: std::collections::HashMap<crate::orchestration::types::TeamRole, String> =
-            std::collections::HashMap::new();
-        for (role, binding) in &team.bindings {
-            bindings.insert(*role, binding.agent.clone());
-        }
+        let bindings = team
+            .bindings
+            .iter()
+            .map(|(role, b)| (*role, b.agent.clone()))
+            .collect();
+        // Manage filters User-tier only, so BuiltIn shouldn't reach here;
+        // collapse defensively. Project keeps its own tier so re-saves
+        // overwrite the project file.
         let tier = match team.source_tier {
             crate::orchestration::team::SourceTier::Project => ComposeTier::Project,
-            _ => ComposeTier::User,
+            crate::orchestration::team::SourceTier::User
+            | crate::orchestration::team::SourceTier::BuiltIn => ComposeTier::User,
         };
+        let primitive = team.primitive;
+        let name = team.name.clone();
         self.compose = ComposePayload {
             source: Some(ComposeSource::Blank),
-            primitive: Some(team.primitive),
+            primitive: Some(primitive),
             bindings,
-            name: team.name,
+            name,
             tier,
-            editing_existing: true,
             ..ComposePayload::default()
         };
+        self.editing_existing = true;
         self.compose_step = ComposeStep::Primitive;
         self.mode = TeamWizardMode::Compose;
     }

@@ -186,6 +186,54 @@ impl Loader {
     pub fn project_tier_default(repo_root: &Path) -> PathBuf {
         repo_root.join(".maestro/teams")
     }
+
+    /// Build a `Loader` pointing at the user-tier dir from `directories` and
+    /// the project-tier dir under the current working directory. Centralises
+    /// the boilerplate that was duplicated across the dispatcher and the
+    /// team-wizard's persist paths.
+    pub fn default_for_cwd() -> Self {
+        let user_dir = Self::user_tier_default();
+        let project_dir = std::env::current_dir()
+            .ok()
+            .map(|p| Self::project_tier_default(&p));
+        Self::new(user_dir, project_dir)
+    }
+
+    /// Serialize a `TeamConfig` and write it to the named user-tier preset
+    /// file. Returns the absolute path on success. Errors stringify as TOML
+    /// or IO failures suitable for surfacing in the wizard's failure step.
+    pub fn write_user_preset(name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
+        let dir =
+            Self::user_tier_default().ok_or_else(|| anyhow!("cannot determine user config dir"))?;
+        write_preset_file(&dir, name, cfg)
+    }
+
+    /// Serialize and write a project-tier preset under
+    /// `<repo_root>/.maestro/teams/<name>.toml`.
+    pub fn write_project_preset(repo_root: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
+        write_preset_file(&Self::project_tier_default(repo_root), name, cfg)
+    }
+
+    /// Remove a user-tier preset file. No-op when the file is already gone.
+    pub fn delete_user_preset(name: &str) -> Result<()> {
+        let dir =
+            Self::user_tier_default().ok_or_else(|| anyhow!("cannot determine user config dir"))?;
+        let path = dir.join(format!("{name}.toml"));
+        if path.exists() {
+            std::fs::remove_file(&path)
+                .with_context(|| format!("removing preset file {path:?}"))?;
+        }
+        Ok(())
+    }
+}
+
+fn write_preset_file(dir: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
+    let toml_text = toml::to_string_pretty(cfg)
+        .with_context(|| format!("serializing preset {name:?} to TOML"))?;
+    std::fs::create_dir_all(dir).with_context(|| format!("creating preset dir {dir:?}"))?;
+    let path = dir.join(format!("{name}.toml"));
+    std::fs::write(&path, toml_text).with_context(|| format!("writing preset file {path:?}"))?;
+    Ok(path)
 }
 
 fn load_dir(dir: &Path, tier: SourceTier) -> Result<Vec<RawTeam>> {

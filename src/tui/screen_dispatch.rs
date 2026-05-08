@@ -1025,11 +1025,7 @@ fn populate_team_wizard_data(
     use crate::orchestration::loader::Loader;
     use std::collections::BTreeSet;
 
-    let user_dir = Loader::user_tier_default();
-    let project_dir = std::env::current_dir()
-        .ok()
-        .map(|p| Loader::project_tier_default(&p));
-    let loader = Loader::new(user_dir, project_dir);
+    let loader = Loader::default_for_cwd();
 
     let resolved = match loader.resolve() {
         Ok(map) => map,

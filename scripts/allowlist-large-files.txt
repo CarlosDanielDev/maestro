@@ -155,6 +155,11 @@ src/state/types.rs # deadline: 2026-08-22, owner: @carlos, ticket: #538, plan: s
 # the test corpus.
 src/util/validation.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: split tests into util/validation/tests/ once another validator lands
 
+# loader.rs grew past 400 LOC after #664 added write_user_preset /
+# write_project_preset / delete_user_preset to centralise filesystem-layout
+# knowledge that was previously duplicated in the wizard layer.
+src/orchestration/loader.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: split persistence helpers into loader/persist.rs once a second writer (e.g. project-tier delete) lands
+
 # --- Team Wizard (#664) — orchestration-wizard chunk 5 ---
 # All 5 files exceed 400 LOC because the wizard implements 6 sub-tasks
 # (5.1–5.6) in a single PR. Split plan per file documented below; deadlines

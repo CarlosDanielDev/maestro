@@ -246,10 +246,6 @@ pub struct ComposePayload {
     pub role_focus: usize,
     pub agent_focus: usize,
     pub source_focus: usize,
-    /// True when the user entered Compose via Manage `[e]`. Save-success
-    /// returns to the Manage list instead of popping the wizard, preserving
-    /// the navigation context the user came from.
-    pub editing_existing: bool,
 }
 
 /// Where the Compose Save step writes the new preset. Mirrors `SourceTier`

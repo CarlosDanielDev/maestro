@@ -5,8 +5,8 @@
 use super::types::{ComposeSource, ComposeStep, ComposeTier, role_label};
 use super::{ScreenAction, TeamWizardMode, TeamWizardScreen};
 use crate::orchestration::loader::Loader;
-use crate::orchestration::team::TeamConfig;
-use crate::orchestration::types::Primitive;
+use crate::orchestration::team::{ResolvedTeam, RoleBinding, TeamConfig};
+use crate::orchestration::types::{Primitive, TeamRole};
 use crossterm::event::KeyCode;
 use std::collections::HashMap;
 
@@ -29,8 +29,8 @@ impl TeamWizardScreen {
             // If the user entered Compose via Manage's [e], return to the
             // Manage list with the just-saved preset already in place.
             // Otherwise pop the wizard back to whatever pushed it.
-            if self.compose.editing_existing {
-                self.compose.editing_existing = false;
+            if self.editing_existing {
+                self.editing_existing = false;
                 self.switch_mode(TeamWizardMode::Manage);
                 return ScreenAction::None;
             }
@@ -252,10 +252,8 @@ impl TeamWizardScreen {
         if self.validate_save_name().is_some() {
             return;
         }
-        match self.persist_compose() {
-            Ok(()) => self.apply_save_result(Ok(())),
-            Err(e) => self.apply_save_result(Err(e)),
-        }
+        let result = self.persist_compose();
+        self.apply_save_result(result);
     }
 
     fn persist_compose(&mut self) -> Result<(), String> {
@@ -268,45 +266,53 @@ impl TeamWizardScreen {
             Some(ComposeSource::Extends(name)) => name.clone(),
         };
 
-        let mut bindings: HashMap<String, toml::Value> = HashMap::new();
+        let mut toml_bindings: HashMap<String, toml::Value> = HashMap::new();
+        let mut resolved_bindings: HashMap<TeamRole, RoleBinding> = HashMap::new();
         for (role, agent) in &self.compose.bindings {
-            bindings.insert(
+            toml_bindings.insert(
                 role_label(*role).to_string(),
                 toml::Value::String(agent.clone()),
+            );
+            resolved_bindings.insert(
+                *role,
+                RoleBinding {
+                    agent: agent.clone(),
+                    ..Default::default()
+                },
             );
         }
         let team_config = TeamConfig {
             extends,
             primitive: Some(primitive),
             min_agents: Some(vec!["claude".to_string()]),
-            bindings,
+            bindings: toml_bindings,
             role_overrides: HashMap::new(),
         };
-        let toml_text = toml::to_string_pretty(&team_config).map_err(|e| e.to_string())?;
 
-        let dir = match self.compose.tier {
-            ComposeTier::User => Loader::user_tier_default()
-                .ok_or_else(|| "cannot determine user config dir".to_string())?,
+        let name = self.compose.name.trim().to_string();
+        match self.compose.tier {
+            ComposeTier::User => {
+                Loader::write_user_preset(&name, &team_config).map_err(|e| e.to_string())?;
+            }
             ComposeTier::Project => {
                 let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-                Loader::project_tier_default(&cwd)
+                Loader::write_project_preset(&cwd, &name, &team_config)
+                    .map_err(|e| e.to_string())?;
             }
-        };
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let name = self.compose.name.trim();
-        let path = dir.join(format!("{name}.toml"));
-        std::fs::write(&path, toml_text).map_err(|e| e.to_string())?;
-
-        // Refresh in-memory cache so the same wizard session sees the new
-        // preset on subsequent Source / Manage views.
-        let user_dir = Loader::user_tier_default();
-        let project_dir = std::env::current_dir()
-            .ok()
-            .map(|p| Loader::project_tier_default(&p));
-        let loader = Loader::new(user_dir, project_dir);
-        if let Ok(resolved) = loader.resolve() {
-            self.apply_resolved_teams(resolved.into_values().collect());
         }
+
+        // Update the in-memory cache directly from the just-written values
+        // — the just-saved preset is already fully described locally, so no
+        // disk re-read is needed (delete_preset_on_disk uses the same
+        // pattern asymmetrically before this fix).
+        let resolved = ResolvedTeam {
+            name: name.clone(),
+            primitive,
+            min_agents: vec!["claude".to_string()],
+            bindings: resolved_bindings,
+            source_tier: self.compose.tier.as_source_tier(),
+        };
+        self.resolved_teams.insert(name, resolved);
         Ok(())
     }
 

@@ -82,19 +82,12 @@ impl TeamWizardScreen {
             Some(n) => n,
             None => return,
         };
-        match self.delete_preset_on_disk(&name) {
-            Ok(()) => self.apply_delete_result(Ok(())),
-            Err(e) => self.apply_delete_result(Err(e)),
-        }
+        let result = self.delete_preset_on_disk(&name);
+        self.apply_delete_result(result);
     }
 
     fn delete_preset_on_disk(&mut self, name: &str) -> Result<(), String> {
-        let dir = Loader::user_tier_default()
-            .ok_or_else(|| "cannot determine user config dir".to_string())?;
-        let path = dir.join(format!("{name}.toml"));
-        if path.exists() {
-            std::fs::remove_file(&path).map_err(|e| e.to_string())?;
-        }
+        Loader::delete_user_preset(name).map_err(|e| e.to_string())?;
         self.resolved_teams.remove(name);
         Ok(())
     }

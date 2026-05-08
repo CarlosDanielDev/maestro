@@ -326,13 +326,13 @@ fn save_success_enter_returns_to_manage_when_editing() {
     )]);
     s.switch_mode(TeamWizardMode::Manage);
     s.handle_input(&key_event(KeyCode::Char('e')), InputMode::Normal);
-    assert!(s.compose_payload().editing_existing);
+    assert!(s.is_editing_existing());
     s.set_compose_step_for_test(ComposeStep::SaveSuccess);
     let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
     assert_eq!(action, ScreenAction::None);
     assert_eq!(s.mode(), TeamWizardMode::Manage);
     assert_eq!(s.manage_step(), ManageStep::List);
-    assert!(!s.compose_payload().editing_existing);
+    assert!(!s.is_editing_existing());
 }
 
 #[test]
