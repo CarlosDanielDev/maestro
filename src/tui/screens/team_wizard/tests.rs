@@ -316,20 +316,26 @@ fn manage_list_empty_when_no_user_teams() {
 // ── Manage edit-jump ────────────────────────────────────────────────────
 
 #[test]
-fn manage_e_key_jumps_to_compose_with_extends_source() {
+fn manage_e_key_loads_preset_into_compose_payload() {
     let mut s = fresh();
     s.apply_resolved_teams(vec![make_test_team(
         "base-team",
-        Primitive::SinglePass,
-        &[],
+        Primitive::Pipeline,
+        &[(TeamRole::Reviewer, "claude")],
         SourceTier::User,
     )]);
     s.switch_mode(TeamWizardMode::Manage);
     s.handle_input(&key_event(KeyCode::Char('e')), InputMode::Normal);
     assert_eq!(s.mode(), TeamWizardMode::Compose);
+    assert_eq!(s.compose_payload().source, Some(ComposeSource::Blank));
+    assert_eq!(s.compose_payload().primitive, Some(Primitive::Pipeline));
+    assert_eq!(s.compose_payload().name, "base-team");
     assert_eq!(
-        s.compose_payload().source,
-        Some(ComposeSource::Extends("base-team".into()))
+        s.compose_payload()
+            .bindings
+            .get(&TeamRole::Reviewer)
+            .map(String::as_str),
+        Some("claude")
     );
     assert_eq!(s.compose_step(), ComposeStep::Primitive);
 }

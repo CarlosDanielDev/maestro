@@ -29,16 +29,26 @@ impl TeamWizardScreen {
             return ScreenAction::Pop;
         }
         match (self.compose_step(), code) {
-            (ComposeStep::Source, KeyCode::Up) => self.compose_source_dec(),
-            (ComposeStep::Source, KeyCode::Down) => self.compose_source_inc(),
+            (ComposeStep::Source, KeyCode::Up | KeyCode::Char('k')) => self.compose_source_dec(),
+            (ComposeStep::Source, KeyCode::Down | KeyCode::Char('j')) => self.compose_source_inc(),
             (ComposeStep::Source, KeyCode::Enter) => self.compose_commit_source(),
-            (ComposeStep::Primitive, KeyCode::Up) => self.compose_primitive_dec(),
-            (ComposeStep::Primitive, KeyCode::Down) => self.compose_primitive_inc(),
+            (ComposeStep::Primitive, KeyCode::Up | KeyCode::Char('k')) => {
+                self.compose_primitive_dec()
+            }
+            (ComposeStep::Primitive, KeyCode::Down | KeyCode::Char('j')) => {
+                self.compose_primitive_inc()
+            }
             (ComposeStep::Primitive, KeyCode::Enter) => self.compose_commit_primitive(),
-            (ComposeStep::Roles, KeyCode::Up) => self.compose_role_focus_dec(),
-            (ComposeStep::Roles, KeyCode::Down) => self.compose_role_focus_inc(),
-            (ComposeStep::Roles, KeyCode::Left) => self.compose_agent_focus_dec(),
-            (ComposeStep::Roles, KeyCode::Right) => self.compose_agent_focus_inc(),
+            (ComposeStep::Roles, KeyCode::Up | KeyCode::Char('k')) => self.compose_role_focus_dec(),
+            (ComposeStep::Roles, KeyCode::Down | KeyCode::Char('j')) => {
+                self.compose_role_focus_inc()
+            }
+            (ComposeStep::Roles, KeyCode::Left | KeyCode::Char('h')) => {
+                self.compose_agent_focus_dec()
+            }
+            (ComposeStep::Roles, KeyCode::Right | KeyCode::Char('l')) => {
+                self.compose_agent_focus_inc()
+            }
             (ComposeStep::Roles, KeyCode::Char(' ')) => self.compose_bind_focused_role(),
             (ComposeStep::Roles, KeyCode::Enter) => {
                 self.try_advance();

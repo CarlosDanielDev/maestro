@@ -24,5 +24,5 @@ expression: t.backend()
 "║                                                                              ║"
 "║                                                                              ║"
 "╚══════════════════════════════════════════════════════════════════════════════╝"
-"                   [↑/↓] pick   [Enter] continue   [Esc] back                   "
+"                 [↑/↓ j/k] pick   [Enter] continue   [Esc] back                 "
 "                                                                                "

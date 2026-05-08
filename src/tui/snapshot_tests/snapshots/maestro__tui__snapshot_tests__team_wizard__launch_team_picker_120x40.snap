@@ -41,4 +41,4 @@ expression: t.backend()
 "║                                                                                                                      ║"
 "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝"
 "                                                      Select a team                                                     "
-"                                        [↑/↓] pick   [Enter] choose   [Esc] back                                        "
+"                                      [↑/↓ j/k] pick   [Enter] choose   [Esc] back                                      "

@@ -25,4 +25,4 @@ expression: t.backend()
 "║                                                                              ║"
 "╚══════════════════════════════════════════════════════════════════════════════╝"
 "                            Bind every required role                            "
-"       [↑/↓] role   [←/→] agent   [Space] bind   [Enter] next   [Esc] back      "
+"   [↑/↓ j/k] role   [←/→ h/l] agent   [Space] bind   [Enter] next   [Esc] back  "

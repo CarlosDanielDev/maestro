@@ -29,11 +29,19 @@ impl TeamWizardScreen {
             return ScreenAction::Pop;
         }
         match (self.launch_step(), code) {
-            (LaunchStep::TeamPicker, KeyCode::Up) => self.launch_team_focus_dec(),
-            (LaunchStep::TeamPicker, KeyCode::Down) => self.launch_team_focus_inc(),
+            (LaunchStep::TeamPicker, KeyCode::Up | KeyCode::Char('k')) => {
+                self.launch_team_focus_dec()
+            }
+            (LaunchStep::TeamPicker, KeyCode::Down | KeyCode::Char('j')) => {
+                self.launch_team_focus_inc()
+            }
             (LaunchStep::TeamPicker, KeyCode::Enter) => self.launch_commit_team(),
-            (LaunchStep::InputPicker, KeyCode::Up) => self.launch_input_focus_dec(),
-            (LaunchStep::InputPicker, KeyCode::Down) => self.launch_input_focus_inc(),
+            (LaunchStep::InputPicker, KeyCode::Up | KeyCode::Char('k')) => {
+                self.launch_input_focus_dec()
+            }
+            (LaunchStep::InputPicker, KeyCode::Down | KeyCode::Char('j')) => {
+                self.launch_input_focus_inc()
+            }
             (LaunchStep::InputPicker, KeyCode::Enter) => self.launch_commit_input(),
             (LaunchStep::PlanPreview, KeyCode::Enter) => self.launch_confirm_plan(),
             (LaunchStep::Confirm, KeyCode::Enter) => self.launch_dispatch(),

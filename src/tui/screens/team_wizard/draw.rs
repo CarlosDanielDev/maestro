@@ -664,9 +664,11 @@ fn home_entry_line(theme: &Theme, key: &str, label: &str, description: &str) -> 
 
 fn compose_footer_hint(step: ComposeStep) -> &'static str {
     match step {
-        ComposeStep::Source => "[↑/↓] pick   [Enter] choose   [Esc] back",
-        ComposeStep::Primitive => "[↑/↓] pick   [Enter] choose   [Esc] back",
-        ComposeStep::Roles => "[↑/↓] role   [←/→] agent   [Space] bind   [Enter] next   [Esc] back",
+        ComposeStep::Source => "[↑/↓ j/k] pick   [Enter] choose   [Esc] back",
+        ComposeStep::Primitive => "[↑/↓ j/k] pick   [Enter] choose   [Esc] back",
+        ComposeStep::Roles => {
+            "[↑/↓ j/k] role   [←/→ h/l] agent   [Space] bind   [Enter] next   [Esc] back"
+        }
         ComposeStep::Overrides => "[Enter] continue   [Esc] back",
         ComposeStep::Save => "[Tab] tier   [Enter] save   [Esc] back",
         ComposeStep::SaveSuccess => "[Enter] return",
@@ -676,8 +678,8 @@ fn compose_footer_hint(step: ComposeStep) -> &'static str {
 
 fn launch_footer_hint(step: LaunchStep) -> &'static str {
     match step {
-        LaunchStep::TeamPicker => "[↑/↓] pick   [Enter] choose   [Esc] back",
-        LaunchStep::InputPicker => "[↑/↓] pick   [Enter] continue   [Esc] back",
+        LaunchStep::TeamPicker => "[↑/↓ j/k] pick   [Enter] choose   [Esc] back",
+        LaunchStep::InputPicker => "[↑/↓ j/k] pick   [Enter] continue   [Esc] back",
         LaunchStep::PlanPreview => "[Enter] confirm   [Esc] back",
         LaunchStep::Confirm => "[Enter] launch   [Esc] back",
         LaunchStep::Executing => "Dispatching…",
@@ -688,7 +690,7 @@ fn launch_footer_hint(step: LaunchStep) -> &'static str {
 
 fn manage_footer_hint(step: ManageStep) -> &'static str {
     match step {
-        ManageStep::List => "[↑/↓] navigate   [e] edit   [d] delete   [Esc] back",
+        ManageStep::List => "[↑/↓ j/k] navigate   [e] edit   [d] delete   [Esc] back",
         ManageStep::DeleteConfirm => "[y] yes   [n] cancel",
         ManageStep::DeleteSuccess => "[Enter] return",
         ManageStep::DeleteFailed => "[r] retry   [Esc] back",

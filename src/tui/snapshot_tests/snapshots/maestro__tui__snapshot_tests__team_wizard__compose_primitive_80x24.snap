@@ -25,4 +25,4 @@ expression: t.backend()
 "║                                                                              ║"
 "╚══════════════════════════════════════════════════════════════════════════════╝"
 "                               Select a primitive                               "
-"                    [↑/↓] pick   [Enter] choose   [Esc] back                    "
+"                  [↑/↓ j/k] pick   [Enter] choose   [Esc] back                  "

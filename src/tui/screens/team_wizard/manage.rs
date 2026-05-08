@@ -12,8 +12,8 @@ impl TeamWizardScreen {
             return self.handle_manage_back();
         }
         match (self.manage_step(), code) {
-            (ManageStep::List, KeyCode::Up) => self.manage_focus_dec(),
-            (ManageStep::List, KeyCode::Down) => self.manage_focus_inc(),
+            (ManageStep::List, KeyCode::Up | KeyCode::Char('k')) => self.manage_focus_dec(),
+            (ManageStep::List, KeyCode::Down | KeyCode::Char('j')) => self.manage_focus_inc(),
             (ManageStep::List, KeyCode::Char('e')) => self.manage_jump_to_edit(),
             (ManageStep::List, KeyCode::Char('d')) => self.manage_open_delete_confirm(),
             (ManageStep::DeleteConfirm, KeyCode::Char('y')) => self.manage_attempt_delete(),

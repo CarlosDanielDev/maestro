@@ -19,8 +19,9 @@ pub mod types;
 pub mod test_helpers;
 
 pub use types::{
-    AgentHealth, ComposePayload, ComposeSource, ComposeStep, LaunchInputKind, LaunchPayload,
-    LaunchStep, ManageState, ManageStep, PreflightCache, TeamLaunchInput, TeamWizardMode,
+    AgentHealth, ComposePayload, ComposeSource, ComposeStep, ComposeTier, LaunchInputKind,
+    LaunchPayload, LaunchStep, ManageState, ManageStep, PreflightCache, TeamLaunchInput,
+    TeamWizardMode,
 };
 
 use crate::orchestration::dag::IssueMeta;
@@ -306,10 +307,29 @@ impl TeamWizardScreen {
         }
     }
 
-    /// Reset Compose to Edit-Extends state for a Manage edit-jump.
+    /// Pre-fill Compose with an existing preset's values so the user can
+    /// edit it in place. Save writes back to the same file when the name
+    /// is unchanged. Issue body called this "Extends(self)" but that
+    /// surprised users — true edit semantics match the [e] label.
     pub fn jump_to_edit(&mut self, parent_name: &str) {
+        let Some(team) = self.resolved_teams.get(parent_name).cloned() else {
+            return;
+        };
+        let mut bindings: std::collections::HashMap<crate::orchestration::types::TeamRole, String> =
+            std::collections::HashMap::new();
+        for (role, binding) in &team.bindings {
+            bindings.insert(*role, binding.agent.clone());
+        }
+        let tier = match team.source_tier {
+            crate::orchestration::team::SourceTier::Project => ComposeTier::Project,
+            _ => ComposeTier::User,
+        };
         self.compose = ComposePayload {
-            source: Some(ComposeSource::Extends(parent_name.to_string())),
+            source: Some(ComposeSource::Blank),
+            primitive: Some(team.primitive),
+            bindings,
+            name: team.name,
+            tier,
             ..ComposePayload::default()
         };
         self.compose_step = ComposeStep::Primitive;

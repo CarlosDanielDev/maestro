@@ -21,4 +21,4 @@ expression: t.backend()
 "║                                                          ║"
 "╚══════════════════════════════════════════════════════════╝"
 "              Pick Blank or an existing preset              "
-"          [↑/↓] pick   [Enter] choose   [Esc] back          "
+"        [↑/↓ j/k] pick   [Enter] choose   [Esc] back        "
