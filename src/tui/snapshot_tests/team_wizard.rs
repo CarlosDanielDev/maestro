@@ -125,14 +125,6 @@ fn compose_roles_80x24() {
 }
 
 #[test]
-fn compose_overrides_80x24() {
-    let mut s = populated_compose_screen();
-    s.set_compose_step_for_test(ComposeStep::Overrides);
-    let t = draw_team_wizard(&mut s, 80, 24);
-    assert_snapshot!(t.backend());
-}
-
-#[test]
 fn compose_save_80x24() {
     let mut s = populated_compose_screen();
     s.set_compose_step_for_test(ComposeStep::Save);

@@ -29,7 +29,6 @@ pub enum ComposeStep {
     Source,
     Primitive,
     Roles,
-    Overrides,
     Save,
     SaveSuccess,
     SaveFailed,
@@ -40,7 +39,6 @@ impl ComposeStep {
         Self::Source,
         Self::Primitive,
         Self::Roles,
-        Self::Overrides,
         Self::Save,
         Self::SaveSuccess,
         Self::SaveFailed,
@@ -51,7 +49,6 @@ impl ComposeStep {
             Self::Source => "Source",
             Self::Primitive => "Primitive",
             Self::Roles => "Roles",
-            Self::Overrides => "Overrides",
             Self::Save => "Save",
             Self::SaveSuccess => "Saved",
             Self::SaveFailed => "Save Failed",
@@ -243,13 +240,16 @@ pub struct ComposePayload {
     pub source: Option<ComposeSource>,
     pub primitive: Option<Primitive>,
     pub bindings: HashMap<TeamRole, String>,
-    pub overrides_note: String,
     pub name: String,
     pub tier: ComposeTier,
     pub primitive_focus: usize,
     pub role_focus: usize,
     pub agent_focus: usize,
     pub source_focus: usize,
+    /// True when the user entered Compose via Manage `[e]`. Save-success
+    /// returns to the Manage list instead of popping the wizard, preserving
+    /// the navigation context the user came from.
+    pub editing_existing: bool,
 }
 
 /// Where the Compose Save step writes the new preset. Mirrors `SourceTier`
@@ -415,8 +415,8 @@ mod tests {
     // ── ComposeStep ──────────────────────────────────────────────────────
 
     #[test]
-    fn compose_step_total_is_seven() {
-        assert_eq!(ComposeStep::total(), 7);
+    fn compose_step_total_is_six() {
+        assert_eq!(ComposeStep::total(), 6);
     }
 
     #[test]
@@ -425,8 +425,8 @@ mod tests {
     }
 
     #[test]
-    fn compose_step_save_failed_is_index_seven() {
-        assert_eq!(ComposeStep::SaveFailed.index(), 7);
+    fn compose_step_save_failed_is_index_six() {
+        assert_eq!(ComposeStep::SaveFailed.index(), 6);
     }
 
     #[test]
@@ -455,8 +455,8 @@ mod tests {
     }
 
     #[test]
-    fn compose_step_save_previous_is_overrides() {
-        assert_eq!(ComposeStep::Save.previous(), Some(ComposeStep::Overrides));
+    fn compose_step_save_previous_is_roles() {
+        assert_eq!(ComposeStep::Save.previous(), Some(ComposeStep::Roles));
     }
 
     #[test]

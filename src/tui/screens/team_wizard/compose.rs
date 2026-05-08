@@ -26,6 +26,14 @@ impl TeamWizardScreen {
             (self.compose_step(), code),
             (ComposeStep::SaveSuccess, KeyCode::Enter)
         ) {
+            // If the user entered Compose via Manage's [e], return to the
+            // Manage list with the just-saved preset already in place.
+            // Otherwise pop the wizard back to whatever pushed it.
+            if self.compose.editing_existing {
+                self.compose.editing_existing = false;
+                self.switch_mode(TeamWizardMode::Manage);
+                return ScreenAction::None;
+            }
             return ScreenAction::Pop;
         }
         match (self.compose_step(), code) {
@@ -51,9 +59,6 @@ impl TeamWizardScreen {
             }
             (ComposeStep::Roles, KeyCode::Char(' ')) => self.compose_bind_focused_role(),
             (ComposeStep::Roles, KeyCode::Enter) => {
-                self.try_advance();
-            }
-            (ComposeStep::Overrides, KeyCode::Enter) => {
                 self.try_advance();
             }
             (ComposeStep::Save, KeyCode::Backspace) => {

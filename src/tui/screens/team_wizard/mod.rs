@@ -330,6 +330,7 @@ impl TeamWizardScreen {
             bindings,
             name: team.name,
             tier,
+            editing_existing: true,
             ..ComposePayload::default()
         };
         self.compose_step = ComposeStep::Primitive;

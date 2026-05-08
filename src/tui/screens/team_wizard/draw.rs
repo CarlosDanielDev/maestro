@@ -29,40 +29,48 @@ impl TeamWizardScreen {
     }
 
     fn draw_home(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        WizardFrame::draw(
-            f,
-            area,
-            theme,
-            WizardFrameHeader {
-                step_index: 0,
-                step_total: 0,
-                step_label: "Teams",
-            },
-            WizardFrameFooter {
-                validation_error: None,
-                hints: Some("[c] Compose   [l] Launch   [m] Manage   [Esc] Back"),
-            },
-            |f, body_area| {
-                let lines = vec![
-                    Line::from(""),
-                    Line::from(Span::styled(
-                        "Pick a team flow:",
-                        Style::default()
-                            .fg(theme.text_primary)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Line::from(""),
-                    home_entry_line(theme, "c", "Compose", "Build or extend a team preset"),
-                    home_entry_line(theme, "l", "Launch", "Run a team on issues / a milestone"),
-                    home_entry_line(theme, "m", "Manage", "Edit or delete user-tier presets"),
-                ];
-                f.render_widget(
-                    Paragraph::new(lines)
-                        .alignment(Alignment::Center)
-                        .block(theme.styled_block("Team Wizard", false)),
-                    body_area,
-                );
-            },
+        // Home is pre-step — skip the wizard chrome ("Step 0/0") and use a
+        // tight centered card so the picker doesn't feel empty on wide
+        // viewports.
+        let block = theme.styled_block("Team Wizard", false);
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let body_height: u16 = 9;
+        let body_area = if inner.height > body_height {
+            let pad = (inner.height - body_height) / 2;
+            Rect {
+                x: inner.x,
+                y: inner.y + pad,
+                width: inner.width,
+                height: body_height,
+            }
+        } else {
+            inner
+        };
+
+        let lines = vec![
+            Line::from(Span::styled(
+                "Pick a flow",
+                Style::default()
+                    .fg(theme.text_primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            home_entry_line(theme, "c", "Compose", "Build or extend a team preset"),
+            home_entry_line(theme, "l", "Launch", "Run a team on issues / a milestone"),
+            home_entry_line(theme, "m", "Manage", "Edit or delete user-tier presets"),
+            Line::from(""),
+            Line::from(Span::styled(
+                "[Esc] back",
+                Style::default()
+                    .fg(theme.text_secondary)
+                    .add_modifier(Modifier::DIM),
+            )),
+        ];
+        f.render_widget(
+            Paragraph::new(lines).alignment(Alignment::Center),
+            body_area,
         );
     }
 
@@ -85,7 +93,6 @@ impl TeamWizardScreen {
                 ComposeStep::Source => self.draw_compose_source(f, body_area, theme),
                 ComposeStep::Primitive => self.draw_compose_primitive(f, body_area, theme),
                 ComposeStep::Roles => self.draw_compose_roles(f, body_area, theme),
-                ComposeStep::Overrides => self.draw_compose_overrides(f, body_area, theme),
                 ComposeStep::Save => self.draw_compose_save(f, body_area, theme),
                 ComposeStep::SaveSuccess => self.draw_terminal_state(
                     f,
@@ -213,24 +220,6 @@ impl TeamWizardScreen {
             agent_lines.push(focused_line(theme, a, i == self.compose.agent_focus));
         }
         f.render_widget(Paragraph::new(agent_lines), columns[1]);
-    }
-
-    fn draw_compose_overrides(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let lines = vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "Optional per-role overrides (mode / model / prompt addendum).",
-                Style::default().fg(theme.text_primary),
-            )),
-            Line::from(Span::styled(
-                "Press Enter to skip — defaults preserve the binding's agent settings.",
-                Style::default().fg(theme.text_secondary),
-            )),
-        ];
-        f.render_widget(
-            Paragraph::new(lines).block(theme.styled_block("Overrides", false)),
-            area,
-        );
     }
 
     fn draw_compose_save(&self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -669,7 +658,6 @@ fn compose_footer_hint(step: ComposeStep) -> &'static str {
         ComposeStep::Roles => {
             "[↑/↓ j/k] role   [←/→ h/l] agent   [Space] bind   [Enter] next   [Esc] back"
         }
-        ComposeStep::Overrides => "[Enter] continue   [Esc] back",
         ComposeStep::Save => "[Tab] tier   [Enter] save   [Esc] back",
         ComposeStep::SaveSuccess => "[Enter] return",
         ComposeStep::SaveFailed => "[r] retry   [Esc] back",

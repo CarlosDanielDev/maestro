@@ -316,6 +316,35 @@ fn manage_list_empty_when_no_user_teams() {
 // ── Manage edit-jump ────────────────────────────────────────────────────
 
 #[test]
+fn save_success_enter_returns_to_manage_when_editing() {
+    let mut s = fresh();
+    s.apply_resolved_teams(vec![make_test_team(
+        "base-team",
+        Primitive::SinglePass,
+        &[],
+        SourceTier::User,
+    )]);
+    s.switch_mode(TeamWizardMode::Manage);
+    s.handle_input(&key_event(KeyCode::Char('e')), InputMode::Normal);
+    assert!(s.compose_payload().editing_existing);
+    s.set_compose_step_for_test(ComposeStep::SaveSuccess);
+    let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(action, ScreenAction::None);
+    assert_eq!(s.mode(), TeamWizardMode::Manage);
+    assert_eq!(s.manage_step(), ManageStep::List);
+    assert!(!s.compose_payload().editing_existing);
+}
+
+#[test]
+fn save_success_enter_pops_when_creating_new() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Compose);
+    s.set_compose_step_for_test(ComposeStep::SaveSuccess);
+    let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(action, ScreenAction::Pop);
+}
+
+#[test]
 fn manage_e_key_loads_preset_into_compose_payload() {
     let mut s = fresh();
     s.apply_resolved_teams(vec![make_test_team(
