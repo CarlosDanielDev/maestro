@@ -234,7 +234,7 @@ impl Loader {
     }
 }
 
-fn write_preset_file(dir: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
+pub(crate) fn write_preset_file(dir: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
     // Defensive: callers must pre-validate, but check again so this private
     // helper cannot become a path-traversal foothold if added to a call
     // site that forgets the guard.
@@ -248,10 +248,10 @@ fn write_preset_file(dir: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf
 }
 
 /// Reject preset names that could escape the tier directory or shadow
-/// system files. Mirrors `commands::team::validate_preset_name` but lives
-/// here so every public write entry point on `Loader` enforces it
-/// uniformly. See #665 security review (Medium #1).
-fn validate_preset_name(name: &str) -> Result<()> {
+/// system files. Single source of truth — every public write entry point
+/// on `Loader` and every CLI handler routes through this. See #665
+/// security review (Medium #1).
+pub(crate) fn validate_preset_name(name: &str) -> Result<()> {
     if name.is_empty() {
         return Err(anyhow!("preset name must not be empty"));
     }

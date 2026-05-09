@@ -19,17 +19,20 @@
 
 #![allow(dead_code)]
 
+#[path = "team_launch.rs"]
+mod team_launch;
+
+pub use team_launch::{LaunchOpts, SchedulerRunner, launch_headless};
+
 use crate::cli::{TeamSubcommand, TeamTier};
-use crate::orchestration::dag::{IssueMeta, IssueState};
-use crate::orchestration::loader::Loader;
-use crate::orchestration::scheduler::Scheduler;
+use crate::orchestration::loader::{Loader, write_preset_file};
 use crate::orchestration::team::{ResolvedTeam, SourceTier, TeamConfig};
-use crate::orchestration::types::{Primitive, TeamInput, TeamOutput, TeamRole};
-use crate::state::types::{IssueNumber, IssueRunState};
+use crate::orchestration::types::{Primitive, TeamRole};
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use team_launch::{ProductionSchedulerRunner, print_launch_outcome};
 
 /// Entry point for `maestro team ...`. Routes each subcommand to its handler.
 pub async fn dispatch(action: TeamSubcommand) -> Result<()> {
@@ -157,7 +160,7 @@ fn cmd_list(loader: &Loader, json: bool) -> Result<()> {
             TierLabel::User => "user",
             TierLabel::Project => "project",
         };
-        let primitive = primitive_label(s.primitive);
+        let primitive = s.primitive.label();
         let roles = s
             .roles
             .iter()
@@ -202,28 +205,16 @@ fn build_preset_config(opts: &NewPresetOpts) -> TeamConfig {
     }
 }
 
-fn validate_preset_name(name: &str) -> Result<()> {
-    if name.is_empty() {
-        return Err(anyhow!("preset name must not be empty"));
-    }
-    if name.contains('/') || name.contains('\\') || name.contains("..") {
-        return Err(anyhow!(
-            "preset name {name:?} contains illegal path characters"
-        ));
-    }
-    Ok(())
-}
-
 /// Write a new preset to the chosen tier. `user_dir_override` and
 /// `project_root_override` let tests redirect the destination away from the
 /// platform default; passing `None` falls back to `Loader::user_tier_default`
-/// or `std::env::current_dir()`.
+/// or `std::env::current_dir()`. Name validation lives in `loader::write_preset_file`
+/// (and `Loader::write_*_preset`), so all paths reject illegal names uniformly.
 pub fn write_new_preset(
     opts: &NewPresetOpts,
     user_dir_override: Option<&Path>,
     project_root_override: Option<&Path>,
 ) -> Result<PathBuf> {
-    validate_preset_name(&opts.name)?;
     let cfg = build_preset_config(opts);
     match opts.tier {
         TeamTier::User => match user_dir_override {
@@ -238,15 +229,6 @@ pub fn write_new_preset(
             Loader::write_project_preset(&root, &opts.name, &cfg)
         }
     }
-}
-
-fn write_preset_file(dir: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
-    let toml_text = toml::to_string_pretty(cfg)
-        .with_context(|| format!("serializing preset {name:?} to TOML"))?;
-    std::fs::create_dir_all(dir).with_context(|| format!("creating preset dir {dir:?}"))?;
-    let path = dir.join(format!("{name}.toml"));
-    std::fs::write(&path, toml_text).with_context(|| format!("writing preset file {path:?}"))?;
-    Ok(path)
 }
 
 fn cmd_new(opts: NewPresetOpts) -> Result<()> {
@@ -264,19 +246,6 @@ fn tier_label(tier: TeamTier) -> &'static str {
         TeamTier::User => "user",
         TeamTier::Project => "project",
     }
-}
-
-/// Human-friendly label for `Primitive`, matching the kebab-case names
-/// users see in TOML and JSON output (vs the raw `Debug` format which
-/// flattens to `singlepass` / `verdictonly`).
-fn primitive_label(p: Primitive) -> String {
-    match p {
-        Primitive::Pipeline => "pipeline",
-        Primitive::FanOut => "fan-out",
-        Primitive::SinglePass => "single-pass",
-        Primitive::VerdictOnly => "verdict-only",
-    }
-    .to_string()
 }
 
 // -- manage --------------------------------------------------------------
@@ -387,7 +356,7 @@ fn cmd_explain(loader: &Loader, name: &str, json: bool) -> Result<()> {
         TierLabel::User => "user",
         TierLabel::Project => "project",
     };
-    let primitive = primitive_label(exp.primitive);
+    let primitive = exp.primitive.label();
     println!("Team: {} ({tier})", exp.name);
     println!("  Primitive: {primitive}");
     println!("  min_agents: {:?}", exp.min_agents);
@@ -409,542 +378,6 @@ fn cmd_explain(loader: &Loader, name: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-// -- launch headless -----------------------------------------------------
-
-#[derive(Debug, Clone)]
-pub struct LaunchOpts {
-    pub preset: String,
-    pub issue: Option<u64>,
-    pub issues: Vec<u64>,
-    pub max_parallel: usize,
-}
-
-#[derive(Debug, Default)]
-pub struct LaunchOutcome {
-    pub succeeded: Vec<IssueNumber>,
-    pub failed: Vec<(IssueNumber, String)>,
-    pub plan_levels: usize,
-}
-
-/// Async seam for headless `team launch --yes`. Production impl drives the
-/// real L1 dispatch + scheduler loop; tests inject `MockSchedulerRunner`
-/// to return canned `TeamOutput` per issue without touching providers.
-///
-/// Pattern mirrors `AgentProviderFactory::with_default_provider` from
-/// `src/orchestration/dispatch.rs` (#663), where a trait object lets tests
-/// substitute the entire downstream-call surface in one place.
-#[async_trait::async_trait]
-pub trait SchedulerRunner: Send + Sync {
-    async fn run_issue(
-        &self,
-        issue: IssueNumber,
-        team: &ResolvedTeam,
-    ) -> Result<TeamOutput, String>;
-}
-
-/// Production `SchedulerRunner` — drives `dispatch_subagent` (#663) for each
-/// `NextStep::Dispatch` emitted by the issue's primitive machine. Headless
-/// v1 returns a synthetic `TeamOutput::Pr` on machine completion: the real
-/// worktree + PR creation surface lives inside the TUI today and will be
-/// extracted in a v0.27.x follow-up. The scheduler-to-dispatch wiring
-/// itself is exercised end-to-end here, so CI can call `team launch --yes`
-/// and see actual provider calls happen.
-struct ProductionSchedulerRunner;
-
-#[async_trait::async_trait]
-impl SchedulerRunner for ProductionSchedulerRunner {
-    async fn run_issue(
-        &self,
-        issue: IssueNumber,
-        team: &ResolvedTeam,
-    ) -> Result<TeamOutput, String> {
-        use crate::config::Config;
-        use crate::orchestration::dispatch::{DispatchContext, dispatch_subagent};
-        use crate::orchestration::primitives::{NextStep, make_machine};
-
-        let config = Config::find_and_load().ok().map(Arc::new);
-        let default_model = config
-            .as_ref()
-            .map(|c| c.sessions.default_model.clone())
-            .unwrap_or_else(|| "opus".to_string());
-        let ctx = DispatchContext::new(team.clone(), config, default_model);
-
-        tracing::info!(
-            target: "maestro::team::launch",
-            issue,
-            team = %team.name,
-            primitive = ?team.primitive,
-            "headless launch dispatching primitive machine"
-        );
-
-        let mut machine = make_machine(team.primitive, issue);
-        loop {
-            match machine.next() {
-                NextStep::Dispatch { role, instructions } => {
-                    let result = dispatch_subagent(&ctx, role, &instructions).await;
-                    machine.advance(role, result);
-                }
-                NextStep::Done { .. } => {
-                    return Ok(TeamOutput::Pr {
-                        number: issue,
-                        branch: format!("feat/issue-{issue}"),
-                    });
-                }
-                NextStep::Fail { reason } => return Err(reason),
-            }
-        }
-    }
-}
-
-fn build_metas_from_args(
-    opts: &LaunchOpts,
-) -> Result<(TeamInput, HashMap<IssueNumber, IssueMeta>)> {
-    let issues: Vec<IssueNumber> = match (opts.issue, opts.issues.as_slice()) {
-        (Some(_), &[_, ..]) => {
-            return Err(anyhow!("--issue and --issues are mutually exclusive"));
-        }
-        (Some(n), []) => vec![n],
-        (None, []) => return Err(anyhow!("--issue or --issues is required for --yes launch")),
-        (None, list) => list.to_vec(),
-    };
-
-    // Synthesise minimal `IssueMeta` records — production code will replace
-    // this with `gh issue view`. For now we treat the CLI input as the full
-    // selection set with no implicit dependencies.
-    let mut metas = HashMap::new();
-    for &n in &issues {
-        metas.insert(
-            n,
-            IssueMeta {
-                number: n,
-                state: IssueState::Open,
-                milestone: None,
-                blocked_by: Vec::new(),
-            },
-        );
-    }
-    let input = if issues.len() == 1 {
-        TeamInput::Issue { number: issues[0] }
-    } else {
-        TeamInput::IssueSet {
-            primary_milestone: None,
-            issues,
-        }
-    };
-    Ok((input, metas))
-}
-
-/// Drive a headless team launch using the supplied `SchedulerRunner`.
-///
-/// Tests inject a mock runner; production wires `LoggingSchedulerRunner`
-/// (placeholder) → real dispatch in a follow-up. Returns `LaunchOutcome`
-/// summarising per-issue terminal state. Errors only on plan-construction
-/// failures; per-issue failures are surfaced through `outcome.failed`.
-pub async fn launch_headless(
-    loader: &Loader,
-    opts: LaunchOpts,
-    runner: Arc<dyn SchedulerRunner>,
-) -> Result<LaunchOutcome> {
-    let resolved = loader.resolve()?;
-    let team = resolved
-        .get(&opts.preset)
-        .ok_or_else(|| anyhow!("preset {:?} not found", opts.preset))?
-        .clone();
-
-    let max_parallel = opts.max_parallel.max(1);
-    let (input, metas) = build_metas_from_args(&opts)?;
-    let mut sched = Scheduler::from_input(team, input, metas, max_parallel)?;
-    let plan_levels = sched.run.plan.len();
-
-    let mut outcome = LaunchOutcome {
-        plan_levels,
-        ..Default::default()
-    };
-
-    loop {
-        let ready = sched.next_ready();
-        if ready.is_empty() {
-            break;
-        }
-        for issue in ready {
-            sched.run.state.insert(
-                issue,
-                IssueRunState::InFlight {
-                    session_id: uuid::Uuid::new_v4(),
-                    started_at: chrono::Utc::now(),
-                },
-            );
-            match runner.run_issue(issue, &sched.team).await {
-                Ok(output) => {
-                    sched
-                        .run
-                        .state
-                        .insert(issue, IssueRunState::Succeeded { output });
-                    outcome.succeeded.push(issue);
-                }
-                Err(reason) => {
-                    sched.run.state.insert(
-                        issue,
-                        IssueRunState::Failed {
-                            reason: reason.clone(),
-                            attempts: 1,
-                        },
-                    );
-                    outcome.failed.push((issue, reason));
-                }
-            }
-        }
-    }
-
-    Ok(outcome)
-}
-
-fn print_launch_outcome(outcome: &LaunchOutcome) {
-    println!(
-        "Plan: {} level(s) — {} succeeded, {} failed",
-        outcome.plan_levels,
-        outcome.succeeded.len(),
-        outcome.failed.len()
-    );
-    for (issue, reason) in &outcome.failed {
-        println!("  ✗ #{issue}: {reason}");
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::tempdir;
-
-    fn make_loader_with_tempdirs() -> (tempfile::TempDir, tempfile::TempDir, Loader) {
-        let user = tempdir().unwrap();
-        let project = tempdir().unwrap();
-        let loader = Loader::new(
-            Some(user.path().to_path_buf()),
-            Some(project.path().to_path_buf()),
-        );
-        (user, project, loader)
-    }
-
-    fn write_user_preset_file(user: &Path, name: &str, contents: &str) {
-        fs::write(user.join(format!("{name}.toml")), contents).unwrap();
-    }
-
-    // -- list_teams ------------------------------------------------------
-
-    #[test]
-    fn list_teams_with_only_builtins_returns_five_entries() {
-        let loader = Loader::new(None, None);
-        let summaries = list_teams(&loader).unwrap();
-        assert_eq!(summaries.len(), 5);
-        for name in [
-            "default-coder",
-            "default-researcher",
-            "default-triager",
-            "default-reviewer",
-            "default-docs",
-        ] {
-            assert!(
-                summaries.iter().any(|s| s.name == name),
-                "missing built-in {name}"
-            );
-        }
-        for s in &summaries {
-            assert_eq!(s.source_tier, TierLabel::BuiltIn);
-        }
-    }
-
-    #[test]
-    fn list_teams_includes_user_tier_preset() {
-        let (user, _project, loader) = make_loader_with_tempdirs();
-        write_user_preset_file(
-            user.path(),
-            "cheap-coder",
-            r#"extends = "default-coder"
-implementer = "ollama"
-"#,
-        );
-        let summaries = list_teams(&loader).unwrap();
-        let entry = summaries
-            .iter()
-            .find(|s| s.name == "cheap-coder")
-            .expect("cheap-coder must be present");
-        assert_eq!(entry.source_tier, TierLabel::User);
-    }
-
-    #[test]
-    fn list_teams_json_is_valid_json_array() {
-        let loader = Loader::new(None, None);
-        let s = list_teams_json(&loader).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&s).unwrap();
-        let arr = parsed.as_array().expect("top level must be array");
-        assert_eq!(arr.len(), 5);
-        for entry in arr {
-            assert!(entry.get("name").is_some());
-            assert!(entry.get("primitive").is_some());
-            assert!(entry.get("source_tier").is_some());
-        }
-    }
-
-    // -- explain ---------------------------------------------------------
-
-    #[test]
-    fn explain_returns_resolved_bindings_for_builtin() {
-        let loader = Loader::new(None, None);
-        let exp = explain(&loader, "default-coder").unwrap();
-        assert_eq!(exp.name, "default-coder");
-        assert_eq!(exp.source_tier, TierLabel::BuiltIn);
-        assert!(!exp.bindings.is_empty());
-    }
-
-    #[test]
-    fn explain_unknown_team_returns_err() {
-        let loader = Loader::new(None, None);
-        let err = explain(&loader, "no-such-team").unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("not found"));
-        assert!(msg.contains("no-such-team"));
-    }
-
-    #[test]
-    fn explain_json_round_trips_through_serde_json() {
-        let loader = Loader::new(None, None);
-        let s = explain_json(&loader, "default-coder").unwrap();
-        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
-        assert_eq!(v["name"], "default-coder");
-        assert!(v["bindings"].is_array());
-    }
-
-    #[test]
-    fn explain_overridden_field_traces_to_child_preset() {
-        let (user, _project, loader) = make_loader_with_tempdirs();
-        write_user_preset_file(
-            user.path(),
-            "child",
-            r#"extends = "default-coder"
-implementer = "opencode"
-"#,
-        );
-        let exp = explain(&loader, "child").unwrap();
-        let imp = exp
-            .bindings
-            .iter()
-            .find(|b| b.role == "implementer")
-            .expect("implementer binding must exist");
-        assert_eq!(imp.agent, "opencode");
-    }
-
-    // -- write_new_preset ------------------------------------------------
-
-    #[test]
-    fn write_new_preset_user_tier_writes_toml_under_override_dir() {
-        let (user, _project, _loader) = make_loader_with_tempdirs();
-        let opts = NewPresetOpts {
-            name: "my-team".into(),
-            extends: "default-coder".into(),
-            tier: TeamTier::User,
-            implementer: Some("opencode".into()),
-            reviewer: None,
-            docs: None,
-        };
-        let path = write_new_preset(&opts, Some(user.path()), None).unwrap();
-        assert!(path.exists());
-        assert!(path.ends_with("my-team.toml"));
-        let body = fs::read_to_string(&path).unwrap();
-        assert!(body.contains("extends = \"default-coder\""));
-        assert!(body.contains("implementer = \"opencode\""));
-    }
-
-    #[test]
-    fn write_new_preset_project_tier_writes_under_dot_maestro_teams() {
-        let (_user, project, _loader) = make_loader_with_tempdirs();
-        let opts = NewPresetOpts {
-            name: "proj-team".into(),
-            extends: "default-coder".into(),
-            tier: TeamTier::Project,
-            implementer: None,
-            reviewer: None,
-            docs: None,
-        };
-        let path = write_new_preset(&opts, None, Some(project.path())).unwrap();
-        assert!(path.exists());
-        assert!(path.to_string_lossy().contains(".maestro/teams"));
-    }
-
-    #[test]
-    fn write_new_preset_rejects_path_traversal_in_name() {
-        let (user, _project, _loader) = make_loader_with_tempdirs();
-        let opts = NewPresetOpts {
-            name: "../etc/passwd".into(),
-            extends: "default-coder".into(),
-            tier: TeamTier::User,
-            implementer: None,
-            reviewer: None,
-            docs: None,
-        };
-        let err = write_new_preset(&opts, Some(user.path()), None).unwrap_err();
-        assert!(format!("{err:#}").contains("illegal path characters"));
-    }
-
-    #[test]
-    fn write_new_preset_rejects_empty_name() {
-        let (user, _project, _loader) = make_loader_with_tempdirs();
-        let opts = NewPresetOpts {
-            name: "".into(),
-            extends: "default-coder".into(),
-            tier: TeamTier::User,
-            implementer: None,
-            reviewer: None,
-            docs: None,
-        };
-        let err = write_new_preset(&opts, Some(user.path()), None).unwrap_err();
-        assert!(format!("{err:#}").contains("empty"));
-    }
-
-    // -- manage_list -----------------------------------------------------
-
-    #[test]
-    fn manage_list_excludes_builtin_tier() {
-        let loader = Loader::new(None, None);
-        let entries = manage_list(&loader).unwrap();
-        assert!(
-            entries.is_empty(),
-            "manage_list must not include built-in presets"
-        );
-    }
-
-    // -- launch_headless (with mock SchedulerRunner) --------------------
-
-    struct MockSchedulerRunner {
-        responses: std::sync::Mutex<std::collections::VecDeque<Result<TeamOutput, String>>>,
-    }
-
-    impl MockSchedulerRunner {
-        fn new(responses: Vec<Result<TeamOutput, String>>) -> Self {
-            Self {
-                responses: std::sync::Mutex::new(responses.into()),
-            }
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl SchedulerRunner for MockSchedulerRunner {
-        async fn run_issue(
-            &self,
-            _issue: IssueNumber,
-            _team: &ResolvedTeam,
-        ) -> Result<TeamOutput, String> {
-            self.responses
-                .lock()
-                .unwrap()
-                .pop_front()
-                .ok_or_else(|| "mock runner exhausted".to_string())
-                .and_then(|r| r)
-        }
-    }
-
-    fn pr_output(n: u64) -> TeamOutput {
-        TeamOutput::Pr {
-            number: n,
-            branch: format!("feat/{n}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn launch_headless_all_succeed_returns_no_failures() {
-        let loader = Loader::new(None, None);
-        let runner = std::sync::Arc::new(MockSchedulerRunner::new(vec![Ok(pr_output(1))]));
-        let outcome = launch_headless(
-            &loader,
-            LaunchOpts {
-                preset: "default-coder".into(),
-                issue: Some(1),
-                issues: vec![],
-                max_parallel: 1,
-            },
-            runner,
-        )
-        .await
-        .unwrap();
-        assert_eq!(outcome.succeeded, vec![1]);
-        assert!(outcome.failed.is_empty());
-        assert_eq!(outcome.plan_levels, 1);
-    }
-
-    #[tokio::test]
-    async fn launch_headless_records_per_issue_failure() {
-        let loader = Loader::new(None, None);
-        let runner = std::sync::Arc::new(MockSchedulerRunner::new(vec![Err("boom".into())]));
-        let outcome = launch_headless(
-            &loader,
-            LaunchOpts {
-                preset: "default-coder".into(),
-                issue: Some(99),
-                issues: vec![],
-                max_parallel: 1,
-            },
-            runner,
-        )
-        .await
-        .unwrap();
-        assert!(outcome.succeeded.is_empty());
-        assert_eq!(outcome.failed.len(), 1);
-        assert_eq!(outcome.failed[0].0, 99);
-        assert!(outcome.failed[0].1.contains("boom"));
-    }
-
-    #[tokio::test]
-    async fn launch_headless_unknown_preset_returns_err() {
-        let loader = Loader::new(None, None);
-        let runner = std::sync::Arc::new(MockSchedulerRunner::new(vec![]));
-        let err = launch_headless(
-            &loader,
-            LaunchOpts {
-                preset: "no-such-preset".into(),
-                issue: Some(1),
-                issues: vec![],
-                max_parallel: 1,
-            },
-            runner,
-        )
-        .await
-        .unwrap_err();
-        assert!(format!("{err:#}").contains("not found"));
-    }
-
-    #[tokio::test]
-    async fn launch_headless_requires_issue_or_issues() {
-        let loader = Loader::new(None, None);
-        let runner = std::sync::Arc::new(MockSchedulerRunner::new(vec![]));
-        let err = launch_headless(
-            &loader,
-            LaunchOpts {
-                preset: "default-coder".into(),
-                issue: None,
-                issues: vec![],
-                max_parallel: 1,
-            },
-            runner,
-        )
-        .await
-        .unwrap_err();
-        assert!(format!("{err:#}").contains("required"));
-    }
-
-    #[test]
-    fn manage_list_includes_user_tier_with_path() {
-        let (user, _project, loader) = make_loader_with_tempdirs();
-        write_user_preset_file(
-            user.path(),
-            "u1",
-            r#"extends = "default-coder"
-implementer = "ollama"
-"#,
-        );
-        let entries = manage_list(&loader).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].name, "u1");
-        assert!(entries[0].path.ends_with("u1.toml"));
-    }
-}
+#[path = "team_tests.rs"]
+mod tests;
