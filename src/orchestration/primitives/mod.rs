@@ -48,7 +48,7 @@ pub enum PrimitiveOutput {
     },
 }
 
-pub trait PrimitiveMachine {
+pub trait PrimitiveMachine: Send {
     fn next(&mut self) -> NextStep;
     fn advance(&mut self, role: TeamRole, result: Result<SubagentResult, SubagentError>);
 }

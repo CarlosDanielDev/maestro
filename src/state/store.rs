@@ -1,4 +1,4 @@
-use super::types::{IssueRunState, MaestroState, TeamRun};
+use super::types::{CURRENT_STATE_VERSION, IssueRunState, MaestroState, TeamRun};
 use anyhow::{Context, Result};
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
@@ -56,6 +56,7 @@ impl StateStore {
                     .with_context(|| format!("reading state from {}", self.path.display()));
             }
         };
+        migrate(&mut state)?;
         reconcile_team_runs(&mut state.team_runs);
         Ok(state)
     }
@@ -70,6 +71,34 @@ impl StateStore {
             .with_context(|| format!("renaming {} to {}", tmp.display(), self.path.display()))?;
         Ok(())
     }
+}
+
+/// Bring an in-memory `MaestroState` up to `CURRENT_STATE_VERSION`.
+///
+/// Files written before the version stamp deserialize with `version: 0`
+/// (via `default_state_version`); this is a no-op structural migration —
+/// every later-added field already carries `#[serde(default)]`, so the
+/// stamp bump is the only mutation required for `0 → 1`.
+///
+/// Returns an error when the state file is from a *newer* maestro version
+/// than this binary supports (`state.version > CURRENT_STATE_VERSION`).
+/// Silently re-saving in that case would discard unknown fields and
+/// downgrade the file format — an OWASP A08 data-integrity risk
+/// (#665 security review).
+///
+/// Idempotent: a state already at `CURRENT_STATE_VERSION` is unchanged.
+pub fn migrate(state: &mut MaestroState) -> Result<()> {
+    if state.version > CURRENT_STATE_VERSION {
+        return Err(anyhow::anyhow!(
+            "state file is from a newer maestro version (v{}); this build only knows up to v{} — upgrade maestro to load it",
+            state.version,
+            CURRENT_STATE_VERSION
+        ));
+    }
+    if state.version < CURRENT_STATE_VERSION {
+        state.version = CURRENT_STATE_VERSION;
+    }
+    Ok(())
 }
 
 pub fn reconcile_team_run(run: &mut TeamRun) {
@@ -92,7 +121,9 @@ fn reconcile_team_runs(runs: &mut [TeamRun]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::types::{IssueRunState, MaestroState, TeamRun};
+    use crate::state::types::{
+        CURRENT_STATE_VERSION, IssueRunState, MaestroState, TeamRun, default_state_version,
+    };
     use std::sync::Arc;
 
     fn must<T, E: std::fmt::Display>(result: std::result::Result<T, E>, context: &str) -> T {
@@ -307,5 +338,113 @@ mod tests {
             run.state.get(&2),
             Some(IssueRunState::Succeeded { .. })
         ));
+    }
+
+    // --- Issue #665: state-store version stamp + v0 migration ---
+
+    #[test]
+    fn default_state_version_constant_is_zero() {
+        // Defensive: any change to the legacy serde default would silently
+        // re-flag old state files as already-current, skipping migration.
+        assert_eq!(default_state_version(), 0);
+    }
+
+    #[test]
+    fn maestro_state_default_has_current_version() {
+        let state = MaestroState::default();
+        assert_eq!(state.version, CURRENT_STATE_VERSION);
+    }
+
+    #[test]
+    fn legacy_state_without_version_key_deserializes_with_zero() {
+        let json = r#"{"sessions":[],"total_cost_usd":0.0,"file_claims":{},"last_updated":null}"#;
+        let state: MaestroState = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            state.version, 0,
+            "legacy file without version key must deserialize to 0 — migration is the bumper"
+        );
+    }
+
+    #[test]
+    fn migrate_bumps_version_zero_to_current() {
+        let mut state = MaestroState {
+            version: 0,
+            ..Default::default()
+        };
+        migrate(&mut state).unwrap();
+        assert_eq!(state.version, CURRENT_STATE_VERSION);
+    }
+
+    #[test]
+    fn migrate_is_idempotent_on_current_version() {
+        let mut state = MaestroState::default();
+        let before = state.version;
+        migrate(&mut state).unwrap();
+        migrate(&mut state).unwrap();
+        assert_eq!(state.version, before);
+    }
+
+    #[test]
+    fn migrate_rejects_state_from_newer_version() {
+        let mut state = MaestroState {
+            version: CURRENT_STATE_VERSION + 1,
+            ..Default::default()
+        };
+        let err = migrate(&mut state).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("newer maestro version"));
+        assert!(msg.contains(&format!("v{}", CURRENT_STATE_VERSION + 1)));
+    }
+
+    #[test]
+    fn store_load_rejects_state_from_newer_version() {
+        let (_dir, store) = make_store();
+        let future_json = format!(
+            r#"{{"version":{},"sessions":[],"total_cost_usd":0.0,"file_claims":{{}},"last_updated":null}}"#,
+            CURRENT_STATE_VERSION + 99
+        );
+        std::fs::write(&store.path, future_json).unwrap();
+        let err = store.load().unwrap_err();
+        assert!(format!("{err:#}").contains("newer maestro version"));
+    }
+
+    #[test]
+    fn store_load_migrates_legacy_state_to_current_version() {
+        let (_dir, store) = make_store();
+        let legacy_json = r#"{
+            "sessions": [],
+            "total_cost_usd": 0.0,
+            "file_claims": {},
+            "last_updated": null
+        }"#;
+        must(
+            std::fs::write(&store.path, legacy_json),
+            "legacy state should be written",
+        );
+        let loaded = must(store.load(), "legacy state should load");
+        assert_eq!(loaded.version, CURRENT_STATE_VERSION);
+    }
+
+    #[test]
+    fn store_load_v0_fixture_round_trips_with_version_bump() {
+        let (_dir, store) = make_store();
+        let v0_json = include_str!("../../tests/fixtures/state/v0.json");
+        must(
+            std::fs::write(&store.path, v0_json),
+            "v0 fixture should be written",
+        );
+        let loaded = must(store.load(), "v0 fixture should load");
+        assert_eq!(loaded.version, CURRENT_STATE_VERSION);
+        assert_eq!(loaded.sessions.len(), 1);
+        assert_eq!(loaded.team_runs.len(), 0);
+
+        must(store.save(&loaded), "migrated state should save");
+        let reloaded = must(store.load(), "migrated state should reload");
+        assert_eq!(reloaded.version, CURRENT_STATE_VERSION);
+        let serialized = std::fs::read_to_string(&store.path).unwrap();
+        assert!(
+            serialized.contains("\"version\""),
+            "saved state must include the version key"
+        );
     }
 }

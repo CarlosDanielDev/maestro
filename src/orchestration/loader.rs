@@ -202,15 +202,22 @@ impl Loader {
     /// Serialize a `TeamConfig` and write it to the named user-tier preset
     /// file. Returns the absolute path on success. Errors stringify as TOML
     /// or IO failures suitable for surfacing in the wizard's failure step.
+    /// Validates `name` (rejects path separators, `..`, NUL, leading `.`,
+    /// empty, leading-`-`, length > 64) so callers cannot escape the tier
+    /// directory through this entry point — non-bypassable defense per
+    /// #665 security review.
     pub fn write_user_preset(name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
+        validate_preset_name(name)?;
         let dir =
             Self::user_tier_default().ok_or_else(|| anyhow!("cannot determine user config dir"))?;
         write_preset_file(&dir, name, cfg)
     }
 
     /// Serialize and write a project-tier preset under
-    /// `<repo_root>/.maestro/teams/<name>.toml`.
+    /// `<repo_root>/.maestro/teams/<name>.toml`. Same `name` validation as
+    /// `write_user_preset`.
     pub fn write_project_preset(repo_root: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
+        validate_preset_name(name)?;
         write_preset_file(&Self::project_tier_default(repo_root), name, cfg)
     }
 
@@ -228,6 +235,10 @@ impl Loader {
 }
 
 fn write_preset_file(dir: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf> {
+    // Defensive: callers must pre-validate, but check again so this private
+    // helper cannot become a path-traversal foothold if added to a call
+    // site that forgets the guard.
+    validate_preset_name(name)?;
     let toml_text = toml::to_string_pretty(cfg)
         .with_context(|| format!("serializing preset {name:?} to TOML"))?;
     std::fs::create_dir_all(dir).with_context(|| format!("creating preset dir {dir:?}"))?;
@@ -235,6 +246,44 @@ fn write_preset_file(dir: &Path, name: &str, cfg: &TeamConfig) -> Result<PathBuf
     std::fs::write(&path, toml_text).with_context(|| format!("writing preset file {path:?}"))?;
     Ok(path)
 }
+
+/// Reject preset names that could escape the tier directory or shadow
+/// system files. Mirrors `commands::team::validate_preset_name` but lives
+/// here so every public write entry point on `Loader` enforces it
+/// uniformly. See #665 security review (Medium #1).
+fn validate_preset_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        return Err(anyhow!("preset name must not be empty"));
+    }
+    if name.len() > 64 {
+        return Err(anyhow!(
+            "preset name {name:?} is {} chars, max 64",
+            name.len()
+        ));
+    }
+    if name.starts_with('.') {
+        return Err(anyhow!(
+            "preset name {name:?} cannot start with '.' (would shadow a hidden file)"
+        ));
+    }
+    if name.starts_with('-') {
+        return Err(anyhow!(
+            "preset name {name:?} cannot start with '-' (would parse as a CLI flag)"
+        ));
+    }
+    if name.contains('/') || name.contains('\\') || name.contains('\0') || name.contains("..") {
+        return Err(anyhow!(
+            "preset name {name:?} contains illegal path characters"
+        ));
+    }
+    Ok(())
+}
+
+/// Hard cap on a single team-preset TOML file — keeps a malicious or
+/// runaway file from OOMing the loader. 1 MiB is ~10000× a real preset
+/// (which runs ~50–100 bytes); if a legitimate preset ever exceeds this
+/// the right answer is to revisit the schema, not raise the cap.
+const MAX_PRESET_FILE_BYTES: u64 = 1024 * 1024;
 
 fn load_dir(dir: &Path, tier: SourceTier) -> Result<Vec<RawTeam>> {
     if !dir.exists() {
@@ -254,6 +303,14 @@ fn load_dir(dir: &Path, tier: SourceTier) -> Result<Vec<RawTeam>> {
             .and_then(|s| s.to_str())
             .ok_or_else(|| anyhow!("invalid team filename: {path:?}"))?
             .to_string();
+        let len = std::fs::metadata(&path)
+            .with_context(|| format!("statting team file {path:?}"))?
+            .len();
+        if len > MAX_PRESET_FILE_BYTES {
+            return Err(anyhow!(
+                "team file {path:?} is {len} bytes, exceeds the {MAX_PRESET_FILE_BYTES}-byte cap"
+            ));
+        }
         let content = std::fs::read_to_string(&path)
             .with_context(|| format!("reading team file {path:?}"))?;
         let config: TeamConfig =

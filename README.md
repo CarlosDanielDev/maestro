@@ -73,6 +73,14 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 
 → [Docs › Agent Providers](docs/agents/mod.md) · [Configuration Reference](docs/configuration.md) · [Example multi-agent config](examples/multi-agent/maestro.toml)
 
+### Team orchestration (v0.27.0+)
+- Five built-in team presets — `default-coder`, `default-researcher`, `default-triager`, `default-reviewer`, `default-docs` — wired to coordination primitives (pipeline, fan-out, single-pass, verdict-only)
+- Three-tier preset resolution: built-in → user (`~/.config/maestro/maestro/teams/`) → project (`<repo>/.maestro/teams/`)
+- Headless launch — `maestro team launch <preset> --issue N --yes` drives the scheduler to completion for CI / scripting; per-issue failures surface as a non-zero exit
+- Inspect resolved bindings with `maestro team explain <name>`; manage user-tier presets with `maestro team manage --list`
+
+→ [Docs › Team Orchestration](docs/teams/README.md)
+
 ## Requirements
 
 - **Rust 1.89+** (edition 2024)

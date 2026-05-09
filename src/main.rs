@@ -127,6 +127,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::TestSlack) => cmd_test_slack().await,
         Some(Commands::Completions { shell }) => cli::cmd_completions(shell),
         Some(Commands::Mangen { out_dir }) => cli::cmd_mangen(&out_dir),
+        Some(Commands::Team { action }) => commands::team::dispatch(action).await,
         Some(Commands::Doctor) => cmd_doctor(),
         Some(Commands::Adapt {
             path,

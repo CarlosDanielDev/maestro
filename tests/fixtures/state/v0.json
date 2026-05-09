@@ -1,0 +1,22 @@
+{
+    "sessions": [{
+        "id": "00000000-0000-0000-0000-000000000001",
+        "status": "queued",
+        "prompt": "p",
+        "issue_number": null,
+        "model": "opus",
+        "mode": "orchestrator",
+        "started_at": null,
+        "finished_at": null,
+        "cost_usd": 0.0,
+        "context_pct": 0.0,
+        "current_activity": "",
+        "last_message": "",
+        "activity_log": [],
+        "files_touched": [],
+        "pid": null
+    }],
+    "total_cost_usd": 0.0,
+    "file_claims": {},
+    "last_updated": null
+}

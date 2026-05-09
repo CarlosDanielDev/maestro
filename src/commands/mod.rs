@@ -10,6 +10,7 @@ pub(crate) mod setup;
 mod slack;
 pub mod slash;
 mod status;
+pub mod team;
 pub mod turboquant;
 
 pub use clean::cmd_clean;

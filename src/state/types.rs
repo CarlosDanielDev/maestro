@@ -9,6 +9,18 @@ use uuid::Uuid;
 
 pub type IssueNumber = u64;
 
+/// Current on-disk schema version for `MaestroState`. Bumped whenever a
+/// breaking format change ships. Files written by older maestro versions
+/// have no `version` key and deserialize to `0`; `StateStore::load` calls
+/// `migrate()` to bring them up to `CURRENT_STATE_VERSION`.
+pub const CURRENT_STATE_VERSION: u32 = 1;
+
+/// Default for the serde `version` field — 0 means "legacy file written
+/// before the version stamp was introduced." Migration handles the bump.
+pub fn default_state_version() -> u32 {
+    0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum IssueRunState {
@@ -60,8 +72,13 @@ pub struct PendingIssueCompletion {
     pub is_ci_fix: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaestroState {
+    /// On-disk schema version. Defaults to `0` for files written before
+    /// the version stamp was introduced; `StateStore::load` migrates
+    /// such files to `CURRENT_STATE_VERSION`.
+    #[serde(default = "default_state_version")]
+    pub version: u32,
     pub sessions: Vec<Session>,
     pub total_cost_usd: f64,
     pub file_claims: HashMap<String, uuid::Uuid>,
@@ -84,6 +101,23 @@ pub struct MaestroState {
     /// Team orchestrator runs. Defaults to empty for backward compatibility.
     #[serde(default)]
     pub team_runs: Vec<TeamRun>,
+}
+
+impl Default for MaestroState {
+    fn default() -> Self {
+        Self {
+            version: CURRENT_STATE_VERSION,
+            sessions: Vec::new(),
+            total_cost_usd: 0.0,
+            file_claims: HashMap::new(),
+            last_updated: None,
+            issue_cache: HashMap::new(),
+            fork_lineage: HashMap::new(),
+            pending_prs: Vec::new(),
+            pending_completions: Vec::new(),
+            team_runs: Vec::new(),
+        }
+    }
 }
 
 impl MaestroState {

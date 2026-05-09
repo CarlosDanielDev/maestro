@@ -1,6 +1,15 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 
+// Sibling module loaded via `#[path]`-friendly direct mod declaration so
+// `build.rs` (which includes `src/cli.rs` directly) also picks it up.
+#[path = "cli_team.rs"]
+mod cli_team;
+// `TeamTier` is consumed only by the runtime handler in `commands::team`;
+// build.rs doesn't see that handler, so the re-export looks unused there.
+#[allow(unused_imports)]
+pub use cli_team::{TeamSubcommand, TeamTier};
+
 /// Output format for sanitize reports (CLI-local, converted to sanitize::OutputFormat in main).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SanitizeOutputFormat {
@@ -260,6 +269,11 @@ pub enum Commands {
     Mangen {
         /// Output directory for man page
         out_dir: std::path::PathBuf,
+    },
+    /// Manage and launch team orchestration presets
+    Team {
+        #[command(subcommand)]
+        action: TeamSubcommand,
     },
 }
 
@@ -1291,5 +1305,267 @@ mod tests {
             result.is_err(),
             "resume must NOT accept --role (saved role is inherited)"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // `team` subcommand parsing (#665)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn team_list_no_flags_parses_with_json_false() {
+        let cli = Cli::try_parse_from(["maestro", "team", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Team {
+                action: TeamSubcommand::List { json: false }
+            })
+        ));
+    }
+
+    #[test]
+    fn team_list_json_flag_parses_true() {
+        let cli = Cli::try_parse_from(["maestro", "team", "list", "--json"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Team {
+                action: TeamSubcommand::List { json: true }
+            })
+        ));
+    }
+
+    #[test]
+    fn team_new_minimal_requires_name_and_extends() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "team",
+            "new",
+            "my-team",
+            "--extends",
+            "default-coder",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Team {
+                action:
+                    TeamSubcommand::New {
+                        name,
+                        extends,
+                        tier,
+                        implementer,
+                        reviewer,
+                        docs,
+                    },
+            }) => {
+                assert_eq!(name, "my-team");
+                assert_eq!(extends, "default-coder");
+                assert_eq!(tier, TeamTier::User);
+                assert!(implementer.is_none());
+                assert!(reviewer.is_none());
+                assert!(docs.is_none());
+            }
+            _ => panic!("expected Commands::Team::New"),
+        }
+    }
+
+    #[test]
+    fn team_new_with_role_overrides_parses_each() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "team",
+            "new",
+            "fast",
+            "--extends",
+            "default-coder",
+            "--tier",
+            "project",
+            "--implementer",
+            "opencode",
+            "--reviewer",
+            "claude",
+            "--docs",
+            "claude",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Team {
+                action:
+                    TeamSubcommand::New {
+                        tier,
+                        implementer,
+                        reviewer,
+                        docs,
+                        ..
+                    },
+            }) => {
+                assert_eq!(tier, TeamTier::Project);
+                assert_eq!(implementer.as_deref(), Some("opencode"));
+                assert_eq!(reviewer.as_deref(), Some("claude"));
+                assert_eq!(docs.as_deref(), Some("claude"));
+            }
+            _ => panic!("expected Commands::Team::New"),
+        }
+    }
+
+    #[test]
+    fn team_new_without_extends_is_rejected() {
+        let result = Cli::try_parse_from(["maestro", "team", "new", "x"]);
+        assert!(result.is_err(), "--extends is required");
+    }
+
+    #[test]
+    fn team_launch_with_single_issue_parses() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "team",
+            "launch",
+            "default-coder",
+            "--issue",
+            "42",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Team {
+                action:
+                    TeamSubcommand::Launch {
+                        preset,
+                        issue,
+                        issues,
+                        yes,
+                        max_parallel,
+                    },
+            }) => {
+                assert_eq!(preset, "default-coder");
+                assert_eq!(issue, Some(42));
+                assert!(issues.is_empty());
+                assert!(!yes);
+                assert_eq!(max_parallel, 3);
+            }
+            _ => panic!("expected Commands::Team::Launch"),
+        }
+    }
+
+    #[test]
+    fn team_launch_with_comma_delimited_issues_parses_vec() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "team",
+            "launch",
+            "default-coder",
+            "--issues",
+            "1,2,3",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Team {
+                action: TeamSubcommand::Launch { issue, issues, .. },
+            }) => {
+                assert!(issue.is_none());
+                assert_eq!(issues, vec![1u64, 2, 3]);
+            }
+            _ => panic!("expected Commands::Team::Launch"),
+        }
+    }
+
+    #[test]
+    fn team_launch_issue_and_issues_are_mutually_exclusive() {
+        let result = Cli::try_parse_from([
+            "maestro",
+            "team",
+            "launch",
+            "default-coder",
+            "--issue",
+            "1",
+            "--issues",
+            "2,3",
+        ]);
+        assert!(
+            result.is_err(),
+            "--issue and --issues must conflict per clap conflicts_with"
+        );
+    }
+
+    #[test]
+    fn team_launch_yes_flag_parses_true() {
+        let cli =
+            Cli::try_parse_from(["maestro", "team", "launch", "default-coder", "--yes"]).unwrap();
+        match cli.command {
+            Some(Commands::Team {
+                action: TeamSubcommand::Launch { yes, .. },
+            }) => assert!(yes),
+            _ => panic!("expected Commands::Team::Launch"),
+        }
+    }
+
+    #[test]
+    fn team_launch_max_parallel_overrides_default() {
+        let cli = Cli::try_parse_from([
+            "maestro",
+            "team",
+            "launch",
+            "default-coder",
+            "--max-parallel",
+            "5",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Team {
+                action: TeamSubcommand::Launch { max_parallel, .. },
+            }) => assert_eq!(max_parallel, 5),
+            _ => panic!("expected Commands::Team::Launch"),
+        }
+    }
+
+    #[test]
+    fn team_manage_no_flag_parses_list_false() {
+        let cli = Cli::try_parse_from(["maestro", "team", "manage"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Team {
+                action: TeamSubcommand::Manage { list: false }
+            })
+        ));
+    }
+
+    #[test]
+    fn team_manage_list_flag_parses_true() {
+        let cli = Cli::try_parse_from(["maestro", "team", "manage", "--list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Team {
+                action: TeamSubcommand::Manage { list: true }
+            })
+        ));
+    }
+
+    #[test]
+    fn team_explain_requires_name() {
+        let result = Cli::try_parse_from(["maestro", "team", "explain"]);
+        assert!(result.is_err(), "team explain must require a name argument");
+    }
+
+    #[test]
+    fn team_explain_with_name_parses_with_json_false() {
+        let cli = Cli::try_parse_from(["maestro", "team", "explain", "default-coder"]).unwrap();
+        match cli.command {
+            Some(Commands::Team {
+                action: TeamSubcommand::Explain { name, json },
+            }) => {
+                assert_eq!(name, "default-coder");
+                assert!(!json);
+            }
+            _ => panic!("expected Commands::Team::Explain"),
+        }
+    }
+
+    #[test]
+    fn team_explain_json_flag_parses_true() {
+        let cli =
+            Cli::try_parse_from(["maestro", "team", "explain", "default-coder", "--json"]).unwrap();
+        match cli.command {
+            Some(Commands::Team {
+                action: TeamSubcommand::Explain { json: true, .. },
+            }) => {}
+            _ => panic!("expected Commands::Team::Explain with json=true"),
+        }
     }
 }

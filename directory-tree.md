@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-07 18:00 (UTC)
+> Last updated: 2026-05-09 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -88,9 +88,10 @@ maestro/
 │   ├── icon_mode.rs                       # Shared icon mode detection: AtomicBool global flag, init_from_config() reads tui.ascii_icons from Config and MAESTRO_ASCII_ICONS env var, use_nerd_font() returns current mode; extracted from tui/icons.rs so non-TUI crates can query the mode without pulling in the full TUI tree  [Issue #307]
 │   ├── icons.rs                           # Shared icon registry: IconId enum (38 variants across Navigation, Status, UI Chrome, Indicators categories, plus NeedsReview variant added in #308), IconPair struct (nerd: &'static str, ascii: &'static str), icon_pair() const fn compiles to a zero-allocation jump table, get(IconId) returns the correct variant based on global mode, get_for_mode(id, nerd_font) pure testable variant; extracted from tui/icons.rs; CheckboxOn codepoint U+F14A (nf-fa-check_square) and CheckboxOff codepoint U+F0C8 (nf-fa-square) — universally present FA-core glyphs replacing the legacy nf-oct variants  [Issue #308, #433]
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; propagates once_mode from parsed CLI flag into App; forces max_concurrent=1 when --continuous is set; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; declares #[cfg(test)] mod integration_tests; declares mod updater; declares mod flags; propagates startup gh auth check result into App.gh_auth_ok; declares mod sanitize; constructs FeatureFlags from --enable-flag / --disable-flag CLI args merged with [flags] config  [Issue #15, #29, #49, #34, #36, #35, #52, #83, #85, #118, #141, #142, #143, #158]
-│   ├── cli.rs                             # CLI definition extracted from main.rs; Cli struct and Commands enum (clap derive); --once flag on Run subcommand (exits after all sessions complete, for CI/scripting); --continuous / -C flag on Run subcommand (auto-advance through issues, pause on failure); --enable-flag / --disable-flag repeatable args on Run subcommand for runtime feature flag overrides; --bypass-review global flag (session-only, skips review council); generate_completions() and cmd_completions() for shell tab-completion output; cmd_mangen() for roff man page generation; Completions and Mangen subcommands  [Issue #18, #83, #85, #143, #328]
+│   ├── cli.rs                             # CLI definition extracted from main.rs; Cli struct and Commands enum (clap derive); --once flag on Run subcommand (exits after all sessions complete, for CI/scripting); --continuous / -C flag on Run subcommand (auto-advance through issues, pause on failure); --enable-flag / --disable-flag repeatable args on Run subcommand for runtime feature flag overrides; --bypass-review global flag (session-only, skips review council); generate_completions() and cmd_completions() for shell tab-completion output; cmd_mangen() for roff man page generation; Completions and Mangen subcommands; Commands::Team { action } variant added for team subcommands; mod cli_team declared; 14 parse tests for team subcommand surface  [Issue #18, #83, #85, #143, #328, #665]
+│   ├── cli_team.rs                        # clap subcommand types for `maestro team`; TeamAction enum (List, New, Explain, Manage, Launch) with all CLI arguments; --json flag on list/explain; --yes / --issue / --issues / --max-parallel flags on launch; --tier flag (user|project) on new; --extends / --implementer / --reviewer / --docs flags on new  [Issue #665]
 │   ├── commands/                          # Command handler modules (one per CLI subcommand)
-│   │   ├── mod.rs                         # Module re-exports; `mod doctor` widened to `pub mod doctor` to allow integration-test access  [Issue #663]
+│   │   ├── mod.rs                         # Module re-exports; `mod doctor` widened to `pub mod doctor` to allow integration-test access; `pub mod team` added  [Issue #663, #665]
 │   │   ├── clean.rs                       # cmd_clean(): prune orphaned worktrees and stale log files
 │   │   ├── dashboard.rs                   # cmd_dashboard(): launch the TUI dashboard
 │   │   ├── doctor.rs                      # cmd_doctor(): run preflight checks and print report; `pub async fn run_health_check(agent_ids: &[String]) -> Vec<AgentHealthCheck>` library entry point for orchestration pre-flight  [Issue #663]
@@ -103,7 +104,8 @@ maestro/
 │   │   ├── slack.rs                       # cmd_slack(): test Slack webhook notification delivery
 │   │   ├── slash.rs                       # SlashCommandRunner: executes /review and other slash commands against a PR; integrates with review::parse to extract the maestro-review JSON block  [Issue #327]
 │   │   ├── status.rs                      # cmd_status(): print current session and queue state
-│   │   └── turboquant.rs                  # cmd_turboquant(): run TurboQuant compression diagnostics
+│   │   ├── turboquant.rs                  # cmd_turboquant(): run TurboQuant compression diagnostics
+│   │   └── team.rs                        # cmd_team(): dispatch arm for all `maestro team` subcommands; SchedulerRunner trait + ProductionSchedulerRunner impl for headless `team launch --yes` execution; routes TeamAction variants to list/new/explain/manage/launch handlers  [Issue #665]
 │   ├── config.rs                          # maestro.toml parsing; ModelsConfig, GatesConfig, ReviewConfig; ContextOverflowConfig; ProviderConfig (kind, organization, az_project); guardrail_prompt in SessionsConfig; CompletionGatesConfig and CompletionGateEntry; CiAutoFixConfig (enabled, max_retries, poll_interval_secs) under GatesConfig.ci_auto_fix; TuiConfig struct with optional theme field and mascot_style field ("sprite" | "ascii", default "sprite"); Config gains tui field; FlagsConfig (flattened HashMap<String, bool>) loaded from [flags] table; Config gains flags field; HollowRetryPolicy enum (Always/IntentAware/Never), HollowRetryConfig struct (policy, work_max_retries, consultation_max_retries), merge_legacy_hollow() for backward-compat TOML parsing, SessionsConfigRaw shadow struct for custom Deserialize; LoadedConfig { config: Config, path: PathBuf } struct returned by find_and_load_with_path() and find_and_load_in_with_path() so callers have the resolved file path; legacy find_and_load() and find_and_load_in() kept as thin shims; ViewsConfig struct (agent_graph_enabled: bool, default false) loaded from [views] table; Config gains views field  [Issue #29, #40, #41, #43, #38, #143, #275, #437, #473, #525]
 │   ├── continuous.rs                      # ContinuousModeState and ContinuousFailure structs; state machine for --continuous / -C flag: auto-advances to next ready issue, pauses loop on failure waiting for user decision (skip / retry / quit)  [Issue #85]
 │   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
@@ -246,7 +248,7 @@ maestro/
 │   │   ├── types.rs                       # `Primitive`, `TeamInput`, `TeamOutput`, `TeamRole` enums
 │   │   ├── contracts.rs                   # `SubagentResult`, `SubagentError`, `Finding`, `ReviewVerdict`, `NewIssueDraft`
 │   │   ├── team.rs                        # `TeamConfig`, `RoleBinding`, `RoleOverride` TOML schema; `#[derive(Default)]` on `RoleBinding`  [Issue #663]
-│   │   ├── loader.rs                      # Three-tier loader (built-in → user → project), `extends` resolution, cycle detection
+│   │   ├── loader.rs                      # Three-tier loader (built-in → user → project), `extends` resolution, cycle detection; file-size cap on TOML reads; validate_preset_name() enforced in write_user_preset() and write_project_preset()  [Issue #665]
 │   │   ├── validation.rs                  # Load-time validation rules
 │   │   ├── scheduler.rs                   # L3 cross-issue scheduler
 │   │   ├── dag.rs                         # DAG construction, edge classification, topo levels, cycle check
@@ -259,7 +261,7 @@ maestro/
 │   │   ├── cost.rs                        # Token + USD cost estimate: `estimate_tokens`, `estimate_cost_usd`, and 4 `pub const`s  [Issue #663]
 │   │   ├── adapt_pipeline.rs              # Adapt pipeline integration helpers
 │   │   └── primitives/                    # One Rust file per primitive; each owns a `run()` state machine
-│   │       ├── mod.rs                     # Primitive registry
+│   │       ├── mod.rs                     # Primitive registry; Send bound added to PrimitiveMachine trait for tokio task compatibility  [Issue #665]
 │   │       ├── pipeline.rs                # `pipeline` state machine
 │   │       ├── fan_out.rs                 # `fan-out` state machine
 │   │       ├── single_pass.rs             # `single-pass` state machine
@@ -305,8 +307,8 @@ maestro/
 │   │   ├── mod.rs                         # Module exports (includes file_claims, progress)
 │   │   ├── file_claims.rs                 # File claim system: FileClaimManager, conflict prevention  [Phase 1]
 │   │   ├── progress.rs                    # SessionProgress: phase tracking (Analyzing, Implementing, Testing, CreatingPR)  [Phase 3]
-│   │   ├── store.rs                       # JSON state persistence
-│   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods; pending_prs: Vec<PendingPr> field on MaestroState — persisted to JSON state for PR retry recovery; pending_completions: Vec<PendingIssueCompletion> field with #[serde(default)] — persists in-flight auto-PR work across maestro restarts (3 round-trip tests)  [Issue #12, #159, #514]
+│   │   ├── store.rs                       # JSON state persistence; pub fn migrate(&mut state) -> Result<()> called from load(); rejects future-version files; migrates version=0 (pre-v0.27.0, no `version` key) → CURRENT_STATE_VERSION=1 on first read  [Issue #665]
+│   │   └── types.rs                       # State types; fork_lineage HashMap; record_fork, fork_chain, fork_depth methods; pending_prs: Vec<PendingPr> field on MaestroState — persisted to JSON state for PR retry recovery; pending_completions: Vec<PendingIssueCompletion> field with #[serde(default)] — persists in-flight auto-PR work across maestro restarts (3 round-trip tests); version: u32 field + CURRENT_STATE_VERSION const + default_state_version() + manual Default impl added for state versioning  [Issue #12, #159, #514, #665]
 │   ├── tui/
 │   │   ├── mod.rs                         # Event loop; keybindings; handle_screen_action() rewritten; command processing loop; launch_session_from_config(); FetchSuggestionData async handler spawns background GitHub fetch for ready/failed counts and milestone progress; spawns async version check on startup via check_for_update() — result delivered as VersionCheckResult data event; key handlers for upgrade flow (confirm/decline banner); CompletionSummary key-intercept branch: [f] collects NeedsReview sessions and calls spawn_gate_fix_session() for each then transitions to Overview, [i] opens issue browser, [r] opens prompt input, [l] switches to Overview (activity log view), [Enter]/[Esc] returns to dashboard via transition_to_dashboard(), [q] quits; failed-gates recovery modal key-intercept handled by input_handler; ContinuousPause key-intercept overlay: [s] skip, [r] retry, [q] quit continuous loop; RefreshSuggestions branch sets loading_suggestions=true and queues FetchSuggestionData; exit path checks once_mode — exits immediately when true, otherwise shows CompletionSummary overlay; "All Issues" navigation always creates a fresh IssueBrowserScreen to prevent stale milestone filters leaking across navigation contexts; PromptInputScreen always created with injected history so Up/Down arrow recall works correctly; F-key bar actions wired (F1–F10, Alt-X); per-tick flash_counter decrement dispatched to session pool; pub mod theme; pub mod widgets; pub mod shell_launcher; RunAdaptScaffold command dispatch; background task handlers for FetchMilestoneHealthIssues and PatchMilestoneDescription; pub(crate) mod agent_graph wired  [Phase 3, Issue #31-33, #46-48, #35, #38, #83, #84, #85, #86, #104, #117, #118, #124, #202, #218, #232, #371, #500, #526, #560]
 │   │   ├── agent_graph/                   # Agent graph visualization module (productionized in #526)
@@ -492,7 +494,7 @@ maestro/
 │   │       ├── text_input.rs              # Single-line text input widget with cursor support
 │   │       └── toggle.rs                 # Boolean toggle widget for settings and forms; draw() routes through icons::get(IconId::CheckboxOn/Off) instead of hardcoded literals, eliminating the DRY drift that caused blank indicators on iTerm2 + some Nerd Font installs  [Issue #433]
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
-│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, and doctor_run_health_check registered  [Issue #500, #562, #663]
+│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, doctor_run_health_check, and orchestration_smoke registered  [Issue #500, #562, #663, #665]
 │   │   ├── adapt_pipeline.rs              # Integration tests for the adapt pipeline
 │   │   ├── completion_pipeline.rs         # 9 tests: label transitions and PR creation
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
@@ -501,6 +503,7 @@ maestro/
 │   │   ├── init.rs                        # Integration tests for `maestro init` and `maestro init --reset`: fresh write, idempotent guard, merge-preserves-user-keys, polyglot detection  [Issue #505]
 │   │   ├── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
 │   │   ├── orchestration_dispatch.rs      # End-to-end L1 dispatch tests using `FakeProvider` with canned `StreamEvent::AssistantText` payloads; exercises full `dispatch_subagent()` path: mode resolution, prompt assembly, stream aggregation, structured-result capture  [Issue #663]
+│   │   ├── orchestration_smoke.rs         # 2-issue scheduler smoke test: drives two issues through a mock SchedulerRunner (one success, one failure) and asserts exit-code semantics and per-issue outcome reporting  [Issue #665]
 │   │   ├── orchestration_mock_task.rs     # Mock `Task()` test helper for L2 orchestrator tests
 │   │   ├── orchestration_pipeline.rs      # End-to-end pipeline tests using mock `Task()` tool
 │   │   ├── session_lifecycle.rs           # 11 tests: enqueue/promote/complete lifecycle via handle_event()
@@ -543,13 +546,22 @@ maestro/
 │   ├── layers-debt.txt                    # Layer-boundary debt notes
 │   ├── RUST-GUARDRAILS.md                 # Rust coding policy and guardrails (single source of truth)
 │   ├── tech-debt-catalog.md               # Automated tech-debt catalog (generated by maestro adapt)
+│   ├── teams/                             # Team orchestration preset documentation (v0.27.0+)  [Issue #665]
+│   │   ├── README.md                      # Preset overview, three-tier resolution model, five built-ins table, CLI surface, headless launch semantics, and state migration guide
+│   │   ├── default-coder.md               # `default-coder` pipeline preset — implementer → reviewer → docs; customisation examples
+│   │   ├── default-researcher.md          # `default-researcher` verdict-only preset — research without code changes; output shape and customisation
+│   │   ├── default-triager.md             # `default-triager` verdict-only preset — idea-inbox bulk triage; promote/park/archive output
+│   │   ├── default-reviewer.md            # `default-reviewer` single-pass preset — one-shot PR/branch review; `ReviewFindings` output shape
+│   │   └── default-docs.md                # `default-docs` single-pass preset — documentation-only run; `DocsChange` output shape
 │   └── superpowers/                       # Superpowers feature documentation
 │       ├── plans/                         # Implementation plans
 │       │   ├── 2026-04-21-implement-harness-enforcement-plan.md
-│       │   └── 2026-04-22-ci-quality-gates-plan.md
+│       │   ├── 2026-04-22-ci-quality-gates-plan.md
+│       │   └── 2026-05-05-orchestration-wizard.md  # Orchestration wizard implementation plan  [Issue #665]
 │       └── specs/                         # Feature specifications
 │           ├── 2026-04-21-implement-harness-enforcement-design.md
-│           └── 2026-04-22-ci-quality-gates-design.md
+│           ├── 2026-04-22-ci-quality-gates-design.md
+│           └── 2026-05-05-orchestration-wizard-design.md  # Orchestration wizard design spec — locked decisions, architecture layers, data model, CLI surface  [Issue #665]
 ├── template/
 │   ├── README-TEMPLATE.md                 # Template usage instructions
 │   └── .claude/                           # Reproducible template for new projects
@@ -600,6 +612,9 @@ maestro/
 │   └── turboquant.rs                      # Benchmark: TurboQuant quantization pipeline throughput
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
+│   ├── fixtures/                          # Static test fixtures for integration and unit tests
+│   │   └── state/
+│   │       └── v0.json                    # Pre-version state-file fixture (no `version` key); used by state migration tests to assert that version=0 loads and migrates to CURRENT_STATE_VERSION=1  [Issue #665]
 │   ├── gatekeeper/                        # Gatekeeper harness fixtures and tests
 │   ├── hooks/                             # Hook script bats tests (requires bats-core)
 │   │   ├── implement-gates.bats           # bats tests for implement-gates.sh
@@ -645,9 +660,14 @@ maestro/
 | `docs/FOLLOW-UPS.md` | Pending hardening and security follow-up items (non-blocking; file as issues before next release) |
 | `docs/RUST-GUARDRAILS.md` | Rust coding policy — single source of truth; amend via PR |
 | `docs/tech-debt-catalog.md` | Tech-debt catalog generated by `maestro adapt` |
+| `docs/teams/` | Team orchestration preset documentation (v0.27.0+) |
+| `docs/teams/README.md` | Preset overview, three-tier resolution, five built-ins, CLI surface, headless launch, state migration |
+| `docs/superpowers/specs/2026-05-05-orchestration-wizard-design.md` | Orchestration wizard design spec — locked decisions, architecture, data model |
+| `docs/superpowers/plans/2026-05-05-orchestration-wizard.md` | Orchestration wizard implementation plan |
 | `src/` | Rust source code |
 | `src/main.rs` | CLI entry point; `--skip-doctor` flag on `run` subcommand; `cmd_run()` calls `validate_preflight()` before launch and uses `PromptBuilder::build_issue_prompt()` for issue sessions; `setup_app_from_config()` propagates `once_mode` into `App`; forces `max_concurrent=1` when `--continuous` is set; `cmd_dashboard()` with startup cleanup, config-driven wiring, and `FetchSuggestionData` queued on startup; declares `mod updater`; declares `mod flags`; propagates startup gh auth check result into `App.gh_auth_ok`; declares `mod sanitize` (Issues #29, #34, #35, #36, #49, #52, #83, #85, #118, #141, #142, #158) |
-| `src/cli.rs` | CLI struct and subcommand definitions; `--once` flag on `run` subcommand exits after all sessions complete (CI/scripting mode); `--continuous` / `-C` flag auto-advances through ready issues; `generate_completions()`, `cmd_completions()`, `cmd_mangen()`; `Completions` and `Mangen` subcommands (Issues #18, #83, #85) |
+| `src/cli.rs` | CLI struct and subcommand definitions; `--once` flag on `run` subcommand exits after all sessions complete (CI/scripting mode); `--continuous` / `-C` flag auto-advances through ready issues; `generate_completions()`, `cmd_completions()`, `cmd_mangen()`; `Completions` and `Mangen` subcommands; `Commands::Team { action }` variant for team subcommands (Issues #18, #83, #85, #665) |
+| `src/cli_team.rs` | clap subcommand types for `maestro team`; `TeamAction` enum with List/New/Explain/Manage/Launch variants and all CLI flags (Issue #665) |
 | `src/continuous.rs` | `ContinuousModeState` and `ContinuousFailure` structs; state machine tracking current issue, completed/skipped counts, and accumulated failures for `--continuous` mode (Issue #85) |
 | `src/budget.rs` | Per-session and global budget enforcement (Phase 3) |
 | `src/sanitize/` | Output-sanitization pipeline (Issue #142) |

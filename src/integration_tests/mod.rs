@@ -24,6 +24,8 @@ mod orchestration_mock_task;
 #[cfg(test)]
 mod orchestration_pipeline;
 #[cfg(test)]
+mod orchestration_smoke;
+#[cfg(test)]
 mod session_lifecycle;
 #[cfg(test)]
 mod stream_parsing;
