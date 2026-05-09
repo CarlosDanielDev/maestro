@@ -3089,6 +3089,23 @@ git commit -m "feat(orchestration): lock cost-estimate formula"
 
 ## Chunk 5: TUI Wizard
 
+> **Delivered in #664 — branch `feat/issue-664-feat-tui-team-orchestration-wizard-compo`**
+>
+> **Implementation deviations from plan:**
+> - File-size cap enforced at 400 LOC (plan said 500); 5 files added to `scripts/allowlist-large-files.txt` with 2026-08-22 split deadlines.
+> - Hint surface: plan said extend `src/tui/screens/copy_keybinding_hint.rs`; actual implementation extended `src/tui/navigation/mode_hints.rs` instead (new `TuiMode::TeamWizard` arm).
+> - Milestone screen: plan referenced `src/tui/screens/milestone/mod.rs`; actual file is `src/tui/screens/milestone.rs` (single file, no subdir).
+> - Async data fetches not yet wired (`Loader::resolve`, `doctor::run_health_check`, issue meta fetch). The wizard exposes `apply_resolved_teams`, `apply_health_check`, `apply_issue_metas` setters; production wiring is a follow-up.
+> - Compose Save and Manage Delete use optimistic transitions to Success/Done on Enter. `Saving` and `Deleting` interim states are follow-up work once dispatcher wiring lands (security review M1/M2).
+> - Snapshot count is ~33 (representative subset across all flows × 3 sizes for heads + 80×24 for terminal states), not the 73 the QA blueprint estimated.
+>
+> **Security findings from review (before merge):**
+> - H1 FIXED: Compose Save name validator tightened to allow-list `^[A-Za-z0-9_-]{1,64}$`, rejects Windows-reserved stems (CON, PRN, AUX, NUL, COM1–9, LPT1–9) and leading `-`/`_`.
+> - H2 FIXED: All external strings (issue/milestone titles, team names, agent IDs/messages, failure_reason, last_error) wrapped with `sanitize_for_terminal` in draw paths.
+> - M1 OPEN: Manage delete optimistic transition — needs `Deleting` interim state deferred to dispatcher result.
+> - M2 OPEN: Compose Save same pattern — needs `Saving` interim state.
+> - M3 OPEN: `manual_issues` and `issue_metas` not bounded — cap at ~500.
+
 **Goal:** Implement the team_wizard TUI screen mirroring the existing `issue_wizard` / `milestone_wizard` pattern. Compose flow, launch flow, manage flow, plan-preview rendering, and entry-point keybindings on issue browser + milestone screen.
 
 > **Mandatory references for the implementer of this chunk** (Tasks 5.2–5.6 below are intentionally outline-only because they mirror established patterns; do NOT attempt them without first reading the reference code):

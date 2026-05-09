@@ -71,6 +71,19 @@ pub fn validate_slug(slug: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reject Windows-reserved device names (case-insensitive). Saving a file
+/// with one of these stems on Windows fails or hijacks a device handle —
+/// callers writing user-supplied stems to disk MUST check this in addition
+/// to `validate_slug`.
+pub fn is_windows_reserved_stem(name: &str) -> bool {
+    const RESERVED: &[&str] = &[
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+        "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    ];
+    let lower = name.to_ascii_lowercase();
+    RESERVED.contains(&lower.as_str())
+}
+
 /// Validate user-provided strings before passing to `gh` CLI.
 /// Prevents argument injection (values starting with `-`).
 pub fn validate_gh_arg(value: &str, field_name: &str) -> Result<()> {
@@ -262,6 +275,26 @@ mod tests {
     #[test]
     fn slug_rejects_null_bytes() {
         assert!(validate_slug("slug\0evil").is_err());
+    }
+
+    // --- Windows-reserved stems ---
+
+    #[test]
+    fn windows_reserved_rejects_devices_case_insensitive() {
+        for n in ["con", "CON", "Con", "prn", "aux", "nul"] {
+            assert!(is_windows_reserved_stem(n), "{n} should be reserved");
+        }
+        for i in 1..=9 {
+            assert!(is_windows_reserved_stem(&format!("com{i}")));
+            assert!(is_windows_reserved_stem(&format!("LPT{i}")));
+        }
+    }
+
+    #[test]
+    fn windows_reserved_allows_normal_names() {
+        for n in ["my-team", "contoso", "com10"] {
+            assert!(!is_windows_reserved_stem(n), "{n} should not be reserved");
+        }
     }
 
     // --- gh arg validation ---

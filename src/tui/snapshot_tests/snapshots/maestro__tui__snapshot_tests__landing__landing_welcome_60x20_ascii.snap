@@ -3,7 +3,6 @@ source: src/tui/snapshot_tests/landing.rs
 expression: terminal.backend()
 ---
 "                                                            "
-"                                                            "
 "         __  __    _    _____ ____ _____ ____   ___         "
 "        |  \/  |  / \  | ____/ ___|_   _|  _ \ / _ \        "
 "       | |\/| | / _ \ |  _| \___ \ | | | |_) | | | |        "
@@ -18,6 +17,7 @@ expression: terminal.backend()
 "                   [p]  PRD                                 "
 "                   [r]  Roadmap                             "
 "                   [h]  Milestone Review                    "
+"                   [t]  Teams                               "
 "                   [q]  Quit                                "
 "                                                            "
 "                   <q> quit  <n> notes                      "

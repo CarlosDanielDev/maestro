@@ -30,11 +30,11 @@ pub(super) fn draw_single_agent_empty_state(
 
     let session = match &node.id {
         NodeId::Agent(id) => options.sessions.iter().copied().find(|s| s.id == *id),
-        NodeId::File(_) => None,
+        NodeId::File(_) | NodeId::Team(_) => None,
     };
     let status = match node.kind {
         NodeKind::Agent { status } => status,
-        NodeKind::File => SessionStatus::Queued,
+        NodeKind::File | NodeKind::Team { .. } => SessionStatus::Queued,
     };
     let is_terminal = status.is_terminal();
     let role = session.map(|s| s.role).unwrap_or_default();

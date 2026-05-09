@@ -768,6 +768,26 @@ impl Screen for MilestoneScreen {
                 KeyCode::Char('c') => {
                     return self.handle_create_issue();
                 }
+                KeyCode::Char('t') => {
+                    if let Some(entry) = self.selected_milestone() {
+                        let seed: Vec<u64> = entry
+                            .issues
+                            .iter()
+                            .filter(|i| i.state == "open")
+                            .map(|i| i.number)
+                            .collect();
+                        return ScreenAction::PushTeamWizard {
+                            mode: crate::tui::screens::team_wizard::TeamWizardMode::Launch,
+                            preselect: Some(
+                                crate::tui::screens::team_wizard::TeamLaunchInput::Milestone {
+                                    number: entry.number,
+                                    title: entry.title.clone(),
+                                    seed_issues: seed,
+                                },
+                            ),
+                        };
+                    }
+                }
                 _ => {}
             }
         }

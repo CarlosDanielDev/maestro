@@ -28,7 +28,24 @@ None blocked the merge; all are Medium or lower severity.
 
 ---
 
-*Last updated: 2026-04-22. File as GitHub issues tagged `hardening` before v0.14.2 planning.*
+*Last updated: 2026-05-07. File as GitHub issues tagged `hardening` before v0.14.2 planning.*
+
+---
+
+## Team Wizard Security Follow-Ups (post-#664, target next hardening sprint)
+
+Three Medium findings from the security review of issue #664 were non-blocking and should be filed before the next release.
+
+### Medium
+
+- **M1: Manage delete optimistic transition** (`src/tui/screens/team_wizard/manage.rs`)
+  The delete confirmation transitions directly to Done on Enter without waiting for a dispatcher result. Add a `Deleting` interim state that only transitions to Done/Error once the dispatcher resolves the operation.
+
+- **M2: Compose Save optimistic transition** (`src/tui/screens/team_wizard/compose.rs`)
+  Same pattern as M1. The Save step transitions to `Success` optimistically. Add a `Saving` interim state once dispatcher wiring (`Loader::resolve`) lands.
+
+- **M3: `manual_issues` and `issue_metas` unbounded** (`src/tui/screens/team_wizard/mod.rs`)
+  Both `manual_issues: Vec<IssueNumber>` and `issue_metas: HashMap<IssueNumber, IssueMeta>` are uncapped. Cap at ~500 entries and log a `tracing::warn!` when the limit is hit to prevent runaway memory growth in long-lived sessions.
 
 ### Resolved in #441
 

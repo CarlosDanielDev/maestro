@@ -181,6 +181,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::ReleaseNotes => app.screen_state.release_notes_screen.as_mut()?,
         app::TuiMode::MilestoneHealth => app.screen_state.milestone_health_screen.as_mut()?,
         app::TuiMode::CiErrorReview => app.screen_state.ci_error_review_screen.as_mut()?,
+        app::TuiMode::TeamWizard => app.screen_state.team_wizard_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -550,6 +551,18 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         Some(crate::tui::screens::milestone_health::MilestoneHealthScreen::new());
                     app.pending_commands.push(app::TuiCommand::FetchMilestones);
                 }
+                app::TuiMode::TeamWizard => {
+                    let provider_kind = app
+                        .config
+                        .as_ref()
+                        .map(|c| c.provider.kind)
+                        .unwrap_or_default();
+                    let screen = app
+                        .screen_state
+                        .team_wizard_screen
+                        .get_or_insert_with(|| screens::TeamWizardScreen::new(provider_kind));
+                    populate_team_wizard_data(screen, app.config.as_ref());
+                }
                 _ => {}
             }
             app.navigate_to(mode);
@@ -568,6 +581,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::MilestoneWizard => {
                     app.screen_state.milestone_wizard_screen = None;
+                }
+                app::TuiMode::TeamWizard => {
+                    app.screen_state.team_wizard_screen = None;
                 }
                 app::TuiMode::MilestoneView => {
                     app.screen_state.milestone_screen = None;
@@ -874,6 +890,17 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             app.screen_state.issue_wizard_screen = Some(wizard);
             app.navigate_to(app::TuiMode::IssueWizard);
         }
+        ScreenAction::PushTeamWizard { mode, preselect } => {
+            let provider_kind = app
+                .config
+                .as_ref()
+                .map(|c| c.provider.kind)
+                .unwrap_or_default();
+            let mut screen = screens::TeamWizardScreen::with_entry(provider_kind, mode, preselect);
+            populate_team_wizard_data(&mut screen, app.config.as_ref());
+            app.screen_state.team_wizard_screen = Some(screen);
+            app.navigate_to(app::TuiMode::TeamWizard);
+        }
         ScreenAction::StartAdaptPipeline(config) => {
             if let Some(ref mut screen) = app.screen_state.adapt_screen {
                 use crate::tui::screens::adapt::types::AdaptStep;
@@ -983,4 +1010,61 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             }
         }
     }
+}
+
+/// Synchronously populate the team-wizard screen with resolved teams, the
+/// known-agent set, and a best-effort health-check cache so the Roles step
+/// has agents to bind. Real `doctor::run_health_check` async wiring is a
+/// follow-up; this seed unblocks the Compose flow today by trusting the
+/// user's `[agents.*]` config + the agent IDs referenced in resolved teams.
+fn populate_team_wizard_data(
+    screen: &mut screens::TeamWizardScreen,
+    config: Option<&crate::config::Config>,
+) {
+    use crate::agent_provider::types::{AgentHealthCheck, AgentProviderId};
+    use crate::orchestration::loader::Loader;
+    use std::collections::BTreeSet;
+
+    let loader = Loader::default_for_cwd();
+
+    let resolved = match loader.resolve() {
+        Ok(map) => map,
+        Err(e) => {
+            tracing::warn!(error = %e, "team_wizard: Loader::resolve failed");
+            std::collections::HashMap::new()
+        }
+    };
+
+    let mut agent_ids: BTreeSet<String> = BTreeSet::new();
+    for team in resolved.values() {
+        for agent in &team.min_agents {
+            agent_ids.insert(agent.clone());
+        }
+        for binding in team.bindings.values() {
+            if !binding.agent.is_empty() {
+                agent_ids.insert(binding.agent.clone());
+            }
+        }
+    }
+    if let Some(cfg) = config {
+        for id in cfg.agents.entries.keys() {
+            agent_ids.insert(id.clone());
+        }
+    }
+
+    let teams: Vec<_> = resolved.into_values().collect();
+    screen.apply_resolved_teams(teams);
+
+    let known_agents: Vec<String> = agent_ids.iter().cloned().collect();
+    let health: Vec<AgentHealthCheck> = known_agents
+        .iter()
+        .map(|id| AgentHealthCheck {
+            provider_id: AgentProviderId::new(id),
+            available: true,
+            version: None,
+            message: "seeded (real health check pending)".into(),
+        })
+        .collect();
+    screen.set_known_agents(known_agents);
+    screen.apply_health_check(health);
 }

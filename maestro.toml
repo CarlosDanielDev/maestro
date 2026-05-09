@@ -134,7 +134,7 @@ milestone_naming = "ai"
 agent_graph_enabled = true
 
 [agents]
-default = "codex"
+default = "claude"
 
 [agents.claude]
 kind = "claude"
@@ -174,7 +174,8 @@ request_timeout_secs = 120
 kind = "opencode"
 enabled = true
 command = "opencode"
-model = "openrouter/deepseek/deepseek-chat"
+model = "opencode-go/deepseek-v4-pro"
+permission_mode = "bypassPermissions"
 extra_args = []
 
 [agents.qwen]

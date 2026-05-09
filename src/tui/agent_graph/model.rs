@@ -1,21 +1,35 @@
 //! Data model for the agent-graph view. See `docs/adr/001-agent-graph-viz.md`.
 
+#![allow(dead_code)]
+
 use std::path::{Path, PathBuf};
 
 use uuid::Uuid;
 
+use crate::orchestration::types::Primitive;
 use crate::session::types::{Session, SessionStatus};
+use crate::state::types::TeamRun;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum NodeId {
     Agent(Uuid),
     File(PathBuf),
+    /// Team-run container. Wraps member agents visually.
+    Team(Uuid),
 }
 
 #[derive(Clone)]
 pub(crate) enum NodeKind {
-    Agent { status: SessionStatus },
+    Agent {
+        status: SessionStatus,
+    },
     File,
+    /// Team-run container. Renders as a labeled rectangle around its
+    /// members; member agents render as their own `Agent` nodes inside.
+    Team {
+        primitive: Primitive,
+        member_count: usize,
+    },
 }
 
 #[derive(Clone)]
@@ -65,6 +79,31 @@ pub(crate) fn build_graph(sessions: &[&Session]) -> (Vec<GraphNode>, Vec<GraphEd
         }
     }
 
+    (nodes, edges)
+}
+
+/// Build a graph that includes team-run containers in addition to the
+/// per-session agent / file nodes. Each `TeamRun` becomes a single
+/// `NodeKind::Team` node; member agents remain as their own `NodeKind::Agent`
+/// nodes (rendered inside the container by the renderer).
+pub(crate) fn build_graph_with_teams(
+    sessions: &[&Session],
+    runs: &[&TeamRun],
+) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+    let (mut nodes, edges) = build_graph(sessions);
+    for run in runs {
+        let team_id = NodeId::Team(run.id);
+        if !nodes.iter().any(|n| n.id == team_id) {
+            nodes.push(GraphNode {
+                id: team_id,
+                kind: NodeKind::Team {
+                    primitive: Primitive::SinglePass,
+                    member_count: run.state.len(),
+                },
+                label: run.team_name.clone(),
+            });
+        }
+    }
     (nodes, edges)
 }
 
@@ -126,5 +165,33 @@ mod tests {
     fn file_label_uses_basename() {
         assert_eq!(file_label(Path::new("src/tui/ui.rs")), "ui.rs");
         assert_eq!(file_label(Path::new("Cargo.toml")), "Cargo.toml");
+    }
+
+    #[test]
+    fn node_id_team_distinct_from_agent_with_same_uuid() {
+        let id = uuid::Uuid::nil();
+        let a = NodeId::Agent(id);
+        let t = NodeId::Team(id);
+        assert!(a != t);
+    }
+
+    #[test]
+    fn build_graph_with_teams_adds_team_node_per_run() {
+        use crate::state::types::TeamRun;
+        use chrono::Utc;
+        use std::collections::HashMap;
+        let run = TeamRun {
+            id: uuid::Uuid::from_u128(1),
+            team_name: "default-coder".into(),
+            started_at: Utc::now(),
+            plan: vec![vec![1]],
+            state: HashMap::new(),
+        };
+        let (nodes, _edges) = build_graph_with_teams(&[], &[&run]);
+        let team_count = nodes
+            .iter()
+            .filter(|n| matches!(n.kind, NodeKind::Team { .. }))
+            .count();
+        assert_eq!(team_count, 1);
     }
 }

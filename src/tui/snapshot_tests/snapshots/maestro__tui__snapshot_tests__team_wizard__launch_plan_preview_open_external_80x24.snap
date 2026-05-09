@@ -1,0 +1,28 @@
+---
+source: src/tui/snapshot_tests/team_wizard.rs
+expression: t.backend()
+---
+"╔══════════════════════════════[ Step 3/7: Plan ]══════════════════════════════╗"
+"║                                                                              ║"
+"╚══════════════════════════════════════════════════════════════════════════════╝"
+"╔═══════════════════════════════[ Plan Preview ]═══════════════════════════════╗"
+"║Team default-coder (pipeline)  ≈ $0.0258 (rough estimate, ±50%)               ║"
+"║Level 0: #1                                                                   ║"
+"║Concurrency: max 3 parallel                                                   ║"
+"║                                                                              ║"
+"║Pre-flight failures:                                                          ║"
+"║✗ Issue #1 blocked by open external #2                                        ║"
+"║Confirm disabled until pre-flight passes.                                     ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"╚══════════════════════════════════════════════════════════════════════════════╝"
+"                        Pre-flight failed — fix blockers                        "
+"                          [Enter] confirm   [Esc] back                          "

@@ -1,0 +1,28 @@
+---
+source: src/tui/snapshot_tests/team_wizard.rs
+expression: t.backend()
+---
+"╔═══════════════════════════[ Step 2/6: Primitive ]════════════════════════════╗"
+"║                                                                              ║"
+"╚══════════════════════════════════════════════════════════════════════════════╝"
+"╔════════════════════════════════[ Primitive ]═════════════════════════════════╗"
+"║Choose the primitive that matches the team's shape.                           ║"
+"║ > pipeline: implementer, reviewer, docs                                      ║"
+"║   fan-out: reviewer                                                          ║"
+"║   single-pass: no required roles                                             ║"
+"║   verdict-only: reviewer                                                     ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"║                                                                              ║"
+"╚══════════════════════════════════════════════════════════════════════════════╝"
+"                               Select a primitive                               "
+"                  [↑/↓ j/k] pick   [Enter] choose   [Esc] back                  "

@@ -7,7 +7,7 @@ use crate::orchestration::types::Primitive;
 use crate::provider::types::Issue;
 
 pub fn build_system_prompt(team: &ResolvedTeam, issue: &Issue) -> String {
-    let primitive = primitive_name(team.primitive);
+    let primitive = team.primitive.label();
     let tools = if team.primitive == Primitive::Pipeline {
         "Task, GhPrCreate, ReportFailure"
     } else {
@@ -24,15 +24,6 @@ Do not inspect files or the issue body. Delegate with Task(role, instructions) o
 Pass only concise structured summaries between roles. ReportFailure on blocked or invalid results.",
         issue.number, team.name
     )
-}
-
-fn primitive_name(primitive: Primitive) -> &'static str {
-    match primitive {
-        Primitive::Pipeline => "pipeline",
-        Primitive::FanOut => "fan-out",
-        Primitive::SinglePass => "single-pass",
-        Primitive::VerdictOnly => "verdict-only",
-    }
 }
 
 #[cfg(test)]

@@ -688,6 +688,37 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::TeamWizard => (
+            "Teams",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "c",
+                    action: "Compose",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "l",
+                    action: "Launch",
+                    priority: 1,
+                },
+                InlineHint {
+                    key: "m",
+                    action: "Manage",
+                    priority: 2,
+                },
+                InlineHint {
+                    key: "Enter",
+                    action: "Confirm",
+                    priority: 3,
+                },
+                InlineHint {
+                    key: "Esc",
+                    action: "Back",
+                    priority: 4,
+                },
+            ],
+        ),
     };
 
     let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);

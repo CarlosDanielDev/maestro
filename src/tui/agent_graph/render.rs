@@ -194,6 +194,33 @@ pub(crate) fn draw_agent_graph(
                         let (lx, rendered) = place_file_label(pt, &label, inner_cols);
                         ctx.print(lx, p.y, Line::styled(rendered, style));
                     }
+                    NodeKind::Team {
+                        primitive: _,
+                        member_count,
+                    } => {
+                        // Container box: dashed-style rectangle around the
+                        // team-run's footprint. Member agent sprites are
+                        // painted by their own NodeKind::Agent arm — this
+                        // arm only paints the container outline + label.
+                        let team_color = options.theme.accent_warning;
+                        ctx.draw(&Rectangle {
+                            x: p.x - 0.15,
+                            y: p.y - 0.10,
+                            width: 0.30,
+                            height: 0.20,
+                            color: team_color,
+                        });
+                        let title = format!("[{}] {}", node.label, member_count);
+                        let pt = CanvasPoint {
+                            x: p.x - 0.13,
+                            y: p.y + 0.09,
+                        };
+                        ctx.print(
+                            pt.x,
+                            pt.y,
+                            Line::styled(title, Style::default().fg(team_color)),
+                        );
+                    }
                 }
             }
         });

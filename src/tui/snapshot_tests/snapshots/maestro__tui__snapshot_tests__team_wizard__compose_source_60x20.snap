@@ -1,0 +1,24 @@
+---
+source: src/tui/snapshot_tests/team_wizard.rs
+expression: t.backend()
+---
+"╔═══════════════════[ Step 1/6: Source ]═══════════════════╗"
+"║                                                          ║"
+"╚══════════════════════════════════════════════════════════╝"
+"╔════════════════════════[ Source ]════════════════════════╗"
+"║Start blank or extend an existing preset.                 ║"
+"║                                                          ║"
+"║ > Blank                                                  ║"
+"║   Extends: default-coder                                 ║"
+"║   Extends: user-team                                     ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"╚══════════════════════════════════════════════════════════╝"
+"              Pick Blank or an existing preset              "
+"        [↑/↓ j/k] pick   [Enter] choose   [Esc] back        "

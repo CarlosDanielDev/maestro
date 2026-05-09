@@ -1,0 +1,24 @@
+---
+source: src/tui/snapshot_tests/team_wizard.rs
+expression: t.backend()
+---
+"╔═════════════════════[ Team Wizard ]══════════════════════╗"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                        Pick a flow                       ║"
+"║                                                          ║"
+"║        [c] Compose: Build or extend a team preset        ║"
+"║      [l] Launch: Run a team on issues / a milestone      ║"
+"║       [m] Manage: Edit or delete user-tier presets       ║"
+"║                                                          ║"
+"║                        [Esc] back                        ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"║                                                          ║"
+"╚══════════════════════════════════════════════════════════╝"

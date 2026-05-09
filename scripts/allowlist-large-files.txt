@@ -148,3 +148,24 @@ src/session/role.rs # deadline: 2026-08-22, owner: @carlos, ticket: #538, plan: 
 # Both test additions are deliberate (they prevent silent state-schema
 # regressions). Trimming one would weaken the schema guard.
 src/state/types.rs # deadline: 2026-08-22, owner: @carlos, ticket: #538, plan: split per-resource sub-modules (state/sessions.rs, state/pending.rs) once the schema stops shifting
+
+# util/validation.rs grew past 400 LOC after #664 added is_windows_reserved_stem
+# (shared filesystem-stem check needed by team_wizard's Compose Save and any
+# future caller that writes user-supplied names to disk). Most of the file is
+# the test corpus.
+src/util/validation.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: split tests into util/validation/tests/ once another validator lands
+
+# loader.rs grew past 400 LOC after #664 added write_user_preset /
+# write_project_preset / delete_user_preset to centralise filesystem-layout
+# knowledge that was previously duplicated in the wizard layer.
+src/orchestration/loader.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: split persistence helpers into loader/persist.rs once a second writer (e.g. project-tier delete) lands
+
+# --- Team Wizard (#664) — orchestration-wizard chunk 5 ---
+# All 5 files exceed 400 LOC because the wizard implements 6 sub-tasks
+# (5.1–5.6) in a single PR. Split plan per file documented below; deadlines
+# match the existing TUI category at 3 months out.
+src/tui/screens/team_wizard/types.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: extract step-machine impls into types/{compose_step,launch_step,manage_step}.rs once flow-specific evolutions diverge
+src/tui/screens/team_wizard/draw.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: move per-flow draw helpers into compose.rs / launch.rs / manage.rs alongside the transitions; keep draw.rs as the mode dispatcher only
+src/tui/screens/team_wizard/mod.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: extract test-only setters into a separate test_setters.rs gated by #[cfg(test)]; move data-ingestion methods into a data.rs sub-module
+src/tui/screens/team_wizard/tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: split into tests/{state.rs, validation.rs, transitions.rs} once additional flow-specific unit tests land
+src/tui/snapshot_tests/team_wizard.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: split into snapshot_tests/team_wizard/{mod.rs, compose.rs, launch.rs, manage.rs} when the snapshot count grows past ~50

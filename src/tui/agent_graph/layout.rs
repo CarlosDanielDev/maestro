@@ -98,7 +98,7 @@ fn place_files_by_barycenter(
                         .iter()
                         .find(|(idx, _)| nodes[*idx].id == e.from)
                         .map(|(_, theta)| *theta),
-                    NodeId::File(_) => None,
+                    NodeId::File(_) | NodeId::Team(_) => None,
                 })
                 .collect();
             let theta = if touching_angles.is_empty() {
