@@ -30,6 +30,7 @@ mod review;
 mod session;
 mod settings;
 mod state;
+mod templates;
 mod tui;
 mod updater;
 mod util;

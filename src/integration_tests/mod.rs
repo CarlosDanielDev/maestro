@@ -30,6 +30,8 @@ mod session_lifecycle;
 #[cfg(test)]
 mod stream_parsing;
 #[cfg(test)]
+mod templates_render;
+#[cfg(test)]
 mod upgrade;
 #[cfg(test)]
 mod wip_backup;

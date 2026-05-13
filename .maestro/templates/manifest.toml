@@ -1,50 +1,53 @@
 # .maestro/templates/manifest.toml
 #
-# Canonical templates manifest (skeleton — placeholders only).
-#
-# This file declares the placeholder vocabulary used in canonical command
-# specs under .maestro/templates/commands/. The render engine (issue #B)
-# resolves these placeholders into provider-specific output (Claude Code,
-# Cursor, etc.) at build time.
-#
-# Until #B lands, this file is intentionally inert: no [provider.*] tables,
-# no [render.*] settings. Adding sections here without the engine will be
-# a no-op.
+# Canonical templates manifest. Parsed by the render engine
+# (`src/templates/manifest.rs`, issue #701). The renderer's placeholder
+# vocabulary is hard-coded; this file declares per-placeholder validation
+# hints and per-provider metadata.
 
-# ── Placeholder vocabulary (reserved tokens) ────────────────────────────
-#
-# Reserved token names (bare):
-#   {{INVOKE_SUBAGENT}}  {{HOOK_GATE}}  {{INCLUDE}}  {{SUBAGENT_LIST}}  {{SKILL}}
-#
-# Each token below shows its full call form (with named arguments). The
-# render engine (#B) accepts both bare and parameterized forms; bare forms
-# fall back to provider defaults.
-#
-# {{INVOKE_SUBAGENT name="…"}}
-#   → Render the canonical instruction for invoking a subagent in the
-#     target provider's idiom (e.g. Claude Code Task tool, Cursor agent
-#     call). Resolved per-provider in #B.
-#
-# {{HOOK_GATE name="…"}}
-#   → Render the bash invocation for a pre-/post-step hook gate (e.g.
-#     `bash .claude/hooks/implement-gates.sh <issue>`). Path is rewritten
-#     per-provider.
-#
-# {{INCLUDE path="core/premises.md"}}
-#   → Inline a shared core fragment from .maestro/templates/core/. Used
-#     by every command spec to keep premises/TDD/dep-graph rules DRY.
-#
-#   Security contract for the render engine (#B): `path` MUST be sandboxed
-#   to .maestro/templates/. Reject absolute paths, paths containing `..`,
-#   and symlinks; allow only `.md` and `.toml` extensions; cap include
-#   depth and detect cycles. Canonicalize before comparing to the
-#   templates root.
-#
-# {{SUBAGENT_LIST}}
-#   → Render the active subagent registry (name + status) for the target
-#     provider. Source-of-truth lives in CLAUDE.md today; will move into
-#     manifest tables in a later milestone.
-#
-# {{SKILL name="…"}}
-#   → Reference a skill knowledge base (e.g. project-patterns,
-#     security-patterns). Resolved to the provider's skill-include syntax.
+[meta]
+version = 1
+description = "maestro canonical templates manifest"
+templates_root = ".maestro/templates"
+
+# ── Placeholder validation hints ────────────────────────────────────────
+# Each entry mirrors the renderer's hard-coded vocabulary. `required_args`
+# is informational metadata; the renderer enforces required args itself.
+
+[placeholders.INVOKE_SUBAGENT]
+description = "render the canonical instruction for invoking a subagent"
+required_args = ["name", "prompt"]
+
+[placeholders.HOOK_GATE]
+description = "render the bash invocation for a pre-/post-step hook gate"
+required_args = ["script", "args"]
+
+[placeholders.INCLUDE]
+description = "inline a shared core fragment from the templates root"
+required_args = ["path"]
+max_depth = 8
+
+[placeholders.SUBAGENT_LIST]
+description = "render the active subagent registry for the target provider"
+required_args = []
+
+[placeholders.SKILL]
+description = "reference a skill knowledge base"
+required_args = ["name"]
+
+# ── Per-provider metadata (parsed; consumed by L2 in #703-#705) ─────────
+
+[providers.claude]
+display_name = "Claude Code"
+target_dir = ".claude/commands"
+inline_skills = false
+
+[providers.codex]
+display_name = "Codex CLI"
+target_dir = ".codex/commands"
+inline_skills = true
+
+[providers.http_generic]
+display_name = "Generic HTTP provider"
+target_dir = ""
+inline_skills = true
