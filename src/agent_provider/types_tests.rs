@@ -175,6 +175,65 @@ fn factory_accepts_ollama_provider() {
 }
 
 #[test]
+fn default_template_rules_returns_null_rules_fail_closed() {
+    use crate::templates::TemplateError;
+    let provider: Arc<dyn AgentProvider> = Arc::new(HttpStubProvider);
+    let rules = provider.template_rules();
+    assert!(rules.target_dir().is_none());
+    match rules.subagent_list() {
+        Err(TemplateError::UnsupportedByProvider { name, .. }) => {
+            assert_eq!(name, "SUBAGENT_LIST");
+        }
+        other => panic!("expected UnsupportedByProvider, got {other:?}"),
+    }
+}
+
+#[test]
+fn all_concrete_providers_inherit_default_template_rules() {
+    use crate::agent_provider::{
+        ClaudeProvider, CodexProvider, MinimaxProvider, OllamaProvider, OpenCodeProvider,
+        QwenProvider,
+    };
+    use crate::templates::TemplateError;
+
+    let providers: Vec<Arc<dyn AgentProvider>> = vec![
+        Arc::new(ClaudeProvider::default()),
+        Arc::new(QwenProvider::new("qwen")),
+        Arc::new(CodexProvider::new("codex")),
+        Arc::new(OpenCodeProvider::new("opencode")),
+        Arc::new(
+            OllamaProvider::new("ollama", "http://localhost:11434", "llama3", 10, None)
+                .expect("ollama provider builds"),
+        ),
+        Arc::new(
+            MinimaxProvider::new(
+                "minimax",
+                "https://api.minimax.io/v1",
+                "MiniMax-M2.7",
+                10,
+                Some("MINIMAX_API_KEY".to_string()),
+            )
+            .expect("minimax provider builds"),
+        ),
+    ];
+
+    for p in &providers {
+        let rules = p.template_rules();
+        assert!(rules.target_dir().is_none(), "{}", p.id());
+        let result = rules.subagent_list();
+        assert!(
+            matches!(
+                &result,
+                Err(TemplateError::UnsupportedByProvider { name, .. }) if name == "SUBAGENT_LIST"
+            ),
+            "{}: {:?}",
+            p.id(),
+            result
+        );
+    }
+}
+
+#[test]
 fn factory_accepts_minimax_provider() {
     let factory = AgentProviderFactory::from_config(AgentProvidersConfig {
         default_provider: "minimax".to_string(),

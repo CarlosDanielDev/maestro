@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-13 00:00 (UTC)
+> Last updated: 2026-05-13 14:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -85,7 +85,7 @@ maestro/
 ├── .maestro/
 │   └── templates/                         # Canonical, provider-agnostic command and fragment sources; render engine (#B) projects them into per-provider outputs; edit here, never under .claude/commands/  [Issue #700]
 │       ├── README.md                      # Canonical templates overview — layout, render engine pointer, edit-here policy
-│       ├── manifest.toml                  # Placeholder vocabulary skeleton for the render engine
+│       ├── manifest.toml                  # Structured TOML manifest: [meta] schema version, [placeholders.*] vocabulary, [providers.*] capability flags; parsed by src/templates/manifest.rs  [Issue #701]
 │       ├── core/                          # Shared fragments included by every command spec
 │       │   ├── premises.md                # Ported from .claude/CLAUDE.md § CRITICAL PREMISES
 │       │   ├── tdd-cycle.md               # Ported from .claude/CLAUDE.md § 5 (TDD mandate and Orchestrator flow)
@@ -94,7 +94,7 @@ maestro/
 │           └── .gitkeep
 ├── build.rs                               # Build script: generates man page (maestro.1) and shell completions (bash, zsh, fish) into OUT_DIR at build time using clap_mangen and clap_complete  [Issue #18]
 ├── src/
-│   ├── lib.rs                             # Library facade; exposes session::parser and session::types for benchmark crates; pub mod icon_mode and pub mod icons added so shared icon modules are accessible as library crate items; agent_graph_spike module removed; the now-removed ADR-002 spike's #[cfg(feature = "spike")] pub mod agent_personalities block was cleaned up in issue #536  [Issue #307, #308, #526, #536, #539]
+│   ├── lib.rs                             # Library facade; exposes session::parser and session::types for benchmark crates; pub mod icon_mode and pub mod icons added so shared icon modules are accessible as library crate items; pub mod templates declared (Issue #701); agent_graph_spike module removed; the now-removed ADR-002 spike's #[cfg(feature = "spike")] pub mod agent_personalities block was cleaned up in issue #536  [Issue #307, #308, #526, #536, #539, #701]
 │   ├── icon_mode.rs                       # Shared icon mode detection: AtomicBool global flag, init_from_config() reads tui.ascii_icons from Config and MAESTRO_ASCII_ICONS env var, use_nerd_font() returns current mode; extracted from tui/icons.rs so non-TUI crates can query the mode without pulling in the full TUI tree  [Issue #307]
 │   ├── icons.rs                           # Shared icon registry: IconId enum (38 variants across Navigation, Status, UI Chrome, Indicators categories, plus NeedsReview variant added in #308), IconPair struct (nerd: &'static str, ascii: &'static str), icon_pair() const fn compiles to a zero-allocation jump table, get(IconId) returns the correct variant based on global mode, get_for_mode(id, nerd_font) pure testable variant; extracted from tui/icons.rs; CheckboxOn codepoint U+F14A (nf-fa-check_square) and CheckboxOff codepoint U+F0C8 (nf-fa-square) — universally present FA-core glyphs replacing the legacy nf-oct variants  [Issue #308, #433]
 │   ├── main.rs                            # CLI entry point (clap); Run, Queue, Add, Status, Cost, Init, Doctor; --skip-doctor flag on Run subcommand bypasses preflight; cmd_run() runs validate_preflight() before session launch and uses PromptBuilder::build_issue_prompt() for issue sessions; setup_app_from_config() shared helper wires budget, model router, notifications, plugins, and permission_mode/allowed_tools from config; propagates once_mode from parsed CLI flag into App; forces max_concurrent=1 when --continuous is set; cmd_dashboard() performs orphan worktree cleanup, log cleanup, fetches username from doctor report, delegates App construction to setup_app_from_config(), and queues FetchSuggestionData on startup; invokes config::run_startup_migration(Path::new("maestro.toml")) after Cli::parse() to backfill default fields in existing configs; declares #[cfg(test)] mod integration_tests; declares mod updater; declares mod flags; propagates startup gh auth check result into App.gh_auth_ok; declares mod sanitize; constructs FeatureFlags from --enable-flag / --disable-flag CLI args merged with [flags] config  [Issue #15, #29, #49, #34, #36, #35, #52, #83, #85, #118, #141, #142, #143, #158, #710]
@@ -187,6 +187,18 @@ maestro/
 │   │   ├── template.rs                    # StackDefaults per stack (language, build_command, test_command, run_command); render_template() produces a complete maestro.toml string including [views]\nagent_graph_enabled = true (default-on since v0.25.1 #710)  [Issue #505, #710]
 │   │   ├── template_tests.rs              # Sibling test module extracted from template.rs to stay under the 400-LOC cap (attached via #[cfg(test)] #[path]); covers render_template output for all DetectedStack variants  [Issue #710]
 │   │   └── merge.rs                       # MergeReport; merge_toml() merges detected defaults into an existing TOML string — adds missing keys, never overwrites user-set keys
+│   ├── templates/                         # Canonical command-template render engine  [Issue #701]
+│   │   ├── mod.rs                         # Public API: `render_for_provider(provider, command)` + `render_command_in(root, provider, command)`; sandbox-validates the `command` parameter before path traversal
+│   │   ├── error.rs                       # `TemplateError` enum (thiserror); variants: UnknownPlaceholder, InvalidPlaceholder, SandboxEscape, IncludeCycle, ManifestMissing, ManifestParse, FileMissing, Io, UnterminatedPlaceholder, UnsupportedByProvider, UnsupportedManifestVersion  [Issue #701]
+│   │   ├── manifest.rs                    # `Manifest::load(path)` parses `.maestro/templates/manifest.toml` into typed structs; `#[serde(deny_unknown_fields)]` on all TOML tables  [Issue #701]
+│   │   ├── provider_rules/
+│   │   │   └── mod.rs                     # `TemplateProviderRules` trait (per-provider placeholder validation + unsupported-feature guard); `NullRules` fail-closed stub; `null_rules()` free fn returning `&'static NullRules`  [Issue #701]
+│   │   └── renderer/
+│   │       ├── mod.rs                     # Placeholder-expansion engine; `MAX_INCLUDE_DEPTH = 8`; `render_template()` entry point; include-cycle detection  [Issue #701]
+│   │       ├── tokenize.rs                # Hand-written tokenizer (no regex); splits template source into `Token::Literal` / `Token::Placeholder` / `Token::Include` variants; detects unterminated placeholder delimiters  [Issue #701]
+│   │       └── tests/
+│   │           ├── mod.rs                 # 21 unit tests covering literal pass-through, placeholder expansion, unknown-placeholder errors, include depth limit, sandbox escape rejection, cycle detection, and null-rules fail-closed behaviour  [Issue #701]
+│   │           └── fakes.rs               # `FakeProviderRules` test double for `TemplateProviderRules`; configurable allow/deny lists for placeholder and provider capability checks  [Issue #701]
 │   ├── updater/                           # Self-upgrade subsystem  [Issue #118]
 │   │   ├── mod.rs                         # UpgradeState state machine (Idle, Checking, UpdateAvailable, Downloading, Installing, Done, Failed); ReleaseInfo type (tag_name, download_url, body); pub mod declarations for error/lock/replace  [Issue #499]
 │   │   ├── checker.rs                     # UpdateChecker trait; GitHubReleaseChecker (hits GitHub Releases API); version parsing via semver comparison; asset names use Rust target triples (e.g. aarch64-apple-darwin); checksum file resolves to sha256sums.txt; check_for_update() async entry point  [Issue #118, #233]
@@ -530,7 +542,7 @@ maestro/
 │   │       ├── text_input.rs              # Single-line text input widget with cursor support
 │   │       └── toggle.rs                 # Boolean toggle widget for settings and forms; draw() routes through icons::get(IconId::CheckboxOn/Off) instead of hardcoded literals, eliminating the DRY drift that caused blank indicators on iTerm2 + some Nerd Font installs  [Issue #433]
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
-│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, doctor_run_health_check, and orchestration_smoke registered  [Issue #500, #562, #663, #665]
+│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, doctor_run_health_check, orchestration_smoke, and templates_render registered  [Issue #500, #562, #663, #665, #701]
 │   │   ├── adapt_pipeline.rs              # Integration tests for the adapt pipeline
 │   │   ├── completion_pipeline.rs         # 9 tests: label transitions and PR creation
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
@@ -547,6 +559,7 @@ maestro/
 │   │   ├── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
 │   │   ├── wip_backup.rs                  # Pipeline-level regression tests for the WIP backup commit step (Issue #562): real git in tempdir; covers backup_wip creates sentinel commit, amend_clean_and_push amends on success, head_is_wip_backup detects sentinel vs clean commit, gate failure leaves WIP commit in place, flag-injection rejected in commit_and_push  [Issue #562]
 │   │   ├── worktree_lifecycle.rs          # 8 tests: worktree create/cleanup and health monitoring
+│   │   └── templates_render.rs            # 11 integration tests for the template render engine using tempdir fixtures; covers literal pass-through, provider placeholder expansion, sandbox escape rejection, include-cycle detection, and manifest-missing error path  [Issue #701]
 │   ├── changelog/                         # CHANGELOG.md parser and model
 │   │   ├── mod.rs                         # Module facade; re-exports ChangelogParser and related types
 │   │   └── parser.rs                      # ChangelogParser: parses Keep a Changelog formatted CHANGELOG.md; used by release notes screen
@@ -691,7 +704,7 @@ maestro/
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
 | `.maestro/templates/` | Canonical template sources for the render engine; never edit rendered outputs under `.claude/commands/` directly  [Issue #700] |
 | `.maestro/templates/core/` | Shared fragments (premises, TDD cycle, dependency-graph mandate) included by every command spec |
-| `.maestro/templates/manifest.toml` | Placeholder vocabulary skeleton; consumed by the render engine (#B) |
+| `.maestro/templates/manifest.toml` | Structured TOML manifest consumed by `src/templates/manifest.rs`; sections: `[meta]` (schema version), `[placeholders.*]` (vocabulary), `[providers.*]` (per-provider capability flags); rewritten from comment-skeleton to typed TOML in Issue #701 |
 | `build.rs` | Build script: generates `maestro.1` man page and bash/zsh/fish completions into `OUT_DIR` at build time (Issue #18) |
 | `docs/` | Project documentation |
 | `docs/adr/` | Architecture Decision Records (ADRs); the only artifact merged to main from a spike branch |
@@ -733,6 +746,16 @@ maestro/
 | `src/adapt/scaffolder.rs` | Scaffold phase — `ProjectScaffolder` trait, `ClaudeScaffolder` impl, `write_scaffold_files()`; generates project config files from the adapt plan (Issue #371) |
 | `src/adapt/prompts.rs` | Claude prompt builders for the analyzer, planner, and scaffold phases; `build_scaffold_prompt()` added (Issue #371) |
 | `src/adapt/knowledge.rs` | Knowledge-base compression (Phase 2.6 of `cmd_adapt`); `KnowledgeBase` struct (six `KnowledgeSection` fields); `write_knowledge_file()` writes `.maestro/knowledge.md`; auto-loaded by `SessionPool::try_promote` as a system-prompt component; 1 MiB size cap, symlink rejection, TOCTOU-safe load, envelope-wrapped injection (Issue #347) |
+| `src/templates/` | Canonical command-template render engine; `render_for_provider(provider, command)` is the public entry point; sandbox-validated path traversal; MAX_INCLUDE_DEPTH=8 include guard (Issue #701) |
+| `src/templates/error.rs` | `TemplateError` enum (thiserror); 11 variants covering all failure modes from manifest I/O to sandbox escape and include cycles (Issue #701) |
+| `src/templates/manifest.rs` | `Manifest::load(path)` — deserializes `.maestro/templates/manifest.toml`; `#[serde(deny_unknown_fields)]` enforces forward-compatibility (Issue #701) |
+| `src/templates/provider_rules/mod.rs` | `TemplateProviderRules` trait; `NullRules` fail-closed stub; `null_rules()` helper returns `&'static NullRules`; concrete implementations deferred to issues #703–#705 (Issue #701) |
+| `src/templates/renderer/mod.rs` | Placeholder-expansion engine; walks token stream produced by `tokenize.rs`; enforces `MAX_INCLUDE_DEPTH = 8`; detects include cycles via a seen-set (Issue #701) |
+| `src/templates/renderer/tokenize.rs` | Hand-written tokenizer (no regex); emits `Token::Literal`, `Token::Placeholder`, `Token::Include`; returns `TemplateError::UnterminatedPlaceholder` on malformed input (Issue #701) |
+| `src/templates/renderer/tests/mod.rs` | 21 unit tests for the renderer: literal pass-through, placeholder expansion, unknown-placeholder error, include depth limit, sandbox escape rejection, cycle detection, and `NullRules` fail-closed (Issue #701) |
+| `src/templates/renderer/tests/fakes.rs` | `FakeProviderRules` test double for `TemplateProviderRules`; configurable allow/deny lists for placeholder and provider capability checks (Issue #701) |
+| `src/integration_tests/templates_render.rs` | 11 integration tests using tempdir fixtures; end-to-end coverage of `render_for_provider` and `render_command_in` including sandbox escape, include cycles, and missing-manifest error path (Issue #701) |
+| `src/agent_provider/types.rs` | `AgentProvider` trait + `AgentProviderId`, `AgentProviderKind`, `AgentOutputFormat`, `ParserBinding`; `template_rules()` default method added — returns `null_rules()` (`NullRules` fail-closed stub); concrete providers override once their per-provider rule modules land (issues #703–#705) (Issue #701) |
 | `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated, Command (Phase 3, Issue #40) |
 | `src/updater/` | Self-upgrade subsystem: version check, binary installation, and restart (Issue #118) |
 | `src/updater/mod.rs` | `UpgradeState` state machine (`Idle` → `Checking` → `UpdateAvailable` → `Downloading` → `Installing` → `Done` / `Failed`); `ReleaseInfo` type; `pub mod` declarations for `error`, `lock`, `replace` (Issue #499) |

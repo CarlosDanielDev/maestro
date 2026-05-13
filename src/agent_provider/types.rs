@@ -186,6 +186,14 @@ pub trait AgentProvider: Send + Sync {
         events: mpsc::UnboundedSender<AgentProviderEvent>,
         cancel: CancellationToken,
     ) -> Result<AgentRunResult, AgentError>;
+
+    /// Returns the rendering rules used when expanding canonical command
+    /// templates for this provider. Default impl returns the fail-closed
+    /// [`crate::templates::NullRules`] stub; concrete providers override
+    /// once their per-provider rule module lands (issues #703–#705).
+    fn template_rules(&self) -> &'static dyn crate::templates::TemplateProviderRules {
+        crate::templates::null_rules()
+    }
 }
 
 #[derive(Clone)]

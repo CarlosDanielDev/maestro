@@ -43,6 +43,7 @@ pub mod session;
 pub mod settings;
 pub mod state;
 pub mod system;
+pub mod templates;
 pub mod tui;
 pub mod updater;
 pub mod util;
