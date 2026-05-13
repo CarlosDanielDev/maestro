@@ -12,6 +12,7 @@ mod experimental;
 mod flags;
 mod gates;
 mod github;
+mod migrate;
 mod models;
 mod modes;
 mod notifications;
@@ -35,6 +36,7 @@ pub use flags::FlagsConfig;
 pub use gates::{CiAutoFixConfig, GatesConfig};
 #[allow(unused_imports)]
 pub use github::{GithubConfig, MergeMethod, ProviderConfig};
+pub use migrate::run_startup_migration;
 pub use models::ModelsConfig;
 pub use modes::ModeConfig;
 pub use notifications::NotificationsConfig;
