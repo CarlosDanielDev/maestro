@@ -23,6 +23,9 @@ pub(crate) use manifest::{ManifestMeta, ManifestPlaceholder, ManifestProvider};
 #[cfg(test)]
 pub(crate) use provider_rules::NullRules;
 pub use provider_rules::{TemplateProviderRules, null_rules};
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use renderer::{PlaceholderKind, Token, tokenize};
 
 use std::path::{Path, PathBuf};
 

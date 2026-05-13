@@ -6,6 +6,8 @@
 #[cfg(test)]
 mod adapt_pipeline;
 #[cfg(test)]
+mod canonical_command_specs;
+#[cfg(test)]
 mod completion_pipeline;
 #[cfg(test)]
 mod concurrent_sessions;

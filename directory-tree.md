@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-13 14:00 (UTC)
+> Last updated: 2026-05-13 15:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -90,8 +90,11 @@ maestro/
 │       │   ├── premises.md                # Ported from .claude/CLAUDE.md § CRITICAL PREMISES
 │       │   ├── tdd-cycle.md               # Ported from .claude/CLAUDE.md § 5 (TDD mandate and Orchestrator flow)
 │       │   └── dependency-graph.md        # Ported from .claude/CLAUDE.md § 4 (dependency-graph mandate)
-│       └── commands/                      # Canonical command specs (populated in #C)
-│           └── .gitkeep
+│       └── commands/                      # Canonical command specs (Issue #702)
+│           ├── implement.md               # Canonical port of .claude/commands/implement.md (489 lines)  [Issue #702]
+│           ├── pushup.md                  # Canonical port of .claude/commands/pushup.md (203 lines)  [Issue #702]
+│           ├── plan-feature.md            # Canonical port of .claude/commands/plan-feature.md (110 lines)  [Issue #702]
+│           └── simplify.md               # New canonical spec (no .claude/commands/ ancestor) (118 lines)  [Issue #702]
 ├── build.rs                               # Build script: generates man page (maestro.1) and shell completions (bash, zsh, fish) into OUT_DIR at build time using clap_mangen and clap_complete  [Issue #18]
 ├── src/
 │   ├── lib.rs                             # Library facade; exposes session::parser and session::types for benchmark crates; pub mod icon_mode and pub mod icons added so shared icon modules are accessible as library crate items; pub mod templates declared (Issue #701); agent_graph_spike module removed; the now-removed ADR-002 spike's #[cfg(feature = "spike")] pub mod agent_personalities block was cleaned up in issue #536  [Issue #307, #308, #526, #536, #539, #701]
@@ -542,7 +545,7 @@ maestro/
 │   │       ├── text_input.rs              # Single-line text input widget with cursor support
 │   │       └── toggle.rs                 # Boolean toggle widget for settings and forms; draw() routes through icons::get(IconId::CheckboxOn/Off) instead of hardcoded literals, eliminating the DRY drift that caused blank indicators on iTerm2 + some Nerd Font installs  [Issue #433]
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
-│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, doctor_run_health_check, orchestration_smoke, and templates_render registered  [Issue #500, #562, #663, #665, #701]
+│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, doctor_run_health_check, orchestration_smoke, templates_render, and canonical_command_specs registered  [Issue #500, #562, #663, #665, #701, #702]
 │   │   ├── adapt_pipeline.rs              # Integration tests for the adapt pipeline
 │   │   ├── completion_pipeline.rs         # 9 tests: label transitions and PR creation
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
@@ -559,7 +562,13 @@ maestro/
 │   │   ├── upgrade.rs                     # End-to-end upgrade flow tests: version check, banner states, installer backup/swap, restart command construction  [Issue #118]
 │   │   ├── wip_backup.rs                  # Pipeline-level regression tests for the WIP backup commit step (Issue #562): real git in tempdir; covers backup_wip creates sentinel commit, amend_clean_and_push amends on success, head_is_wip_backup detects sentinel vs clean commit, gate failure leaves WIP commit in place, flag-injection rejected in commit_and_push  [Issue #562]
 │   │   ├── worktree_lifecycle.rs          # 8 tests: worktree create/cleanup and health monitoring
-│   │   └── templates_render.rs            # 11 integration tests for the template render engine using tempdir fixtures; covers literal pass-through, provider placeholder expansion, sandbox escape rejection, include-cycle detection, and manifest-missing error path  [Issue #701]
+│   │   ├── templates_render.rs            # 11 integration tests for the template render engine using tempdir fixtures; covers literal pass-through, provider placeholder expansion, sandbox escape rejection, include-cycle detection, and manifest-missing error path  [Issue #701]
+│   │   ├── canonical_command_specs.rs     # 15-invariant test suite for canonical command specs; verifies structural integrity of all four commands/ files (front-matter, placeholder coverage, include directives, section headings); 4 insta snapshots via tokenize()  [Issue #702]
+│   │   └── snapshots/                     # Insta snapshot files for canonical_command_specs tests  [Issue #702]
+│   │       ├── maestro__integration_tests__canonical_command_specs__snapshot_tokenize_implement.snap
+│   │       ├── maestro__integration_tests__canonical_command_specs__snapshot_tokenize_plan_feature.snap
+│   │       ├── maestro__integration_tests__canonical_command_specs__snapshot_tokenize_pushup.snap
+│   │       └── maestro__integration_tests__canonical_command_specs__snapshot_tokenize_simplify.snap
 │   ├── changelog/                         # CHANGELOG.md parser and model
 │   │   ├── mod.rs                         # Module facade; re-exports ChangelogParser and related types
 │   │   └── parser.rs                      # ChangelogParser: parses Keep a Changelog formatted CHANGELOG.md; used by release notes screen
@@ -704,6 +713,7 @@ maestro/
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
 | `.maestro/templates/` | Canonical template sources for the render engine; never edit rendered outputs under `.claude/commands/` directly  [Issue #700] |
 | `.maestro/templates/core/` | Shared fragments (premises, TDD cycle, dependency-graph mandate) included by every command spec |
+| `.maestro/templates/commands/` | Canonical command specs; four files ported/created in Issue #702: `implement.md`, `pushup.md`, `plan-feature.md`, `simplify.md` |
 | `.maestro/templates/manifest.toml` | Structured TOML manifest consumed by `src/templates/manifest.rs`; sections: `[meta]` (schema version), `[placeholders.*]` (vocabulary), `[providers.*]` (per-provider capability flags); rewritten from comment-skeleton to typed TOML in Issue #701 |
 | `build.rs` | Build script: generates `maestro.1` man page and bash/zsh/fish completions into `OUT_DIR` at build time (Issue #18) |
 | `docs/` | Project documentation |
@@ -926,7 +936,7 @@ maestro/
 | `src/tui/snapshot_tests/turboquant_dashboard.rs` | 3 snapshot tests for `TurboQuantDashboard`: projections-only, mixed actual+projections, empty sessions (Issue #346) |
 | `src/tui/snapshot_tests/snapshots/` | Committed `.snap` files — insta ground-truth for TUI rendering regressions; includes 4 agent_graph baselines (`80x24`, `100x30`, `120x40`, original `single_agent_card`) added in Issue #526; the `single_agent_card` snap was retired in Issue #543 in favor of `single_agent_with_files_as_graph` + `falls_back_when_single_agent_has_no_files` (the fallback was narrowed to no-edges only); 2 agent_graph_dispatcher baselines (`toggle_on_renders_graph`, `toggle_off_renders_panels`) added in Issue #527; 11 agent_personalities snapshots added in Issue #539; several existing agent_graph snaps re-baselined in #539 (nodes now render as sprites/abbrevs); 12 activity_log_dispatch snapshots added in Issue #543 (chip renders per role × mode, guard cases, multi-dispatch composition); 2 completion_overlay snapshots added in Issue #560 (`completion_overlay_success_modal_80x24` and `completion_overlay_failed_gates_modal_80x24`) |
 | `src/integration_tests/` | End-to-end integration test suite; MockGitHubClient and MockWorktreeManager; no external process dependencies (Issue #15) |
-| `src/integration_tests/mod.rs` | Module declarations and shared helpers: `make_pool()`, `make_pool_with_worktree()`, `make_session()`, `make_session_with_issue()`, `make_gh_issue()` |
+| `src/integration_tests/mod.rs` | Module declarations and shared helpers: `make_pool()`, `make_pool_with_worktree()`, `make_session()`, `make_session_with_issue()`, `make_gh_issue()`; `mod canonical_command_specs` registered in Issue #702 |
 | `src/integration_tests/doctor_run_health_check.rs` | Smoke tests for `run_health_check` library function (Issue #663) |
 | `src/integration_tests/orchestration_dispatch.rs` | End-to-end L1 dispatch tests with `FakeProvider`; exercises `dispatch_subagent()` path (Issue #663) |
 | `src/integration_tests/session_lifecycle.rs` | 11 tests covering enqueue, promote, and complete session lifecycle via `handle_event()` |
@@ -936,6 +946,8 @@ maestro/
 | `src/integration_tests/gate_failure_retention.rs` | 8 tests covering gate-failure worktree retention; 3 new pipeline tests added in #560 verify `worktree_path` is persisted on the session at `FailedGates` transition; uses real `git worktree` commands so the #558 regression (force-remove on gate failure) is guarded end-to-end (Issues #558, #560) |
 | `src/integration_tests/worktree_lifecycle.rs` | 8 tests covering worktree create/cleanup and health monitoring |
 | `src/integration_tests/upgrade.rs` | End-to-end upgrade flow tests: version check, banner state transitions, installer backup/swap, `RestartCommand` construction (Issue #118) |
+| `src/integration_tests/canonical_command_specs.rs` | 15-invariant test suite for canonical command specs; verifies structural integrity of all four `.maestro/templates/commands/` files (front-matter, placeholder coverage, include directives, section headings); 4 insta snapshots via `tokenize()` (Issue #702) |
+| `src/integration_tests/snapshots/` | Insta snapshot files for `canonical_command_specs` tests: `snapshot_tokenize_implement`, `snapshot_tokenize_plan_feature`, `snapshot_tokenize_pushup`, `snapshot_tokenize_simplify` (Issue #702) |
 | `src/turboquant/` | Vector quantization for context compression (Issues #242-253, #343-345, #347) |
 | `src/turboquant/types.rs` | `QuantStrategy` enum; `TurboQuantConfig` with three v0.14.0 budget fields (`fork_handoff_budget`, `system_prompt_budget`, `knowledge_budget`); `QuantResult`; `CompressionMetrics` |
 | `src/turboquant/polar.rs` | PolarQuant — recursive polar decomposition; preserves cosine distance |

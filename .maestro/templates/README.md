@@ -18,8 +18,11 @@ directly. The canonical-vs-rendered split exists so cross-provider rules
 │   ├── premises.md
 │   ├── tdd-cycle.md
 │   └── dependency-graph.md
-└── commands/              ← canonical command specs (populated in #C)
-    └── .gitkeep
+└── commands/              ← canonical command specs (Issue #702)
+    ├── implement.md
+    ├── pushup.md
+    ├── plan-feature.md
+    └── simplify.md
 ```
 
 > Authoritative project layout lives in `directory-tree.md` at the repo root.
@@ -27,15 +30,14 @@ directly. The canonical-vs-rendered split exists so cross-provider rules
 
 ## Forward-reference legend
 
-Letter codes (`#A`, `#B`, `#C`, `#G`) reference work items in the approved
-plan `we-need-to-standardize-zippy-wave.md`. They are placeholders until the
-follow-up GitHub issues are filed; replace with concrete `#NNN` numbers as
-each lands.
+Letter codes (`#A`, `#B`, `#G`) reference work items in the approved
+plan `we-need-to-standardize-zippy-wave.md`. `#A`, `#B`, and `#C` have
+landed; replace `#G` with a concrete `#NNN` number when that issue is filed.
 
-| Code | Scope |
-|------|-------|
-| #A   | This issue (#700) — L0 scaffold |
-| #B   | Render engine — resolves placeholders into per-provider output |
-| #C   | Canonical command specs — populates `commands/` |
-| #G   | `maestro sync-templates` CLI — re-renders from canonical sources |
+| Code | Issue | Scope |
+|------|-------|-------|
+| #A   | #700  | L0 scaffold — canonical templates directory |
+| #B   | #701  | Render engine — resolves placeholders into per-provider output |
+| #C   | #702  | Canonical command specs — populated `commands/` with implement, pushup, plan-feature, simplify |
+| #G   | TBD   | `maestro sync-templates` CLI — re-renders from canonical sources |
 

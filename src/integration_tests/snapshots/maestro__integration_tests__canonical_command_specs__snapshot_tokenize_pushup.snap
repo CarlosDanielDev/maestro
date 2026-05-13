@@ -1,0 +1,25 @@
+---
+source: src/integration_tests/canonical_command_specs.rs
+assertion_line: 386
+expression: "snapshot_tokens(\"pushup\")"
+---
+[
+    (
+        "INCLUDE",
+        [
+            (
+                "path",
+                "core/premises.md",
+            ),
+        ],
+    ),
+    (
+        "INCLUDE",
+        [
+            (
+                "path",
+                "core/dependency-graph.md",
+            ),
+        ],
+    ),
+]

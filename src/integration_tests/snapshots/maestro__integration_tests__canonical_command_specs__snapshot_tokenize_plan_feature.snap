@@ -1,0 +1,29 @@
+---
+source: src/integration_tests/canonical_command_specs.rs
+assertion_line: 391
+expression: "snapshot_tokens(\"plan-feature\")"
+---
+[
+    (
+        "INCLUDE",
+        [
+            (
+                "path",
+                "core/premises.md",
+            ),
+        ],
+    ),
+    (
+        "SUBAGENT_LIST",
+        [],
+    ),
+    (
+        "INCLUDE",
+        [
+            (
+                "path",
+                "core/dependency-graph.md",
+            ),
+        ],
+    ),
+]
