@@ -10,6 +10,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 - feat(orchestration): `maestro team {list,new,launch,manage,explain}` CLI subcommands closing v0.27.0 — built-in preset docs under `docs/teams/`, 2-issue scheduler smoke test, headless `team launch --yes` headless dispatch (#665)
 - feat(orchestration): implement L1 subagent dispatch, cost-estimate formula, and `run_health_check` library function (#663)
+- feat(config): agent graph view enabled by default (`agent_graph_enabled = true`); startup migration in `config::run_startup_migration()` backfills the key into older `maestro.toml` files automatically on first run (#710)
 
 ### Changed
 - state(store): `MaestroState` carries an explicit `version: u32` field (`CURRENT_STATE_VERSION = 1`); legacy state files (no `version` key) deserialize to `0` and migrate on first load — structural no-op for `0 → 1` (#665)

@@ -113,10 +113,24 @@ fn notifications_config_missing_desktop_field_defaults_to_true() {
 
 #[test]
 fn views_config_defaults_when_section_absent() {
+    // agent_graph_enabled defaults to true so a fresh install or a
+    // startup-migration write failure still gets the feature.
     let f = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(f.path(), MINIMAL_TOML).unwrap();
     let cfg = Config::load(f.path()).expect("load failed");
-    assert!(!cfg.views.agent_graph_enabled);
+    assert!(
+        cfg.views.agent_graph_enabled,
+        "views.agent_graph_enabled must default to true"
+    );
+}
+
+#[test]
+fn views_config_in_memory_default_is_true() {
+    let cfg = ViewsConfig::default();
+    assert!(
+        cfg.agent_graph_enabled,
+        "ViewsConfig::default() must return agent_graph_enabled = true"
+    );
 }
 
 #[test]

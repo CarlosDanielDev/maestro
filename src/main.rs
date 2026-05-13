@@ -116,6 +116,18 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
+    // Skip migration on commands that never load config — they shouldn't pay
+    // for the stat even if it's cheap. `init` writes a fresh template that
+    // already contains the new defaults, so migration would be a no-op there.
+    if !matches!(
+        &cli.command,
+        Some(Commands::Completions { .. })
+            | Some(Commands::Mangen { .. })
+            | Some(Commands::Init { .. })
+    ) {
+        config::run_startup_migration(std::path::Path::new("maestro.toml"));
+    }
+
     match cli.command {
         Some(Commands::Init {
             reset,

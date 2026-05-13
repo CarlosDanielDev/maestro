@@ -911,7 +911,9 @@ enabled = true
 
     #[test]
     fn navigate_to_agent_graph_with_toggle_off_redirects_to_overview() {
-        let mut app = make_app_with_views_toml("");
+        // agent_graph_enabled defaults to true; the OFF case must be set
+        // explicitly rather than relying on an absent [views].
+        let mut app = make_app_with_views_toml("[views]\nagent_graph_enabled = false\n");
         app.tui_mode = TuiMode::Overview;
         app.navigate_to(TuiMode::AgentGraph);
         assert_eq!(

@@ -138,3 +138,16 @@ api_key_env = "MINIMAX_API_KEY"
 - Other enabled agents are optional warnings.
 
 Use `enabled = false` for configured examples that are not ready to run.
+
+## Views
+
+```toml
+[views]
+agent_graph_enabled = true
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `agent_graph_enabled` | bool | `true` | Show the agent-graph view (concentric bipartite layout) instead of the default panel grid when two or more sessions are active. Set to `false` to revert to the panel layout. |
+
+`agent_graph_enabled` defaults to `true` as of v0.25.1 (Issue #710). Older `maestro.toml` files that omit the `[views]` section or the `agent_graph_enabled` key are migrated automatically on first startup — maestro appends the key with value `true` to the existing file. The migration is skipped if the key is already present (regardless of its value), so any explicit `agent_graph_enabled = false` you have set is preserved.
