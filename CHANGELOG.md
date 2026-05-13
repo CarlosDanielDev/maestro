@@ -7,6 +7,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-05-12
+
+### Added
+- feat(ci): add PR failure error review and fix action (#695)
+- feat(orchestration): CLI subcommands + built-in docs + smoke test (#665)
+- feat(tui): team orchestration wizard — compose / launch / manage (#664)
+- feat(orchestration): L1 subagent dispatch + cost estimate (#663)
+- feat(orchestration): L2 per-issue orchestrator + primitive state machines (#662)
+- feat(orchestration): L3 cross-issue scheduler (#661)
+- feat(orchestration): foundation — types, contracts, tier loader, built-ins (#660)
+
+### Fixed
+- fix(tui): prevent Agent Graph from freezing after session completion (#694)
+
+### Chore
+- Improve agent graph empty state with animated agent and live activity (#692)
 ### Added
 - feat(orchestration): `maestro team {list,new,launch,manage,explain}` CLI subcommands closing v0.27.0 — built-in preset docs under `docs/teams/`, 2-issue scheduler smoke test, headless `team launch --yes` headless dispatch (#665)
 - feat(orchestration): implement L1 subagent dispatch, cost-estimate formula, and `run_health_check` library function (#663)
