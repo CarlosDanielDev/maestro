@@ -9,6 +9,10 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
 
+mod claude;
+
+pub use claude::claude_rules;
+
 use std::path::Path;
 
 use crate::templates::TemplateError;

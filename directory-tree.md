@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-13 15:00 (UTC)
+> Last updated: 2026-05-13 17:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -20,14 +20,15 @@ maestro/
 │   │   ├── subagent-master-planner.md     # System-level planning subagent
 │   │   ├── subagent-qa.md                 # QA and test design subagent
 │   │   └── subagent-security-analyst.md   # Security review subagent
-│   ├── commands/
+│   ├── commands/                          # Generated artifacts rendered from .maestro/templates/commands/; DO NOT edit directly — edit canonical sources and re-render  [Issue #703]
 │   │   ├── create-subagent.md             # Slash command: scaffold a new subagent
-│   │   ├── implement.md                   # Slash command: run full TDD implementation flow
-│   │   ├── plan-feature.md                # Slash command: invoke master planner
-│   │   ├── pushup.md                      # Slash command: git push workflow
+│   │   ├── implement.md                   # Slash command: run full TDD implementation flow  [generated]
+│   │   ├── plan-feature.md                # Slash command: invoke master planner  [generated]
+│   │   ├── pushup.md                      # Slash command: git push workflow  [generated]
 │   │   ├── release.md                     # Slash command: semantic version release — bump version, update changelog, tag, push, and create GitHub Release
 │   │   ├── setup-notifications.md         # Slash command: configure hook notifications
 │   │   ├── setup-project.md               # Slash command: initialize project config
+│   │   ├── simplify.md                    # Slash command: simplify code or prose  [generated]
 │   │   ├── triage-idea.md                 # Slash command: non-mutating idea triage loop (fetch idea issue → dispatch subagent-idea-triager → validate report → render digest)  [Issue #485]
 │   │   ├── update-from-template.md        # Slash command: sync from template directory
 │   │   ├── validate-contracts.md          # Slash command: validate API contracts
@@ -195,7 +196,8 @@ maestro/
 │   │   ├── error.rs                       # `TemplateError` enum (thiserror); variants: UnknownPlaceholder, InvalidPlaceholder, SandboxEscape, IncludeCycle, ManifestMissing, ManifestParse, FileMissing, Io, UnterminatedPlaceholder, UnsupportedByProvider, UnsupportedManifestVersion  [Issue #701]
 │   │   ├── manifest.rs                    # `Manifest::load(path)` parses `.maestro/templates/manifest.toml` into typed structs; `#[serde(deny_unknown_fields)]` on all TOML tables  [Issue #701]
 │   │   ├── provider_rules/
-│   │   │   └── mod.rs                     # `TemplateProviderRules` trait (per-provider placeholder validation + unsupported-feature guard); `NullRules` fail-closed stub; `null_rules()` free fn returning `&'static NullRules`  [Issue #701]
+│   │   │   ├── mod.rs                     # `TemplateProviderRules` trait (per-provider placeholder validation + unsupported-feature guard); `NullRules` fail-closed stub; `null_rules()` free fn returning `&'static NullRules`; re-exports `ClaudeRules`  [Issue #701, #703]
+│   │   │   └── claude.rs                  # `ClaudeRules` — concrete `TemplateProviderRules` impl for Claude Code; sandbox-validated `include()` guard; 11 unit tests  [Issue #703]
 │   │   └── renderer/
 │   │       ├── mod.rs                     # Placeholder-expansion engine; `MAX_INCLUDE_DEPTH = 8`; `render_template()` entry point; include-cycle detection  [Issue #701]
 │   │       ├── tokenize.rs                # Hand-written tokenizer (no regex); splits template source into `Token::Literal` / `Token::Placeholder` / `Token::Include` variants; detects unterminated placeholder delimiters  [Issue #701]
@@ -670,6 +672,7 @@ maestro/
 │   └── turboquant.rs                      # Benchmark: TurboQuant quantization pipeline throughput
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
+│   ├── templates_render.rs                # 5 byte-identical regression tests asserting `.claude/commands/*.md` matches rendered output from `.maestro/templates/`; 1 `#[ignore]` regeneration helper; enforces drift detection in CI  [Issue #703]
 │   ├── fixtures/                          # Static test fixtures for integration and unit tests
 │   │   └── state/
 │   │       └── v0.json                    # Pre-version state-file fixture (no `version` key); used by state migration tests to assert that version=0 loads and migrates to CURRENT_STATE_VERSION=1  [Issue #665]
@@ -706,7 +709,7 @@ maestro/
 | `.claude/hooks/sentinel-path.sh` | Resolves XDG-aware sentinel path for `$GATE_LOG_DIR` persistence across non-persistent Bash tool shells |
 | `.claude/` | Claude Code agent configuration |
 | `.claude/agents/` | Subagent definitions |
-| `.claude/commands/` | Slash command definitions |
+| `.claude/commands/` | Slash command definitions; `implement.md`, `pushup.md`, `plan-feature.md`, and `simplify.md` are **generated artifacts** — edit `.maestro/templates/commands/` instead (Issue #703) |
 | `.claude/hooks/` | Pre/post command notification hooks |
 | `.claude/hooks/notify.sh` | Unix notification hook; Slack payload constructed with `jq -n --arg` (no raw string interpolation); PowerShell toast uses `escape_powershell_string` helper; `jq` is a soft runtime dependency — Slack notifications are skipped silently when absent (Issue #583) |
 | `.claude/skills/` | Reusable knowledge bases for subagents |
@@ -759,13 +762,17 @@ maestro/
 | `src/templates/` | Canonical command-template render engine; `render_for_provider(provider, command)` is the public entry point; sandbox-validated path traversal; MAX_INCLUDE_DEPTH=8 include guard (Issue #701) |
 | `src/templates/error.rs` | `TemplateError` enum (thiserror); 11 variants covering all failure modes from manifest I/O to sandbox escape and include cycles (Issue #701) |
 | `src/templates/manifest.rs` | `Manifest::load(path)` — deserializes `.maestro/templates/manifest.toml`; `#[serde(deny_unknown_fields)]` enforces forward-compatibility (Issue #701) |
-| `src/templates/provider_rules/mod.rs` | `TemplateProviderRules` trait; `NullRules` fail-closed stub; `null_rules()` helper returns `&'static NullRules`; concrete implementations deferred to issues #703–#705 (Issue #701) |
+| `src/templates/provider_rules/mod.rs` | `TemplateProviderRules` trait; `NullRules` fail-closed stub; `null_rules()` helper returns `&'static NullRules`; re-exports `ClaudeRules` (Issues #701, #703) |
+| `src/templates/provider_rules/claude.rs` | `ClaudeRules` — concrete `TemplateProviderRules` for Claude Code; sandbox-validated `include()` guard; 11 unit tests (Issue #703) |
 | `src/templates/renderer/mod.rs` | Placeholder-expansion engine; walks token stream produced by `tokenize.rs`; enforces `MAX_INCLUDE_DEPTH = 8`; detects include cycles via a seen-set (Issue #701) |
 | `src/templates/renderer/tokenize.rs` | Hand-written tokenizer (no regex); emits `Token::Literal`, `Token::Placeholder`, `Token::Include`; returns `TemplateError::UnterminatedPlaceholder` on malformed input (Issue #701) |
 | `src/templates/renderer/tests/mod.rs` | 21 unit tests for the renderer: literal pass-through, placeholder expansion, unknown-placeholder error, include depth limit, sandbox escape rejection, cycle detection, and `NullRules` fail-closed (Issue #701) |
 | `src/templates/renderer/tests/fakes.rs` | `FakeProviderRules` test double for `TemplateProviderRules`; configurable allow/deny lists for placeholder and provider capability checks (Issue #701) |
 | `src/integration_tests/templates_render.rs` | 11 integration tests using tempdir fixtures; end-to-end coverage of `render_for_provider` and `render_command_in` including sandbox escape, include cycles, and missing-manifest error path (Issue #701) |
-| `src/agent_provider/types.rs` | `AgentProvider` trait + `AgentProviderId`, `AgentProviderKind`, `AgentOutputFormat`, `ParserBinding`; `template_rules()` default method added — returns `null_rules()` (`NullRules` fail-closed stub); concrete providers override once their per-provider rule modules land (issues #703–#705) (Issue #701) |
+| `tests/templates_render.rs` | 5 byte-identical regression tests asserting `.claude/commands/*.md` matches rendered output from `.maestro/templates/`; 1 `#[ignore]` regeneration helper; enforces drift detection in CI (Issue #703) |
+| `src/agent_provider/types.rs` | `AgentProvider` trait + `AgentProviderId`, `AgentProviderKind`, `AgentOutputFormat`, `ParserBinding`; `template_rules()` default method returns `null_rules()`; providers with dedicated rules (e.g. Claude) override this method (Issues #701, #703) |
+| `src/agent_provider/claude.rs` | `ClaudeProvider` impl; `template_rules()` override returns `&'static ClaudeRules` (Issue #703) |
+| `src/agent_provider/types_tests.rs` | Provider trait unit tests; split in #703: `providers_without_dedicated_rules_inherit_default_template_rules` + `claude_provider_overrides_default_template_rules` (Issue #703) |
 | `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated, Command (Phase 3, Issue #40) |
 | `src/updater/` | Self-upgrade subsystem: version check, binary installation, and restart (Issue #118) |
 | `src/updater/mod.rs` | `UpgradeState` state machine (`Idle` → `Checking` → `UpdateAvailable` → `Downloading` → `Installing` → `Done` / `Failed`); `ReleaseInfo` type; `pub mod` declarations for `error`, `lock`, `replace` (Issue #499) |
