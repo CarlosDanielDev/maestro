@@ -1,0 +1,103 @@
+---
+source: src/integration_tests/canonical_command_specs.rs
+assertion_line: 381
+expression: "snapshot_tokens(\"implement\")"
+---
+[
+    (
+        "INCLUDE",
+        [
+            (
+                "path",
+                "core/premises.md",
+            ),
+        ],
+    ),
+    (
+        "HOOK_GATE",
+        [
+            (
+                "args",
+                "$ISSUE_NUMBER ${DIRTY_TREE_ACTION:+--dirty-tree-action=$DIRTY_TREE_ACTION}",
+            ),
+            (
+                "script",
+                "implement-gates.sh",
+            ),
+        ],
+    ),
+    (
+        "INVOKE_SUBAGENT",
+        [
+            (
+                "name",
+                "gatekeeper",
+            ),
+            (
+                "prompt",
+                "Classify issue $ISSUE_NUMBER (DOR, blockers, contracts, task_type). Return the structured JSON gatekeeper report.",
+            ),
+        ],
+    ),
+    (
+        "INCLUDE",
+        [
+            (
+                "path",
+                "core/tdd-cycle.md",
+            ),
+        ],
+    ),
+    (
+        "INVOKE_SUBAGENT",
+        [
+            (
+                "name",
+                "architect",
+            ),
+            (
+                "prompt",
+                "Produce architecture blueprint for issue $ISSUE_NUMBER using $GATE_LOG_DIR/issue-summary.md; on Continue, prepend resumption context.",
+            ),
+        ],
+    ),
+    (
+        "INVOKE_SUBAGENT",
+        [
+            (
+                "name",
+                "qa",
+            ),
+            (
+                "prompt",
+                "Produce test blueprint from architect's blueprint for issue $ISSUE_NUMBER; on Continue, prepend resumption context.",
+            ),
+        ],
+    ),
+    (
+        "INVOKE_SUBAGENT",
+        [
+            (
+                "name",
+                "security-analyst",
+            ),
+            (
+                "prompt",
+                "Review newly-written code for issue $ISSUE_NUMBER against OWASP Top 10, secrets handling, and input validation.",
+            ),
+        ],
+    ),
+    (
+        "INVOKE_SUBAGENT",
+        [
+            (
+                "name",
+                "docs-analyst",
+            ),
+            (
+                "prompt",
+                "Update documentation and directory-tree.md for issue $ISSUE_NUMBER.",
+            ),
+        ],
+    ),
+]

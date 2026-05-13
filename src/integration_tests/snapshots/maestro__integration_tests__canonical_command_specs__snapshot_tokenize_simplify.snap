@@ -1,0 +1,47 @@
+---
+source: src/integration_tests/canonical_command_specs.rs
+assertion_line: 396
+expression: "snapshot_tokens(\"simplify\")"
+---
+[
+    (
+        "INCLUDE",
+        [
+            (
+                "path",
+                "core/premises.md",
+            ),
+        ],
+    ),
+    (
+        "SKILL",
+        [
+            (
+                "name",
+                "project-patterns",
+            ),
+        ],
+    ),
+    (
+        "INVOKE_SUBAGENT",
+        [
+            (
+                "name",
+                "architect",
+            ),
+            (
+                "prompt",
+                "Review the diff <base>..HEAD against ETC, Demeter, and Object Calisthenics 5-7/9. Flag duplications, dead code, over-abstraction, and Demeter violations. Return a blueprint, not code.",
+            ),
+        ],
+    ),
+    (
+        "INCLUDE",
+        [
+            (
+                "path",
+                "core/tdd-cycle.md",
+            ),
+        ],
+    ),
+]
