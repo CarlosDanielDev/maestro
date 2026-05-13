@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-12 00:00 (UTC)
+> Last updated: 2026-05-13 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -82,6 +82,16 @@ maestro/
 │       ├── ci.yml                         # GitHub Actions CI pipeline
 │       ├── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
 │       └── self-host.yml                  # Self-host smoke workflow: builds maestro, creates ephemeral repo, runs headlessly against a fixture issue, asserts PR is opened, deletes repo; requires MAESTRO_SELFTEST_PAT and MAESTRO_SELFTEST_OWNER secrets  [Issue #545]
+├── .maestro/
+│   └── templates/                         # Canonical, provider-agnostic command and fragment sources; render engine (#B) projects them into per-provider outputs; edit here, never under .claude/commands/  [Issue #700]
+│       ├── README.md                      # Canonical templates overview — layout, render engine pointer, edit-here policy
+│       ├── manifest.toml                  # Placeholder vocabulary skeleton for the render engine
+│       ├── core/                          # Shared fragments included by every command spec
+│       │   ├── premises.md                # Ported from .claude/CLAUDE.md § CRITICAL PREMISES
+│       │   ├── tdd-cycle.md               # Ported from .claude/CLAUDE.md § 5 (TDD mandate and Orchestrator flow)
+│       │   └── dependency-graph.md        # Ported from .claude/CLAUDE.md § 4 (dependency-graph mandate)
+│       └── commands/                      # Canonical command specs (populated in #C)
+│           └── .gitkeep
 ├── build.rs                               # Build script: generates man page (maestro.1) and shell completions (bash, zsh, fish) into OUT_DIR at build time using clap_mangen and clap_complete  [Issue #18]
 ├── src/
 │   ├── lib.rs                             # Library facade; exposes session::parser and session::types for benchmark crates; pub mod icon_mode and pub mod icons added so shared icon modules are accessible as library crate items; agent_graph_spike module removed; the now-removed ADR-002 spike's #[cfg(feature = "spike")] pub mod agent_personalities block was cleaned up in issue #536  [Issue #307, #308, #526, #536, #539]
@@ -679,6 +689,9 @@ maestro/
 | `.claude/hooks/notify.sh` | Unix notification hook; Slack payload constructed with `jq -n --arg` (no raw string interpolation); PowerShell toast uses `escape_powershell_string` helper; `jq` is a soft runtime dependency — Slack notifications are skipped silently when absent (Issue #583) |
 | `.claude/skills/` | Reusable knowledge bases for subagents |
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
+| `.maestro/templates/` | Canonical template sources for the render engine; never edit rendered outputs under `.claude/commands/` directly  [Issue #700] |
+| `.maestro/templates/core/` | Shared fragments (premises, TDD cycle, dependency-graph mandate) included by every command spec |
+| `.maestro/templates/manifest.toml` | Placeholder vocabulary skeleton; consumed by the render engine (#B) |
 | `build.rs` | Build script: generates `maestro.1` man page and bash/zsh/fish completions into `OUT_DIR` at build time (Issue #18) |
 | `docs/` | Project documentation |
 | `docs/adr/` | Architecture Decision Records (ADRs); the only artifact merged to main from a spike branch |

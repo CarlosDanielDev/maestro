@@ -7,6 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+- chore(templates): scaffold canonical templates layer at `.maestro/templates/` — core fragments (premises, tdd-cycle, dependency-graph), manifest skeleton, README; L0 foundation for the render engine and canonical command specs (#700)
+
 ## [0.26.0] - 2026-05-12
 
 ### Added
