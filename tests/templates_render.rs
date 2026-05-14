@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use maestro::agent_provider::ClaudeProvider;
+use maestro::agent_provider::{ClaudeProvider, CodexProvider};
 use maestro::templates::render_for_provider;
 
 fn assert_byte_identical(command: &str, rendered: &str, committed_path: &Path) {
@@ -89,6 +89,67 @@ fn simplify_render_contains_no_unresolved_placeholders() {
     assert!(
         !rendered.contains("{{"),
         "simplify render contains unexpanded `{{{{...}}}}`:\n{rendered}"
+    );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Codex provider — semantic assertions (no committed baselines because
+// Codex has no `.codex/commands/` analogue; see CodexRules::target_dir).
+// ──────────────────────────────────────────────────────────────────────────
+
+fn render_codex(command: &str) -> String {
+    render_for_provider(&CodexProvider::new("codex"), command)
+        .unwrap_or_else(|e| panic!("render_for_provider failed for codex `{command}`: {e}"))
+}
+
+#[test]
+fn codex_renders_all_four_canonical_commands_with_zero_unresolved_placeholders() {
+    for command in ["implement", "pushup", "plan-feature", "simplify"] {
+        let rendered = render_codex(command);
+        assert!(
+            !rendered.contains("{{") && !rendered.contains("}}"),
+            "codex render of `{command}` contains unexpanded `{{{{...}}}}`:\n{rendered}"
+        );
+    }
+}
+
+#[test]
+fn codex_implement_render_contains_inline_subtask_heading() {
+    let rendered = render_codex("implement");
+    assert!(
+        rendered.contains("## Sub-task:"),
+        "expected `## Sub-task:` in codex implement render; got:\n{}",
+        &rendered[..rendered.len().min(500)]
+    );
+    assert!(
+        !rendered.contains("Use the Task tool"),
+        "codex render leaked Claude phrasing"
+    );
+}
+
+#[test]
+fn codex_simplify_render_inlines_skill_body() {
+    let rendered = render_codex("simplify");
+    assert!(
+        rendered.contains("project-patterns"),
+        "expected inlined skill body in codex simplify render"
+    );
+    assert!(
+        !rendered.contains(".claude/skills/project-patterns/SKILL.md)"),
+        "codex render leaked Claude's skill_link phrasing"
+    );
+}
+
+#[test]
+fn codex_hook_gate_uses_provider_neutral_dot_maestro_path() {
+    // Verifies the `{{HOOK_GATE script="implement-gates.sh" args="..."}}`
+    // expansion uses `.maestro/hooks/`. Literal `.claude/hooks/` mentions
+    // inside `core/premises.md` prose are out-of-scope here — a separate
+    // ticket will rewrite the canonical premises to be provider-neutral.
+    let rendered = render_codex("implement");
+    assert!(
+        rendered.contains("bash .maestro/hooks/implement-gates.sh"),
+        "expected provider-neutral hook path from HOOK_GATE expansion"
     );
 }
 

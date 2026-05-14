@@ -9,6 +9,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 - chore(templates): scaffold canonical templates layer at `.maestro/templates/` — core fragments (premises, tdd-cycle, dependency-graph), manifest skeleton, README; L0 foundation for the render engine and canonical command specs (#700)
+- feat(templates): `CodexRules` — concrete `TemplateProviderRules` impl for Codex; `target_dir()=None`, inline sub-task headers, provider-neutral hook paths, verbatim skill bodies, link-free subagent tables; 4 integration tests added to `tests/templates_render.rs` (#704)
 
 ## [0.26.0] - 2026-05-12
 

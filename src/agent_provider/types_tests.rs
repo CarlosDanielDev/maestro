@@ -190,17 +190,14 @@ fn default_template_rules_returns_null_rules_fail_closed() {
 
 #[test]
 fn providers_without_dedicated_rules_inherit_default_template_rules() {
-    use crate::agent_provider::{
-        CodexProvider, MinimaxProvider, OllamaProvider, OpenCodeProvider, QwenProvider,
-    };
+    use crate::agent_provider::{MinimaxProvider, OllamaProvider, OpenCodeProvider, QwenProvider};
     use crate::templates::TemplateError;
 
-    // ClaudeProvider intentionally omitted — it ships dedicated ClaudeRules
-    // (issue #703). Other concrete providers still inherit NullRules until
-    // their per-provider rule modules land (#704, #705).
+    // ClaudeProvider (#703) and CodexProvider (#704) intentionally omitted —
+    // they ship dedicated rule modules. Other concrete providers still
+    // inherit NullRules until their per-provider rule modules land (#705).
     let providers: Vec<Arc<dyn AgentProvider>> = vec![
         Arc::new(QwenProvider::new("qwen")),
-        Arc::new(CodexProvider::new("codex")),
         Arc::new(OpenCodeProvider::new("opencode")),
         Arc::new(
             OllamaProvider::new("ollama", "http://localhost:11434", "llama3", 10, None)
@@ -245,6 +242,20 @@ fn claude_provider_overrides_default_template_rules() {
         Some(std::path::Path::new(".claude/commands")),
     );
     let list = rules.subagent_list().expect("ClaudeRules.subagent_list ok");
+    assert!(list.contains("subagent-gatekeeper"), "{list}");
+}
+
+#[test]
+fn codex_provider_overrides_default_template_rules() {
+    use crate::agent_provider::CodexProvider;
+
+    let provider: Arc<dyn AgentProvider> = Arc::new(CodexProvider::new("codex"));
+    let rules = provider.template_rules();
+    assert!(
+        rules.target_dir().is_none(),
+        "Codex has no project-level slash-command discovery dir; expected None",
+    );
+    let list = rules.subagent_list().expect("CodexRules.subagent_list ok");
     assert!(list.contains("subagent-gatekeeper"), "{list}");
 }
 

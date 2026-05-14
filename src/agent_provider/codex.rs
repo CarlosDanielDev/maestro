@@ -252,6 +252,10 @@ impl AgentProvider for CodexProvider {
         }
     }
 
+    fn template_rules(&self) -> &'static dyn crate::templates::TemplateProviderRules {
+        crate::templates::provider_rules::codex_rules()
+    }
+
     async fn run(
         &self,
         request: AgentRequest,
@@ -372,12 +376,10 @@ impl AgentProvider for CodexProvider {
 
 fn codex_prompt(request: &AgentRequest) -> String {
     match request.system_prompt_appendix.as_deref() {
-        Some(appendix) if !appendix.trim().is_empty() => {
-            format!(
-                "Maestro session context:\n{}\n\nUser task:\n{}",
-                appendix, request.prompt
-            )
-        }
+        Some(appendix) if !appendix.trim().is_empty() => format!(
+            "Maestro session context:\n{}\n\nUser task:\n{}",
+            appendix, request.prompt
+        ),
         _ => request.prompt.clone(),
     }
 }
