@@ -30,6 +30,9 @@ mod review;
 mod session;
 mod settings;
 mod state;
+// Bin entry never reaches into templates directly; symbols are exercised
+// through provider trait defaults and via the lib (see `src/lib.rs`).
+#[allow(dead_code)]
 mod templates;
 mod tui;
 mod updater;

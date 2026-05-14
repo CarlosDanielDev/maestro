@@ -16,6 +16,7 @@ use crate::templates::TemplateError;
 use crate::templates::provider_rules::TemplateProviderRules;
 
 pub(crate) const MAX_INCLUDE_DEPTH: usize = 8;
+#[cfg(test)]
 pub(crate) const SOURCE_LABEL: &str = "<template>";
 
 pub(crate) use tokenize::tokenize;
@@ -148,6 +149,7 @@ fn expand(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn render(
     input: &str,
     rules: &dyn TemplateProviderRules,

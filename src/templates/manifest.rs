@@ -6,6 +6,9 @@
 
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
+// Manifest fields/methods are populated for #706 (sync-templates CLI) and
+// downstream consumers; load() exercises them via serde at parse time.
+#![allow(dead_code)]
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
