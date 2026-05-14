@@ -179,6 +179,10 @@ impl AgentProvider for ClaudeProvider {
         }
     }
 
+    fn template_rules(&self) -> &'static dyn crate::templates::TemplateProviderRules {
+        crate::templates::provider_rules::claude_rules()
+    }
+
     async fn run(
         &self,
         request: AgentRequest,

@@ -1,8 +1,114 @@
+---
+command: implement
+version: 1.0.0
+description: Fetch a GitHub issue and implement it following the enforced TDD harness.
+placeholders:
+  - HOOK_GATE
+  - INCLUDE
+  - INVOKE_SUBAGENT
+includes:
+  - core/premises.md
+  - core/tdd-cycle.md
+source_provenance:
+  ported_from: .claude/commands/implement.md
+  ported_at: 2026-05-13
+---
+
 # Implement Issue
 
 Fetch a GitHub issue and implement it following the enforced TDD harness.
 
 **Usage:** `/implement #123` or `/implement 123 --english --orchestrator`
+
+# Premises (Canonical Fragment)
+
+> Canonical fragment. Do not edit per-provider — render via `manifest.toml`.
+> Source of truth ported from `.claude/CLAUDE.md` § CRITICAL PREMISES.
+
+## 1. YOU ARE THE ONLY AGENT THAT WRITES CODE
+
+**The orchestrator is the ONLY agent authorized to:**
+- Write, edit, or create code files
+- Execute bash commands
+- Run tests
+- Create any files (except documentation - see docs-analyst)
+
+**ALL subagents are CONSULTIVE ONLY.** They:
+- Analyze, research, and plan
+- Provide detailed recommendations with exact file paths and code examples
+- Return blueprints for YOU to implement
+
+**Exception:** `subagent-docs-analyst` can create/edit .md files.
+
+## 2. Subagent Delegation Depends on MODE
+
+**In 🤖 Subagents Orchestrator Mode - You are FORBIDDEN from doing these tasks directly:**
+- Researching or exploring codebases → delegate to subagents
+- Planning implementations → delegate to subagents
+- Analyzing code or architecture → delegate to subagents
+- Web searches for solutions → delegate to subagents
+- Reading documentation to understand how things work → delegate to subagents
+
+**Orchestrator Mode workflow is ALWAYS (TDD ENFORCED):**
+1. Receive user request
+2. **Pre-check hook (MANDATORY):**
+   - Run `bash .claude/hooks/implement-gates.sh <issue-number>`
+   - Abort on any non-zero exit (see exit-code table in `/implement`)
+3. **Delegate to Gatekeeper (MANDATORY):**
+   - `subagent-gatekeeper` → structured JSON report (DOR, blockers, contracts, task_type)
+   - Parse via `.claude/hooks/parse_gatekeeper_report.py`
+   - On DOR FAIL → by default, orchestrator prints the proposed comment for human review and **STOP**s (does NOT auto-post); pass `--auto-comment` to `/implement` to auto-post the comment and apply `needs-info` label
+   - On blocker/contract FAIL → **STOP** with reasons from the report
+4. **Delegate to Architect for blueprint - MANDATORY:**
+   - `subagent-architect` - For all architecture decisions
+   - **NEVER skip architecture step - the architect MUST be called**
+5. **CONTRACT VALIDATION (if task involves API endpoints) - MANDATORY:**
+   - Run `/validate-contracts` to check existing models against `docs/api-contracts/` schemas
+   - If no contract schema exists for the endpoint → **STOP and ask user to provide the JSON schema**
+   - If contract exists but models mismatch → fix models BEFORE proceeding
+6. **Delegate to QA for test blueprint - MANDATORY (TDD):**
+   - `subagent-qa` - Provides test cases, mocks, and expected behaviors
+   - **Tests are designed BEFORE implementation**
+7. **Write tests FIRST (RED)** — verify they fail (enforced by `/implement` Step 6e bash gate)
+8. **Implement minimum code (GREEN)** — make tests pass (enforced by `/implement` Step 6g bash gate)
+9. **Refactor** — clean up while tests stay green
+10. Delegate to Security for review of implemented code
+11. Call docs-analyst at the end
+
+**In 🎸 Vibe Coding Mode - You work DIRECTLY:**
+- Research, plan, and execute yourself
+- ⚠️ WARN user about context window limitations
+- ONLY `subagent-docs-analyst` is mandatory (at task end)
+
+**In 📚 Training Mode - You ONLY MODIFY `.claude/` DIRECTORY:**
+- You can ONLY edit files inside `.claude/` directory (agents, skills, commands, CLAUDE.md)
+- You help user configure and modify the agent structure
+- You CANNOT modify any project files outside `.claude/` directory
+- This mode is for managing and improving the agent system itself
+
+## 3. DOR — Definition of Ready (Issue Quality Gate)
+
+**Before starting any issue, the orchestrator MUST verify the issue meets the Definition of Ready.**
+
+A conforming issue contains these sections (enforced by GitHub issue templates):
+
+| Section | Feature | Bug | Description |
+|---------|---------|-----|-------------|
+| Overview | Required | Required | What and why |
+| Current Behavior | — | Required | What is broken |
+| Expected Behavior | Required | Required | Desired outcome |
+| Steps to Reproduce | — | Required | How to trigger the bug |
+| Acceptance Criteria | Required | Required | Testable conditions |
+| Files to Modify | Required | Optional | Expected file changes |
+| Test Hints | Required | Optional | Mocking and edge-case guidance |
+| Blocked By | Required | Required | Dependency issues (issue numbers or "None") |
+| Definition of Done | Required | Required | Completion checklist |
+
+**If an issue is missing required DOR fields, the orchestrator MUST:**
+1. Comment on the issue requesting the missing information
+2. Apply the `needs-info` label
+3. NOT start implementation until the DOR is satisfied
+
 
 ---
 
@@ -21,10 +127,10 @@ Fetch a GitHub issue and implement it following the enforced TDD harness.
 | `--vibe-coding` | `-vc` | Use Vibe Coding mode |
 | `--continue` | — | Step 5 idempotency: continue on existing branch (skip prompt) |
 | `--restart` | — | Step 5 idempotency: delete existing branch and start fresh (skip prompt; still requires inner `RESTART` confirmation if interactive) |
-| `--dirty-tree-action=stash\|abort\|ask` | — | Pre-check Gate 6: how to handle a dirty working tree. Pass-through to `implement-gates.sh`. |
+| `--dirty-tree-action=stash\|abort\|ask` | — | Pre-check Gate 6: how to handle a dirty working tree. Pass-through to the gate hook. |
 | `--auto-comment` | — | Step 4 DOR remediation: auto-post the gatekeeper-drafted comment + `needs-info` label. Default: print the proposed action and STOP for human review. |
 
-`--training` / `-t` is explicitly rejected — Training mode is for `.claude/` configuration, not implementation.
+`--training` / `-t` is explicitly rejected — Training mode is for provider-configuration directories, not implementation.
 
 `--continue` and `--restart` are mutually exclusive — passing both is an error.
 
@@ -51,9 +157,9 @@ All subsequent gate commands in this file reference `$ISSUE_NUMBER`, not bare `<
 If `--training` or `-t` is detected, output:
 
 ```
-Training mode is for configuring .claude/ agents, skills, and commands.
+Training mode is for configuring provider agents, skills, and commands.
 /implement is for building features from GitHub issues.
-Drop --training, or use a free-form prompt for .claude/ configuration.
+Drop --training, or use a free-form prompt for provider configuration.
 ```
 
 and exit 0 (not an error).
@@ -69,13 +175,12 @@ If flags provided, honor them. Otherwise, ask the user.
 Run the mechanical pre-check hook. Abort on non-zero exit, printing stderr verbatim. Pass through `--dirty-tree-action=...` from Step 0 if the user supplied it.
 
 ```bash
-bash .claude/hooks/implement-gates.sh "$ISSUE_NUMBER" \
-  ${DIRTY_TREE_ACTION:+--dirty-tree-action=$DIRTY_TREE_ACTION}
+bash .claude/hooks/implement-gates.sh $ISSUE_NUMBER ${DIRTY_TREE_ACTION:+--dirty-tree-action=$DIRTY_TREE_ACTION}
 ```
 
-The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success AND writes the same path to a sentinel file resolved via `.claude/hooks/sentinel-path.sh` (preferred) plus the legacy `/tmp/maestro-current-gate-dir` (back-compat). The sentinel allows subsequent Bash tool calls to recover `GATE_LOG_DIR` without relying on env-var persistence (each Bash call is a fresh shell — `export` does not propagate).
+The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success AND writes the same path to a sentinel file. The sentinel allows subsequent shell calls to recover `GATE_LOG_DIR` without relying on env-var persistence (each fresh shell loses `export`).
 
-The resolution chain (per #545 P3 — symlink-attack hardening on multi-user Linux) is `$XDG_RUNTIME_DIR` → `$HOME/.cache/maestro` → `${TMPDIR:-/tmp}`. The hook prints the chosen path as `sentinel: <path>` on stdout.
+The resolution chain (symlink-attack hardening on multi-user Linux) is `$XDG_RUNTIME_DIR` → `$HOME/.cache/maestro` → `${TMPDIR:-/tmp}`. The hook prints the chosen path as `sentinel: <path>` on stdout.
 
 Recovery pattern for any later step (walks the same chain):
 
@@ -94,14 +199,14 @@ done
 
 The sentinel file is overwritten on the next `/implement` run, so it always points at the current gate session.
 
-**Non-TTY behavior of the hook (Bash tool default):** `implement-gates.sh` detects no-TTY (`! -t 0`) and refuses to prompt for the dirty-tree action. If the tree is dirty and `--dirty-tree-action=` is not passed, the hook prints an actionable message and exits 6. Re-run the slash command with `--dirty-tree-action=stash` (auto-stash) or `--dirty-tree-action=abort` (clean fail) to unblock.
+**Non-TTY behavior of the hook:** the gate hook detects no-TTY (`! -t 0`) and refuses to prompt for the dirty-tree action. If the tree is dirty and `--dirty-tree-action=` is not passed, the hook prints an actionable message and exits 6. Re-run the slash command with `--dirty-tree-action=stash` (auto-stash) or `--dirty-tree-action=abort` (clean fail) to unblock.
 
 Exit codes:
 - `0` — proceed.
 - `1` — generic failure (gh missing, not authed, not in repo, closed issue). Abort with the hook's stderr.
 - `2` — baseline cargo test failing. Abort — fix the baseline before starting.
 - `6` — dirty tree, user chose abort. Abort cleanly.
-- `7+` — preflight.sh failure. Abort with its stderr.
+- `7+` — preflight failure. Abort with its stderr.
 
 ### Step 3: Read cached issue JSON and summary
 
@@ -147,23 +252,10 @@ report = {
     "report_version": 1,
     "status": "PASS",
     "task_type": task_map.get(lint.get("task_type"), "implementation"),
-    "dor": {
-        "passed": True,
-        "missing_sections": [],
-        "weak_sections": [],
-    },
-    "blockers": {
-        "passed": True,
-        "open": [],
-    },
-    "contracts": {
-        "passed": True,
-        "missing": [],
-    },
-    "remediation": {
-        "comment_body": "",
-        "labels_to_add": [],
-    },
+    "dor": {"passed": True, "missing_sections": [], "weak_sections": []},
+    "blockers": {"passed": True, "open": []},
+    "contracts": {"passed": True, "missing": []},
+    "remediation": {"comment_body": "", "labels_to_add": []},
     "reasons": [],
 }
 json.dump(report, open(sys.argv[2], "w"), separators=(",", ":"))
@@ -177,17 +269,17 @@ else
 fi
 ```
 
-If the fast path did not write `$GATE_LOG_DIR/gatekeeper.json`, invoke
-`subagent-gatekeeper` via the `Agent` tool. Pass the issue JSON (from
-`$GATE_LOG_DIR/issue.json`), selected mode, and repo name. This preserves the
-subagent interface for ambiguous lint failures, missing sections, open blockers,
-and contract-validation cases.
+If the fast path did not write `$GATE_LOG_DIR/gatekeeper.json`, invoke the gatekeeper subagent:
+
+Use the Task tool to launch the `subagent-gatekeeper` subagent with the prompt below.
+
+Classify issue $ISSUE_NUMBER (DOR, blockers, contracts, task_type). Return the structured JSON gatekeeper report.
 
 The subagent's response will contain a fenced `json gatekeeper` code block. Pipe its full response through the parser:
 
 ```bash
 if [ ! -f "$GATE_LOG_DIR/gatekeeper.json" ]; then
-  echo "$SUBAGENT_RESPONSE" | python3 .claude/hooks/parse_gatekeeper_report.py > "$GATE_LOG_DIR/gatekeeper.json"
+  echo "$SUBAGENT_RESPONSE" | python3 scripts/parse_gatekeeper_report.py > "$GATE_LOG_DIR/gatekeeper.json"
 fi
 ```
 
@@ -204,16 +296,12 @@ if [ "$status" = "FAIL" ]; then
     labels_csv=$(jq -r '.remediation.labels_to_add | join(", ")' "$GATE_LOG_DIR/gatekeeper.json")
 
     if [ "${AUTO_COMMENT:-0}" = "1" ]; then
-      # Operator opted in via --auto-comment: post the comment + apply labels.
       gh issue comment "$ISSUE_NUMBER" --body "$comment_body"
       for label in $(jq -r '.remediation.labels_to_add[]' "$GATE_LOG_DIR/gatekeeper.json"); do
         gh issue edit "$ISSUE_NUMBER" --add-label "$label"
       done
       echo "Gatekeeper FAIL: DOR auto-remediation posted (--auto-comment)." >&2
     else
-      # Default: print the proposed action for human review, do NOT post.
-      # Posting LLM-emitted text to a public issue is a non-recoverable
-      # action; default to human-in-the-loop (#545 P1).
       echo "Gatekeeper FAIL: DOR not satisfied." >&2
       echo "Proposed remediation (NOT posted; re-run with --auto-comment to post):" >&2
       echo "" >&2
@@ -232,7 +320,6 @@ if [ "$status" = "FAIL" ]; then
   exit 5
 fi
 
-# PASS — continue with the classified task_type.
 echo "Gatekeeper PASS (task_type: $task_type)"
 export TASK_TYPE="$task_type"
 ```
@@ -277,7 +364,7 @@ Resolution rules (in order):
    Choice [C/R/A]:
    ```
 
-4. If neither flag was passed AND stdin is **not** a TTY (the default under the Claude Code Bash tool) → default to **(A)bort** with this message:
+4. If neither flag was passed AND stdin is **not** a TTY → default to **(A)bort** with this message:
 
    ```
    Branch `<existing>` already exists and stdin is not interactive.
@@ -291,7 +378,7 @@ Handle each choice:
 **(C)ontinue:**
 - `git checkout <existing>`.
 - Re-invoke the gatekeeper (idempotent).
-- When delegating to architect/QA in Step 6, prepend the resumption context prompt from the spec (§Idempotency UX → Continue semantics):
+- When delegating to architect/QA in Step 6, prepend the resumption context prompt:
 
   > **Context for resumption:** This branch already has commits. Here is the history since `main`:
   >
@@ -299,9 +386,9 @@ Handle each choice:
   > $(git log --oneline main..HEAD)
   > ```
   >
-  > Before producing a full blueprint, inspect these commits (via Read / Grep on the branch). If the work described by the issue appears substantially done (architecture scaffolded, tests present, or implementation in place), return a **minimal response** acknowledging the existing state and listing only what remains. Do not duplicate work already in the branch. If the branch diverges from what you would design (e.g., different module layout, different abstractions), flag the divergence and recommend either reconciling or restarting — do not silently layer a conflicting plan on top.
+  > Before producing a full blueprint, inspect these commits. If the work described by the issue appears substantially done (architecture scaffolded, tests present, or implementation in place), return a **minimal response** acknowledging the existing state and listing only what remains. Do not duplicate work already in the branch. If the branch diverges from what you would design (e.g., different module layout, different abstractions), flag the divergence and recommend either reconciling or restarting — do not silently layer a conflicting plan on top.
 
-- **Divergence handling (spec §Idempotency UX → Divergence handling):** if the architect or QA subagent flags divergence, the orchestrator presents a secondary prompt — but only when stdin is a TTY:
+- **Divergence handling:** if the architect or QA subagent flags divergence, the orchestrator presents a secondary prompt — but only when stdin is a TTY:
 
   ```
   Architect detected divergence between the existing branch and the
@@ -320,7 +407,7 @@ Handle each choice:
   - **(S)witch to Restart**: fall through to the Restart flow below (typed `RESTART` confirmation, branch deletion).
   - **(A)bort**: exit cleanly, tell the user to inspect manually.
 
-  **Non-TTY default** (Bash tool): emit the divergence summary to the user, default to **(A)bort**, and instruct: `Re-run with /implement #<N> --restart` to take the Switch-to-Restart path explicitly, or fix the divergence manually then re-run with `--continue`. Do not silently reconcile — divergence is exactly the case the human should adjudicate.
+  **Non-TTY default:** emit the divergence summary to the user, default to **(A)bort**, and instruct: `Re-run with /implement #<N> --restart` to take the Switch-to-Restart path explicitly, or fix the divergence manually then re-run with `--continue`. Do not silently reconcile — divergence is exactly the case the human should adjudicate.
 
 **(R)estart:**
 - If reached via the interactive prompt, require typed `RESTART` confirmation. If reached via `--restart`, the flag itself is the confirmation — skip the typed gate.
@@ -337,19 +424,100 @@ If the user is already on the matching branch, skip the prompt and use Continue 
 
 Vibe mode skips 6a and 6c. All gates use `bash` (not `sh`) — `${PIPESTATUS[0]}` requires it.
 
-#### 6a. `subagent-architect` → blueprint
+The TDD cycle below is non-negotiable. The full canonical fragment:
 
-Orchestrator mode only. Invoke `subagent-architect` with the condensed issue
+# TDD Cycle (Canonical Fragment)
+
+> Canonical fragment. Do not edit per-provider — render via `manifest.toml`.
+> Source of truth ported from `.claude/CLAUDE.md` § 5.
+
+## TDD Is Mandatory — Non-Negotiable
+
+**Every implementation MUST follow Test-Driven Development. No exceptions.**
+
+**The TDD cycle is ALWAYS:**
+1. **RED — Write the test FIRST**
+   - Write a failing test that defines the expected behavior
+   - The test MUST fail before any implementation exists
+
+2. **GREEN — Write the MINIMUM code to pass**
+   - Implement only what is needed to make the failing test pass
+   - Do NOT over-engineer or add features beyond what the test requires
+   - Mock dependencies as needed (traits/protocols + mock implementations)
+
+3. **REFACTOR — Clean up while tests stay green**
+   - Improve code quality without changing behavior
+   - All tests MUST remain passing after refactoring
+
+**Rules:**
+- 🚫 **NEVER write implementation code without a failing test first**
+- 🚫 **NEVER skip the mocking step** — dependencies MUST be mocked via traits/protocols
+- ✅ Tests are written BEFORE implementation in ALL modes
+- ✅ Mocking pattern: Define a trait/protocol → Create a mock → Inject mock in tests
+
+## Orchestrator Mode TDD Flow
+
+```
+Pre-check hook (implement-gates.sh) → STOP on any gate failure
+    │
+    ▼
+subagent-gatekeeper → STOP if DOR/blockers/contracts FAIL
+                      (DOR FAIL: print proposed comment for human review by default;
+                       pass --auto-comment to /implement to auto-post + needs-info)
+    │
+    ▼
+subagent-architect → Blueprint (includes testable interfaces)
+    │
+    ▼
+CONTRACT VALIDATION (if API endpoints involved)
+  → /validate-contracts checks models vs docs/api-contracts/ schemas
+  → STOP if no schema exists — ask user for JSON schema
+  → Fix mismatches before proceeding
+    │
+    ▼
+subagent-qa → Test blueprint (test cases, mocks)
+    │
+    ▼
+YOU WRITE TESTS FIRST (from QA blueprint)
+    │
+    ▼
+YOU VERIFY TESTS FAIL (RED phase)
+    │
+    ▼
+YOU IMPLEMENT (GREEN phase — minimum code to pass)
+    │
+    ▼
+YOU REFACTOR (if needed, tests stay green)
+    │
+    ▼
+subagent-security-analyst → Security review
+    │
+    ▼
+subagent-docs-analyst → Documentation
+```
+
+
+#### 6a. Architect → blueprint
+
+Orchestrator mode only. Invoke the architect subagent with the condensed issue
 summary from `$GATE_LOG_DIR/issue-summary.md` and the architecture blueprint
 request. If Step 5 chose Continue, prepend the resumption context prompt.
+
+Use the Task tool to launch the `subagent-architect` subagent with the prompt below.
+
+Produce architecture blueprint for issue $ISSUE_NUMBER using $GATE_LOG_DIR/issue-summary.md; on Continue, prepend resumption context.
 
 #### 6b. `/validate-contracts` (if architect blueprint touches API endpoints)
 
 Skip if no endpoints.
 
-#### 6c. `subagent-qa` → test blueprint
+#### 6c. QA → test blueprint
 
-Orchestrator mode only. Invoke `subagent-qa` with the architect's blueprint. If Step 5 chose Continue, prepend the resumption context prompt.
+Orchestrator mode only. Invoke the QA subagent with the architect's blueprint. If Step 5 chose Continue, prepend the resumption context prompt.
+
+Use the Task tool to launch the `subagent-qa` subagent with the prompt below.
+
+Produce test blueprint from architect's blueprint for issue $ISSUE_NUMBER; on Continue, prepend resumption context.
 
 #### 6d. Write tests from QA blueprint
 
@@ -366,9 +534,7 @@ For most tasks `cargo test` is the binding RED/GREEN gate. For tasks where the a
 | Shell scripts (`scripts/**`) | `bash -n` + `shellcheck` on changed files | `cargo test --quiet` |
 | Docs (`*.md`, `directory-tree.md`) | none (skipped) | `cargo test --quiet` |
 
-For CI / non-Rust tasks the orchestrator runs the binding gate before and after implementation, and `cargo test` as a regression-only check. The 6e/6g `cargo test` blocks below remain the default; substitute the appropriate gate when the gatekeeper's advisory or the issue body indicates a non-Rust binding gate. The gatekeeper's report explicitly flags this — look for an "advisory" / "binding gate" note in the PASS branch.
-
-**Note (post-#510):** the per-issue `scripts/verify-issue-NNN.sh` convention from #485 and #507 is retired. CI-only changes are gated by tool-specific binding gates (`actionlint`, `shellcheck`, etc.) wired into `.github/workflows/ci.yml`. Do not introduce new `verify-issue-*.sh` scripts.
+For CI / non-Rust tasks the orchestrator runs the binding gate before and after implementation, and `cargo test` as a regression-only check. The 6e/6g `cargo test` blocks below remain the default; substitute the appropriate gate when the gatekeeper's advisory or the issue body indicates a non-Rust binding gate.
 
 #### 6e. RED checkpoint (GATE)
 
@@ -419,13 +585,21 @@ cargo test --quiet 2>&1 | tee "$GATE_LOG_DIR/green-refactor.log"
 [ ${PIPESTATUS[0]} -eq 0 ] || { echo "Refactor broke tests"; exit 4; }
 ```
 
-#### 6i. `subagent-security-analyst` → review
+#### 6i. Security review
 
-Both modes. Invoke security analyst against the newly-written code.
+Both modes. Invoke the security analyst against the newly-written code.
 
-#### 6j. `subagent-docs-analyst` → docs + directory-tree.md
+Use the Task tool to launch the `subagent-security-analyst` subagent with the prompt below.
+
+Review newly-written code for issue $ISSUE_NUMBER against OWASP Top 10, secrets handling, and input validation.
+
+#### 6j. Documentation
 
 Both modes. Mandatory at task end.
+
+Use the Task tool to launch the `subagent-docs-analyst` subagent with the prompt below.
+
+Update documentation and directory-tree.md for issue $ISSUE_NUMBER.
 
 ### Step 7: Handoff
 

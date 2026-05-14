@@ -28,6 +28,20 @@ directly. The canonical-vs-rendered split exists so cross-provider rules
 > Authoritative project layout lives in `directory-tree.md` at the repo root.
 > The snippet above is illustrative for this subtree only.
 
+## Cutover policy (post-#703)
+
+`.maestro/templates/` is the **single source of truth** for slash-command specs.
+`.claude/commands/*.md` files that are listed as `[generated]` in `directory-tree.md`
+(`implement.md`, `pushup.md`, `plan-feature.md`, `simplify.md`) are **rendered artifacts**.
+
+- **Never edit generated files directly.** Edit the canonical source in
+  `.maestro/templates/commands/` and re-render.
+- **CI enforces drift.** `tests/templates_render.rs` contains byte-identical regression
+  tests. Any mismatch between a canonical source and its rendered output is caught at
+  compile/test time.
+- Commands without a canonical spec (`create-subagent.md`, `release.md`, etc.) remain
+  hand-maintained for now.
+
 ## Forward-reference legend
 
 Letter codes (`#A`, `#B`, `#G`) reference work items in the approved
