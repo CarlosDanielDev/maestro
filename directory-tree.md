@@ -196,8 +196,9 @@ maestro/
 │   │   ├── error.rs                       # `TemplateError` enum (thiserror); variants: UnknownPlaceholder, InvalidPlaceholder, SandboxEscape, IncludeCycle, ManifestMissing, ManifestParse, FileMissing, Io, UnterminatedPlaceholder, UnsupportedByProvider, UnsupportedManifestVersion  [Issue #701]
 │   │   ├── manifest.rs                    # `Manifest::load(path)` parses `.maestro/templates/manifest.toml` into typed structs; `#[serde(deny_unknown_fields)]` on all TOML tables  [Issue #701]
 │   │   ├── provider_rules/
-│   │   │   ├── mod.rs                     # `TemplateProviderRules` trait (per-provider placeholder validation + unsupported-feature guard); `NullRules` fail-closed stub; `null_rules()` free fn returning `&'static NullRules`; re-exports `ClaudeRules`  [Issue #701, #703]
-│   │   │   └── claude.rs                  # `ClaudeRules` — concrete `TemplateProviderRules` impl for Claude Code; sandbox-validated `include()` guard; 11 unit tests  [Issue #703]
+│   │   │   ├── mod.rs                     # `TemplateProviderRules` trait (per-provider placeholder validation + unsupported-feature guard); `NullRules` fail-closed stub; `null_rules()` free fn returning `&'static NullRules`; re-exports `ClaudeRules` and `codex_rules()`  [Issue #701, #703, #704]
+│   │   │   ├── claude.rs                  # `ClaudeRules` — concrete `TemplateProviderRules` impl for Claude Code; sandbox-validated `include()` guard; 11 unit tests  [Issue #703]
+│   │   │   └── codex.rs                   # `CodexRules` — concrete `TemplateProviderRules` impl for Codex; `target_dir()=None`; `invoke_subagent` inlines as `## Sub-task`; `hook_gate` emits provider-neutral bash path; `skill_link` inlines full body; `subagent_list` returns link-free Markdown table  [Issue #704]
 │   │   └── renderer/
 │   │       ├── mod.rs                     # Placeholder-expansion engine; `MAX_INCLUDE_DEPTH = 8`; `render_template()` entry point; include-cycle detection  [Issue #701]
 │   │       ├── tokenize.rs                # Hand-written tokenizer (no regex); splits template source into `Token::Literal` / `Token::Placeholder` / `Token::Include` variants; detects unterminated placeholder delimiters  [Issue #701]
@@ -762,17 +763,19 @@ maestro/
 | `src/templates/` | Canonical command-template render engine; `render_for_provider(provider, command)` is the public entry point; sandbox-validated path traversal; MAX_INCLUDE_DEPTH=8 include guard (Issue #701) |
 | `src/templates/error.rs` | `TemplateError` enum (thiserror); 11 variants covering all failure modes from manifest I/O to sandbox escape and include cycles (Issue #701) |
 | `src/templates/manifest.rs` | `Manifest::load(path)` — deserializes `.maestro/templates/manifest.toml`; `#[serde(deny_unknown_fields)]` enforces forward-compatibility (Issue #701) |
-| `src/templates/provider_rules/mod.rs` | `TemplateProviderRules` trait; `NullRules` fail-closed stub; `null_rules()` helper returns `&'static NullRules`; re-exports `ClaudeRules` (Issues #701, #703) |
+| `src/templates/provider_rules/mod.rs` | `TemplateProviderRules` trait; `NullRules` fail-closed stub; `null_rules()` helper returns `&'static NullRules`; re-exports `ClaudeRules` and `codex_rules()` (Issues #701, #703, #704) |
 | `src/templates/provider_rules/claude.rs` | `ClaudeRules` — concrete `TemplateProviderRules` for Claude Code; sandbox-validated `include()` guard; 11 unit tests (Issue #703) |
+| `src/templates/provider_rules/codex.rs` | `CodexRules` — concrete `TemplateProviderRules` for Codex; `target_dir()=None`; `invoke_subagent` inlines as `## Sub-task: {name}`; `hook_gate` emits provider-neutral `bash .maestro/hooks/<script>`; `skill_link` inlines full skill body; `subagent_list` returns link-free Markdown table (Issue #704) |
 | `src/templates/renderer/mod.rs` | Placeholder-expansion engine; walks token stream produced by `tokenize.rs`; enforces `MAX_INCLUDE_DEPTH = 8`; detects include cycles via a seen-set (Issue #701) |
 | `src/templates/renderer/tokenize.rs` | Hand-written tokenizer (no regex); emits `Token::Literal`, `Token::Placeholder`, `Token::Include`; returns `TemplateError::UnterminatedPlaceholder` on malformed input (Issue #701) |
 | `src/templates/renderer/tests/mod.rs` | 21 unit tests for the renderer: literal pass-through, placeholder expansion, unknown-placeholder error, include depth limit, sandbox escape rejection, cycle detection, and `NullRules` fail-closed (Issue #701) |
 | `src/templates/renderer/tests/fakes.rs` | `FakeProviderRules` test double for `TemplateProviderRules`; configurable allow/deny lists for placeholder and provider capability checks (Issue #701) |
 | `src/integration_tests/templates_render.rs` | 11 integration tests using tempdir fixtures; end-to-end coverage of `render_for_provider` and `render_command_in` including sandbox escape, include cycles, and missing-manifest error path (Issue #701) |
-| `tests/templates_render.rs` | 5 byte-identical regression tests asserting `.claude/commands/*.md` matches rendered output from `.maestro/templates/`; 1 `#[ignore]` regeneration helper; enforces drift detection in CI (Issue #703) |
-| `src/agent_provider/types.rs` | `AgentProvider` trait + `AgentProviderId`, `AgentProviderKind`, `AgentOutputFormat`, `ParserBinding`; `template_rules()` default method returns `null_rules()`; providers with dedicated rules (e.g. Claude) override this method (Issues #701, #703) |
+| `tests/templates_render.rs` | 9 byte-identical regression tests (5 Claude + 4 Codex) asserting rendered output matches `.claude/commands/*.md`; 1 `#[ignore]` regeneration helper; enforces drift detection in CI (Issues #703, #704) |
+| `src/agent_provider/types.rs` | `AgentProvider` trait + `AgentProviderId`, `AgentProviderKind`, `AgentOutputFormat`, `ParserBinding`; `template_rules()` default method returns `null_rules()`; providers with dedicated rules (e.g. Claude, Codex) override this method (Issues #701, #703, #704) |
 | `src/agent_provider/claude.rs` | `ClaudeProvider` impl; `template_rules()` override returns `&'static ClaudeRules` (Issue #703) |
-| `src/agent_provider/types_tests.rs` | Provider trait unit tests; split in #703: `providers_without_dedicated_rules_inherit_default_template_rules` + `claude_provider_overrides_default_template_rules` (Issue #703) |
+| `src/agent_provider/codex.rs` | `CodexProvider` impl; `template_rules()` override returns `codex_rules()` (Issue #704) |
+| `src/agent_provider/types_tests.rs` | Provider trait unit tests; Codex moved out of inherit-NullRules list; added `codex_provider_overrides_default_template_rules` override test (Issues #703, #704) |
 | `src/gates/` | Completion gates: TestsPass, FileExists, FileContains, PrCreated, Command (Phase 3, Issue #40) |
 | `src/updater/` | Self-upgrade subsystem: version check, binary installation, and restart (Issue #118) |
 | `src/updater/mod.rs` | `UpgradeState` state machine (`Idle` → `Checking` → `UpdateAvailable` → `Downloading` → `Installing` → `Done` / `Failed`); `ReleaseInfo` type; `pub mod` declarations for `error`, `lock`, `replace` (Issue #499) |

@@ -10,8 +10,10 @@
 #![deny(clippy::expect_used)]
 
 mod claude;
+mod codex;
 
 pub use claude::claude_rules;
+pub use codex::codex_rules;
 
 use std::path::Path;
 
