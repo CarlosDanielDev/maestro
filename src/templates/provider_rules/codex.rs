@@ -28,13 +28,12 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
 
-use std::path::{Component, Path};
+use std::path::Path;
 
 use crate::templates::TemplateError;
 use crate::templates::provider_rules::TemplateProviderRules;
 
 const TEMPLATES_ROOT: &str = ".maestro/templates";
-const SKILLS_ROOT: &str = ".claude/skills";
 
 #[derive(Debug, Default)]
 pub struct CodexRules;
@@ -66,7 +65,7 @@ impl TemplateProviderRules for CodexRules {
     }
 
     fn include(&self, path: &Path) -> Result<String, TemplateError> {
-        read_sandboxed(Path::new(TEMPLATES_ROOT), path)
+        super::read_sandboxed(Path::new(TEMPLATES_ROOT), path)
     }
 
     fn subagent_list(&self) -> Result<String, TemplateError> {
@@ -74,46 +73,8 @@ impl TemplateProviderRules for CodexRules {
     }
 
     fn skill_link(&self, name: &str) -> Result<String, TemplateError> {
-        let skill_path = format!("{name}/SKILL.md");
-        read_sandboxed(Path::new(SKILLS_ROOT), Path::new(&skill_path))
+        super::read_skill_body(name)
     }
-}
-
-fn read_sandboxed(root: &Path, path: &Path) -> Result<String, TemplateError> {
-    let display_path = path.to_string_lossy().into_owned();
-    let root_display = root.to_string_lossy().into_owned();
-    let escape = || TemplateError::SandboxEscape {
-        path: display_path.clone(),
-        root: root_display.clone(),
-    };
-    if path.is_absolute() {
-        return Err(escape());
-    }
-    if path
-        .components()
-        .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return Err(escape());
-    }
-    let full = root.join(path);
-    let canonical_root = std::fs::canonicalize(root).map_err(|source| TemplateError::Io {
-        path: root.to_path_buf(),
-        source,
-    })?;
-    let canonical_full = std::fs::canonicalize(&full).map_err(|source| match source.kind() {
-        std::io::ErrorKind::NotFound => TemplateError::FileMissing { path: full.clone() },
-        _ => TemplateError::Io {
-            path: full.clone(),
-            source,
-        },
-    })?;
-    if !canonical_full.starts_with(&canonical_root) {
-        return Err(escape());
-    }
-    std::fs::read_to_string(&canonical_full).map_err(|source| TemplateError::Io {
-        path: canonical_full,
-        source,
-    })
 }
 
 const SUBAGENT_LIST_MARKDOWN: &str = "\
@@ -130,11 +91,6 @@ const SUBAGENT_LIST_MARKDOWN: &str = "\
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn manifest_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    }
 
     #[test]
     fn target_dir_is_none_codex_has_no_project_slash_command_dir() {
@@ -185,9 +141,8 @@ mod tests {
     }
 
     #[test]
-    fn skill_link_inlines_skill_body_verbatim() {
-        let root = manifest_dir().join(".claude/skills");
-        let out = read_sandboxed(&root, Path::new("project-patterns/SKILL.md")).expect("ok");
+    fn skill_link_inlines_existing_skill_body_verbatim() {
+        let out = CodexRules.skill_link("project-patterns").expect("ok");
         assert!(
             out.contains("project-patterns") || out.contains("Maestro"),
             "expected SKILL.md content, got: {out:.120}"
@@ -196,8 +151,8 @@ mod tests {
 
     #[test]
     fn skill_link_missing_returns_file_missing() {
-        let root = manifest_dir().join(".claude/skills");
-        let err = read_sandboxed(&root, Path::new("definitely-not-a-real-skill-xyz/SKILL.md"))
+        let err = CodexRules
+            .skill_link("definitely-not-a-real-skill-xyz")
             .unwrap_err();
         assert!(matches!(err, TemplateError::FileMissing { .. }), "{err:?}");
     }
@@ -212,40 +167,12 @@ mod tests {
     }
 
     #[test]
-    fn include_reads_existing_core_premises() {
-        let root = manifest_dir().join(".maestro/templates");
-        let out = read_sandboxed(&root, Path::new("core/premises.md")).expect("ok");
-        assert!(
-            out.contains("YOU ARE THE ONLY AGENT THAT WRITES CODE"),
-            "unexpected content: {out:.120}"
-        );
-    }
-
-    #[test]
-    fn include_rejects_parent_dir_traversal() {
-        let root = manifest_dir().join(".maestro/templates");
-        let err = read_sandboxed(&root, Path::new("../Cargo.toml")).unwrap_err();
+    fn include_delegates_to_sandboxed_reader() {
+        let err = CodexRules.include(Path::new("../Cargo.toml")).unwrap_err();
         assert!(
             matches!(err, TemplateError::SandboxEscape { .. }),
             "{err:?}"
         );
-    }
-
-    #[test]
-    fn include_rejects_absolute_path() {
-        let root = manifest_dir().join(".maestro/templates");
-        let err = read_sandboxed(&root, Path::new("/etc/passwd")).unwrap_err();
-        assert!(
-            matches!(err, TemplateError::SandboxEscape { .. }),
-            "{err:?}"
-        );
-    }
-
-    #[test]
-    fn include_missing_file_returns_file_missing() {
-        let root = manifest_dir().join(".maestro/templates");
-        let err = read_sandboxed(&root, Path::new("core/does-not-exist.md")).unwrap_err();
-        assert!(matches!(err, TemplateError::FileMissing { .. }), "{err:?}");
     }
 
     #[test]

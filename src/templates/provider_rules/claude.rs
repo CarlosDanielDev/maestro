@@ -11,7 +11,7 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
 
-use std::path::{Component, Path};
+use std::path::Path;
 
 use crate::templates::TemplateError;
 use crate::templates::provider_rules::TemplateProviderRules;
@@ -51,7 +51,7 @@ impl TemplateProviderRules for ClaudeRules {
     }
 
     fn include(&self, path: &Path) -> Result<String, TemplateError> {
-        read_include(Path::new(TEMPLATES_ROOT), path)
+        super::read_sandboxed(Path::new(TEMPLATES_ROOT), path)
     }
 
     fn subagent_list(&self) -> Result<String, TemplateError> {
@@ -63,43 +63,6 @@ impl TemplateProviderRules for ClaudeRules {
             "the `{name}` skill (.claude/skills/{name}/SKILL.md)"
         ))
     }
-}
-
-fn read_include(root: &Path, path: &Path) -> Result<String, TemplateError> {
-    let display_path = path.to_string_lossy().into_owned();
-    let root_display = root.to_string_lossy().into_owned();
-    let escape = || TemplateError::SandboxEscape {
-        path: display_path.clone(),
-        root: root_display.clone(),
-    };
-    if path.is_absolute() {
-        return Err(escape());
-    }
-    for component in path.components() {
-        match component {
-            Component::Normal(_) => {}
-            _ => return Err(escape()),
-        }
-    }
-    let full = root.join(path);
-    let canonical_root = std::fs::canonicalize(root).map_err(|source| TemplateError::Io {
-        path: root.to_path_buf(),
-        source,
-    })?;
-    let canonical_full = std::fs::canonicalize(&full).map_err(|source| match source.kind() {
-        std::io::ErrorKind::NotFound => TemplateError::FileMissing { path: full.clone() },
-        _ => TemplateError::Io {
-            path: full.clone(),
-            source,
-        },
-    })?;
-    if !canonical_full.starts_with(&canonical_root) {
-        return Err(escape());
-    }
-    std::fs::read_to_string(&canonical_full).map_err(|source| TemplateError::Io {
-        path: canonical_full,
-        source,
-    })
 }
 
 const SUBAGENT_LIST_MARKDOWN: &str = "\
@@ -116,11 +79,6 @@ const SUBAGENT_LIST_MARKDOWN: &str = "\
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn manifest_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    }
 
     #[test]
     fn target_dir_is_dot_claude_commands() {
@@ -182,40 +140,12 @@ mod tests {
     }
 
     #[test]
-    fn include_reads_existing_core_premises() {
-        let root = manifest_dir().join(".maestro/templates");
-        let out = read_include(&root, Path::new("core/premises.md")).expect("ok");
-        assert!(
-            out.contains("YOU ARE THE ONLY AGENT THAT WRITES CODE"),
-            "unexpected content: {out:.120}"
-        );
-    }
-
-    #[test]
-    fn include_rejects_parent_dir_traversal() {
-        let root = manifest_dir().join(".maestro/templates");
-        let err = read_include(&root, Path::new("../Cargo.toml")).unwrap_err();
+    fn include_delegates_to_sandboxed_reader() {
+        let err = ClaudeRules.include(Path::new("../Cargo.toml")).unwrap_err();
         assert!(
             matches!(err, TemplateError::SandboxEscape { .. }),
             "{err:?}"
         );
-    }
-
-    #[test]
-    fn include_rejects_absolute_path() {
-        let root = manifest_dir().join(".maestro/templates");
-        let err = read_include(&root, Path::new("/etc/passwd")).unwrap_err();
-        assert!(
-            matches!(err, TemplateError::SandboxEscape { .. }),
-            "{err:?}"
-        );
-    }
-
-    #[test]
-    fn include_missing_file_returns_file_missing() {
-        let root = manifest_dir().join(".maestro/templates");
-        let err = read_include(&root, Path::new("core/does-not-exist.md")).unwrap_err();
-        assert!(matches!(err, TemplateError::FileMissing { .. }), "{err:?}");
     }
 
     #[test]
