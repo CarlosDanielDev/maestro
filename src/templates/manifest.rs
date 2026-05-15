@@ -25,6 +25,8 @@ pub struct Manifest {
     pub placeholders: BTreeMap<String, ManifestPlaceholder>,
     #[serde(default)]
     pub providers: BTreeMap<String, ManifestProvider>,
+    #[serde(default)]
+    pub subagents: Vec<ManifestSubagent>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -46,6 +48,13 @@ pub struct ManifestPlaceholder {
     pub required_args: Vec<String>,
     #[serde(default)]
     pub max_depth: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestSubagent {
+    pub slug: String,
+    pub purpose: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -103,6 +112,10 @@ impl Manifest {
 
     pub fn provider(&self, id: &str) -> Option<&ManifestProvider> {
         self.providers.get(id)
+    }
+
+    pub fn subagents(&self) -> &[ManifestSubagent] {
+        &self.subagents
     }
 }
 
@@ -232,5 +245,69 @@ version = 1
         );
         let m = Manifest::load(f.path()).expect("load ok");
         assert!(m.provider("cursor").is_none());
+    }
+
+    #[test]
+    fn subagents_default_to_empty_when_absent() {
+        let f = write_tmp(
+            r#"
+[meta]
+version = 1
+"#,
+        );
+        let m = Manifest::load(f.path()).expect("load ok");
+        assert!(m.subagents().is_empty());
+    }
+
+    #[test]
+    fn subagents_preserve_declaration_order() {
+        let f = write_tmp(
+            r#"
+[meta]
+version = 1
+
+[[subagents]]
+slug = "subagent-idea-triager"
+purpose = "Triage"
+
+[[subagents]]
+slug = "subagent-gatekeeper"
+purpose = "Gate"
+
+[[subagents]]
+slug = "subagent-qa"
+purpose = "QA"
+"#,
+        );
+        let m = Manifest::load(f.path()).expect("load ok");
+        let slugs: Vec<&str> = m.subagents().iter().map(|s| s.slug.as_str()).collect();
+        assert_eq!(
+            slugs,
+            [
+                "subagent-idea-triager",
+                "subagent-gatekeeper",
+                "subagent-qa"
+            ]
+        );
+        assert_eq!(m.subagents()[0].purpose, "Triage");
+    }
+
+    #[test]
+    fn subagent_unknown_field_in_entry_returns_parse_error() {
+        let f = write_tmp(
+            r#"
+[meta]
+version = 1
+
+[[subagents]]
+slug = "subagent-gatekeeper"
+purpose = "Gate"
+category = "control"
+"#,
+        );
+        match Manifest::load(f.path()) {
+            Err(TemplateError::ManifestParse { .. }) => {}
+            other => panic!("expected ManifestParse, got {other:?}"),
+        }
     }
 }

@@ -16,7 +16,7 @@ mod renderer;
 pub(crate) mod test_fakes;
 
 pub use error::TemplateError;
-pub(crate) use manifest::Manifest;
+pub(crate) use manifest::{Manifest, ManifestSubagent};
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use manifest::{ManifestMeta, ManifestPlaceholder, ManifestProvider};

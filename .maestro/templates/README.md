@@ -13,7 +13,7 @@ directly. The canonical-vs-rendered split exists so cross-provider rules
 ```
 .maestro/templates/
 ├── README.md              ← this file
-├── manifest.toml          ← placeholder vocabulary (skeleton)
+├── manifest.toml          ← placeholder vocabulary + subagent registry (canonical)
 ├── core/                  ← shared fragments included by every spec
 │   ├── premises.md
 │   ├── tdd-cycle.md
@@ -27,6 +27,40 @@ directly. The canonical-vs-rendered split exists so cross-provider rules
 
 > Authoritative project layout lives in `directory-tree.md` at the repo root.
 > The snippet above is illustrative for this subtree only.
+
+## manifest.toml schema
+
+`manifest.toml` is the single source of truth for all placeholder metadata used
+by the render engine.
+
+### `[[subagents]]` — subagent registry (Issue #728)
+
+Each entry in the `[[subagents]]` TOML array declares one subagent that appears
+in the rendered `{{SUBAGENT_LIST}}` placeholder:
+
+```toml
+[[subagents]]
+slug    = "subagent-gatekeeper"
+purpose = "DOR, blockers, and API-contract gate for `/implement`"
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `slug` | string | Exact filename stem of the agent file (e.g. `subagent-gatekeeper` matches `.claude/agents/subagent-gatekeeper.md`) |
+| `purpose` | string | One-line description; rendered verbatim as the "Purpose" column in the Markdown table |
+
+**Order matters.** Rows in the rendered table follow the order of entries in
+this file (pipeline order, not alphabetical).
+
+**Drift detection.** The set of slugs in `[[subagents]]` must match the set of
+`subagent-*.md` files on disk under `.claude/agents/`. Any mismatch is caught
+at test time by `tests/subagent_manifest_drift.rs`. When you add or remove an
+agent file you must update this array.
+
+**Render path.** `src/templates/provider_rules/subagent_list.rs` reads this
+array via `Manifest::subagents()` and converts it into the Markdown table.
+The three provider rule files (`claude.rs`, `codex.rs`, `http_generic.rs`) all
+delegate their `subagent_list()` method to that shared helper.
 
 ## Cutover policy (post-#703)
 
