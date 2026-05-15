@@ -12,6 +12,7 @@
 mod claude;
 mod codex;
 mod http_generic;
+pub(super) mod subagent_list;
 
 pub use claude::claude_rules;
 pub use codex::codex_rules;

@@ -311,6 +311,11 @@ Immediately after language selection, ask:
 
 ### Subagent Registry
 
+> **Note:** This table is the human-readable operational reference (Status column, richer descriptions).
+> The **canonical machine-readable list** for `{{SUBAGENT_LIST}}` template rendering lives in
+> `.maestro/templates/manifest.toml` (`[[subagents]]` array, Issue #728).
+> When adding or removing an agent, update both this table and that file.
+
 | Subagent | Purpose | Status |
 |----------|---------|--------|
 | `subagent-gatekeeper` | DOR, Blocked By, API-contract gatekeeper for /implement | **Ready** |
@@ -426,7 +431,8 @@ The `directory-tree.md` file at project root is the **SINGLE SOURCE OF TRUTH** f
 ### When a new subagent is created:
 1. Start in `drafts/agents/` for development
 2. Move to `.claude/agents/` when ready
-3. Update the Subagent Registry above
+3. Add an entry to the `[[subagents]]` array in `.maestro/templates/manifest.toml` (canonical render source)
+4. Update the Subagent Registry table above (operational reference)
 
 ### When a new skill is created:
 1. Create directory in `.claude/skills/{skill-name}/`

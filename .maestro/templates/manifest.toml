@@ -51,3 +51,36 @@ inline_skills = true
 display_name = "Generic HTTP provider"
 target_dir = ""
 inline_skills = true
+
+# ── Subagent registry (rendered by {{SUBAGENT_LIST}}) ────────────────────
+# Order in this file = order in the rendered Markdown table. Drift between
+# this list and `.claude/agents/subagent-*.md` is caught by
+# `tests/subagent_manifest_drift.rs`.
+
+[[subagents]]
+slug = "subagent-gatekeeper"
+purpose = "DOR, blockers, and API-contract gate for `/implement`"
+
+[[subagents]]
+slug = "subagent-architect"
+purpose = "Architecture design and implementation planning"
+
+[[subagents]]
+slug = "subagent-qa"
+purpose = "QA engineering, test design, quality gates"
+
+[[subagents]]
+slug = "subagent-security-analyst"
+purpose = "Security review (OWASP Top 10)"
+
+[[subagents]]
+slug = "subagent-docs-analyst"
+purpose = "Documentation management (only subagent allowed to write `.md`)"
+
+[[subagents]]
+slug = "subagent-master-planner"
+purpose = "System architecture planning, ADRs"
+
+[[subagents]]
+slug = "subagent-idea-triager"
+purpose = "Idea-inbox triage gate (5-question honesty check)"

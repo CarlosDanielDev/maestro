@@ -55,7 +55,7 @@ impl TemplateProviderRules for ClaudeRules {
     }
 
     fn subagent_list(&self) -> Result<String, TemplateError> {
-        Ok(SUBAGENT_LIST_MARKDOWN.to_string())
+        super::subagent_list::load_subagent_list_markdown()
     }
 
     fn skill_link(&self, name: &str) -> Result<String, TemplateError> {
@@ -64,17 +64,6 @@ impl TemplateProviderRules for ClaudeRules {
         ))
     }
 }
-
-const SUBAGENT_LIST_MARKDOWN: &str = "\
-| Subagent | Purpose |
-|----------|---------|
-| `subagent-gatekeeper` | DOR, blockers, and API-contract gate for `/implement` |
-| `subagent-architect` | Architecture design and implementation planning |
-| `subagent-qa` | QA engineering, test design, quality gates |
-| `subagent-security-analyst` | Security review (OWASP Top 10) |
-| `subagent-docs-analyst` | Documentation management (only subagent allowed to write `.md`) |
-| `subagent-master-planner` | System architecture planning, ADRs |
-| `subagent-idea-triager` | Idea-inbox triage gate (5-question honesty check)";
 
 #[cfg(test)]
 mod tests {
@@ -120,23 +109,6 @@ mod tests {
             out,
             "the `project-patterns` skill (.claude/skills/project-patterns/SKILL.md)"
         );
-    }
-
-    #[test]
-    fn subagent_list_is_markdown_table_with_known_subagents() {
-        let out = ClaudeRules.subagent_list().expect("ok");
-        assert!(out.starts_with("| Subagent | Purpose |"), "{out}");
-        for slug in [
-            "subagent-gatekeeper",
-            "subagent-architect",
-            "subagent-qa",
-            "subagent-security-analyst",
-            "subagent-docs-analyst",
-            "subagent-master-planner",
-            "subagent-idea-triager",
-        ] {
-            assert!(out.contains(slug), "missing `{slug}` in: {out}");
-        }
     }
 
     #[test]
