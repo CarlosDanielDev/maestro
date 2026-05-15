@@ -673,10 +673,14 @@ maestro/
 ├── benches/                               # Criterion benchmark crates
 │   ├── parser.rs                          # Benchmark: stream-json parser throughput  [Issue #19]
 │   └── turboquant.rs                      # Benchmark: TurboQuant quantization pipeline throughput
+├── examples/                              # Cargo examples (`cargo run --example <name>`) — dev-only utilities not shipped in the binary
+│   ├── regen_templates.rs                 # Rewrites `.claude/commands/*.md` from canonical sources in `.maestro/templates/`; run with `cargo run --example regen_templates`  [Issue #729]
+│   └── multi-agent/                       # Multi-agent example configuration
+│       └── maestro.toml                   # Example maestro.toml for a multi-agent setup
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
 │   ├── subagent_manifest_drift.rs         # Drift guard: set-difference between `.claude/agents/subagent-*.md` on disk and `[[subagents]]` slugs in `manifest.toml`; fails with a diff line on "missing from manifest" or "stale in manifest"; 5 unit tests + 1 live-repo integration test  [Issue #728]
-│   ├── templates_render.rs                # 5 byte-identical regression tests asserting `.claude/commands/*.md` matches rendered output from `.maestro/templates/`; 1 `#[ignore]` regeneration helper; enforces drift detection in CI  [Issue #703]
+│   ├── templates_render.rs                # 5 byte-identical regression tests asserting `.claude/commands/*.md` matches rendered output from `.maestro/templates/`; enforces drift detection in CI  [Issue #703, #729]
 │   ├── fixtures/                          # Static test fixtures for integration and unit tests
 │   │   └── state/
 │   │       └── v0.json                    # Pre-version state-file fixture (no `version` key); used by state migration tests to assert that version=0 loads and migrates to CURRENT_STATE_VERSION=1  [Issue #665]
