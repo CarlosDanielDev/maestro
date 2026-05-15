@@ -53,6 +53,19 @@ pub(crate) fn render_command_in(
     provider: &dyn AgentProvider,
     command: &str,
 ) -> Result<String, TemplateError> {
+    render_command_for_rules(root, provider.template_rules(), command)
+}
+
+/// Render a canonical command using the supplied provider rules directly.
+///
+/// Used by `maestro sync-templates`, which iterates `&'static dyn
+/// TemplateProviderRules` pointers (one per registered provider) and never
+/// needs a full `AgentProvider` instance.
+pub fn render_command_for_rules(
+    root: &Path,
+    rules: &dyn TemplateProviderRules,
+    command: &str,
+) -> Result<String, TemplateError> {
     validate_command_name(command, root)?;
     let _manifest = Manifest::load(&root.join("manifest.toml"))?;
     let command_path = root.join("commands").join(format!("{command}.md"));
@@ -65,7 +78,6 @@ pub(crate) fn render_command_in(
             source: e,
         },
     })?;
-    let rules = provider.template_rules();
     renderer::render_with_source(&input, rules, command_path.to_string_lossy().as_ref(), 0)
 }
 

@@ -10,6 +10,7 @@ pub(crate) mod setup;
 mod slack;
 pub mod slash;
 mod status;
+pub mod sync_templates;
 pub mod team;
 pub mod turboquant;
 
@@ -25,4 +26,5 @@ pub use resume::cmd_resume;
 pub use run::cmd_run;
 pub use slack::cmd_test_slack;
 pub use status::{cmd_cost, cmd_status};
+pub use sync_templates::{SyncTemplatesArgs, cmd_sync_templates};
 pub use turboquant::cmd_turboquant_benchmark;

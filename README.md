@@ -276,6 +276,19 @@ The full key map (global, overview, home screen, issue browser, milestone overvi
 
 Maestro ships pre-generated bash, zsh, and fish completions plus a `maestro.1` man page in every release tarball; Homebrew installs them automatically. To regenerate on demand: `maestro completions <bash|zsh|fish>`. Per-shell installation paths and zsh `fpath` configuration are covered in [Wiki › Installation](https://github.com/CarlosDanielDev/maestro/wiki/Installation).
 
+## Template sync
+
+Maestro ships canonical command specs in `.maestro/templates/commands/`. The `maestro sync-templates` subcommand renders those specs per provider and writes them to the correct target directory (e.g. `.claude/commands/` for Claude Code). Rendered files carry an `AUTO-GENERATED` banner and must not be edited directly — edit the canonical source and re-render.
+
+```bash
+maestro sync-templates                     # render all providers
+maestro sync-templates --provider claude   # render Claude only
+maestro sync-templates --check            # verify no drift (what CI runs)
+maestro sync-templates --dry-run          # preview writes without touching files
+```
+
+SHA-256 checksums of every rendered file are recorded in `.maestro/templates.lock` (committed). The CI pipeline fails if any rendered output diverges from its canonical source.
+
 ## Integration with `.claude/`
 
 Maestro wraps — not replaces — your existing `.claude/` agent system. Each spawned Claude session inherits your project's `CLAUDE.md`, agents, skills, and commands. Maestro adds coordination context (file claims, peer awareness) via `--append-system-prompt`.

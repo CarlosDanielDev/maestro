@@ -275,6 +275,20 @@ pub enum Commands {
         #[command(subcommand)]
         action: TeamSubcommand,
     },
+    /// Render canonical command templates per provider and track drift.
+    SyncTemplates {
+        /// Filter to a single provider id (default: all configured providers)
+        #[arg(long)]
+        provider: Option<String>,
+
+        /// CI mode: exit 1 on drift, print unified diff to stderr. Does not write.
+        #[arg(long)]
+        check: bool,
+
+        /// Print intended writes without touching the filesystem.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Output format for TurboQuant benchmark reports.
@@ -1567,5 +1581,61 @@ mod tests {
             }) => {}
             _ => panic!("expected Commands::Team::Explain with json=true"),
         }
+    }
+
+    // ------------------------------------------------------------------
+    // SyncTemplates subcommand parsing (#706)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn sync_templates_subcommand_parses_with_no_flags() {
+        let cli = Cli::try_parse_from(["maestro", "sync-templates"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::SyncTemplates {
+                provider: None,
+                check: false,
+                dry_run: false,
+            })
+        ));
+    }
+
+    #[test]
+    fn sync_templates_subcommand_accepts_check_flag() {
+        let cli = Cli::try_parse_from(["maestro", "sync-templates", "--check"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::SyncTemplates { check: true, .. })
+        ));
+    }
+
+    #[test]
+    fn sync_templates_subcommand_accepts_dry_run_flag() {
+        let cli = Cli::try_parse_from(["maestro", "sync-templates", "--dry-run"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::SyncTemplates { dry_run: true, .. })
+        ));
+    }
+
+    #[test]
+    fn sync_templates_subcommand_accepts_provider_with_value() {
+        let cli =
+            Cli::try_parse_from(["maestro", "sync-templates", "--provider", "claude"]).unwrap();
+        match cli.command {
+            Some(Commands::SyncTemplates {
+                provider: Some(p), ..
+            }) => assert_eq!(p, "claude"),
+            _ => panic!("expected SyncTemplates with provider=Some(claude)"),
+        }
+    }
+
+    #[test]
+    fn sync_templates_subcommand_rejects_provider_without_value() {
+        let result = Cli::try_parse_from(["maestro", "sync-templates", "--provider"]);
+        assert!(
+            result.is_err(),
+            "--provider without a value must be rejected by clap"
+        );
     }
 }
