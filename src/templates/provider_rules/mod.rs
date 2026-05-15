@@ -17,9 +17,70 @@ pub use claude::claude_rules;
 pub use codex::codex_rules;
 pub use http_generic::http_generic_rules;
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 use crate::templates::TemplateError;
+
+/// Read a file under `root`, rejecting any path that escapes the sandbox.
+///
+/// Sandbox rules:
+/// - `path` must be relative.
+/// - Every component of `path` must be `Component::Normal` (no `.`, `..`,
+///   prefix, or root-dir markers).
+/// - After canonicalization, the resolved file must remain a descendant of
+///   `root` (`starts_with` on canonicalized paths).
+///
+/// Errors:
+/// - `TemplateError::SandboxEscape` for absolute paths, non-Normal components,
+///   or post-canonicalization escapes (symlinks pointing outside `root`).
+/// - `TemplateError::FileMissing` if the resolved file does not exist.
+/// - `TemplateError::Io` for any other I/O failure.
+pub(super) fn read_sandboxed(root: &Path, path: &Path) -> Result<String, TemplateError> {
+    let display_path = path.to_string_lossy().into_owned();
+    let root_display = root.to_string_lossy().into_owned();
+    let escape = || TemplateError::SandboxEscape {
+        path: display_path.clone(),
+        root: root_display.clone(),
+    };
+    if path.is_absolute() {
+        return Err(escape());
+    }
+    if path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(escape());
+    }
+    let full = root.join(path);
+    let canonical_root = std::fs::canonicalize(root).map_err(|source| TemplateError::Io {
+        path: root.to_path_buf(),
+        source,
+    })?;
+    let canonical_full = std::fs::canonicalize(&full).map_err(|source| match source.kind() {
+        std::io::ErrorKind::NotFound => TemplateError::FileMissing { path: full.clone() },
+        _ => TemplateError::Io {
+            path: full.clone(),
+            source,
+        },
+    })?;
+    if !canonical_full.starts_with(&canonical_root) {
+        return Err(escape());
+    }
+    std::fs::read_to_string(&canonical_full).map_err(|source| TemplateError::Io {
+        path: canonical_full,
+        source,
+    })
+}
+
+/// Read `.claude/skills/<name>/SKILL.md` through the sandbox reader.
+///
+/// Shared by `CodexRules::skill_link` and `HttpGenericRules::skill_link`, both
+/// of which inline the skill body verbatim into the rendered template.
+pub(super) fn read_skill_body(name: &str) -> Result<String, TemplateError> {
+    const SKILLS_ROOT: &str = ".claude/skills";
+    let skill_path = format!("{name}/SKILL.md");
+    read_sandboxed(Path::new(SKILLS_ROOT), Path::new(&skill_path))
+}
 
 /// Per-provider rendering rules for the five canonical placeholder kinds.
 ///
@@ -145,5 +206,78 @@ mod tests {
     fn null_rules_is_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<NullRules>();
+    }
+
+    mod sandbox {
+        use super::super::read_sandboxed;
+        use crate::templates::TemplateError;
+        use std::path::{Path, PathBuf};
+
+        fn manifest_dir() -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        }
+
+        #[test]
+        fn reads_existing_file_under_root() {
+            let root = manifest_dir().join(".maestro/templates");
+            let out = read_sandboxed(&root, Path::new("core/premises.md")).expect("ok");
+            assert!(
+                out.contains("YOU ARE THE ONLY AGENT THAT WRITES CODE"),
+                "unexpected content: {out:.120}"
+            );
+        }
+
+        #[test]
+        fn rejects_absolute_path() {
+            let root = manifest_dir().join(".maestro/templates");
+            let err = read_sandboxed(&root, Path::new("/etc/passwd")).unwrap_err();
+            assert!(
+                matches!(err, TemplateError::SandboxEscape { .. }),
+                "{err:?}"
+            );
+        }
+
+        #[test]
+        fn rejects_parent_dir_component() {
+            let root = manifest_dir().join(".maestro/templates");
+            let err = read_sandboxed(&root, Path::new("../Cargo.toml")).unwrap_err();
+            assert!(
+                matches!(err, TemplateError::SandboxEscape { .. }),
+                "{err:?}"
+            );
+        }
+
+        #[test]
+        fn rejects_cur_dir_component() {
+            let root = manifest_dir().join(".maestro/templates");
+            let err = read_sandboxed(&root, Path::new("./core/premises.md")).unwrap_err();
+            assert!(
+                matches!(err, TemplateError::SandboxEscape { .. }),
+                "{err:?}"
+            );
+        }
+
+        #[test]
+        fn missing_file_returns_file_missing() {
+            let root = manifest_dir().join(".maestro/templates");
+            let err = read_sandboxed(&root, Path::new("core/does-not-exist.md")).unwrap_err();
+            assert!(matches!(err, TemplateError::FileMissing { .. }), "{err:?}");
+        }
+
+        #[test]
+        #[cfg(unix)]
+        fn symlink_escape_is_rejected_by_starts_with_check() {
+            use std::os::unix::fs::symlink;
+
+            let dir = tempfile::tempdir().expect("tempdir");
+            let link = dir.path().join("escape.md");
+            symlink("/etc/passwd", &link).expect("symlink");
+
+            let err = read_sandboxed(dir.path(), Path::new("escape.md")).unwrap_err();
+            assert!(
+                matches!(err, TemplateError::SandboxEscape { .. }),
+                "symlink escape must be caught by canonicalize+starts_with: {err:?}"
+            );
+        }
     }
 }
