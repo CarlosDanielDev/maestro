@@ -113,6 +113,10 @@ impl AgentProvider for MinimaxProvider {
         })
     }
 
+    fn template_rules(&self) -> &'static dyn crate::templates::TemplateProviderRules {
+        crate::templates::provider_rules::http_generic_rules()
+    }
+
     async fn run(
         &self,
         request: AgentRequest,
