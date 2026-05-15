@@ -11,6 +11,7 @@ use std::path::Path;
 use maestro::agent_provider::{
     AgentProvider, ClaudeProvider, CodexProvider, MinimaxProvider, OllamaProvider, QwenProvider,
 };
+use maestro::commands::sync_templates::banner::with_banner;
 use maestro::templates::render_for_provider;
 
 fn assert_byte_identical(command: &str, rendered: &str, committed_path: &Path) {
@@ -49,9 +50,13 @@ fn render(command: &str) -> String {
         .unwrap_or_else(|e| panic!("render_for_provider failed for `{command}`: {e}"))
 }
 
+fn render_with_banner(command: &str) -> String {
+    with_banner(&render(command), command)
+}
+
 #[test]
 fn renders_plan_feature_byte_identical() {
-    let rendered = render("plan-feature");
+    let rendered = render_with_banner("plan-feature");
     assert_byte_identical(
         "plan-feature",
         &rendered,
@@ -61,13 +66,13 @@ fn renders_plan_feature_byte_identical() {
 
 #[test]
 fn renders_pushup_byte_identical() {
-    let rendered = render("pushup");
+    let rendered = render_with_banner("pushup");
     assert_byte_identical("pushup", &rendered, Path::new(".claude/commands/pushup.md"));
 }
 
 #[test]
 fn renders_implement_byte_identical() {
-    let rendered = render("implement");
+    let rendered = render_with_banner("implement");
     assert_byte_identical(
         "implement",
         &rendered,
@@ -77,7 +82,7 @@ fn renders_implement_byte_identical() {
 
 #[test]
 fn renders_simplify_byte_identical() {
-    let rendered = render("simplify");
+    let rendered = render_with_banner("simplify");
     assert_byte_identical(
         "simplify",
         &rendered,

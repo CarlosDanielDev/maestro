@@ -1,12 +1,12 @@
 # Canonical Templates
 
 This directory holds **canonical**, provider-agnostic command and fragment
-sources. The render engine (issue #B) projects them into provider-specific
-outputs such as `.claude/commands/*.md` (Claude Code) or `.cursor/commands/*.md`
-(Cursor). Edit canonical sources here and re-render with `maestro sync-templates`
-(lands in #G) — never edit the rendered files under `.claude/commands/*.md`
-directly. The canonical-vs-rendered split exists so cross-provider rules
-(premises, TDD cycle, dependency-graph mandate) live in exactly one place.
+sources. The render engine projects them into provider-specific outputs such as
+`.claude/commands/*.md` (Claude Code). Edit canonical sources here and re-render
+with `maestro sync-templates` — never edit the rendered files under
+`.claude/commands/*.md` directly. The canonical-vs-rendered split exists so
+cross-provider rules (premises, TDD cycle, dependency-graph mandate) live in
+exactly one place.
 
 ## Layout
 
@@ -69,42 +69,51 @@ delegate their `subagent_list()` method to that shared helper.
 (`implement.md`, `pushup.md`, `plan-feature.md`, `simplify.md`) are **rendered artifacts**.
 
 - **Never edit generated files directly.** Edit the canonical source in
-  `.maestro/templates/commands/` and re-render.
-- **CI enforces drift.** `tests/templates_render.rs` contains byte-identical regression
-  tests. Any mismatch between a canonical source and its rendered output is caught at
-  compile/test time.
+  `.maestro/templates/commands/` and re-render with `maestro sync-templates`.
+- **CI enforces drift.** The `sync-templates` CI job runs
+  `cargo run --quiet -- sync-templates --check` and fails the build on any mismatch.
+  `tests/templates_render.rs` additionally contains byte-identical regression tests.
 - Commands without a canonical spec (`create-subagent.md`, `release.md`, etc.) remain
   hand-maintained for now.
 
-### Regenerating Claude baselines
+### Regenerating rendered outputs
 
 After editing a canonical spec under `.maestro/templates/commands/` or a shared fragment
-under `.maestro/templates/core/`, regenerate the rendered `.claude/commands/*.md`
-artifacts with:
+under `.maestro/templates/core/`, regenerate all rendered outputs with:
 
 ```sh
-cargo run --example regen_templates
+maestro sync-templates
 ```
 
-The example writes the four canonical commands (`implement`, `pushup`, `plan-feature`,
-`simplify`) into the directory reported by `ClaudeRules::target_dir()` (`.claude/commands/`).
+To regenerate only the Claude provider outputs:
+
+```sh
+maestro sync-templates --provider claude
+```
+
+To preview planned writes without touching the filesystem:
+
+```sh
+maestro sync-templates --dry-run
+```
+
+To verify that on-disk files match the canonical sources (what CI runs):
+
+```sh
+maestro sync-templates --check
+```
+
 Confirm the regeneration with `cargo test --test templates_render` — the byte-identical
 regression tests pass when the rendered output matches the canonical render.
 
-> The dedicated `maestro sync-templates` CLI (forward-reference `#G`) will eventually
-> replace this example with a provider-aware command. Until that lands, the example is
-> the regen path.
-
 ## Forward-reference legend
 
-Letter codes (`#A`, `#B`, `#G`) reference work items in the approved
-plan `we-need-to-standardize-zippy-wave.md`. `#A`, `#B`, and `#C` have
-landed; replace `#G` with a concrete `#NNN` number when that issue is filed.
+All planned work items from `we-need-to-standardize-zippy-wave.md` have landed:
 
 | Code | Issue | Scope |
 |------|-------|-------|
 | #A   | #700  | L0 scaffold — canonical templates directory |
 | #B   | #701  | Render engine — resolves placeholders into per-provider output |
 | #C   | #702  | Canonical command specs — populated `commands/` with implement, pushup, plan-feature, simplify |
-| #G   | TBD   | `maestro sync-templates` CLI — re-renders from canonical sources |
+| #G   | #706  | `maestro sync-templates` CLI — provider-aware re-render + drift detection |
 

@@ -100,6 +100,14 @@ pub trait TemplateProviderRules: Send + Sync {
     fn subagent_list(&self) -> Result<String, TemplateError>;
 
     fn skill_link(&self, name: &str) -> Result<String, TemplateError>;
+
+    /// `true` for the fail-closed [`NullRules`] stub. Concrete providers
+    /// inherit the default `false` and may render templates. Consumers such
+    /// as `maestro sync-templates` use this to skip providers whose rules
+    /// have not been wired yet.
+    fn is_null(&self) -> bool {
+        false
+    }
 }
 
 /// Fail-closed stub returned by the default `AgentProvider::template_rules()`.
@@ -148,6 +156,10 @@ impl TemplateProviderRules for NullRules {
             name: "SKILL".to_string(),
             reason: "no provider rules registered (NullRules)".to_string(),
         })
+    }
+
+    fn is_null(&self) -> bool {
+        true
     }
 }
 

@@ -36,6 +36,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -- -D warnings -A dead_code
 
+  sync-templates:
+    # Drift gate for canonical command templates (#706).
+    # Fails the build when rendered command files drift from what
+    # `maestro sync-templates` would emit from `.maestro/templates/`.
+    name: Templates Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check rendered templates are in sync
+        run: cargo run --quiet -- sync-templates --check
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
