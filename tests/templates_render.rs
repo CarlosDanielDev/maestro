@@ -250,22 +250,3 @@ fn http_generic_skill_link_inlines_skill_body() {
         "expected inlined skill body in HTTP-generic simplify render"
     );
 }
-
-/// Regeneration helper for the #703 cutover. Not part of the default test
-/// run — invoke explicitly:
-///
-/// ```text
-/// cargo test --test templates_render -- --ignored regenerate_claude_baselines --nocapture
-/// ```
-///
-/// After this writes the baselines, the byte-identical tests above pass.
-#[test]
-#[ignore = "manual regeneration of generated artifacts under .claude/commands/"]
-fn regenerate_claude_baselines() {
-    for command in ["implement", "pushup", "plan-feature", "simplify"] {
-        let rendered = render(command);
-        let path = format!(".claude/commands/{command}.md");
-        std::fs::write(&path, &rendered).unwrap_or_else(|e| panic!("write `{path}`: {e}"));
-        println!("wrote {path} ({} bytes)", rendered.len());
-    }
-}

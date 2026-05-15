@@ -76,6 +76,25 @@ delegate their `subagent_list()` method to that shared helper.
 - Commands without a canonical spec (`create-subagent.md`, `release.md`, etc.) remain
   hand-maintained for now.
 
+### Regenerating Claude baselines
+
+After editing a canonical spec under `.maestro/templates/commands/` or a shared fragment
+under `.maestro/templates/core/`, regenerate the rendered `.claude/commands/*.md`
+artifacts with:
+
+```sh
+cargo run --example regen_templates
+```
+
+The example writes the four canonical commands (`implement`, `pushup`, `plan-feature`,
+`simplify`) into the directory reported by `ClaudeRules::target_dir()` (`.claude/commands/`).
+Confirm the regeneration with `cargo test --test templates_render` — the byte-identical
+regression tests pass when the rendered output matches the canonical render.
+
+> The dedicated `maestro sync-templates` CLI (forward-reference `#G`) will eventually
+> replace this example with a provider-aware command. Until that lands, the example is
+> the regen path.
+
 ## Forward-reference legend
 
 Letter codes (`#A`, `#B`, `#G`) reference work items in the approved
