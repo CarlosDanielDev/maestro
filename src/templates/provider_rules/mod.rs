@@ -3,17 +3,19 @@
 //! Each concrete `AgentProvider` returns a `&'static dyn TemplateProviderRules`
 //! from its `template_rules()` method. The default impl on `AgentProvider`
 //! returns [`NullRules`], which fails closed on every placeholder. Concrete
-//! provider rule modules (`claude.rs`, `codex.rs`, `http_generic.rs`) land in
-//! issues #703–#705.
+//! provider rule modules live in `claude.rs`, `codex.rs`, and
+//! `http_generic.rs`.
 
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
 
 mod claude;
 mod codex;
+mod http_generic;
 
 pub use claude::claude_rules;
 pub use codex::codex_rules;
+pub use http_generic::http_generic_rules;
 
 use std::path::Path;
 

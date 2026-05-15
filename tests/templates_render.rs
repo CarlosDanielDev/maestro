@@ -8,7 +8,9 @@
 
 use std::path::Path;
 
-use maestro::agent_provider::{ClaudeProvider, CodexProvider};
+use maestro::agent_provider::{
+    AgentProvider, ClaudeProvider, CodexProvider, MinimaxProvider, OllamaProvider, QwenProvider,
+};
 use maestro::templates::render_for_provider;
 
 fn assert_byte_identical(command: &str, rendered: &str, committed_path: &Path) {
@@ -150,6 +152,102 @@ fn codex_hook_gate_uses_provider_neutral_dot_maestro_path() {
     assert!(
         rendered.contains("bash .maestro/hooks/implement-gates.sh"),
         "expected provider-neutral hook path from HOOK_GATE expansion"
+    );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// HTTP-generic providers (Qwen, Ollama, MiniMax) — semantic assertions only.
+// No committed baselines: target_dir() is None, output is runtime-injected
+// (cached on disk by `maestro sync-templates` in #707, appended at session
+// spawn in #708).
+// ──────────────────────────────────────────────────────────────────────────
+
+fn render_via(provider: &dyn AgentProvider, command: &str) -> String {
+    render_for_provider(provider, command).unwrap_or_else(|e| {
+        panic!(
+            "render_for_provider failed for `{command}` via `{}`: {e}",
+            provider.id()
+        )
+    })
+}
+
+fn ollama_provider() -> OllamaProvider {
+    OllamaProvider::new("ollama", "http://localhost:11434", "llama3", 10, None)
+        .expect("ollama provider builds")
+}
+
+fn minimax_provider() -> MinimaxProvider {
+    MinimaxProvider::new(
+        "minimax",
+        "https://api.minimax.io/v1",
+        "MiniMax-M2.7",
+        10,
+        Some("MINIMAX_API_KEY".to_string()),
+    )
+    .expect("minimax provider builds")
+}
+
+#[test]
+fn qwen_renders_all_four_canonical_commands_with_zero_unresolved_placeholders() {
+    let provider = QwenProvider::new("qwen");
+    for command in ["implement", "pushup", "plan-feature", "simplify"] {
+        let rendered = render_via(&provider, command);
+        assert!(
+            !rendered.contains("{{") && !rendered.contains("}}"),
+            "qwen render of `{command}` contains unexpanded `{{{{...}}}}`:\n{rendered}"
+        );
+    }
+}
+
+#[test]
+fn ollama_renders_all_four_canonical_commands_with_zero_unresolved_placeholders() {
+    let provider = ollama_provider();
+    for command in ["implement", "pushup", "plan-feature", "simplify"] {
+        let rendered = render_via(&provider, command);
+        assert!(
+            !rendered.contains("{{") && !rendered.contains("}}"),
+            "ollama render of `{command}` contains unexpanded `{{{{...}}}}`:\n{rendered}"
+        );
+    }
+}
+
+#[test]
+fn minimax_renders_all_four_canonical_commands_with_zero_unresolved_placeholders() {
+    let provider = minimax_provider();
+    for command in ["implement", "pushup", "plan-feature", "simplify"] {
+        let rendered = render_via(&provider, command);
+        assert!(
+            !rendered.contains("{{") && !rendered.contains("}}"),
+            "minimax render of `{command}` contains unexpanded `{{{{...}}}}`:\n{rendered}"
+        );
+    }
+}
+
+#[test]
+fn http_generic_hook_gate_renders_instruction_text() {
+    let provider = QwenProvider::new("qwen");
+    let rendered = render_via(&provider, "implement");
+    assert!(
+        rendered.contains("the orchestrator MUST run:"),
+        "expected instruction-text hook_gate phrasing in HTTP-generic render"
+    );
+    assert!(
+        rendered.contains(".maestro/hooks/implement-gates.sh"),
+        "expected hook script reference embedded in instruction text"
+    );
+}
+
+#[test]
+fn http_generic_skill_link_inlines_skill_body() {
+    let provider = QwenProvider::new("qwen");
+    let rendered = render_via(&provider, "simplify");
+    assert!(
+        !rendered.contains(".claude/skills/project-patterns/SKILL.md)"),
+        "HTTP-generic render leaked Claude's skill_link phrasing"
+    );
+    assert!(
+        rendered.contains("project-patterns"),
+        "expected inlined skill body in HTTP-generic simplify render"
     );
 }
 

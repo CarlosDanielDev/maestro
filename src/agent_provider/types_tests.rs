@@ -190,30 +190,13 @@ fn default_template_rules_returns_null_rules_fail_closed() {
 
 #[test]
 fn providers_without_dedicated_rules_inherit_default_template_rules() {
-    use crate::agent_provider::{MinimaxProvider, OllamaProvider, OpenCodeProvider, QwenProvider};
+    use crate::agent_provider::OpenCodeProvider;
     use crate::templates::TemplateError;
 
-    // ClaudeProvider (#703) and CodexProvider (#704) intentionally omitted —
-    // they ship dedicated rule modules. Other concrete providers still
-    // inherit NullRules until their per-provider rule modules land (#705).
-    let providers: Vec<Arc<dyn AgentProvider>> = vec![
-        Arc::new(QwenProvider::new("qwen")),
-        Arc::new(OpenCodeProvider::new("opencode")),
-        Arc::new(
-            OllamaProvider::new("ollama", "http://localhost:11434", "llama3", 10, None)
-                .expect("ollama provider builds"),
-        ),
-        Arc::new(
-            MinimaxProvider::new(
-                "minimax",
-                "https://api.minimax.io/v1",
-                "MiniMax-M2.7",
-                10,
-                Some("MINIMAX_API_KEY".to_string()),
-            )
-            .expect("minimax provider builds"),
-        ),
-    ];
+    // ClaudeProvider (#703), CodexProvider (#704), and Qwen/Ollama/Minimax
+    // (#705) all ship dedicated rule modules. OpenCode is the only concrete
+    // provider that still inherits NullRules until its rule module lands.
+    let providers: Vec<Arc<dyn AgentProvider>> = vec![Arc::new(OpenCodeProvider::new("opencode"))];
 
     for p in &providers {
         let rules = p.template_rules();
@@ -229,6 +212,62 @@ fn providers_without_dedicated_rules_inherit_default_template_rules() {
             result
         );
     }
+}
+
+#[test]
+fn qwen_provider_overrides_default_template_rules_with_http_generic() {
+    use crate::agent_provider::QwenProvider;
+
+    let provider: Arc<dyn AgentProvider> = Arc::new(QwenProvider::new("qwen"));
+    // Qwen is Subprocess-kind, not Http; the shared template rules are about
+    // template semantics (no slash-command dir, no Task tool), not transport.
+    assert_eq!(provider.kind(), AgentProviderKind::Subprocess);
+    let rules = provider.template_rules();
+    assert!(rules.target_dir().is_none());
+    let list = rules
+        .subagent_list()
+        .expect("HttpGenericRules.subagent_list ok");
+    assert!(list.contains("subagent-gatekeeper"), "{list}");
+}
+
+#[test]
+fn ollama_provider_overrides_default_template_rules_with_http_generic() {
+    use crate::agent_provider::OllamaProvider;
+
+    let provider: Arc<dyn AgentProvider> = Arc::new(
+        OllamaProvider::new("ollama", "http://localhost:11434", "llama3", 10, None)
+            .expect("ollama provider builds"),
+    );
+    assert_eq!(provider.kind(), AgentProviderKind::Http);
+    let rules = provider.template_rules();
+    assert!(rules.target_dir().is_none());
+    let list = rules
+        .subagent_list()
+        .expect("HttpGenericRules.subagent_list ok");
+    assert!(list.contains("subagent-gatekeeper"), "{list}");
+}
+
+#[test]
+fn minimax_provider_overrides_default_template_rules_with_http_generic() {
+    use crate::agent_provider::MinimaxProvider;
+
+    let provider: Arc<dyn AgentProvider> = Arc::new(
+        MinimaxProvider::new(
+            "minimax",
+            "https://api.minimax.io/v1",
+            "MiniMax-M2.7",
+            10,
+            Some("MINIMAX_API_KEY".to_string()),
+        )
+        .expect("minimax provider builds"),
+    );
+    assert_eq!(provider.kind(), AgentProviderKind::Http);
+    let rules = provider.template_rules();
+    assert!(rules.target_dir().is_none());
+    let list = rules
+        .subagent_list()
+        .expect("HttpGenericRules.subagent_list ok");
+    assert!(list.contains("subagent-gatekeeper"), "{list}");
 }
 
 #[test]
