@@ -3,6 +3,25 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use uuid::Uuid;
 
+/// Provenance of a session — gates runtime features that depend on whether
+/// the session was started by the user directly or dispatched by the
+/// orchestration layers.
+///
+/// `DirectUser` is the default for backward compatibility and matches the
+/// behavior of every existing `Session::new` call site. L1/L2 dispatch paths
+/// do NOT flow through `SessionPool`/`ManagedSession` today (see
+/// `src/orchestration/dispatch.rs`); the `OrchestratorL1` / `OrchestratorL2`
+/// variants exist to make the gate in `pool.rs` explicit and to give future
+/// orchestration refactors a typed escape hatch. See issue #707.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionOrigin {
+    #[default]
+    DirectUser,
+    OrchestratorL1,
+    OrchestratorL2,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionStatus {
@@ -330,6 +349,18 @@ pub struct Session {
     /// and re-surface the overlay after the user dismisses it.
     #[serde(skip)]
     pub adapt_follow_up_considered: bool,
+    /// Provenance — `DirectUser` unless explicitly set by an orchestrator
+    /// constructor. Used by `SessionPool::try_promote` to gate HTTP-template
+    /// injection (issue #707).
+    #[serde(default)]
+    pub origin: SessionOrigin,
+    /// Canonical command identifier (e.g., `"implement"`, `"pushup"`,
+    /// `"plan-feature"`, `"simplify"`) when the session was spawned in the
+    /// context of one. `None` for ad-hoc prompts. Used by
+    /// `SessionPool::try_promote` to look up the rendered template body for
+    /// HTTP-generic providers. See issue #707.
+    #[serde(default)]
+    pub active_command: Option<String>,
 }
 
 /// Lightweight gate result stored on a session for post-completion display.
@@ -417,6 +448,8 @@ impl Session {
             transition_history: Vec::new(),
             intent,
             role,
+            origin: SessionOrigin::default(),
+            active_command: None,
             consultation_skip_logged: false,
             adapt_follow_up_considered: false,
         }
@@ -472,6 +505,18 @@ impl Session {
 
     pub fn with_agent_id(mut self, agent_id: Option<String>) -> Self {
         self.agent_id = agent_id;
+        self
+    }
+
+    #[allow(dead_code)] // Reason: set by orchestrator constructors once L1/L2 flow through pool
+    pub fn with_origin(mut self, origin: SessionOrigin) -> Self {
+        self.origin = origin;
+        self
+    }
+
+    #[allow(dead_code)] // Reason: set by command-invocation surfaces (#707 follow-up)
+    pub fn with_active_command(mut self, command: Option<String>) -> Self {
+        self.active_command = command;
         self
     }
 
@@ -1579,5 +1624,81 @@ mod tests {
         assert!(!json.contains("transition_flash_remaining"));
         let rt: Session = serde_json::from_str(&json).unwrap();
         assert_eq!(rt.transition_flash_remaining, 0);
+    }
+
+    // --- Issue #707: SessionOrigin + active_command ---
+
+    #[test]
+    fn session_origin_default_is_direct_user() {
+        assert_eq!(SessionOrigin::default(), SessionOrigin::DirectUser);
+    }
+
+    #[test]
+    fn session_origin_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionOrigin::OrchestratorL1).unwrap();
+        assert_eq!(json, r#""orchestrator_l1""#);
+        let json = serde_json::to_string(&SessionOrigin::OrchestratorL2).unwrap();
+        assert_eq!(json, r#""orchestrator_l2""#);
+        let json = serde_json::to_string(&SessionOrigin::DirectUser).unwrap();
+        assert_eq!(json, r#""direct_user""#);
+    }
+
+    #[test]
+    fn session_origin_deserializes_from_snake_case() {
+        let result: SessionOrigin = serde_json::from_str(r#""orchestrator_l2""#).unwrap();
+        assert_eq!(result, SessionOrigin::OrchestratorL2);
+    }
+
+    #[test]
+    fn session_origin_deserializes_with_default_when_field_absent() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json.replace(r#","origin":"direct_user""#, "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert_eq!(rt.origin, SessionOrigin::DirectUser);
+    }
+
+    #[test]
+    fn session_new_defaults_origin_to_direct_user() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        assert_eq!(s.origin, SessionOrigin::DirectUser);
+    }
+
+    #[test]
+    fn session_new_defaults_active_command_to_none() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        assert!(s.active_command.is_none());
+    }
+
+    #[test]
+    fn session_with_origin_builder_sets_origin() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None)
+            .with_origin(SessionOrigin::OrchestratorL1);
+        assert_eq!(s.origin, SessionOrigin::OrchestratorL1);
+    }
+
+    #[test]
+    fn session_with_active_command_builder_sets_command() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None)
+            .with_active_command(Some("implement".to_string()));
+        assert_eq!(s.active_command.as_deref(), Some("implement"));
+    }
+
+    #[test]
+    fn session_active_command_round_trips_via_serde() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None)
+            .with_active_command(Some("implement".to_string()));
+        let json = serde_json::to_string(&s).unwrap();
+        let rt: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.active_command.as_deref(), Some("implement"));
+    }
+
+    #[test]
+    fn session_active_command_deserializes_with_default_when_field_absent() {
+        let s = Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        let json = serde_json::to_string(&s).unwrap();
+        let stripped = json.replace(r#","active_command":null"#, "");
+        let rt: Session = serde_json::from_str(&stripped).unwrap();
+        assert!(rt.active_command.is_none());
     }
 }

@@ -416,6 +416,8 @@ mod tests {
             role: crate::session::role::Role::default(),
             consultation_skip_logged: false,
             adapt_follow_up_considered: false,
+            origin: crate::session::types::SessionOrigin::default(),
+            active_command: None,
         };
         ManagedSession::new(session)
     }

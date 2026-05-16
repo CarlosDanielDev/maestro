@@ -34,6 +34,8 @@ mod stream_parsing;
 #[cfg(test)]
 mod templates_render;
 #[cfg(test)]
+mod templates_runtime;
+#[cfg(test)]
 mod upgrade;
 #[cfg(test)]
 mod wip_backup;

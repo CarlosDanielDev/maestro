@@ -11,6 +11,7 @@
 mod error;
 mod manifest;
 pub mod provider_rules;
+pub mod rendered_cache;
 mod renderer;
 #[cfg(test)]
 pub(crate) mod test_fakes;
@@ -23,6 +24,11 @@ pub(crate) use manifest::{ManifestMeta, ManifestPlaceholder, ManifestProvider};
 #[cfg(test)]
 pub(crate) use provider_rules::NullRules;
 pub use provider_rules::{TemplateProviderRules, null_rules};
+#[cfg(test)]
+pub(crate) use rendered_cache::FakeRenderedStore;
+#[allow(unused_imports)]
+// Reason: DiskRenderedTemplateStore wired in setup once active_command is plumbed (#707)
+pub use rendered_cache::{DiskRenderedTemplateStore, RenderedTemplateStore};
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use renderer::{PlaceholderKind, Token, tokenize};
