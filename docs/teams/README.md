@@ -72,9 +72,9 @@ The interactive `compose / launch / manage` flows live in the TUI wizard (`maest
 
 ## State migration
 
-The on-disk state file (`maestro-state.json`) carries an explicit `version: u32` field starting with v0.27.0. Files written by older maestro versions (no `version` key) load with `version = 0` and migrate to `CURRENT_STATE_VERSION = 1` on first read. The migration is structural: every later-added field already defaulted via `#[serde(default)]`, so the bump is the only mutation required for `0 → 1`.
+The on-disk state file (`maestro-state.json`) carries an explicit `version: u32` field starting with v0.26.0. Files written by older maestro versions (no `version` key) load with `version = 0` and migrate to `CURRENT_STATE_VERSION = 1` on first read. The migration is structural: every later-added field already defaulted via `#[serde(default)]`, so the bump is the only mutation required for `0 → 1`.
 
 ## See also
 
 - [`directory-tree.md`](../../directory-tree.md) — full project layout
-- [`CHANGELOG.md`](../../CHANGELOG.md) — v0.27.0 release notes
+- [`CHANGELOG.md`](../../CHANGELOG.md) — v0.26.0 release notes

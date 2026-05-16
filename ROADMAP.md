@@ -1,162 +1,58 @@
 # Maestro Roadmap
 
-> Single source of truth for project milestones and implementation order.
-> See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
+> Single source of truth for shipped and upcoming work.
+> See [CHANGELOG.md](CHANGELOG.md) for detailed release notes per version.
 
 ---
 
-## Milestone: v0.1.0 — Foundation + Core Features ✅
+## Released
 
-**Status:** Released (2026-03-24)
+### v0.28.0 — Template sync engine ✅ (2026-05-16)
 
-All core orchestration features from Phases 0–4 of the PRD.
+Canonical command specs in `.maestro/templates/`, rendered per-provider via `maestro sync-templates`. SHA-256 lockfile + CI drift check. HTTP-provider runtime template injection. Cross-platform release tarball ergonomics.
 
-| Phase | Description | Issue | PR | Status |
-|-------|-------------|-------|----|--------|
-| Phase 0 | Foundation — single-session TUI, parser, state | — | `ebfb959` | ✅ Done |
-| Phase 1 | Multi-session pool, split-pane TUI, worktrees, file claims | [#2] | [#6] | ✅ Done |
-| Phase 2 | GitHub integration — issues, PRs, labels, dependencies | [#3] | [#7] | ✅ Done |
-| Phase 3 | Intelligence — budget, stall detection, retry, gates | [#4] | [#8] | ✅ Done |
-| Phase 4 | Plugins, modes, TUI polish, resume, completions | [#5] | [#11] | ✅ Done |
+### v0.26.0 — Team orchestration ✅ (2026-05-12)
 
----
+Multi-agent coordination layer: L1/L2/L3 scheduler, five built-in presets (`default-coder`, `default-researcher`, `default-triager`, `default-reviewer`, `default-docs`), TUI launch wizard, CLI `team` subcommands (`list`, `new`, `launch`, `manage`, `explain`), three-tier preset resolution (built-in → user → project), headless `--yes` mode for CI.
 
-## Milestone: v0.4.0 — Live TUI Data and Session Launch 🚀
+### v0.25.1 — CI gates hardening ✅ (2026-05-06)
 
-**Status:** In Progress
+`cargo-dupes` regression gate added to CI; release-script resilience fix.
 
-Wiring the interactive TUI screens to real GitHub data and real Claude session launch.
+### v0.25.0 — Multi-agent runtime ✅ (2026-05-06)
 
-| Issue | Title | Priority | Status |
-|-------|-------|----------|--------|
-| [#46] | Issue browser fetches issues from GitHub on open | P1 | Done |
-| [#47] | Milestone screen fetches milestones from GitHub on open | P1 | Done |
-| [#48] | Session launch wired from issue browser and milestone screens | P1 | Done |
+Added Codex, Qwen, OpenCode (subprocess) and Ollama, MiniMax (HTTP) providers alongside Claude. Provider selected via `--agent <id>` or `[agents].default`; subprocess vs HTTP transport abstracted behind a single trait.
+
+### v0.24.1 — README hero polish ✅ (2026-05-05)
+
+Replaced distorted README hero image with a snapshot-driven SVG render produced by `scripts/render-readme-hero.sh`.
 
 ---
 
-## Milestone: v0.2.0 — Quality & Hardening 🔧
+## What's Next
 
-**Status:** In Progress
+Items below are sourced from explicitly-deferred decisions in `docs/superpowers/specs/*.md`. They are candidates, not commitments — scope is set per release.
 
-Hardening, missing PRD features, test coverage, and distribution.
+### From the orchestration-wizard spec (deferred to v2+)
 
-### Missing PRD Features
+- **Versioned `extends` syntax** — `extends = "default-coder@v1"` to insulate user presets from built-in drift; today, breaking changes to built-in presets are documented in CHANGELOG only.
+- **Migration `assist` command** — convert legacy `[modes.*]` configs into team presets automatically.
+- **Real-time team coordination** — subagents talking to each other mid-run (currently each run is independent).
+- **Auto-tuning team bindings** based on past success rates.
+- **Team marketplaces / preset sharing** via a registry.
 
-| Issue | Title | Priority | Status |
-|-------|-------|----------|--------|
-| [#12] | Context overflow detection and auto-fork | P1 | Done |
-| [#13] | Real-time conflict detection via stream parsing | P1 | Planned |
-| [#14] | Slack webhook integration for notifications | P2 | Planned |
-| [#31] | Interactive home screen with idle dashboard | P1 | Done |
-| [#32] | Interactive issue browser with selection and launch | P1 | Done |
-| [#33] | Milestone overview with progress tracking | P1 | Done |
-| [#35] | Work suggestions and quick commands on home screen | P1 | Done |
-| [#41] | CI error detection and auto-fix loop | P1 | Done |
+### From the implement-harness-enforcement spec (deferred to v2)
 
-### Testing & Quality
+- **Baseline-green cost optimization** — swap the full `cargo test` baseline assertion for `cargo test --no-run --quiet` (compile-only) to cut 30+ seconds off every `/implement` run on large projects.
 
-| Issue | Title | Priority |
-|-------|-------|----------|
-| [#15] | Integration test suite for end-to-end session lifecycle | P1 |
-| [#16] | TUI rendering snapshot tests | P2 |
-| [#19] | Benchmark session parser throughput | P2 |
+### Ongoing
 
-### Infrastructure & Docs
-
-| Issue | Title | Priority | Status |
-|-------|-------|----------|--------|
-| [#17] | Release workflow for binary builds and distribution | P2 | Done |
-| [#18] | Man page and shell completion installation guide | P2 | Planned |
+- **CI quality gates depth** — mutation testing, coverage tiers, and miri/ThreadSanitizer integration land incrementally per the CI gates design doc.
 
 ---
 
-## Milestone: v0.3.0 — Multi-Project Task Management 🌐
+## How to follow along
 
-**Status:** Planned
-
-Extend Maestro from single-project to multi-project orchestration (Phase 5).
-
-**Tracking issue:** [#9]
-
-| Issue | Title | Blocked By | Priority |
-|-------|-------|------------|----------|
-| [#20] | Workspace configuration with multi-project maestro.toml | — | P1 |
-| [#21] | Cross-project session orchestration | [#20] | P1 |
-| [#22] | Multi-project TUI dashboard | [#21] | P1 |
-| [#23] | CLI extensions for multi-project management | [#20] | P2 |
-| [#24] | Cross-project notifications and event routing | [#21] | P2 |
-
----
-
-## Implementation Order
-
-```
-v0.1.0 ✅ Complete
-  └── Phases 0-4 (all merged)
-
-v0.4.0 🚀 In Progress
-  ├── #46 Issue browser live fetch ──✅ Done
-  ├── #47 Milestone screen live fetch ✅ Done
-  └── #48 Session launch from screens ✅ Done
-
-v0.2.0 🔧 In Progress
-  ├── #12 Context auto-fork ─────────✅ Done
-  ├── #13 Conflict detection ────────┐ PRD gaps (parallel)
-  ├── #14 Slack notifications ───────┘ 
-  ├── #15 Integration tests ─────────┐
-  ├── #16 TUI snapshot tests ────────┤ Quality (parallel)
-  ├── #19 Parser benchmarks ─────────┘
-  ├── #17 Release workflow ─────────✅ Done
-  ├── #41 CI auto-fix loop ─────────✅ Done
-  └── #18 Completion docs
-
-v0.13.0 🧠 TurboQuant Full Integration
-  ├── #246 Context compaction adapter ──┐
-  ├── #252 Runtime toggle via flag ─────┤ Level 0 (parallel)
-  ├── #251 System resource monitor ─────┘
-  ├── #249 Token analytics metrics ─────┐ Level 1 (parallel)
-  ├── #253 A/B benchmark dashboard ─────┘
-  └── #250 Feature guide (docs) ──────── Level 2
-
-v0.3.0 🌐 Planned
-  ├── #20 Workspace config ──────────┐
-  │   ├── #21 Cross-project orch. ───┤ Sequential
-  │   │   ├── #22 Multi-project TUI  │
-  │   │   └── #24 Cross-proj notifs  │
-  │   └── #23 CLI extensions ────────┘
-  └── (all depend on #20 workspace config)
-```
-
----
-
-[#2]: https://github.com/CarlosDanielDev/maestro/issues/2
-[#3]: https://github.com/CarlosDanielDev/maestro/issues/3
-[#4]: https://github.com/CarlosDanielDev/maestro/issues/4
-[#5]: https://github.com/CarlosDanielDev/maestro/issues/5
-[#6]: https://github.com/CarlosDanielDev/maestro/pull/6
-[#7]: https://github.com/CarlosDanielDev/maestro/pull/7
-[#8]: https://github.com/CarlosDanielDev/maestro/pull/8
-[#9]: https://github.com/CarlosDanielDev/maestro/issues/9
-[#11]: https://github.com/CarlosDanielDev/maestro/pull/11
-[#12]: https://github.com/CarlosDanielDev/maestro/issues/12
-[#13]: https://github.com/CarlosDanielDev/maestro/issues/13
-[#14]: https://github.com/CarlosDanielDev/maestro/issues/14
-[#15]: https://github.com/CarlosDanielDev/maestro/issues/15
-[#16]: https://github.com/CarlosDanielDev/maestro/issues/16
-[#17]: https://github.com/CarlosDanielDev/maestro/issues/17
-[#18]: https://github.com/CarlosDanielDev/maestro/issues/18
-[#19]: https://github.com/CarlosDanielDev/maestro/issues/19
-[#20]: https://github.com/CarlosDanielDev/maestro/issues/20
-[#21]: https://github.com/CarlosDanielDev/maestro/issues/21
-[#22]: https://github.com/CarlosDanielDev/maestro/issues/22
-[#23]: https://github.com/CarlosDanielDev/maestro/issues/23
-[#24]: https://github.com/CarlosDanielDev/maestro/issues/24
-[#31]: https://github.com/CarlosDanielDev/maestro/issues/31
-[#32]: https://github.com/CarlosDanielDev/maestro/issues/32
-[#33]: https://github.com/CarlosDanielDev/maestro/issues/33
-[#35]: https://github.com/CarlosDanielDev/maestro/issues/35
-[#41]: https://github.com/CarlosDanielDev/maestro/issues/41
-[#46]: https://github.com/CarlosDanielDev/maestro/issues/46
-[#47]: https://github.com/CarlosDanielDev/maestro/issues/47
-[#48]: https://github.com/CarlosDanielDev/maestro/issues/48
+- **Open milestones:** [github.com/CarlosDanielDev/maestro/milestones](https://github.com/CarlosDanielDev/maestro/milestones)
+- **Latest release binary:** [releases/latest](https://github.com/CarlosDanielDev/maestro/releases/latest)
+- **Per-release notes:** [`CHANGELOG.md`](CHANGELOG.md)
