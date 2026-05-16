@@ -178,7 +178,9 @@ pub fn scaffold_templates_dir(s: &dyn Scaffolder) -> Result<ScaffoldReport> {
 }
 
 /// Stable list of relative paths (under the project root) that
-/// `scaffold_templates_dir` writes.
+/// `scaffold_templates_dir` writes. Test-only — production callers
+/// consume the `ScaffoldReport` returned by `scaffold_templates_dir`.
+#[cfg(test)]
 pub fn template_relative_paths() -> Vec<PathBuf> {
     FILES
         .iter()

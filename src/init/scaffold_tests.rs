@@ -1,7 +1,7 @@
 //! Tests for `scaffold.rs`. Sibling file loaded via `#[path]` to keep
 //! `scaffold.rs` under the repo's 400-line guardrail.
 
-use super::{FsScaffolder, ScaffoldAction, ScaffoldReport, Scaffolder, scaffold_templates_dir};
+use super::{FsScaffolder, ScaffoldAction, Scaffolder, scaffold_templates_dir};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
