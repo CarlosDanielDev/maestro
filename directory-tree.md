@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-15 18:00 (UTC)
+> Last updated: 2026-05-15 20:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -110,7 +110,7 @@ maestro/
 │   │   ├── clean.rs                       # cmd_clean(): prune orphaned worktrees and stale log files
 │   │   ├── dashboard.rs                   # cmd_dashboard(): launch the TUI dashboard
 │   │   ├── doctor.rs                      # cmd_doctor(): run preflight checks and print report; `pub async fn run_health_check(agent_ids: &[String]) -> Vec<AgentHealthCheck>` library entry point for orchestration pre-flight  [Issue #663]
-│   │   ├── init.rs                        # cmd_init(): scaffold maestro.toml; delegates to src/init/; accepts --reset flag  [Issue #505]
+│   │   ├── init.rs                        # cmd_init(): scaffold maestro.toml; delegates to src/init/; accepts --reset flag; calls scaffold_templates_and_report(project_root) after Fresh and Merged writes to drop .maestro/templates/ mirror  [Issue #505, #708]
 │   │   ├── logs.rs                        # cmd_logs(): stream or tail session log files
 │   │   ├── queue.rs                       # cmd_queue(): interactive work-queue management
 │   │   ├── resume.rs                      # cmd_resume(): re-attach to a paused session
@@ -193,12 +193,14 @@ maestro/
 │   │   ├── scaffolder.rs                  # Scaffold phase: ProjectScaffolder trait, ClaudeScaffolder impl, write_scaffold_files(); generates project files from adapt plan  [Issue #371]
 │   │   ├── prompts.rs                     # Claude prompt builders for analyzer, planner, and scaffold phases  [Issue #371]
 │   │   └── knowledge.rs                   # Knowledge-base compression (Phase 2.6): consumes AdaptReport + ProjectProfile; produces KnowledgeBase (six token-budgeted sections); write_knowledge_file() writes .maestro/knowledge.md; auto-loaded by SessionPool::try_promote as a system-prompt component; 1 MiB size cap, symlink rejection, TOCTOU-safe load, envelope-wrapped injection  [Issue #347]
-│   ├── init/                              # Project tech-stack auto-detection used by `maestro init --reset` and the Settings TUI action  [Issue #505]
-│   │   ├── mod.rs                         # Module facade; RenderOutcome enum (Fresh | Merged); render_or_merge() top-level orchestration used by CLI and TUI
+│   ├── init/                              # Project tech-stack auto-detection used by `maestro init --reset` and the Settings TUI action; includes template scaffolding since #708  [Issue #505, #708]
+│   │   ├── mod.rs                         # Module facade; RenderOutcome enum (Fresh | Merged); render_or_merge() top-level orchestration used by CLI and TUI; re-exports scaffold_templates_and_report()  [Issue #505, #708]
 │   │   ├── detector.rs                    # DetectedStack enum (Rust, Node, Python, Go); ProjectDetector trait; FsProjectDetector probes marker files (Cargo.toml, package.json, pyproject.toml/requirements.txt/setup.py, go.mod); FakeProjectDetector for tests
 │   │   ├── walk.rs                        # find_project_root(): walks ancestors looking for known marker files
 │   │   ├── template.rs                    # StackDefaults per stack (language, build_command, test_command, run_command); render_template() produces a complete maestro.toml string including [views]\nagent_graph_enabled = true (default-on since v0.25.1 #710)  [Issue #505, #710]
 │   │   ├── template_tests.rs              # Sibling test module extracted from template.rs to stay under the 400-LOC cap (attached via #[cfg(test)] #[path]); covers render_template output for all DetectedStack variants  [Issue #710]
+│   │   ├── scaffold.rs                    # Scaffolder trait + FsScaffolder impl; scaffold_templates_dir() writes template/.maestro/templates/ mirror into the project root; template_relative_paths() enumerates embedded paths; files embedded via include_bytes! at build time — works for `cargo install` binaries; idempotent: reports Created / Skipped per file; path-traversal hardening rejects any relative path escaping the target dir  [Issue #708]
+│   │   ├── scaffold_tests.rs              # Sibling unit tests for scaffold.rs (attached via #[cfg(test)] #[path]); covers fresh write, idempotency (Skipped), and path-traversal rejection  [Issue #708]
 │   │   └── merge.rs                       # MergeReport; merge_toml() merges detected defaults into an existing TOML string — adds missing keys, never overwrites user-set keys
 │   ├── templates/                         # Canonical command-template render engine  [Issue #701]
 │   │   ├── mod.rs                         # Public API: `render_for_provider(provider, command)` + `render_command_in(root, provider, command)` + `render_command_for_rules(root, rules, command)`; sandbox-validates the `command` parameter before path traversal; the third entry point allows sync-templates to render with a `&'static dyn TemplateProviderRules` directly (no provider instantiation)
@@ -620,6 +622,7 @@ maestro/
 │   ├── layers-debt.txt                    # Layer-boundary debt notes
 │   ├── RUST-GUARDRAILS.md                 # Rust coding policy and guardrails (single source of truth)
 │   ├── tech-debt-catalog.md               # Automated tech-debt catalog (generated by maestro adapt)
+│   ├── templates.md                       # Developer guide for the canonical templates layer: placeholder vocabulary, how to add commands/providers, drift detection, per-provider quirks, maestro init scaffolding, troubleshooting  [Issue #708]
 │   ├── teams/                             # Team orchestration preset documentation (v0.27.0+)  [Issue #665]
 │   │   ├── README.md                      # Preset overview, three-tier resolution model, five built-ins table, CLI surface, headless launch semantics, and state migration guide
 │   │   ├── default-coder.md               # `default-coder` pipeline preset — implementer → reviewer → docs; customisation examples
@@ -638,19 +641,32 @@ maestro/
 │           └── 2026-05-05-orchestration-wizard-design.md  # Orchestration wizard design spec — locked decisions, architecture layers, data model, CLI surface  [Issue #665]
 ├── template/
 │   ├── README-TEMPLATE.md                 # Template usage instructions
-│   └── .claude/                           # Reproducible template for new projects
-│       ├── CLAUDE.md
-│       ├── agents/                        # Template copies of all subagents
-│       ├── commands/
-│       │   ├── implement.md
-│       │   └── validate-contracts.md
-│       ├── hooks/
-│       │   └── README.md
-│       ├── settings.json
-│       └── skills/                        # Template copies of core skills
-│           ├── api-contract-validation/
-│           ├── project-patterns/
-│           └── security-patterns/
+│   ├── .claude/                           # Reproducible template for new projects
+│   │   ├── CLAUDE.md                      # Template CLAUDE.md; §4 (canonical templates rule) added in #708
+│   │   ├── agents/                        # Template copies of all subagents
+│   │   ├── commands/
+│   │   │   ├── implement.md
+│   │   │   └── validate-contracts.md
+│   │   ├── hooks/
+│   │   │   └── README.md
+│   │   ├── settings.json
+│   │   └── skills/                        # Template copies of core skills
+│   │       ├── api-contract-validation/
+│   │       ├── project-patterns/
+│   │       └── security-patterns/
+│   └── .maestro/
+│       └── templates/                     # Byte-mirror of canonical .maestro/templates/ for scaffolding; embedded via include_bytes! in src/init/scaffold.rs; kept in sync by tests/template_mirror_drift.rs; fix drift with: cp -a .maestro/templates/. template/.maestro/templates/  [Issue #708]
+│           ├── README.md
+│           ├── manifest.toml
+│           ├── core/
+│           │   ├── premises.md
+│           │   ├── tdd-cycle.md
+│           │   └── dependency-graph.md
+│           └── commands/
+│               ├── implement.md
+│               ├── pushup.md
+│               ├── plan-feature.md
+│               └── simplify.md
 ├── scripts/                               # Project-level shell scripts and config for architecture, file-size, coverage, and workflow automation
 │   ├── allowlist-large-files.txt          # Allowlist for large files exempted from size checks; src/tui/screens/milestone_health/state/tests/mod.rs added (deadline 2026-07-22, pending at(step) helper)  [Issue #500]
 │   ├── architecture-layers.yml            # Layer dependency rules for check-layers.sh
@@ -690,6 +706,7 @@ maestro/
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
 │   ├── subagent_manifest_drift.rs         # Drift guard: set-difference between `.claude/agents/subagent-*.md` on disk and `[[subagents]]` slugs in `manifest.toml`; fails with a diff line on "missing from manifest" or "stale in manifest"; 5 unit tests + 1 live-repo integration test  [Issue #728]
+│   ├── template_mirror_drift.rs           # Drift guard: asserts byte-equality between every file in `.maestro/templates/` and its mirror under `template/.maestro/templates/`; fails CI when the mirror is stale; fix with: cp -a .maestro/templates/. template/.maestro/templates/  [Issue #708]
 │   ├── templates_render.rs                # 5 byte-identical regression tests asserting `.claude/commands/*.md` matches rendered output from `.maestro/templates/`; enforces drift detection in CI  [Issue #703, #729]
 │   ├── fixtures/                          # Static test fixtures for integration and unit tests
 │   │   └── state/
@@ -744,6 +761,9 @@ maestro/
 | `docs/FOLLOW-UPS.md` | Pending hardening and security follow-up items (non-blocking; file as issues before next release) |
 | `docs/RUST-GUARDRAILS.md` | Rust coding policy — single source of truth; amend via PR |
 | `docs/tech-debt-catalog.md` | Tech-debt catalog generated by `maestro adapt` |
+| `docs/templates.md` | Canonical templates developer guide — placeholder vocabulary, add commands/providers, drift detection, `maestro init` scaffolding (Issue #708) |
+| `tests/template_mirror_drift.rs` | Drift guard asserting byte-equality between `.maestro/templates/` and `template/.maestro/templates/` (Issue #708) |
+| `template/.maestro/templates/` | Byte-mirror of canonical templates embedded by `src/init/scaffold.rs` via `include_bytes!`; kept in sync by `tests/template_mirror_drift.rs` (Issue #708) |
 | `docs/teams/` | Team orchestration preset documentation (v0.27.0+) |
 | `docs/teams/README.md` | Preset overview, three-tier resolution, five built-ins, CLI surface, headless launch, state migration |
 | `docs/superpowers/specs/2026-05-05-orchestration-wizard-design.md` | Orchestration wizard design spec — locked decisions, architecture, data model |

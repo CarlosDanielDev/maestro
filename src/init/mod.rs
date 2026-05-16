@@ -3,6 +3,7 @@
 
 pub mod detector;
 pub mod merge;
+pub mod scaffold;
 pub mod template;
 pub mod walk;
 

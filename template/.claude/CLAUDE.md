@@ -33,6 +33,12 @@
 2. **GREEN** — Write minimum code to pass
 3. **REFACTOR** — Clean up, tests stay green
 
+### 4. CANONICAL TEMPLATES — DO NOT EDIT RENDERED FILES
+
+- Edit canonical files under `.maestro/templates/commands/` and `.maestro/templates/core/`.
+- Never edit rendered `.claude/commands/*.md` directly (they carry an `AUTO-GENERATED` banner).
+- Run `maestro sync-templates` after every canonical edit; commit the regenerated artifacts.
+
 ---
 
 ## FIRST ACTIONS: Language and Mode Selection

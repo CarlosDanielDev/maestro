@@ -1,0 +1,86 @@
+# .maestro/templates/manifest.toml
+#
+# Canonical templates manifest. Parsed by the render engine
+# (`src/templates/manifest.rs`, issue #701). The renderer's placeholder
+# vocabulary is hard-coded; this file declares per-placeholder validation
+# hints and per-provider metadata.
+
+[meta]
+version = 1
+description = "maestro canonical templates manifest"
+templates_root = ".maestro/templates"
+
+# ── Placeholder validation hints ────────────────────────────────────────
+# Each entry mirrors the renderer's hard-coded vocabulary. `required_args`
+# is informational metadata; the renderer enforces required args itself.
+
+[placeholders.INVOKE_SUBAGENT]
+description = "render the canonical instruction for invoking a subagent"
+required_args = ["name", "prompt"]
+
+[placeholders.HOOK_GATE]
+description = "render the bash invocation for a pre-/post-step hook gate"
+required_args = ["script", "args"]
+
+[placeholders.INCLUDE]
+description = "inline a shared core fragment from the templates root"
+required_args = ["path"]
+max_depth = 8
+
+[placeholders.SUBAGENT_LIST]
+description = "render the active subagent registry for the target provider"
+required_args = []
+
+[placeholders.SKILL]
+description = "reference a skill knowledge base"
+required_args = ["name"]
+
+# ── Per-provider metadata (parsed; consumed by L2 in #703-#705) ─────────
+
+[providers.claude]
+display_name = "Claude Code"
+target_dir = ".claude/commands"
+inline_skills = false
+
+[providers.codex]
+display_name = "Codex CLI"
+target_dir = ".codex/commands"
+inline_skills = true
+
+[providers.http_generic]
+display_name = "Generic HTTP provider"
+target_dir = ""
+inline_skills = true
+
+# ── Subagent registry (rendered by {{SUBAGENT_LIST}}) ────────────────────
+# Order in this file = order in the rendered Markdown table. Drift between
+# this list and `.claude/agents/subagent-*.md` is caught by
+# `tests/subagent_manifest_drift.rs`.
+
+[[subagents]]
+slug = "subagent-gatekeeper"
+purpose = "DOR, blockers, and API-contract gate for `/implement`"
+
+[[subagents]]
+slug = "subagent-architect"
+purpose = "Architecture design and implementation planning"
+
+[[subagents]]
+slug = "subagent-qa"
+purpose = "QA engineering, test design, quality gates"
+
+[[subagents]]
+slug = "subagent-security-analyst"
+purpose = "Security review (OWASP Top 10)"
+
+[[subagents]]
+slug = "subagent-docs-analyst"
+purpose = "Documentation management (only subagent allowed to write `.md`)"
+
+[[subagents]]
+slug = "subagent-master-planner"
+purpose = "System architecture planning, ADRs"
+
+[[subagents]]
+slug = "subagent-idea-triager"
+purpose = "Idea-inbox triage gate (5-question honesty check)"

@@ -205,6 +205,18 @@ subagent-security-analyst → Security review
 subagent-docs-analyst → Documentation
 ```
 
+### 6. CANONICAL TEMPLATES — DO NOT EDIT RENDERED FILES
+
+`.maestro/templates/` is the canonical source for slash commands. The orchestrator and contributors MUST:
+
+- Edit canonical files under `.maestro/templates/commands/` and `.maestro/templates/core/`, **never** edit rendered `.claude/commands/*.md` directly (those carry an `AUTO-GENERATED` banner).
+- Run `maestro sync-templates` after every canonical edit; commit the regenerated artifacts.
+- CI runs `maestro sync-templates --check` and rejects PRs with drift.
+
+`maestro init` scaffolds the same `.maestro/templates/` reference tree into newly initialized projects (embedded under `template/.maestro/templates/`; a drift test guards the mirror).
+
+See `docs/templates.md` for the placeholder vocabulary, per-provider quirks, and the "how to add a new command" walkthrough.
+
 ---
 
 ## FIRST ACTIONS: Language and Mode Selection
