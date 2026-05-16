@@ -35,6 +35,18 @@ maestro team new cheap-coder --extends default-coder --implementer opencode
 
 That writes `~/.config/maestro/maestro/teams/cheap-coder.toml` with `extends = "default-coder"` plus the override, leaving the built-in untouched.
 
+## User Guide
+
+New to team presets? Walk through the cookbook in order:
+
+1. [When to use a team](cookbook/01-when-to-use-a-team.md) — decision matrix, cost intuition.
+2. [Extending a built-in](cookbook/02-extending-a-builtin.md) — swap an agent, add a prompt addendum, pin to project tier.
+3. [Composing from scratch](cookbook/03-composing-from-scratch.md) — schema cheat sheet, naming rules.
+4. [Recipes](cookbook/04-recipes.md) — end-to-end `team new` → `team launch --yes` walkthrough plus multi-issue and tier-precedence flows.
+5. [Troubleshooting](cookbook/05-troubleshooting.md) — every loader error message and the honest v1 scope notes.
+
+Every TOML snippet in the cookbook is mirrored by a fixture under `tests/fixtures/teams_cookbook/` and validated on every CI run.
+
 ## CLI surface
 
 | Command | Purpose |

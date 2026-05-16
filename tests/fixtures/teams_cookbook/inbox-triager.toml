@@ -1,0 +1,4 @@
+extends = "default-triager"
+
+[role_overrides.triager]
+prompt_addendum = "Triage strictly: park anything missing acceptance criteria."

@@ -1,0 +1,5 @@
+extends = "default-coder"
+docs = "claude"
+
+[role_overrides.docs]
+prompt_addendum = "Enforce project ADR conventions. Reject undocumented public APIs."

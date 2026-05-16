@@ -1,0 +1,4 @@
+extends = ""
+primitive = "fan-out"
+min_agents = ["claude"]
+reviewer = "claude"
