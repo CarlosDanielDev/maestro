@@ -27,7 +27,7 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 
 ### TUI dashboard
 - Interactive landing screen with quick-actions menu, contextual work suggestions, and recent activity
-- DOS-style F-key status bar (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Alt-X Exit)
+- DOS-style F-key status bar (F1 Help, F2 Summary, F3 Full, F4 Costs, F5 Tokens, F6 Deps, F9 Pause, F10 Kill, Ctrl+X Exit)
 - Rich activity log — file paths, command previews, tool durations, extended-thinking markers
 - Status-transition flash on session state changes
 - Completion-summary overlay when all sessions finish
@@ -73,7 +73,7 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 
 → [Docs › Agent Providers](docs/agents/mod.md) · [Configuration Reference](docs/configuration.md) · [Example multi-agent config](examples/multi-agent/maestro.toml)
 
-### Team orchestration (v0.27.0+)
+### Team orchestration (v0.26.0+)
 - Five built-in team presets — `default-coder`, `default-researcher`, `default-triager`, `default-reviewer`, `default-docs` — wired to coordination primitives (pipeline, fan-out, single-pass, verdict-only)
 - Three-tier preset resolution: built-in → user (`~/.config/maestro/maestro/teams/`) → project (`<repo>/.maestro/teams/`)
 - Headless launch — `maestro team launch <preset> --issue N --yes` drives the scheduler to completion for CI / scripting; per-issue failures surface as a non-zero exit
@@ -295,7 +295,7 @@ Maestro wraps — not replaces — your existing `.claude/` agent system. Each s
 
 ## Roadmap
 
-[`ROADMAP.md`](ROADMAP.md) is the single source of truth for milestones and implementation order; [`CHANGELOG.md`](CHANGELOG.md) has detailed release notes. The active milestone is **[v0.17.0 – Documentation & Community](https://github.com/CarlosDanielDev/maestro/milestone/28)**; browse all open milestones at [github.com/CarlosDanielDev/maestro/milestones](https://github.com/CarlosDanielDev/maestro/milestones), and the latest released version is always at [releases/latest](https://github.com/CarlosDanielDev/maestro/releases/latest).
+[`ROADMAP.md`](ROADMAP.md) is the single source of truth for shipped and upcoming work; [`CHANGELOG.md`](CHANGELOG.md) has detailed release notes. The latest release is **v0.28.0** (template sync engine + HTTP-provider runtime injection). Browse open milestones at [github.com/CarlosDanielDev/maestro/milestones](https://github.com/CarlosDanielDev/maestro/milestones); the latest released binary is always at [releases/latest](https://github.com/CarlosDanielDev/maestro/releases/latest).
 
 ## Contributing
 

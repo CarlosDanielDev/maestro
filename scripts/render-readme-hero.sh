@@ -104,7 +104,7 @@ def color_status_bar() -> None:
     write_plain(top, AMBER)
     parts = [
         ("│", AMBER),
-        (" MAESTRO v0.24.0 ", TQ),
+        (" MAESTRO v0.28.0 ", TQ),
         (" -- Welcome -- ", DIM_GREEN),
         ("0 agents (0 active)", GREEN),
         (" -- ", DIM_GREEN),
@@ -143,7 +143,7 @@ def color_main(line: str) -> None:
     if not stripped:
         write_plain(line, GREEN)
         return
-    if "██" in line or stripped == "v0.24.0":
+    if "██" in line or stripped == "v0.28.0":
         write_plain(line, GREEN)
         return
     if "[d]  Dashboard" in line:
