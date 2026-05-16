@@ -9,7 +9,10 @@ use std::path::Path;
 
 use crate::init::{
     FsProjectDetector, ProjectDetector, RenderOutcome, render_or_merge,
-    render_or_merge_with_provider, template::ProviderTemplate, walk::find_project_root,
+    render_or_merge_with_provider,
+    scaffold::{FsScaffolder, ScaffoldAction, scaffold_templates_dir},
+    template::ProviderTemplate,
+    walk::find_project_root,
 };
 use crate::provider::{detect_provider_from_remote, types::ProviderKind};
 
@@ -154,6 +157,7 @@ pub fn cmd_init_inner_with_options(
                     target.display()
                 );
             }
+            scaffold_templates_and_report(project_root)?;
         }
         RenderOutcome::Merged { stacks, report } => {
             std::fs::write(&target, &report.merged_toml)
@@ -169,10 +173,26 @@ pub fn cmd_init_inner_with_options(
                 report.keys_added.len(),
                 report.keys_preserved.len()
             );
+            scaffold_templates_and_report(project_root)?;
         }
     }
 
     Ok(0)
+}
+
+/// Scaffold `.maestro/templates/` next to the project root and print a
+/// one-line summary. Idempotent: pre-existing files are reported as Skipped.
+fn scaffold_templates_and_report(project_root: &Path) -> Result<()> {
+    let scaffolder = FsScaffolder::new(project_root.to_path_buf());
+    let report = scaffold_templates_dir(&scaffolder)?;
+    let created = report.count(ScaffoldAction::Created);
+    let skipped = report.count(ScaffoldAction::Skipped);
+    if created > 0 || skipped > 0 {
+        println!(
+            "Scaffolded .maestro/templates/: {created} created, {skipped} skipped (already present)."
+        );
+    }
+    Ok(())
 }
 
 fn provider_template_from_options(options: InitOptions<'_>) -> Result<ProviderTemplate> {
