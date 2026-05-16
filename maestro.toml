@@ -1,53 +1,57 @@
-plugins = []
-
 [project]
 repo = "CarlosDanielDev/maestro"
 base_branch = "main"
+language = "rust"
+build_command = "cargo build"
+test_command = "cargo test"
+run_command = "cargo run"
 
 [sessions]
-max_concurrent = 4
+max_concurrent = 3
 stall_timeout_secs = 300
 default_model = "opus"
 default_mode = "orchestrator"
-permission_mode = "bypassPermissions"
-allowed_tools = []
-max_retries = 2
-retry_cooldown_secs = 60
-max_prompt_history = 100
+permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
+allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
+# [agents]
+# default = "claude"
+# [agents.claude]
+# kind = "claude"
+# enabled = true
+# command = "claude"
+# model = "opus"
+# permission_mode = "bypassPermissions"
+# allowed_tools = []
 
-[sessions.hollow_retry]
-policy = "intent-aware"
-work_max_retries = 1
-consultation_max_retries = 0
-
-[sessions.context_overflow]
-overflow_threshold_pct = 70
-auto_fork = true
-commit_prompt_pct = 50
-max_fork_depth = 5
-
-[sessions.conflict]
-enabled = true
-policy = "warn"
-
-[sessions.completion_gates]
-enabled = true
-
-[[sessions.completion_gates.commands]]
-name = "fmt"
-run = "cargo fmt --check"
-required = true
-
-[[sessions.completion_gates.commands]]
-name = "clippy"
-run = "cargo clippy -- -D warnings"
-required = true
-
-[[sessions.completion_gates.commands]]
-name = "test"
-run = "cargo test"
-required = true
-
+# [agents.codex]
+# kind = "codex"
+# enabled = false
+# command = "codex"
+# model = "gpt-5.4-codex"
+# permission_mode = "yolo"
+# sandbox = "workspace-write"
+# json = true
+# ephemeral = false
+# extra_args = []
+# [agents.opencode]
+# kind = "opencode"
+# enabled = false
+# command = "opencode"
+# model = "anthropic/claude-sonnet-4-5"
+# extra_args = []
+# [agents.ollama]
+# kind = "ollama"
+# enabled = false
+# model = "qwen3"
+# base_url = "http://localhost:11434"
+# request_timeout_secs = 120
+# [agents.minimax]
+# kind = "minimax"
+# enabled = false
+# model = "MiniMax-M2.7"
+# base_url = "https://api.minimax.io/v1"
+# request_timeout_secs = 120
+# api_key_env = "MINIMAX_API_KEY"
 [budget]
 per_session_usd = 5.0
 total_usd = 50.0
@@ -56,14 +60,9 @@ alert_threshold_pct = 80
 [github]
 issue_filter_labels = ["maestro:ready"]
 auto_pr = true
+auto_merge = false                      # Set to true to auto-merge PRs after CI + review pass
+merge_method = "merge"                 # Options: merge, squash, rebase
 cache_ttl_secs = 300
-auto_merge = false
-merge_method = "merge"
-
-[notifications]
-desktop = true
-slack = false
-slack_rate_limit_per_min = 10
 
 [provider]
 kind = "github"
@@ -73,7 +72,6 @@ auto_merge = false
 merge_method = "squash"
 cache_ttl_secs = 300
 
-[models.routing]
 
 [gates]
 enabled = true
@@ -81,107 +79,27 @@ test_command = "cargo test"
 ci_poll_interval_secs = 30
 ci_max_wait_secs = 1800
 
-[gates.ci_auto_fix]
-enabled = true
-max_retries = 3
+[notifications]
+desktop = true
+slack = false
+# slack_webhook_url = "https://hooks.slack.com/services/T.../B.../xxx"
+# slack_rate_limit_per_min = 10
 
 [review]
-enabled = true
+enabled = false
 command = "gh pr review {pr_number} --comment --body 'Automated review by Maestro'"
-reviewers = []
 
 [concurrency]
 heavy_task_labels = []
-heavy_task_limit = 3
+heavy_task_limit = 2
 
 [monitoring]
 work_tick_interval_secs = 10
 
-[modes]
-
-[tui]
-ascii_icons = false
-show_mascot = true
-mascot_style = "sprite"
-
-[tui.theme]
-preset = "retro"
-
-[tui.theme.overrides]
-
-[tui.layout]
-mode = "horizontal"
-density = "compact"
-preview_ratio = 65
-activity_log_height = 20
-
-[flags]
-
-[turboquant]
-enabled = true
-bit_width = 4
-strategy = "turboquant"
-apply_to = "both"
-auto_on_overflow = false
-fork_handoff_budget = 4096
-system_prompt_budget = 2048
-knowledge_budget = 4096
-
-[adapt]
-milestone_naming = "ai"
-
 [views]
 agent_graph_enabled = true
 
-[agents]
-default = "claude"
-
-[agents.claude]
-kind = "claude"
-enabled = true
-command = "claude"
-model = "opus"
-permission_mode = "bypassPermissions"
-allowed_tools = []
-
-[agents.codex]
-kind = "codex"
-enabled = true
-command = "codex"
-model = "gpt-5.1-codex-max"
-permission_mode = "yolo"
-sandbox = "workspace-write"
-json = true
-ephemeral = false
-extra_args = []
-
-[agents.minimax]
-kind = "minimax"
-enabled = true
-model = "MiniMax-M2.7"
-base_url = "https://api.minimax.io/v1"
-request_timeout_secs = 120
-api_key_env = "MINIMAX_API_KEY"
-
-[agents.ollama]
-kind = "ollama"
-enabled = true
-model = "qwen3"
-base_url = "http://localhost:11434"
-request_timeout_secs = 120
-
-[agents.opencode]
-kind = "opencode"
-enabled = true
-command = "opencode"
-model = "opencode-go/deepseek-v4-pro"
-permission_mode = "bypassPermissions"
-extra_args = []
-
-[agents.qwen]
-kind = "qwen"
-enabled = true
-command = "qwen"
-model = "qwen-test"
-permission_mode = "bypassPermissions"
-extra_args = ["--auth-type", "openai"]
+[flags]
+# continuous_mode = true   # default: true
+# auto_fork = true         # default: true
+# ci_auto_fix = false      # default: false
