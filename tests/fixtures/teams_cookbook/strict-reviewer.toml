@@ -1,0 +1,4 @@
+extends = "default-coder"
+
+[role_overrides.reviewer]
+prompt_addendum = "Apply strict style enforcement: no magic numbers, all public items documented."
