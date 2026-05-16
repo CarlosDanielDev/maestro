@@ -155,6 +155,8 @@ impl RetryPolicy {
         new_session.retry_count = original.retry_count + 1;
         new_session.last_retry_at = Some(Utc::now());
         new_session.issue_title = original.issue_title.clone();
+        new_session.origin = original.origin;
+        new_session.active_command = original.active_command.clone();
         new_session
     }
 }
@@ -661,5 +663,28 @@ consultation_max_retries = 3
         // A consultation hollow session with consultation_max=0 must report
         // effective_max=0, NOT the work_max_retries of 3.
         assert_eq!(policy.effective_max(&session), 0);
+    }
+
+    // --- Issue #707: retry inherits origin + active_command ---
+
+    #[test]
+    fn retry_inherits_origin_from_original() {
+        let policy = RetryPolicy::new(2, 0, legacy_hollow(1));
+        let mut original = make_session(SessionStatus::Errored, 0);
+        original.origin = crate::session::types::SessionOrigin::OrchestratorL2;
+        let retry = policy.prepare_retry(&original, None, None);
+        assert_eq!(
+            retry.origin,
+            crate::session::types::SessionOrigin::OrchestratorL2
+        );
+    }
+
+    #[test]
+    fn retry_inherits_active_command_from_original() {
+        let policy = RetryPolicy::new(2, 0, legacy_hollow(1));
+        let mut original = make_session(SessionStatus::Errored, 0);
+        original.active_command = Some("implement".to_string());
+        let retry = policy.prepare_retry(&original, None, None);
+        assert_eq!(retry.active_command.as_deref(), Some("implement"));
     }
 }

@@ -113,6 +113,8 @@ impl SessionForker for ForkPolicy {
         child.parent_session_id = Some(parent.id);
         child.fork_depth = parent.fork_depth + 1;
         child.issue_title = parent.issue_title.clone();
+        child.origin = parent.origin;
+        child.active_command = parent.active_command.clone();
 
         ForkResult::Forked {
             child: Box::new(child),
@@ -538,6 +540,47 @@ mod tests {
                 handoff_metrics, ..
             } => {
                 assert!(handoff_metrics.is_none());
+            }
+            ForkResult::Denied { reason } => panic!("Fork denied: {}", reason),
+        }
+    }
+
+    // --- Issue #707: fork inherits origin + active_command ---
+
+    #[test]
+    fn fork_child_inherits_origin_from_parent() {
+        let policy = ForkPolicy::new(5);
+        let mut parent = make_session(SessionStatus::Running, 0);
+        parent.origin = crate::session::types::SessionOrigin::OrchestratorL1;
+        let result = policy.prepare_fork(
+            &parent,
+            None,
+            ForkReason::ContextOverflow { context_pct: 0.75 },
+        );
+        match result {
+            ForkResult::Forked { child, .. } => {
+                assert_eq!(
+                    child.origin,
+                    crate::session::types::SessionOrigin::OrchestratorL1
+                );
+            }
+            ForkResult::Denied { reason } => panic!("Fork denied: {}", reason),
+        }
+    }
+
+    #[test]
+    fn fork_child_inherits_active_command_from_parent() {
+        let policy = ForkPolicy::new(5);
+        let mut parent = make_session(SessionStatus::Running, 0);
+        parent.active_command = Some("implement".to_string());
+        let result = policy.prepare_fork(
+            &parent,
+            None,
+            ForkReason::ContextOverflow { context_pct: 0.75 },
+        );
+        match result {
+            ForkResult::Forked { child, .. } => {
+                assert_eq!(child.active_command.as_deref(), Some("implement"));
             }
             ForkResult::Denied { reason } => panic!("Fork denied: {}", reason),
         }

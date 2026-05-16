@@ -5,10 +5,11 @@ use uuid::Uuid;
 
 use super::image::copy_images_to_worktree;
 use super::manager::{ManagedSession, SessionEvent};
-use super::types::{Session, SessionStatus};
+use super::types::{Session, SessionOrigin, SessionStatus};
 use super::worktree::WorktreeManager;
 use crate::agent_provider::{AgentProvider, ClaudeProvider};
 use crate::state::file_claims::FileClaimManager;
+use crate::templates::RenderedTemplateStore;
 use crate::turboquant::adapter::TurboQuantAdapter;
 
 pub struct SessionPool {
@@ -35,6 +36,10 @@ pub struct SessionPool {
     system_prompt_budget: usize,
     /// Cached knowledge-base appendix loaded once at configure time.
     knowledge_appendix: Option<String>,
+    /// Lookup for rendered HTTP-provider templates (issue #707). `None`
+    /// disables injection — used in unit tests that don't care about
+    /// templates and as a no-op fallback when XDG cache resolution fails.
+    rendered_template_store: Option<Arc<dyn RenderedTemplateStore>>,
 }
 
 impl SessionPool {
@@ -59,7 +64,16 @@ impl SessionPool {
             turboquant_adapter: None,
             system_prompt_budget: 0,
             knowledge_appendix: None,
+            rendered_template_store: None,
         }
+    }
+
+    /// Install a rendered-template lookup so HTTP-generic provider sessions
+    /// can receive the cached canonical command body at promotion time.
+    /// See issue #707.
+    #[allow(dead_code)] // Reason: wired by setup_app_from_config once active_command is plumbed
+    pub fn set_rendered_template_store(&mut self, store: Arc<dyn RenderedTemplateStore>) {
+        self.rendered_template_store = Some(store);
     }
 
     /// Inject a shared TurboQuant adapter for system-prompt compaction.
@@ -174,6 +188,27 @@ impl SessionPool {
             if let Some(ref knowledge) = self.knowledge_appendix {
                 components.push(knowledge.clone());
             }
+
+            // Resolve the provider once, honoring `session.agent_id` overrides.
+            // Reused below for rendered-template lookup (issue #707) and for
+            // setting `managed.provider`.
+            let provider = Arc::clone(self.resolve_provider(&session));
+
+            // HTTP-provider rendered-template injection (issue #707).
+            // Inserted before the TurboQuant branch below so oversized
+            // templates still get compacted.
+            if let Some(rendered) = self.rendered_template_for_session(&session, &provider) {
+                let command = session.active_command.as_deref().unwrap_or("?").to_string();
+                tracing::info!(
+                    session_id = %session.id,
+                    provider = %provider.id(),
+                    command = %command,
+                    bytes = rendered.len(),
+                    "injecting rendered HTTP-provider template into system_prompt_appendix"
+                );
+                components.push(rendered);
+            }
+
             let system_prompt = if components.is_empty() {
                 None
             } else if let Some(ref tq) = self.turboquant_adapter
@@ -188,13 +223,7 @@ impl SessionPool {
             // Session remains Queued until ManagedSession::spawn() transitions it
             let mut managed =
                 ManagedSession::with_worktree(session, worktree_path, branch, system_prompt);
-            let provider = managed
-                .session
-                .agent_id
-                .as_ref()
-                .and_then(|id| self.agent_providers.get(id))
-                .unwrap_or(&self.provider);
-            managed.set_provider(Arc::clone(provider));
+            managed.set_provider(Arc::clone(&provider));
             managed.permission_mode = mode_config
                 .as_ref()
                 .and_then(|mode| mode.permission_mode.clone())
@@ -208,6 +237,38 @@ impl SessionPool {
         }
 
         promoted
+    }
+
+    /// Resolve the provider this session will run against, honoring any
+    /// `session.agent_id` override against the registered provider map.
+    fn resolve_provider(&self, session: &Session) -> &Arc<dyn AgentProvider> {
+        session
+            .agent_id
+            .as_ref()
+            .and_then(|id| self.agent_providers.get(id))
+            .unwrap_or(&self.provider)
+    }
+
+    /// Resolve the rendered HTTP-provider template body for this session,
+    /// applying every gate in order. Returns `None` (no injection) when
+    /// origin is not `DirectUser`, when no `active_command` is set, when
+    /// the resolved provider is not HTTP-generic, when the store is absent,
+    /// or on cache miss. Caller supplies the already-resolved provider to
+    /// avoid re-walking the agent map. See issue #707.
+    fn rendered_template_for_session(
+        &self,
+        session: &Session,
+        provider: &Arc<dyn AgentProvider>,
+    ) -> Option<String> {
+        if session.origin != SessionOrigin::DirectUser {
+            return None;
+        }
+        let command = session.active_command.as_deref()?;
+        if provider.template_rules().target_dir().is_some() {
+            return None;
+        }
+        let store = self.rendered_template_store.as_ref()?;
+        store.lookup(provider.id(), command)
     }
 
     /// Move a terminal session from `active` to `finished`, deciding whether
@@ -1073,5 +1134,137 @@ mod tests {
     fn worktree_exists_returns_false_for_unknown_slug() {
         let pool = make_pool(2);
         assert!(!pool.worktree_exists("issue-99999"));
+    }
+
+    // --- Issue #707: HTTP-provider rendered-template injection ---
+
+    use crate::agent_provider::test_fakes::{FakeClaudeProvider, FakeHttpProvider};
+    use crate::session::types::SessionOrigin;
+    use crate::templates::FakeRenderedStore;
+
+    #[test]
+    fn pool_injects_template_when_http_provider_and_command_set() {
+        let mut pool = make_pool(1);
+        let store = FakeRenderedStore::new().with("qwen", "implement", "# Template body");
+        pool.set_rendered_template_store(Arc::new(store));
+        pool.set_provider(Arc::new(FakeHttpProvider));
+        pool.enqueue(make_session("work").with_active_command(Some("implement".into())));
+        pool.try_promote();
+        let managed = &pool.active[0];
+        let appendix = must_get_appendix(managed);
+        assert!(
+            appendix.contains("# Template body"),
+            "appendix missing template body: {appendix}"
+        );
+    }
+
+    #[test]
+    fn pool_does_not_inject_template_for_claude_provider_with_target_dir() {
+        let mut pool = make_pool(1);
+        let store = FakeRenderedStore::new().with("claude", "implement", "CLAUDE_BODY");
+        pool.set_rendered_template_store(Arc::new(store));
+        pool.set_provider(Arc::new(FakeClaudeProvider));
+        pool.enqueue(make_session("work").with_active_command(Some("implement".into())));
+        pool.try_promote();
+        let managed = &pool.active[0];
+        let appendix_opt = managed.system_prompt_appendix.as_deref().unwrap_or("");
+        assert!(
+            !appendix_opt.contains("CLAUDE_BODY"),
+            "Claude provider must not get rendered template injection"
+        );
+    }
+
+    #[test]
+    fn pool_does_not_inject_template_when_no_active_command() {
+        let mut pool = make_pool(1);
+        let store = FakeRenderedStore::new().with("qwen", "implement", "BODY");
+        pool.set_rendered_template_store(Arc::new(store));
+        pool.set_provider(Arc::new(FakeHttpProvider));
+        pool.enqueue(make_session("work"));
+        pool.try_promote();
+        let managed = &pool.active[0];
+        assert!(managed.system_prompt_appendix.is_none());
+    }
+
+    #[test]
+    fn pool_skips_injection_when_origin_is_orchestrator_l1() {
+        let mut pool = make_pool(1);
+        let store = FakeRenderedStore::new().with("qwen", "implement", "L1_FORBIDDEN");
+        pool.set_rendered_template_store(Arc::new(store));
+        pool.set_provider(Arc::new(FakeHttpProvider));
+        pool.enqueue(
+            make_session("work")
+                .with_active_command(Some("implement".into()))
+                .with_origin(SessionOrigin::OrchestratorL1),
+        );
+        pool.try_promote();
+        let managed = &pool.active[0];
+        let appendix_opt = managed.system_prompt_appendix.as_deref().unwrap_or("");
+        assert!(!appendix_opt.contains("L1_FORBIDDEN"));
+    }
+
+    #[test]
+    fn pool_skips_injection_when_origin_is_orchestrator_l2() {
+        let mut pool = make_pool(1);
+        let store = FakeRenderedStore::new().with("qwen", "implement", "L2_FORBIDDEN");
+        pool.set_rendered_template_store(Arc::new(store));
+        pool.set_provider(Arc::new(FakeHttpProvider));
+        pool.enqueue(
+            make_session("work")
+                .with_active_command(Some("implement".into()))
+                .with_origin(SessionOrigin::OrchestratorL2),
+        );
+        pool.try_promote();
+        let managed = &pool.active[0];
+        let appendix_opt = managed.system_prompt_appendix.as_deref().unwrap_or("");
+        assert!(!appendix_opt.contains("L2_FORBIDDEN"));
+    }
+
+    #[test]
+    fn pool_does_not_inject_when_store_is_absent() {
+        let mut pool = make_pool(1);
+        pool.set_provider(Arc::new(FakeHttpProvider));
+        pool.enqueue(make_session("work").with_active_command(Some("implement".into())));
+        pool.try_promote();
+        let managed = &pool.active[0];
+        assert!(managed.system_prompt_appendix.is_none());
+    }
+
+    #[test]
+    fn pool_does_not_inject_when_store_returns_none() {
+        let mut pool = make_pool(1);
+        let store = FakeRenderedStore::new();
+        pool.set_rendered_template_store(Arc::new(store));
+        pool.set_provider(Arc::new(FakeHttpProvider));
+        pool.enqueue(make_session("work").with_active_command(Some("implement".into())));
+        pool.try_promote();
+        let managed = &pool.active[0];
+        assert!(managed.system_prompt_appendix.is_none());
+    }
+
+    #[test]
+    fn pool_injected_template_appears_before_turboquant_compaction() {
+        use crate::turboquant::adapter::TurboQuantAdapter;
+
+        let mut pool = make_pool(1);
+        let store = FakeRenderedStore::new().with(
+            "qwen",
+            "implement",
+            "# Implement Command\n\nRender step-by-step instructions for issue tasks.",
+        );
+        pool.set_rendered_template_store(Arc::new(store));
+        pool.set_provider(Arc::new(FakeHttpProvider));
+        pool.set_guardrail_prompt(
+            "Guardrail: never modify auth code without explicit approval.".into(),
+        );
+        pool.set_turboquant_adapter(Arc::new(TurboQuantAdapter::new(4)), 4096);
+        pool.enqueue(make_session("work").with_active_command(Some("implement".into())));
+        pool.try_promote();
+        let managed = &pool.active[0];
+        let appendix = must_get_appendix(managed);
+        assert!(
+            appendix.contains("Implement Command"),
+            "template body must survive TurboQuant compaction: {appendix}"
+        );
     }
 }

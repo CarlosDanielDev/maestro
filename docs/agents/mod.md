@@ -30,6 +30,15 @@ transport differs:
   MiniMax are HTTP providers. They require `base_url` and must not set
   `command`.
 
+HTTP providers do not run the Claude CLI and therefore cannot rely on its
+built-in template delivery mechanism. When a session originates from a direct
+user request (`SessionOrigin::DirectUser`) and carries an `active_command`,
+`SessionPool::try_promote` consults a `RenderedTemplateStore` to inject the
+pre-rendered template body into the session prompt. This injection happens after
+the knowledge-base push and before TurboQuant compaction. Subprocess providers
+(Claude, Codex, Qwen, OpenCode) are not affected; they handle template delivery
+through their own CLI flags.
+
 ## Comparison
 
 | Agent | Transport | Cost | Requires | Notes |
