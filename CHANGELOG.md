@@ -7,6 +7,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-05-16
+
+### Added
+- feat(templates): derive subagent_list from filesystem manifest, drop hand-rolled constant (#728)
+- feat(templates): extract sandbox-aware include reader for provider rule reuse (#727)
+- feat(templates): HTTP-provider runtime injection (#707)
+- feat(cli): maestro sync-templates subcommand + drift detection (#706)
+- feat(templates): HTTP-generic provider rendering rules (#705)
+- feat(templates): Codex provider rendering rules (#704)
+- feat(templates): Claude provider rendering rules + byte-identical regression (#703)
+- feat(templates): author canonical command specs (implement, pushup, plan-feature, simplify) (#702)
+- feat(templates): render engine + AgentProvider trait extension (#701)
+
+### Documentation
+- chore(init): maestro init scaffolding update + user-facing docs (#708)
+
+### Chore
+- chore(templates): convert regenerate_claude_baselines test to example/xtask (#729)
+- chore(templates): scaffold canonical templates directory (#700)
 ### Added
 - chore(templates): scaffold canonical templates layer at `.maestro/templates/` — core fragments (premises, tdd-cycle, dependency-graph), manifest skeleton, README; L0 foundation for the render engine and canonical command specs (#700)
 - feat(templates): `CodexRules` — concrete `TemplateProviderRules` impl for Codex; `target_dir()=None`, inline sub-task headers, provider-neutral hook paths, verbatim skill bodies, link-free subagent tables; 4 integration tests added to `tests/templates_render.rs` (#704)
