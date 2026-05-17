@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-16 00:00 (UTC)
+> Last updated: 2026-05-16 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -150,9 +150,17 @@ maestro/
 │   │   ├── review.rs                      # ReviewConfig
 │   │   ├── runtime.rs                     # ProviderConfig (kind, organization, az_project); LoadedConfig { config, path } returned by find_and_load_with_path()
 │   │   ├── sessions.rs                    # SessionsConfig; guardrail_prompt; ContextOverflowConfig; HollowRetryPolicy/HollowRetryConfig; merge_legacy_hollow(); SessionsConfigRaw shadow struct for custom Deserialize
-│   │   ├── tests.rs                       # Integration-level config parse tests
-│   │   ├── tests/                         # Config test fixtures
-│   │   │   └── notifications_views.rs     # Tests for NotificationsConfig and ViewsConfig parsing; views_config_defaults_when_section_absent expects true; views_config_in_memory_default_is_true  [Issue #710]
+│   │   ├── tests.rs                       # Integration-level config parse tests; declares mod for all split test modules
+│   │   ├── tests/                         # Config test modules split by domain to stay under the 400-LOC guardrail
+│   │   │   ├── agents.rs                  # Tests for multi-agent config parsing (AgentEntry, AgentKind, per-provider fields)
+│   │   │   ├── configuration_doc.rs       # Doc-integrity tests for docs/configuration.md: every TOML block parses as valid TOML; every relative link resolves on disk (Issue #674)
+│   │   │   ├── core.rs                    # Core Config round-trip and minimal-TOML parse tests
+│   │   │   ├── experimental.rs            # Tests for ExperimentalConfig (azure_devops flag, backwards-compat)
+│   │   │   ├── notifications_views.rs     # Tests for NotificationsConfig and ViewsConfig parsing; views_config_defaults_when_section_absent expects true; views_config_in_memory_default_is_true  [Issue #710]
+│   │   │   ├── orchestration.rs           # Tests for orchestration-related config (teams, modes, plugins)
+│   │   │   ├── roundtrip.rs               # Serde roundtrip tests: serialize → deserialize → compare for all Config sub-tables
+│   │   │   ├── sessions_layout.rs         # Tests for SessionsConfig sub-tables (hollow_retry, context_overflow, conflict, completion_gates)
+│   │   │   └── turbo_adapt_paths.rs       # Tests for TurboQuantConfig and AdaptConfig field parsing
 │   │   ├── tui.rs                         # TuiConfig (theme, mascot_style "sprite"|"ascii", default "sprite")
 │   │   └── turboquant.rs                  # TurboQuantConfig
 │   ├── continuous.rs                      # ContinuousModeState and ContinuousFailure structs; state machine for --continuous / -C flag: auto-advances to next ready issue, pauses loop on failure waiting for user decision (skip / retry / quit)  [Issue #85]
@@ -770,6 +778,7 @@ maestro/
 | `.maestro/templates/manifest.toml` | Structured TOML manifest consumed by `src/templates/manifest.rs`; sections: `[meta]` (schema version), `[placeholders.*]` (vocabulary), `[providers.*]` (per-provider capability flags); rewritten from comment-skeleton to typed TOML in Issue #701 |
 | `build.rs` | Build script: generates `maestro.1` man page and bash/zsh/fish completions into `OUT_DIR` at build time (Issue #18) |
 | `docs/` | Project documentation |
+| `docs/configuration.md` | Authoritative `maestro.toml` reference — every `[table]` with field types, defaults, and source pointers; CLI flag → config map for every `maestro <subcommand> --help` (Issue #674) |
 | `docs/adr/` | Architecture Decision Records (ADRs); the only artifact merged to main from a spike branch |
 | `docs/adr/001-agent-graph-viz.md` | ADR 001 — agent graph visualization; Go verdict: concentric/radial bipartite layout, Braille Canvas; tracking issue #513; productionized in Issue #526 |
 | `docs/FOLLOW-UPS.md` | Pending hardening and security follow-up items (non-blocking; file as issues before next release) |
