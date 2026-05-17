@@ -59,6 +59,29 @@ through their own CLI flags.
 - [Ollama](ollama.md)
 - [MiniMax](minimax.md)
 - [Configuration Reference](../configuration.md)
+- [Team Orchestration Presets](../teams/README.md)
+
+## Using providers inside a team
+
+`[agents.<id>]` defines _how_ a provider is launched (command, base URL, model,
+credentials). A **team preset** defines _which_ provider runs each role
+(implementer, reviewer, docs, …) and how the roles compose into a coordination
+primitive (pipeline, fan-out, single-pass, verdict-only).
+
+Each per-provider page closes with a "Using `<id>` in a team binding"
+subsection showing a worked example. The TL;DR for picking providers:
+
+| Role | Subprocess provider best fit | HTTP provider best fit |
+| --- | --- | --- |
+| implementer | `claude`, `codex` | `minimax` (long-context only) |
+| reviewer | `qwen`, `opencode` | `ollama`, `minimax` |
+| docs | `claude`, `opencode` | `minimax` |
+| researcher | `claude` | `minimax` |
+| triager | `claude` | — |
+
+HTTP providers (`ollama`, `minimax`) call OpenAI-compatible chat completions
+and have no CLI/subprocess, so they cannot drive roles that need interactive
+permission prompts, sandboxes, or Claude/Codex-only flags.
 
 ## Migration
 

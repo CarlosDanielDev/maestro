@@ -70,3 +70,27 @@ maestro run --prompt "Review the config loader" --agent qwen
   environment.
 - Empty or malformed output: confirm your Qwen version supports
   `--output-format stream-json`.
+
+## Using `qwen` in a team binding
+
+Qwen is well-suited to the reviewer or docs role, where you want a second
+opinion without spending Claude tokens. The implementer typically stays on
+Claude or Codex.
+
+```toml
+# ~/.config/maestro/maestro/teams/qwen-reviewer.toml
+extends = "default-coder"
+
+reviewer = "qwen"
+```
+
+To pair Qwen with a stricter review prompt:
+
+```toml
+[role_overrides.reviewer]
+agent = "qwen"
+prompt_addendum = "List risks only — skip praise and restating diffs."
+```
+
+Auth keys, base URLs, and `extra_args` live in `[agents.qwen]`. See
+[`docs/teams/`](../teams/README.md) for the full preset schema.
