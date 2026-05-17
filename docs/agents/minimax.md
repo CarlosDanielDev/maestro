@@ -77,3 +77,31 @@ maestro run --prompt "Implement a focused bug fix" --agent minimax
   in MiniMax's platform docs before changing the config.
 - **Rate limits**: reduce `sessions.max_concurrent`, wait for the quota window,
   or use Ollama/OpenCode for lower-priority work.
+
+## Using `minimax` in a team binding
+
+MiniMax's 204k-token context window makes it useful for the docs and researcher
+roles, where the prompt may carry a large repo slice. Like Ollama, it is an
+HTTP provider — Maestro sends the role prompt as a chat-completions user
+message, so MiniMax is not appropriate for roles that need CLI-only behavior
+(interactive prompts, subprocess sandboxes).
+
+```toml
+# ~/.config/maestro/maestro/teams/longctx-researcher.toml
+extends = "default-researcher"
+
+implementer = "minimax"
+```
+
+To bind MiniMax to the docs role with a stricter prompt:
+
+```toml
+[role_overrides.docs]
+agent = "minimax"
+prompt_addendum = "Quote source paths inline; never invent file names."
+fallback_agent = "claude"
+```
+
+`api_key_env`, `base_url`, and `request_timeout_secs` come from
+`[agents.minimax]`. See [`docs/teams/`](../teams/README.md) for the full preset
+schema.

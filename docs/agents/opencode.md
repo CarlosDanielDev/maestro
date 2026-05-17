@@ -114,3 +114,29 @@ maestro run --prompt "Implement the issue parser" --agent opencode
   Check pricing with the backend provider before using it as the default.
 - **No JSON events**: update OpenCode and confirm `opencode run --format json`
   works outside Maestro.
+
+## Using `opencode` in a team binding
+
+OpenCode shines in cheap-iteration roles: docs refresh, scoped reviews, or a
+budget implementer that escalates to Claude on fallback. Use it for fan-out
+patterns where you want multiple low-cost opinions.
+
+```toml
+# ~/.config/maestro/maestro/teams/cheap-coder.toml
+extends = "default-coder"
+
+implementer = "opencode"
+docs = "opencode"
+```
+
+`model_override` for OpenCode must use the `provider/model` form:
+
+```toml
+[role_overrides.implementer]
+agent = "opencode"
+model_override = "openrouter/deepseek/deepseek-chat"
+fallback_agent = "claude"
+```
+
+CLI flags, auth, and `command` come from `[agents.opencode]`. See
+[`docs/teams/`](../teams/README.md) for the full preset schema.

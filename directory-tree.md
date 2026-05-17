@@ -621,6 +621,14 @@ maestro/
 │   ├── adr/                               # Architecture Decision Records; one file per decision; ADRs that survive a spike are the only artifact merged to main from that spike
 │   │   ├── 001-agent-graph-viz.md         # ADR 001: agent graph visualization — Go/No-Go verdict (concentric/radial bipartite layout, Braille canvas); tracking issue #513
 │   │   └── 002-agent-personalities.md     # ADR 002: agent personality sprites — 5-role taxonomy, 6×6 ghost sprites, hybrid derive_role, ASCII fallback; Go verdict; tracking issue #536
+│   ├── agents/                            # Per-provider docs (subprocess + HTTP); each page closes with a "Using <id> in a team binding" subsection that links into docs/teams/  [Issue #676]
+│   │   ├── claude.md                      # Claude subprocess provider — install, configuration, runtime, troubleshooting, team binding
+│   │   ├── codex.md                       # Codex subprocess provider — install, configuration, field behavior, troubleshooting, team binding
+│   │   ├── minimax.md                     # MiniMax HTTP provider — API key, configuration, model choice, doctor output, troubleshooting, team binding
+│   │   ├── mod.md                         # Provider catalog — comparison table, transport types, role-fit matrix, FAQ, links to per-provider pages and team docs
+│   │   ├── ollama.md                      # Ollama HTTP provider — install/start, configuration, doctor output, troubleshooting, team binding
+│   │   ├── opencode.md                    # OpenCode subprocess provider — install, authenticate, configuration, doctor output, troubleshooting, team binding
+│   │   └── qwen.md                        # Qwen subprocess provider — install/authenticate, configuration, field behavior, troubleshooting, team binding
 │   ├── api-contracts/                     # JSON Schema (Draft 2020-12) for every external payload that crosses a process boundary; one file per payload type; referenced by /validate-contracts and subagent-gatekeeper
 │   │   ├── README.md                      # Convention guide: naming, additionalProperties policy, gatekeeper integration  [Issue #327]
 │   │   └── review-comment.json            # Schema for the maestro-review JSON block in /review PR comments; parsed by review::parse and TUI pr_review screen  [Issue #327]

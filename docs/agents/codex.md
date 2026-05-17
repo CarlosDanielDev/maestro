@@ -76,3 +76,23 @@ maestro run --prompt "Add tests for the retry policy" --agent codex
 - Model errors: verify the configured `model` is available to your account.
 - Sandbox errors: try `sandbox = "workspace-write"` first, then tighten the
   sandbox once the command is working.
+
+## Using `codex` in a team binding
+
+Codex is a strong implementer when you want an OpenAI-backed alternative to
+Claude. Pair it with a Claude fallback so a transient Codex outage still leaves
+the pipeline runnable:
+
+```toml
+# .maestro/teams/codex-pipeline.toml
+extends = "default-coder"
+
+[role_overrides.implementer]
+agent = "codex"
+fallback_agent = "claude"
+```
+
+Sandbox, profile, and `config_overrides` come from `[agents.codex]`; team
+bindings only carry `agent`, `mode`, `model_override`, `prompt_addendum`, and
+`fallback_agent`. See [`docs/teams/`](../teams/README.md) for the full preset
+schema.

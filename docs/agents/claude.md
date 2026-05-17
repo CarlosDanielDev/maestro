@@ -61,3 +61,33 @@ maestro run --issue 42 --agent claude
 - Permission prompts block automation: choose the project-appropriate
   `permission_mode`, such as `bypassPermissions`, or restrict tools with
   `allowed_tools`.
+
+## Using `claude` in a team binding
+
+Claude is the built-in default for every role in every preset. Override it only
+when another provider is genuinely a better fit; otherwise leave the role bound
+to `claude`.
+
+Minimal-form binding (top-level role keys):
+
+```toml
+# ~/.config/maestro/maestro/teams/claude-pipeline.toml
+extends = "default-coder"
+
+implementer = "claude"
+reviewer = "claude"
+docs = "claude"
+```
+
+Rich-form binding with a model override:
+
+```toml
+[role_overrides.implementer]
+agent = "claude"
+model_override = "opus"
+prompt_addendum = "Stay terse; do not explain unchanged code."
+```
+
+`model_override` is set on the team binding; the underlying `[agents.claude]`
+table still owns `command`, `permission_mode`, and `allowed_tools`. See
+[`docs/teams/`](../teams/README.md) for the full preset schema.
