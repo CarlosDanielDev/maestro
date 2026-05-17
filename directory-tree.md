@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-16 12:00 (UTC)
+> Last updated: 2026-05-16 14:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -652,6 +652,17 @@ maestro/
 │   │   ├── default-triager.md             # `default-triager` verdict-only preset — idea-inbox bulk triage; promote/park/archive output
 │   │   ├── default-reviewer.md            # `default-reviewer` single-pass preset — one-shot PR/branch review; `ReviewFindings` output shape
 │   │   └── default-docs.md                # `default-docs` single-pass preset — documentation-only run; `DocsChange` output shape
+│   ├── releases/                          # Per-version release notes in user-facing prose; GitHub release bodies are generated from these files  [Issue #677]
+│   │   ├── .snapshots/                    # Pre-edit snapshots kept for rollback (not published)
+│   │   │   ├── v0.25.0.md                 # Snapshot of v0.25.0 release notes before Issue #677 rewrite
+│   │   │   ├── v0.25.1.md                 # Snapshot of v0.25.1 release notes before Issue #677 rewrite
+│   │   │   ├── v0.26.0.md                 # Snapshot of v0.26.0 release notes before Issue #677 rewrite
+│   │   │   └── v0.28.0.md                 # Snapshot of v0.28.0 release notes before Issue #677 rewrite
+│   │   ├── discord-v0.26.0-announcement.md  # Discord #releases announcement copy for v0.26.0
+│   │   ├── v0.25.0.md                     # Release notes for v0.25.0 — multi-agent foundation
+│   │   ├── v0.25.1.md                     # Release notes for v0.25.1 — reliability patch
+│   │   ├── v0.26.0.md                     # Release notes for v0.26.0 — team orchestration
+│   │   └── v0.28.0.md                     # Release notes for v0.28.0 — templates sync engine
 │   └── superpowers/                       # Superpowers feature documentation
 │       ├── plans/                         # Implementation plans
 │       │   ├── 2026-04-21-implement-harness-enforcement-plan.md
@@ -795,6 +806,13 @@ maestro/
 | `docs/templates.md` | Canonical templates developer guide — placeholder vocabulary, add commands/providers, drift detection, `maestro init` scaffolding (Issue #708) |
 | `tests/template_mirror_drift.rs` | Drift guard asserting byte-equality between `.maestro/templates/` and `template/.maestro/templates/` (Issue #708) |
 | `template/.maestro/templates/` | Byte-mirror of canonical templates embedded by `src/init/scaffold.rs` via `include_bytes!`; kept in sync by `tests/template_mirror_drift.rs` (Issue #708) |
+| `docs/releases/` | Per-version release notes in user-facing prose; GitHub release bodies are generated from these files (Issue #677) |
+| `docs/releases/v0.25.0.md` | Release notes for v0.25.0 — multi-agent foundation |
+| `docs/releases/v0.25.1.md` | Release notes for v0.25.1 — reliability patch |
+| `docs/releases/v0.26.0.md` | Release notes for v0.26.0 — team orchestration |
+| `docs/releases/v0.28.0.md` | Release notes for v0.28.0 — templates sync engine |
+| `docs/releases/discord-v0.26.0-announcement.md` | Discord #releases announcement copy for v0.26.0 |
+| `docs/releases/.snapshots/` | Pre-edit snapshots of release notes before Issue #677 rewrite; kept for rollback, not published |
 | `docs/teams/` | Team orchestration preset documentation (v0.26.0+) |
 | `docs/teams/README.md` | Preset overview, three-tier resolution, five built-ins, CLI surface, headless launch, state migration; links to cookbook (Issue #675) |
 | `docs/teams/cookbook/` | Hands-on team configuration recipes (Issue #675) |

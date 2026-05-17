@@ -77,4 +77,4 @@ The on-disk state file (`maestro-state.json`) carries an explicit `version: u32`
 ## See also
 
 - [`directory-tree.md`](../../directory-tree.md) — full project layout
-- [`CHANGELOG.md`](../../CHANGELOG.md) — v0.26.0 release notes
+- [`docs/releases/v0.26.0.md`](../releases/v0.26.0.md) — v0.26.0 release notes

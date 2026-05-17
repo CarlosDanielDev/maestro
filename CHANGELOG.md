@@ -2,86 +2,97 @@
 
 All notable changes to Maestro are documented here.
 
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+> v0.27.0 was reserved during planning and never released. The version
+> sequence is v0.25.0 → v0.25.1 → v0.26.0 → v0.28.0 → v0.28.1.
+
+> The `### Migration` group is a project-specific extension covering
+> automatic state/config migrations and any user-action steps required on
+> upgrade. Empty Migration groups are omitted.
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-05-16
+
+Documentation refresh milestone. No runtime changes; user-facing docs only.
+
+### Added
+- Consolidated CHANGELOG entries for v0.25.0 / v0.25.1 / v0.26.0 / v0.28.0 and rewrote GitHub release bodies in user-facing tone (#677).
+- `docs/teams-cookbook.md` — task-oriented cookbook for team workflows (#675).
+
+### Changed
+- README and ROADMAP audited and refreshed against the v0.28.0 surface (#672).
+- Wiki content audited for accuracy and currency (#673).
+- `docs/configuration.md` reference rewritten; CLI `--help` text audited against documented options (#674).
+- Agent documentation verified end-to-end against actual agent definitions (#676).
+
 ## [0.28.0] - 2026-05-16
 
-### Added
-- feat(templates): derive subagent_list from filesystem manifest, drop hand-rolled constant (#728)
-- feat(templates): extract sandbox-aware include reader for provider rule reuse (#727)
-- feat(templates): HTTP-provider runtime injection (#707)
-- feat(cli): maestro sync-templates subcommand + drift detection (#706)
-- feat(templates): HTTP-generic provider rendering rules (#705)
-- feat(templates): Codex provider rendering rules (#704)
-- feat(templates): Claude provider rendering rules + byte-identical regression (#703)
-- feat(templates): author canonical command specs (implement, pushup, plan-feature, simplify) (#702)
-- feat(templates): render engine + AgentProvider trait extension (#701)
+Templates layer — slash commands, agent rules, and subagent lists now render from a single canonical source under `.maestro/templates/`, with drift detection in CI and a `maestro sync-templates` command to regenerate everything in one shot.
 
-### Documentation
-- chore(init): maestro init scaffolding update + user-facing docs (#708)
-
-### Chore
-- chore(templates): convert regenerate_claude_baselines test to example/xtask (#729)
-- chore(templates): scaffold canonical templates directory (#700)
 ### Added
-- chore(templates): scaffold canonical templates layer at `.maestro/templates/` — core fragments (premises, tdd-cycle, dependency-graph), manifest skeleton, README; L0 foundation for the render engine and canonical command specs (#700)
-- feat(templates): `CodexRules` — concrete `TemplateProviderRules` impl for Codex; `target_dir()=None`, inline sub-task headers, provider-neutral hook paths, verbatim skill bodies, link-free subagent tables; 4 integration tests added to `tests/templates_render.rs` (#704)
+- `maestro sync-templates` CLI subcommand with drift detection — regenerate all provider artifacts in one shot and fail CI on drift (#706).
+- HTTP-provider runtime template injection — canonical commands rendered into HTTP-generic providers at runtime (#707).
+- HTTP-generic provider rendering rules — link-free subagent tables, inline sub-task headers (#705).
+- Codex provider rendering rules — `target_dir()=None`, inline sub-task headers, provider-neutral hook paths (#704).
+- Claude provider rendering rules with a byte-identical regression test suite (#703).
+- Canonical command specs for `/implement`, `/pushup`, `/plan-feature`, `/simplify` under `.maestro/templates/commands/` (#702).
+- Render engine and `AgentProvider::template_rules()` trait extension (#701).
+- Canonical templates layer scaffolded at `.maestro/templates/` — core fragments (premises, tdd-cycle, dependency-graph), manifest skeleton, README (#700).
+- `maestro init` now scaffolds the same `.maestro/templates/` reference tree into newly initialized projects (#708).
+
+### Changed
+- `subagent_list` placeholder now derives from the filesystem manifest; hand-rolled constant retired (#728).
+- Sandbox-aware include reader extracted for provider rule reuse (#727).
+- `regen_claude_baselines` test relocated to an example/xtask binary so `cargo test` no longer regenerates artifacts as a side-effect (#729).
+
+### Migration
+- New Cargo dependency: `reqwest = "0.12"` (default features off, `rustls-tls`) — pulled in by the HTTP-provider runtime. Relevant for restricted-network and air-gapped builds.
 
 ## [0.26.0] - 2026-05-12
 
+Team orchestration — define a team of agents, hand them a milestone, and maestro coordinates the work. The orchestration layer schedules issues by dependency level, dispatches them to the right agent, and surfaces progress in the TUI graph view.
+
 ### Added
-- feat(ci): add PR failure error review and fix action (#695)
-- feat(orchestration): CLI subcommands + built-in docs + smoke test (#665)
-- feat(tui): team orchestration wizard — compose / launch / manage (#664)
-- feat(orchestration): L1 subagent dispatch + cost estimate (#663)
-- feat(orchestration): L2 per-issue orchestrator + primitive state machines (#662)
-- feat(orchestration): L3 cross-issue scheduler (#661)
-- feat(orchestration): foundation — types, contracts, tier loader, built-ins (#660)
+- Multi-agent orchestration foundation: L1 subagent dispatch + cost estimate, L2 per-issue orchestrator state machines, L3 cross-issue scheduler, team wizard TUI, and `maestro team {list,new,launch,manage,explain}` CLI subcommands with built-in preset docs under `docs/teams/` (#660, #661, #662, #663, #664, #665).
+- `views.agent_graph_enabled = true` by default, with a TUI graph view of running sessions and an animated empty state when no sessions are active (#710, #692).
+- CI error review-and-fix popup in the TUI (#695).
 
 ### Fixed
-- fix(tui): prevent Agent Graph from freezing after session completion (#694)
+- Agent Graph no longer freezes after session completion (#694).
 
-### Chore
-- Improve agent graph empty state with animated agent and live activity (#692)
-### Added
-- feat(orchestration): `maestro team {list,new,launch,manage,explain}` CLI subcommands closing v0.27.0 — built-in preset docs under `docs/teams/`, 2-issue scheduler smoke test, headless `team launch --yes` headless dispatch (#665)
-- feat(orchestration): implement L1 subagent dispatch, cost-estimate formula, and `run_health_check` library function (#663)
-- feat(config): agent graph view enabled by default (`agent_graph_enabled = true`); startup migration in `config::run_startup_migration()` backfills the key into older `maestro.toml` files automatically on first run (#710)
-
-### Changed
-- state(store): `MaestroState` carries an explicit `version: u32` field (`CURRENT_STATE_VERSION = 1`); legacy state files (no `version` key) deserialize to `0` and migrate on first load — structural no-op for `0 → 1` (#665)
-- orchestration: `PrimitiveMachine` trait gains a `Send` bound so async runners can hold a `Box<dyn PrimitiveMachine>` across `await` (#665)
+### Migration
+- State-store schema bumped from version 0 to 1. Legacy state files migrate automatically on first load — run `maestro` once after upgrade; no manual action required.
+- `agent_graph_enabled` is backfilled into older `maestro.toml` files on startup. The default value preserves prior behavior for users who never set the key.
+- New Cargo dependency: `directories = "5"` — used to resolve user-config paths under the orchestration foundation. Relevant for restricted-network and air-gapped builds.
 
 ## [0.25.1] - 2026-05-06
 
+Reliability patch.
+
 ### Added
-- ci(quality): add cargo-dupes code duplication gate to CI pipeline (#620)
+- `cargo-dupes` code-duplication gate added to the CI pipeline (#620).
 
 ### Fixed
-- fix: make release script resilient to protected-branch release PR edge cases (#685)
+- Release script resilient to protected-branch release-PR edge cases (#685).
 
 ## [0.25.0] - 2026-05-06
 
+Multi-agent foundation — maestro now drives Claude, Codex, Qwen, Ollama, Minimax, OpenCode, and any OpenAI-compatible endpoint behind a single workflow, with a doctor command to validate your setup and a per-session agent selector in the TUI.
+
 ### Added
-- feat: extract OpenAiCompatibleSseParser at Level 1 (#652)
-- spike: OpenCode `--format json` schema research (#651)
-- spike: Qwen Code CLI output format (#650)
-- feat(agent): add OpenCodeProvider for 75+ AI backend sessions (#617)
-- feat(agent): add MinimaxProvider for cloud cheap-model sessions (#616)
-- feat(agent): add OllamaProvider for local cheap-model sessions (#612)
-- feat(agent): add Codex CLI provider implementation (#589)
-- Implement parser adapters for different agent output formats (#552)
-- Add per-session agent selector in TUI (#551)
-- Update doctor command for multi-agent validation (#550)
-- Extend configuration system for multi-agent support (#549)
-- Add Qwen Code provider implementation (#548)
-- Implement AgentProvider trait for multi-agent support (#547)
+- `AgentProvider` trait — pluggable interface for any CLI-based or HTTP-based agent backend (#547).
+- New providers: Qwen Code (#548), Codex CLI (#589), Ollama for local cheap-model sessions (#612), Minimax for cloud cheap-model sessions (#616), OpenCode for 75+ AI backend sessions behind one provider (#617).
+- `OpenAiCompatibleSseParser` extracted as a Level-1 building block for OpenAI-compatible streams (#652).
+- Parser adapters for differing agent output formats (#552).
+- Per-session agent selector in the TUI (#551).
+- Multi-agent validation in `maestro doctor` (#550).
+- Extended configuration schema for multi-agent setups (#549).
 
 ### Documentation
-- Document multi-agent setup and usage (#553)
+- Multi-agent setup and usage guide (#553).
 
 ## [0.24.1] - 2026-05-05
 
