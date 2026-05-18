@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 - `.claude/hooks/` directory path. The symlink will be removed in the next minor release. Update any external tooling, dotfiles, or local scripts to reference `.maestro/hooks/` directly. Affected scripts: `implement-gates.sh`, `preflight.sh`, `notify.sh`, `notify.ps1`, `sentinel-path.sh`, `parse_gatekeeper_report.py`, `parse_idea_triager_report.py` (#759).
 
+### Removed
+- Deprecated Claude-Code-only `/simplify` skill. The canonical source is `.maestro/templates/commands/simplify.md`, rendered to `.claude/commands/simplify.md` and other provider targets via `maestro sync-templates`. New regression guards in `tests/legacy_skills_removed.rs` prevent reintroduction (#760).
+
 ## [0.28.1] - 2026-05-16
 
 Documentation refresh milestone. No runtime changes; user-facing docs only.

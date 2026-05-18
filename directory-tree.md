@@ -743,6 +743,7 @@ maestro/
 │   ├── subagent_manifest_drift.rs         # Drift guard: set-difference between `.claude/agents/subagent-*.md` on disk and `[[subagents]]` slugs in `manifest.toml`; fails with a diff line on "missing from manifest" or "stale in manifest"; 5 unit tests + 1 live-repo integration test  [Issue #728]
 │   ├── template_mirror_drift.rs           # Drift guard: asserts byte-equality between every file in `.maestro/templates/` and its mirror under `template/.maestro/templates/`; fails CI when the mirror is stale; fix with: cp -a .maestro/templates/. template/.maestro/templates/  [Issue #708]
 │   ├── templates_render.rs                # 5 byte-identical regression tests asserting `.claude/commands/*.md` matches rendered output from `.maestro/templates/`; enforces drift detection in CI  [Issue #703, #729]
+│   ├── legacy_skills_removed.rs           # 4 regression-guard tests asserting that `.claude/skills/simplify/` is absent from disk; prevents accidental re-introduction of the deprecated simplify skill  [Issue #760]
 │   ├── teams_cookbook_fixtures.rs         # Integration tests validating all six `tests/fixtures/teams_cookbook/*.toml` files parse and resolve correctly via `Loader::resolve`  [Issue #675]
 │   ├── fixtures/                          # Static test fixtures for integration and unit tests
 │   │   ├── state/
@@ -1072,6 +1073,7 @@ maestro/
 | `src/work/conflicts.rs` | Conflict detection for concurrent work items |
 | `src/work/dependencies.rs` | Dependency graph, topological sort |
 | `src/work/executor.rs` | `QueueExecutor` state machine: `ExecutorPhase` (Idle, Running, AwaitingDecision, Finished); `ExecutorItem`; `QueueItemState`; `FailureAction` (Retry, Skip, Abort); `advance()`, `mark_success()`, `mark_failure()`, `apply_decision()`, `set_session_id()` |
+| `tests/legacy_skills_removed.rs` | 4 regression-guard tests asserting `.claude/skills/simplify/` is absent; prevents re-introduction of the deprecated simplify skill (Issue #760) |
 | `tests/settings_caveman.rs` | Integration tests for `FsSettingsStore`: real-tempfile read/write/toggle round-trips, missing-key defaults, malformed JSON handling (Issue #490) |
 | `template/` | Reproducible project template |
 | `CHANGELOG.md` | Release history |
