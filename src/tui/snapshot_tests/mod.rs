@@ -27,6 +27,7 @@ mod settings_layout_parity;
 mod settings_theme_parity;
 mod settings_gates_parity;
 mod settings_sessions_parity;
+mod settings_advanced_parity;
 mod team_wizard;
 mod turboquant_dashboard;
 

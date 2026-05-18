@@ -38,7 +38,7 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
         layout::build_fields(config, flags),
         vec![],
         turboquant::build_fields(config, flags),
-        advanced::build_fields(config),
+        advanced::build_fields(config, flags),
     ]
 }
 
@@ -470,14 +470,41 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
     // Advanced (tab 11 — after TurboQuant)
     let mut caveman_change: Option<bool> = None;
     if let Some(fields) = screen.fields_per_tab.get(11) {
-        if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
-            screen.config.concurrency.heavy_task_limit = w.value as usize;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
-            screen.config.monitoring.work_tick_interval_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::ListEditor(w)) = fields.get(2).map(|f| &f.widget) {
-            screen.config.concurrency.heavy_task_labels = w.items.clone();
+        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
+            let concurrency_table = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "concurrency");
+            let monitoring_table = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "monitoring");
+            if let Some(table) = concurrency_table
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: advanced.concurrency failed; config left unchanged");
+            }
+            if let Some(table) = monitoring_table
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: advanced.monitoring failed; config left unchanged");
+            }
+        } else {
+            if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
+                screen.config.concurrency.heavy_task_limit = w.value as usize;
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
+                screen.config.monitoring.work_tick_interval_secs = w.value as u64;
+            }
+            if let Some(WidgetKind::ListEditor(w)) = fields.get(2).map(|f| &f.widget) {
+                screen.config.concurrency.heavy_task_labels = w.items.clone();
+            }
         }
         let prev = screen.caveman_state.as_bool().unwrap_or(false);
         if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(fields, super::CAVEMAN_LABEL)
