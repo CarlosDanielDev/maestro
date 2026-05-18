@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/landing.rs
-assertion_line: 64
 expression: terminal.backend()
 ---
 "                                                                                "
@@ -10,7 +9,7 @@ expression: terminal.backend()
 "                 | |\/| | / _ \ |  _| \___ \ | | | |_) | | | |                  "
 "                 | |  | |/ ___ \| |___ ___) || | |  _ <| |_| |                  "
 "                  |_|  |_/_/   \_\_____|____/ |_| |_| \_\\___/                  "
-"                                    v0.28.0                                     "
+"                                    v0.28.1                                     "
 "                                                                                "
 "                 [d]  Dashboard           [r]  Roadmap                          "
 "                 [i]  Create Issue        [h]  Milestone Review                 "
@@ -18,11 +17,11 @@ expression: terminal.backend()
 "                 [s]  Project Stats       [q]  Quit                             "
 "                 [p]  PRD                                                       "
 "                                                                                "
-"  ╔════════════════════════[ What's New in v0.28.0 ]═════════════════════════╗  "
-"  ║  [Added] `maestro sync-templates` CLI subcommand with drift detection — …║  "
-"  ║  [Added] HTTP-provider runtime template injection — canonical commands r…║  "
-"  ║  [Added] HTTP-generic provider rendering rules — link-free subagent tabl…║  "
-"  ║  [Added] Codex provider rendering rules — `target_dir()=None`, inline su…║  "
+"  ╔════════════════════════[ What's New in v0.28.1 ]═════════════════════════╗  "
+"  ║  [Added] `docs/teams-cookbook.md` — task-oriented cookbook for team work…║  "
+"  ║  [Added] Consolidated CHANGELOG entries for v0.25.0 / v0.25.1 / v0.26.0 …║  "
+"  ║  [Added] `tests/legacy_skills_removed.rs` regression guards preventing t…║  "
+"  ║  [Changed] README and ROADMAP audited and refreshed against the v0.28.0 …║  "
 "  ╚════════════════════ Press [n] for full release notes ════════════════════╝  "
 "                                                                                "
 "                 <q> quit  <n> notes                                            "
