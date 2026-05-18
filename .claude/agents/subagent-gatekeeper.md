@@ -103,7 +103,7 @@ from labels in this priority:
 
 Your response must contain exactly one fenced code block with the
 `json gatekeeper` language tag. The block is parsed by
-`.claude/hooks/parse_gatekeeper_report.py`. Prose above and below the
+`.maestro/hooks/parse_gatekeeper_report.py`. Prose above and below the
 fence is ignored by the parser but read by humans — use it for
 explanation and reasoning.
 

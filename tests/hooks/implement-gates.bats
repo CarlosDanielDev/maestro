@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# Tests for .claude/hooks/implement-gates.sh
+# Tests for .maestro/hooks/implement-gates.sh
 #
 # Each test:
 #   1. Creates a scratch git repo (via init-test-repo.sh).
@@ -12,7 +12,7 @@
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  HOOK="$REPO_ROOT/.claude/hooks/implement-gates.sh"
+  HOOK="$REPO_ROOT/.maestro/hooks/implement-gates.sh"
   FIXTURES="$REPO_ROOT/tests/hooks/fixtures"
 
   # Make the fakes visible as `gh` and `cargo` on PATH.
@@ -108,14 +108,14 @@ teardown() {
 }
 
 @test "calls preflight.sh when present and propagates exit code on failure" {
-  mkdir -p .claude/hooks
-  cat > .claude/hooks/preflight.sh <<'PFEOF'
+  mkdir -p .maestro/hooks
+  cat > .maestro/hooks/preflight.sh <<'PFEOF'
 #!/usr/bin/env bash
 echo "preflight: simulated ci fail"
 exit 7
 PFEOF
-  chmod +x .claude/hooks/preflight.sh
-  git add .claude/hooks/preflight.sh
+  chmod +x .maestro/hooks/preflight.sh
+  git add .maestro/hooks/preflight.sh
   git commit -m "test: add failing preflight.sh"
   export FAKE_CARGO_TEST_EXIT=0
   run bash "$HOOK" 123
@@ -124,14 +124,14 @@ PFEOF
 }
 
 @test "calls preflight.sh when present and passes on exit 0" {
-  mkdir -p .claude/hooks
-  cat > .claude/hooks/preflight.sh <<'PFEOF'
+  mkdir -p .maestro/hooks
+  cat > .maestro/hooks/preflight.sh <<'PFEOF'
 #!/usr/bin/env bash
 echo "preflight: all clear"
 exit 0
 PFEOF
-  chmod +x .claude/hooks/preflight.sh
-  git add .claude/hooks/preflight.sh
+  chmod +x .maestro/hooks/preflight.sh
+  git add .maestro/hooks/preflight.sh
   git commit -m "test: add passing preflight.sh"
   export FAKE_CARGO_TEST_EXIT=0
   run bash "$HOOK" 123

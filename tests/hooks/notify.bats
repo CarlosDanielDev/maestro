@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# Tests for .claude/hooks/notify.sh
+# Tests for .maestro/hooks/notify.sh
 #
 # Covers the sanitization fix from issue #583:
 #   - Slack JSON payload built via jq --arg (no heredoc interpolation).
@@ -11,7 +11,7 @@
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  HOOK="$REPO_ROOT/.claude/hooks/notify.sh"
+  HOOK="$REPO_ROOT/.maestro/hooks/notify.sh"
 
   # Sourcing the script only loads helpers; main is gated behind a
   # sourced-vs-executed check inside the hook itself.

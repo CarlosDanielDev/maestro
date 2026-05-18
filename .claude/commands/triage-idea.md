@@ -2,7 +2,7 @@
 
 Run the upstream idea-inbox triage loop on a GitHub issue created from
 `.github/ISSUE_TEMPLATE/idea.yml`. Dispatches `subagent-idea-triager`,
-validates the structured report through `.claude/hooks/parse_idea_triager_report.py`,
+validates the structured report through `.maestro/hooks/parse_idea_triager_report.py`,
 and prints a digest. **Does not mutate GitHub state without explicit user
 confirmation** — every comment posting and label change is gated on a
 `yes/no` prompt. v0.16.1 is the foundation milestone; auto-mutation flows
@@ -72,7 +72,7 @@ Pipe the subagent's response through the parser hook into a single
 no re-parsing in between.
 
 ```bash
-PARSED_JSON=$(echo "$SUBAGENT_RESPONSE" | python3 .claude/hooks/parse_idea_triager_report.py)
+PARSED_JSON=$(echo "$SUBAGENT_RESPONSE" | python3 .maestro/hooks/parse_idea_triager_report.py)
 ```
 
 If the parser exits non-zero:
@@ -225,7 +225,7 @@ on an explicit `yes`.
 - Run mutating `gh` commands (`gh issue comment`, `gh issue edit`,
   `gh issue close`) without an explicit `yes` from the Step 5 prompt.
 - Act on the subagent's raw response — always pipe through
-  `.claude/hooks/parse_idea_triager_report.py` first.
+  `.maestro/hooks/parse_idea_triager_report.py` first.
 - Create spike issues from this command (Plan 3 territory).
 - Invoke `superpowers:brainstorming` from this command (Plan 2 territory).
 - Close the idea issue from this command, even on `archive`

@@ -3,7 +3,7 @@
 Run before tagging any release that modifies CI infrastructure
 (`.github/workflows/*.yml`, `scripts/check-*.sh`, `scripts/*-tiers.yml`,
 `scripts/architecture-layers.yml`, `.cargo/mutants.toml`, `deny.toml`,
-`clippy.toml`, `.claude/hooks/preflight.sh`).
+`clippy.toml`, `.maestro/hooks/preflight.sh`).
 
 Expected time: ~15 minutes.
 
@@ -56,7 +56,7 @@ Expected time: ~15 minutes.
 
 ## Scenario 10 — Preflight hook
 
-- [ ] Run `bash .claude/hooks/preflight.sh` locally on a clean tree.
+- [ ] Run `bash .maestro/hooks/preflight.sh` locally on a clean tree.
 - [ ] Verify all three gates run and exit 0.
 - [ ] Deliberately introduce a fmt violation; re-run; verify the hook fails on fmt.
 

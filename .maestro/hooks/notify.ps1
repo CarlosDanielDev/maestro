@@ -13,10 +13,12 @@ $SlackBotToken = $env:SLACK_BOT_TOKEN  # Set via environment variable
 
 # Detectar diretorio do projeto (onde o script esta)
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$ProjectClaudeDir = Split-Path -Parent $ScriptDir
+$ProjectMaestroDir = Split-Path -Parent $ScriptDir
+$ProjectRoot = Split-Path -Parent $ProjectMaestroDir
 
-# Arquivos de configuracao (prioridade: projeto > global)
-$ProjectConfigFile = Join-Path $ProjectClaudeDir "notifications.conf"
+# Arquivos de configuracao (prioridade: .maestro/ > .claude/ legacy > global)
+$ProjectConfigFile = Join-Path $ProjectMaestroDir "notifications.conf"
+$LegacyProjectConfigFile = Join-Path $ProjectRoot ".claude\notifications.conf"
 $LegacyConfigFile = Join-Path $env:USERPROFILE ".claude\notifications.conf"
 $LegacySlackFile = Join-Path $env:USERPROFILE ".claude\slack_user_id"
 
@@ -28,7 +30,7 @@ $NOTIFY_IDLE_PROMPT = "true"
 $SLACK_USER_ID = ""
 
 # Carregar configuracao (projeto primeiro, depois global)
-$ConfigFile = if (Test-Path $ProjectConfigFile) { $ProjectConfigFile } elseif (Test-Path $LegacyConfigFile) { $LegacyConfigFile } else { $null }
+$ConfigFile = if (Test-Path $ProjectConfigFile) { $ProjectConfigFile } elseif (Test-Path $LegacyProjectConfigFile) { $LegacyProjectConfigFile } elseif (Test-Path $LegacyConfigFile) { $LegacyConfigFile } else { $null }
 
 if ($ConfigFile) {
     Get-Content $ConfigFile | ForEach-Object {

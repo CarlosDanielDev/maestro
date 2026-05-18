@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-16 14:00 (UTC)
+> Last updated: 2026-05-17 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -33,22 +33,7 @@ maestro/
 │   │   ├── update-from-template.md        # Slash command: sync from template directory
 │   │   ├── validate-contracts.md          # Slash command: validate API contracts
 │   │   └── video-frames.md                # Slash command: extract video frames
-│   ├── hooks/
-│   │   ├── README.md                      # Hook usage documentation
-│   │   ├── fixtures/                      # Fixture inputs for smoke-testing parser hooks
-│   │   │   ├── idea_triager_fail_bad_enum.txt     # Negative fixture: valid JSON but unsupported recommendation enum value
-│   │   │   ├── idea_triager_fail_missing_fence.txt # Negative fixture: plain prose with no fenced block
-│   │   │   └── idea_triager_pass.txt              # Golden-path fixture: full valid idea-triager report
-│   │   ├── implement-gates.sh             # Pre-implementation gate: DOR / blocker / contract checks
-│   │   ├── notify.ps1                     # Windows notification hook
-│   │   ├── notify.sh                      # Unix notification hook; Slack payload built via `jq -n --arg` (soft dep: no-ops gracefully when jq absent); PowerShell single-quote escaping via escape_powershell_string helper  [Issue #583]
-│   │   ├── parse_gatekeeper_report.py     # Validates and re-emits gatekeeper JSON reports (exit 1 on contract violation)
-│   │   ├── parse_idea_triager_report.py   # Validates and re-emits idea-triager JSON reports; enforces fence, version, enums (exit 1 on violation)  [Issue #484]
-│   │   ├── preflight.sh                   # Preflight environment checks run before session launch
-│   │   ├── sentinel-path.sh               # Resolves the XDG-aware sentinel path chain ($XDG_RUNTIME_DIR → $HOME/.cache/maestro → $TMPDIR/tmp); used by implement-gates.sh and /implement recovery snippets  [Issue #545]
-│   │   └── tests/                         # Shell and Python smoke tests for hook scripts  [Issue #545]
-│   │       ├── test-sentinel.sh           # Integration test: exercises sentinel-path.sh across all three resolution candidates
-│   │       └── test_parse_gatekeeper_report.py  # Unit tests for parse_gatekeeper_report.py: happy path, bad enum, missing fence
+│   ├── hooks -> ../.maestro/hooks         # Backward-compat symlink for one release (#759); canonical location is .maestro/hooks/
 │   ├── settings.json                      # Claude Code project settings
 │   ├── settings.local.json                # Local overrides (not committed)
 │   ├── worktrees/
@@ -84,6 +69,23 @@ maestro/
 │       ├── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
 │       └── self-host.yml                  # Self-host smoke workflow: builds maestro, creates ephemeral repo, runs headlessly against a fixture issue, asserts PR is opened, deletes repo; requires MAESTRO_SELFTEST_PAT and MAESTRO_SELFTEST_OWNER secrets  [Issue #545]
 ├── .maestro/
+│   ├── hooks/                             # Canonical home for all agent-agnostic hook scripts (moved from .claude/hooks/ in #759); .claude/hooks is a symlink here for one release
+│   │   ├── README.md                      # Hook usage documentation
+│   │   ├── fixtures/                      # Fixture inputs for smoke-testing parser hooks
+│   │   │   ├── idea_triager_fail_bad_enum.txt     # Negative fixture: valid JSON but unsupported recommendation enum value
+│   │   │   ├── idea_triager_fail_missing_fence.txt # Negative fixture: plain prose with no fenced block
+│   │   │   └── idea_triager_pass.txt              # Golden-path fixture: full valid idea-triager report
+│   │   ├── implement-gates.sh             # Pre-implementation gate: DOR / blocker / contract checks
+│   │   ├── notify.ps1                     # Windows notification hook
+│   │   ├── notify.sh                      # Unix notification hook; Slack payload built via `jq -n --arg` (soft dep: no-ops gracefully when jq absent); PowerShell single-quote escaping via escape_powershell_string helper  [Issue #583]
+│   │   ├── parse_gatekeeper_report.py     # Validates and re-emits gatekeeper JSON reports (exit 1 on contract violation)
+│   │   ├── parse_idea_triager_report.py   # Validates and re-emits idea-triager JSON reports; enforces fence, version, enums (exit 1 on violation)  [Issue #484]
+│   │   ├── preflight.sh                   # Preflight environment checks run before session launch
+│   │   ├── sentinel-path.sh               # Resolves the XDG-aware sentinel path chain ($XDG_RUNTIME_DIR → $HOME/.cache/maestro → $TMPDIR/tmp); used by implement-gates.sh and /implement recovery snippets  [Issue #545]
+│   │   └── tests/                         # Shell and Python smoke tests for hook scripts  [Issue #545, #759]
+│   │       ├── symlink-compat.bats        # Asserts that .claude/hooks is a symlink resolving to .maestro/hooks  [Issue #759]
+│   │       ├── test-sentinel.sh           # Integration test: exercises sentinel-path.sh across all three resolution candidates
+│   │       └── test_parse_gatekeeper_report.py  # Unit tests for parse_gatekeeper_report.py: happy path, bad enum, missing fence
 │   ├── templates.lock                     # SHA-256 checksums of all repo-relative files written by `maestro sync-templates`; TOML format, keys sorted deterministically; committed artifact — regenerated automatically on every sync run  [Issue #706]
 │   └── templates/                         # Canonical, provider-agnostic command and fragment sources; render engine (#B) projects them into per-provider outputs; edit here, never under .claude/commands/  [Issue #700]
 │       ├── README.md                      # Canonical templates overview — layout, render engine pointer, edit-here policy
@@ -782,14 +784,16 @@ maestro/
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline (test, clippy, fmt, file-size, deny, audit, coverage, layers, **actionlint**) |
 | `.github/workflows/release.yml` | Release automation: cross-platform builds, GitHub Release with SHA256 checksums, Homebrew tap update, Discord `#releases` notification (`notify-discord` job; requires `DISCORD_WEBHOOK_URL` secret) |
 | `.github/workflows/self-host.yml` | Self-host smoke workflow (manual trigger); requires `MAESTRO_SELFTEST_PAT` and `MAESTRO_SELFTEST_OWNER` secrets; creates + destroys an ephemeral sandbox repo |
-| `.claude/hooks/sentinel-path.sh` | Resolves XDG-aware sentinel path for `$GATE_LOG_DIR` persistence across non-persistent Bash tool shells |
 | `.claude/` | Claude Code agent configuration |
 | `.claude/agents/` | Subagent definitions |
 | `.claude/commands/` | Slash command definitions; `implement.md`, `pushup.md`, `plan-feature.md`, and `simplify.md` are **generated artifacts** — edit `.maestro/templates/commands/` and re-render with `maestro sync-templates` (Issues #703, #706) |
-| `.claude/hooks/` | Pre/post command notification hooks |
-| `.claude/hooks/notify.sh` | Unix notification hook; Slack payload constructed with `jq -n --arg` (no raw string interpolation); PowerShell toast uses `escape_powershell_string` helper; `jq` is a soft runtime dependency — Slack notifications are skipped silently when absent (Issue #583) |
+| `.claude/hooks` | Backward-compat symlink → `../.maestro/hooks`; present for one release only — will be removed in the next minor release (#759) |
 | `.claude/skills/` | Reusable knowledge bases for subagents |
 | `.claude/worktrees/` | Worktree checkouts managed by maestro |
+| `.maestro/hooks/` | Canonical home for all agent-agnostic hook scripts (moved from `.claude/hooks/` in #759) |
+| `.maestro/hooks/sentinel-path.sh` | Resolves XDG-aware sentinel path for `$GATE_LOG_DIR` persistence across non-persistent Bash tool shells |
+| `.maestro/hooks/notify.sh` | Unix notification hook; Slack payload constructed with `jq -n --arg` (no raw string interpolation); PowerShell toast uses `escape_powershell_string` helper; `jq` is a soft runtime dependency — Slack notifications are skipped silently when absent (Issue #583) |
+| `.maestro/hooks/tests/symlink-compat.bats` | Asserts that `.claude/hooks` is a valid symlink resolving to `.maestro/hooks` (#759) |
 | `.maestro/templates/` | Canonical template sources for the render engine; never edit rendered outputs under `.claude/commands/` directly; re-render with `maestro sync-templates`  [Issues #700, #706] |
 | `.maestro/templates.lock` | SHA-256 lockfile for repo-relative rendered outputs; committed, updated by every `maestro sync-templates` run; `--check` mode uses this to detect drift  [Issue #706] |
 | `.maestro/templates/core/` | Shared fragments (premises, TDD cycle, dependency-graph mandate) included by every command spec |

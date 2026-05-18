@@ -1,6 +1,6 @@
 # /implement Harness Acceptance Checklist
 
-Run this checklist before any release that modifies `.claude/commands/implement.md`, `.claude/hooks/implement-gates.sh`, `.claude/hooks/parse_gatekeeper_report.py`, or `.claude/agents/subagent-gatekeeper.md`.
+Run this checklist before any release that modifies `.claude/commands/implement.md`, `.maestro/hooks/implement-gates.sh`, `.maestro/hooks/parse_gatekeeper_report.py`, or `.claude/agents/subagent-gatekeeper.md`.
 
 Total time: ~10 minutes.
 

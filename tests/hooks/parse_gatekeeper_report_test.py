@@ -1,11 +1,11 @@
-"""Unit tests for .claude/hooks/parse_gatekeeper_report.py."""
+"""Unit tests for .maestro/hooks/parse_gatekeeper_report.py."""
 import importlib.util
 import subprocess
 import sys
 import unittest
 from pathlib import Path
 
-HOOK_PATH = Path(__file__).resolve().parents[2] / ".claude" / "hooks" / "parse_gatekeeper_report.py"
+HOOK_PATH = Path(__file__).resolve().parents[2] / ".maestro" / "hooks" / "parse_gatekeeper_report.py"
 
 def _load_parser():
     spec = importlib.util.spec_from_file_location("parse_gatekeeper_report", HOOK_PATH)
@@ -75,7 +75,7 @@ Prose below the fence.
         text = "Prose.\n```json gatekeeper\n{\"report_version\": 1}\n"  # no closing ```
         with self.assertRaises(self.parser.ParseError) as ctx:
             self.parser.extract_report(text)
-        self.assertIn("no ```json gatekeeper fenced block found", str(ctx.exception))
+        self.assertIn("no gatekeeper fence found", str(ctx.exception))
 
     def test_rejects_malformed_json(self):
         text = """
@@ -150,7 +150,7 @@ class CliTests(unittest.TestCase):
     def test_cli_reports_error_on_malformed_input(self):
         result = self._run("no fence here")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("no ```json gatekeeper", result.stderr)
+        self.assertIn("no gatekeeper fence found", result.stderr)
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,7 +7,7 @@
 #   2. Invoke the subagent-gatekeeper via the Claude Code Agent tool
 #      harness, passing the fixture as issue JSON.
 #   3. Pipe the subagent's response through
-#      .claude/hooks/parse_gatekeeper_report.py.
+#      .maestro/hooks/parse_gatekeeper_report.py.
 #   4. Compare key fields against tests/gatekeeper/expected/<name>.expected.json
 #      using a structural-subset match (jq-based).
 #
@@ -19,7 +19,7 @@ set -euo pipefail
 
 FIXTURES_DIR="tests/gatekeeper/fixtures"
 EXPECTED_DIR="tests/gatekeeper/expected"
-PARSER=".claude/hooks/parse_gatekeeper_report.py"
+PARSER=".maestro/hooks/parse_gatekeeper_report.py"
 
 if [ ! -d "$FIXTURES_DIR" ]; then
   echo "error: $FIXTURES_DIR not found. Run from repo root." >&2

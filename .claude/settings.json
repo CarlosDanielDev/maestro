@@ -11,7 +11,7 @@
       {
         "hooks": [
           {
-            "command": ".claude/hooks/notify.sh",
+            "command": ".maestro/hooks/notify.sh",
             "type": "command"
           }
         ],

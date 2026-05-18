@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for parse_gatekeeper_report.py — both legacy and new fence formats.
 
-Run with: python3 -m unittest .claude/hooks/tests/test_parse_gatekeeper_report.py
+Run with: python3 -m unittest .maestro/hooks/tests/test_parse_gatekeeper_report.py
 """
 import json
 import os
