@@ -11,9 +11,11 @@ set -euo pipefail
 
 # Detectar diretorio do projeto (onde o script esta)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_CLAUDE_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_MAESTRO_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$PROJECT_MAESTRO_DIR")"
 
-readonly CONFIG_FILE="$PROJECT_CLAUDE_DIR/notifications.conf"
+readonly CONFIG_FILE="$PROJECT_MAESTRO_DIR/notifications.conf"
+readonly LEGACY_PROJECT_CONFIG_FILE="$PROJECT_ROOT/.claude/notifications.conf"
 readonly LEGACY_CONFIG_FILE="$HOME/.claude/notifications.conf"
 readonly LEGACY_SLACK_FILE="$HOME/.claude/slack_user_id"
 readonly SLACK_API_URL="https://slack.com/api/chat.postMessage"
@@ -31,10 +33,13 @@ load_config() {
   NOTIFY_IDLE_PROMPT=true
   SLACK_USER_ID=""
 
-  # Prioridade: config do projeto > config global
+  # Prioridade: .maestro/notifications.conf > .claude/notifications.conf (legacy) > global ~/.claude
   if [[ -f "$CONFIG_FILE" ]]; then
     # shellcheck source=/dev/null
     source "$CONFIG_FILE"
+  elif [[ -f "$LEGACY_PROJECT_CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$LEGACY_PROJECT_CONFIG_FILE"
   elif [[ -f "$LEGACY_CONFIG_FILE" ]]; then
     # shellcheck source=/dev/null
     source "$LEGACY_CONFIG_FILE"

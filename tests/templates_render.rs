@@ -149,14 +149,30 @@ fn codex_simplify_render_inlines_skill_body() {
 
 #[test]
 fn codex_hook_gate_uses_provider_neutral_dot_maestro_path() {
-    // Verifies the `{{HOOK_GATE script="implement-gates.sh" args="..."}}`
-    // expansion uses `.maestro/hooks/`. Literal `.claude/hooks/` mentions
-    // inside `core/premises.md` prose are out-of-scope here — a separate
-    // ticket will rewrite the canonical premises to be provider-neutral.
     let rendered = render_codex("implement");
     assert!(
         rendered.contains("bash .maestro/hooks/implement-gates.sh"),
         "expected provider-neutral hook path from HOOK_GATE expansion"
+    );
+    assert!(
+        !rendered.contains("bash .claude/hooks/"),
+        "codex render must not emit legacy .claude/hooks/ path (#759)"
+    );
+}
+
+#[test]
+fn claude_hook_gate_uses_dot_maestro_path() {
+    // Regression guard for #759: ClaudeRules::hook_gate must emit `.maestro/hooks/`,
+    // matching the Codex provider. Integration-level check; the unit tests in
+    // `src/templates/provider_rules/claude.rs` verify the method in isolation.
+    let rendered = render("implement");
+    assert!(
+        rendered.contains("bash .maestro/hooks/implement-gates.sh"),
+        "expected .maestro/hooks/ path from Claude HOOK_GATE expansion"
+    );
+    assert!(
+        !rendered.contains("bash .claude/hooks/"),
+        "claude render must not emit legacy .claude/hooks/ path (#759)"
     );
 }
 

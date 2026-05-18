@@ -5,19 +5,19 @@ schema_version = 1
 [files.".claude/commands/implement.md"]
 provider = "claude"
 command = "implement"
-sha256 = "46363017d37e6901d1ebd517bdaa22a44dbaacc7c0ad9de1a2f56053982a4ca4"
+sha256 = "2b41e840d26886a3118969b369ad1a12d7fa051478bef6e940ca3e1a2b5b3adf"
 
 [files.".claude/commands/plan-feature.md"]
 provider = "claude"
 command = "plan-feature"
-sha256 = "2f0fbd1448cc1d918984c29b8a383b7816409db1b551677816f0ddf1caf2bbf4"
+sha256 = "13432433bcec294866608875aee60d8dba6f74b229009252111ccc9bbe023fcc"
 
 [files.".claude/commands/pushup.md"]
 provider = "claude"
 command = "pushup"
-sha256 = "d57009cda214ca44982955588ebd365d26c7d735e19f4c196dfcbeb2bfb843a2"
+sha256 = "e4237a6cf5436a388713d01bc231f3be32efc459b327e5794bdcb9790d4482d2"
 
 [files.".claude/commands/simplify.md"]
 provider = "claude"
 command = "simplify"
-sha256 = "ebeb28395fa1d6598a9a944154d6c5ff352c1f15dbc0ecc24a4ecf2b0fe618c1"
+sha256 = "3b2c71a6ac77a7beee497df5385bb9d6b218ce67f300570b1559e6f7a235d423"

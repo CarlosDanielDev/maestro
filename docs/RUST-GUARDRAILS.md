@@ -415,7 +415,7 @@ During Wave 1 implementation, `scripts/check-file-size.sh` was found to have a p
 
 **Pre-flight hook.**
 
-`.claude/hooks/preflight.sh` runs fast per-PR gates locally (fmt + clippy + file-size) so `/implement` catches regressions before a branch is created.
+`.maestro/hooks/preflight.sh` runs fast per-PR gates locally (fmt + clippy + file-size) so `/implement` catches regressions before a branch is created.
 
 ---
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for sentinel-path.sh — verifies the path resolution chain.
-# Run with: bash .claude/hooks/tests/test-sentinel.sh
+# Run with: bash .maestro/hooks/tests/test-sentinel.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -161,9 +161,9 @@ if ! cargo test --quiet > "$GATE_LOG_DIR/baseline.log" 2>&1; then
 fi
 
 # Gate 8 (optional): preflight bridge.
-if [ -x .claude/hooks/preflight.sh ]; then
+if [ -x .maestro/hooks/preflight.sh ]; then
   set +e
-  bash .claude/hooks/preflight.sh
+  bash .maestro/hooks/preflight.sh
   preflight_exit=$?
   set -e
   if [ $preflight_exit -ne 0 ]; then

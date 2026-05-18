@@ -29,11 +29,11 @@
 **Orchestrator Mode workflow is ALWAYS (TDD ENFORCED):**
 1. Receive user request
 2. **Pre-check hook (MANDATORY):**
-   - Run `bash .claude/hooks/implement-gates.sh <issue-number>`
+   - Run `bash .maestro/hooks/implement-gates.sh <issue-number>`
    - Abort on any non-zero exit (see exit-code table in `/implement`)
 3. **Delegate to Gatekeeper (MANDATORY):**
    - `subagent-gatekeeper` → structured JSON report (DOR, blockers, contracts, task_type)
-   - Parse via `.claude/hooks/parse_gatekeeper_report.py`
+   - Parse via `.maestro/hooks/parse_gatekeeper_report.py`
    - On DOR FAIL → by default, orchestrator prints the proposed comment for human review and **STOP**s (does NOT auto-post); pass `--auto-comment` to `/implement` to auto-post the comment and apply `needs-info` label
    - On blocker/contract FAIL → **STOP** with reasons from the report
 4. **Delegate to Architect for blueprint - MANDATORY:**
@@ -287,7 +287,7 @@ Immediately after language selection, ask:
 
 **Mandatory Subagent Sequence (IN THIS ORDER — TDD ENFORCED):**
 
-1. Pre-check hook → `bash .claude/hooks/implement-gates.sh <issue-number>` (MANDATORY)
+1. Pre-check hook → `bash .maestro/hooks/implement-gates.sh <issue-number>` (MANDATORY)
 2. `subagent-gatekeeper` → DOR/blockers/contracts (MANDATORY)
 3. `subagent-architect` → Architecture Blueprint (MANDATORY)
 4. `/validate-contracts` → Contract validation (if API endpoints)

@@ -44,9 +44,9 @@ impl TemplateProviderRules for ClaudeRules {
 
     fn hook_gate(&self, script: &str, args: &str) -> Result<String, TemplateError> {
         if args.is_empty() {
-            Ok(format!("bash .claude/hooks/{script}"))
+            Ok(format!("bash .maestro/hooks/{script}"))
         } else {
-            Ok(format!("bash .claude/hooks/{script} {args}"))
+            Ok(format!("bash .maestro/hooks/{script} {args}"))
         }
     }
 
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn hook_gate_drops_trailing_space_when_args_empty() {
         let out = ClaudeRules.hook_gate("preflight.sh", "").expect("ok");
-        assert_eq!(out, "bash .claude/hooks/preflight.sh");
+        assert_eq!(out, "bash .maestro/hooks/preflight.sh");
     }
 
     #[test]
@@ -99,7 +99,7 @@ mod tests {
         let out = ClaudeRules
             .hook_gate("implement-gates.sh", "$ISSUE_NUMBER")
             .expect("ok");
-        assert_eq!(out, "bash .claude/hooks/implement-gates.sh $ISSUE_NUMBER");
+        assert_eq!(out, "bash .maestro/hooks/implement-gates.sh $ISSUE_NUMBER");
     }
 
     #[test]

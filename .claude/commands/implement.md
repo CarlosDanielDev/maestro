@@ -54,11 +54,11 @@ Fetch a GitHub issue and implement it following the enforced TDD harness.
 **Orchestrator Mode workflow is ALWAYS (TDD ENFORCED):**
 1. Receive user request
 2. **Pre-check hook (MANDATORY):**
-   - Run `bash .claude/hooks/implement-gates.sh <issue-number>`
+   - Run `bash .maestro/hooks/implement-gates.sh <issue-number>`
    - Abort on any non-zero exit (see exit-code table in `/implement`)
 3. **Delegate to Gatekeeper (MANDATORY):**
    - `subagent-gatekeeper` → structured JSON report (DOR, blockers, contracts, task_type)
-   - Parse via `.claude/hooks/parse_gatekeeper_report.py`
+   - Parse via `.maestro/hooks/parse_gatekeeper_report.py`
    - On DOR FAIL → by default, orchestrator prints the proposed comment for human review and **STOP**s (does NOT auto-post); pass `--auto-comment` to `/implement` to auto-post the comment and apply `needs-info` label
    - On blocker/contract FAIL → **STOP** with reasons from the report
 4. **Delegate to Architect for blueprint - MANDATORY:**
@@ -177,7 +177,7 @@ If flags provided, honor them. Otherwise, ask the user.
 Run the mechanical pre-check hook. Abort on non-zero exit, printing stderr verbatim. Pass through `--dirty-tree-action=...` from Step 0 if the user supplied it.
 
 ```bash
-bash .claude/hooks/implement-gates.sh $ISSUE_NUMBER ${DIRTY_TREE_ACTION:+--dirty-tree-action=$DIRTY_TREE_ACTION}
+bash .maestro/hooks/implement-gates.sh $ISSUE_NUMBER ${DIRTY_TREE_ACTION:+--dirty-tree-action=$DIRTY_TREE_ACTION}
 ```
 
 The hook prints `gate log dir: /tmp/maestro-$ISSUE_NUMBER-<ts>` on success AND writes the same path to a sentinel file. The sentinel allows subsequent shell calls to recover `GATE_LOG_DIR` without relying on env-var persistence (each fresh shell loses `export`).

@@ -115,13 +115,13 @@ fn render_invoke_subagent_expands() {
 #[test]
 fn render_hook_gate_expands() {
     let out = render(
-        r#"{{HOOK_GATE script=".claude/hooks/implement-gates.sh" args="701"}}"#,
+        r#"{{HOOK_GATE script=".maestro/hooks/implement-gates.sh" args="701"}}"#,
         &FakeRules,
     )
     .expect("ok");
     assert_eq!(
         out,
-        "[HOOK script=.claude/hooks/implement-gates.sh args=701]"
+        "[HOOK script=.maestro/hooks/implement-gates.sh args=701]"
     );
 }
 
