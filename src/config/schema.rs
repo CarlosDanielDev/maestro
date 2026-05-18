@@ -112,21 +112,6 @@ const SCHEMA: &[TableSchema] = &[
         fields: core::SESSIONS_FIELDS,
     },
     TableSchema {
-        name: "sessions.hollow_retry",
-        label: "Hollow Retry",
-        fields: core::HOLLOW_RETRY_FIELDS,
-    },
-    TableSchema {
-        name: "sessions.context_overflow",
-        label: "Context Overflow",
-        fields: core::CONTEXT_OVERFLOW_FIELDS,
-    },
-    TableSchema {
-        name: "sessions.conflict",
-        label: "Conflict Detection",
-        fields: core::CONFLICT_FIELDS,
-    },
-    TableSchema {
         name: "budget",
         label: "Budget",
         fields: core::BUDGET_FIELDS,

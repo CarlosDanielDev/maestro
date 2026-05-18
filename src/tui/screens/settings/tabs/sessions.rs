@@ -1,10 +1,30 @@
 use crate::config::Config;
+use crate::config::schema::schema_for_config;
+use crate::flags::Flag;
+use crate::flags::store::FeatureFlags;
 use crate::tui::widgets::{Dropdown, NumberStepper, TextInput, Toggle, WidgetKind};
 
-use super::field;
+use super::{BYPASS_LABEL, field};
 use crate::tui::screens::settings::SettingsField;
+use crate::tui::screens::settings::schema_tab::build::from_schema;
 
-pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
+pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<SettingsField> {
+    if flags.is_enabled(Flag::SchemaDrivenSettings) {
+        let table = schema_for_config()
+            .iter()
+            .find(|t| t.name == "sessions")
+            .expect("sessions schema must exist");
+        let mut fields = from_schema(table, config);
+        let bypass = field(WidgetKind::Toggle(Toggle::new(
+            BYPASS_LABEL,
+            config.sessions.permission_mode == "bypassPermissions",
+        )));
+        // Place between `default_mode` (idx 3) and `permission_mode` (idx 4).
+        let insert_at = 4.min(fields.len());
+        fields.insert(insert_at, bypass);
+        return fields;
+    }
+
     let s = &config.sessions;
     let permission_options: Vec<String> = vec![
         "default",
@@ -42,7 +62,7 @@ pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
             &s.default_mode,
         ))),
         field(WidgetKind::Toggle(Toggle::new(
-            "bypass_review_corrections (DANGER: auto-accepts all review fixes)",
+            BYPASS_LABEL,
             s.permission_mode == "bypassPermissions",
         ))),
         field(WidgetKind::Dropdown(Dropdown::new(
@@ -85,7 +105,7 @@ pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
         // Context Overflow sub-section
         field(WidgetKind::NumberStepper(
             NumberStepper::new(
-                "overflow_threshold_pct",
+                "context_overflow.overflow_threshold_pct",
                 s.context_overflow.overflow_threshold_pct as i64,
                 10,
                 100,
@@ -93,12 +113,12 @@ pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
             .with_step(5),
         )),
         field(WidgetKind::Toggle(Toggle::new(
-            "auto_fork",
+            "context_overflow.auto_fork",
             s.context_overflow.auto_fork,
         ))),
         field(WidgetKind::NumberStepper(
             NumberStepper::new(
-                "commit_prompt_pct",
+                "context_overflow.commit_prompt_pct",
                 s.context_overflow.commit_prompt_pct as i64,
                 10,
                 100,
@@ -106,18 +126,18 @@ pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
             .with_step(5),
         )),
         field(WidgetKind::NumberStepper(NumberStepper::new(
-            "max_fork_depth",
+            "context_overflow.max_fork_depth",
             s.context_overflow.max_fork_depth as i64,
             1,
             20,
         ))),
         // Conflict sub-section
         field(WidgetKind::Toggle(Toggle::new(
-            "conflict_enabled",
+            "conflict.enabled",
             s.conflict.enabled,
         ))),
         field(WidgetKind::Dropdown(Dropdown::new(
-            "conflict_policy",
+            "conflict.policy",
             vec!["warn".into(), "pause".into(), "kill".into()],
             match s.conflict.policy {
                 crate::config::ConflictPolicy::Warn => 0,

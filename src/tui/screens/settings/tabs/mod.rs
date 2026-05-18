@@ -22,10 +22,13 @@ fn field(widget: WidgetKind) -> SettingsField {
     SettingsField { widget }
 }
 
+pub(super) const BYPASS_LABEL: &str =
+    "bypass_review_corrections (DANGER: auto-accepts all review fixes)";
+
 pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<SettingsField>> {
     vec![
         project::build_fields(config, flags),
-        sessions::build_fields(config),
+        sessions::build_fields(config, flags),
         budget::build_fields(config),
         github::build_fields(config, flags),
         notifications::build_fields(config, flags),
@@ -63,7 +66,37 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
     // Sessions (tab 1) — looked up by label so widget reordering
     // cannot silently drop a sync. New widgets only need to appear in
     // `build_sessions_fields`; no index bookkeeping here.
-    if let Some(fields) = screen.fields_per_tab.get(1) {
+    let sessions_handled_by_schema = if let Some(fields) = screen.fields_per_tab.get(1)
+        && screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings)
+    {
+        // Apply bypass toggle BEFORE schema sync so the dropdown's value
+        // (written by sync_to_config) still wins on conflict — matches
+        // legacy "dropdown last" semantics.
+        if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(fields, BYPASS_LABEL) {
+            if w.value {
+                screen.config.sessions.permission_mode = "bypassPermissions".to_string();
+            } else if screen.config.sessions.permission_mode == "bypassPermissions" {
+                screen.config.sessions.permission_mode = "default".to_string();
+            }
+        }
+        if let Some(table) = crate::config::schema::schema_for_config()
+            .iter()
+            .find(|t| t.name == "sessions")
+            && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                table,
+                fields,
+                &mut screen.config,
+            )
+        {
+            tracing::warn!(error = %e, "schema sync: sessions tab failed; config left unchanged");
+        }
+        true
+    } else {
+        false
+    };
+    if !sessions_handled_by_schema
+        && let Some(fields) = screen.fields_per_tab.get(1)
+    {
         let s = &mut screen.config.sessions;
         if let Some(WidgetKind::NumberStepper(w)) = super::widget_by_label(fields, "max_concurrent")
         {
@@ -87,7 +120,7 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
         // who picked "acceptEdits" via the dropdown aren't reset).
         if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(
             fields,
-            "bypass_review_corrections (DANGER: auto-accepts all review fixes)",
+            BYPASS_LABEL,
         ) {
             if w.value {
                 s.permission_mode = "bypassPermissions".to_string();
@@ -125,26 +158,29 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
             s.hollow_retry.consultation_max_retries = w.value as u32;
         }
         if let Some(WidgetKind::NumberStepper(w)) =
-            super::widget_by_label(fields, "overflow_threshold_pct")
+            super::widget_by_label(fields, "context_overflow.overflow_threshold_pct")
         {
             s.context_overflow.overflow_threshold_pct = w.value as u8;
         }
-        if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(fields, "auto_fork") {
+        if let Some(WidgetKind::Toggle(w)) =
+            super::widget_by_label(fields, "context_overflow.auto_fork")
+        {
             s.context_overflow.auto_fork = w.value;
         }
         if let Some(WidgetKind::NumberStepper(w)) =
-            super::widget_by_label(fields, "commit_prompt_pct")
+            super::widget_by_label(fields, "context_overflow.commit_prompt_pct")
         {
             s.context_overflow.commit_prompt_pct = w.value as u8;
         }
-        if let Some(WidgetKind::NumberStepper(w)) = super::widget_by_label(fields, "max_fork_depth")
+        if let Some(WidgetKind::NumberStepper(w)) =
+            super::widget_by_label(fields, "context_overflow.max_fork_depth")
         {
             s.context_overflow.max_fork_depth = w.value as u8;
         }
-        if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(fields, "conflict_enabled") {
+        if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(fields, "conflict.enabled") {
             s.conflict.enabled = w.value;
         }
-        if let Some(WidgetKind::Dropdown(w)) = super::widget_by_label(fields, "conflict_policy") {
+        if let Some(WidgetKind::Dropdown(w)) = super::widget_by_label(fields, "conflict.policy") {
             s.conflict.policy = match w.selected {
                 0 => crate::config::ConflictPolicy::Warn,
                 1 => crate::config::ConflictPolicy::Pause,
