@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-18 00:00 (UTC)
+> Last updated: 2026-05-18 18:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -131,8 +131,8 @@ maestro/
 │   │   │   └── runner_tests.rs            # FakeFs + integration tests for SyncRunner covering all flag combinations and provider filtering
 │   │   ├── turboquant.rs                  # cmd_turboquant(): run TurboQuant compression diagnostics
 │   │   └── team.rs                        # cmd_team(): dispatch arm for all `maestro team` subcommands; SchedulerRunner trait + ProductionSchedulerRunner impl for headless `team launch --yes` execution; routes TeamAction variants to list/new/explain/manage/launch handlers  [Issue #665]
-│   ├── config/                            # maestro.toml parsing — split from the former config.rs monolith  [Issue #29, #40, #41, #43, #38, #143, #275, #437, #473, #525, #710]
-│   │   ├── mod.rs                         # Module facade; re-exports all Config types (ModelsConfig, GatesConfig, ReviewConfig, ViewsConfig, etc.); re-exports run_startup_migration() and MigrationResult from migrate.rs; find_and_load_with_path() / find_and_load_in_with_path(); legacy find_and_load() / find_and_load_in() shims
+│   ├── config/                            # maestro.toml parsing — split from the former config.rs monolith  [Issue #29, #40, #41, #43, #38, #143, #275, #437, #473, #525, #710, #712]
+│   │   ├── mod.rs                         # Module facade; re-exports all Config types (ModelsConfig, GatesConfig, ReviewConfig, ViewsConfig, etc.); re-exports run_startup_migration() and MigrationResult from migrate.rs; find_and_load_with_path() / find_and_load_in_with_path(); legacy find_and_load() / find_and_load_in() shims; Config::save dispatches via fs::metadata (NotFound/empty → save_fresh; otherwise → save_into_existing); Config::save_into_str(&self, original_text) comment-preserving overlay merge via overlay.rs; Config::save_into_existing(path) atomic-write wrapper; Config::save_fresh(path) fast path for new installs  [Issue #712]
 │   │   ├── views.rs                       # ViewsConfig struct; agent_graph_enabled: bool with custom Default impl returning true (flipped from false in v0.25.1 #710); #[serde(default = "fn")] attribute; loaded from [views] table; Config gains views field  [Issue #525, #710]
 │   │   ├── migrate.rs                     # Startup config migration for v0.25.1+ defaults: run_startup_migration(path) idempotently adds agent_graph_enabled = true to [views] when absent; security-hardened: rejects symlinks and non-regular files via symlink_metadata(), refuses files > 1 MiB; uses tempfile::NamedTempFile (O_EXCL) for atomic write to close TOCTOU window; returns MigrationResult enum (NoChange / Migrated)  [Issue #710]
 │   │   ├── migrate_tests.rs               # Sibling test module loaded via #[path] from migrate.rs; fixtures and unit tests for run_startup_migration: symlink rejection, oversized-file rejection, already-migrated no-op, missing-section insertion, idempotency round-trip  [Issue #710]
@@ -147,6 +147,7 @@ maestro/
 │   │   ├── models.rs                      # ModelsConfig; label-based model routing config
 │   │   ├── modes.rs                       # Permission mode config types
 │   │   ├── notifications.rs               # NotificationsConfig
+│   │   ├── overlay.rs                     # Diff-walker algorithm for comment-preserving TOML overlay merge; walks a toml_edit Document tree and applies only the keys that differ between the original and updated Config, leaving unknown sections, comments, and blank lines intact  [Issue #712]
 │   │   ├── plugins.rs                     # PluginsConfig
 │   │   ├── project.rs                     # ProjectConfig (language/languages/build_command/test_command/run_command fields written by `maestro init --reset`)
 │   │   ├── review.rs                      # ReviewConfig
@@ -161,6 +162,8 @@ maestro/
 │   │   │   ├── notifications_views.rs     # Tests for NotificationsConfig and ViewsConfig parsing; views_config_defaults_when_section_absent expects true; views_config_in_memory_default_is_true  [Issue #710]
 │   │   │   ├── orchestration.rs           # Tests for orchestration-related config (teams, modes, plugins)
 │   │   │   ├── roundtrip.rs               # Serde roundtrip tests: serialize → deserialize → compare for all Config sub-tables
+│   │   │   ├── roundtrip_overlay.rs       # 12 overlay-merge tests via Config::save_into_str: verifies comments, blank lines, key order, and unknown sections are preserved across a full Config round-trip through fixture files in tests/fixtures/config_roundtrip/  [Issue #712]
+│   │   │   ├── roundtrip_overlay_single_key.rs  # 3 focused tests for single-key overlay mutations (save_into_str on partial changes); guards against regression where only one field differs  [Issue #712]
 │   │   │   ├── sessions_layout.rs         # Tests for SessionsConfig sub-tables (hollow_retry, context_overflow, conflict, completion_gates)
 │   │   │   └── turbo_adapt_paths.rs       # Tests for TurboQuantConfig and AdaptConfig field parsing
 │   │   ├── tui.rs                         # TuiConfig (theme, mascot_style "sprite"|"ascii", default "sprite")
@@ -758,6 +761,10 @@ maestro/
 │   ├── legacy_skills_removed.rs           # 4 regression-guard tests asserting that `.claude/skills/simplify/` is absent from disk; prevents accidental re-introduction of the deprecated simplify skill  [Issue #760]
 │   ├── teams_cookbook_fixtures.rs         # Integration tests validating all six `tests/fixtures/teams_cookbook/*.toml` files parse and resolve correctly via `Loader::resolve`  [Issue #675]
 │   ├── fixtures/                          # Static test fixtures for integration and unit tests
+│   │   ├── config_roundtrip/              # TOML fixtures used by roundtrip_overlay and roundtrip_overlay_single_key tests to verify comment-preserving saves  [Issue #712]
+│   │   │   ├── full_maestro.toml          # Fully-populated maestro.toml used to verify every section round-trips without data loss or comment stripping
+│   │   │   ├── with_comments.toml         # Sparse maestro.toml with inline and header comments; guards that comments survive a Config::save_into_str call unchanged
+│   │   │   └── with_unknown_section.toml  # maestro.toml with a custom [my_tool] section unknown to Config; guards that unknown sections are preserved verbatim by the overlay merge
 │   │   ├── state/
 │   │   │   └── v0.json                    # Pre-version state-file fixture (no `version` key); used by state migration tests to assert that version=0 loads and migrates to CURRENT_STATE_VERSION=1  [Issue #665]
 │   │   └── teams_cookbook/                # TOML fixtures for cookbook preset validation  [Issue #675]
@@ -775,7 +782,7 @@ maestro/
 │   └── scripts/                           # Test script fixtures
 ├── .gitignore                             # Includes .maestro/worktrees/ and runtime artifacts; .maestro/knowledge.md (written by maestro adapt, auto-loaded as system-prompt component by SessionPool::try_promote) is also excluded
 ├── Cargo.lock                             # Dependency lock file
-├── Cargo.toml                             # Rust package manifest; tempfile promoted to runtime dependency; thiserror = "1" added; insta dev-dependency; optimized release profile; [features] section contains experimental-sanitizer = [] only (spike = [] feature and [[example]] agent_personalities_spike entry both removed in #539); flate2 and tar dependencies for tar.gz extraction in self-updater; strip-ansi-escapes = "0.2" for ANSI stripping in clipboard copy  [Issue #142, #233, #482, #499, #526, #536, #539]
+├── Cargo.toml                             # Rust package manifest; tempfile promoted to runtime dependency; thiserror = "1" added; insta dev-dependency; optimized release profile; [features] section contains experimental-sanitizer = [] only (spike = [] feature and [[example]] agent_personalities_spike entry both removed in #539); flate2 and tar dependencies for tar.gz extraction in self-updater; strip-ansi-escapes = "0.2" for ANSI stripping in clipboard copy; toml_edit = "0.22" promoted to direct [dependencies] entry for comment-preserving config saves  [Issue #142, #233, #482, #499, #526, #536, #539, #712]
 ├── CHANGELOG.md                           # Release history following Keep a Changelog format
 ├── LICENSE
 ├── README.md                              # Project front door

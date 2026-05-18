@@ -13,5 +13,7 @@ mod experimental;
 mod notifications_views;
 mod orchestration;
 mod roundtrip;
+mod roundtrip_overlay;
+mod roundtrip_overlay_single_key;
 mod sessions_layout;
 mod turbo_adapt_paths;

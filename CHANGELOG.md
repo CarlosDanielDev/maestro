@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `maestro.toml` saves now preserve comments, blank lines, key order, and any sections not modeled by the `Config` struct — powered by a `toml_edit` overlay merge in the new `src/config/overlay.rs` module (#712).
+
 ## [0.28.1] - 2026-05-18
 
 Documentation refresh + hook/skill hygiene milestone. User-facing docs audited end-to-end against the v0.28.0 surface, hook scripts relocated to the agent-agnostic `.maestro/hooks/` path, and the legacy Claude-Code-only `/simplify` skill retired in favor of the canonical `maestro` command.
