@@ -5,11 +5,14 @@
 //! types in this module are intentionally simple data records — no runtime
 //! state, no closures — so the entire registry lives in `const` arrays.
 
+#[allow(dead_code)]
 mod core;
+#[allow(dead_code)]
 mod extras;
 
 /// Default value for a [`FieldSchema`]. Mirrors [`FieldKind`] so the entire
 /// schema can live in a `const` (no heap, no `toml::Value`, no `String`).
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DefaultValue {
     Bool(bool),
@@ -23,6 +26,7 @@ pub enum DefaultValue {
 
 /// Kind of a configuration field, used by downstream renderers/generators
 /// to pick a widget and enforce a domain.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum FieldKind {
     Bool,
@@ -52,6 +56,7 @@ pub enum FieldKind {
 pub(crate) type Validator = fn(&toml::Value) -> Result<(), String>;
 
 /// Schema for one leaf field (or nested sub-table) in `Config`.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct FieldSchema {
     pub key: &'static str,
@@ -64,6 +69,7 @@ pub struct FieldSchema {
 
 /// Schema for one TOML table. Nested tables (e.g. `tui.theme`) use dotted
 /// `name`s — every consumer iterates the flat slice without recursion.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct TableSchema {
     pub name: &'static str,
@@ -71,6 +77,7 @@ pub struct TableSchema {
     pub fields: &'static [FieldSchema],
 }
 
+#[allow(dead_code)]
 pub(crate) fn validate_url_or_empty(value: &toml::Value) -> Result<(), String> {
     match value.as_str() {
         Some("") => Ok(()),
@@ -81,6 +88,7 @@ pub(crate) fn validate_url_or_empty(value: &toml::Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn validate_non_empty(value: &toml::Value) -> Result<(), String> {
     match value.as_str() {
         Some(s) if !s.trim().is_empty() => Ok(()),
@@ -89,6 +97,7 @@ pub(crate) fn validate_non_empty(value: &toml::Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 const SCHEMA: &[TableSchema] = &[
     TableSchema {
         name: "project",
@@ -177,6 +186,7 @@ const SCHEMA: &[TableSchema] = &[
     },
 ];
 
+#[allow(dead_code)]
 pub(crate) const fn schema_for_config() -> &'static [TableSchema] {
     SCHEMA
 }

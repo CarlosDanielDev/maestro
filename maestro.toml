@@ -100,15 +100,16 @@ preset = "retro"
 [tui.theme.overrides]
 
 [tui.layout]
-mode = "vertical"
-density = "default"
+mode = "horizontal"
+density = "compact"
 preview_ratio = 50
 activity_log_height = 25
 
 [flags]
+schema_driven_settings = true
 
 [turboquant]
-enabled = false
+enabled = true
 bit_width = 4
 strategy = "turboquant"
 apply_to = "both"
@@ -124,3 +125,14 @@ milestone_naming = "ai"
 agent_graph_enabled = true
 
 [teams]
+
+[agents]
+default = "claude"
+
+[agents.claude]
+kind = "claude"
+enabled = true
+command = "claude"
+model = "opus"
+permission_mode = "bypassPermissions"
+allowed_tools = []
