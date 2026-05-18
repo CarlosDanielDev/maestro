@@ -22,6 +22,7 @@ mod plugins;
 mod project;
 mod review;
 mod runtime;
+pub mod schema;
 mod sessions;
 mod tui;
 mod turboquant;
