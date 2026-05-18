@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/landing.rs
+assertion_line: 82
 expression: terminal.backend()
 ---
 "                                                                                                                        "
@@ -23,10 +24,10 @@ expression: terminal.backend()
 "                                     [p]  PRD                                                                           "
 "                                                                                                                        "
 "            ╔══════════════════════════════════[ What's New in v0.28.0 ]═══════════════════════════════════╗            "
-"            ║  [Added] feat(templates): derive subagent_list from filesystem manifest, drop hand-rolled co…║            "
-"            ║  [Added] feat(templates): extract sandbox-aware include reader for provider rule reuse (#727)║            "
-"            ║  [Added] feat(templates): HTTP-provider runtime injection (#707)                             ║            "
-"            ║  [Added] feat(cli): maestro sync-templates subcommand + drift detection (#706)               ║            "
+"            ║  [Added] `maestro sync-templates` CLI subcommand with drift detection — regenerate all provi…║            "
+"            ║  [Added] HTTP-provider runtime template injection — canonical commands rendered into HTTP-ge…║            "
+"            ║  [Added] HTTP-generic provider rendering rules — link-free subagent tables, inline sub-task …║            "
+"            ║  [Added] Codex provider rendering rules — `target_dir()=None`, inline sub-task headers, prov…║            "
 "            ╚══════════════════════════════ Press [n] for full release notes ══════════════════════════════╝            "
 "                                                                                                                        "
 "                                     <q> quit  <n> notes                                                                "
