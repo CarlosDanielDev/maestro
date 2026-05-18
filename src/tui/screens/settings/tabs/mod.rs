@@ -29,7 +29,7 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
         budget::build_fields(config),
         github::build_fields(config, flags),
         notifications::build_fields(config, flags),
-        gates::build_fields(config),
+        gates::build_fields(config, flags),
         review::build_fields(config, flags),
         theme::build_fields(config, flags),
         layout::build_fields(config, flags),
@@ -247,24 +247,38 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
 
     // Gates (tab 5)
     if let Some(fields) = screen.fields_per_tab.get(5) {
-        let g = &mut screen.config.gates;
-        if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
-            g.enabled = w.value;
-        }
-        if let Some(WidgetKind::TextInput(w)) = fields.get(1).map(|f| &f.widget) {
-            g.test_command = w.value.clone();
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
-            g.ci_poll_interval_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(3).map(|f| &f.widget) {
-            g.ci_max_wait_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(4).map(|f| &f.widget) {
-            g.ci_auto_fix.enabled = w.value;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(5).map(|f| &f.widget) {
-            g.ci_auto_fix.max_retries = w.value as u32;
+        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
+            if let Some(table) = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "gates")
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: gates tab failed; config left unchanged");
+            }
+        } else {
+            let g = &mut screen.config.gates;
+            if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
+                g.enabled = w.value;
+            }
+            if let Some(WidgetKind::TextInput(w)) = fields.get(1).map(|f| &f.widget) {
+                g.test_command = w.value.clone();
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
+                g.ci_poll_interval_secs = w.value as u64;
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(3).map(|f| &f.widget) {
+                g.ci_max_wait_secs = w.value as u64;
+            }
+            if let Some(WidgetKind::Toggle(w)) = fields.get(4).map(|f| &f.widget) {
+                g.ci_auto_fix.enabled = w.value;
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(5).map(|f| &f.widget) {
+                g.ci_auto_fix.max_retries = w.value as u32;
+            }
         }
     }
 

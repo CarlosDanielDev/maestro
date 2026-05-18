@@ -1,0 +1,53 @@
+---
+source: src/tui/snapshot_tests/settings_gates_parity.rs
+assertion_line: 115
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 80, height: 24 },
+    content: [
+        "✓ enabled                                                                       ",
+        "test_command: cargo test                                                        ",
+        "ci_poll_interval_secs: < 30 >                                                   ",
+        "ci_max_wait_secs: < 1800 >                                                      ",
+        "✓ ci_auto_fix.enabled                                                           ",
+        "ci_auto_fix.max_retries: < 3 >                                                  ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Black, bg: Cyan, underline: Reset, modifier: BOLD | REVERSED,
+        x: 9, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 1, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 14, y: 1, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 24, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 2, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 23, y: 2, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 29, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 3, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 18, y: 3, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 26, y: 3, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 4, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
+        x: 2, y: 4, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 21, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 5, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 25, y: 5, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 30, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}

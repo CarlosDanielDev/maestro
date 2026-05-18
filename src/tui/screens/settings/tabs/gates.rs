@@ -1,10 +1,22 @@
 use crate::config::Config;
+use crate::config::schema::schema_for_config;
+use crate::flags::Flag;
+use crate::flags::store::FeatureFlags;
 use crate::tui::widgets::{NumberStepper, TextInput, Toggle, WidgetKind};
 
 use super::field;
 use crate::tui::screens::settings::SettingsField;
+use crate::tui::screens::settings::schema_tab::build::from_schema;
 
-pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
+pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<SettingsField> {
+    if flags.is_enabled(Flag::SchemaDrivenSettings) {
+        let table = schema_for_config()
+            .iter()
+            .find(|t| t.name == "gates")
+            .expect("gates schema must exist");
+        return from_schema(table, config);
+    }
+
     let g = &config.gates;
     vec![
         field(WidgetKind::Toggle(Toggle::new("enabled", g.enabled))),
