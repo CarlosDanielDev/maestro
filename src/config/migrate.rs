@@ -9,9 +9,10 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
-use toml::Value;
+use toml_edit::{DocumentMut, Value};
 
 use super::io::atomic_write;
+use super::toml_edit_helpers::{EnsureOutcome, ensure_field};
 
 /// Maximum size of `maestro.toml` the migrator will consider. Anything larger
 /// is almost certainly not a config; the cap prevents memory exhaustion on
@@ -35,34 +36,17 @@ pub(crate) enum MigrationOutcome {
 /// Surfaces parse errors (caller decides whether to skip or propagate). The
 /// driver swallows them so that a malformed `maestro.toml` is never rewritten.
 pub(crate) fn plan_v0_25_1_migration(existing_toml: &str) -> Result<MigrationOutcome> {
-    let mut value: Value = toml::from_str(existing_toml).context("parsing maestro.toml")?;
-    let Some(root) = value.as_table_mut() else {
-        anyhow::bail!("maestro.toml root must be a table");
-    };
+    let mut doc: DocumentMut = existing_toml.parse().context("parsing maestro.toml")?;
 
-    let mut added_keys: Vec<String> = Vec::new();
+    let outcome = ensure_field(&mut doc, "views.agent_graph_enabled", Value::from(true))?;
 
-    let views_entry = root
-        .entry("views".to_string())
-        .or_insert_with(|| Value::Table(Default::default()));
-    let Some(views) = views_entry.as_table_mut() else {
-        anyhow::bail!("[views] must be a table");
-    };
-
-    if !views.contains_key("agent_graph_enabled") {
-        views.insert("agent_graph_enabled".to_string(), Value::Boolean(true));
-        added_keys.push("views.agent_graph_enabled".to_string());
+    match outcome {
+        EnsureOutcome::AlreadyPresent => Ok(MigrationOutcome::AlreadyCurrent),
+        EnsureOutcome::Inserted => Ok(MigrationOutcome::Migrated {
+            new_toml: doc.to_string(),
+            added_keys: vec!["views.agent_graph_enabled".to_string()],
+        }),
     }
-
-    if added_keys.is_empty() {
-        return Ok(MigrationOutcome::AlreadyCurrent);
-    }
-
-    let new_toml = toml::to_string_pretty(&value).context("serializing migrated TOML")?;
-    Ok(MigrationOutcome::Migrated {
-        new_toml,
-        added_keys,
-    })
 }
 
 /// Driver. Reads `path`, decides whether to migrate, and writes the result.
@@ -176,3 +160,7 @@ pub(crate) fn run_startup_migration_with_writer(path: &Path, stderr: &mut dyn st
 #[cfg(test)]
 #[path = "migrate_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "migrate_byte_identity_tests.rs"]
+mod byte_identity_tests;
