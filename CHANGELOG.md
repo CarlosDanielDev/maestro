@@ -14,28 +14,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-05-18
+
+Documentation refresh + hook/skill hygiene milestone. User-facing docs audited end-to-end against the v0.28.0 surface, hook scripts relocated to the agent-agnostic `.maestro/hooks/` path, and the legacy Claude-Code-only `/simplify` skill retired in favor of the canonical `maestro` command.
+
+### Added
+- `docs/teams-cookbook.md` — task-oriented cookbook for team workflows (#675).
+- Consolidated CHANGELOG entries for v0.25.0 / v0.25.1 / v0.26.0 / v0.28.0 and rewrote GitHub release bodies in user-facing tone (#677).
+- `tests/legacy_skills_removed.rs` regression guards preventing the legacy `/simplify` skill from reappearing (#760).
+
 ### Changed
+- README and ROADMAP audited and refreshed against the v0.28.0 surface (#672).
+- GitHub Wiki content audited for accuracy and currency (#673).
+- `docs/configuration.md` reference rewritten; CLI `--help` text audited against documented options (#674).
+- Agent documentation verified end-to-end against actual agent definitions (#676).
 - Hook scripts relocated from `.claude/hooks/` to `.maestro/hooks/` to reflect their agent-agnostic role. The `.claude/hooks/` path is preserved as a relative symlink to `.maestro/hooks/` for one release (#759).
 
 ### Deprecated
 - `.claude/hooks/` directory path. The symlink will be removed in the next minor release. Update any external tooling, dotfiles, or local scripts to reference `.maestro/hooks/` directly. Affected scripts: `implement-gates.sh`, `preflight.sh`, `notify.sh`, `notify.ps1`, `sentinel-path.sh`, `parse_gatekeeper_report.py`, `parse_idea_triager_report.py` (#759).
 
 ### Removed
-- Deprecated Claude-Code-only `/simplify` skill. The canonical source is `.maestro/templates/commands/simplify.md`, rendered to `.claude/commands/simplify.md` and other provider targets via `maestro sync-templates`. New regression guards in `tests/legacy_skills_removed.rs` prevent reintroduction (#760).
-
-## [0.28.1] - 2026-05-16
-
-Documentation refresh milestone. No runtime changes; user-facing docs only.
-
-### Added
-- Consolidated CHANGELOG entries for v0.25.0 / v0.25.1 / v0.26.0 / v0.28.0 and rewrote GitHub release bodies in user-facing tone (#677).
-- `docs/teams-cookbook.md` — task-oriented cookbook for team workflows (#675).
-
-### Changed
-- README and ROADMAP audited and refreshed against the v0.28.0 surface (#672).
-- Wiki content audited for accuracy and currency (#673).
-- `docs/configuration.md` reference rewritten; CLI `--help` text audited against documented options (#674).
-- Agent documentation verified end-to-end against actual agent definitions (#676).
+- Deprecated Claude-Code-only `/simplify` skill. The canonical source is `.maestro/templates/commands/simplify.md`, rendered to `.claude/commands/simplify.md` and other provider targets via `maestro sync-templates` (#760).
 
 ## [0.28.0] - 2026-05-16
 
