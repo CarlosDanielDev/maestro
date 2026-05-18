@@ -24,6 +24,7 @@ mod review;
 mod runtime;
 pub mod schema;
 mod sessions;
+mod toml_edit_helpers;
 mod tui;
 mod turboquant;
 mod views;

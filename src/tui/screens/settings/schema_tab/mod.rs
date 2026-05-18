@@ -6,7 +6,9 @@
 //! feature flag (default off). No production tab consumes this module yet —
 //! it is an opt-in path for future tab migrations.
 
+#[allow(dead_code)]
 pub(crate) mod build;
+#[allow(dead_code)]
 pub(crate) mod sync;
 
 #[cfg(test)]
