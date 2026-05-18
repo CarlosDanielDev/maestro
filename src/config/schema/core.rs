@@ -1,0 +1,336 @@
+//! Field arrays for the early tables: project, sessions and nested
+//! sub-sections, budget, github, notifications.
+
+use super::{DefaultValue, FieldKind, FieldSchema, validate_non_empty, validate_url_or_empty};
+
+const PERMISSION_MODES: &[&str] = &[
+    "default",
+    "acceptEdits",
+    "bypassPermissions",
+    "dontAsk",
+    "plan",
+    "auto",
+];
+const HOLLOW_POLICIES: &[&str] = &["always", "intent-aware", "never"];
+const CONFLICT_POLICIES: &[&str] = &["warn", "pause", "kill"];
+const MERGE_METHODS: &[&str] = &["merge", "squash", "rebase"];
+
+pub(super) const PROJECT_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "repo",
+        label: "Repository",
+        help: "GitHub `owner/repo` or Azure DevOps project — used by `gh`/`az` CLI calls",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: Some(validate_non_empty),
+    },
+    FieldSchema {
+        key: "base_branch",
+        label: "Base Branch",
+        help: "Default branch worktrees fork from",
+        default: DefaultValue::Str("main"),
+        kind: FieldKind::String,
+        validator: Some(validate_non_empty),
+    },
+];
+
+pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "max_concurrent",
+        label: "Max Concurrent Sessions",
+        help: "Maximum simultaneous Claude sessions",
+        default: DefaultValue::Int(3),
+        kind: FieldKind::Int {
+            min: 1,
+            max: 20,
+            step: 1,
+        },
+        validator: None,
+    },
+    FieldSchema {
+        key: "stall_timeout_secs",
+        label: "Stall Timeout (sec)",
+        help: "Mark a session stalled after no output for this many seconds",
+        default: DefaultValue::Int(300),
+        kind: FieldKind::Int {
+            min: 30,
+            max: 3600,
+            step: 30,
+        },
+        validator: None,
+    },
+    FieldSchema {
+        key: "default_model",
+        label: "Default Model",
+        help: "Claude CLI model used when sessions don't specify one",
+        default: DefaultValue::Str("opus"),
+        kind: FieldKind::String,
+        validator: Some(validate_non_empty),
+    },
+    FieldSchema {
+        key: "default_mode",
+        label: "Default Mode",
+        help: "Session mode used when none is set explicitly",
+        default: DefaultValue::Str("orchestrator"),
+        kind: FieldKind::String,
+        validator: Some(validate_non_empty),
+    },
+    FieldSchema {
+        key: "permission_mode",
+        label: "Permission Mode",
+        help: "Claude CLI permission flow — `bypassPermissions` disables prompts",
+        default: DefaultValue::Str("default"),
+        kind: FieldKind::Enum(PERMISSION_MODES),
+        validator: None,
+    },
+    FieldSchema {
+        key: "max_retries",
+        label: "Max Retries",
+        help: "Retries for failed or stalled sessions",
+        default: DefaultValue::Int(2),
+        kind: FieldKind::Int {
+            min: 0,
+            max: 10,
+            step: 1,
+        },
+        validator: None,
+    },
+    FieldSchema {
+        key: "retry_cooldown_secs",
+        label: "Retry Cooldown (sec)",
+        help: "Cooldown between retries",
+        default: DefaultValue::Int(60),
+        kind: FieldKind::Int {
+            min: 0,
+            max: 600,
+            step: 10,
+        },
+        validator: None,
+    },
+];
+
+pub(super) const HOLLOW_RETRY_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "policy",
+        label: "Hollow Retry Policy",
+        help: "When to retry hollow (empty-output) completions",
+        default: DefaultValue::Str("intent-aware"),
+        kind: FieldKind::Enum(HOLLOW_POLICIES),
+        validator: None,
+    },
+    FieldSchema {
+        key: "work_max_retries",
+        label: "Work Session Retries",
+        help: "Retries for hollow completions in work sessions",
+        default: DefaultValue::Int(2),
+        kind: FieldKind::Int {
+            min: 0,
+            max: 10,
+            step: 1,
+        },
+        validator: None,
+    },
+    FieldSchema {
+        key: "consultation_max_retries",
+        label: "Consultation Retries",
+        help: "Retries for hollow completions in consultation sessions",
+        default: DefaultValue::Int(0),
+        kind: FieldKind::Int {
+            min: 0,
+            max: 10,
+            step: 1,
+        },
+        validator: None,
+    },
+];
+
+pub(super) const CONTEXT_OVERFLOW_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "overflow_threshold_pct",
+        label: "Overflow Threshold (%)",
+        help: "Context-usage percentage at which auto-fork triggers",
+        default: DefaultValue::Int(70),
+        kind: FieldKind::Int {
+            min: 10,
+            max: 100,
+            step: 5,
+        },
+        validator: None,
+    },
+    FieldSchema {
+        key: "auto_fork",
+        label: "Auto Fork",
+        help: "Automatically fork on overflow instead of stalling",
+        default: DefaultValue::Bool(true),
+        kind: FieldKind::Bool,
+        validator: None,
+    },
+    FieldSchema {
+        key: "commit_prompt_pct",
+        label: "Commit Prompt (%)",
+        help: "Context percentage at which to prompt a periodic commit",
+        default: DefaultValue::Int(50),
+        kind: FieldKind::Int {
+            min: 10,
+            max: 100,
+            step: 5,
+        },
+        validator: None,
+    },
+    FieldSchema {
+        key: "max_fork_depth",
+        label: "Max Fork Depth",
+        help: "Cap fork chains to prevent runaway forking",
+        default: DefaultValue::Int(5),
+        kind: FieldKind::Int {
+            min: 1,
+            max: 20,
+            step: 1,
+        },
+        validator: None,
+    },
+];
+
+pub(super) const CONFLICT_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "enabled",
+        label: "Conflict Detection",
+        help: "Detect real-time file conflicts between sessions",
+        default: DefaultValue::Bool(true),
+        kind: FieldKind::Bool,
+        validator: None,
+    },
+    FieldSchema {
+        key: "policy",
+        label: "Conflict Policy",
+        help: "What to do when a conflict is detected",
+        default: DefaultValue::Str("warn"),
+        kind: FieldKind::Enum(CONFLICT_POLICIES),
+        validator: None,
+    },
+];
+
+pub(super) const BUDGET_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "per_session_usd",
+        label: "Per-Session Budget (USD)",
+        help: "Hard cap per session before alerts and termination",
+        default: DefaultValue::Float(5.0),
+        kind: FieldKind::Float {
+            min: 0.1,
+            max: 100.0,
+            step: 0.5,
+        },
+        validator: None,
+    },
+    FieldSchema {
+        key: "total_usd",
+        label: "Total Budget (USD)",
+        help: "Aggregate budget across all sessions",
+        default: DefaultValue::Float(50.0),
+        kind: FieldKind::Float {
+            min: 0.1,
+            max: 1000.0,
+            step: 5.0,
+        },
+        validator: None,
+    },
+    FieldSchema {
+        key: "alert_threshold_pct",
+        label: "Alert Threshold (%)",
+        help: "Percentage of budget at which to surface a warning",
+        default: DefaultValue::Int(80),
+        kind: FieldKind::Int {
+            min: 10,
+            max: 100,
+            step: 5,
+        },
+        validator: None,
+    },
+];
+
+pub(super) const GITHUB_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "issue_filter_labels",
+        label: "Issue Filter Labels",
+        help: "Only fetch issues with at least one of these labels",
+        default: DefaultValue::StrList(&["maestro:ready"]),
+        kind: FieldKind::StringList,
+        validator: None,
+    },
+    FieldSchema {
+        key: "auto_pr",
+        label: "Auto Create PR",
+        help: "Open a PR automatically when a session finishes cleanly",
+        default: DefaultValue::Bool(true),
+        kind: FieldKind::Bool,
+        validator: None,
+    },
+    FieldSchema {
+        key: "cache_ttl_secs",
+        label: "Cache TTL (sec)",
+        help: "How long to cache issue data before refetching",
+        default: DefaultValue::Int(300),
+        kind: FieldKind::Int {
+            min: 30,
+            max: 3600,
+            step: 30,
+        },
+        validator: None,
+    },
+    FieldSchema {
+        key: "auto_merge",
+        label: "Auto Merge",
+        help: "Merge PRs automatically once all required checks pass",
+        default: DefaultValue::Bool(false),
+        kind: FieldKind::Bool,
+        validator: None,
+    },
+    FieldSchema {
+        key: "merge_method",
+        label: "Merge Method",
+        help: "Strategy used when merging PRs",
+        default: DefaultValue::Str("squash"),
+        kind: FieldKind::Enum(MERGE_METHODS),
+        validator: None,
+    },
+];
+
+pub(super) const NOTIFICATIONS_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "desktop",
+        label: "Desktop Notifications",
+        help: "Show native desktop notifications on session events",
+        default: DefaultValue::Bool(true),
+        kind: FieldKind::Bool,
+        validator: None,
+    },
+    FieldSchema {
+        key: "slack",
+        label: "Slack Notifications",
+        help: "Send notifications to Slack via webhook",
+        default: DefaultValue::Bool(false),
+        kind: FieldKind::Bool,
+        validator: None,
+    },
+    FieldSchema {
+        key: "slack_webhook_url",
+        label: "Slack Webhook URL",
+        help: "Incoming-webhook URL — leave empty to disable Slack",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: Some(validate_url_or_empty),
+    },
+    FieldSchema {
+        key: "slack_rate_limit_per_min",
+        label: "Slack Rate Limit (per min)",
+        help: "Cap on Slack messages per minute",
+        default: DefaultValue::Int(10),
+        kind: FieldKind::Int {
+            min: 1,
+            max: 60,
+            step: 1,
+        },
+        validator: None,
+    },
+];
