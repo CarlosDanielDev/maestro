@@ -30,7 +30,7 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
         github::build_fields(config),
         notifications::build_fields(config),
         gates::build_fields(config),
-        review::build_fields(config),
+        review::build_fields(config, flags),
         theme::build_fields(config),
         layout::build_fields(config),
         vec![],
@@ -236,12 +236,26 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
 
     // Review (tab 6)
     if let Some(fields) = screen.fields_per_tab.get(6) {
-        let r = &mut screen.config.review;
-        if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
-            r.enabled = w.value;
-        }
-        if let Some(WidgetKind::TextInput(w)) = fields.get(1).map(|f| &f.widget) {
-            r.command = w.value.clone();
+        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
+            if let Some(table) = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "review")
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: review tab failed; config left unchanged");
+            }
+        } else {
+            let r = &mut screen.config.review;
+            if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
+                r.enabled = w.value;
+            }
+            if let Some(WidgetKind::TextInput(w)) = fields.get(1).map(|f| &f.widget) {
+                r.command = w.value.clone();
+            }
         }
     }
 
