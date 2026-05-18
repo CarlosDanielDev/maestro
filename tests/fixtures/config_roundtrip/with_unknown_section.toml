@@ -1,0 +1,33 @@
+[project]
+repo = "owner/repo"
+base_branch = "main"
+
+[sessions]
+max_concurrent = 3
+stall_timeout_secs = 300
+default_model = "opus"
+default_mode = "orchestrator"
+permission_mode = "bypassPermissions"
+allowed_tools = []
+max_retries = 2
+retry_cooldown_secs = 60
+max_prompt_history = 100
+
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+
+[github]
+
+[notifications]
+
+# This section is not modeled in the Config struct.
+# It must survive save unchanged — forward-compatibility contract.
+[custom_automation]
+foo = "bar"
+baz = 42
+tags = ["alpha", "beta"]
+
+[custom_automation.nested]
+deep_key = true

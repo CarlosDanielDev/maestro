@@ -12,10 +12,12 @@ mod experimental;
 mod flags;
 mod gates;
 mod github;
+mod io;
 mod migrate;
 mod models;
 mod modes;
 mod notifications;
+mod overlay;
 mod plugins;
 mod project;
 mod review;
@@ -114,8 +116,63 @@ impl Config {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
+        match std::fs::metadata(path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => self.save_fresh(path),
+            Err(e) => Err(e).with_context(|| format!("stat config path {}", path.display())),
+            Ok(meta) if meta.len() == 0 => self.save_fresh(path),
+            Ok(_) => self.save_into_existing(path),
+        }
+    }
+
+    /// Whole-document write used when the destination does not yet exist
+    /// (fresh install). Preserves prior behavior; no overlay involved.
+    fn save_fresh(&self, path: &Path) -> Result<()> {
         let content = toml::to_string_pretty(self).context("serializing config to TOML")?;
-        std::fs::write(path, content)
+        io::atomic_write(path, &content)
+            .with_context(|| format!("writing config to {}", path.display()))?;
+        Ok(())
+    }
+
+    /// Comment-preserving save: applies the in-memory `Config`'s changes onto
+    /// the existing TOML text using a `toml_edit::DocumentMut` overlay, so
+    /// comments, blank lines, key order, and unknown sections survive.
+    /// Pure (no I/O); returns the new file contents.
+    pub fn save_into_str(&self, original_text: &str) -> Result<String> {
+        let mut existing: toml_edit::DocumentMut = original_text.parse().with_context(|| {
+            "parsing existing config as TOML (refusing to overwrite malformed file)".to_string()
+        })?;
+        let on_disk_cfg: Config =
+            toml::from_str(original_text).context("parsing existing config into Config model")?;
+
+        // Route both serializations through `toml::to_string_pretty` so that
+        // nested struct fields render as standard `[section]` headers rather
+        // than inline tables — `toml_edit::ser::to_document` defaults to
+        // inline-table form for nested struct fields, which would force every
+        // section change to be a wholesale type-mismatch replacement.
+        let on_disk_canonical = toml::to_string(&on_disk_cfg)
+            .context("serializing on-disk config to canonical TOML")?;
+        let new_canonical =
+            toml::to_string(self).context("serializing in-memory config to canonical TOML")?;
+        let on_disk_doc: toml_edit::DocumentMut = on_disk_canonical
+            .parse()
+            .context("re-parsing canonical on-disk config")?;
+        let new_doc: toml_edit::DocumentMut = new_canonical
+            .parse()
+            .context("re-parsing canonical in-memory config")?;
+
+        overlay::apply_overlay(&mut existing, on_disk_doc.as_table(), new_doc.as_table());
+
+        Ok(existing.to_string())
+    }
+
+    /// Atomic save over an existing on-disk file using the overlay.
+    /// Refuses to overwrite a malformed file. Mirror of `save_into_str`'s
+    /// guarantees, plus tempfile-based atomic write.
+    pub fn save_into_existing(&self, path: &Path) -> Result<()> {
+        let original = std::fs::read_to_string(path)
+            .with_context(|| format!("reading existing config at {}", path.display()))?;
+        let new_content = self.save_into_str(&original)?;
+        io::atomic_write(path, &new_content)
             .with_context(|| format!("writing config to {}", path.display()))?;
         Ok(())
     }
