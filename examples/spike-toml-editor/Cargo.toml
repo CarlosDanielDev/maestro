@@ -1,0 +1,27 @@
+[package]
+name = "spike-toml-editor"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone workspace root — do NOT inherit the parent crate's lints / deps.
+# Per issue #711: spike is intentionally throwaway; relaxed unwrap/expect policy.
+[workspace]
+
+[lib]
+name = "spike_toml_editor"
+path = "src/lib.rs"
+
+[[bin]]
+name = "spike-toml-editor"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.28"
+crossterm = "0.28"
+toml_edit = "0.22"
+anyhow = "1"
+
+[dev-dependencies]
+tempfile = "3"
+toml_edit = "0.22"

@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-17 00:00 (UTC)
+> Last updated: 2026-05-18 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -736,8 +736,20 @@ maestro/
 │   ├── parser.rs                          # Benchmark: stream-json parser throughput  [Issue #19]
 │   └── turboquant.rs                      # Benchmark: TurboQuant quantization pipeline throughput
 ├── examples/                              # Cargo examples (`cargo run --example <name>`) — dev-only utilities not shipped in the binary
-│   └── multi-agent/                       # Multi-agent example configuration
-│       └── maestro.toml                   # Example maestro.toml for a multi-agent setup
+│   ├── multi-agent/                       # Multi-agent example configuration
+│   │   └── maestro.toml                   # Example maestro.toml for a multi-agent setup
+│   └── spike-toml-editor/                 # Throwaway spike: interactive TOML editor TUI (standalone workspace, not part of main Cargo workspace) — findings documented in SPIKE.md; issue #711
+│       ├── Cargo.toml                     # Standalone workspace manifest; deps: ratatui 0.28, crossterm 0.28, toml_edit 0.22, anyhow 1; dev-deps: tempfile 3
+│       ├── SPIKE.md                       # Spike findings: sections a–f, L0 hardening checklist, security checklist
+│       ├── fixtures/
+│       │   └── maestro.toml               # Trimmed fixture ([project], [sessions], [tui]) used by round-trip tests
+│       ├── src/
+│       │   ├── lib.rs                     # Library facade
+│       │   ├── main.rs                    # Event loop and App state
+│       │   ├── schema.rs                  # Schema / FieldType / EditedValue types; load / save / edit_value
+│       │   └── widgets.rs                 # Pure ratatui render functions
+│       └── tests/
+│           └── round_trip.rs              # 14 tests: decor-preservation canaries and round-trip byte-identity
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
 │   ├── subagent_manifest_drift.rs         # Drift guard: set-difference between `.claude/agents/subagent-*.md` on disk and `[[subagents]]` slugs in `manifest.toml`; fails with a diff line on "missing from manifest" or "stale in manifest"; 5 unit tests + 1 live-repo integration test  [Issue #728]
