@@ -27,7 +27,7 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
         project::build_fields(config, flags),
         sessions::build_fields(config),
         budget::build_fields(config),
-        github::build_fields(config),
+        github::build_fields(config, flags),
         notifications::build_fields(config, flags),
         gates::build_fields(config),
         review::build_fields(config, flags),
@@ -168,25 +168,39 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
 
     // GitHub (tab 3)
     if let Some(fields) = screen.fields_per_tab.get(3) {
-        let g = &mut screen.config.github;
-        if let Some(WidgetKind::ListEditor(w)) = fields.first().map(|f| &f.widget) {
-            g.issue_filter_labels = w.items.clone();
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(1).map(|f| &f.widget) {
-            g.auto_pr = w.value;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
-            g.cache_ttl_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(3).map(|f| &f.widget) {
-            g.auto_merge = w.value;
-        }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(4).map(|f| &f.widget) {
-            g.merge_method = match w.selected {
-                0 => crate::config::MergeMethod::Merge,
-                1 => crate::config::MergeMethod::Squash,
-                _ => crate::config::MergeMethod::Rebase,
-            };
+        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
+            if let Some(table) = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "github")
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: github tab failed; config left unchanged");
+            }
+        } else {
+            let g = &mut screen.config.github;
+            if let Some(WidgetKind::ListEditor(w)) = fields.first().map(|f| &f.widget) {
+                g.issue_filter_labels = w.items.clone();
+            }
+            if let Some(WidgetKind::Toggle(w)) = fields.get(1).map(|f| &f.widget) {
+                g.auto_pr = w.value;
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
+                g.cache_ttl_secs = w.value as u64;
+            }
+            if let Some(WidgetKind::Toggle(w)) = fields.get(3).map(|f| &f.widget) {
+                g.auto_merge = w.value;
+            }
+            if let Some(WidgetKind::Dropdown(w)) = fields.get(4).map(|f| &f.widget) {
+                g.merge_method = match w.selected {
+                    0 => crate::config::MergeMethod::Merge,
+                    1 => crate::config::MergeMethod::Squash,
+                    _ => crate::config::MergeMethod::Rebase,
+                };
+            }
         }
     }
 
