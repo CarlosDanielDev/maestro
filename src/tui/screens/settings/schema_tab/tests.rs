@@ -223,6 +223,88 @@ fn apply_to_toml_nested_table_writes_inner_bool_value() {
     assert_eq!(nested.get("inner_bool"), Some(&toml::Value::Boolean(true)));
 }
 
+// --- dotted table_name walking (Layout, Theme, Gates nested tables) ---
+
+#[test]
+fn build_from_schema_resolves_value_through_dotted_table_name() {
+    use crate::config::LayoutMode;
+    use crate::config::schema::schema_for_config;
+
+    let mut config = default_config();
+    config.tui.layout.mode = LayoutMode::Horizontal;
+
+    let table = schema_for_config()
+        .iter()
+        .find(|t| t.name == "tui.layout")
+        .expect("tui.layout schema must exist");
+    let fields = from_schema(table, &config);
+    let mode_field = fields
+        .iter()
+        .find(|f| f.widget.label() == "mode")
+        .expect("layout mode field must exist");
+    let WidgetKind::Dropdown(d) = &mode_field.widget else {
+        panic!("expected Dropdown for layout mode");
+    };
+    assert_eq!(
+        d.options[d.selected], "horizontal",
+        "from_schema must walk dotted table_name 'tui.layout' to reach the nested toml value",
+    );
+}
+
+#[test]
+fn sync_to_config_writes_through_dotted_table_name_to_nested_toml_tree() {
+    use crate::config::LayoutMode;
+    use crate::config::schema::schema_for_config;
+
+    let mut config = default_config();
+    let table = schema_for_config()
+        .iter()
+        .find(|t| t.name == "tui.layout")
+        .expect("tui.layout schema must exist");
+    let mut fields = from_schema(table, &config);
+    let mode_idx = fields
+        .iter()
+        .position(|f| f.widget.label() == "mode")
+        .unwrap();
+    if let WidgetKind::Dropdown(ref mut d) = fields[mode_idx].widget {
+        let horizontal_idx = d.options.iter().position(|s| s == "horizontal").unwrap();
+        d.selected = horizontal_idx;
+    }
+    sync_to_config(table, &fields, &mut config).expect("sync_to_config must succeed");
+    assert_eq!(
+        config.tui.layout.mode,
+        LayoutMode::Horizontal,
+        "sync_to_config must walk dotted table_name 'tui.layout' to write the nested value",
+    );
+}
+
+#[test]
+fn sync_to_config_dotted_table_name_does_not_create_literal_key() {
+    use crate::config::schema::schema_for_config;
+
+    let mut config = default_config();
+    let table = schema_for_config()
+        .iter()
+        .find(|t| t.name == "tui.layout")
+        .expect("tui.layout schema must exist");
+    let mut fields = from_schema(table, &config);
+    let mode_idx = fields
+        .iter()
+        .position(|f| f.widget.label() == "mode")
+        .unwrap();
+    if let WidgetKind::Dropdown(ref mut d) = fields[mode_idx].widget {
+        let horizontal_idx = d.options.iter().position(|s| s == "horizontal").unwrap();
+        d.selected = horizontal_idx;
+    }
+    sync_to_config(table, &fields, &mut config).expect("sync_to_config must succeed");
+
+    let root = toml::Value::try_from(&config).expect("config must serialize back to toml");
+    assert!(
+        root.as_table().map(|t| !t.contains_key("tui.layout")).unwrap_or(true),
+        "sync_to_config must not insert a literal 'tui.layout' key at the root",
+    );
+}
+
 // --- sync::sync_to_config end-to-end ---
 
 #[test]
