@@ -28,7 +28,7 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
         sessions::build_fields(config),
         budget::build_fields(config),
         github::build_fields(config),
-        notifications::build_fields(config),
+        notifications::build_fields(config, flags),
         gates::build_fields(config),
         review::build_fields(config, flags),
         theme::build_fields(config),
@@ -192,22 +192,42 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
 
     // Notifications (tab 4)
     if let Some(fields) = screen.fields_per_tab.get(4) {
-        let n = &mut screen.config.notifications;
-        if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
-            n.desktop = w.value;
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(1).map(|f| &f.widget) {
-            n.slack = w.value;
-        }
-        if let Some(WidgetKind::TextInput(w)) = fields.get(2).map(|f| &f.widget) {
-            n.slack_webhook_url = if w.value.is_empty() {
-                None
-            } else {
-                Some(w.value.clone())
-            };
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(3).map(|f| &f.widget) {
-            n.slack_rate_limit_per_min = w.value as u32;
+        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
+            if let Some(table) = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "notifications")
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: notifications tab failed; config left unchanged");
+            }
+            // Preserve legacy `Some("") -> None` semantics for slack_webhook_url.
+            if let Some(url) = screen.config.notifications.slack_webhook_url.as_deref()
+                && url.is_empty()
+            {
+                screen.config.notifications.slack_webhook_url = None;
+            }
+        } else {
+            let n = &mut screen.config.notifications;
+            if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
+                n.desktop = w.value;
+            }
+            if let Some(WidgetKind::Toggle(w)) = fields.get(1).map(|f| &f.widget) {
+                n.slack = w.value;
+            }
+            if let Some(WidgetKind::TextInput(w)) = fields.get(2).map(|f| &f.widget) {
+                n.slack_webhook_url = if w.value.is_empty() {
+                    None
+                } else {
+                    Some(w.value.clone())
+                };
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(3).map(|f| &f.widget) {
+                n.slack_rate_limit_per_min = w.value as u32;
+            }
         }
     }
 
