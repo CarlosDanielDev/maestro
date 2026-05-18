@@ -97,13 +97,15 @@ pub(crate) fn validate_non_empty(value: &toml::Value) -> Result<(), String> {
     }
 }
 
+pub(crate) const PROJECT_TABLE: TableSchema = TableSchema {
+    name: "project",
+    label: "Project",
+    fields: core::PROJECT_FIELDS,
+};
+
 #[allow(dead_code)]
 const SCHEMA: &[TableSchema] = &[
-    TableSchema {
-        name: "project",
-        label: "Project",
-        fields: core::PROJECT_FIELDS,
-    },
+    PROJECT_TABLE,
     TableSchema {
         name: "sessions",
         label: "Sessions",

@@ -205,7 +205,7 @@ auto_fork = false
 | `continuous_mode` | `false` | Enable automatic issue-to-issue progression (also set via `--continuous`). |
 | `auto_fork` | `false` | Automatically fork sessions that exceed the context threshold. |
 | `ci_auto_fix` | `false` | Spawn a fix session automatically when CI fails on a maestro-managed PR. |
-| `schema_driven_settings` | `false` | **No-op until a settings tab opts in.** Enables the schema-driven renderer in `src/tui/screens/settings/schema_tab/`. Shipped default-off in v0.28.x while the infrastructure is being built; no user-visible behavior change is expected until a future milestone migrates a tab to the new renderer. Setting this flag to `true` is safe but currently has no effect. |
+| `schema_driven_settings` | `false` | Enables the schema-driven renderer in `src/tui/screens/settings/schema_tab/`. When `true`, the **Project** tab renders via `from_schema(&PROJECT_TABLE, config)` and `sync_to_config` instead of the hand-coded path. The two renderers are snapshot-parity tested; no user-visible behavior change is expected. Other tabs remain hand-coded until a future milestone migrates them. |
 
 *Source: `src/config/flags.rs`, `src/flags/store.rs`, `src/flags/mod.rs`.*
 

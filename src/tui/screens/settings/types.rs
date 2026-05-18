@@ -69,7 +69,7 @@ pub struct SettingsScreen {
     pub config_path: Option<std::path::PathBuf>,
     pub(super) active_tab: usize,
     pub(super) field_index: usize,
-    pub(super) fields_per_tab: Vec<Vec<SettingsField>>,
+    pub(crate) fields_per_tab: Vec<Vec<SettingsField>>,
     pub(super) scroll_offset: usize,
     pub(super) confirm_discard: bool,
     pub(super) save_flash: Option<std::time::Instant>,

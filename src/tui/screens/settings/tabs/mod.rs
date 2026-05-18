@@ -23,11 +23,8 @@ fn field(widget: WidgetKind) -> SettingsField {
 }
 
 pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<SettingsField>> {
-    if flags.is_enabled(Flag::SchemaDrivenSettings) {
-        tracing::debug!("settings: schema_driven_settings flag is on (no tab is migrated yet)");
-    }
     vec![
-        project::build_fields(config),
+        project::build_fields(config, flags),
         sessions::build_fields(config),
         budget::build_fields(config),
         github::build_fields(config),
@@ -45,11 +42,21 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
 pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
     // Project (tab 0)
     if let Some(fields) = screen.fields_per_tab.first() {
-        if let Some(WidgetKind::TextInput(w)) = fields.first().map(|f| &f.widget) {
-            screen.config.project.repo = w.value.clone();
-        }
-        if let Some(WidgetKind::TextInput(w)) = fields.get(1).map(|f| &f.widget) {
-            screen.config.project.base_branch = w.value.clone();
+        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
+            if let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                &crate::config::schema::PROJECT_TABLE,
+                fields,
+                &mut screen.config,
+            ) {
+                tracing::warn!(error = %e, "schema sync: project tab failed; config left unchanged");
+            }
+        } else {
+            if let Some(WidgetKind::TextInput(w)) = fields.first().map(|f| &f.widget) {
+                screen.config.project.repo = w.value.clone();
+            }
+            if let Some(WidgetKind::TextInput(w)) = fields.get(1).map(|f| &f.widget) {
+                screen.config.project.base_branch = w.value.clone();
+            }
         }
     }
 
