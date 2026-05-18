@@ -17,6 +17,7 @@ mod milestone;
 mod milestone_wizard;
 mod overview;
 mod roadmap;
+mod schema_tab;
 mod team_wizard;
 mod turboquant_dashboard;
 

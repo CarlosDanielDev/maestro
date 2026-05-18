@@ -12,6 +12,8 @@ pub mod theme;
 pub mod turboquant;
 
 use crate::config::Config;
+use crate::flags::Flag;
+use crate::flags::store::FeatureFlags;
 use crate::tui::widgets::WidgetKind;
 
 use super::{SettingsField, SettingsScreen};
@@ -20,7 +22,10 @@ fn field(widget: WidgetKind) -> SettingsField {
     SettingsField { widget }
 }
 
-pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
+pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<SettingsField>> {
+    if flags.is_enabled(Flag::SchemaDrivenSettings) {
+        tracing::debug!("settings: schema_driven_settings flag is on (no tab is migrated yet)");
+    }
     vec![
         project::build_fields(config),
         sessions::build_fields(config),

@@ -190,7 +190,7 @@ heavy_task_limit = 2
 
 Arbitrary `key = bool` entries that merge with the built-in flag defaults (see `src/flags/store.rs`). The `maestro run --enable-flag <FLAG>` and `--disable-flag <FLAG>` options layer on top with **disable wins** semantics when both are supplied for the same flag in the same invocation.
 
-Documented flags shipped with the binary (defaults shown in source): `continuous_mode`, `auto_fork`, `ci_auto_fix`. Unknown keys are accepted and stored verbatim; they have no effect until code reads them.
+Documented flags shipped with the binary (defaults shown in source): `continuous_mode`, `auto_fork`, `ci_auto_fix`, `schema_driven_settings`. Unknown keys are accepted and stored verbatim; they have no effect until code reads them.
 
 ```toml
 [flags]
@@ -198,7 +198,16 @@ ci_auto_fix = true
 auto_fork = false
 ```
 
-*Source: `src/config/flags.rs`, `src/flags/store.rs`.*
+### Built-in flag reference
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `continuous_mode` | `false` | Enable automatic issue-to-issue progression (also set via `--continuous`). |
+| `auto_fork` | `false` | Automatically fork sessions that exceed the context threshold. |
+| `ci_auto_fix` | `false` | Spawn a fix session automatically when CI fails on a maestro-managed PR. |
+| `schema_driven_settings` | `false` | **No-op until a settings tab opts in.** Enables the schema-driven renderer in `src/tui/screens/settings/schema_tab/`. Shipped default-off in v0.28.x while the infrastructure is being built; no user-visible behavior change is expected until a future milestone migrates a tab to the new renderer. Setting this flag to `true` is safe but currently has no effect. |
+
+*Source: `src/config/flags.rs`, `src/flags/store.rs`, `src/flags/mod.rs`.*
 
 ## `[gates]`
 

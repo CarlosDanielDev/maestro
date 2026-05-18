@@ -2,6 +2,7 @@ pub mod caveman_row;
 mod draw;
 mod input;
 mod keymap;
+pub(crate) mod schema_tab;
 mod tabs;
 pub mod types;
 pub mod validation;
@@ -36,7 +37,7 @@ pub(super) fn widget_by_label<'a>(
 
 impl SettingsScreen {
     pub fn new(config: Config, flags: FeatureFlags) -> Self {
-        let fields_per_tab = tabs::build_fields(&config);
+        let fields_per_tab = tabs::build_fields(&config, &flags);
         let validators = build_validator_map();
         let mut screen = Self {
             original_config: config.clone(),
@@ -114,7 +115,7 @@ impl SettingsScreen {
 
     fn reset_to_original(&mut self) {
         self.config = self.original_config.clone();
-        self.fields_per_tab = tabs::build_fields(&self.config);
+        self.fields_per_tab = tabs::build_fields(&self.config, &self.feature_flags);
     }
 
     fn save_config(&mut self) -> Result<(), anyhow::Error> {

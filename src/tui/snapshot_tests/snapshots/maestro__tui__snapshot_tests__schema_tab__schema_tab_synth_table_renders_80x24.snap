@@ -1,0 +1,29 @@
+---
+source: src/tui/snapshot_tests/schema_tab.rs
+assertion_line: 123
+expression: terminal.backend()
+---
+"✓ flag_a                                                                        "
+"count_a: < 7 >                                                                  "
+"ratio_a: < 2 >                                                                  "
+"name_a: hello                                                                   "
+"mode_a:  beta                                                                 "
+"tags_a:                                                                         "
+"○ nested_a.inner_bool                                                           "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
