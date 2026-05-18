@@ -41,6 +41,7 @@ pub enum Flag {
     ModelRouting,
     ContextOverflow,
     TurboQuant,
+    SchemaDrivenSettings,
 }
 
 const ALL_FLAGS: &[Flag] = &[
@@ -51,6 +52,7 @@ const ALL_FLAGS: &[Flag] = &[
     Flag::ModelRouting,
     Flag::ContextOverflow,
     Flag::TurboQuant,
+    Flag::SchemaDrivenSettings,
 ];
 
 impl Flag {
@@ -64,6 +66,7 @@ impl Flag {
             Flag::ModelRouting => false,
             Flag::ContextOverflow => false,
             Flag::TurboQuant => false,
+            Flag::SchemaDrivenSettings => false,
         }
     }
 
@@ -77,6 +80,7 @@ impl Flag {
             Flag::ModelRouting => "model_routing",
             Flag::ContextOverflow => "context_overflow",
             Flag::TurboQuant => "turboquant",
+            Flag::SchemaDrivenSettings => "schema_driven_settings",
         }
     }
 
@@ -90,6 +94,9 @@ impl Flag {
             Flag::ModelRouting => "Route tasks to different models based on complexity",
             Flag::ContextOverflow => "Detect and handle context window overflow",
             Flag::TurboQuant => "Enable TurboQuant vector quantization for context compression",
+            Flag::SchemaDrivenSettings => {
+                "Render settings tabs from the const schema instead of hand-coded build_fields"
+            }
         }
     }
 
@@ -140,6 +147,11 @@ mod tests {
         assert!(!Flag::TurboQuant.default_enabled());
     }
 
+    #[test]
+    fn flag_default_enabled_schema_driven_settings_is_false() {
+        assert!(!Flag::SchemaDrivenSettings.default_enabled());
+    }
+
     // -- Flag::description --
 
     #[test]
@@ -157,8 +169,8 @@ mod tests {
     // -- Flag::all --
 
     #[test]
-    fn flag_all_returns_exactly_seven_variants() {
-        assert_eq!(Flag::all().len(), 7);
+    fn flag_all_returns_exactly_eight_variants() {
+        assert_eq!(Flag::all().len(), 8);
     }
 
     #[test]
@@ -171,6 +183,7 @@ mod tests {
         assert!(all.contains(&Flag::ModelRouting));
         assert!(all.contains(&Flag::ContextOverflow));
         assert!(all.contains(&Flag::TurboQuant));
+        assert!(all.contains(&Flag::SchemaDrivenSettings));
     }
 
     // -- Flag::name --
@@ -183,6 +196,8 @@ mod tests {
         assert_eq!(Flag::ReviewCouncil.name(), "review_council");
         assert_eq!(Flag::ModelRouting.name(), "model_routing");
         assert_eq!(Flag::ContextOverflow.name(), "context_overflow");
+        assert_eq!(Flag::TurboQuant.name(), "turboquant");
+        assert_eq!(Flag::SchemaDrivenSettings.name(), "schema_driven_settings");
     }
 
     #[test]

@@ -39,3 +39,4 @@ mod dirty;
 mod flags_validation;
 mod integration;
 mod keybinds_save_caveman;
+mod schema_flag;
