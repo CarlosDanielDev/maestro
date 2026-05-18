@@ -32,7 +32,7 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
         gates::build_fields(config),
         review::build_fields(config, flags),
         theme::build_fields(config),
-        layout::build_fields(config),
+        layout::build_fields(config, flags),
         vec![],
         turboquant::build_fields(config, flags),
         advanced::build_fields(config),
@@ -312,25 +312,39 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
 
     // Layout (tab 8)
     if let Some(fields) = screen.fields_per_tab.get(8) {
-        let l = &mut screen.config.tui.layout;
-        if let Some(WidgetKind::Dropdown(w)) = fields.first().map(|f| &f.widget) {
-            l.mode = match w.selected {
-                0 => crate::config::LayoutMode::Vertical,
-                _ => crate::config::LayoutMode::Horizontal,
-            };
-        }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(1).map(|f| &f.widget) {
-            l.density = match w.selected {
-                0 => crate::config::Density::Default,
-                1 => crate::config::Density::Comfortable,
-                _ => crate::config::Density::Compact,
-            };
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
-            l.preview_ratio = w.value as u8;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(3).map(|f| &f.widget) {
-            l.activity_log_height = w.value as u8;
+        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
+            if let Some(table) = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "tui.layout")
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: layout tab failed; config left unchanged");
+            }
+        } else {
+            let l = &mut screen.config.tui.layout;
+            if let Some(WidgetKind::Dropdown(w)) = fields.first().map(|f| &f.widget) {
+                l.mode = match w.selected {
+                    0 => crate::config::LayoutMode::Vertical,
+                    _ => crate::config::LayoutMode::Horizontal,
+                };
+            }
+            if let Some(WidgetKind::Dropdown(w)) = fields.get(1).map(|f| &f.widget) {
+                l.density = match w.selected {
+                    0 => crate::config::Density::Default,
+                    1 => crate::config::Density::Comfortable,
+                    _ => crate::config::Density::Compact,
+                };
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
+                l.preview_ratio = w.value as u8;
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(3).map(|f| &f.widget) {
+                l.activity_log_height = w.value as u8;
+            }
         }
     }
 

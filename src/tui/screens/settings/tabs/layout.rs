@@ -1,10 +1,22 @@
 use crate::config::Config;
+use crate::config::schema::schema_for_config;
+use crate::flags::Flag;
+use crate::flags::store::FeatureFlags;
 use crate::tui::widgets::{Dropdown, NumberStepper, WidgetKind};
 
 use super::field;
 use crate::tui::screens::settings::SettingsField;
+use crate::tui::screens::settings::schema_tab::build::from_schema;
 
-pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
+pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<SettingsField> {
+    if flags.is_enabled(Flag::SchemaDrivenSettings) {
+        let table = schema_for_config()
+            .iter()
+            .find(|t| t.name == "tui.layout")
+            .expect("tui.layout schema must exist");
+        return from_schema(table, config);
+    }
+
     use crate::config::{Density, LayoutMode};
     let mode_options: Vec<String> = vec!["vertical".into(), "horizontal".into()];
     let mode_idx = match config.tui.layout.mode {

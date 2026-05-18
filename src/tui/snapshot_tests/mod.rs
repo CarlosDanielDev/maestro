@@ -23,6 +23,7 @@ mod settings_review_parity;
 mod settings_turboquant_parity;
 mod settings_notifications_parity;
 mod settings_github_parity;
+mod settings_layout_parity;
 mod team_wizard;
 mod turboquant_dashboard;
 
