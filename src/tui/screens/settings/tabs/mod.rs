@@ -34,7 +34,7 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
         theme::build_fields(config),
         layout::build_fields(config),
         vec![],
-        turboquant::build_fields(config),
+        turboquant::build_fields(config, flags),
         advanced::build_fields(config),
     ]
 }
@@ -302,29 +302,43 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
 
     // TurboQuant (tab 10 — Flags tab at 9 has no widgets)
     if let Some(fields) = screen.fields_per_tab.get(10) {
-        let tq = &mut screen.config.turboquant;
-        if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
-            tq.enabled = w.value;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
-            tq.bit_width = w.value as u8;
-        }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(2).map(|f| &f.widget) {
-            tq.strategy = match w.selected {
-                0 => crate::config::QuantStrategy::TurboQuant,
-                1 => crate::config::QuantStrategy::PolarQuant,
-                _ => crate::config::QuantStrategy::Qjl,
-            };
-        }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(3).map(|f| &f.widget) {
-            tq.apply_to = match w.selected {
-                0 => crate::config::ApplyTarget::Keys,
-                1 => crate::config::ApplyTarget::Values,
-                _ => crate::config::ApplyTarget::Both,
-            };
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(4).map(|f| &f.widget) {
-            tq.auto_on_overflow = w.value;
+        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
+            if let Some(table) = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "turboquant")
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: turboquant tab failed; config left unchanged");
+            }
+        } else {
+            let tq = &mut screen.config.turboquant;
+            if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
+                tq.enabled = w.value;
+            }
+            if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
+                tq.bit_width = w.value as u8;
+            }
+            if let Some(WidgetKind::Dropdown(w)) = fields.get(2).map(|f| &f.widget) {
+                tq.strategy = match w.selected {
+                    0 => crate::config::QuantStrategy::TurboQuant,
+                    1 => crate::config::QuantStrategy::PolarQuant,
+                    _ => crate::config::QuantStrategy::Qjl,
+                };
+            }
+            if let Some(WidgetKind::Dropdown(w)) = fields.get(3).map(|f| &f.widget) {
+                tq.apply_to = match w.selected {
+                    0 => crate::config::ApplyTarget::Keys,
+                    1 => crate::config::ApplyTarget::Values,
+                    _ => crate::config::ApplyTarget::Both,
+                };
+            }
+            if let Some(WidgetKind::Toggle(w)) = fields.get(4).map(|f| &f.widget) {
+                tq.auto_on_overflow = w.value;
+            }
         }
     }
 

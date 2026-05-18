@@ -20,6 +20,7 @@ mod roadmap;
 mod schema_tab;
 mod settings_project_parity;
 mod settings_review_parity;
+mod settings_turboquant_parity;
 mod team_wizard;
 mod turboquant_dashboard;
 
