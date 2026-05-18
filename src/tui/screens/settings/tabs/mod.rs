@@ -31,7 +31,7 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
         notifications::build_fields(config, flags),
         gates::build_fields(config),
         review::build_fields(config, flags),
-        theme::build_fields(config),
+        theme::build_fields(config, flags),
         layout::build_fields(config, flags),
         vec![],
         turboquant::build_fields(config, flags),
@@ -293,20 +293,47 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
         }
     }
 
-    // Theme (tab 7)
+    // Theme (tab 7) — live_preview stays bespoke (screen-local state)
     if let Some(fields) = screen.fields_per_tab.get(7) {
         if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
             screen.live_preview = w.value;
         }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(1).map(|f| &f.widget) {
-            screen.config.tui.theme.preset = match w.selected {
-                0 => crate::tui::theme::ThemePreset::Dark,
-                1 => crate::tui::theme::ThemePreset::Light,
-                _ => crate::tui::theme::ThemePreset::Retro,
-            };
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(2).map(|f| &f.widget) {
-            screen.config.tui.ascii_icons = w.value;
+        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
+            let theme_table = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "tui.theme");
+            let tui_table = crate::config::schema::schema_for_config()
+                .iter()
+                .find(|t| t.name == "tui");
+            if let Some(table) = theme_table
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: theme.preset failed; config left unchanged");
+            }
+            if let Some(table) = tui_table
+                && let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
+                    table,
+                    fields,
+                    &mut screen.config,
+                )
+            {
+                tracing::warn!(error = %e, "schema sync: tui.ascii_icons failed; config left unchanged");
+            }
+        } else {
+            if let Some(WidgetKind::Dropdown(w)) = fields.get(1).map(|f| &f.widget) {
+                screen.config.tui.theme.preset = match w.selected {
+                    0 => crate::tui::theme::ThemePreset::Dark,
+                    1 => crate::tui::theme::ThemePreset::Light,
+                    _ => crate::tui::theme::ThemePreset::Retro,
+                };
+            }
+            if let Some(WidgetKind::Toggle(w)) = fields.get(2).map(|f| &f.widget) {
+                screen.config.tui.ascii_icons = w.value;
+            }
         }
     }
 
