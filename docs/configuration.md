@@ -34,6 +34,18 @@ On every invocation other than `init`, `completions`, and `mangen`, Maestro runs
 - Sections are in alphabetical order of the table heading.
 - For every section the parenthetical *Source:* footer points at the Rust definition. If the source changes and this doc does not, the doc is wrong — update both.
 
+## How autogen works
+
+Per-field tables wrapped in `<!-- BEGIN AUTOGEN:NAME --> ... <!-- END AUTOGEN:NAME -->` markers are produced from `src/config/schema/{core,extras}.rs`. The integration test `integration_tests::docs_gen::docs_gen_no_drift` re-renders the markers in-memory and fails CI when the committed file differs from what the schema would emit.
+
+Regenerate after editing a `FieldSchema`:
+
+```
+bash scripts/regenerate-docs.sh
+```
+
+Hand-written sections outside the markers (location, examples, prose, *Source:* footers, the CLI reference appendix) are preserved verbatim. Sections without markers — `[adapt]`, `[agents]`, `[experimental]`, `[flags]`, `[models]`, `[modes]`, `[[plugins]]`, `[provider]`, `[sessions.completion_gates]`, `[teams]`, `[views]`, plus schema-incomplete tables tracked in a follow-up (see `integration_tests/docs_gen.rs::SCHEMA_BACKFILL_PENDING`) — stay hand-written.
+
 ## Minimal example
 
 ```toml
@@ -147,11 +159,13 @@ model = "qwen3"
 
 ## `[budget]`
 
+<!-- BEGIN AUTOGEN:budget -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `per_session_usd` | float | `5.0` | Soft cap per session. |
-| `total_usd` | float | `50.0` | Soft cap across all sessions in the run. |
-| `alert_threshold_pct` | integer | `80` | Percentage of either cap at which the budget warning fires. |
+|---|---|---|---|
+| `per_session_usd` | float (0.1..=100.0, step 0.5) | `5.0` | Hard cap per session before alerts and termination |
+| `total_usd` | float (0.1..=1000.0, step 5.0) | `50.0` | Aggregate budget across all sessions |
+| `alert_threshold_pct` | int (10..=100, step 5) | `80` | Percentage of budget at which to surface a warning |
+<!-- END AUTOGEN:budget -->
 
 ```toml
 [budget]
@@ -216,19 +230,23 @@ auto_fork = false
 
 Completion gates run after a session finishes and before PR creation. See also `[sessions.completion_gates]` for the in-session variant.
 
+<!-- BEGIN AUTOGEN:gates -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `enabled` | bool | `true` | Master switch for gates. |
-| `test_command` | string | `"cargo test"` | Default test command. `maestro init` rewrites this for non-Rust stacks. |
-| `ci_poll_interval_secs` | integer | `30` | Seconds between CI status polls. |
-| `ci_max_wait_secs` | integer | `1800` | Hard timeout (30 min) waiting for CI. |
+|---|---|---|---|
+| `enabled` | bool | `true` | Run completion gates before creating PRs |
+| `test_command` | string | `cargo test` | Command used as the default test gate |
+| `ci_poll_interval_secs` | int (5..=300, step 5) | `30` | Seconds between CI status polls |
+| `ci_max_wait_secs` | int (60..=7200, step 60) | `1800` | Maximum seconds to wait for CI to finish |
+<!-- END AUTOGEN:gates -->
 
 ### `[gates.ci_auto_fix]`
 
+<!-- BEGIN AUTOGEN:gates.ci_auto_fix -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `enabled` | bool | `true` | Whether the CI auto-fix loop is active. |
-| `max_retries` | integer | `3` | Maximum auto-fix attempts per PR. |
+|---|---|---|---|
+| `enabled` | bool | `true` | Spawn a fix session when CI fails on an open PR |
+| `max_retries` | int (0..=10) | `3` | How many auto-fix passes to run per PR |
+<!-- END AUTOGEN:gates.ci_auto_fix -->
 
 ```toml
 [gates]
@@ -248,13 +266,15 @@ max_retries = 3
 
 Legacy block for GitHub-only configs. Prefer `[provider]` with `kind = "github"` for new configs — `[github]` exists so pre-v0.22.0 files keep parsing without edits.
 
+<!-- BEGIN AUTOGEN:github -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `issue_filter_labels` | array of string | `["maestro:ready"]` | Labels Maestro pulls from the work queue. |
-| `auto_pr` | bool | `true` | Auto-open a PR on session completion. |
-| `cache_ttl_secs` | integer | `300` | Issue-cache TTL in seconds. |
-| `auto_merge` | bool | `false` | Auto-merge PRs once gates pass. |
-| `merge_method` | string enum | `"squash"` | One of `merge`, `squash`, `rebase`. |
+|---|---|---|---|
+| `issue_filter_labels` | array of string | `["maestro:ready"]` | Only fetch issues with at least one of these labels |
+| `auto_pr` | bool | `true` | Open a PR automatically when a session finishes cleanly |
+| `cache_ttl_secs` | int (30..=3600, step 30) | `300` | How long to cache issue data before refetching |
+| `auto_merge` | bool | `false` | Merge PRs automatically once all required checks pass |
+| `merge_method` | enum (`merge`, `squash`, `rebase`) | `squash` | Strategy used when merging PRs |
+<!-- END AUTOGEN:github -->
 
 ```toml
 [github]
@@ -303,20 +323,24 @@ permission_mode = "default"
 
 ## `[monitoring]`
 
+<!-- BEGIN AUTOGEN:monitoring -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `work_tick_interval_secs` | integer | `10` | Cadence of work-assigner ticks. |
+|---|---|---|---|
+| `work_tick_interval_secs` | int (1..=120, step 5) | `10` | How often the work assigner ticks |
+<!-- END AUTOGEN:monitoring -->
 
 *Source: `src/config/runtime.rs`.*
 
 ## `[notifications]`
 
+<!-- BEGIN AUTOGEN:notifications -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `desktop` | bool | `true` | OS-native desktop notifications. |
-| `slack` | bool | `false` | Slack webhook delivery. |
-| `slack_webhook_url` | string | unset | Webhook URL. Required when `slack = true`. |
-| `slack_rate_limit_per_min` | integer | `10` | Slack messages-per-minute cap. |
+|---|---|---|---|
+| `desktop` | bool | `true` | Show native desktop notifications on session events |
+| `slack` | bool | `false` | Send notifications to Slack via webhook |
+| `slack_webhook_url` | string | unset | Incoming-webhook URL — leave empty to disable Slack |
+| `slack_rate_limit_per_min` | int (1..=60) | `10` | Cap on Slack messages per minute |
+<!-- END AUTOGEN:notifications -->
 
 ```toml
 [notifications]
@@ -461,29 +485,35 @@ command = "scripts/doc-review.sh {pr_number}"
 
 Hollow-completion retry policy.
 
+<!-- BEGIN AUTOGEN:sessions.hollow_retry -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `policy` | string enum | `"intent-aware"` | `always`, `intent-aware`, `never`. |
-| `work_max_retries` | integer | `2` | Retries for work sessions. |
-| `consultation_max_retries` | integer | `0` | Retries for consultation sessions. |
+|---|---|---|---|
+| `policy` | enum (`always`, `intent-aware`, `never`) | `intent-aware` | When to retry hollow (empty-output) completions |
+| `work_max_retries` | int (0..=10) | `2` | Retries for hollow completions in work sessions |
+| `consultation_max_retries` | int (0..=10) | `0` | Retries for hollow completions in consultation sessions |
+<!-- END AUTOGEN:sessions.hollow_retry -->
 
 Legacy `sessions.hollow_max_retries = N` is auto-merged into this section with a one-shot `tracing::warn` (see `merge_legacy_hollow`, `src/config/sessions.rs`).
 
 ### `[sessions.context_overflow]`
 
+<!-- BEGIN AUTOGEN:sessions.context_overflow -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `overflow_threshold_pct` | integer (0–100) | `70` | Context % at which auto-fork triggers. |
-| `auto_fork` | bool | `true` | Whether auto-fork runs at the threshold. |
-| `commit_prompt_pct` | integer (0–100) | `50` | Context % at which a periodic-commit prompt fires. |
-| `max_fork_depth` | integer | `5` | Hard cap on fork-chain depth. |
+|---|---|---|---|
+| `overflow_threshold_pct` | int (10..=100, step 5) | `70` | Context-usage percentage at which auto-fork triggers |
+| `auto_fork` | bool | `true` | Automatically fork on overflow instead of stalling |
+| `commit_prompt_pct` | int (10..=100, step 5) | `50` | Context percentage at which to prompt a periodic commit |
+| `max_fork_depth` | int (1..=20) | `5` | Cap fork chains to prevent runaway forking |
+<!-- END AUTOGEN:sessions.context_overflow -->
 
 ### `[sessions.conflict]`
 
+<!-- BEGIN AUTOGEN:sessions.conflict -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `enabled` | bool | `true` | Real-time conflict detection. |
-| `policy` | string enum | `"warn"` | `warn`, `pause`, `kill`. |
+|---|---|---|---|
+| `enabled` | bool | `true` | Detect real-time file conflicts between sessions |
+| `policy` | enum (`warn`, `pause`, `kill`) | `warn` | What to do when a conflict is detected |
+<!-- END AUTOGEN:sessions.conflict -->
 
 ### `[sessions.completion_gates]`
 
@@ -589,12 +619,14 @@ For tier-resolution rules, the `maestro team` CLI surface, and cookbook walkthro
 
 ### `[tui.layout]`
 
+<!-- BEGIN AUTOGEN:tui.layout -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `mode` | string enum | `"vertical"` | `vertical` or `horizontal`. |
-| `density` | string enum | `"default"` | `default`, `comfortable`, `compact`. |
-| `preview_ratio` | integer (0–100) | `50` | Width % (horizontal mode) or height % (vertical mode) for the preview panel. |
-| `activity_log_height` | integer (0–100) | `25` | Activity-log panel height %. |
+|---|---|---|---|
+| `mode` | enum (`vertical`, `horizontal`) | `vertical` | Stack the preview panel below the list or beside it |
+| `density` | enum (`default`, `comfortable`, `compact`) | `default` | Information density across all list views |
+| `preview_ratio` | int (10..=90, step 5) | `50` | Width or height percentage allocated to the preview panel |
+| `activity_log_height` | int (10..=50, step 5) | `25` | Percentage of screen height for the activity log |
+<!-- END AUTOGEN:tui.layout -->
 
 ### `[tui.theme]`
 

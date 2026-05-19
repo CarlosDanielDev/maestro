@@ -12,6 +12,8 @@ mod completion_pipeline;
 #[cfg(test)]
 mod concurrent_sessions;
 #[cfg(test)]
+mod docs_gen;
+#[cfg(test)]
 mod doctor_run_health_check;
 #[cfg(test)]
 mod gate_failure_retention;

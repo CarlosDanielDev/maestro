@@ -7,6 +7,7 @@
 
 #[allow(dead_code)]
 mod core;
+pub(crate) mod docs_render;
 #[allow(dead_code)]
 mod extras;
 
