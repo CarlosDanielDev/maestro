@@ -15,6 +15,7 @@ mod extras;
 /// schema can live in a `const` (no heap, no `toml::Value`, no `String`).
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum DefaultValue {
     Bool(bool),
     Int(i64),
@@ -47,6 +48,7 @@ pub enum Presentation {
 /// to pick a widget and enforce a domain.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum FieldKind {
     Bool,
     Int {
