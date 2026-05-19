@@ -14,6 +14,8 @@ pub(crate) mod build;
 pub(crate) mod sync;
 
 #[cfg(test)]
+mod float_tests;
+#[cfg(test)]
 pub(crate) mod test_fixture;
 #[cfg(test)]
 mod tests;
