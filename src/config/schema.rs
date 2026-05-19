@@ -40,6 +40,11 @@ pub enum FieldKind {
         min: f64,
         max: f64,
         step: f64,
+        /// Render hint: store the value as `i64 = round(value * display_scale)`
+        /// inside the stepper widget and divide on writeback. `1` means render
+        /// as integer (legacy behaviour). Use powers of 10 only (`10`, `100`, …)
+        /// — other values are accepted by the math but display unconventionally.
+        display_scale: u32,
     },
     String,
     Enum(&'static [&'static str]),
@@ -104,6 +109,12 @@ pub(crate) const PROJECT_TABLE: TableSchema = TableSchema {
     fields: core::PROJECT_FIELDS,
 };
 
+pub(crate) const BUDGET_TABLE: TableSchema = TableSchema {
+    name: "budget",
+    label: "Budget",
+    fields: core::BUDGET_FIELDS,
+};
+
 #[allow(dead_code)]
 const SCHEMA: &[TableSchema] = &[
     PROJECT_TABLE,
@@ -112,11 +123,7 @@ const SCHEMA: &[TableSchema] = &[
         label: "Sessions",
         fields: core::SESSIONS_FIELDS,
     },
-    TableSchema {
-        name: "budget",
-        label: "Budget",
-        fields: core::BUDGET_FIELDS,
-    },
+    BUDGET_TABLE,
     TableSchema {
         name: "github",
         label: "GitHub",

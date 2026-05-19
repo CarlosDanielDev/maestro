@@ -18,6 +18,7 @@ pub struct NumberStepper {
     pub min: i64,
     pub max: i64,
     pub step: i64,
+    display_divisor: Option<u32>,
 }
 
 impl NumberStepper {
@@ -28,12 +29,35 @@ impl NumberStepper {
             min,
             max,
             step: 1,
+            display_divisor: None,
         }
     }
 
     pub fn with_step(mut self, step: i64) -> Self {
         self.step = step;
         self
+    }
+
+    /// Render `value / divisor` as a fractional number. `divisor` should be
+    /// a power of 10 (10 = one decimal, 100 = two decimals). Internal `i64`
+    /// representation is unchanged — only the rendered string is affected.
+    /// Passing `Some(1)` or `None` renders the raw integer.
+    pub fn with_display_divisor(mut self, divisor: Option<u32>) -> Self {
+        self.display_divisor = divisor;
+        self
+    }
+
+    /// Format the stored integer for the user. Pure function — used by
+    /// `draw` and exercised directly in tests.
+    pub fn display_value(&self) -> String {
+        match self.display_divisor {
+            None => self.value.to_string(),
+            Some(d) if d <= 1 => self.value.to_string(),
+            Some(d) => {
+                let decimals = (d as f64).log10().round() as usize;
+                format!("{:.*}", decimals, self.value as f64 / d as f64)
+            }
+        }
     }
 
     pub fn handle_input(&mut self, key: KeyEvent) -> WidgetAction {
@@ -99,7 +123,7 @@ impl NumberStepper {
         let line = Line::from(vec![
             Span::styled(format!("{}: ", self.label), label_style),
             Span::styled("< ", left_arrow),
-            Span::styled(self.value.to_string(), value_style),
+            Span::styled(self.display_value(), value_style),
             Span::styled(" >", right_arrow),
         ]);
         f.render_widget(Paragraph::new(line), area);
@@ -209,5 +233,49 @@ mod tests {
         let action = s.handle_input(key(KeyCode::Char('x')));
         assert_eq!(s.value, 5);
         assert_eq!(action, WidgetAction::None);
+    }
+
+    // --- #785: optional display divisor for fractional render ---
+
+    #[test]
+    fn display_value_no_divisor_renders_as_integer() {
+        let s = NumberStepper::new("count", 55, 0, 1000);
+        assert_eq!(s.display_value(), "55");
+    }
+
+    #[test]
+    fn display_value_divisor_10_value_55_renders_5_point_5() {
+        let s = NumberStepper::new("per_session_usd", 55, 1, 1000).with_display_divisor(Some(10));
+        assert_eq!(s.display_value(), "5.5");
+    }
+
+    #[test]
+    fn display_value_divisor_10_value_0_renders_0_point_0() {
+        let s = NumberStepper::new("budget", 0, 0, 1000).with_display_divisor(Some(10));
+        assert_eq!(s.display_value(), "0.0");
+    }
+
+    #[test]
+    fn display_value_divisor_10_value_125_renders_12_point_5() {
+        let s = NumberStepper::new("total_usd", 125, 1, 10000).with_display_divisor(Some(10));
+        assert_eq!(s.display_value(), "12.5");
+    }
+
+    #[test]
+    fn display_value_divisor_one_renders_as_integer() {
+        let s = NumberStepper::new("scale_one", 42, 0, 1000).with_display_divisor(Some(1));
+        assert_eq!(s.display_value(), "42");
+    }
+
+    #[test]
+    fn with_display_divisor_builder_preserves_other_fields() {
+        let s = NumberStepper::new("x", 7, 1, 100)
+            .with_step(3)
+            .with_display_divisor(Some(10));
+        assert_eq!(s.value, 7);
+        assert_eq!(s.min, 1);
+        assert_eq!(s.max, 100);
+        assert_eq!(s.step, 3);
+        assert_eq!(s.display_value(), "0.7");
     }
 }

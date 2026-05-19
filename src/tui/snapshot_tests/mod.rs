@@ -19,6 +19,7 @@ mod overview;
 mod roadmap;
 mod schema_tab;
 mod settings_advanced_parity;
+mod settings_budget_parity;
 mod settings_gates_parity;
 mod settings_github_parity;
 mod settings_layout_parity;
