@@ -190,7 +190,7 @@ heavy_task_limit = 2
 
 Arbitrary `key = bool` entries that merge with the built-in flag defaults (see `src/flags/store.rs`). The `maestro run --enable-flag <FLAG>` and `--disable-flag <FLAG>` options layer on top with **disable wins** semantics when both are supplied for the same flag in the same invocation.
 
-Documented flags shipped with the binary (defaults shown in source): `continuous_mode`, `auto_fork`, `ci_auto_fix`, `schema_driven_settings`. Unknown keys are accepted and stored verbatim; they have no effect until code reads them.
+Documented flags shipped with the binary (defaults shown in source): `continuous_mode`, `auto_fork`, `ci_auto_fix`, `review_council`, `model_routing`, `context_overflow`, `turboquant`. Unknown keys are accepted and stored verbatim; they have no effect until code reads them.
 
 ```toml
 [flags]
@@ -202,10 +202,13 @@ auto_fork = false
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `continuous_mode` | `false` | Enable automatic issue-to-issue progression (also set via `--continuous`). |
-| `auto_fork` | `false` | Automatically fork sessions that exceed the context threshold. |
+| `continuous_mode` | `true` | Enable automatic issue-to-issue progression (also set via `--continuous`). |
+| `auto_fork` | `true` | Automatically fork sessions that exceed the context threshold. |
 | `ci_auto_fix` | `false` | Spawn a fix session automatically when CI fails on a maestro-managed PR. |
-| `schema_driven_settings` | `false` | Enables the schema-driven renderer in `src/tui/screens/settings/schema_tab/`. When `true`, the **Project** tab renders via `from_schema(&PROJECT_TABLE, config)` and `sync_to_config` instead of the hand-coded path. The two renderers are snapshot-parity tested; no user-visible behavior change is expected. Other tabs remain hand-coded until a future milestone migrates them. |
+| `review_council` | `false` | Enable multi-model review council for code review. |
+| `model_routing` | `false` | Route tasks to different models based on complexity. |
+| `context_overflow` | `false` | Detect and handle context window overflow. |
+| `turboquant` | `false` | Enable TurboQuant vector quantization for context compression. |
 
 *Source: `src/config/flags.rs`, `src/flags/store.rs`, `src/flags/mod.rs`.*
 
