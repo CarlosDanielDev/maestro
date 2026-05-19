@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `config`: TOML migrations now preserve comments, blank lines, and key order via `toml_edit`. The internal helper module exposes a shared `ensure_field` primitive for future single-key migrations. (#718)
+- `config/schema`: `FieldKind` and `DefaultValue` enums are now marked `#[non_exhaustive]`, preventing external crates and future match arms from silently exhausting the variants. Marker-only refactor; no behavior change (#796).
 - Budget tab in TUI settings is now rendered by the schema-driven renderer (same path as all other tabs except Flags and Theme/Advanced multi-table). `per_session_usd` and `total_usd` display correctly as floating-point values (`5.5`, `12.5`) — the legacy `×10` integer storage trick is gone. `FieldKind::Float` gained a `display_scale: u32` field; `NumberStepper` gained `display_divisor` + `display_value()`. `tabs/budget.rs` collapsed from 27 LOC to 7 LOC. Covered by 8 new parity tests in `src/tui/snapshot_tests/settings_budget_parity.rs`. (#785)
 
 ## [0.28.1] - 2026-05-18
