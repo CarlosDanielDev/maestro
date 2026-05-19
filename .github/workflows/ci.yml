@@ -49,6 +49,16 @@ jobs:
       - name: Check rendered templates are in sync
         run: cargo run --quiet -- sync-templates --check
 
+  docs-gen:
+    name: Docs Autogen Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check docs/configuration.md is in sync
+        run: cargo test --quiet docs_gen_no_drift --bin maestro
+
   fmt:
     name: Format
     runs-on: ubuntu-latest

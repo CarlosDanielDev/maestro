@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-18 21:00 (UTC)
+> Last updated: 2026-05-19 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -65,7 +65,7 @@ maestro/
 │   │   ├── feature.yml                    # Feature request issue form with DOR; Blocked By required; Dependency Graph field
 │   │   └── idea.yml                       # Idea inbox issue form — 5 required textareas (itch + Q1-Q4) + Q5 vision-alignment dropdown
 │   └── workflows/
-│       ├── ci.yml                         # GitHub Actions CI pipeline; includes `sync-templates` job that runs `cargo run --quiet -- sync-templates --check` and fails the build on template drift  [Issue #706]
+│       ├── ci.yml                         # GitHub Actions CI pipeline; includes `sync-templates` job that runs `cargo run --quiet -- sync-templates --check` and fails the build on template drift; includes `docs-gen` job that runs `cargo test --quiet docs_gen_no_drift --bin maestro` to guard against configuration.md autogen drift  [Issue #706, #717]
 │       ├── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
 │       └── self-host.yml                  # Self-host smoke workflow: builds maestro, creates ephemeral repo, runs headlessly against a fixture issue, asserts PR is opened, deletes repo; requires MAESTRO_SELFTEST_PAT and MAESTRO_SELFTEST_OWNER secrets  [Issue #545]
 ├── .maestro/
@@ -171,6 +171,8 @@ maestro/
 │   │   │   └── turbo_adapt_paths.rs       # Tests for TurboQuantConfig and AdaptConfig field parsing
 │   │   ├── schema.rs                      # FieldSchema, FieldKind, TableSchema, DefaultValue, Validator types; pub(crate) validate_url_or_empty and validate_non_empty validators; pub(crate) const PROJECT_TABLE: TableSchema — canonical schema for the Project settings tab (extracted for schema-driven renderer); 6 inline unit tests (path resolution, enum-domain check, help-text style, default-kind compatibility, no duplicate paths, validator purity)  [Issue #713, #715]
 │   │   ├── schema/                        # Submodule tree for the config schema registry  [Issue #713]
+│   │   │   ├── docs_render.rs             # Pure renderer module: walks a TableSchema and emits a Markdown table block; used by the autogen system to produce AUTOGEN-marked sections in docs/configuration.md  [Issue #717]
+│   │   │   ├── docs_render_tests.rs       # Sibling test module for docs_render.rs loaded via `#[path]`; unit tests for the renderer covering all FieldKind leaf variants and NestedTable flattening  [Issue #717]
 │   │   │   └── registry/                  # Const &'static [TableSchema] registry covering 17 tables / 52 fields
 │   │   │       ├── mod.rs                 # Registry module facade; re-exports the combined table slice
 │   │   │       ├── core.rs                # Core registry entries: adapt, agents, budget, gates, github, models, modes, notifications, plugins, project, review, runtime, sessions, tui, turboquant, views
@@ -608,11 +610,12 @@ maestro/
 │   │       ├── text_input.rs              # Single-line text input widget with cursor support
 │   │       └── toggle.rs                 # Boolean toggle widget for settings and forms; draw() routes through icons::get(IconId::CheckboxOn/Off) instead of hardcoded literals, eliminating the DRY drift that caused blank indicators on iTerm2 + some Nerd Font installs  [Issue #433]
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
-│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, doctor_run_health_check, orchestration_smoke, templates_render, templates_runtime, and canonical_command_specs registered  [Issue #500, #562, #663, #665, #701, #702, #707]
+│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, doctor_run_health_check, orchestration_smoke, templates_render, templates_runtime, canonical_command_specs, and docs_gen registered  [Issue #500, #562, #663, #665, #701, #702, #707, #717]
 │   │   ├── adapt_pipeline.rs              # Integration tests for the adapt pipeline
 │   │   ├── completion_pipeline.rs         # 9 tests: label transitions and PR creation
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
 │   │   ├── doctor_run_health_check.rs     # Smoke tests for `run_health_check` library function: verifies return shape without asserting environment-dependent health state  [Issue #663]
+│   │   ├── docs_gen.rs                    # Drift guard for docs/configuration.md autogen: `docs_gen_no_drift` asserts every AUTOGEN block in the file matches re-rendered schema output; `docs_gen_regenerate` (#[ignore]) rewrites the file in-place (run manually with cargo test -- --ignored)  [Issue #717]
 │   │   ├── gate_failure_retention.rs      # 8 tests: gate-failure worktree retention vs. teardown; 3 new pipeline tests added in #560 verify worktree_path persistence end-to-end; uses real git worktree commands (not MockWorktreeManager) to guard against the #558 regression  [Issue #558, #560]
 │   │   ├── init.rs                        # Integration tests for `maestro init` and `maestro init --reset`: fresh write, idempotent guard, merge-preserves-user-keys, polyglot detection  [Issue #505]
 │   │   ├── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
@@ -671,6 +674,7 @@ maestro/
 │   │   ├── README.md                      # Convention guide: naming, additionalProperties policy, gatekeeper integration  [Issue #327]
 │   │   └── review-comment.json            # Schema for the maestro-review JSON block in /review PR comments; parsed by review::parse and TUI pr_review screen  [Issue #327]
 │   ├── ci-smoke-check.md                  # CI smoke-check test harness guide
+│   ├── configuration.md                   # Authoritative maestro.toml reference — every [table] with field types, defaults, and source pointers; CLI flag → config map; 10 AUTOGEN marker blocks auto-populated from schema by the docs_render system; integrity checked by src/config/tests/configuration_doc.rs and the CI docs-gen job  [Issue #674, #717]
 │   ├── FOLLOW-UPS.md                      # Pending hardening and security follow-up items (non-blocking, filed as issues before next release)
 │   ├── harness-acceptance.md              # Acceptance criteria for the test harness
 │   ├── layers-debt.txt                    # Layer-boundary debt notes
@@ -749,6 +753,7 @@ maestro/
 │   ├── coverage-tiers.yml                 # Coverage tier definitions
 │   ├── dor-lint.sh                        # Fast mechanical DOR lint for /implement; writes dor-lint.json and resolves blocker states  [Issue #555]
 │   ├── pr-skeleton.sh                     # /pushup helper: emits PR body skeleton with summary placeholders, Closes line, and test plan  [Issue #556]
+│   ├── regenerate-docs.sh                 # Convenience wrapper: runs `cargo test docs_gen_regenerate -- --ignored` to regenerate all AUTOGEN blocks in docs/configuration.md from schema  [Issue #717]
 │   ├── update-milestone-graph.py          # Mechanical /pushup milestone dependency-graph updater with dry-run and post-PATCH verification  [Issue #554]
 │   └── tests/                             # Pytest and bats coverage for workflow automation scripts
 │       ├── test_commit_helper.bats        # bats tests for label-to-prefix precedence, missing issue, gh availability, and draft-file writes  [Issue #556]
