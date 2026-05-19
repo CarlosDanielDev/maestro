@@ -3,9 +3,9 @@
 //! The renderer maps each `FieldKind` to a `WidgetKind`. Fields not present
 //! in the serialized `Config` fall back to `field.default` — tests rely on
 //! this to inject synthetic schemas that do not appear in the production
-//! registry. `Float` fields are rendered through `NumberStepper` and lose
-//! sub-integer precision; tabs that need fractional steps must keep the
-//! hand-coded path until a dedicated float widget exists.
+//! registry. `Float` fields are routed through `NumberStepper` with an
+//! optional `display_divisor`; the integer math stays exact and the
+//! rendered string projects through `display_scale`.
 
 use crate::config::Config;
 use crate::config::schema::{DefaultValue, FieldKind, FieldSchema, TableSchema};
@@ -98,15 +98,16 @@ fn widget_for_kind(label: String, field: &FieldSchema, value: Option<&toml::Valu
                 .unwrap_or_else(|| default_int(field.default));
             WidgetKind::NumberStepper(NumberStepper::new(label, v, min, max).with_step(step))
         }
-        FieldKind::Float { min, max, step } => {
+        FieldKind::Float {
+            min,
+            max,
+            step,
+            display_scale,
+        } => {
             let raw = value
                 .and_then(|v| v.as_float())
                 .unwrap_or_else(|| default_float(field.default));
-            let v = raw.round() as i64;
-            let min_i = (min.floor() as i64).min(v);
-            let max_i = (max.ceil() as i64).max(v);
-            let step_i = (step.ceil() as i64).max(1);
-            WidgetKind::NumberStepper(NumberStepper::new(label, v, min_i, max_i).with_step(step_i))
+            WidgetKind::NumberStepper(float_stepper(label, raw, min, max, step, display_scale))
         }
         FieldKind::String => {
             let v = value
@@ -145,6 +146,30 @@ fn widget_for_kind(label: String, field: &FieldSchema, value: Option<&toml::Valu
         }
         FieldKind::NestedTable(_) => unreachable!("NestedTable handled by push_field"),
     }
+}
+
+/// Scale a `f64` domain (min, max, step) into the `i64` representation
+/// that `NumberStepper` stores internally. `display_scale > 1` keeps the
+/// fractional projection alive via `with_display_divisor`. Extracted from
+/// `widget_for_kind` so the rounding/clamping logic is directly testable.
+pub(super) fn float_stepper(
+    label: String,
+    raw: f64,
+    min: f64,
+    max: f64,
+    step: f64,
+    display_scale: u32,
+) -> NumberStepper {
+    let scale_f = display_scale.max(1) as f64;
+    let v_scaled = (raw * scale_f).round() as i64;
+    let min_scaled = (min * scale_f).round() as i64;
+    let max_scaled = (max * scale_f).round() as i64;
+    let step_scaled = ((step * scale_f).round() as i64).max(1);
+    let v_clamped = v_scaled.clamp(min_scaled, max_scaled);
+    let divisor = (display_scale > 1).then_some(display_scale);
+    NumberStepper::new(label, v_clamped, min_scaled, max_scaled)
+        .with_step(step_scaled)
+        .with_display_divisor(divisor)
 }
 
 fn default_bool(default: DefaultValue) -> bool {

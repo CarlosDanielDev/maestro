@@ -61,7 +61,7 @@ pub(crate) fn render_type_string(kind: &FieldKind) -> String {
                 format!("int ({min}..={max}, step {step})")
             }
         }
-        FieldKind::Float { min, max, step } => {
+        FieldKind::Float { min, max, step, .. } => {
             if *step == 1.0 {
                 format!("float ({min:?}..={max:?})")
             } else {

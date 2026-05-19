@@ -82,8 +82,9 @@ fn label_for(prefix: &[&str], key: &str) -> String {
 fn widget_to_toml(widget: &WidgetKind, kind: &FieldKind) -> toml::Value {
     match (widget, kind) {
         (WidgetKind::Toggle(w), _) => toml::Value::Boolean(w.value),
-        (WidgetKind::NumberStepper(w), FieldKind::Float { .. }) => {
-            toml::Value::Float(w.value as f64)
+        (WidgetKind::NumberStepper(w), FieldKind::Float { display_scale, .. }) => {
+            let scale = (*display_scale).max(1) as f64;
+            toml::Value::Float(w.value as f64 / scale)
         }
         (WidgetKind::NumberStepper(w), _) => toml::Value::Integer(w.value),
         (WidgetKind::TextInput(w), _) => toml::Value::String(w.value.clone()),

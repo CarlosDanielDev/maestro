@@ -39,6 +39,7 @@ const SYNTH_FLOAT_FIELD: FieldSchema = FieldSchema {
         min: 0.0,
         max: 10.0,
         step: 0.5,
+        display_scale: 1,
     },
     validator: None,
 };

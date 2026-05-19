@@ -71,6 +71,7 @@ fn render_type_float_with_step() {
         min: 0.1,
         max: 100.0,
         step: 0.5,
+        display_scale: 10,
     });
     assert_eq!(s, "float (0.1..=100.0, step 0.5)");
 }

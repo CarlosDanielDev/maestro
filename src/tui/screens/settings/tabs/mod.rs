@@ -53,14 +53,14 @@ pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
 }
 
 /// Map a settings tab index to the schema table that drives it. `None`
-/// means the tab is hand-coded (Budget, idx 2), has no widgets (Flags,
-/// idx 9), or spans more than one TOML table — Theme (idx 7) and
-/// Advanced (idx 11) are handled by `sync_theme_multi_table` /
-/// `sync_advanced_multi_table` below.
+/// means the tab has no widgets (Flags, idx 9) or spans more than one
+/// TOML table — Theme (idx 7) and Advanced (idx 11) are handled by
+/// `sync_multi_table` below.
 fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
     let name = match idx {
         0 => "project",
         1 => "sessions",
+        2 => "budget",
         3 => "github",
         4 => "notifications",
         5 => "gates",
@@ -78,7 +78,6 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
     sync_multi_table(7, &["tui.theme", "tui"], screen);
     sync_theme_screen_local(screen);
     sync_notifications_empty_url_collapse(screen);
-    sync_budget_legacy(screen);
     sync_multi_table(11, &["concurrency", "monitoring"], screen);
     sync_advanced_caveman(screen);
 }
@@ -145,22 +144,6 @@ fn sync_theme_screen_local(screen: &mut SettingsScreen) {
     };
     if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
         screen.live_preview = w.value;
-    }
-}
-
-/// Budget tab stays hand-coded — Float precision needs F2 (#785).
-fn sync_budget_legacy(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(2) else {
-        return;
-    };
-    if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
-        screen.config.budget.per_session_usd = w.value as f64 / 10.0;
-    }
-    if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
-        screen.config.budget.total_usd = w.value as f64 / 10.0;
-    }
-    if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
-        screen.config.budget.alert_threshold_pct = w.value as u8;
     }
 }
 
