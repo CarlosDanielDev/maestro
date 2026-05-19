@@ -151,7 +151,12 @@ pub fn build_validator_map() -> std::collections::HashMap<FieldKey, ValidatorFn>
     // Sessions tab (1)
     m.insert((1, 0), validate_max_concurrent as ValidatorFn);
     m.insert((1, 1), validate_stall_timeout_secs as ValidatorFn);
-    m.insert((1, 7), validate_overflow_threshold_pct as ValidatorFn);
+    // (1, 11): context_overflow.overflow_threshold_pct (post-schema reshape, #716).
+    // Layout: [0]max_concurrent, [1]stall_timeout_secs, [2]default_model,
+    // [3]default_mode, [4]bypass_review_corrections, [5]permission_mode,
+    // [6]max_retries, [7]retry_cooldown_secs, [8..10]hollow_retry.*,
+    // [11]context_overflow.overflow_threshold_pct, ...
+    m.insert((1, 11), validate_overflow_threshold_pct as ValidatorFn);
     // Budget tab (2)
     m.insert((2, 0), validate_per_session_usd as ValidatorFn);
     m.insert((2, 1), validate_total_usd as ValidatorFn);
@@ -167,6 +172,46 @@ pub fn build_validator_map() -> std::collections::HashMap<FieldKey, ValidatorFn>
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::flags::store::FeatureFlags;
+    use crate::tui::screens::settings::SettingsScreen;
+    use crate::tui::widgets::WidgetKind;
+
+    /// Pin the validator-key index to the label at that position so future
+    /// schema reshapes that move a field's index break this test, not the
+    /// silent "validator fires on the wrong row" runtime regression security
+    /// review found in #716.
+    #[test]
+    fn validator_keys_match_expected_field_labels() {
+        let toml_str = "[project]\nrepo = \"owner/repo\"\nbase_branch = \"main\"\n[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n[github]\n[notifications]\nslack_webhook_url = \"\"\n";
+        let config: Config = toml::from_str(toml_str).expect("test config must parse");
+        let screen = SettingsScreen::new(config, FeatureFlags::default());
+        let expectations: &[((usize, usize), &str)] = &[
+            ((0, 0), "repo"),
+            ((0, 1), "base_branch"),
+            ((1, 0), "max_concurrent"),
+            ((1, 1), "stall_timeout_secs"),
+            ((1, 11), "context_overflow.overflow_threshold_pct"),
+            ((4, 2), "slack_webhook_url"),
+            ((5, 3), "ci_max_wait_secs"),
+        ];
+        for ((tab, idx), expected_label) in expectations {
+            let widget = screen.fields_per_tab[*tab]
+                .get(*idx)
+                .map(|f| &f.widget)
+                .unwrap_or_else(|| panic!("tab {tab} field {idx} must exist"));
+            let actual = match widget {
+                WidgetKind::Toggle(w) => w.label.as_str(),
+                WidgetKind::TextInput(w) => w.label.as_str(),
+                WidgetKind::Dropdown(w) => w.label.as_str(),
+                WidgetKind::NumberStepper(w) => w.label.as_str(),
+                WidgetKind::ListEditor(w) => w.label.as_str(),
+            };
+            assert_eq!(
+                actual, *expected_label,
+                "validator key ({tab}, {idx}) expects field labelled `{expected_label}` but found `{actual}`",
+            );
+        }
+    }
 
     fn test_config() -> Config {
         let toml_str = r#"
@@ -458,7 +503,7 @@ alert_threshold_pct = 80
         assert!(map.contains_key(&(0, 1))); // base_branch
         assert!(map.contains_key(&(1, 0))); // max_concurrent
         assert!(map.contains_key(&(1, 1))); // stall_timeout_secs
-        assert!(map.contains_key(&(1, 7))); // overflow_threshold_pct
+        assert!(map.contains_key(&(1, 11))); // context_overflow.overflow_threshold_pct
         assert!(map.contains_key(&(2, 0))); // per_session_usd
         assert!(map.contains_key(&(2, 1))); // total_usd
         assert!(map.contains_key(&(2, 2))); // alert_threshold_pct
