@@ -112,21 +112,6 @@ const SCHEMA: &[TableSchema] = &[
         fields: core::SESSIONS_FIELDS,
     },
     TableSchema {
-        name: "sessions.hollow_retry",
-        label: "Hollow Retry",
-        fields: core::HOLLOW_RETRY_FIELDS,
-    },
-    TableSchema {
-        name: "sessions.context_overflow",
-        label: "Context Overflow",
-        fields: core::CONTEXT_OVERFLOW_FIELDS,
-    },
-    TableSchema {
-        name: "sessions.conflict",
-        label: "Conflict Detection",
-        fields: core::CONFLICT_FIELDS,
-    },
-    TableSchema {
         name: "budget",
         label: "Budget",
         fields: core::BUDGET_FIELDS,
@@ -145,11 +130,6 @@ const SCHEMA: &[TableSchema] = &[
         name: "gates",
         label: "Gates",
         fields: extras::GATES_FIELDS,
-    },
-    TableSchema {
-        name: "gates.ci_auto_fix",
-        label: "CI Auto-Fix",
-        fields: extras::GATES_CI_AUTO_FIX_FIELDS,
     },
     TableSchema {
         name: "review",
@@ -231,6 +211,27 @@ mod tests {
             .validator
     }
 
+    fn walk_table_paths(
+        toml_val: &toml::Value,
+        prefix: &str,
+        fields: &'static [FieldSchema],
+        walked: &mut usize,
+    ) {
+        for field in fields {
+            if let FieldKind::NestedTable(inner) = field.kind {
+                let next_prefix = format!("{prefix}.{}", field.key);
+                walk_table_paths(toml_val, &next_prefix, inner, walked);
+                continue;
+            }
+            let path = format!("{prefix}.{}", field.key);
+            assert!(
+                resolve(toml_val, &path).is_some(),
+                "schema path not found in serialized Config: {path}"
+            );
+            *walked += 1;
+        }
+    }
+
     #[test]
     fn schema_all_dotted_paths_resolve_on_default_config() {
         let config = default_config();
@@ -238,17 +239,7 @@ mod tests {
 
         let mut walked = 0usize;
         for table in schema_for_config() {
-            for field in table.fields {
-                if matches!(field.kind, FieldKind::NestedTable(_)) {
-                    continue;
-                }
-                let path = format!("{}.{}", table.name, field.key);
-                assert!(
-                    resolve(&toml_val, &path).is_some(),
-                    "schema path not found in serialized Config: {path}"
-                );
-                walked += 1;
-            }
+            walk_table_paths(&toml_val, table.name, table.fields, &mut walked);
         }
         assert_eq!(
             walked, EXPECTED_NON_NESTED_FIELDS,

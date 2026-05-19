@@ -37,7 +37,7 @@ pub(super) fn widget_by_label<'a>(
 
 impl SettingsScreen {
     pub fn new(config: Config, flags: FeatureFlags) -> Self {
-        let fields_per_tab = tabs::build_fields(&config, &flags);
+        let fields_per_tab = tabs::build_fields(&config);
         let validators = build_validator_map();
         let mut screen = Self {
             original_config: config.clone(),
@@ -115,7 +115,7 @@ impl SettingsScreen {
 
     fn reset_to_original(&mut self) {
         self.config = self.original_config.clone();
-        self.fields_per_tab = tabs::build_fields(&self.config, &self.feature_flags);
+        self.fields_per_tab = tabs::build_fields(&self.config);
     }
 
     fn save_config(&mut self) -> Result<(), anyhow::Error> {

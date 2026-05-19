@@ -9,6 +9,29 @@ const LAYOUT_DENSITIES: &[&str] = &["default", "comfortable", "compact"];
 const QUANT_STRATEGIES: &[&str] = &["turboquant", "polarquant", "qjl"];
 const QUANT_APPLY: &[&str] = &["keys", "values", "both"];
 
+pub(super) const GATES_CI_AUTO_FIX_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "enabled",
+        label: "Auto-Fix Enabled",
+        help: "Spawn a fix session when CI fails on an open PR",
+        default: DefaultValue::Bool(true),
+        kind: FieldKind::Bool,
+        validator: None,
+    },
+    FieldSchema {
+        key: "max_retries",
+        label: "Max Fix Attempts",
+        help: "How many auto-fix passes to run per PR",
+        default: DefaultValue::Int(3),
+        kind: FieldKind::Int {
+            min: 0,
+            max: 10,
+            step: 1,
+        },
+        validator: None,
+    },
+];
+
 pub(super) const GATES_FIELDS: &[FieldSchema] = &[
     FieldSchema {
         key: "enabled",
@@ -50,27 +73,12 @@ pub(super) const GATES_FIELDS: &[FieldSchema] = &[
         },
         validator: None,
     },
-];
-
-pub(super) const GATES_CI_AUTO_FIX_FIELDS: &[FieldSchema] = &[
     FieldSchema {
-        key: "enabled",
-        label: "Auto-Fix Enabled",
-        help: "Spawn a fix session when CI fails on an open PR",
-        default: DefaultValue::Bool(true),
-        kind: FieldKind::Bool,
-        validator: None,
-    },
-    FieldSchema {
-        key: "max_retries",
-        label: "Max Fix Attempts",
-        help: "How many auto-fix passes to run per PR",
-        default: DefaultValue::Int(3),
-        kind: FieldKind::Int {
-            min: 0,
-            max: 10,
-            step: 1,
-        },
+        key: "ci_auto_fix",
+        label: "CI Auto-Fix",
+        help: "Auto-fix passes when CI fails on an open PR",
+        default: DefaultValue::Nested,
+        kind: FieldKind::NestedTable(GATES_CI_AUTO_FIX_FIELDS),
         validator: None,
     },
 ];

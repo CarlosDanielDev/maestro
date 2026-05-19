@@ -12,19 +12,32 @@ pub mod theme;
 pub mod turboquant;
 
 use crate::config::Config;
-use crate::flags::Flag;
-use crate::flags::store::FeatureFlags;
+use crate::config::schema::{TableSchema, schema_for_config};
+use crate::tui::screens::settings::schema_tab::sync::sync_to_config;
 use crate::tui::widgets::WidgetKind;
 
-use super::{SettingsField, SettingsScreen};
+use super::{CAVEMAN_LABEL, SettingsField, SettingsScreen, widget_by_label};
 
 fn field(widget: WidgetKind) -> SettingsField {
     SettingsField { widget }
 }
 
-pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<SettingsField>> {
+pub(super) const BYPASS_LABEL: &str =
+    "bypass_review_corrections (DANGER: auto-accepts all review fixes)";
+
+/// Look up a schema table by name. Panics with a uniform message if the
+/// `const SCHEMA` registry does not contain `name` — a programmer error
+/// caught at SettingsScreen::new time, never at runtime from user input.
+pub(super) fn schema_table(name: &'static str) -> &'static TableSchema {
+    schema_for_config()
+        .iter()
+        .find(|t| t.name == name)
+        .unwrap_or_else(|| panic!("{name} schema must exist in const SCHEMA registry"))
+}
+
+pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
     vec![
-        project::build_fields(config, flags),
+        project::build_fields(config),
         sessions::build_fields(config),
         budget::build_fields(config),
         github::build_fields(config),
@@ -39,311 +52,140 @@ pub(super) fn build_fields(config: &Config, flags: &FeatureFlags) -> Vec<Vec<Set
     ]
 }
 
+/// Map a settings tab index to the schema table that drives it. `None`
+/// means the tab is hand-coded (Budget, idx 2), has no widgets (Flags,
+/// idx 9), or spans more than one TOML table — Theme (idx 7) and
+/// Advanced (idx 11) are handled by `sync_theme_multi_table` /
+/// `sync_advanced_multi_table` below.
+fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
+    let name = match idx {
+        0 => "project",
+        1 => "sessions",
+        3 => "github",
+        4 => "notifications",
+        5 => "gates",
+        6 => "review",
+        8 => "tui.layout",
+        10 => "turboquant",
+        _ => return None,
+    };
+    Some(schema_table(name))
+}
+
 pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
-    // Project (tab 0)
-    if let Some(fields) = screen.fields_per_tab.first() {
-        if screen.feature_flags.is_enabled(Flag::SchemaDrivenSettings) {
-            if let Err(e) = crate::tui::screens::settings::schema_tab::sync::sync_to_config(
-                &crate::config::schema::PROJECT_TABLE,
-                fields,
-                &mut screen.config,
-            ) {
-                tracing::warn!(error = %e, "schema sync: project tab failed; config left unchanged");
-            }
-        } else {
-            if let Some(WidgetKind::TextInput(w)) = fields.first().map(|f| &f.widget) {
-                screen.config.project.repo = w.value.clone();
-            }
-            if let Some(WidgetKind::TextInput(w)) = fields.get(1).map(|f| &f.widget) {
-                screen.config.project.base_branch = w.value.clone();
-            }
-        }
-    }
+    sync_schema_tabs(screen);
+    sync_sessions_bypass_override(screen);
+    sync_multi_table(7, &["tui.theme", "tui"], screen);
+    sync_theme_screen_local(screen);
+    sync_notifications_empty_url_collapse(screen);
+    sync_budget_legacy(screen);
+    sync_multi_table(11, &["concurrency", "monitoring"], screen);
+    sync_advanced_caveman(screen);
+}
 
-    // Sessions (tab 1) — looked up by label so widget reordering
-    // cannot silently drop a sync. New widgets only need to appear in
-    // `build_sessions_fields`; no index bookkeeping here.
-    if let Some(fields) = screen.fields_per_tab.get(1) {
-        let s = &mut screen.config.sessions;
-        if let Some(WidgetKind::NumberStepper(w)) = super::widget_by_label(fields, "max_concurrent")
-        {
-            s.max_concurrent = w.value as usize;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) =
-            super::widget_by_label(fields, "stall_timeout_secs")
-        {
-            s.stall_timeout_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::TextInput(w)) = super::widget_by_label(fields, "default_model") {
-            s.default_model = w.value.clone();
-        }
-        if let Some(WidgetKind::TextInput(w)) = super::widget_by_label(fields, "default_mode") {
-            s.default_mode = w.value.clone();
-        }
-        // Apply the bypass toggle FIRST so the permission_mode dropdown
-        // can override it if the user explicitly picked a non-bypass
-        // value (e.g. "acceptEdits"). Toggle ON → bypassPermissions;
-        // toggle OFF → "default" only if currently bypass (so users
-        // who picked "acceptEdits" via the dropdown aren't reset).
-        if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(
-            fields,
-            "bypass_review_corrections (DANGER: auto-accepts all review fixes)",
-        ) {
-            if w.value {
-                s.permission_mode = "bypassPermissions".to_string();
-            } else if s.permission_mode == "bypassPermissions" {
-                s.permission_mode = "default".to_string();
-            }
-        }
-        if let Some(WidgetKind::Dropdown(w)) = super::widget_by_label(fields, "permission_mode") {
-            s.permission_mode = w.selected_value().to_string();
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = super::widget_by_label(fields, "max_retries") {
-            s.max_retries = w.value as u32;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) =
-            super::widget_by_label(fields, "retry_cooldown_secs")
-        {
-            s.retry_cooldown_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::Dropdown(w)) = super::widget_by_label(fields, "hollow_retry.policy")
-        {
-            s.hollow_retry.policy = match w.selected {
-                0 => crate::config::HollowRetryPolicy::Always,
-                1 => crate::config::HollowRetryPolicy::IntentAware,
-                _ => crate::config::HollowRetryPolicy::Never,
-            };
-        }
-        if let Some(WidgetKind::NumberStepper(w)) =
-            super::widget_by_label(fields, "hollow_retry.work_max_retries")
-        {
-            s.hollow_retry.work_max_retries = w.value as u32;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) =
-            super::widget_by_label(fields, "hollow_retry.consultation_max_retries")
-        {
-            s.hollow_retry.consultation_max_retries = w.value as u32;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) =
-            super::widget_by_label(fields, "overflow_threshold_pct")
-        {
-            s.context_overflow.overflow_threshold_pct = w.value as u8;
-        }
-        if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(fields, "auto_fork") {
-            s.context_overflow.auto_fork = w.value;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) =
-            super::widget_by_label(fields, "commit_prompt_pct")
-        {
-            s.context_overflow.commit_prompt_pct = w.value as u8;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = super::widget_by_label(fields, "max_fork_depth")
-        {
-            s.context_overflow.max_fork_depth = w.value as u8;
-        }
-        if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(fields, "conflict_enabled") {
-            s.conflict.enabled = w.value;
-        }
-        if let Some(WidgetKind::Dropdown(w)) = super::widget_by_label(fields, "conflict_policy") {
-            s.conflict.policy = match w.selected {
-                0 => crate::config::ConflictPolicy::Warn,
-                1 => crate::config::ConflictPolicy::Pause,
-                _ => crate::config::ConflictPolicy::Kill,
-            };
+fn sync_schema_tabs(screen: &mut SettingsScreen) {
+    for (idx, fields) in screen.fields_per_tab.iter().enumerate() {
+        let Some(table) = schema_table_for_tab(idx) else {
+            continue;
+        };
+        if let Err(e) = sync_to_config(table, fields, &mut screen.config) {
+            tracing::warn!(tab = idx, error = %e, "schema sync failed; config left unchanged");
         }
     }
+}
 
-    // Budget (tab 2) — values stored as x10 for decimal precision
-    if let Some(fields) = screen.fields_per_tab.get(2) {
-        if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
-            screen.config.budget.per_session_usd = w.value as f64 / 10.0;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
-            screen.config.budget.total_usd = w.value as f64 / 10.0;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
-            screen.config.budget.alert_threshold_pct = w.value as u8;
-        }
+/// Sessions bypass toggle is a bespoke derived view of `permission_mode`.
+/// The schema sync writes the dropdown's value first; this hook then
+/// downgrades back to "default" only when the toggle is off and the
+/// dropdown is still pointed at "bypassPermissions". When the toggle is
+/// on, the dropdown wins on conflict — matches legacy "dropdown last"
+/// semantics. See `settings_sessions_parity.rs` for the contract.
+fn sync_sessions_bypass_override(screen: &mut SettingsScreen) {
+    let Some(fields) = screen.fields_per_tab.get(1) else {
+        return;
+    };
+    let Some(WidgetKind::Toggle(w)) = widget_by_label(fields, BYPASS_LABEL) else {
+        return;
+    };
+    if !w.value && screen.config.sessions.permission_mode == "bypassPermissions" {
+        screen.config.sessions.permission_mode = "default".to_string();
     }
+}
 
-    // GitHub (tab 3)
-    if let Some(fields) = screen.fields_per_tab.get(3) {
-        let g = &mut screen.config.github;
-        if let Some(WidgetKind::ListEditor(w)) = fields.first().map(|f| &f.widget) {
-            g.issue_filter_labels = w.items.clone();
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(1).map(|f| &f.widget) {
-            g.auto_pr = w.value;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
-            g.cache_ttl_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(3).map(|f| &f.widget) {
-            g.auto_merge = w.value;
-        }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(4).map(|f| &f.widget) {
-            g.merge_method = match w.selected {
-                0 => crate::config::MergeMethod::Merge,
-                1 => crate::config::MergeMethod::Squash,
-                _ => crate::config::MergeMethod::Rebase,
-            };
+/// Sync a tab whose widgets span multiple TOML tables (Theme spans
+/// `tui.theme` + `tui`; Advanced spans `concurrency` + `monitoring`).
+/// `sync_to_config` dispatches by label so the order of names does not
+/// affect correctness — order matters only for the matching-tab snapshot.
+fn sync_multi_table(tab_idx: usize, table_names: &[&'static str], screen: &mut SettingsScreen) {
+    let Some(fields) = screen.fields_per_tab.get(tab_idx) else {
+        return;
+    };
+    for name in table_names {
+        let table = schema_table(name);
+        if let Err(e) = sync_to_config(table, fields, &mut screen.config) {
+            tracing::warn!(table = name, tab = tab_idx, error = %e, "schema sync: multi-table failed; config left unchanged");
         }
     }
+}
 
-    // Notifications (tab 4)
-    if let Some(fields) = screen.fields_per_tab.get(4) {
-        let n = &mut screen.config.notifications;
-        if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
-            n.desktop = w.value;
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(1).map(|f| &f.widget) {
-            n.slack = w.value;
-        }
-        if let Some(WidgetKind::TextInput(w)) = fields.get(2).map(|f| &f.widget) {
-            n.slack_webhook_url = if w.value.is_empty() {
-                None
-            } else {
-                Some(w.value.clone())
-            };
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(3).map(|f| &f.widget) {
-            n.slack_rate_limit_per_min = w.value as u32;
-        }
+/// Preserve legacy `Some("") -> None` collapse for `slack_webhook_url` so
+/// code that gates Slack on `Option::is_some()` keeps working.
+fn sync_notifications_empty_url_collapse(screen: &mut SettingsScreen) {
+    if let Some(url) = screen.config.notifications.slack_webhook_url.as_deref()
+        && url.is_empty()
+    {
+        screen.config.notifications.slack_webhook_url = None;
     }
+}
 
-    // Gates (tab 5)
-    if let Some(fields) = screen.fields_per_tab.get(5) {
-        let g = &mut screen.config.gates;
-        if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
-            g.enabled = w.value;
-        }
-        if let Some(WidgetKind::TextInput(w)) = fields.get(1).map(|f| &f.widget) {
-            g.test_command = w.value.clone();
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
-            g.ci_poll_interval_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(3).map(|f| &f.widget) {
-            g.ci_max_wait_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(4).map(|f| &f.widget) {
-            g.ci_auto_fix.enabled = w.value;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(5).map(|f| &f.widget) {
-            g.ci_auto_fix.max_retries = w.value as u32;
-        }
+/// Theme tab field 0 is `live_preview` (screen-local, not in schema).
+fn sync_theme_screen_local(screen: &mut SettingsScreen) {
+    let Some(fields) = screen.fields_per_tab.get(7) else {
+        return;
+    };
+    if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
+        screen.live_preview = w.value;
     }
+}
 
-    // Review (tab 6)
-    if let Some(fields) = screen.fields_per_tab.get(6) {
-        let r = &mut screen.config.review;
-        if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
-            r.enabled = w.value;
-        }
-        if let Some(WidgetKind::TextInput(w)) = fields.get(1).map(|f| &f.widget) {
-            r.command = w.value.clone();
-        }
+/// Budget tab stays hand-coded — Float precision needs F2 (#785).
+fn sync_budget_legacy(screen: &mut SettingsScreen) {
+    let Some(fields) = screen.fields_per_tab.get(2) else {
+        return;
+    };
+    if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
+        screen.config.budget.per_session_usd = w.value as f64 / 10.0;
     }
+    if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
+        screen.config.budget.total_usd = w.value as f64 / 10.0;
+    }
+    if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
+        screen.config.budget.alert_threshold_pct = w.value as u8;
+    }
+}
 
-    // Theme (tab 7)
-    if let Some(fields) = screen.fields_per_tab.get(7) {
-        if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
-            screen.live_preview = w.value;
-        }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(1).map(|f| &f.widget) {
-            screen.config.tui.theme.preset = match w.selected {
-                0 => crate::tui::theme::ThemePreset::Dark,
-                1 => crate::tui::theme::ThemePreset::Light,
-                _ => crate::tui::theme::ThemePreset::Retro,
-            };
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(2).map(|f| &f.widget) {
-            screen.config.tui.ascii_icons = w.value;
-        }
+/// Caveman toggle (Advanced tab) is bespoke; route through existing
+/// `pending_caveman_toggle` flow.
+fn sync_advanced_caveman(screen: &mut SettingsScreen) {
+    let Some(fields) = screen.fields_per_tab.get(11) else {
+        return;
+    };
+    let prev = screen.caveman_state.as_bool().unwrap_or(false);
+    let Some(WidgetKind::Toggle(w)) = widget_by_label(fields, CAVEMAN_LABEL) else {
+        return;
+    };
+    if w.value == prev {
+        return;
     }
-
-    // Layout (tab 8)
-    if let Some(fields) = screen.fields_per_tab.get(8) {
-        let l = &mut screen.config.tui.layout;
-        if let Some(WidgetKind::Dropdown(w)) = fields.first().map(|f| &f.widget) {
-            l.mode = match w.selected {
-                0 => crate::config::LayoutMode::Vertical,
-                _ => crate::config::LayoutMode::Horizontal,
-            };
-        }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(1).map(|f| &f.widget) {
-            l.density = match w.selected {
-                0 => crate::config::Density::Default,
-                1 => crate::config::Density::Comfortable,
-                _ => crate::config::Density::Compact,
-            };
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
-            l.preview_ratio = w.value as u8;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(3).map(|f| &f.widget) {
-            l.activity_log_height = w.value as u8;
-        }
-    }
-
-    // TurboQuant (tab 10 — Flags tab at 9 has no widgets)
-    if let Some(fields) = screen.fields_per_tab.get(10) {
-        let tq = &mut screen.config.turboquant;
-        if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
-            tq.enabled = w.value;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
-            tq.bit_width = w.value as u8;
-        }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(2).map(|f| &f.widget) {
-            tq.strategy = match w.selected {
-                0 => crate::config::QuantStrategy::TurboQuant,
-                1 => crate::config::QuantStrategy::PolarQuant,
-                _ => crate::config::QuantStrategy::Qjl,
-            };
-        }
-        if let Some(WidgetKind::Dropdown(w)) = fields.get(3).map(|f| &f.widget) {
-            tq.apply_to = match w.selected {
-                0 => crate::config::ApplyTarget::Keys,
-                1 => crate::config::ApplyTarget::Values,
-                _ => crate::config::ApplyTarget::Both,
-            };
-        }
-        if let Some(WidgetKind::Toggle(w)) = fields.get(4).map(|f| &f.widget) {
-            tq.auto_on_overflow = w.value;
-        }
-    }
-
-    // Advanced (tab 11 — after TurboQuant)
-    let mut caveman_change: Option<bool> = None;
-    if let Some(fields) = screen.fields_per_tab.get(11) {
-        if let Some(WidgetKind::NumberStepper(w)) = fields.first().map(|f| &f.widget) {
-            screen.config.concurrency.heavy_task_limit = w.value as usize;
-        }
-        if let Some(WidgetKind::NumberStepper(w)) = fields.get(1).map(|f| &f.widget) {
-            screen.config.monitoring.work_tick_interval_secs = w.value as u64;
-        }
-        if let Some(WidgetKind::ListEditor(w)) = fields.get(2).map(|f| &f.widget) {
-            screen.config.concurrency.heavy_task_labels = w.items.clone();
-        }
-        let prev = screen.caveman_state.as_bool().unwrap_or(false);
-        if let Some(WidgetKind::Toggle(w)) = super::widget_by_label(fields, super::CAVEMAN_LABEL)
-            && w.value != prev
-        {
-            caveman_change = Some(w.value);
-        }
-    }
-    if let Some(new_value) = caveman_change {
-        if screen.caveman_state.is_toggleable() {
-            screen.pending_caveman_toggle = Some(new_value);
-        } else {
-            let label = screen.caveman_state.label().into_owned();
-            let state = screen.caveman_state.clone();
-            screen.set_caveman_state(state);
-            screen.show_caveman_status(format!(
-                "caveman_mode is unreadable ({}); fix the file before toggling.",
-                label
-            ));
-        }
+    if screen.caveman_state.is_toggleable() {
+        screen.pending_caveman_toggle = Some(w.value);
+    } else {
+        let label = screen.caveman_state.label().into_owned();
+        let state = screen.caveman_state.clone();
+        screen.set_caveman_state(state);
+        screen.show_caveman_status(format!(
+            "caveman_mode is unreadable ({}); fix the file before toggling.",
+            label
+        ));
     }
 }

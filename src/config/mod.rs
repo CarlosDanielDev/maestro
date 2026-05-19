@@ -56,7 +56,9 @@ pub use sessions::{
     CompletionGateEntry, CompletionGatesConfig, ConflictConfig, ConflictPolicy,
     ContextOverflowConfig, HollowRetryConfig, HollowRetryPolicy, SessionsConfig,
 };
+#[allow(unused_imports)]
 pub use tui::{Density, LayoutConfig, LayoutMode, TuiConfig};
+#[allow(unused_imports)]
 pub use turboquant::{ApplyTarget, QuantStrategy, TurboQuantConfig};
 pub use views::ViewsConfig;
 

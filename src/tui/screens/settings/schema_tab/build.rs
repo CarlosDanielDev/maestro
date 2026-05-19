@@ -74,7 +74,10 @@ fn resolve_field_value(
     key: &str,
     root: &toml::Value,
 ) -> Option<toml::Value> {
-    let mut node = root.get(table_name)?;
+    let mut node = root;
+    for segment in table_name.split('.') {
+        node = node.get(segment)?;
+    }
     for segment in prefix {
         node = node.get(*segment)?;
     }

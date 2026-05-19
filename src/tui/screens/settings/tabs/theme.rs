@@ -1,27 +1,17 @@
 use crate::config::Config;
-use crate::tui::widgets::{Dropdown, Toggle, WidgetKind};
+use crate::tui::widgets::{Toggle, WidgetKind};
 
-use super::field;
+use super::{field, schema_table};
 use crate::tui::screens::settings::SettingsField;
+use crate::tui::screens::settings::schema_tab::build::from_schema;
 
 pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
-    use crate::tui::theme::ThemePreset;
-    let preset_options: Vec<String> = vec!["dark".into(), "light".into(), "retro".into()];
-    let preset_idx = match config.tui.theme.preset {
-        ThemePreset::Dark => 0,
-        ThemePreset::Light => 1,
-        ThemePreset::Retro => 2,
-    };
-    vec![
-        field(WidgetKind::Toggle(Toggle::new("live_preview", false))),
-        field(WidgetKind::Dropdown(Dropdown::new(
-            "preset",
-            preset_options,
-            preset_idx,
-        ))),
-        field(WidgetKind::Toggle(Toggle::new(
-            "ascii_icons",
-            config.tui.ascii_icons,
-        ))),
-    ]
+    let mut fields: Vec<SettingsField> = Vec::with_capacity(3);
+    fields.push(field(WidgetKind::Toggle(Toggle::new(
+        "live_preview",
+        false,
+    ))));
+    fields.extend(from_schema(schema_table("tui.theme"), config));
+    fields.extend(from_schema(schema_table("tui"), config));
+    fields
 }

@@ -101,7 +101,7 @@ fn set_path(
     key: &str,
     value: toml::Value,
 ) {
-    let mut segments: Vec<&str> = vec![table_name];
+    let mut segments: Vec<&str> = table_name.split('.').collect();
     segments.extend(prefix.iter().copied());
 
     let mut node = root;

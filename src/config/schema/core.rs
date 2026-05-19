@@ -107,6 +107,30 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         },
         validator: None,
     },
+    FieldSchema {
+        key: "hollow_retry",
+        label: "Hollow Retry",
+        help: "Retry policy and per-intent limits for hollow completions",
+        default: DefaultValue::Nested,
+        kind: FieldKind::NestedTable(HOLLOW_RETRY_FIELDS),
+        validator: None,
+    },
+    FieldSchema {
+        key: "context_overflow",
+        label: "Context Overflow",
+        help: "Behaviour when a session approaches the context limit",
+        default: DefaultValue::Nested,
+        kind: FieldKind::NestedTable(CONTEXT_OVERFLOW_FIELDS),
+        validator: None,
+    },
+    FieldSchema {
+        key: "conflict",
+        label: "Conflict Detection",
+        help: "Detect and handle concurrent edits across sessions",
+        default: DefaultValue::Nested,
+        kind: FieldKind::NestedTable(CONFLICT_FIELDS),
+        validator: None,
+    },
 ];
 
 pub(super) const HOLLOW_RETRY_FIELDS: &[FieldSchema] = &[
