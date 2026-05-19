@@ -300,7 +300,9 @@ fn sync_to_config_dotted_table_name_does_not_create_literal_key() {
 
     let root = toml::Value::try_from(&config).expect("config must serialize back to toml");
     assert!(
-        root.as_table().map(|t| !t.contains_key("tui.layout")).unwrap_or(true),
+        root.as_table()
+            .map(|t| !t.contains_key("tui.layout"))
+            .unwrap_or(true),
         "sync_to_config must not insert a literal 'tui.layout' key at the root",
     );
 }

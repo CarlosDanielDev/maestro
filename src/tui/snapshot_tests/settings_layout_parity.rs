@@ -6,7 +6,6 @@ use ratatui::{Terminal, backend::TestBackend};
 
 use crate::config::Config;
 use crate::config::schema::schema_for_config;
-use crate::flags::Flag;
 use crate::flags::store::FeatureFlags;
 use crate::tui::screens::settings::SettingsField;
 use crate::tui::screens::settings::SettingsScreen;
@@ -28,16 +27,6 @@ const MINIMAL_TOML: &str = concat!(
 
 fn test_config() -> Config {
     toml::from_str(MINIMAL_TOML).expect("MINIMAL_TOML must parse")
-}
-
-fn flags_off() -> FeatureFlags {
-    FeatureFlags::default()
-}
-
-fn flags_on() -> FeatureFlags {
-    let mut f = FeatureFlags::default();
-    f.set_enabled(Flag::SchemaDrivenSettings, true);
-    f
 }
 
 fn layout_table() -> &'static crate::config::schema::TableSchema {
@@ -72,16 +61,11 @@ fn render_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buf
     terminal.backend().buffer().clone()
 }
 
-const EXPECTED_LABELS: [&str; 4] = [
-    "mode",
-    "density",
-    "preview_ratio",
-    "activity_log_height",
-];
+const EXPECTED_LABELS: [&str; 4] = ["mode", "density", "preview_ratio", "activity_log_height"];
 
 #[test]
 fn layout_tab_flag_off_field_count_and_labels() {
-    let screen = SettingsScreen::new(test_config(), flags_off());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[LAYOUT_TAB_INDEX];
     assert_eq!(fields.len(), 4);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
@@ -91,7 +75,7 @@ fn layout_tab_flag_off_field_count_and_labels() {
 
 #[test]
 fn layout_tab_flag_on_field_count_and_labels() {
-    let screen = SettingsScreen::new(test_config(), flags_on());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[LAYOUT_TAB_INDEX];
     assert_eq!(fields.len(), 4);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
@@ -101,15 +85,15 @@ fn layout_tab_flag_on_field_count_and_labels() {
 
 #[test]
 fn layout_tab_flag_off_renders_80x24() {
-    let screen = SettingsScreen::new(test_config(), flags_off());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let buf = render_tab(&screen.fields_per_tab[LAYOUT_TAB_INDEX], 80, 24);
     assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
 fn layout_tab_flag_on_renders_80x24_parity_with_flag_off() {
-    let screen_off = SettingsScreen::new(test_config(), flags_off());
-    let screen_on = SettingsScreen::new(test_config(), flags_on());
+    let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
+    let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
     let buf_off = render_tab(&screen_off.fields_per_tab[LAYOUT_TAB_INDEX], 80, 24);
     let buf_on = render_tab(&screen_on.fields_per_tab[LAYOUT_TAB_INDEX], 80, 24);
     assert_eq!(buf_off, buf_on);
@@ -117,8 +101,8 @@ fn layout_tab_flag_on_renders_80x24_parity_with_flag_off() {
 
 #[test]
 fn layout_tab_flag_on_renders_120x40_parity_with_flag_off() {
-    let screen_off = SettingsScreen::new(test_config(), flags_off());
-    let screen_on = SettingsScreen::new(test_config(), flags_on());
+    let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
+    let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
     let buf_off = render_tab(&screen_off.fields_per_tab[LAYOUT_TAB_INDEX], 120, 40);
     let buf_on = render_tab(&screen_on.fields_per_tab[LAYOUT_TAB_INDEX], 120, 40);
     assert_eq!(buf_off, buf_on);

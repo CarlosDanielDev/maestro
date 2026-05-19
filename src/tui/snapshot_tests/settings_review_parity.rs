@@ -10,7 +10,6 @@ use ratatui::{Terminal, backend::TestBackend};
 
 use crate::config::Config;
 use crate::config::schema::schema_for_config;
-use crate::flags::Flag;
 use crate::flags::store::FeatureFlags;
 use crate::tui::screens::settings::SettingsField;
 use crate::tui::screens::settings::SettingsScreen;
@@ -34,16 +33,6 @@ fn test_config() -> Config {
     toml::from_str(MINIMAL_TOML).expect("MINIMAL_TOML must parse")
 }
 
-fn flags_off() -> FeatureFlags {
-    FeatureFlags::default()
-}
-
-fn flags_on() -> FeatureFlags {
-    let mut f = FeatureFlags::default();
-    f.set_enabled(Flag::SchemaDrivenSettings, true);
-    f
-}
-
 fn review_table() -> &'static crate::config::schema::TableSchema {
     schema_for_config()
         .iter()
@@ -51,11 +40,7 @@ fn review_table() -> &'static crate::config::schema::TableSchema {
         .expect("review schema must exist")
 }
 
-fn render_review_tab(
-    fields: &[SettingsField],
-    width: u16,
-    height: u16,
-) -> ratatui::buffer::Buffer {
+fn render_review_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buffer::Buffer {
     let mut terminal =
         Terminal::new(TestBackend::new(width, height)).expect("TestBackend must init");
     let theme = Theme::dark();
@@ -82,7 +67,7 @@ fn render_review_tab(
 
 #[test]
 fn review_tab_flag_off_field_count_and_labels() {
-    let screen = SettingsScreen::new(test_config(), flags_off());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[REVIEW_TAB_INDEX];
 
     assert_eq!(
@@ -96,7 +81,7 @@ fn review_tab_flag_off_field_count_and_labels() {
 
 #[test]
 fn review_tab_flag_on_field_count_and_labels() {
-    let screen = SettingsScreen::new(test_config(), flags_on());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[REVIEW_TAB_INDEX];
 
     assert_eq!(
@@ -110,15 +95,15 @@ fn review_tab_flag_on_field_count_and_labels() {
 
 #[test]
 fn review_tab_flag_off_renders_80x24() {
-    let screen = SettingsScreen::new(test_config(), flags_off());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let buf = render_review_tab(&screen.fields_per_tab[REVIEW_TAB_INDEX], 80, 24);
     assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
 fn review_tab_flag_on_renders_80x24_parity_with_flag_off() {
-    let screen_off = SettingsScreen::new(test_config(), flags_off());
-    let screen_on = SettingsScreen::new(test_config(), flags_on());
+    let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
+    let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
 
     let buf_off = render_review_tab(&screen_off.fields_per_tab[REVIEW_TAB_INDEX], 80, 24);
     let buf_on = render_review_tab(&screen_on.fields_per_tab[REVIEW_TAB_INDEX], 80, 24);
@@ -131,8 +116,8 @@ fn review_tab_flag_on_renders_80x24_parity_with_flag_off() {
 
 #[test]
 fn review_tab_flag_on_renders_120x40_parity_with_flag_off() {
-    let screen_off = SettingsScreen::new(test_config(), flags_off());
-    let screen_on = SettingsScreen::new(test_config(), flags_on());
+    let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
+    let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
 
     let buf_off = render_review_tab(&screen_off.fields_per_tab[REVIEW_TAB_INDEX], 120, 40);
     let buf_on = render_review_tab(&screen_on.fields_per_tab[REVIEW_TAB_INDEX], 120, 40);

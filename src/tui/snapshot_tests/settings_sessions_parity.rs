@@ -13,7 +13,6 @@ use ratatui::{Terminal, backend::TestBackend};
 
 use crate::config::Config;
 use crate::config::schema::schema_for_config;
-use crate::flags::Flag;
 use crate::flags::store::FeatureFlags;
 use crate::tui::screens::settings::SettingsField;
 use crate::tui::screens::settings::SettingsScreen;
@@ -22,8 +21,7 @@ use crate::tui::theme::Theme;
 use crate::tui::widgets::WidgetKind;
 
 const SESSIONS_TAB_INDEX: usize = 1;
-const BYPASS_LABEL: &str =
-    "bypass_review_corrections (DANGER: auto-accepts all review fixes)";
+const BYPASS_LABEL: &str = "bypass_review_corrections (DANGER: auto-accepts all review fixes)";
 
 const MINIMAL_TOML: &str = concat!(
     "[project]\nrepo = \"owner/repo\"\nbase_branch = \"main\"\n",
@@ -38,16 +36,6 @@ const MINIMAL_TOML: &str = concat!(
 
 fn test_config() -> Config {
     toml::from_str(MINIMAL_TOML).expect("MINIMAL_TOML must parse")
-}
-
-fn flags_off() -> FeatureFlags {
-    FeatureFlags::default()
-}
-
-fn flags_on() -> FeatureFlags {
-    let mut f = FeatureFlags::default();
-    f.set_enabled(Flag::SchemaDrivenSettings, true);
-    f
 }
 
 fn render_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buffer::Buffer {
@@ -97,7 +85,7 @@ const EXPECTED_LABELS: [&str; 17] = [
 
 #[test]
 fn sessions_tab_flag_off_field_count_and_labels() {
-    let screen = SettingsScreen::new(test_config(), flags_off());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
     assert_eq!(fields.len(), 17);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
@@ -107,7 +95,7 @@ fn sessions_tab_flag_off_field_count_and_labels() {
 
 #[test]
 fn sessions_tab_flag_on_field_count_and_labels() {
-    let screen = SettingsScreen::new(test_config(), flags_on());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
     assert_eq!(fields.len(), 17);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
@@ -117,7 +105,7 @@ fn sessions_tab_flag_on_field_count_and_labels() {
 
 #[test]
 fn sessions_tab_flag_on_bypass_toggle_pinned_at_index_4() {
-    let screen = SettingsScreen::new(test_config(), flags_on());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
     let WidgetKind::Toggle(t) = &fields[4].widget else {
         panic!("field[4] must be Toggle for bypass_review_corrections");
@@ -127,15 +115,15 @@ fn sessions_tab_flag_on_bypass_toggle_pinned_at_index_4() {
 
 #[test]
 fn sessions_tab_flag_off_renders_80x24() {
-    let screen = SettingsScreen::new(test_config(), flags_off());
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let buf = render_tab(&screen.fields_per_tab[SESSIONS_TAB_INDEX], 80, 24);
     assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
 fn sessions_tab_flag_on_renders_80x24_parity_with_flag_off() {
-    let screen_off = SettingsScreen::new(test_config(), flags_off());
-    let screen_on = SettingsScreen::new(test_config(), flags_on());
+    let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
+    let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
     let buf_off = render_tab(&screen_off.fields_per_tab[SESSIONS_TAB_INDEX], 80, 24);
     let buf_on = render_tab(&screen_on.fields_per_tab[SESSIONS_TAB_INDEX], 80, 24);
     assert_eq!(buf_off, buf_on);
@@ -143,8 +131,8 @@ fn sessions_tab_flag_on_renders_80x24_parity_with_flag_off() {
 
 #[test]
 fn sessions_tab_flag_on_renders_120x40_parity_with_flag_off() {
-    let screen_off = SettingsScreen::new(test_config(), flags_off());
-    let screen_on = SettingsScreen::new(test_config(), flags_on());
+    let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
+    let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
     let buf_off = render_tab(&screen_off.fields_per_tab[SESSIONS_TAB_INDEX], 120, 40);
     let buf_on = render_tab(&screen_on.fields_per_tab[SESSIONS_TAB_INDEX], 120, 40);
     assert_eq!(buf_off, buf_on);
@@ -152,7 +140,7 @@ fn sessions_tab_flag_on_renders_120x40_parity_with_flag_off() {
 
 #[test]
 fn sessions_sync_flag_on_writes_outer_default_and_nested_fields() {
-    let mut screen = SettingsScreen::new(test_config(), flags_on());
+    let mut screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &mut screen.fields_per_tab[SESSIONS_TAB_INDEX];
 
     if let WidgetKind::NumberStepper(ref mut w) = fields[0].widget {
@@ -186,18 +174,14 @@ fn sessions_sync_flag_on_writes_outer_default_and_nested_fields() {
 fn sessions_bypass_toggle_on_then_dropdown_acceptedits_keeps_acceptedits() {
     let mut config = test_config();
     config.sessions.permission_mode = "default".into();
-    let mut screen = SettingsScreen::new(config, flags_on());
+    let mut screen = SettingsScreen::new(config, FeatureFlags::default());
     let fields = &mut screen.fields_per_tab[SESSIONS_TAB_INDEX];
 
     if let WidgetKind::Toggle(ref mut w) = fields[4].widget {
         w.value = true;
     }
     if let WidgetKind::Dropdown(ref mut w) = fields[5].widget {
-        let idx = w
-            .options
-            .iter()
-            .position(|s| s == "acceptEdits")
-            .unwrap();
+        let idx = w.options.iter().position(|s| s == "acceptEdits").unwrap();
         w.selected = idx;
     }
 
@@ -213,7 +197,7 @@ fn sessions_bypass_toggle_on_then_dropdown_acceptedits_keeps_acceptedits() {
 fn sessions_bypass_toggle_off_reverts_bypass_to_default() {
     let mut config = test_config();
     config.sessions.permission_mode = "bypassPermissions".into();
-    let mut screen = SettingsScreen::new(config, flags_on());
+    let mut screen = SettingsScreen::new(config, FeatureFlags::default());
     let fields = &mut screen.fields_per_tab[SESSIONS_TAB_INDEX];
 
     if let WidgetKind::Toggle(ref mut w) = fields[4].widget {
@@ -235,7 +219,7 @@ fn sessions_bypass_toggle_off_reverts_bypass_to_default() {
 #[test]
 fn sessions_sync_flag_on_preserves_other_config_sections() {
     let original = test_config();
-    let mut screen = SettingsScreen::new(original.clone(), flags_on());
+    let mut screen = SettingsScreen::new(original.clone(), FeatureFlags::default());
     let fields = &mut screen.fields_per_tab[SESSIONS_TAB_INDEX];
     if let WidgetKind::NumberStepper(ref mut w) = fields[0].widget {
         w.value = 4;
