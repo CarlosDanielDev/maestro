@@ -26,6 +26,7 @@ const SCALE_FIELDS: &[FieldSchema] = &[FieldSchema {
         display_scale: 10,
     },
     validator: None,
+    presentation: None,
 }];
 
 const SCALE_TABLE: TableSchema = TableSchema {

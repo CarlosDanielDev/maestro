@@ -77,6 +77,7 @@ fn build_enum_field_unknown_default_falls_back_to_index_zero() {
         default: DefaultValue::Str("missing"),
         kind: FieldKind::Enum(&["alpha", "beta"]),
         validator: None,
+        presentation: None,
     }];
     const BAD_TABLE: TableSchema = TableSchema {
         name: "bad_synth",
@@ -348,6 +349,7 @@ fn validate_fields_returns_error_for_failing_validator() {
         default: DefaultValue::Str(""),
         kind: FieldKind::String,
         validator: Some(reject_empty),
+        presentation: None,
     }];
     const VALIDATED_TABLE: TableSchema = TableSchema {
         name: "validated_synth",

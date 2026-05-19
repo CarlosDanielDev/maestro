@@ -17,6 +17,7 @@ fn leaf(
         default,
         kind,
         validator: None,
+        presentation: None,
     }
 }
 
@@ -27,6 +28,7 @@ const DEMO_FIELDS_SWITCH: &[FieldSchema] = &[FieldSchema {
     default: DefaultValue::Bool(true),
     kind: FieldKind::Bool,
     validator: None,
+    presentation: None,
 }];
 
 const DEMO_FIELDS_K: &[FieldSchema] = &[FieldSchema {
@@ -36,6 +38,7 @@ const DEMO_FIELDS_K: &[FieldSchema] = &[FieldSchema {
     default: DefaultValue::Bool(false),
     kind: FieldKind::Bool,
     validator: None,
+    presentation: None,
 }];
 
 const DEMO_FIELDS_EMPTY: &[FieldSchema] = &[];

@@ -145,6 +145,13 @@ fn widget_for_kind(label: String, field: &FieldSchema, value: Option<&toml::Valu
             WidgetKind::ListEditor(ListEditor::new(label, items))
         }
         FieldKind::NestedTable(_) => unreachable!("NestedTable handled by push_field"),
+        FieldKind::Map { .. } | FieldKind::VecOfStruct { .. } => {
+            unreachable!(
+                "dynamic-cardinality field {:?} reached widget_for_kind; \
+                 dynamic sections must not be registered until renderer wiring lands",
+                field.key
+            )
+        }
     }
 }
 

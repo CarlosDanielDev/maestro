@@ -23,6 +23,7 @@ pub(super) const PROJECT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str(""),
         kind: FieldKind::String,
         validator: Some(validate_non_empty),
+        presentation: None,
     },
     FieldSchema {
         key: "base_branch",
@@ -31,6 +32,7 @@ pub(super) const PROJECT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("main"),
         kind: FieldKind::String,
         validator: Some(validate_non_empty),
+        presentation: None,
     },
 ];
 
@@ -46,6 +48,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
             step: 1,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "stall_timeout_secs",
@@ -58,6 +61,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
             step: 30,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "default_model",
@@ -66,6 +70,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("opus"),
         kind: FieldKind::String,
         validator: Some(validate_non_empty),
+        presentation: None,
     },
     FieldSchema {
         key: "default_mode",
@@ -74,6 +79,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("orchestrator"),
         kind: FieldKind::String,
         validator: Some(validate_non_empty),
+        presentation: None,
     },
     FieldSchema {
         key: "permission_mode",
@@ -82,6 +88,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("default"),
         kind: FieldKind::Enum(PERMISSION_MODES),
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "max_retries",
@@ -94,6 +101,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
             step: 1,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "retry_cooldown_secs",
@@ -106,6 +114,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
             step: 10,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "hollow_retry",
@@ -114,6 +123,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Nested,
         kind: FieldKind::NestedTable(HOLLOW_RETRY_FIELDS),
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "context_overflow",
@@ -122,6 +132,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Nested,
         kind: FieldKind::NestedTable(CONTEXT_OVERFLOW_FIELDS),
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "conflict",
@@ -130,6 +141,7 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Nested,
         kind: FieldKind::NestedTable(CONFLICT_FIELDS),
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -141,6 +153,7 @@ pub(super) const HOLLOW_RETRY_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("intent-aware"),
         kind: FieldKind::Enum(HOLLOW_POLICIES),
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "work_max_retries",
@@ -153,6 +166,7 @@ pub(super) const HOLLOW_RETRY_FIELDS: &[FieldSchema] = &[
             step: 1,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "consultation_max_retries",
@@ -165,6 +179,7 @@ pub(super) const HOLLOW_RETRY_FIELDS: &[FieldSchema] = &[
             step: 1,
         },
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -180,6 +195,7 @@ pub(super) const CONTEXT_OVERFLOW_FIELDS: &[FieldSchema] = &[
             step: 5,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "auto_fork",
@@ -188,6 +204,7 @@ pub(super) const CONTEXT_OVERFLOW_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(true),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "commit_prompt_pct",
@@ -200,6 +217,7 @@ pub(super) const CONTEXT_OVERFLOW_FIELDS: &[FieldSchema] = &[
             step: 5,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "max_fork_depth",
@@ -212,6 +230,7 @@ pub(super) const CONTEXT_OVERFLOW_FIELDS: &[FieldSchema] = &[
             step: 1,
         },
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -223,6 +242,7 @@ pub(super) const CONFLICT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(true),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "policy",
@@ -231,6 +251,7 @@ pub(super) const CONFLICT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("warn"),
         kind: FieldKind::Enum(CONFLICT_POLICIES),
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -247,6 +268,7 @@ pub(super) const BUDGET_FIELDS: &[FieldSchema] = &[
             display_scale: 10,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "total_usd",
@@ -260,6 +282,7 @@ pub(super) const BUDGET_FIELDS: &[FieldSchema] = &[
             display_scale: 10,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "alert_threshold_pct",
@@ -272,6 +295,7 @@ pub(super) const BUDGET_FIELDS: &[FieldSchema] = &[
             step: 5,
         },
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -283,6 +307,7 @@ pub(super) const GITHUB_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::StrList(&["maestro:ready"]),
         kind: FieldKind::StringList,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "auto_pr",
@@ -291,6 +316,7 @@ pub(super) const GITHUB_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(true),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "cache_ttl_secs",
@@ -303,6 +329,7 @@ pub(super) const GITHUB_FIELDS: &[FieldSchema] = &[
             step: 30,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "auto_merge",
@@ -311,6 +338,7 @@ pub(super) const GITHUB_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(false),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "merge_method",
@@ -319,6 +347,7 @@ pub(super) const GITHUB_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("squash"),
         kind: FieldKind::Enum(MERGE_METHODS),
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -330,6 +359,7 @@ pub(super) const NOTIFICATIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(true),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "slack",
@@ -338,6 +368,7 @@ pub(super) const NOTIFICATIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(false),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "slack_webhook_url",
@@ -346,6 +377,7 @@ pub(super) const NOTIFICATIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str(""),
         kind: FieldKind::String,
         validator: Some(validate_url_or_empty),
+        presentation: None,
     },
     FieldSchema {
         key: "slack_rate_limit_per_min",
@@ -358,5 +390,6 @@ pub(super) const NOTIFICATIONS_FIELDS: &[FieldSchema] = &[
             step: 1,
         },
         validator: None,
+        presentation: None,
     },
 ];

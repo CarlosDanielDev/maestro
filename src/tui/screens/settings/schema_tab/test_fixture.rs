@@ -15,6 +15,7 @@ const SYNTH_BOOL_FIELD: FieldSchema = FieldSchema {
     default: DefaultValue::Bool(true),
     kind: FieldKind::Bool,
     validator: None,
+    presentation: None,
 };
 
 const SYNTH_INT_FIELD: FieldSchema = FieldSchema {
@@ -28,6 +29,7 @@ const SYNTH_INT_FIELD: FieldSchema = FieldSchema {
         step: 2,
     },
     validator: None,
+    presentation: None,
 };
 
 const SYNTH_FLOAT_FIELD: FieldSchema = FieldSchema {
@@ -42,6 +44,7 @@ const SYNTH_FLOAT_FIELD: FieldSchema = FieldSchema {
         display_scale: 1,
     },
     validator: None,
+    presentation: None,
 };
 
 const SYNTH_STRING_FIELD: FieldSchema = FieldSchema {
@@ -51,6 +54,7 @@ const SYNTH_STRING_FIELD: FieldSchema = FieldSchema {
     default: DefaultValue::Str("hello"),
     kind: FieldKind::String,
     validator: None,
+    presentation: None,
 };
 
 const SYNTH_ENUM_FIELD: FieldSchema = FieldSchema {
@@ -60,6 +64,7 @@ const SYNTH_ENUM_FIELD: FieldSchema = FieldSchema {
     default: DefaultValue::Str("beta"),
     kind: FieldKind::Enum(&["alpha", "beta", "gamma"]),
     validator: None,
+    presentation: None,
 };
 
 const SYNTH_LIST_FIELD: FieldSchema = FieldSchema {
@@ -69,6 +74,7 @@ const SYNTH_LIST_FIELD: FieldSchema = FieldSchema {
     default: DefaultValue::StrList(&["x", "y"]),
     kind: FieldKind::StringList,
     validator: None,
+    presentation: None,
 };
 
 const SYNTH_NESTED_INNER: &[FieldSchema] = &[FieldSchema {
@@ -78,6 +84,7 @@ const SYNTH_NESTED_INNER: &[FieldSchema] = &[FieldSchema {
     default: DefaultValue::Bool(false),
     kind: FieldKind::Bool,
     validator: None,
+    presentation: None,
 }];
 
 const SYNTH_NESTED_FIELD: FieldSchema = FieldSchema {
@@ -87,6 +94,7 @@ const SYNTH_NESTED_FIELD: FieldSchema = FieldSchema {
     default: DefaultValue::Nested,
     kind: FieldKind::NestedTable(SYNTH_NESTED_INNER),
     validator: None,
+    presentation: None,
 };
 
 const SYNTH_FIELDS: &[FieldSchema] = &[
