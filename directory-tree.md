@@ -713,7 +713,8 @@ maestro/
 │       └── specs/                         # Feature specifications
 │           ├── 2026-04-21-implement-harness-enforcement-design.md
 │           ├── 2026-04-22-ci-quality-gates-design.md
-│           └── 2026-05-05-orchestration-wizard-design.md  # Orchestration wizard design spec — locked decisions, architecture layers, data model, CLI surface  [Issue #665]
+│           ├── 2026-05-05-orchestration-wizard-design.md  # Orchestration wizard design spec — locked decisions, architecture layers, data model, CLI surface  [Issue #665]
+│           └── 2026-05-19-dynamic-config-editing.md      # Dynamic config editing design spec  [Issue #719]
 ├── template/
 │   ├── README-TEMPLATE.md                 # Template usage instructions
 │   ├── .claude/                           # Reproducible template for new projects
@@ -881,6 +882,7 @@ maestro/
 | `tests/teams_cookbook_fixtures.rs` | Integration tests: all six cookbook TOML fixtures resolve via `Loader::resolve` (Issue #675) |
 | `tests/fixtures/teams_cookbook/` | Six TOML preset fixtures exercised by `teams_cookbook_fixtures.rs` (Issue #675) |
 | `docs/superpowers/specs/2026-05-05-orchestration-wizard-design.md` | Orchestration wizard design spec — locked decisions, architecture, data model |
+| `docs/superpowers/specs/2026-05-19-dynamic-config-editing.md` | Dynamic config editing design spec  [Issue #719] |
 | `docs/superpowers/plans/2026-05-05-orchestration-wizard.md` | Orchestration wizard implementation plan |
 | `src/` | Rust source code |
 | `src/main.rs` | CLI entry point; `--skip-doctor` flag on `run` subcommand; `cmd_run()` calls `validate_preflight()` before launch and uses `PromptBuilder::build_issue_prompt()` for issue sessions; `setup_app_from_config()` propagates `once_mode` into `App`; forces `max_concurrent=1` when `--continuous` is set; `cmd_dashboard()` with startup cleanup, config-driven wiring, and `FetchSuggestionData` queued on startup; invokes `config::run_startup_migration(Path::new("maestro.toml"))` after `Cli::parse()` to backfill default fields in existing configs; declares `mod updater`; declares `mod flags`; propagates startup gh auth check result into `App.gh_auth_ok`; declares `mod sanitize` (Issues #29, #34, #35, #36, #49, #52, #83, #85, #118, #141, #142, #158, #710) |
