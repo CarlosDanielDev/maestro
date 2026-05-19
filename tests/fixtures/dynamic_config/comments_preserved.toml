@@ -1,0 +1,75 @@
+# mixed-scenario regression for issue #790
+# this file is loaded, mutated (add + remove + reorder), and re-saved
+# every comment line that appears here must appear in the saved output
+[project]
+repo = "owner/repo"
+base_branch = "main"
+
+[sessions]
+max_concurrent = 3
+stall_timeout_secs = 300
+default_model = "opus"
+default_mode = "orchestrator"
+permission_mode = "default"
+allowed_tools = []
+max_retries = 2
+retry_cooldown_secs = 60
+max_prompt_history = 100
+
+[sessions.hollow_retry]
+policy = "intent-aware"
+work_max_retries = 2
+consultation_max_retries = 0
+
+[sessions.context_overflow]
+overflow_threshold_pct = 70
+auto_fork = true
+commit_prompt_pct = 50
+max_fork_depth = 5
+
+[sessions.conflict]
+enabled = true
+policy = "warn"
+
+[sessions.completion_gates]
+enabled = true
+
+# Gate alpha
+[[sessions.completion_gates.commands]]
+name = "fmt"
+run = "cargo fmt --check"
+required = true
+
+# Gate beta
+[[sessions.completion_gates.commands]]
+name = "clippy"
+run = "cargo clippy -- -D warnings"
+required = true
+
+# Financial guardrails
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+
+[github]
+issue_filter_labels = []
+auto_pr = true
+cache_ttl_secs = 300
+auto_merge = false
+merge_method = "merge"
+
+[notifications]
+desktop = true
+slack = false
+slack_rate_limit_per_min = 10
+
+[agents]
+default = "claude"
+
+# Existing claude agent
+[agents.claude]
+kind = "claude"
+enabled = true
+command = "claude"
+model = "opus"

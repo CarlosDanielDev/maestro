@@ -151,6 +151,7 @@ maestro/
 │   │   ├── modes.rs                       # Permission mode config types
 │   │   ├── notifications.rs               # NotificationsConfig
 │   │   ├── overlay.rs                     # Diff-walker algorithm for comment-preserving TOML overlay merge; walks a toml_edit Document tree and applies only the keys that differ between the original and updated Config, leaving unknown sections, comments, and blank lines intact  [Issue #712]
+│   │   ├── overlay_dynamic.rs             # Comment-preserving round-trip writer for dynamic sections (teams, plugins, agents); uses toml_edit to splice spliced/added/removed entries into the live document without disturbing surrounding comments or ordering; gated behind the `dynamic-config-reorder` Cargo feature (off-by-default for one release); tests load fixtures from tests/fixtures/dynamic_config/  [Issue #790]
 │   │   ├── plugins.rs                     # PluginsConfig
 │   │   ├── project.rs                     # ProjectConfig (language/languages/build_command/test_command/run_command fields written by `maestro init --reset`)
 │   │   ├── review.rs                      # ReviewConfig
@@ -803,6 +804,7 @@ maestro/
 │   ├── teams_cookbook_fixtures.rs         # Integration tests validating all six `tests/fixtures/teams_cookbook/*.toml` files parse and resolve correctly via `Loader::resolve`  [Issue #675]
 │   ├── fixtures/                          # Static test fixtures for integration and unit tests
 │   │   ├── config_roundtrip/              # TOML fixtures used by roundtrip_overlay and roundtrip_overlay_single_key tests to verify comment-preserving saves  [Issue #712]
+│   │   ├── dynamic_config/                # TOML fixtures for overlay_dynamic round-trip tests: add/remove/reorder entries in dynamic sections while preserving comments  [Issue #790]
 │   │   │   ├── full_maestro.toml          # Fully-populated maestro.toml used to verify every section round-trips without data loss or comment stripping
 │   │   │   ├── with_comments.toml         # Sparse maestro.toml with inline and header comments; guards that comments survive a Config::save_into_str call unchanged
 │   │   │   └── with_unknown_section.toml  # maestro.toml with a custom [my_tool] section unknown to Config; guards that unknown sections are preserved verbatim by the overlay merge

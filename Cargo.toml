@@ -52,6 +52,14 @@ thiserror = "2"
 shlex = "1"
 directories = "5"
 
+[features]
+# Off-by-default for one release. When enabled, `Config::save_into_str` detects
+# array-of-tables reorders by element-wise content hash and rewrites only the
+# moved slots, preserving per-element comments. With the feature off, reorders
+# fall back to a wholesale rewrite of the array (per-element comments on moved
+# rows are lost; neighbors survive). See docs/configuration.md §dynamic-config.
+dynamic-config-reorder = []
+
 [build-dependencies]
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"

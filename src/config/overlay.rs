@@ -26,6 +26,8 @@
 
 use toml_edit::{DocumentMut, Item, Table, Value};
 
+use super::overlay_dynamic;
+
 pub(super) fn apply_overlay(existing: &mut DocumentMut, on_disk: &Table, new: &Table) {
     merge_table(existing.as_table_mut(), on_disk, new);
 }
@@ -72,6 +74,15 @@ fn merge_key(target: &mut Table, key: &str, old: Option<&Item>, new: &Item) {
         }
         (Some(Item::Value(_)), Item::Value(new_val)) => {
             replace_value_preserving_decor(target, key, new_val.clone());
+        }
+        (Some(Item::ArrayOfTables(old_arr)), Item::ArrayOfTables(new_arr)) => {
+            if let Some(target_item) = target.get_mut(key)
+                && let Some(target_arr) = target_item.as_array_of_tables_mut()
+            {
+                overlay_dynamic::merge_array_of_tables(target_arr, old_arr, new_arr);
+                return;
+            }
+            target.insert(key, new.clone());
         }
         _ => {
             target.insert(key, new.clone());

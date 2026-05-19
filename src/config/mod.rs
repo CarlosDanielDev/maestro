@@ -18,6 +18,7 @@ mod models;
 mod modes;
 mod notifications;
 mod overlay;
+mod overlay_dynamic;
 mod plugins;
 mod project;
 mod review;

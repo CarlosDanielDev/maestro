@@ -7,10 +7,26 @@ use super::*;
 use std::io::Write;
 
 pub(super) fn fixture(name: &str) -> String {
+    fixture_in("tests/fixtures/config_roundtrip", name)
+}
+
+pub(super) fn fixture_in(dir: &str, name: &str) -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/config_roundtrip")
+        .join(dir)
         .join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read fixture {name}: {e}"))
+}
+
+/// Convenience for the very common "read fixture file → temp-file → load
+/// `Config`" preamble in round-trip tests. Returns the original text and the
+/// loaded `Config` (the temp file is dropped immediately — `Config::load`
+/// reads it eagerly).
+pub(super) fn load_fixture(dir: &str, name: &str) -> (String, Config) {
+    let text = fixture_in(dir, name);
+    let tmp = temp_file_with(&text);
+    let cfg = Config::load(tmp.path())
+        .unwrap_or_else(|e| panic!("fixture {name} failed to parse as Config: {e}"));
+    (text, cfg)
 }
 
 pub(super) fn assert_byte_identical(label_a: &str, a: &str, label_b: &str, b: &str) {
