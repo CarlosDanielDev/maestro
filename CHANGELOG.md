@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `maestro.toml` saves now preserve comments, blank lines, key order, and any sections not modeled by the `Config` struct — powered by a `toml_edit` overlay merge in the new `src/config/overlay.rs` module (#712).
 - Schema-driven autogen system for `docs/configuration.md`: 10 AUTOGEN marker blocks are now auto-populated from the config schema registry via `src/config/schema/docs_render.rs`; a drift guard (`src/integration_tests/docs_gen.rs` / `docs_gen_no_drift`) runs in CI under the new `docs-gen` job, and `scripts/regenerate-docs.sh` provides a convenience wrapper for local regeneration (#717).
+- `DynamicMapWidget` and `DynamicRowsWidget` — two new TUI widget primitives for editing key-value maps and ordered lists inside the schema-driven settings renderer; both support Add/Remove modals, 5-second undo (`UndoBuffer`), and Alt+↑/↓ row reorder (#791).
 
 ### Changed
 - `config`: TOML migrations now preserve comments, blank lines, and key order via `toml_edit`. The internal helper module exposes a shared `ensure_field` primitive for future single-key migrations. (#718)

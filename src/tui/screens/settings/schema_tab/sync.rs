@@ -92,6 +92,8 @@ fn widget_to_toml(widget: &WidgetKind, kind: &FieldKind) -> toml::Value {
         (WidgetKind::ListEditor(w), _) => {
             toml::Value::Array(w.items.iter().cloned().map(toml::Value::String).collect())
         }
+        (WidgetKind::DynamicMap(w), _) => w.serialize_to_toml(),
+        (WidgetKind::DynamicRows(w), _) => w.serialize_to_toml(),
     }
 }
 

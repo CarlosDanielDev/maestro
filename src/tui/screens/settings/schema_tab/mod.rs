@@ -11,7 +11,11 @@
 #[allow(dead_code)]
 pub(crate) mod build;
 #[allow(dead_code)]
+pub(crate) mod modals;
+#[allow(dead_code)]
 pub(crate) mod sync;
+#[allow(dead_code)]
+pub(crate) mod widgets;
 
 #[cfg(test)]
 mod float_tests;

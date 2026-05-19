@@ -10,6 +10,7 @@
 use crate::config::Config;
 use crate::config::schema::{DefaultValue, FieldKind, FieldSchema, TableSchema};
 use crate::tui::screens::settings::SettingsField;
+use crate::tui::screens::settings::schema_tab::widgets::{DynamicMapWidget, DynamicRowsWidget};
 use crate::tui::widgets::{Dropdown, ListEditor, NumberStepper, TextInput, Toggle, WidgetKind};
 
 /// Build a flat `Vec<SettingsField>` from a `TableSchema`.
@@ -53,8 +54,20 @@ fn push_field(
 
     let label = label_for(prefix, field.key);
     let value = resolve_field_value(table_name, prefix, field.key, root);
-    let widget = widget_for_kind(label, field, value.as_ref());
+    let section_path = section_path_for(table_name, prefix);
+    let widget = widget_for_kind(label, &section_path, field, value.as_ref());
     out.push(SettingsField { widget });
+}
+
+fn section_path_for(table_name: &str, prefix: &[&str]) -> String {
+    if prefix.is_empty() {
+        table_name.to_string()
+    } else {
+        let mut s = String::from(table_name);
+        s.push('.');
+        s.push_str(&prefix.join("."));
+        s
+    }
 }
 
 fn label_for(prefix: &[&str], key: &str) -> String {
@@ -84,7 +97,12 @@ fn resolve_field_value(
     node.get(key).cloned()
 }
 
-fn widget_for_kind(label: String, field: &FieldSchema, value: Option<&toml::Value>) -> WidgetKind {
+fn widget_for_kind(
+    label: String,
+    section_path: &str,
+    field: &FieldSchema,
+    value: Option<&toml::Value>,
+) -> WidgetKind {
     match field.kind {
         FieldKind::Bool => {
             let v = value
@@ -145,12 +163,13 @@ fn widget_for_kind(label: String, field: &FieldSchema, value: Option<&toml::Valu
             WidgetKind::ListEditor(ListEditor::new(label, items))
         }
         FieldKind::NestedTable(_) => unreachable!("NestedTable handled by push_field"),
-        FieldKind::Map { .. } | FieldKind::VecOfStruct { .. } => {
-            unreachable!(
-                "dynamic-cardinality field {:?} reached widget_for_kind; \
-                 dynamic sections must not be registered until renderer wiring lands",
-                field.key
-            )
+        FieldKind::Map { entry_fields } => {
+            let path = format!("{}.{}", section_path, field.key);
+            WidgetKind::DynamicMap(DynamicMapWidget::new(label, path, entry_fields, value))
+        }
+        FieldKind::VecOfStruct { entry_fields } => {
+            let path = format!("{}.{}", section_path, field.key);
+            WidgetKind::DynamicRows(DynamicRowsWidget::new(label, path, entry_fields, value))
         }
     }
 }
