@@ -602,13 +602,13 @@ in-scope for v0.29.0 closure; **B** is v0.30.0 work that depends on A.
 
 | ID | Title | Scope | Dependencies | Milestone |
 |---|---|---|---|---|
-| A.1 | `feat(config/schema): introduce FieldKind::Map and FieldKind::VecOfStruct variants + Presentation hint` | Adds the two enum variants, the `Presentation` field on `FieldSchema`, and `presentation: None` to every existing literal. No renderer wiring yet; unit tests assert the schema compiles and round-trips through serde. | — | v0.29.0 |
+| A.1 ✅ | `feat(config/schema): introduce FieldKind::Map and FieldKind::VecOfStruct variants + Presentation hint` | Adds the two enum variants, the `Presentation` field on `FieldSchema`, and `presentation: None` to every existing literal. No renderer wiring yet; unit tests assert the schema compiles and round-trips through serde. **Shipped in #789** (`feat/issue-789-feat-config-schema-introduce-fieldkind-m`). | — | v0.29.0 |
 | A.2 | `feat(tui/widgets): DynamicMap and DynamicRows widget primitives` | New `WidgetKind` variants; per-entry sub-state; integration with the existing keymap. Widget-level tests only (no schema integration yet). Includes the Add modal, Remove confirm + undo flash, and Alt+↑/↓ reorder. | A.1 | v0.29.0 |
 | A.3 | `feat(config): toml_edit comment-preserving round-trip for dynamic sections` | Extends `Config::save_into_str` to handle add/remove of dynamic sub-tables and reorder of array-of-tables. Element-wise content-hash compare for permutation detection. Golden fixtures committed. | A.1 | v0.29.0 |
 | A.4 | `refactor(tui/settings): wire Agents, Modes, Teams, completion_gates.commands tabs through schema renderer` | Adds 3 new `SettingsTab` enum variants (`Agents`, `Modes`, `Teams`); extends `tabs::build_fields`; registers the dynamic `TableSchema` entries; `[[completion_gates.commands]]` shows inside the existing Sessions tab below the static fields. | A.1, A.2, A.3 | v0.29.0 |
 | A.5 | `feat(docs): auto-generate docs/configuration.md sections for dynamic config tables` | Extends `src/config/schema/docs_render.rs` (#717) to render `Map`/`VecOfStruct` as "one row per entry" tables plus a prose paragraph. Updates the golden snapshot. | A.1 | v0.29.0 |
 
-**Sequence:** A.1 → A.2 ∥ A.3 → A.4 → A.5
+**Sequence:** ✅A.1 → A.2 ∥ A.3 → A.4 → A.5
 
 ### B. v0.30.0 (deferred for cardinality and widget reasons)
 

@@ -21,8 +21,26 @@ pub enum DefaultValue {
     Float(f64),
     Str(&'static str),
     StrList(&'static [&'static str]),
+    /// Marker for `Map` / `VecOfStruct` — dynamic sections start empty;
+    /// per-entry defaults live on `entry_fields`.
+    Empty,
     /// Marker for `NestedTable` — sub-table defaults live on inner fields.
     Nested,
+}
+
+/// Renderer hint for dynamic-cardinality fields ([`FieldKind::Map`],
+/// [`FieldKind::VecOfStruct`]). `None` on a [`FieldSchema`] resolves to the
+/// per-variant default via [`FieldSchema::resolved_presentation`]:
+///
+/// * `Map` → [`Presentation::Subtabs`]
+/// * `VecOfStruct` → [`Presentation::Rows`]
+///
+/// Static variants ignore this hint.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Presentation {
+    Subtabs,
+    Rows,
 }
 
 /// Kind of a configuration field, used by downstream renderers/generators
@@ -55,6 +73,19 @@ pub enum FieldKind {
     /// recursion. Kept here so downstream tickets can opt into recursive
     /// rendering without a schema-shape change.
     NestedTable(&'static [FieldSchema]),
+    /// Dynamic-key sub-table. Entries share `entry_fields`; users add/remove
+    /// entries at runtime. Defaults to [`Presentation::Subtabs`]. Renderer
+    /// wiring lands in a follow-up — A.1 ships the type only, with no
+    /// registered Map sections.
+    Map {
+        entry_fields: &'static [FieldSchema],
+    },
+    /// Ordered array-of-tables. Entries share `entry_fields`; reorder is part
+    /// of the edit verb set. Defaults to [`Presentation::Rows`]. Renderer
+    /// wiring lands in a follow-up — A.1 ships the type only.
+    VecOfStruct {
+        entry_fields: &'static [FieldSchema],
+    },
 }
 
 /// Pure validator. Function pointer (not closure) so [`FieldSchema`] stays
@@ -71,6 +102,33 @@ pub struct FieldSchema {
     pub default: DefaultValue,
     pub kind: FieldKind,
     pub validator: Option<Validator>,
+    /// Renderer hint. `None` resolves to a per-variant default via
+    /// [`FieldSchema::resolved_presentation`]. Static-shape variants
+    /// ignore this field.
+    pub presentation: Option<Presentation>,
+}
+
+impl FieldSchema {
+    /// Returns the effective presentation hint, applying the per-variant
+    /// default when `self.presentation` is `None`. Returns `None` for
+    /// every static variant (Bool/Int/Float/String/Enum/StringList/NestedTable).
+    #[allow(dead_code)]
+    pub const fn resolved_presentation(&self) -> Option<Presentation> {
+        if let Some(explicit) = self.presentation {
+            return Some(explicit);
+        }
+        match self.kind {
+            FieldKind::Map { .. } => Some(Presentation::Subtabs),
+            FieldKind::VecOfStruct { .. } => Some(Presentation::Rows),
+            FieldKind::Bool
+            | FieldKind::Int { .. }
+            | FieldKind::Float { .. }
+            | FieldKind::String
+            | FieldKind::Enum(_)
+            | FieldKind::StringList
+            | FieldKind::NestedTable(_) => None,
+        }
+    }
 }
 
 /// Schema for one TOML table. Nested tables (e.g. `tui.theme`) use dotted
@@ -182,208 +240,5 @@ pub(crate) const fn schema_for_config() -> &'static [TableSchema] {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::Config;
-
-    const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n[github]\n[notifications]\nslack_webhook_url = \"\"\n";
-
-    const EXPECTED_NON_NESTED_FIELDS: usize = 52;
-
-    fn default_config() -> Config {
-        toml::from_str(MINIMAL_TOML).expect("MINIMAL_TOML fixture must parse")
-    }
-
-    fn config_as_toml_value(config: &Config) -> toml::Value {
-        toml::Value::try_from(config).expect("Config must serialize to toml::Value")
-    }
-
-    fn resolve<'a>(root: &'a toml::Value, path: &str) -> Option<&'a toml::Value> {
-        path.split('.').try_fold(root, |node, seg| node.get(seg))
-    }
-
-    fn has_internal_sentence_boundary(s: &str) -> bool {
-        s.as_bytes().windows(3).any(|w| {
-            matches!(w[0], b'.' | b'!' | b'?') && w[1] == b' ' && w[2].is_ascii_uppercase()
-        })
-    }
-
-    fn find_validator(dotted: &str) -> Option<Validator> {
-        let (table_name, field_key) = dotted.rsplit_once('.')?;
-        schema_for_config()
-            .iter()
-            .find(|t| t.name == table_name)?
-            .fields
-            .iter()
-            .find(|f| f.key == field_key)?
-            .validator
-    }
-
-    fn walk_table_paths(
-        toml_val: &toml::Value,
-        prefix: &str,
-        fields: &'static [FieldSchema],
-        walked: &mut usize,
-    ) {
-        for field in fields {
-            if let FieldKind::NestedTable(inner) = field.kind {
-                let next_prefix = format!("{prefix}.{}", field.key);
-                walk_table_paths(toml_val, &next_prefix, inner, walked);
-                continue;
-            }
-            let path = format!("{prefix}.{}", field.key);
-            assert!(
-                resolve(toml_val, &path).is_some(),
-                "schema path not found in serialized Config: {path}"
-            );
-            *walked += 1;
-        }
-    }
-
-    #[test]
-    fn schema_all_dotted_paths_resolve_on_default_config() {
-        let config = default_config();
-        let toml_val = config_as_toml_value(&config);
-
-        let mut walked = 0usize;
-        for table in schema_for_config() {
-            walk_table_paths(&toml_val, table.name, table.fields, &mut walked);
-        }
-        assert_eq!(
-            walked, EXPECTED_NON_NESTED_FIELDS,
-            "expected {EXPECTED_NON_NESTED_FIELDS} non-nested schema fields, walked {walked}"
-        );
-    }
-
-    #[test]
-    fn schema_enum_defaults_are_within_allowed_variants() {
-        let config = default_config();
-        let toml_val = config_as_toml_value(&config);
-
-        for table in schema_for_config() {
-            for field in table.fields {
-                let FieldKind::Enum(variants) = &field.kind else {
-                    continue;
-                };
-                let path = format!("{}.{}", table.name, field.key);
-                let node = resolve(&toml_val, &path)
-                    .unwrap_or_else(|| panic!("enum field not found in Config TOML: {path}"));
-                let actual = node.as_str().unwrap_or_else(|| {
-                    panic!("enum field {path} serializes as non-string: {node:?}")
-                });
-                assert!(
-                    variants.contains(&actual),
-                    "enum field {path}: default value {actual:?} not in allowed list {variants:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn schema_help_text_style() {
-        for table in schema_for_config() {
-            for field in table.fields {
-                let path = format!("{}.{}", table.name, field.key);
-                let h = field.help;
-                assert!(!h.is_empty(), "{path}: help must not be empty");
-                assert!(
-                    h.len() <= 120,
-                    "{path}: help length {} exceeds 120 chars: {h:?}",
-                    h.len()
-                );
-                assert!(
-                    !matches!(h.as_bytes().last(), Some(b'.' | b'!' | b'?')),
-                    "{path}: help must not end with sentence punctuation: {h:?}"
-                );
-                assert!(
-                    !has_internal_sentence_boundary(h),
-                    "{path}: help contains internal sentence boundary: {h:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn schema_default_value_variant_matches_field_kind() {
-        for table in schema_for_config() {
-            for field in table.fields {
-                let path = format!("{}.{}", table.name, field.key);
-                let ok = matches!(
-                    (&field.default, &field.kind),
-                    (DefaultValue::Bool(_), FieldKind::Bool)
-                        | (DefaultValue::Int(_), FieldKind::Int { .. })
-                        | (DefaultValue::Float(_), FieldKind::Float { .. })
-                        | (DefaultValue::Str(_), FieldKind::String | FieldKind::Enum(_),)
-                        | (DefaultValue::StrList(_), FieldKind::StringList)
-                        | (DefaultValue::Nested, FieldKind::NestedTable(_)),
-                );
-                assert!(
-                    ok,
-                    "{path}: DefaultValue {:?} incompatible with FieldKind {:?}",
-                    field.default, field.kind
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn schema_no_duplicate_dotted_paths() {
-        let mut paths: Vec<String> = schema_for_config()
-            .iter()
-            .flat_map(|t| {
-                t.fields
-                    .iter()
-                    .map(move |f| format!("{}.{}", t.name, f.key))
-            })
-            .collect();
-        paths.sort();
-        let total = paths.len();
-        paths.dedup();
-        assert_eq!(
-            paths.len(),
-            total,
-            "duplicate dotted paths detected in schema registry"
-        );
-    }
-
-    #[test]
-    fn schema_validators_are_pure_functions() {
-        let url_validator = find_validator("notifications.slack_webhook_url")
-            .expect("notifications.slack_webhook_url must have a validator");
-
-        assert!(
-            url_validator(&toml::Value::String(String::new())).is_ok(),
-            "validate_url_or_empty: empty string must be Ok"
-        );
-        assert!(
-            url_validator(&toml::Value::String(
-                "https://hooks.slack.com/services/T/B/X".into()
-            ))
-            .is_ok(),
-            "validate_url_or_empty: valid https URL must be Ok"
-        );
-        assert!(
-            url_validator(&toml::Value::String("not-a-url".into())).is_err(),
-            "validate_url_or_empty: bare word must be Err"
-        );
-        assert!(
-            url_validator(&toml::Value::String("http://".into())).is_err(),
-            "validate_url_or_empty: scheme-only string must be Err"
-        );
-
-        for field_path in ["review.command", "project.repo"] {
-            let v = find_validator(field_path)
-                .unwrap_or_else(|| panic!("{field_path} must have a validator"));
-            assert!(
-                v(&toml::Value::String("cargo test".into())).is_ok(),
-                "{field_path}: non-empty string must be Ok"
-            );
-            let err = v(&toml::Value::String(String::new()));
-            assert!(err.is_err(), "{field_path}: empty string must be Err");
-            assert!(
-                !err.unwrap_err().is_empty(),
-                "{field_path}: error message must not be empty"
-            );
-        }
-    }
-}
+#[path = "schema_tests.rs"]
+mod tests;

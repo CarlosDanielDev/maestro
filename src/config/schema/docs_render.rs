@@ -79,6 +79,8 @@ pub(crate) fn render_type_string(kind: &FieldKind) -> String {
         }
         FieldKind::StringList => "array of string".to_string(),
         FieldKind::NestedTable(_) => "table".to_string(),
+        FieldKind::Map { .. } => "dynamic map".to_string(),
+        FieldKind::VecOfStruct { .. } => "array of table".to_string(),
     }
 }
 
@@ -100,6 +102,7 @@ pub(crate) fn render_default_string(default: &DefaultValue) -> String {
             format!("`[{inner}]`")
         }
         DefaultValue::Nested => "(nested table)".to_string(),
+        DefaultValue::Empty => "(empty)".to_string(),
     }
 }
 

@@ -17,6 +17,7 @@ pub(super) const GATES_CI_AUTO_FIX_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(true),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "max_retries",
@@ -29,6 +30,7 @@ pub(super) const GATES_CI_AUTO_FIX_FIELDS: &[FieldSchema] = &[
             step: 1,
         },
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -40,6 +42,7 @@ pub(super) const GATES_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(true),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "test_command",
@@ -48,6 +51,7 @@ pub(super) const GATES_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("cargo test"),
         kind: FieldKind::String,
         validator: Some(validate_non_empty),
+        presentation: None,
     },
     FieldSchema {
         key: "ci_poll_interval_secs",
@@ -60,6 +64,7 @@ pub(super) const GATES_FIELDS: &[FieldSchema] = &[
             step: 5,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "ci_max_wait_secs",
@@ -72,6 +77,7 @@ pub(super) const GATES_FIELDS: &[FieldSchema] = &[
             step: 60,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "ci_auto_fix",
@@ -80,6 +86,7 @@ pub(super) const GATES_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Nested,
         kind: FieldKind::NestedTable(GATES_CI_AUTO_FIX_FIELDS),
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -91,6 +98,7 @@ pub(super) const REVIEW_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(false),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "command",
@@ -101,6 +109,7 @@ pub(super) const REVIEW_FIELDS: &[FieldSchema] = &[
         ),
         kind: FieldKind::String,
         validator: Some(validate_non_empty),
+        presentation: None,
     },
 ];
 
@@ -111,6 +120,7 @@ pub(super) const TUI_FIELDS: &[FieldSchema] = &[FieldSchema {
     default: DefaultValue::Bool(false),
     kind: FieldKind::Bool,
     validator: None,
+    presentation: None,
 }];
 
 pub(super) const TUI_THEME_FIELDS: &[FieldSchema] = &[FieldSchema {
@@ -120,6 +130,7 @@ pub(super) const TUI_THEME_FIELDS: &[FieldSchema] = &[FieldSchema {
     default: DefaultValue::Str("dark"),
     kind: FieldKind::Enum(THEME_PRESETS),
     validator: None,
+    presentation: None,
 }];
 
 pub(super) const TUI_LAYOUT_FIELDS: &[FieldSchema] = &[
@@ -130,6 +141,7 @@ pub(super) const TUI_LAYOUT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("vertical"),
         kind: FieldKind::Enum(LAYOUT_MODES),
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "density",
@@ -138,6 +150,7 @@ pub(super) const TUI_LAYOUT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("default"),
         kind: FieldKind::Enum(LAYOUT_DENSITIES),
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "preview_ratio",
@@ -150,6 +163,7 @@ pub(super) const TUI_LAYOUT_FIELDS: &[FieldSchema] = &[
             step: 5,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "activity_log_height",
@@ -162,6 +176,7 @@ pub(super) const TUI_LAYOUT_FIELDS: &[FieldSchema] = &[
             step: 5,
         },
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -173,6 +188,7 @@ pub(super) const TURBOQUANT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(false),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "bit_width",
@@ -185,6 +201,7 @@ pub(super) const TURBOQUANT_FIELDS: &[FieldSchema] = &[
             step: 1,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "strategy",
@@ -193,6 +210,7 @@ pub(super) const TURBOQUANT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("turboquant"),
         kind: FieldKind::Enum(QUANT_STRATEGIES),
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "apply_to",
@@ -201,6 +219,7 @@ pub(super) const TURBOQUANT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("both"),
         kind: FieldKind::Enum(QUANT_APPLY),
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "auto_on_overflow",
@@ -209,6 +228,7 @@ pub(super) const TURBOQUANT_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Bool(false),
         kind: FieldKind::Bool,
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -224,6 +244,7 @@ pub(super) const CONCURRENCY_FIELDS: &[FieldSchema] = &[
             step: 1,
         },
         validator: None,
+        presentation: None,
     },
     FieldSchema {
         key: "heavy_task_labels",
@@ -232,6 +253,7 @@ pub(super) const CONCURRENCY_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::StrList(&[]),
         kind: FieldKind::StringList,
         validator: None,
+        presentation: None,
     },
 ];
 
@@ -246,4 +268,5 @@ pub(super) const MONITORING_FIELDS: &[FieldSchema] = &[FieldSchema {
         step: 5,
     },
     validator: None,
+    presentation: None,
 }];

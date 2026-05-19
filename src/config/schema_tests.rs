@@ -1,0 +1,398 @@
+//! Tests for `src/config/schema.rs`.
+//!
+//! Loaded via `#[cfg(test)] #[path = "schema_tests.rs"] mod tests;` so the
+//! parent module stays under the 400-LOC file-size cap (see
+//! `docs/RUST-GUARDRAILS.md` §7). Mirrors the convention used by
+//! `docs_render_tests.rs` and `migrate_tests.rs`.
+
+use super::*;
+use crate::config::Config;
+
+const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n[github]\n[notifications]\nslack_webhook_url = \"\"\n";
+
+const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 52;
+const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 0;
+
+const EMPTY: &[FieldSchema] = &[];
+
+const fn dummy_field(kind: FieldKind, default: DefaultValue) -> FieldSchema {
+    FieldSchema {
+        key: "k",
+        label: "K",
+        help: "k",
+        default,
+        kind,
+        validator: None,
+        presentation: None,
+    }
+}
+
+fn default_config() -> Config {
+    toml::from_str(MINIMAL_TOML).expect("MINIMAL_TOML fixture must parse")
+}
+
+fn config_as_toml_value(config: &Config) -> toml::Value {
+    toml::Value::try_from(config).expect("Config must serialize to toml::Value")
+}
+
+fn resolve<'a>(root: &'a toml::Value, path: &str) -> Option<&'a toml::Value> {
+    path.split('.').try_fold(root, |node, seg| node.get(seg))
+}
+
+fn has_internal_sentence_boundary(s: &str) -> bool {
+    s.as_bytes()
+        .windows(3)
+        .any(|w| matches!(w[0], b'.' | b'!' | b'?') && w[1] == b' ' && w[2].is_ascii_uppercase())
+}
+
+fn find_validator(dotted: &str) -> Option<Validator> {
+    let (table_name, field_key) = dotted.rsplit_once('.')?;
+    schema_for_config()
+        .iter()
+        .find(|t| t.name == table_name)?
+        .fields
+        .iter()
+        .find(|f| f.key == field_key)?
+        .validator
+}
+
+fn walk_table_paths(
+    toml_val: &toml::Value,
+    prefix: &str,
+    fields: &'static [FieldSchema],
+    walked: &mut usize,
+    dynamic_slots: &mut usize,
+) {
+    for field in fields {
+        match field.kind {
+            FieldKind::NestedTable(inner) => {
+                let next_prefix = format!("{prefix}.{}", field.key);
+                walk_table_paths(toml_val, &next_prefix, inner, walked, dynamic_slots);
+            }
+            FieldKind::Map { .. } | FieldKind::VecOfStruct { .. } => {
+                *dynamic_slots += 1;
+            }
+            _ => {
+                let path = format!("{prefix}.{}", field.key);
+                assert!(
+                    resolve(toml_val, &path).is_some(),
+                    "schema path not found in serialized Config: {path}"
+                );
+                *walked += 1;
+            }
+        }
+    }
+}
+
+#[test]
+fn schema_all_dotted_static_paths_resolve_on_default_config() {
+    let config = default_config();
+    let toml_val = config_as_toml_value(&config);
+
+    let mut walked = 0usize;
+    let mut dynamic_slots = 0usize;
+    for table in schema_for_config() {
+        walk_table_paths(
+            &toml_val,
+            table.name,
+            table.fields,
+            &mut walked,
+            &mut dynamic_slots,
+        );
+    }
+    assert_eq!(
+        walked, EXPECTED_STATIC_NON_NESTED_FIELDS,
+        "expected {EXPECTED_STATIC_NON_NESTED_FIELDS} static non-nested fields, walked {walked}"
+    );
+    assert_eq!(
+        dynamic_slots, EXPECTED_DYNAMIC_CARDINALITY_SLOTS,
+        "expected {EXPECTED_DYNAMIC_CARDINALITY_SLOTS} dynamic-cardinality slots, got {dynamic_slots}"
+    );
+}
+
+#[test]
+fn schema_enum_defaults_are_within_allowed_variants() {
+    let config = default_config();
+    let toml_val = config_as_toml_value(&config);
+
+    for table in schema_for_config() {
+        for field in table.fields {
+            let FieldKind::Enum(variants) = &field.kind else {
+                continue;
+            };
+            let path = format!("{}.{}", table.name, field.key);
+            let node = resolve(&toml_val, &path)
+                .unwrap_or_else(|| panic!("enum field not found in Config TOML: {path}"));
+            let actual = node
+                .as_str()
+                .unwrap_or_else(|| panic!("enum field {path} serializes as non-string: {node:?}"));
+            assert!(
+                variants.contains(&actual),
+                "enum field {path}: default value {actual:?} not in allowed list {variants:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn schema_help_text_style() {
+    for table in schema_for_config() {
+        for field in table.fields {
+            let path = format!("{}.{}", table.name, field.key);
+            let h = field.help;
+            assert!(!h.is_empty(), "{path}: help must not be empty");
+            assert!(
+                h.len() <= 120,
+                "{path}: help length {} exceeds 120 chars: {h:?}",
+                h.len()
+            );
+            assert!(
+                !matches!(h.as_bytes().last(), Some(b'.' | b'!' | b'?')),
+                "{path}: help must not end with sentence punctuation: {h:?}"
+            );
+            assert!(
+                !has_internal_sentence_boundary(h),
+                "{path}: help contains internal sentence boundary: {h:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn schema_default_value_variant_matches_field_kind() {
+    for table in schema_for_config() {
+        for field in table.fields {
+            let path = format!("{}.{}", table.name, field.key);
+            let ok = matches!(
+                (&field.default, &field.kind),
+                (DefaultValue::Bool(_), FieldKind::Bool)
+                    | (DefaultValue::Int(_), FieldKind::Int { .. })
+                    | (DefaultValue::Float(_), FieldKind::Float { .. })
+                    | (DefaultValue::Str(_), FieldKind::String | FieldKind::Enum(_))
+                    | (DefaultValue::StrList(_), FieldKind::StringList)
+                    | (DefaultValue::Nested, FieldKind::NestedTable(_))
+                    | (
+                        DefaultValue::Empty,
+                        FieldKind::Map { .. } | FieldKind::VecOfStruct { .. },
+                    ),
+            );
+            assert!(
+                ok,
+                "{path}: DefaultValue {:?} incompatible with FieldKind {:?}",
+                field.default, field.kind
+            );
+        }
+    }
+}
+
+#[test]
+fn schema_no_duplicate_dotted_paths() {
+    let mut paths: Vec<String> = schema_for_config()
+        .iter()
+        .flat_map(|t| {
+            t.fields
+                .iter()
+                .map(move |f| format!("{}.{}", t.name, f.key))
+        })
+        .collect();
+    paths.sort();
+    let total = paths.len();
+    paths.dedup();
+    assert_eq!(
+        paths.len(),
+        total,
+        "duplicate dotted paths detected in schema registry"
+    );
+}
+
+#[test]
+fn schema_validators_are_pure_functions() {
+    let url_validator = find_validator("notifications.slack_webhook_url")
+        .expect("notifications.slack_webhook_url must have a validator");
+
+    assert!(
+        url_validator(&toml::Value::String(String::new())).is_ok(),
+        "validate_url_or_empty: empty string must be Ok"
+    );
+    assert!(
+        url_validator(&toml::Value::String(
+            "https://hooks.slack.com/services/T/B/X".into()
+        ))
+        .is_ok(),
+        "validate_url_or_empty: valid https URL must be Ok"
+    );
+    assert!(
+        url_validator(&toml::Value::String("not-a-url".into())).is_err(),
+        "validate_url_or_empty: bare word must be Err"
+    );
+    assert!(
+        url_validator(&toml::Value::String("http://".into())).is_err(),
+        "validate_url_or_empty: scheme-only string must be Err"
+    );
+
+    for field_path in ["review.command", "project.repo"] {
+        let v = find_validator(field_path)
+            .unwrap_or_else(|| panic!("{field_path} must have a validator"));
+        assert!(
+            v(&toml::Value::String("cargo test".into())).is_ok(),
+            "{field_path}: non-empty string must be Ok"
+        );
+        let err = v(&toml::Value::String(String::new()));
+        assert!(err.is_err(), "{field_path}: empty string must be Err");
+        assert!(
+            !err.unwrap_err().is_empty(),
+            "{field_path}: error message must not be empty"
+        );
+    }
+}
+
+#[test]
+fn presentation_default_resolves_to_subtabs_for_map() {
+    let field = dummy_field(
+        FieldKind::Map {
+            entry_fields: EMPTY,
+        },
+        DefaultValue::Empty,
+    );
+    assert!(
+        matches!(field.resolved_presentation(), Some(Presentation::Subtabs)),
+        "Map with presentation:None must resolve to Subtabs, got {:?}",
+        field.resolved_presentation()
+    );
+}
+
+#[test]
+fn presentation_default_resolves_to_rows_for_vecofstruct() {
+    let field = dummy_field(
+        FieldKind::VecOfStruct {
+            entry_fields: EMPTY,
+        },
+        DefaultValue::Empty,
+    );
+    assert!(
+        matches!(field.resolved_presentation(), Some(Presentation::Rows)),
+        "VecOfStruct with presentation:None must resolve to Rows, got {:?}",
+        field.resolved_presentation()
+    );
+}
+
+#[test]
+fn presentation_explicit_subtabs_on_vecofstruct_overrides_default() {
+    let field = FieldSchema {
+        key: "k",
+        label: "K",
+        help: "k",
+        default: DefaultValue::Empty,
+        kind: FieldKind::VecOfStruct {
+            entry_fields: EMPTY,
+        },
+        validator: None,
+        presentation: Some(Presentation::Subtabs),
+    };
+    assert!(
+        matches!(field.resolved_presentation(), Some(Presentation::Subtabs)),
+        "explicit Subtabs must override VecOfStruct default (Rows), got {:?}",
+        field.resolved_presentation()
+    );
+}
+
+#[test]
+fn presentation_explicit_rows_on_map_overrides_default() {
+    let field = FieldSchema {
+        key: "k",
+        label: "K",
+        help: "k",
+        default: DefaultValue::Empty,
+        kind: FieldKind::Map {
+            entry_fields: EMPTY,
+        },
+        validator: None,
+        presentation: Some(Presentation::Rows),
+    };
+    assert!(
+        matches!(field.resolved_presentation(), Some(Presentation::Rows)),
+        "explicit Rows must override Map default (Subtabs), got {:?}",
+        field.resolved_presentation()
+    );
+}
+
+#[test]
+fn presentation_returns_none_for_all_static_variants() {
+    let static_fields: &[FieldSchema] = &[
+        dummy_field(FieldKind::Bool, DefaultValue::Bool(false)),
+        dummy_field(
+            FieldKind::Int {
+                min: 0,
+                max: 10,
+                step: 1,
+            },
+            DefaultValue::Int(0),
+        ),
+        dummy_field(
+            FieldKind::Float {
+                min: 0.0,
+                max: 1.0,
+                step: 0.1,
+                display_scale: 10,
+            },
+            DefaultValue::Float(0.0),
+        ),
+        dummy_field(FieldKind::String, DefaultValue::Str("")),
+        dummy_field(FieldKind::Enum(&["a", "b"]), DefaultValue::Str("a")),
+        dummy_field(FieldKind::StringList, DefaultValue::StrList(&[])),
+        dummy_field(FieldKind::NestedTable(EMPTY), DefaultValue::Nested),
+    ];
+
+    for field in static_fields {
+        assert!(
+            field.resolved_presentation().is_none(),
+            "static variant {:?} must return None, got {:?}",
+            field.kind,
+            field.resolved_presentation()
+        );
+    }
+}
+
+#[test]
+fn dynamic_field_kinds_have_stable_debug_shape() {
+    const TINY: &[FieldSchema] = &[];
+
+    let map_kind = FieldKind::Map { entry_fields: TINY };
+    let vec_kind = FieldKind::VecOfStruct { entry_fields: TINY };
+
+    let map_debug_a = format!("{map_kind:?}");
+    let map_debug_b = format!("{map_kind:?}");
+    assert!(
+        map_debug_a.starts_with("Map { entry_fields:"),
+        "FieldKind::Map Debug must start with 'Map {{ entry_fields:', got: {map_debug_a:?}"
+    );
+    assert_eq!(
+        map_debug_a, map_debug_b,
+        "FieldKind::Map Debug must be idempotent"
+    );
+
+    let vec_debug_a = format!("{vec_kind:?}");
+    let vec_debug_b = format!("{vec_kind:?}");
+    assert!(
+        vec_debug_a.starts_with("VecOfStruct { entry_fields:"),
+        "FieldKind::VecOfStruct Debug must start with 'VecOfStruct {{ entry_fields:', got: {vec_debug_a:?}"
+    );
+    assert_eq!(
+        vec_debug_a, vec_debug_b,
+        "FieldKind::VecOfStruct Debug must be idempotent"
+    );
+}
+
+#[test]
+fn dynamic_field_kinds_are_const_constructible() {
+    const _MAP: FieldKind = FieldKind::Map {
+        entry_fields: EMPTY,
+    };
+    const _VEC: FieldKind = FieldKind::VecOfStruct {
+        entry_fields: EMPTY,
+    };
+    const _FIELD_MAP: FieldSchema = dummy_field(_MAP, DefaultValue::Empty);
+    const _FIELD_VEC: FieldSchema = dummy_field(_VEC, DefaultValue::Empty);
+    assert!(matches!(_FIELD_MAP.kind, FieldKind::Map { .. }));
+    assert!(matches!(_FIELD_VEC.kind, FieldKind::VecOfStruct { .. }));
+}
