@@ -1,8 +1,6 @@
-//! Parity tests for the Review tab schema-driven migration (issue #716).
-//!
-//! Verifies that with `schema_driven_settings` on or off the Review tab
-//! produces the same field shape and renders to a byte-identical buffer at
-//! 80×24 and 120×40. Also exercises the schema sync writeback.
+//! Field-shape regression tests for the Review tab schema migration
+//! (issue #716). Pins field count, labels, render bytes at 80×24 +
+//! 120×40, and the schema sync writeback.
 
 use insta::assert_snapshot;
 use ratatui::layout::Rect;
@@ -40,7 +38,7 @@ fn review_table() -> &'static crate::config::schema::TableSchema {
         .expect("review schema must exist")
 }
 
-fn render_review_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buffer::Buffer {
+fn render_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buffer::Buffer {
     let mut terminal =
         Terminal::new(TestBackend::new(width, height)).expect("TestBackend must init");
     let theme = Theme::dark();
@@ -70,11 +68,7 @@ fn review_tab_flag_off_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[REVIEW_TAB_INDEX];
 
-    assert_eq!(
-        fields.len(),
-        2,
-        "flag-off: review tab must have exactly 2 fields"
-    );
+    assert_eq!(fields.len(), 2, "review tab must have exactly 2 fields");
     assert_eq!(fields[0].widget.label(), "enabled");
     assert_eq!(fields[1].widget.label(), "command");
 }
@@ -87,7 +81,7 @@ fn review_tab_flag_on_field_count_and_labels() {
     assert_eq!(
         fields.len(),
         2,
-        "flag-on: review tab must have exactly 2 fields"
+        "review tab must have exactly 2 fields (schema-on path)"
     );
     assert_eq!(fields[0].widget.label(), "enabled");
     assert_eq!(fields[1].widget.label(), "command");
@@ -96,7 +90,7 @@ fn review_tab_flag_on_field_count_and_labels() {
 #[test]
 fn review_tab_flag_off_renders_80x24() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
-    let buf = render_review_tab(&screen.fields_per_tab[REVIEW_TAB_INDEX], 80, 24);
+    let buf = render_tab(&screen.fields_per_tab[REVIEW_TAB_INDEX], 80, 24);
     assert_snapshot!(format!("{buf:?}"));
 }
 
@@ -105,12 +99,12 @@ fn review_tab_flag_on_renders_80x24_parity_with_flag_off() {
     let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
     let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
 
-    let buf_off = render_review_tab(&screen_off.fields_per_tab[REVIEW_TAB_INDEX], 80, 24);
-    let buf_on = render_review_tab(&screen_on.fields_per_tab[REVIEW_TAB_INDEX], 80, 24);
+    let buf_off = render_tab(&screen_off.fields_per_tab[REVIEW_TAB_INDEX], 80, 24);
+    let buf_on = render_tab(&screen_on.fields_per_tab[REVIEW_TAB_INDEX], 80, 24);
 
     assert_eq!(
         buf_off, buf_on,
-        "flag-on and flag-off must produce byte-identical 80×24 render"
+        "schema-on and schema-off must produce byte-identical 80×24 render"
     );
 }
 
@@ -119,12 +113,12 @@ fn review_tab_flag_on_renders_120x40_parity_with_flag_off() {
     let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
     let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
 
-    let buf_off = render_review_tab(&screen_off.fields_per_tab[REVIEW_TAB_INDEX], 120, 40);
-    let buf_on = render_review_tab(&screen_on.fields_per_tab[REVIEW_TAB_INDEX], 120, 40);
+    let buf_off = render_tab(&screen_off.fields_per_tab[REVIEW_TAB_INDEX], 120, 40);
+    let buf_on = render_tab(&screen_on.fields_per_tab[REVIEW_TAB_INDEX], 120, 40);
 
     assert_eq!(
         buf_off, buf_on,
-        "flag-on and flag-off must produce byte-identical 120×40 render"
+        "schema-on and schema-off must produce byte-identical 120×40 render"
     );
 }
 

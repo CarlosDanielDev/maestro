@@ -1,8 +1,7 @@
 use crate::config::Config;
-use crate::config::schema::schema_for_config;
 use crate::tui::widgets::{Toggle, WidgetKind};
 
-use super::field;
+use super::{field, schema_table};
 use crate::tui::screens::settings::SettingsField;
 use crate::tui::screens::settings::schema_tab::build::from_schema;
 
@@ -12,15 +11,7 @@ pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
         "live_preview",
         false,
     ))));
-    let theme_table = schema_for_config()
-        .iter()
-        .find(|t| t.name == "tui.theme")
-        .expect("tui.theme schema must exist");
-    fields.extend(from_schema(theme_table, config));
-    let tui_table = schema_for_config()
-        .iter()
-        .find(|t| t.name == "tui")
-        .expect("tui schema must exist");
-    fields.extend(from_schema(tui_table, config));
+    fields.extend(from_schema(schema_table("tui.theme"), config));
+    fields.extend(from_schema(schema_table("tui"), config));
     fields
 }

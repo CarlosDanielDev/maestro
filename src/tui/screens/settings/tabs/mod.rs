@@ -25,6 +25,16 @@ fn field(widget: WidgetKind) -> SettingsField {
 pub(super) const BYPASS_LABEL: &str =
     "bypass_review_corrections (DANGER: auto-accepts all review fixes)";
 
+/// Look up a schema table by name. Panics with a uniform message if the
+/// `const SCHEMA` registry does not contain `name` — a programmer error
+/// caught at SettingsScreen::new time, never at runtime from user input.
+pub(super) fn schema_table(name: &'static str) -> &'static TableSchema {
+    schema_for_config()
+        .iter()
+        .find(|t| t.name == name)
+        .unwrap_or_else(|| panic!("{name} schema must exist in const SCHEMA registry"))
+}
+
 pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
     vec![
         project::build_fields(config),
@@ -42,8 +52,11 @@ pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
     ]
 }
 
-/// Map a settings tab index to the schema table that drives it. `None` means
-/// the tab is hand-coded (Budget) or has no widgets (Flags).
+/// Map a settings tab index to the schema table that drives it. `None`
+/// means the tab is hand-coded (Budget, idx 2), has no widgets (Flags,
+/// idx 9), or spans more than one TOML table — Theme (idx 7) and
+/// Advanced (idx 11) are handled by `sync_theme_multi_table` /
+/// `sync_advanced_multi_table` below.
 fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
     let name = match idx {
         0 => "project",
@@ -56,17 +69,17 @@ fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
         10 => "turboquant",
         _ => return None,
     };
-    schema_for_config().iter().find(|t| t.name == name)
+    Some(schema_table(name))
 }
 
 pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
     sync_schema_tabs(screen);
     sync_sessions_bypass_override(screen);
-    sync_theme_multi_table(screen);
+    sync_multi_table(7, &["tui.theme", "tui"], screen);
     sync_theme_screen_local(screen);
     sync_notifications_empty_url_collapse(screen);
     sync_budget_legacy(screen);
-    sync_advanced_multi_table(screen);
+    sync_multi_table(11, &["concurrency", "monitoring"], screen);
     sync_advanced_caveman(screen);
 }
 
@@ -81,9 +94,12 @@ fn sync_schema_tabs(screen: &mut SettingsScreen) {
     }
 }
 
-/// Sessions bypass toggle is a bespoke field that derives `permission_mode`.
-/// Applied AFTER the schema sync wrote the dropdown's value, then re-applied
-/// in the same dropdown-wins order legacy used.
+/// Sessions bypass toggle is a bespoke derived view of `permission_mode`.
+/// The schema sync writes the dropdown's value first; this hook then
+/// downgrades back to "default" only when the toggle is off and the
+/// dropdown is still pointed at "bypassPermissions". When the toggle is
+/// on, the dropdown wins on conflict — matches legacy "dropdown last"
+/// semantics. See `settings_sessions_parity.rs` for the contract.
 fn sync_sessions_bypass_override(screen: &mut SettingsScreen) {
     let Some(fields) = screen.fields_per_tab.get(1) else {
         return;
@@ -91,31 +107,23 @@ fn sync_sessions_bypass_override(screen: &mut SettingsScreen) {
     let Some(WidgetKind::Toggle(w)) = widget_by_label(fields, BYPASS_LABEL) else {
         return;
     };
-    // Pre-sync semantics: apply toggle then let the dropdown win. After the
-    // schema sync above already wrote the dropdown's value, the toggle here
-    // only takes effect when its current state differs from the dropdown.
-    // We compare against the current `permission_mode` to preserve the
-    // "dropdown last wins" invariant when both are set.
-    if w.value && screen.config.sessions.permission_mode != "bypassPermissions" {
-        // Toggle ON but dropdown picked something else — keep the dropdown.
-    } else if !w.value && screen.config.sessions.permission_mode == "bypassPermissions" {
-        // Toggle OFF but dropdown is still bypass — revert to default.
+    if !w.value && screen.config.sessions.permission_mode == "bypassPermissions" {
         screen.config.sessions.permission_mode = "default".to_string();
     }
 }
 
-/// Theme tab spans `tui.theme` (preset) and `tui` (ascii_icons). Schema
-/// sync dispatches by label so order doesn't matter.
-fn sync_theme_multi_table(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(7) else {
+/// Sync a tab whose widgets span multiple TOML tables (Theme spans
+/// `tui.theme` + `tui`; Advanced spans `concurrency` + `monitoring`).
+/// `sync_to_config` dispatches by label so the order of names does not
+/// affect correctness — order matters only for the matching-tab snapshot.
+fn sync_multi_table(tab_idx: usize, table_names: &[&'static str], screen: &mut SettingsScreen) {
+    let Some(fields) = screen.fields_per_tab.get(tab_idx) else {
         return;
     };
-    for name in ["tui.theme", "tui"] {
-        let Some(table) = schema_for_config().iter().find(|t| t.name == name) else {
-            continue;
-        };
+    for name in table_names {
+        let table = schema_table(name);
         if let Err(e) = sync_to_config(table, fields, &mut screen.config) {
-            tracing::warn!(table = name, error = %e, "schema sync: theme failed; config left unchanged");
+            tracing::warn!(table = name, tab = tab_idx, error = %e, "schema sync: multi-table failed; config left unchanged");
         }
     }
 }
@@ -153,23 +161,6 @@ fn sync_budget_legacy(screen: &mut SettingsScreen) {
     }
     if let Some(WidgetKind::NumberStepper(w)) = fields.get(2).map(|f| &f.widget) {
         screen.config.budget.alert_threshold_pct = w.value as u8;
-    }
-}
-
-/// Advanced tab spans `concurrency` + `monitoring`. The fields are emitted
-/// in legacy display order by `advanced::build_fields`, but the schema sync
-/// dispatches by label so order doesn't matter for writeback.
-fn sync_advanced_multi_table(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(11) else {
-        return;
-    };
-    for name in ["concurrency", "monitoring"] {
-        let Some(table) = schema_for_config().iter().find(|t| t.name == name) else {
-            continue;
-        };
-        if let Err(e) = sync_to_config(table, fields, &mut screen.config) {
-            tracing::warn!(table = name, error = %e, "schema sync: advanced failed; config left unchanged");
-        }
     }
 }
 

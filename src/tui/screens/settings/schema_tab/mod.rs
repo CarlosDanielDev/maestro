@@ -2,9 +2,10 @@
 //!
 //! Builds `SettingsField` entries from a `TableSchema` (defined in
 //! `crate::config::schema`) and writes widget values back through a single
-//! `toml::Value` round-trip. Wired behind the `schema_driven_settings`
-//! feature flag (default off). No production tab consumes this module yet —
-//! it is an opt-in path for future tab migrations.
+//! `toml::Value` round-trip. Consumed by every settings tab except Budget
+//! (Float precision — see #785) and Flags (no widgets). The
+//! `schema_driven_settings` flag that originally gated this path was
+//! removed in #716 after the per-tab migrations landed.
 
 #[allow(dead_code)]
 pub(crate) mod build;

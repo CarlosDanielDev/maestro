@@ -1,8 +1,7 @@
-//! Parity tests for the Project tab schema-driven migration (issue #715).
-//!
-//! Verifies that with `schema_driven_settings` on or off the Project tab
-//! produces the same field shape and renders to a byte-identical buffer at
-//! 80×24 and 120×40. Also exercises the schema sync writeback and the
+//! Field-shape regression tests for the Project tab (originally
+//! introduced by #715 as a flag-on/off parity matrix; the flag was
+//! removed in #716). The tests still pin field count, labels, render
+//! bytes at 80×24 + 120×40, the schema sync writeback, and the
 //! schema-layer validators on `repo` and `base_branch`.
 
 use insta::assert_snapshot;
@@ -31,11 +30,7 @@ fn test_config() -> Config {
     toml::from_str(MINIMAL_TOML).expect("MINIMAL_TOML must parse")
 }
 
-fn render_project_tab(
-    fields: &[SettingsField],
-    width: u16,
-    height: u16,
-) -> ratatui::buffer::Buffer {
+fn render_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buffer::Buffer {
     let mut terminal =
         Terminal::new(TestBackend::new(width, height)).expect("TestBackend must init");
     let theme = Theme::dark();
@@ -65,11 +60,7 @@ fn project_tab_flag_off_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[0];
 
-    assert_eq!(
-        fields.len(),
-        4,
-        "flag-off: project tab must have exactly 4 fields"
-    );
+    assert_eq!(fields.len(), 4, "project tab must have exactly 4 fields");
     assert_eq!(fields[0].widget.label(), "repo");
     assert_eq!(fields[1].widget.label(), "base_branch");
     assert_eq!(
@@ -90,7 +81,7 @@ fn project_tab_flag_on_field_count_and_labels() {
     assert_eq!(
         fields.len(),
         4,
-        "flag-on: project tab must have exactly 4 fields"
+        "project tab must have exactly 4 fields (schema-on path)"
     );
     assert_eq!(fields[0].widget.label(), "repo");
     assert_eq!(fields[1].widget.label(), "base_branch");
@@ -107,7 +98,7 @@ fn project_tab_flag_on_field_count_and_labels() {
 #[test]
 fn project_tab_flag_off_renders_80x24() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
-    let buf = render_project_tab(&screen.fields_per_tab[0], 80, 24);
+    let buf = render_tab(&screen.fields_per_tab[0], 80, 24);
     assert_snapshot!(format!("{buf:?}"));
 }
 
@@ -116,12 +107,12 @@ fn project_tab_flag_on_renders_80x24_parity_with_flag_off() {
     let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
     let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
 
-    let buf_off = render_project_tab(&screen_off.fields_per_tab[0], 80, 24);
-    let buf_on = render_project_tab(&screen_on.fields_per_tab[0], 80, 24);
+    let buf_off = render_tab(&screen_off.fields_per_tab[0], 80, 24);
+    let buf_on = render_tab(&screen_on.fields_per_tab[0], 80, 24);
 
     assert_eq!(
         buf_off, buf_on,
-        "flag-on and flag-off must produce byte-identical 80×24 render"
+        "schema-on and schema-off must produce byte-identical 80×24 render"
     );
 }
 
@@ -130,12 +121,12 @@ fn project_tab_flag_on_renders_120x40_parity_with_flag_off() {
     let screen_off = SettingsScreen::new(test_config(), FeatureFlags::default());
     let screen_on = SettingsScreen::new(test_config(), FeatureFlags::default());
 
-    let buf_off = render_project_tab(&screen_off.fields_per_tab[0], 120, 40);
-    let buf_on = render_project_tab(&screen_on.fields_per_tab[0], 120, 40);
+    let buf_off = render_tab(&screen_off.fields_per_tab[0], 120, 40);
+    let buf_on = render_tab(&screen_on.fields_per_tab[0], 120, 40);
 
     assert_eq!(
         buf_off, buf_on,
-        "flag-on and flag-off must produce byte-identical 120×40 render"
+        "schema-on and schema-off must produce byte-identical 120×40 render"
     );
 }
 

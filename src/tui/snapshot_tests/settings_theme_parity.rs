@@ -88,7 +88,7 @@ fn theme_tab_flag_on_live_preview_stays_bespoke_at_index_zero() {
     };
     assert_eq!(
         t.label, "live_preview",
-        "live_preview must remain at field[0] in flag-on path"
+        "live_preview must remain at field[0]"
     );
 }
 
