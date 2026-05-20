@@ -12,6 +12,18 @@ use crate::config::schema::dynamic::agent_field_visible_for_kind;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{WidgetAction, WidgetKind};
 
+/// Display label used in modal titles and other user-facing strings.
+/// The section_path is the TOML key path (e.g. `"agents"`); for the
+/// sake of UX clarity the `[agents]` table is presented as "provider"
+/// in the TUI. Other section_paths fall back to themselves.
+fn display_name_for(section_path: &str) -> &str {
+    if section_path.ends_with("agents") {
+        "provider"
+    } else {
+        section_path
+    }
+}
+
 use super::super::modals::ModalAction;
 use super::super::modals::add_entry::AddEntryModal;
 use super::super::modals::remove_confirm::RemoveConfirmModal;
@@ -320,8 +332,9 @@ impl DynamicMapWidget {
 
     fn open_add_modal(&mut self) {
         let existing: Vec<String> = self.entries.iter().map(|e| e.id.clone()).collect();
+        let display_name = display_name_for(&self.section_path);
         self.add_modal = Some(AddEntryModal::new(
-            format!("Add {} entry", self.section_path),
+            format!("Add {} entry", display_name),
             existing,
         ));
         self.focus = MapFocus::AddModal;

@@ -74,7 +74,7 @@ impl SettingsTab {
             Self::Notifications => "Notifications",
             Self::Gates => "Gates",
             Self::Review => "Review",
-            Self::Agents => "Agents",
+            Self::Agents => "Providers",
             Self::Modes => "Modes",
             Self::Theme => "Theme",
             Self::Layout => "Layout",

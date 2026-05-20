@@ -7,7 +7,9 @@ use crate::config::AgentConfig;
 #[test]
 fn settings_tab_all_includes_agents_at_index_seven() {
     assert_eq!(SettingsTab::ALL[7], SettingsTab::Agents);
-    assert_eq!(SettingsTab::ALL[7].label(), "Agents");
+    // Display label renamed from "Agents" to "Providers" — the TOML
+    // section + Rust types stay AgentConfig/AgentKind/[agents.<id>].
+    assert_eq!(SettingsTab::ALL[7].label(), "Providers");
 }
 
 #[test]

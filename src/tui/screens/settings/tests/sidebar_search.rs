@@ -112,8 +112,9 @@ fn typing_into_search_clamps_active_tab_into_visible_set() {
     // Move active to Project so the filter has something to exclude.
     screen.jump_to_tab(SettingsTab::Project);
     screen.handle_input(&key(KeyCode::Char('/')), InputMode::Normal);
-    // "agen" matches only Agents — Project is excluded.
-    for c in "agen".chars() {
+    // "prov" matches only "Providers" (label for SettingsTab::Agents) —
+    // Project is excluded.
+    for c in "prov".chars() {
         screen.handle_input(&key(KeyCode::Char(c)), InputMode::Normal);
     }
     assert_eq!(screen.active_tab(), SettingsTab::Agents);
