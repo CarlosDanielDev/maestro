@@ -138,6 +138,18 @@ impl DynamicMapWidget {
             return self.dispatch_remove(action);
         }
 
+        // While an inner text-editing widget owns input, every key goes
+        // straight to it — otherwise typing "opencode" into a String
+        // field would route `d` to the Remove-entry shortcut below.
+        if let MapFocus::EntryField(n) = self.focus
+            && let Some(active) = self.active_idx
+            && let Some(entry) = self.entries.get_mut(active)
+            && let Some(field) = entry.fields.get_mut(n)
+            && field.widget.needs_insert_mode()
+        {
+            return field.widget.handle_input(key);
+        }
+
         match key.code {
             KeyCode::Char('a') => {
                 self.open_add_modal();

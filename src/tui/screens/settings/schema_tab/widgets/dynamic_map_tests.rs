@@ -149,6 +149,37 @@ fn bracket_ignored_when_entry_field_focused() {
 }
 
 #[test]
+fn d_typed_into_text_field_does_not_open_remove_modal() {
+    // Regression: user types "opencode" into a String field; the inner
+    // 'd' should land in the TextInput buffer, NOT trigger the Remove-
+    // entry shortcut. Pre-fix, DynamicMap.handle_input matched
+    // Char('d') before delegating, so the modal opened mid-word.
+    let (mut w, _) = fresh_with_clock();
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "claude");
+    w.handle_input(ev(KeyCode::Enter));
+    // Focus is EntryField(0). Walk Down to a String field — TEST_AGENT_FIELDS
+    // index 2 is `command` (String). 0 = kind (Enum), 1 = enabled (Bool),
+    // 2 = command (String).
+    w.handle_input(ev(KeyCode::Down));
+    w.handle_input(ev(KeyCode::Down));
+    assert_eq!(*w.focus(), MapFocus::EntryField(2));
+    // Enter insert mode on the TextInput.
+    w.handle_input(ev(KeyCode::Enter));
+    // Type "opencode" — the `d` and `a` must stay characters, not open
+    // Remove / Add modals.
+    typed_seq(&mut w, "opencode");
+    assert!(
+        w.add_modal().is_none(),
+        "`a` typed while editing must not open Add modal"
+    );
+    assert!(
+        w.remove_modal().is_none(),
+        "`d` typed while editing must not open Remove modal"
+    );
+}
+
+#[test]
 fn down_advances_through_entry_fields() {
     let (mut w, _) = fresh_with_clock();
     w.handle_input(ev(KeyCode::Char('a')));
