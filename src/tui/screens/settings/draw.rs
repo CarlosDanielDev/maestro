@@ -438,16 +438,15 @@ impl SettingsScreen {
                 theme,
             );
         } else {
-            let edit_hint = self
+            let edit_hints: &'static [(&'static str, &'static str)] = self
                 .current_fields()
                 .get(self.field_index)
-                .map(|field| field.widget.edit_hint());
-            let mut entries: Vec<(&str, &str)> = Vec::with_capacity(5);
+                .map(|field| field.widget.edit_hint())
+                .unwrap_or(&[]);
+            let mut entries: Vec<(&str, &str)> = Vec::with_capacity(4 + edit_hints.len());
             entries.push(("Tab", "Tab"));
             entries.push(("↑/↓", "Field"));
-            if let Some((key, label)) = edit_hint {
-                entries.push((key, label));
-            }
+            entries.extend(edit_hints.iter().copied());
             entries.push(("Ctrl+s", "Save"));
             entries.push(("Esc", "Back"));
             draw_keybinds_bar(f, vertical[1], &entries, theme);

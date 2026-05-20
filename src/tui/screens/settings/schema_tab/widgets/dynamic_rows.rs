@@ -290,8 +290,8 @@ impl DynamicRowsWidget {
         self.add_modal.is_some()
     }
 
-    pub fn edit_hint(&self) -> (&'static str, &'static str) {
-        ("a/d/Alt↑↓", "Add/Del/Reorder")
+    pub fn edit_hint(&self) -> &'static [(&'static str, &'static str)] {
+        &[("a/d", "Add/Del"), ("Alt+↑↓", "Reorder")]
     }
 
     pub fn serialize_to_toml(&self) -> toml::Value {

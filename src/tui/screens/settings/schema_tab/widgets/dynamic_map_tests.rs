@@ -272,7 +272,10 @@ fn d_with_no_entries_is_noop() {
 #[test]
 fn edit_hint_is_static() {
     let (w, _) = fresh_with_clock();
-    let (k, l) = w.edit_hint();
-    assert!(!k.is_empty());
-    assert!(!l.is_empty());
+    let hints = w.edit_hint();
+    assert!(!hints.is_empty(), "edit_hint must return ≥1 (key, label) pair");
+    for (k, l) in hints {
+        assert!(!k.is_empty());
+        assert!(!l.is_empty());
+    }
 }

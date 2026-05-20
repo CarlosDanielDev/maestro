@@ -335,8 +335,8 @@ impl DynamicMapWidget {
         false
     }
 
-    pub fn edit_hint(&self) -> (&'static str, &'static str) {
-        ("a/d/[/]", "Add/Del/Switch")
+    pub fn edit_hint(&self) -> &'static [(&'static str, &'static str)] {
+        &[("a/d", "Add/Del"), ("[ ]", "Prev/Next")]
     }
 
     pub fn serialize_to_toml(&self) -> toml::Value {

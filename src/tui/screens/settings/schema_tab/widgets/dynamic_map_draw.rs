@@ -58,10 +58,14 @@ pub(super) fn draw(
             widget.active_index().unwrap_or(0),
             chunks[0].width,
         );
+        // Active entry gets a filled selection background so the chip
+        // reads as state, not as a bullet. Matches the sidebar tab list
+        // and the field-row focus highlight.
         let tabs = Tabs::new(titles).select(highlight_idx).highlight_style(
             Style::default()
-                .fg(theme.accent_info)
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                .fg(theme.selection_fg)
+                .bg(theme.selection_bg)
+                .add_modifier(Modifier::BOLD),
         );
         f.render_widget(tabs, chunks[0]);
 
