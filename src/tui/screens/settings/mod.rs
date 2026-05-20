@@ -43,7 +43,9 @@ impl SettingsScreen {
             original_config: config.clone(),
             config,
             config_path: None,
-            active_tab: 0,
+            // Open on the first alphabetical tab so the sidebar selection
+            // matches the visible order from the moment the screen opens.
+            active_tab: SettingsTab::ALPHABETICAL_INDICES[0],
             field_index: 0,
             fields_per_tab,
             scroll_offset: 0,
@@ -241,52 +243,53 @@ impl SettingsScreen {
             .collect()
     }
 
-    // Tab navigation walks the canonical SettingsTab::ALL order while the
-    // sidebar search is empty (preserves existing tests). When a search
-    // query narrows the visible list, Tab/BackTab walk only the visible
-    // alphabetical subset so the selection bar always stays inside the
-    // user's field of view.
+    // Tab navigation always walks alphabetical order so the on-screen
+    // sidebar position matches what `Tab` advances to. Filtered search
+    // narrows the walk to visible matches only.
     fn next_tab(&mut self) {
-        if self.sidebar_search.is_empty() {
-            self.active_tab = (self.active_tab + 1) % SettingsTab::ALL.len();
-        } else {
-            let visible = self.sidebar_visible_indices();
-            if visible.is_empty() {
-                return;
-            }
-            let pos = visible
-                .iter()
-                .position(|&idx| idx == self.active_tab)
-                .unwrap_or(0);
-            self.active_tab = visible[(pos + 1) % visible.len()];
+        let visible = self.sidebar_visible_indices();
+        if visible.is_empty() {
+            return;
         }
+        let pos = visible
+            .iter()
+            .position(|&idx| idx == self.active_tab)
+            .unwrap_or(0);
+        self.active_tab = visible[(pos + 1) % visible.len()];
         self.field_index = 0;
         self.scroll_offset = 0;
         self.flags_selected = 0;
     }
 
     fn prev_tab(&mut self) {
-        if self.sidebar_search.is_empty() {
-            self.active_tab = if self.active_tab == 0 {
-                SettingsTab::ALL.len() - 1
-            } else {
-                self.active_tab - 1
-            };
-        } else {
-            let visible = self.sidebar_visible_indices();
-            if visible.is_empty() {
-                return;
-            }
-            let pos = visible
-                .iter()
-                .position(|&idx| idx == self.active_tab)
-                .unwrap_or(0);
-            let prev = if pos == 0 { visible.len() - 1 } else { pos - 1 };
-            self.active_tab = visible[prev];
+        let visible = self.sidebar_visible_indices();
+        if visible.is_empty() {
+            return;
         }
+        let pos = visible
+            .iter()
+            .position(|&idx| idx == self.active_tab)
+            .unwrap_or(0);
+        let prev = if pos == 0 { visible.len() - 1 } else { pos - 1 };
+        self.active_tab = visible[prev];
         self.field_index = 0;
         self.scroll_offset = 0;
         self.flags_selected = 0;
+    }
+
+    /// Test helper: jump to a named tab without relying on Tab keystroke
+    /// counts. After switching to alphabetical Tab navigation the
+    /// `for _ in 0..N { Tab }` pattern across the test suite became
+    /// fragile, so production code paths still use next_tab/prev_tab
+    /// while tests use this direct setter.
+    #[cfg(test)]
+    pub(super) fn jump_to_tab(&mut self, tab: SettingsTab) {
+        if let Some(idx) = SettingsTab::ALL.iter().position(|t| *t == tab) {
+            self.active_tab = idx;
+            self.field_index = 0;
+            self.scroll_offset = 0;
+            self.flags_selected = 0;
+        }
     }
 
     /// Move `active_tab` onto the first visible tab when the current

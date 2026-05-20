@@ -29,7 +29,7 @@ desktop = true
         SettingsScreen::new(config, make_flags()).with_config_path(f.path().to_path_buf());
 
     // Modify: sessions tab, increment max_concurrent
-    screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+    screen.jump_to_tab(SettingsTab::Sessions);
     screen.handle_input(&key_event(KeyCode::Char('l')), InputMode::Normal); // 3 -> 4
     assert_eq!(screen.config.sessions.max_concurrent, 4);
     assert!(screen.is_dirty());
@@ -75,7 +75,7 @@ alert_threshold_pct = 80
         SettingsScreen::new(config, make_flags()).with_config_path(f.path().to_path_buf());
 
     // Modify
-    screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+    screen.jump_to_tab(SettingsTab::Sessions);
     screen.handle_input(&key_event(KeyCode::Char('l')), InputMode::Normal);
     assert!(screen.is_dirty());
 
@@ -99,12 +99,10 @@ fn integration_modify_ctrl_r_verify_all_fields_reset() {
     let orig = screen.config.clone();
 
     // Modify multiple things
-    screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // Sessions
+    screen.jump_to_tab(SettingsTab::Sessions);
     screen.handle_input(&key_event(KeyCode::Char('l')), InputMode::Normal); // max_concurrent++
 
-    for _ in 0..3 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    } // Notifications
+    screen.jump_to_tab(SettingsTab::Notifications);
     screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // toggle desktop
 
     assert!(screen.is_dirty());
@@ -125,10 +123,7 @@ fn integration_modify_ctrl_r_verify_all_fields_reset() {
 fn integration_theme_preview_on_change_emits_preview() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
 
-    // Go to Theme tab (index 9 — shifted from 7 by Agents/Modes tabs)
-    for _ in 0..9 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Theme);
     assert_eq!(screen.active_tab(), SettingsTab::Theme);
 
     // First field is live_preview toggle (default off)
@@ -162,10 +157,7 @@ fn integration_theme_preview_reset_clears_preview() {
 #[test]
 fn integration_layout_tab_fields() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    // Navigate to Layout tab (index 10 — shifted from 8 by Agents/Modes tabs)
-    for _ in 0..10 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Layout);
     assert_eq!(screen.active_tab(), SettingsTab::Layout);
     assert_eq!(screen.field_count(), 4); // mode, density, preview_ratio, activity_log_height
 

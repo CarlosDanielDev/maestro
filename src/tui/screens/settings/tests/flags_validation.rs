@@ -29,13 +29,7 @@ fn flags_tab_has_no_widget_fields() {
 fn flags_navigation_up_down() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     // Navigate to Flags tab
-    let flags_idx = SettingsTab::ALL
-        .iter()
-        .position(|t| *t == SettingsTab::Flags)
-        .unwrap();
-    for _ in 0..flags_idx {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Flags);
     assert_eq!(screen.active_tab(), SettingsTab::Flags);
     assert_eq!(screen.flags_selected, 0);
 
@@ -59,13 +53,7 @@ fn flags_navigation_up_down() {
 #[test]
 fn flags_navigation_bounded_by_flag_count() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    let flags_idx = SettingsTab::ALL
-        .iter()
-        .position(|t| *t == SettingsTab::Flags)
-        .unwrap();
-    for _ in 0..flags_idx {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Flags);
     // Press Down more times than there are flags
     for _ in 0..20 {
         screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
@@ -77,13 +65,7 @@ fn flags_navigation_bounded_by_flag_count() {
 #[test]
 fn flags_tab_read_only_ignores_widget_keys() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    let flags_idx = SettingsTab::ALL
-        .iter()
-        .position(|t| *t == SettingsTab::Flags)
-        .unwrap();
-    for _ in 0..flags_idx {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Flags);
     // Space, Enter, 'l' should all be no-ops
     let action = screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
     assert_eq!(action, ScreenAction::None);
@@ -94,14 +76,7 @@ fn flags_tab_read_only_ignores_widget_keys() {
 #[test]
 fn advanced_tab_still_works_after_flags_reindex() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    // Navigate to Advanced tab (last)
-    let adv_idx = SettingsTab::ALL
-        .iter()
-        .position(|t| *t == SettingsTab::Advanced)
-        .unwrap();
-    for _ in 0..adv_idx {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Advanced);
     assert_eq!(screen.active_tab(), SettingsTab::Advanced);
     assert!(screen.field_count() > 0, "Advanced tab must have fields");
 
@@ -146,6 +121,7 @@ fn valid_config_has_no_validation_errors() {
 #[test]
 fn validation_runs_on_field_change() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
+    screen.jump_to_tab(SettingsTab::Project);
     assert!(!screen.has_validation_errors());
     // Navigate to Project tab, field 0 (repo), enter edit mode, clear value
     screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);

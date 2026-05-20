@@ -107,16 +107,12 @@ fn slash_inside_search_is_a_literal_not_a_re_entry() {
 #[test]
 fn typing_into_search_clamps_active_tab_into_visible_set() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    // Initial active = Project (index 0 in ALL).
-    assert_eq!(screen.active_tab(), SettingsTab::Project);
+    // Initial active = Advanced (first alphabetical).
+    assert_eq!(screen.active_tab(), SettingsTab::Advanced);
+    // Move active to Project so the filter has something to exclude.
+    screen.jump_to_tab(SettingsTab::Project);
     screen.handle_input(&key(KeyCode::Char('/')), InputMode::Normal);
-    // Type a query that excludes Project — only "Theme" matches "thm".
-    for c in "thm".chars() {
-        screen.handle_input(&key(KeyCode::Char(c)), InputMode::Normal);
-    }
-    // No "thm" substring on any label — visible is empty, active stays.
-    // Adjust to a real exclusive substring: "agen" matches only Agents.
-    while screen.sidebar_search.pop().is_some() {}
+    // "agen" matches only Agents — Project is excluded.
     for c in "agen".chars() {
         screen.handle_input(&key(KeyCode::Char(c)), InputMode::Normal);
     }
@@ -162,10 +158,11 @@ fn esc_clears_filter_and_restores_full_tab_traversal() {
     for c in "th".chars() {
         screen.handle_input(&key(KeyCode::Char(c)), InputMode::Normal);
     }
-    // Active is now GitHub (first visible).
+    // Active is now GitHub (first visible match).
     screen.handle_input(&key(KeyCode::Esc), InputMode::Normal);
     assert!(screen.sidebar_search.is_empty());
-    // Tab from GitHub walks ALL ordering (next is Notifications).
+    // With filter cleared, Tab walks the full alphabetical list — next
+    // alphabetical after GitHub is Layout.
     screen.handle_input(&key(KeyCode::Tab), InputMode::Normal);
-    assert_eq!(screen.active_tab(), SettingsTab::Notifications);
+    assert_eq!(screen.active_tab(), SettingsTab::Layout);
 }

@@ -1,32 +1,37 @@
 use super::*;
 
 #[test]
-fn initial_tab_is_project() {
+fn initial_tab_is_first_alphabetical() {
     let screen = SettingsScreen::new(make_config(), make_flags());
-    assert_eq!(screen.active_tab(), SettingsTab::Project);
+    // Sidebar opens on the first alphabetical entry (Advanced) so the
+    // initial selection matches what the user sees.
+    assert_eq!(screen.active_tab(), SettingsTab::Advanced);
 }
 
 #[test]
-fn tab_cycles_right() {
+fn tab_cycles_right_alphabetical() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    assert_eq!(screen.active_tab(), SettingsTab::Sessions);
+    // Tab walks alphabetical order — Advanced → Agents.
+    assert_eq!(screen.active_tab(), SettingsTab::Agents);
 }
 
 #[test]
-fn tab_wraps_right() {
+fn tab_wraps_right_alphabetical() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    for _ in 0..SettingsTab::ALL.len() {
+    for _ in 0..SettingsTab::ALPHABETICAL_INDICES.len() {
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     }
-    assert_eq!(screen.active_tab(), SettingsTab::Project);
+    assert_eq!(screen.active_tab(), SettingsTab::Advanced);
 }
 
 #[test]
-fn tab_wraps_left() {
+fn tab_wraps_left_alphabetical() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     screen.handle_input(&key_event(KeyCode::BackTab), InputMode::Normal);
-    assert_eq!(screen.active_tab(), SettingsTab::Advanced);
+    // From the first alphabetical tab (Advanced), BackTab wraps to the
+    // last alphabetical (TurboQuant).
+    assert_eq!(screen.active_tab(), SettingsTab::TurboQuant);
 }
 
 #[test]
@@ -58,6 +63,7 @@ fn project_tab_contains_reset_settings_label() {
 #[test]
 fn reset_settings_row_returns_action_on_enter() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
+    screen.jump_to_tab(SettingsTab::Project);
     let reset_idx = screen.fields_per_tab[0]
         .iter()
         .position(|f| f.widget.label().starts_with("Reset Settings"))
@@ -86,6 +92,7 @@ fn project_tab_contains_normalize_agent_config_label() {
 #[test]
 fn normalize_agent_config_row_returns_action_on_enter() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
+    screen.jump_to_tab(SettingsTab::Project);
     let normalize_idx = screen.fields_per_tab[0]
         .iter()
         .position(|f| f.widget.label().starts_with("Normalize Agent Config"))
@@ -114,11 +121,7 @@ fn tab_switch_resets_field_index() {
 #[test]
 fn toggle_widget_changes_config() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    // Navigate to Notifications tab (index 4)
-    for _ in 0..4 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
-    assert_eq!(screen.active_tab(), SettingsTab::Notifications);
+    screen.jump_to_tab(SettingsTab::Notifications);
     // First field is "desktop" (Toggle, default true)
     assert!(screen.config.notifications.desktop);
     // Toggle it
@@ -129,9 +132,7 @@ fn toggle_widget_changes_config() {
 #[test]
 fn number_stepper_changes_config() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    // Navigate to Sessions tab
-    screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    assert_eq!(screen.active_tab(), SettingsTab::Sessions);
+    screen.jump_to_tab(SettingsTab::Sessions);
     // First field is max_concurrent (NumberStepper, default 3)
     let orig = screen.config.sessions.max_concurrent;
     // Increment
@@ -142,10 +143,7 @@ fn number_stepper_changes_config() {
 #[test]
 fn dropdown_cycles_config() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    // Navigate to GitHub tab (index 3)
-    for _ in 0..3 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::GitHub);
     // Navigate to merge_method (last field, index 4)
     for _ in 0..4 {
         screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
