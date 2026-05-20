@@ -39,25 +39,31 @@ fn render_focused_row_bg(f: &mut Frame, area: Rect, theme: &Theme) {
 }
 
 impl SettingsScreen {
-    fn draw_tab_bar(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let mut spans = Vec::new();
-        for (i, tab) in SettingsTab::ALL.iter().enumerate() {
-            let style = if i == self.active_tab {
-                Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    fn draw_sidebar(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        // Vertical list of tab labels in alphabetical order. The active
+        // tab is prefixed with `> ` in accent_success; others use
+        // text_secondary with a leading two-space gutter so labels stay
+        // visually aligned. Width is fixed by the caller (Layout::Length).
+        let mut lines: Vec<Line> = Vec::with_capacity(SettingsTab::ALPHABETICAL_INDICES.len());
+        for &tab_idx in SettingsTab::ALPHABETICAL_INDICES {
+            let tab = SettingsTab::ALL[tab_idx];
+            let is_active = tab_idx == self.active_tab;
+            let (prefix, style) = if is_active {
+                (
+                    "> ",
+                    Style::default()
+                        .fg(theme.accent_success)
+                        .add_modifier(Modifier::BOLD),
+                )
             } else {
-                Style::default().fg(theme.text_secondary)
+                ("  ", Style::default().fg(theme.text_secondary))
             };
-            if i > 0 {
-                spans.push(Span::styled(
-                    " │ ",
-                    Style::default().fg(theme.border_inactive),
-                ));
-            }
-            spans.push(Span::styled(tab.label(), style));
+            lines.push(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(tab.label(), style),
+            ]));
         }
-        f.render_widget(Paragraph::new(Line::from(spans)), area);
+        f.render_widget(Paragraph::new(lines), area);
     }
 
     fn field_height(&self, tab: usize, field_idx: usize) -> u16 {
@@ -269,31 +275,50 @@ impl SettingsScreen {
             return;
         }
 
-        let chunks = Layout::default()
+        let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // tab bar
-                Constraint::Length(1), // separator
-                Constraint::Min(1),    // field list
+                Constraint::Min(1),    // sidebar + content
                 Constraint::Length(1), // keybinds
             ])
             .split(inner);
 
-        self.draw_tab_bar(f, chunks[0], theme);
+        // Sidebar (left) | vertical separator | content (right).
+        // Sidebar width = longest label + 4 (prefix + breathing room),
+        // clamped to a reasonable upper bound. 18 covers "Notifications"
+        // (13 chars) + 2-char prefix + 3-char gutter.
+        let sidebar_width: u16 = 18;
+        let horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(sidebar_width),
+                Constraint::Length(1), // vertical separator
+                Constraint::Min(1),    // content
+            ])
+            .split(vertical[0]);
 
-        let sep = "─".repeat(inner.width as usize);
+        self.draw_sidebar(f, horizontal[0], theme);
+
+        let sep_col = "│".repeat(horizontal[1].height as usize);
         f.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                sep,
-                Style::default().fg(theme.border_inactive),
-            ))),
-            chunks[1],
+            Paragraph::new(
+                sep_col
+                    .chars()
+                    .map(|c| {
+                        Line::from(Span::styled(
+                            c.to_string(),
+                            Style::default().fg(theme.border_inactive),
+                        ))
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            horizontal[1],
         );
 
         if self.active_tab() == SettingsTab::Flags {
-            self.draw_feature_flags(f, chunks[2], theme);
+            self.draw_feature_flags(f, horizontal[2], theme);
         } else {
-            self.draw_fields(f, chunks[2], theme);
+            self.draw_fields(f, horizontal[2], theme);
         }
 
         if self.confirm_discard {
@@ -307,12 +332,12 @@ impl SettingsScreen {
                     ),
                     Span::styled("(y/n)", Style::default().fg(theme.text_secondary)),
                 ])),
-                chunks[3],
+                vertical[1],
             );
         } else if self.active_tab() == SettingsTab::Flags {
             draw_keybinds_bar(
                 f,
-                chunks[3],
+                vertical[1],
                 &[("Tab", "Tab"), ("↑/↓", "Navigate"), ("Esc", "Back")],
                 theme,
             );
@@ -329,7 +354,7 @@ impl SettingsScreen {
             }
             entries.push(("Ctrl+s", "Save"));
             entries.push(("Esc", "Back"));
-            draw_keybinds_bar(f, chunks[3], &entries, theme);
+            draw_keybinds_bar(f, vertical[1], &entries, theme);
         }
     }
 }

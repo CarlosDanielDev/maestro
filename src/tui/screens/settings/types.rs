@@ -44,6 +44,27 @@ impl SettingsTab {
         Self::Advanced,
     ];
 
+    /// Indices into [`Self::ALL`] in alphabetical-by-label order. Used by
+    /// the Settings sidebar so the on-screen list is sorted while the
+    /// canonical enum (and any `active_tab` index already stored or
+    /// serialized) remains stable.
+    pub const ALPHABETICAL_INDICES: &'static [usize] = &[
+        13, // Advanced
+        7,  // Agents
+        2,  // Budget
+        11, // Flags
+        5,  // Gates
+        3,  // GitHub
+        10, // Layout
+        8,  // Modes
+        4,  // Notifications
+        0,  // Project
+        6,  // Review
+        1,  // Sessions
+        9,  // Theme
+        12, // TurboQuant
+    ];
+
     pub fn label(&self) -> &'static str {
         match self {
             Self::Project => "Project",

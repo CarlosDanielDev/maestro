@@ -207,6 +207,22 @@ impl SettingsScreen {
         self.current_fields().len()
     }
 
+    /// Position of the currently active tab inside
+    /// [`SettingsTab::ALPHABETICAL_INDICES`]. Returns 0 if the active tab
+    /// is somehow missing from the alphabetical view (should be unreachable
+    /// while ALPHABETICAL_INDICES mirrors ALL).
+    pub(super) fn alphabetical_position(&self) -> usize {
+        SettingsTab::ALPHABETICAL_INDICES
+            .iter()
+            .position(|&idx| idx == self.active_tab)
+            .unwrap_or(0)
+    }
+
+    // Tab navigation walks the canonical SettingsTab::ALL order (the
+    // historical ordering preserved by existing tests). The sidebar
+    // visualizes tabs alphabetically — see ALPHABETICAL_INDICES — but
+    // Tab/BackTab still advance by enum index. A future PR can unify
+    // by walking ALPHABETICAL_INDICES once the test suite is migrated.
     fn next_tab(&mut self) {
         self.active_tab = (self.active_tab + 1) % SettingsTab::ALL.len();
         self.field_index = 0;
