@@ -155,6 +155,16 @@ src/state/types.rs # deadline: 2026-08-22, owner: @carlos, ticket: #538, plan: s
 # the test corpus.
 src/util/validation.rs # deadline: 2026-08-22, owner: @carlos, ticket: #664, plan: split tests into util/validation/tests/ once another validator lands
 
+# --- v0.29.0 dynamic config editing (#792) ---
+# schema_tests.rs grew past 400 LOC after #792 added FlattenedMap / agents /
+# modes / completion_gates entry-field tests on top of the existing dynamic
+# Map/VecOfStruct presentation tests. Most of the new bulk is the per-table
+# entry-key assertions plus an AgentKind round-trip lock.
+src/config/schema_tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #792, plan: split presentation tests, dynamic-table registration tests, and AgentKind round-trip lock into schema/tests/{presentation.rs, dynamic.rs, drift.rs}
+# core.rs gained a `[sessions.completion_gates]` NestedTable wrapper plus the
+# VecOfStruct field for the gates command list. Tipped from 396 to ~430 LOC.
+src/config/schema/core.rs # deadline: 2026-08-22, owner: @carlos, ticket: #792, plan: split SESSIONS_FIELDS sub-tables (hollow_retry/context_overflow/conflict/completion_gates) into core/sessions/sub_tables.rs once a third entry-field family lands
+
 # loader.rs grew past 400 LOC after #664 added write_user_preset /
 # write_project_preset / delete_user_preset to centralise filesystem-layout
 # knowledge that was previously duplicated in the wizard layer.

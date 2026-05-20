@@ -100,6 +100,14 @@ fn docs_gen_all_schema_tables_have_markers() {
         "tui.theme",
         "turboquant",
         "concurrency",
+        // agents/modes ship the schema in #792 (TUI wiring). The hand-written
+        // `[agents]` and `[modes]` sections in docs/configuration.md include
+        // provider-specific notes (HTTP-vs-subprocess defaults, model
+        // fallbacks, `maestro doctor` checks) the schema does not capture, so
+        // docs autogen lands as a follow-up alongside the docs-render
+        // refactor that supports the FlattenedMap variant.
+        "agents",
+        "modes",
     ];
 
     let path = doc_path();

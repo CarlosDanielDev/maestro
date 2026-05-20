@@ -101,7 +101,10 @@ fn build_widget(label: String, fs: &FieldSchema, value: Option<&toml::Value>) ->
                 .unwrap_or_default();
             WidgetKind::ListEditor(ListEditor::new(label, items))
         }
-        FieldKind::NestedTable(_) | FieldKind::Map { .. } | FieldKind::VecOfStruct { .. } => {
+        FieldKind::NestedTable(_)
+        | FieldKind::Map { .. }
+        | FieldKind::FlattenedMap { .. }
+        | FieldKind::VecOfStruct { .. } => {
             // Nested dynamic shapes inside entries are out of scope for #791.
             WidgetKind::TextInput(TextInput::new(label, ""))
         }

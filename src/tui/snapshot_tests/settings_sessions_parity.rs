@@ -29,6 +29,7 @@ const MINIMAL_TOML: &str = concat!(
     "[sessions.hollow_retry]\npolicy = \"intent-aware\"\nwork_max_retries = 2\nconsultation_max_retries = 0\n",
     "[sessions.context_overflow]\noverflow_threshold_pct = 70\nauto_fork = true\ncommit_prompt_pct = 50\nmax_fork_depth = 5\n",
     "[sessions.conflict]\nenabled = true\npolicy = \"warn\"\n",
+    "[sessions.completion_gates]\nenabled = true\n",
     "[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n",
     "[github]\n",
     "[notifications]\nslack_webhook_url = \"\"\n",
@@ -63,7 +64,7 @@ fn render_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buf
     terminal.backend().buffer().clone()
 }
 
-const EXPECTED_LABELS: [&str; 17] = [
+const EXPECTED_LABELS: [&str; 19] = [
     "max_concurrent",
     "stall_timeout_secs",
     "default_model",
@@ -81,13 +82,15 @@ const EXPECTED_LABELS: [&str; 17] = [
     "context_overflow.max_fork_depth",
     "conflict.enabled",
     "conflict.policy",
+    "completion_gates.enabled",
+    "completion_gates.commands",
 ];
 
 #[test]
 fn sessions_tab_flag_off_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
-    assert_eq!(fields.len(), 17);
+    assert_eq!(fields.len(), 19);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
         assert_eq!(fields[i].widget.label(), *expected, "field[{i}] label");
     }
@@ -97,10 +100,21 @@ fn sessions_tab_flag_off_field_count_and_labels() {
 fn sessions_tab_flag_on_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
-    assert_eq!(fields.len(), 17);
+    assert_eq!(fields.len(), 19);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
         assert_eq!(fields[i].widget.label(), *expected, "field[{i}] label");
     }
+}
+
+#[test]
+fn sessions_tab_completion_gates_commands_renders_dynamic_rows() {
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
+    let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
+    let last = fields.last().expect("Sessions tab must have a last field");
+    assert!(
+        matches!(last.widget, WidgetKind::DynamicRows(_)),
+        "last field of Sessions tab must be DynamicRows widget for completion_gates.commands"
+    );
 }
 
 #[test]

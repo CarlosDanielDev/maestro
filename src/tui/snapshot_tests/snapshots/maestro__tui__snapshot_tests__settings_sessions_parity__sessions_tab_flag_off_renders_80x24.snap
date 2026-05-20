@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/settings_sessions_parity.rs
-assertion_line: 132
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -23,8 +22,8 @@ Buffer {
         "context_overflow.max_fork_depth: < 5 >                                          ",
         "✓ conflict.enabled                                                              ",
         "conflict.policy:  warn                                                        ",
-        "                                                                                ",
-        "                                                                                ",
+        "✓ completion_gates.enabled                                                      ",
+        "┌ completion_gates.commands ───────────────────────────────────────────────────┐",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -82,5 +81,10 @@ Buffer {
         x: 0, y: 16, fg: White, bg: Reset, underline: Reset, modifier: NONE,
         x: 17, y: 16, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
         x: 25, y: 16, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 17, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
+        x: 2, y: 17, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 26, y: 17, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 18, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 19, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

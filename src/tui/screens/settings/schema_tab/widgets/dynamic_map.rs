@@ -70,6 +70,13 @@ impl DynamicMapWidget {
             let mut keys: Vec<&String> = table.keys().collect();
             keys.sort();
             for k in keys {
+                let entry_value = table.get(k);
+                // Flattened maps share the table with scalar siblings
+                // (e.g. `agents.default`). Skip non-table values so the
+                // scalar siblings are not misread as entries.
+                if !entry_value.map(|v| v.is_table()).unwrap_or(false) {
+                    continue;
+                }
                 if validate_identifier(k, &[]).is_err() {
                     tracing::warn!(
                         section = %section_path,
@@ -82,7 +89,7 @@ impl DynamicMapWidget {
                     &section_path,
                     k.clone(),
                     entry_fields,
-                    table.get(k),
+                    entry_value,
                 ));
             }
         }

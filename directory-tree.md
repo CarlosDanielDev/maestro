@@ -176,6 +176,7 @@ maestro/
 │   │   │   ├── docs_render.rs             # Pure renderer module: walks a TableSchema and emits a Markdown table block; used by the autogen system to produce AUTOGEN-marked sections in docs/configuration.md  [Issue #717]
 │   │   │   ├── docs_render_tests.rs       # Sibling test module for docs_render.rs loaded via `#[path]`; unit tests for the renderer covering all FieldKind leaf variants and NestedTable flattening  [Issue #717]
 │   │   │   ├── docs_render_dynamic_tests.rs # Sibling test module loaded via `#[path]`; insta + unit tests for `FieldKind::Map` and `FieldKind::VecOfStruct` dynamic-section rendering (heading, prose, entry-field table)  [Issue #793]
+│   │   │   ├── dynamic.rs                 # `FieldKind::FlattenedMap` schema variant — entries live at the parent table level directly (used for `agents.<id>` and `modes.<id>`); `AGENTS_TABLE` and `MODES_TABLE` const schemas; `truncated_titles` helper for sub-tab strip overflow when 12+ entries  [Issue #792]
 │   │   │   └── registry/                  # Const &'static [TableSchema] registry covering 17 tables / 52 fields
 │   │   │       ├── mod.rs                 # Registry module facade; re-exports the combined table slice
 │   │   │       ├── core.rs                # Core registry entries: adapt, agents, budget, gates, github, models, modes, notifications, plugins, project, review, runtime, sessions, tui, turboquant, views
@@ -590,6 +591,9 @@ maestro/
 │   │       └── settings/                  # Settings screen components  [Issue #124, #146]
 │   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent; Sessions tab gains hollow-retry widgets: [policy] dropdown (always/intent-aware/never), [work_max_retries] stepper, [consultation_max_retries] stepper; footer built from focused widget's edit_hint() so edit keys (Space/Enter/←→) are always advertised; KeymapProvider::keybindings() gains a third "Edit" group for consistent ? help overlay; save_config returns Err via let-else when config_path is None; Ctrl+S surfaces failures as a 5-second title-bar flash (save_error_flash: Option<(String, Instant)> field) rendered as "Settings [Save failed: <msg>]" in accent_error; with_caveman_mode() builder, sync hook for Space-toggling caveman mode, status flash in the title bar, Space → caveman binding in the help overlay  [Issue #275, #432, #437, #490]
 │   │           ├── caveman_row.rs         # TUI render helper for the caveman-mode settings row; four visual states: ExplicitTrue (green checkbox + label), ExplicitFalse (dim checkbox), Default (grey "inherits settings.json"), Error (red warning); consumed by SettingsScreen  [Issue #490]
+│   │           ├── tabs/                  # Per-tab module files for schema-driven settings tabs  [Issue #792]
+│   │           │   ├── agents.rs          # `SettingsTab::Agents` (index 7): renders `[agents]` via `FlattenedMap` schema; each `[agents.<id>]` sub-table is a DynamicMapWidget entry; `DynamicMapWidget::with_clock` filters non-table scalar siblings (e.g. `agents.default`) to avoid mis-parsing  [Issue #792]
+│   │           │   └── modes.rs           # `SettingsTab::Modes` (index 8): renders `[modes]` via `FlattenedMap` schema; each `[modes.<id>]` sub-table is a DynamicMapWidget entry  [Issue #792]
 │   │           ├── schema_tab/            # Schema-driven settings renderer — builds SettingsField entries from a TableSchema; all 10 settings tabs now use from_schema() + sync_to_config (Flag::SchemaDrivenSettings deleted in #716)  [Issue #714, #715, #716]
 │   │           │   ├── mod.rs             # Module facade; pub(crate) mod build; pub(crate) mod sync; pub(crate) mod widgets; pub(crate) mod modals; #[cfg(test)] mod tests
 │   │           │   ├── build.rs           # from_schema(): maps each FieldKind to a WidgetKind and builds a flat Vec<SettingsField>; falls back to field.default for keys absent in serialized Config
@@ -614,6 +618,7 @@ maestro/
 │   │           │       └── remove_confirm.rs  # RemoveConfirmModal: confirmation dialog before deleting a row
 │   │           ├── tests/                 # Settings screen test modules  [Issue #714]
 │   │           │   ├── mod.rs             # Module declarations for all settings test submodules
+│   │           │   ├── agents_tab.rs      # Tests for Agents tab: validates FlattenedMap rendering, scalar sibling filtering (agents.default skipped), and save_config agents.validate() cross-entry check (missing default agent surfaces error banner)  [Issue #792]
 │   │           │   ├── basic.rs           # Basic SettingsScreen construction and navigation tests
 │   │           │   ├── dirty.rs           # Dirty-state and unsaved-change detection tests
 │   │           │   ├── flags_validation.rs  # Validation tests for the Flags tab

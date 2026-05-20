@@ -1,9 +1,11 @@
 pub mod advanced;
+pub mod agents;
 pub mod budget;
 pub mod flags;
 pub mod gates;
 pub mod github;
 pub mod layout;
+pub mod modes;
 pub mod notifications;
 pub mod project;
 pub mod review;
@@ -44,6 +46,8 @@ pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
         notifications::build_fields(config),
         gates::build_fields(config),
         review::build_fields(config),
+        agents::build_fields(config),
+        modes::build_fields(config),
         theme::build_fields(config),
         layout::build_fields(config),
         vec![],
@@ -53,8 +57,8 @@ pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
 }
 
 /// Map a settings tab index to the schema table that drives it. `None`
-/// means the tab has no widgets (Flags, idx 9) or spans more than one
-/// TOML table — Theme (idx 7) and Advanced (idx 11) are handled by
+/// means the tab has no widgets (Flags, idx 11) or spans more than one
+/// TOML table — Theme (idx 9) and Advanced (idx 13) are handled by
 /// `sync_multi_table` below.
 fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
     let name = match idx {
@@ -65,8 +69,10 @@ fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
         4 => "notifications",
         5 => "gates",
         6 => "review",
-        8 => "tui.layout",
-        10 => "turboquant",
+        7 => "agents",
+        8 => "modes",
+        10 => "tui.layout",
+        12 => "turboquant",
         _ => return None,
     };
     Some(schema_table(name))
@@ -75,10 +81,10 @@ fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
 pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
     sync_schema_tabs(screen);
     sync_sessions_bypass_override(screen);
-    sync_multi_table(7, &["tui.theme", "tui"], screen);
+    sync_multi_table(9, &["tui.theme", "tui"], screen);
     sync_theme_screen_local(screen);
     sync_notifications_empty_url_collapse(screen);
-    sync_multi_table(11, &["concurrency", "monitoring"], screen);
+    sync_multi_table(13, &["concurrency", "monitoring"], screen);
     sync_advanced_caveman(screen);
 }
 
@@ -139,7 +145,7 @@ fn sync_notifications_empty_url_collapse(screen: &mut SettingsScreen) {
 
 /// Theme tab field 0 is `live_preview` (screen-local, not in schema).
 fn sync_theme_screen_local(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(7) else {
+    let Some(fields) = screen.fields_per_tab.get(9) else {
         return;
     };
     if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
@@ -150,7 +156,7 @@ fn sync_theme_screen_local(screen: &mut SettingsScreen) {
 /// Caveman toggle (Advanced tab) is bespoke; route through existing
 /// `pending_caveman_toggle` flow.
 fn sync_advanced_caveman(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(11) else {
+    let Some(fields) = screen.fields_per_tab.get(13) else {
         return;
     };
     let prev = screen.caveman_state.as_bool().unwrap_or(false);

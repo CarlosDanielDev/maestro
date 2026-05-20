@@ -49,7 +49,7 @@ fn keybind_bar_project_text_input_shows_enter_edit() {
 #[test]
 fn keybind_bar_turboquant_toggle_shows_space_toggle() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    for _ in 0..10 {
+    for _ in 0..12 {
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     }
     assert_eq!(screen.active_tab(), SettingsTab::TurboQuant);
@@ -69,7 +69,7 @@ fn keybind_bar_turboquant_toggle_shows_space_toggle() {
 #[test]
 fn keybind_bar_turboquant_dropdown_shows_arrows_change() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    for _ in 0..10 {
+    for _ in 0..12 {
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     }
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
@@ -87,7 +87,7 @@ fn keybind_bar_turboquant_dropdown_shows_arrows_change() {
 #[test]
 fn keybind_bar_flags_tab_has_no_widget_hints() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    for _ in 0..9 {
+    for _ in 0..11 {
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     }
     assert_eq!(screen.active_tab(), SettingsTab::Flags);
@@ -106,7 +106,7 @@ fn keybind_bar_flags_tab_has_no_widget_hints() {
 #[test]
 fn keybind_bar_list_editor_still_shows_save_esc_at_80_cols() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    for _ in 0..11 {
+    for _ in 0..13 {
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     }
     assert_eq!(screen.active_tab(), SettingsTab::Advanced);
@@ -263,7 +263,7 @@ fn screen_with_caveman(state: CavemanModeState) -> SettingsScreen {
 }
 
 fn navigate_to_advanced_caveman_row(screen: &mut SettingsScreen) {
-    for _ in 0..11 {
+    for _ in 0..13 {
         screen.handle_input(
             &crate::tui::screens::test_helpers::key_event(KeyCode::Tab),
             InputMode::Normal,
@@ -351,7 +351,7 @@ fn space_when_state_is_error_shows_status_explanation() {
 fn set_caveman_state_updates_underlying_widget_value() {
     let mut screen = screen_with_caveman(CavemanModeState::ExplicitFalse);
     screen.set_caveman_state(CavemanModeState::ExplicitTrue);
-    let advanced = &screen.fields_per_tab[11];
+    let advanced = &screen.fields_per_tab[13];
     let toggle = advanced
         .iter()
         .find_map(|f| match &f.widget {

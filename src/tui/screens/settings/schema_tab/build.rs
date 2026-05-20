@@ -52,11 +52,40 @@ fn push_field(
         return;
     }
 
+    if let FieldKind::FlattenedMap { entry_fields } = field.kind {
+        let label = label_for(prefix, field.key);
+        let section_path = section_path_for(table_name, prefix);
+        let parent_value = resolve_table_value(table_name, prefix, root);
+        let widget = WidgetKind::DynamicMap(DynamicMapWidget::new(
+            label,
+            section_path,
+            entry_fields,
+            parent_value.as_ref(),
+        ));
+        out.push(SettingsField { widget });
+        return;
+    }
+
     let label = label_for(prefix, field.key);
     let value = resolve_field_value(table_name, prefix, field.key, root);
     let section_path = section_path_for(table_name, prefix);
     let widget = widget_for_kind(label, &section_path, field, value.as_ref());
     out.push(SettingsField { widget });
+}
+
+fn resolve_table_value(
+    table_name: &str,
+    prefix: &[&str],
+    root: &toml::Value,
+) -> Option<toml::Value> {
+    let mut node = root;
+    for segment in table_name.split('.') {
+        node = node.get(segment)?;
+    }
+    for segment in prefix {
+        node = node.get(*segment)?;
+    }
+    Some(node.clone())
 }
 
 fn section_path_for(table_name: &str, prefix: &[&str]) -> String {
@@ -167,6 +196,7 @@ fn widget_for_kind(
             let path = format!("{}.{}", section_path, field.key);
             WidgetKind::DynamicMap(DynamicMapWidget::new(label, path, entry_fields, value))
         }
+        FieldKind::FlattenedMap { .. } => unreachable!("FlattenedMap handled by push_field"),
         FieldKind::VecOfStruct { entry_fields } => {
             let path = format!("{}.{}", section_path, field.key);
             WidgetKind::DynamicRows(DynamicRowsWidget::new(label, path, entry_fields, value))

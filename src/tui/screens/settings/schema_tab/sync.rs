@@ -63,9 +63,77 @@ fn write_field(
         return Ok(());
     };
 
+    if let FieldKind::FlattenedMap { .. } = field.kind {
+        let WidgetKind::DynamicMap(map) = widget else {
+            return Ok(());
+        };
+        merge_flattened_map(root, table_name, prefix, &map.serialize_to_toml());
+        return Ok(());
+    }
+
     let value = widget_to_toml(widget, &field.kind);
     set_path(root, table_name, prefix, field.key, value);
     Ok(())
+}
+
+/// Merge a `FlattenedMap` widget's serialized entries into the parent table
+/// at `<table_name>.<prefix>`. Removes existing table-valued keys (old
+/// entries that no longer exist in the widget) and preserves scalar
+/// siblings (e.g. `agents.default`).
+fn merge_flattened_map(
+    root: &mut toml::Value,
+    table_name: &str,
+    prefix: &[&str],
+    widget_table: &toml::Value,
+) {
+    let Some(parent_table) = navigate_or_create_table(root, table_name, prefix) else {
+        return;
+    };
+
+    let stale_keys: Vec<String> = parent_table
+        .iter()
+        .filter(|(_, v)| v.is_table())
+        .map(|(k, _)| k.clone())
+        .collect();
+    for k in stale_keys {
+        parent_table.remove(&k);
+    }
+
+    if let Some(entries) = widget_table.as_table() {
+        for (k, v) in entries {
+            parent_table.insert(k.clone(), v.clone());
+        }
+    }
+}
+
+/// Walk `root` along `<table_name>.<...prefix>`, creating empty `Table`
+/// nodes on the way. Returns `None` if a non-table node blocks the walk
+/// and we cannot promote it to a table. Used by [`set_path`] and
+/// [`merge_flattened_map`] so the navigation logic lives in one place.
+fn navigate_or_create_table<'a>(
+    root: &'a mut toml::Value,
+    table_name: &str,
+    prefix: &[&str],
+) -> Option<&'a mut toml::map::Map<String, toml::Value>> {
+    let mut segments: Vec<&str> = table_name.split('.').collect();
+    segments.extend(prefix.iter().copied());
+
+    let mut node: &mut toml::Value = root;
+    for segment in &segments {
+        if !node.is_table() {
+            *node = toml::Value::Table(toml::map::Map::new());
+        }
+        let table = node.as_table_mut()?;
+        let entry = table
+            .entry((*segment).to_string())
+            .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+        node = entry;
+    }
+
+    if !node.is_table() {
+        *node = toml::Value::Table(toml::map::Map::new());
+    }
+    node.as_table_mut()
 }
 
 fn label_for(prefix: &[&str], key: &str) -> String {
@@ -104,28 +172,7 @@ fn set_path(
     key: &str,
     value: toml::Value,
 ) {
-    let mut segments: Vec<&str> = table_name.split('.').collect();
-    segments.extend(prefix.iter().copied());
-
-    let mut node = root;
-    for segment in &segments {
-        if !node.is_table() {
-            *node = toml::Value::Table(toml::map::Map::new());
-        }
-        let table = match node.as_table_mut() {
-            Some(t) => t,
-            None => return,
-        };
-        let entry = table
-            .entry((*segment).to_string())
-            .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
-        node = entry;
-    }
-
-    if !node.is_table() {
-        *node = toml::Value::Table(toml::map::Map::new());
-    }
-    if let Some(table) = node.as_table_mut() {
+    if let Some(table) = navigate_or_create_table(root, table_name, prefix) {
         table.insert(key.to_string(), value);
     }
 }

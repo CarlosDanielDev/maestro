@@ -53,18 +53,16 @@ pub(super) fn draw(
             .constraints([Constraint::Length(2), Constraint::Min(1)])
             .split(inner);
 
-        let titles: Vec<Line> = widget
-            .entries()
-            .iter()
-            .map(|e| Line::from(e.id.as_str()))
-            .collect();
-        let tabs = Tabs::new(titles)
-            .select(widget.active_index().unwrap_or(0))
-            .highlight_style(
-                Style::default()
-                    .fg(theme.accent_info)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            );
+        let (titles, highlight_idx) = truncated_titles(
+            widget.entries(),
+            widget.active_index().unwrap_or(0),
+            chunks[0].width,
+        );
+        let tabs = Tabs::new(titles).select(highlight_idx).highlight_style(
+            Style::default()
+                .fg(theme.accent_info)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        );
         f.render_widget(tabs, chunks[0]);
 
         if let Some(entry) = widget.active_entry() {
@@ -94,6 +92,85 @@ pub(super) fn draw(
     }
 }
 
+/// Build a Tabs strip slice that fits in `available_width`, centering the
+/// window on `active_idx` and prepending/appending `…` when entries fall
+/// off either side. Returns (titles, adjusted_highlight_idx).
+///
+/// Per spec §8 open question A (line 556–559): truncate-with-`…` is the
+/// chosen overflow behaviour for v0.29.0; an overflow dropdown is deferred
+/// to a follow-up (#792 acceptance criteria).
+pub(super) fn truncated_titles<'a>(
+    entries: &'a [EntryState],
+    active_idx: usize,
+    available_width: u16,
+) -> (Vec<Line<'a>>, usize) {
+    if entries.is_empty() {
+        return (Vec::new(), 0);
+    }
+    // ratatui's Tabs draws " | " separator between entries.
+    const SEP: u16 = 3;
+    const ELLIPSIS_COL: u16 = 2; // "…" + leading or trailing space
+
+    let widths: Vec<u16> = entries
+        .iter()
+        .map(|e| e.id.chars().count().clamp(1, 256) as u16)
+        .collect();
+    let total: u32 = widths
+        .iter()
+        .map(|w| u32::from(*w) + u32::from(SEP))
+        .sum::<u32>()
+        .saturating_sub(u32::from(SEP));
+
+    if total <= u32::from(available_width) {
+        let titles = entries.iter().map(|e| Line::from(e.id.as_str())).collect();
+        return (titles, active_idx);
+    }
+
+    // Reserve budget for leading + trailing `… ` markers up front; if the
+    // window naturally hits an edge we get the bytes back.
+    let budget = available_width.saturating_sub(ELLIPSIS_COL * 2);
+    let active = active_idx.min(entries.len() - 1);
+
+    let mut start = active;
+    let mut end = active;
+    let mut used = widths[active];
+    loop {
+        let mut grew = false;
+        if start > 0 {
+            let candidate = used.saturating_add(widths[start - 1].saturating_add(SEP));
+            if candidate <= budget {
+                start -= 1;
+                used = candidate;
+                grew = true;
+            }
+        }
+        if end + 1 < entries.len() {
+            let candidate = used.saturating_add(widths[end + 1].saturating_add(SEP));
+            if candidate <= budget {
+                end += 1;
+                used = candidate;
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+
+    let mut titles: Vec<Line<'a>> = Vec::new();
+    if start > 0 {
+        titles.push(Line::from("…"));
+    }
+    for entry in &entries[start..=end] {
+        titles.push(Line::from(entry.id.as_str()));
+    }
+    if end + 1 < entries.len() {
+        titles.push(Line::from("…"));
+    }
+    let highlight = active - start + usize::from(start > 0);
+    (titles, highlight)
+}
+
 fn draw_entry_fields(
     f: &mut Frame,
     area: Rect,
@@ -113,5 +190,89 @@ fn draw_entry_fields(
     for (idx, sf) in entry.fields.iter().enumerate() {
         let focused = matches!(focus, MapFocus::EntryField(n) if *n == idx);
         sf.widget.draw(f, rows[idx], theme, focused, None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::schema::FieldSchema;
+
+    const EMPTY_FIELDS: &[FieldSchema] = &[];
+
+    fn entry(id: &str) -> EntryState {
+        EntryState::build("agents", id.to_string(), EMPTY_FIELDS, None)
+    }
+
+    fn title_text(line: &Line<'_>) -> String {
+        line.spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>()
+    }
+
+    #[test]
+    fn truncated_titles_returns_empty_for_no_entries() {
+        let (titles, idx) = truncated_titles(&[], 0, 80);
+        assert!(titles.is_empty());
+        assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn truncated_titles_fits_all_when_under_budget() {
+        let entries: Vec<EntryState> = (0..5).map(|i| entry(&format!("a{i}"))).collect();
+        let (titles, idx) = truncated_titles(&entries, 2, 80);
+        assert_eq!(titles.len(), 5, "all entries fit, no truncation");
+        assert_eq!(idx, 2, "highlight index unchanged when all fit");
+    }
+
+    #[test]
+    fn truncated_titles_active_first_truncates_right_only() {
+        let entries: Vec<EntryState> = (0..12).map(|i| entry(&format!("agent-{i:02}"))).collect();
+        let (titles, idx) = truncated_titles(&entries, 0, 40);
+        assert_eq!(
+            title_text(&titles[0]),
+            "agent-00",
+            "active-first must place the active entry at slot 0"
+        );
+        assert_eq!(
+            title_text(titles.last().unwrap()),
+            "…",
+            "active-first must end with the trailing ellipsis"
+        );
+        assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn truncated_titles_active_last_truncates_left_only() {
+        let entries: Vec<EntryState> = (0..12).map(|i| entry(&format!("agent-{i:02}"))).collect();
+        let (titles, idx) = truncated_titles(&entries, 11, 40);
+        assert_eq!(
+            title_text(&titles[0]),
+            "…",
+            "active-last must start with the leading ellipsis"
+        );
+        assert_eq!(
+            title_text(titles.last().unwrap()),
+            "agent-11",
+            "active-last must place the active entry at the end"
+        );
+        assert_eq!(idx, titles.len() - 1);
+    }
+
+    #[test]
+    fn truncated_titles_active_middle_truncates_both_sides() {
+        let entries: Vec<EntryState> = (0..12).map(|i| entry(&format!("agent-{i:02}"))).collect();
+        let (titles, _idx) = truncated_titles(&entries, 6, 40);
+        assert_eq!(
+            title_text(&titles[0]),
+            "…",
+            "middle-active must have leading ellipsis"
+        );
+        assert_eq!(
+            title_text(titles.last().unwrap()),
+            "…",
+            "middle-active must have trailing ellipsis"
+        );
     }
 }

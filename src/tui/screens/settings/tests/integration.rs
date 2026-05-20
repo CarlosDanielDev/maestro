@@ -125,8 +125,8 @@ fn integration_modify_ctrl_r_verify_all_fields_reset() {
 fn integration_theme_preview_on_change_emits_preview() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
 
-    // Go to Theme tab (index 7)
-    for _ in 0..7 {
+    // Go to Theme tab (index 9 — shifted from 7 by Agents/Modes tabs)
+    for _ in 0..9 {
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     }
     assert_eq!(screen.active_tab(), SettingsTab::Theme);
@@ -162,8 +162,8 @@ fn integration_theme_preview_reset_clears_preview() {
 #[test]
 fn integration_layout_tab_fields() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    // Navigate to Layout tab (index 8)
-    for _ in 0..8 {
+    // Navigate to Layout tab (index 10 — shifted from 8 by Agents/Modes tabs)
+    for _ in 0..10 {
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     }
     assert_eq!(screen.active_tab(), SettingsTab::Layout);

@@ -76,7 +76,7 @@ impl SettingsScreen {
     pub fn set_caveman_state(&mut self, state: CavemanModeState) {
         let bool_value = state.as_bool().unwrap_or(false);
         self.caveman_state = state;
-        if let Some(fields) = self.fields_per_tab.get_mut(11)
+        if let Some(fields) = self.fields_per_tab.get_mut(13)
             && let Some(field) = fields
                 .iter_mut()
                 .find(|f| f.widget.label() == CAVEMAN_LABEL)
@@ -125,6 +125,12 @@ impl SettingsScreen {
                 "No config file resolved — cannot save. Run `maestro init` to create one."
             );
         };
+        // Cross-entry validation gate: surfaces `agents.default` referring to
+        // a missing entry (and any future cross-entry rules) in the Save banner.
+        self.config
+            .agents
+            .validate()
+            .with_context(|| "settings cross-entry validation".to_string())?;
         self.config
             .save(path)
             .with_context(|| format!("saving settings to {}", path.display()))?;

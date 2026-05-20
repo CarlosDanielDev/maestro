@@ -1,6 +1,7 @@
 //! Field arrays for the early tables: project, sessions and nested
 //! sub-sections, budget, github, notifications.
 
+use super::dynamic::COMPLETION_GATE_ENTRY_FIELDS;
 use super::{DefaultValue, FieldKind, FieldSchema, validate_non_empty, validate_url_or_empty};
 
 const PERMISSION_MODES: &[&str] = &[
@@ -142,6 +143,38 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         kind: FieldKind::NestedTable(CONFLICT_FIELDS),
         validator: None,
         presentation: None,
+    },
+    FieldSchema {
+        key: "completion_gates",
+        label: "Completion Gates",
+        help: "Commands run after session completion before PR creation",
+        default: DefaultValue::Nested,
+        kind: FieldKind::NestedTable(COMPLETION_GATES_FIELDS),
+        validator: None,
+        presentation: None,
+    },
+];
+
+pub(super) const COMPLETION_GATES_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "enabled",
+        label: "Completion Gates Enabled",
+        help: "Master switch for completion-gate commands",
+        default: DefaultValue::Bool(true),
+        kind: FieldKind::Bool,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "commands",
+        label: "Commands",
+        help: "Ordered list of gate commands — declaration order is execution order",
+        default: DefaultValue::Empty,
+        kind: FieldKind::VecOfStruct {
+            entry_fields: COMPLETION_GATE_ENTRY_FIELDS,
+        },
+        validator: None,
+        presentation: Some(super::Presentation::Rows),
     },
 ];
 
