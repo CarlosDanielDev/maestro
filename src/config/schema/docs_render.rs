@@ -111,7 +111,10 @@ fn escape_pipes(s: &str) -> String {
 }
 
 pub(crate) fn render_field_row(field: &FieldSchema) -> Option<String> {
-    if matches!(field.kind, FieldKind::NestedTable(_)) {
+    if matches!(
+        field.kind,
+        FieldKind::NestedTable(_) | FieldKind::Map { .. } | FieldKind::VecOfStruct { .. }
+    ) {
         return None;
     }
     Some(format!(
@@ -123,13 +126,71 @@ pub(crate) fn render_field_row(field: &FieldSchema) -> Option<String> {
     ))
 }
 
-pub(crate) fn render_table_body(fields: &[FieldSchema]) -> String {
+fn render_entry_table(entry_fields: &[FieldSchema]) -> String {
     let mut out = String::new();
     out.push_str("| Field | Type | Default | Description |\n");
     out.push_str("|---|---|---|---|\n");
-    for field in fields {
+    for field in entry_fields {
         if let Some(row) = render_field_row(field) {
             out.push_str(&row);
+        }
+    }
+    out
+}
+
+/// Render a dynamic-key `Map` section: `### [name.<id>] — dynamic-key map`,
+/// prose explaining the dynamic shape, then a fields table for entries.
+fn render_dynamic_map_section(parent_name: &str, entry_fields: &[FieldSchema]) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "\n### `[{parent_name}.<id>]` — dynamic-key map\n\n"
+    ));
+    out.push_str(&format!(
+        "Each `<id>` is a user-chosen identifier matching `[a-z0-9_-]+`. \
+         Add or remove entries via the Settings UI or by hand-editing \
+         `maestro.toml`. Each `[{parent_name}.<id>]` table has the following \
+         fields:\n\n"
+    ));
+    out.push_str(&render_entry_table(entry_fields));
+    out
+}
+
+/// Render a `VecOfStruct` section: `### [[name]] — array-of-tables
+/// (order-sensitive)`, prose noting that order matters, then a fields table.
+fn render_dynamic_vec_section(parent_name: &str, entry_fields: &[FieldSchema]) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "\n### `[[{parent_name}]]` — array-of-tables (order-sensitive)\n\n"
+    ));
+    out.push_str(&format!(
+        "Each `[[{parent_name}]]` block defines one entry. The list is \
+         **order-sensitive — declaration order is execution order.** Add, \
+         remove, or reorder entries via the Settings UI or by hand-editing \
+         `maestro.toml`. Each entry has the following fields:\n\n"
+    ));
+    out.push_str(&render_entry_table(entry_fields));
+    out
+}
+
+pub(crate) fn render_table_body(name: &str, fields: &[FieldSchema]) -> String {
+    let static_rows: Vec<String> = fields.iter().filter_map(render_field_row).collect();
+    let mut out = String::new();
+    if !static_rows.is_empty() {
+        out.push_str("| Field | Type | Default | Description |\n");
+        out.push_str("|---|---|---|---|\n");
+        for row in static_rows {
+            out.push_str(&row);
+        }
+    }
+    for field in fields {
+        match field.kind {
+            FieldKind::Map { entry_fields } => {
+                out.push_str(&render_dynamic_map_section(name, entry_fields));
+            }
+            FieldKind::VecOfStruct { entry_fields } => {
+                out.push_str(&render_dynamic_vec_section(name, entry_fields));
+            }
+            _ => {}
         }
     }
     out
@@ -163,7 +224,7 @@ pub(crate) fn regenerate(existing: &str, schema: &[TableSchema]) -> Result<Strin
 
             out.push_str(line);
             out.push('\n');
-            out.push_str(&render_table_body(fields));
+            out.push_str(&render_table_body(name, fields));
 
             let expected_end = end_marker(name);
             let mut found_end = false;
@@ -215,3 +276,7 @@ fn parse_end_marker(line: &str) -> Option<&str> {
 #[cfg(test)]
 #[path = "docs_render_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "docs_render_dynamic_tests.rs"]
+mod dynamic_tests;

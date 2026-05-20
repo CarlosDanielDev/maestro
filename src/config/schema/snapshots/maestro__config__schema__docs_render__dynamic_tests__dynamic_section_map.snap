@@ -1,0 +1,14 @@
+---
+source: src/config/schema/docs_render_dynamic_tests.rs
+assertion_line: 202
+expression: body
+---
+
+### `[agents.<id>]` — dynamic-key map
+
+Each `<id>` is a user-chosen identifier matching `[a-z0-9_-]+`. Add or remove entries via the Settings UI or by hand-editing `maestro.toml`. Each `[agents.<id>]` table has the following fields:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `kind` | enum (`claude`, `codex`, `qwen`) | unset | Agent kind (claude, codex, qwen, ...). |
+| `enabled` | bool | `true` | Whether this agent participates in sessions. |
