@@ -153,7 +153,16 @@ impl AgentConfig {
             }
         }
 
-        if let Some(api_key_env) = self.api_key_env.as_deref() {
+        // Same empty-string-as-unset handling as base_url / command above.
+        // An empty TextInput round-trips as `Some("")`; treat that as "no
+        // api_key_env was specified" so users can clear the field in the
+        // TUI without tripping the env-var-name validator.
+        if let Some(api_key_env) = self
+            .api_key_env
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
             validate_env_var_name(api_key_env)
                 .map_err(|msg| anyhow::anyhow!("agents.{id}.api_key_env {msg}"))?;
         }

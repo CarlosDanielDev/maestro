@@ -329,6 +329,33 @@ command = ""
 }
 
 #[test]
+fn config_validate_accepts_subprocess_agent_with_empty_string_api_key_env() {
+    // Regression: same TextInput round-trip as base_url. A cleared
+    // api_key_env field becomes `Some("")` and the env-var-name
+    // validator would reject it as "must not be empty". Subprocess
+    // agents (claude/codex/qwen/opencode) don't need an api_key_env —
+    // empty must mean "not set", not "set to empty string".
+    let cfg = load_config(&format!(
+        r#"{MINIMAL_TOML}
+[agents]
+default = "claude"
+
+[agents.claude]
+kind = "claude"
+command = "claude"
+api_key_env = ""
+"#
+    ))
+    .expect("empty-string api_key_env must be accepted on subprocess agents");
+    let claude = cfg
+        .agents
+        .entries
+        .get("claude")
+        .expect("claude agent should be present");
+    assert_eq!(claude.api_key_env.as_deref(), Some(""));
+}
+
+#[test]
 fn config_validate_rejects_http_agent_with_command() {
     let err = load_config(&format!(
         r#"{MINIMAL_TOML}
