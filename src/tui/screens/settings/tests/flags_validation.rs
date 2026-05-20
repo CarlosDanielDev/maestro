@@ -174,7 +174,10 @@ fn save_blocked_when_validation_errors_exist() {
         state: KeyEventState::NONE,
     });
     let action = screen.handle_input(&ctrl_s, InputMode::Normal);
-    assert_eq!(action, ScreenAction::None);
+    // Save failure now returns a LogActivity so the truncated header flash
+    // has a permanent home in the activity log. Header flash is set
+    // independently (see save_with_validation_errors_populates_save_error_flash).
+    assert!(matches!(action, ScreenAction::LogActivity { .. }));
 }
 
 #[test]

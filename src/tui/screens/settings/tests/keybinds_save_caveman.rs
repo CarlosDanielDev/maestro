@@ -198,8 +198,8 @@ fn ctrl_s_without_config_path_sets_error_flash() {
     let action = screen.handle_input(&ctrl_s_event(), InputMode::Normal);
 
     assert!(
-        matches!(action, ScreenAction::None),
-        "must return None when save fails, got {:?}",
+        matches!(action, ScreenAction::LogActivity { .. }),
+        "must return LogActivity when save fails (mirrors header flash to activity log), got {:?}",
         action
     );
     assert!(

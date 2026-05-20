@@ -60,8 +60,12 @@ impl Screen for SettingsScreen {
                     let summary = self
                         .validation_error_summary()
                         .unwrap_or_else(|| "validation failed".to_string());
-                    self.save_error_flash = Some((summary, std::time::Instant::now()));
-                    return ScreenAction::None;
+                    self.save_error_flash = Some((summary.clone(), std::time::Instant::now()));
+                    return ScreenAction::LogActivity {
+                        tag: "SETTINGS".into(),
+                        message: format!("Save blocked — {}", summary),
+                        level: crate::tui::activity_log::LogLevel::Error,
+                    };
                 }
                 match self.save_config() {
                     Ok(()) => {
@@ -73,8 +77,12 @@ impl Screen for SettingsScreen {
                     Err(e) => {
                         tracing::error!("Settings save failed: {:#}", e);
                         let stored: String = format!("{:#}", e).chars().take(512).collect();
-                        self.save_error_flash = Some((stored, std::time::Instant::now()));
-                        ScreenAction::None
+                        self.save_error_flash = Some((stored.clone(), std::time::Instant::now()));
+                        ScreenAction::LogActivity {
+                            tag: "SETTINGS".into(),
+                            message: format!("Save failed — {}", stored),
+                            level: crate::tui::activity_log::LogLevel::Error,
+                        }
                     }
                 }
             }

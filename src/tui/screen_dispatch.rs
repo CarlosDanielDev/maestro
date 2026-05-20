@@ -450,6 +450,13 @@ fn handle_normalize_agent_config(app: &mut app::App) {
 pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
     match action {
         ScreenAction::None => {}
+        ScreenAction::LogActivity {
+            tag,
+            message,
+            level,
+        } => {
+            app.activity_log.push_simple(tag, message, level);
+        }
         ScreenAction::Push(mode) => {
             match mode {
                 app::TuiMode::Landing => {
