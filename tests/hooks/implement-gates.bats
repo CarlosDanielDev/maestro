@@ -97,13 +97,46 @@ teardown() {
   [[ "$output" == *"gate log dir"* ]]
 }
 
-@test "dirty tree with (S)tash stashes and continues past baseline" {
+@test "dirty tree with (S)tash stashes tracked changes and continues past baseline" {
   echo "dirty" > new-file.txt
   git add new-file.txt
   export FAKE_CARGO_TEST_EXIT=0
   run bash "$HOOK" 123 --dirty-tree-action=stash
   [ "$status" -eq 0 ]
-  [[ "$output" == *"stashed as 'auto-stash before /implement #123'"* ]]
+  # G2: prefix every stash output line with "implement-gates:"
+  [[ "$output" == *"Saved working directory"* ]] || [[ "$output" == *"WIP on"* ]]
+  git stash list | grep -q 'auto-stash before /implement #123'
+}
+
+@test "G2: untracked-only dirty tree with --dirty-tree-action=stash prints honest WARN and leaves files on disk" {
+  # No tracked changes, only an untracked file.
+  echo "stray" > untracked.txt
+  export FAKE_CARGO_TEST_EXIT=0
+  run bash "$HOOK" 123 --dirty-tree-action=stash
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: auto-stash skipped — no tracked changes to stash."* ]]
+  [[ "$output" == *"untracked.txt"* ]]
+  # File stays on disk, NOT in stash.
+  [ -f untracked.txt ]
+  ! git stash list | grep -q "auto-stash before /implement #123"
+}
+
+@test "G2: --include-untracked stashes untracked files too" {
+  echo "stray" > untracked.txt
+  export FAKE_CARGO_TEST_EXIT=0
+  run bash "$HOOK" 123 --dirty-tree-action=stash --include-untracked
+  [ "$status" -eq 0 ]
+  # The file is now stashed, gone from working tree.
+  [ ! -f untracked.txt ]
+  git stash list | grep -q 'auto-stash before /implement #123 (untracked included)'
+}
+
+@test "G2: unknown --no-include-untracked is accepted (default behaviour)" {
+  echo "dirty" > new-file.txt
+  git add new-file.txt
+  export FAKE_CARGO_TEST_EXIT=0
+  run bash "$HOOK" 123 --dirty-tree-action=stash --no-include-untracked
+  [ "$status" -eq 0 ]
   git stash list | grep -q 'auto-stash before /implement #123'
 }
 
