@@ -39,8 +39,28 @@ impl EntryState {
     }
 
     pub fn to_toml(&self, entry_fields: &'static [FieldSchema]) -> toml::Value {
+        let all: Vec<usize> = (0..entry_fields.len()).collect();
+        self.to_toml_filtered(entry_fields, &all)
+    }
+
+    /// Serialize the entry table, including only the field indices in
+    /// `visible_indices`. Used by `DynamicMap.serialize_to_toml` to drop
+    /// kind-incompatible agent fields from the saved TOML so the
+    /// validator never sees stale HTTP-era values on a subprocess
+    /// agent (and vice-versa).
+    pub fn to_toml_filtered(
+        &self,
+        entry_fields: &'static [FieldSchema],
+        visible_indices: &[usize],
+    ) -> toml::Value {
         let mut table = toml::map::Map::new();
-        for (fs, sf) in entry_fields.iter().zip(self.fields.iter()) {
+        for &idx in visible_indices {
+            let Some(fs) = entry_fields.get(idx) else {
+                continue;
+            };
+            let Some(sf) = self.fields.get(idx) else {
+                continue;
+            };
             table.insert(fs.key.to_string(), widget_value(&sf.widget));
         }
         toml::Value::Table(table)

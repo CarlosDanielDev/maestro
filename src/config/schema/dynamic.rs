@@ -19,6 +19,37 @@ use super::{DefaultValue, FieldKind, FieldSchema};
 pub(crate) const AGENT_KINDS: &[&str] =
     &["claude", "codex", "qwen", "opencode", "ollama", "minimax"];
 
+/// Subset of [`AGENT_KINDS`] that runs as a local subprocess (CLI mode).
+/// Mirrors `AgentKind::is_subprocess` so the TUI can hide HTTP-only
+/// fields (base_url, api_key_env, request_timeout_secs) when kind is
+/// one of these.
+pub(crate) const SUBPROCESS_KINDS: &[&str] = &["claude", "codex", "qwen", "opencode"];
+
+/// Subset of [`AGENT_KINDS`] that talks over HTTP. Mirrors
+/// `AgentKind::is_http`. CLI-only fields (command, permission_mode,
+/// allowed_tools, sandbox, extra_args) hide when kind is one of these.
+pub(crate) const HTTP_KINDS: &[&str] = &["ollama", "minimax"];
+
+/// Decide whether an `[agents.<id>]` field row should render for a given
+/// kind value. Subprocess fields (command, permission_mode, sandbox,
+/// allowed_tools, extra_args) hide when kind is an HTTP variant and
+/// vice-versa. Unknown keys or unknown kinds default to visible —
+/// hiding silently is worse than showing an extra row.
+pub(crate) fn agent_field_visible_for_kind(field_key: &str, kind_value: &str) -> bool {
+    let is_subprocess = SUBPROCESS_KINDS.contains(&kind_value);
+    let is_http = HTTP_KINDS.contains(&kind_value);
+    if !is_subprocess && !is_http {
+        return true;
+    }
+    match field_key {
+        "command" | "permission_mode" | "sandbox" | "allowed_tools" | "extra_args" => {
+            is_subprocess
+        }
+        "base_url" | "api_key_env" | "request_timeout_secs" => is_http,
+        _ => true,
+    }
+}
+
 /// Allowed `agents.<id>.permission_mode` values. Mirrors
 /// `core::PERMISSION_MODES` so the two tabs surface identical choices.
 pub(crate) const PERMISSION_MODES: &[&str] = &[

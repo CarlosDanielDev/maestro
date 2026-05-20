@@ -149,6 +149,149 @@ fn bracket_ignored_when_entry_field_focused() {
 }
 
 #[test]
+fn agents_kind_subprocess_hides_http_only_fields() {
+    use crate::config::schema::dynamic::AGENTS_ENTRY_FIELDS;
+    use std::sync::Arc;
+    let clock: Arc<FakeClock> = Arc::new(FakeClock::new());
+    let mut w = DynamicMapWidget::with_clock(
+        "agents",
+        "agents",
+        AGENTS_ENTRY_FIELDS,
+        None,
+        clock.clone() as Arc<dyn Clock>,
+    );
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "claude");
+    w.handle_input(ev(KeyCode::Enter));
+    // kind defaults to "claude" (subprocess). HTTP-only fields must not
+    // appear in the visible index list.
+    let visible = w.visible_field_indices();
+    let visible_keys: Vec<&str> = visible
+        .iter()
+        .map(|&i| AGENTS_ENTRY_FIELDS[i].key)
+        .collect();
+    for hidden in ["base_url", "api_key_env", "request_timeout_secs"] {
+        assert!(
+            !visible_keys.contains(&hidden),
+            "subprocess kind must hide `{hidden}`; visible = {:?}",
+            visible_keys
+        );
+    }
+    for shown in [
+        "kind",
+        "enabled",
+        "command",
+        "model",
+        "extra_args",
+        "permission_mode",
+        "allowed_tools",
+        "sandbox",
+    ] {
+        assert!(
+            visible_keys.contains(&shown),
+            "subprocess kind must show `{shown}`; visible = {:?}",
+            visible_keys
+        );
+    }
+}
+
+#[test]
+fn agents_kind_http_hides_subprocess_only_fields() {
+    use crate::config::schema::dynamic::AGENTS_ENTRY_FIELDS;
+    use std::sync::Arc;
+    let clock: Arc<FakeClock> = Arc::new(FakeClock::new());
+    let mut w = DynamicMapWidget::with_clock(
+        "agents",
+        "agents",
+        AGENTS_ENTRY_FIELDS,
+        None,
+        clock.clone() as Arc<dyn Clock>,
+    );
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "ollama");
+    w.handle_input(ev(KeyCode::Enter));
+    // Switch kind from default "claude" to "ollama" by walking the
+    // Dropdown to position of "ollama" in AGENT_KINDS:
+    // [claude, codex, qwen, opencode, ollama, minimax] — 4 Right presses.
+    assert_eq!(*w.focus(), MapFocus::EntryField(0));
+    for _ in 0..4 {
+        w.handle_input(ev(KeyCode::Right));
+    }
+    let visible = w.visible_field_indices();
+    let visible_keys: Vec<&str> = visible
+        .iter()
+        .map(|&i| AGENTS_ENTRY_FIELDS[i].key)
+        .collect();
+    for hidden in [
+        "command",
+        "permission_mode",
+        "sandbox",
+        "allowed_tools",
+        "extra_args",
+    ] {
+        assert!(
+            !visible_keys.contains(&hidden),
+            "http kind must hide `{hidden}`; visible = {:?}",
+            visible_keys
+        );
+    }
+    for shown in ["kind", "enabled", "base_url", "model", "api_key_env", "request_timeout_secs"] {
+        assert!(
+            visible_keys.contains(&shown),
+            "http kind must show `{shown}`; visible = {:?}",
+            visible_keys
+        );
+    }
+}
+
+#[test]
+fn switching_kind_clamps_focus_off_now_hidden_field() {
+    use crate::config::schema::dynamic::AGENTS_ENTRY_FIELDS;
+    use std::sync::Arc;
+    let clock: Arc<FakeClock> = Arc::new(FakeClock::new());
+    let mut w = DynamicMapWidget::with_clock(
+        "agents",
+        "agents",
+        AGENTS_ENTRY_FIELDS,
+        None,
+        clock.clone() as Arc<dyn Clock>,
+    );
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "claude");
+    w.handle_input(ev(KeyCode::Enter));
+    // Walk down to `command` (field 2 — subprocess-only). Validate.
+    w.handle_input(ev(KeyCode::Down));
+    w.handle_input(ev(KeyCode::Down));
+    assert_eq!(*w.focus(), MapFocus::EntryField(2));
+    // Go back to kind, switch to ollama.
+    w.handle_input(ev(KeyCode::Up));
+    w.handle_input(ev(KeyCode::Up));
+    assert_eq!(*w.focus(), MapFocus::EntryField(0));
+    for _ in 0..4 {
+        w.handle_input(ev(KeyCode::Right));
+    }
+    // Walk Down from kind — must land on a VISIBLE field, never on
+    // `command` (now hidden under http kind).
+    w.handle_input(ev(KeyCode::Down));
+    let visible = w.visible_field_indices();
+    if let MapFocus::EntryField(n) = *w.focus() {
+        assert!(
+            visible.contains(&n),
+            "after switching kind, focus {} must be on a visible field; visible = {:?}",
+            n,
+            visible
+        );
+        assert_ne!(
+            AGENTS_ENTRY_FIELDS[n].key,
+            "command",
+            "focus must not land on now-hidden `command`"
+        );
+    } else {
+        panic!("expected EntryField focus");
+    }
+}
+
+#[test]
 fn d_typed_into_text_field_does_not_open_remove_modal() {
     // Regression: user types "opencode" into a String field; the inner
     // 'd' should land in the TextInput buffer, NOT trigger the Remove-

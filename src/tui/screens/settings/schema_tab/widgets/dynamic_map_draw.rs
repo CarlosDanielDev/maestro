@@ -70,7 +70,8 @@ pub(super) fn draw(
         f.render_widget(tabs, chunks[0]);
 
         if let Some(entry) = widget.active_entry() {
-            draw_entry_fields(f, chunks[1], theme, entry, widget.focus());
+            let visible = widget.visible_field_indices();
+            draw_entry_fields(f, chunks[1], theme, entry, widget.focus(), &visible);
         }
     }
 
@@ -181,8 +182,9 @@ fn draw_entry_fields(
     theme: &Theme,
     entry: &EntryState,
     focus: &MapFocus,
+    visible_indices: &[usize],
 ) {
-    let n = entry.fields.len() as u16;
+    let n = visible_indices.len() as u16;
     if n == 0 {
         return;
     }
@@ -191,9 +193,12 @@ fn draw_entry_fields(
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
-    for (idx, sf) in entry.fields.iter().enumerate() {
-        let focused = matches!(focus, MapFocus::EntryField(n) if *n == idx);
-        sf.widget.draw(f, rows[idx], theme, focused, None);
+    for (row_idx, &field_idx) in visible_indices.iter().enumerate() {
+        let Some(sf) = entry.fields.get(field_idx) else {
+            continue;
+        };
+        let focused = matches!(focus, MapFocus::EntryField(n) if *n == field_idx);
+        sf.widget.draw(f, rows[row_idx], theme, focused, None);
     }
 }
 
