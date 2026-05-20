@@ -177,6 +177,55 @@ impl Screen for SettingsScreen {
                 if self.active_tab() == SettingsTab::Flags {
                     return ScreenAction::None;
                 }
+                // Tab-level shortcuts for dynamic-cardinality widgets.
+                // `a` add, `d` delete, `u` undo route to the FIRST
+                // DynamicMap / DynamicRows widget on the active tab,
+                // regardless of which scalar field currently owns the
+                // cursor. Without this, pressing `a` while focused on
+                // `max_concurrent` (a NumberStepper, no `a` handler)
+                // would silently do nothing even though the tab also
+                // hosts `completion_gates.commands` with a visible
+                // "[a] add first row" hint.
+                if matches!(
+                    *code,
+                    KeyCode::Char('a') | KeyCode::Char('d') | KeyCode::Char('u')
+                ) && modifiers.is_empty()
+                {
+                    let idx = self.field_index;
+                    let tab = self.active_tab;
+                    let key_event = KeyEvent::new(*code, *modifiers);
+                    // Don't double-handle if the current field is itself
+                    // a dynamic widget — fall through to the normal
+                    // delegation arm below so its own state machine sees
+                    // the key exactly once.
+                    let current_is_dynamic = self.fields_per_tab[tab]
+                        .get(idx)
+                        .map(|f| {
+                            matches!(
+                                f.widget,
+                                crate::tui::widgets::WidgetKind::DynamicMap(_)
+                                    | crate::tui::widgets::WidgetKind::DynamicRows(_)
+                            )
+                        })
+                        .unwrap_or(false);
+                    if !current_is_dynamic {
+                        if let Some(target_idx) =
+                            self.fields_per_tab[tab].iter().position(|f| {
+                                matches!(
+                                    f.widget,
+                                    crate::tui::widgets::WidgetKind::DynamicMap(_)
+                                        | crate::tui::widgets::WidgetKind::DynamicRows(_)
+                                )
+                            })
+                        {
+                            self.field_index = target_idx;
+                            if let Some(field) = self.fields_per_tab[tab].get_mut(target_idx) {
+                                field.widget.handle_input(key_event);
+                            }
+                            return ScreenAction::None;
+                        }
+                    }
+                }
                 // Special-case Project action rows: Enter/Space triggers
                 // file operations rather than the toggle's normal behaviour.
                 if self.active_tab() == SettingsTab::Project

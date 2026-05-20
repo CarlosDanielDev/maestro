@@ -170,6 +170,31 @@ fn keybindings_returns_non_empty() {
 }
 
 #[test]
+fn a_key_from_scalar_field_routes_to_tab_dynamic_widget() {
+    let mut screen = SettingsScreen::new(make_config(), make_flags());
+    // Sessions tab hosts both scalar fields (max_concurrent, …) and the
+    // `completion_gates.commands` DynamicRows widget at the end.
+    screen.jump_to_tab(SettingsTab::Sessions);
+    // Cursor starts on field 0 (max_concurrent, NumberStepper). Press `a`.
+    let start_field = screen.field_index;
+    screen.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
+    // Expectation: field_index jumped onto the DynamicRows row AND the
+    // widget opened its Add modal. We can't easily peek into the modal
+    // from outside, but the focus jump is observable.
+    let target_field = screen.field_index;
+    assert_ne!(
+        start_field, target_field,
+        "pressing `a` while focused on a scalar field must move focus onto the tab's dynamic widget"
+    );
+    let target_widget = &screen.fields_per_tab[screen.active_tab][target_field].widget;
+    assert!(
+        matches!(target_widget, WidgetKind::DynamicRows(_) | WidgetKind::DynamicMap(_)),
+        "target field must be the dynamic-cardinality widget, got {:?}",
+        target_widget.label()
+    );
+}
+
+#[test]
 fn all_tabs_have_fields_except_flags() {
     let screen = SettingsScreen::new(make_config(), make_flags());
     for (i, tab) in SettingsTab::ALL.iter().enumerate() {
