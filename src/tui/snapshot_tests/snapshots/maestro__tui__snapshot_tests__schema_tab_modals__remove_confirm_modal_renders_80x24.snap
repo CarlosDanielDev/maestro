@@ -1,0 +1,28 @@
+---
+source: src/tui/snapshot_tests/schema_tab_modals.rs
+expression: terminal.backend()
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"          ╔═════════════════════[ Remove entry ]═════════════════════╗          "
+"          ║                                                          ║          "
+"          ║                  Delete [agents.claude]?                 ║          "
+"          ║                                                          ║          "
+"          ║                [y] confirm  [n/Esc] cancel               ║          "
+"          ║                                                          ║          "
+"          ╚══════════════════════════════════════════════════════════╝          "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

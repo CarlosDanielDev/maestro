@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Clear, Paragraph},
 };
 
 use crate::tui::theme::Theme;
@@ -85,14 +85,11 @@ impl AddEntryModal {
         let centered = centered_rect(area, 60, 9);
         f.render_widget(Clear, centered);
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" {} ", self.title))
-            .border_style(Style::default().fg(theme.border_active))
-            .style(Style::default().bg(theme.branding_bg));
-        f.render_widget(block.clone(), centered);
-
+        let block = theme
+            .styled_block(&self.title, true)
+            .border_style(Style::default().fg(theme.accent_info));
         let inner = block.inner(centered);
+        f.render_widget(block, centered);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
