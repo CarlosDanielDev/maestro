@@ -114,7 +114,16 @@ impl AgentConfig {
                     self.kind.as_str()
                 );
             }
-            if self.base_url.is_some() {
+            // TUI text inputs round-trip cleared fields as `Some("")`,
+            // not `None`. Treat empty / whitespace-only base_url as
+            // "not set" so the user can recover from a stale HTTP-era
+            // value by simply clearing the field.
+            let base_url_set = self
+                .base_url
+                .as_deref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
+            if base_url_set {
                 anyhow::bail!(
                     "agents.{id}.base_url is only valid for HTTP agents; remove it from {} agent `{id}`",
                     self.kind.as_str()
@@ -130,7 +139,13 @@ impl AgentConfig {
                     self.kind.as_str()
                 );
             }
-            if self.command.is_some() {
+            // Same empty-string handling as the subprocess branch.
+            let command_set = self
+                .command
+                .as_deref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
+            if command_set {
                 anyhow::bail!(
                     "agents.{id}.command is only valid for subprocess agents; remove it from {} agent `{id}`",
                     self.kind.as_str()
