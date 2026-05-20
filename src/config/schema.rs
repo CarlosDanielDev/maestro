@@ -7,6 +7,10 @@
 
 #[allow(dead_code)]
 mod core;
+// docs_render is consumed only by src/integration_tests/docs_gen.rs (also
+// #[cfg(test)]). Gate it the same way so non-test builds don't compile
+// dead-code paths that produced ~14 dead_code warnings in `cargo check`.
+#[cfg(test)]
 pub(crate) mod docs_render;
 #[allow(dead_code)]
 mod extras;
