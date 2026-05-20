@@ -140,7 +140,11 @@ impl SettingsScreen {
                 width: area.width,
                 height: h,
             };
-            if focused {
+            // Single-line scalar fields get an orange filled focus row.
+            // Multi-line widgets (DynamicMap, DynamicRows) render their own
+            // focus chrome via the `focused` arg below — painting a height-1
+            // strip on top of them produces a stray orange stripe.
+            if focused && h == 1 {
                 render_focused_row_bg(
                     f,
                     Rect {
