@@ -590,10 +590,27 @@ maestro/
 │   │           ├── mod.rs                 # SettingsScreen: interactive settings screen with tabbed TUI widget system; Flags tab displays all feature flags with name, on/off state, source (Default/Config/Cli), and description in read-only mode; focused fields rendered with green accent; Sessions tab gains hollow-retry widgets: [policy] dropdown (always/intent-aware/never), [work_max_retries] stepper, [consultation_max_retries] stepper; footer built from focused widget's edit_hint() so edit keys (Space/Enter/←→) are always advertised; KeymapProvider::keybindings() gains a third "Edit" group for consistent ? help overlay; save_config returns Err via let-else when config_path is None; Ctrl+S surfaces failures as a 5-second title-bar flash (save_error_flash: Option<(String, Instant)> field) rendered as "Settings [Save failed: <msg>]" in accent_error; with_caveman_mode() builder, sync hook for Space-toggling caveman mode, status flash in the title bar, Space → caveman binding in the help overlay  [Issue #275, #432, #437, #490]
 │   │           ├── caveman_row.rs         # TUI render helper for the caveman-mode settings row; four visual states: ExplicitTrue (green checkbox + label), ExplicitFalse (dim checkbox), Default (grey "inherits settings.json"), Error (red warning); consumed by SettingsScreen  [Issue #490]
 │   │           ├── schema_tab/            # Schema-driven settings renderer — builds SettingsField entries from a TableSchema; all 10 settings tabs now use from_schema() + sync_to_config (Flag::SchemaDrivenSettings deleted in #716)  [Issue #714, #715, #716]
-│   │           │   ├── mod.rs             # Module facade; pub(crate) mod build; pub(crate) mod sync; #[cfg(test)] mod tests
+│   │           │   ├── mod.rs             # Module facade; pub(crate) mod build; pub(crate) mod sync; pub(crate) mod widgets; pub(crate) mod modals; #[cfg(test)] mod tests
 │   │           │   ├── build.rs           # from_schema(): maps each FieldKind to a WidgetKind and builds a flat Vec<SettingsField>; falls back to field.default for keys absent in serialized Config
 │   │           │   ├── sync.rs            # sync_to_config(): serializes Config to toml::Value, applies widget mutations via schema walk, deserializes back; apply_to_toml() exposed for unit-testing with synthetic schemas
-│   │           │   └── tests.rs           # Unit tests for build and sync paths using synthetic TableSchema fixtures
+│   │           │   ├── tests.rs           # Unit tests for build and sync paths using synthetic TableSchema fixtures
+│   │           │   ├── widgets/           # Reusable widget primitives for DynamicMap and DynamicRows  [Issue #791]
+│   │           │   │   ├── mod.rs             # Re-exports for all widget primitives
+│   │           │   │   ├── clock.rs           # Clock trait + SystemClock + FakeClock for testable time
+│   │           │   │   ├── identifier.rs      # validate_identifier(), IdentifierError, RESERVED_IDENTIFIERS
+│   │           │   │   ├── undo.rs            # UndoBuffer with 5-second undo window
+│   │           │   │   ├── entry_state.rs     # EntryState wrapper for widget row state
+│   │           │   │   ├── dynamic_map.rs         # DynamicMapWidget: key-value map editor with add/remove/reorder (Alt+↑/↓)
+│   │           │   │   ├── dynamic_map_draw.rs    # Rendering logic for DynamicMapWidget
+│   │           │   │   ├── dynamic_map_tests.rs   # Unit tests for DynamicMapWidget
+│   │           │   │   ├── dynamic_rows.rs        # DynamicRowsWidget: ordered list editor with add/remove/reorder (Alt+↑/↓)
+│   │           │   │   ├── dynamic_rows_draw.rs   # Rendering logic for DynamicRowsWidget
+│   │           │   │   ├── dynamic_rows_tests.rs  # Unit tests for DynamicRowsWidget
+│   │           │   │   └── test_fixture.rs        # TEST_AGENT_FIELDS and TEST_COMMAND_FIELDS shared fixtures
+│   │           │   └── modals/            # Modal dialogs used by DynamicMap and DynamicRows  [Issue #791]
+│   │           │       ├── mod.rs             # ModalAction enum and re-exports
+│   │           │       ├── add_entry.rs       # AddEntryModal: text-input dialog for inserting a new row/key
+│   │           │       └── remove_confirm.rs  # RemoveConfirmModal: confirmation dialog before deleting a row
 │   │           ├── tests/                 # Settings screen test modules  [Issue #714]
 │   │           │   ├── mod.rs             # Module declarations for all settings test submodules
 │   │           │   ├── basic.rs           # Basic SettingsScreen construction and navigation tests

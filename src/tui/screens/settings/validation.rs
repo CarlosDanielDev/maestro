@@ -199,13 +199,7 @@ mod tests {
                 .get(*idx)
                 .map(|f| &f.widget)
                 .unwrap_or_else(|| panic!("tab {tab} field {idx} must exist"));
-            let actual = match widget {
-                WidgetKind::Toggle(w) => w.label.as_str(),
-                WidgetKind::TextInput(w) => w.label.as_str(),
-                WidgetKind::Dropdown(w) => w.label.as_str(),
-                WidgetKind::NumberStepper(w) => w.label.as_str(),
-                WidgetKind::ListEditor(w) => w.label.as_str(),
-            };
+            let actual = widget.label();
             assert_eq!(
                 actual, *expected_label,
                 "validator key ({tab}, {idx}) expects field labelled `{expected_label}` but found `{actual}`",

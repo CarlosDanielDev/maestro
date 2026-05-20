@@ -58,6 +58,8 @@ pub enum WidgetKind {
     NumberStepper(NumberStepper),
     Dropdown(Dropdown),
     ListEditor(ListEditor),
+    DynamicMap(crate::tui::screens::settings::schema_tab::widgets::DynamicMapWidget),
+    DynamicRows(crate::tui::screens::settings::schema_tab::widgets::DynamicRowsWidget),
 }
 
 impl WidgetKind {
@@ -68,6 +70,8 @@ impl WidgetKind {
             Self::NumberStepper(w) => w.handle_input(key),
             Self::Dropdown(w) => w.handle_input(key),
             Self::ListEditor(w) => w.handle_input(key),
+            Self::DynamicMap(w) => w.handle_input(key),
+            Self::DynamicRows(w) => w.handle_input(key),
         }
     }
 
@@ -85,6 +89,8 @@ impl WidgetKind {
             Self::NumberStepper(w) => w.draw(f, area, theme, focused, validation),
             Self::Dropdown(w) => w.draw(f, area, theme, focused),
             Self::ListEditor(w) => w.draw(f, area, theme, focused),
+            Self::DynamicMap(w) => w.draw(f, area, theme, focused),
+            Self::DynamicRows(w) => w.draw(f, area, theme, focused),
         }
     }
 
@@ -96,6 +102,8 @@ impl WidgetKind {
             Self::NumberStepper(w) => &w.label,
             Self::Dropdown(w) => &w.label,
             Self::ListEditor(w) => &w.label,
+            Self::DynamicMap(w) => &w.label,
+            Self::DynamicRows(w) => &w.label,
         }
     }
 
@@ -103,6 +111,8 @@ impl WidgetKind {
         match self {
             Self::TextInput(w) => w.editing,
             Self::ListEditor(w) => w.editing,
+            Self::DynamicMap(w) => w.needs_insert_mode(),
+            Self::DynamicRows(w) => w.needs_insert_mode(),
             _ => false,
         }
     }
@@ -115,6 +125,8 @@ impl WidgetKind {
             Self::NumberStepper(_) => ("←/→", "Adjust"),
             Self::TextInput(_) => ("Enter", "Edit"),
             Self::ListEditor(_) => ("Enter", "Edit list"),
+            Self::DynamicMap(w) => w.edit_hint(),
+            Self::DynamicRows(w) => w.edit_hint(),
         }
     }
 }
