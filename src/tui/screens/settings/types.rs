@@ -109,4 +109,11 @@ pub struct SettingsScreen {
     pub(super) caveman_state: CavemanModeState,
     pub(super) pending_caveman_toggle: Option<bool>,
     pub(super) caveman_status_flash: Option<(String, std::time::Instant)>,
+    /// Substring query that filters the sidebar tab list. Case-insensitive.
+    /// Empty = all tabs visible.
+    pub(super) sidebar_search: String,
+    /// True while the search input owns key events. Toggled by `/` (enter)
+    /// and `Esc` / `Enter` (exit). When false, key events route to the
+    /// normal settings handler.
+    pub(super) sidebar_search_active: bool,
 }

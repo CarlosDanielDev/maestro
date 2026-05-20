@@ -58,6 +58,8 @@ impl SettingsScreen {
             caveman_state: CavemanModeState::Default,
             pending_caveman_toggle: None,
             caveman_status_flash: None,
+            sidebar_search: String::new(),
+            sidebar_search_active: false,
         };
         screen.run_all_validations();
         screen
@@ -211,11 +213,32 @@ impl SettingsScreen {
     /// [`SettingsTab::ALPHABETICAL_INDICES`]. Returns 0 if the active tab
     /// is somehow missing from the alphabetical view (should be unreachable
     /// while ALPHABETICAL_INDICES mirrors ALL).
+    #[allow(dead_code)] // reserved for follow-up that unifies Tab key with sidebar order
     pub(super) fn alphabetical_position(&self) -> usize {
         SettingsTab::ALPHABETICAL_INDICES
             .iter()
             .position(|&idx| idx == self.active_tab)
             .unwrap_or(0)
+    }
+
+    /// Subset of [`SettingsTab::ALPHABETICAL_INDICES`] whose labels match
+    /// the current sidebar search (case-insensitive substring). Empty
+    /// search returns all alphabetical indices.
+    pub(super) fn sidebar_visible_indices(&self) -> Vec<usize> {
+        if self.sidebar_search.is_empty() {
+            return SettingsTab::ALPHABETICAL_INDICES.to_vec();
+        }
+        let needle = self.sidebar_search.to_lowercase();
+        SettingsTab::ALPHABETICAL_INDICES
+            .iter()
+            .copied()
+            .filter(|&idx| {
+                SettingsTab::ALL[idx]
+                    .label()
+                    .to_lowercase()
+                    .contains(&needle)
+            })
+            .collect()
     }
 
     // Tab navigation walks the canonical SettingsTab::ALL order (the

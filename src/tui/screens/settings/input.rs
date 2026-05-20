@@ -31,6 +31,38 @@ impl Screen for SettingsScreen {
             return ScreenAction::None;
         }
 
+        // Sidebar search input. When active, captures every key event so
+        // chars type into the query, Backspace pops, Enter/Esc exit. Esc
+        // also clears the query; Enter keeps it so the filter sticks.
+        if self.sidebar_search_active {
+            match *code {
+                KeyCode::Esc => {
+                    self.sidebar_search.clear();
+                    self.sidebar_search_active = false;
+                }
+                KeyCode::Enter => {
+                    self.sidebar_search_active = false;
+                }
+                KeyCode::Backspace => {
+                    self.sidebar_search.pop();
+                }
+                KeyCode::Char(c) if c.is_ascii() && !c.is_control() => {
+                    self.sidebar_search.push(c);
+                }
+                _ => {}
+            }
+            return ScreenAction::None;
+        }
+
+        // Enter search mode on `/` (vim-style) when no widget is taking
+        // text input. `/` typed inside a TextInput sub-field stays a
+        // literal because that path returns earlier via
+        // active_widget_needs_insert.
+        if matches!(*code, KeyCode::Char('/')) && modifiers.is_empty() {
+            self.sidebar_search_active = true;
+            return ScreenAction::None;
+        }
+
         // Handle discard confirmation
         if self.confirm_discard {
             return match *code {

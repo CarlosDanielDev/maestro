@@ -40,30 +40,105 @@ fn render_focused_row_bg(f: &mut Frame, area: Rect, theme: &Theme) {
 
 impl SettingsScreen {
     fn draw_sidebar(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        // Vertical list of tab labels in alphabetical order. The active
-        // tab is prefixed with `> ` in accent_success; others use
-        // text_secondary with a leading two-space gutter so labels stay
-        // visually aligned. Width is fixed by the caller (Layout::Length).
-        let mut lines: Vec<Line> = Vec::with_capacity(SettingsTab::ALPHABETICAL_INDICES.len());
-        for &tab_idx in SettingsTab::ALPHABETICAL_INDICES {
-            let tab = SettingsTab::ALL[tab_idx];
-            let is_active = tab_idx == self.active_tab;
-            let (prefix, style) = if is_active {
-                (
-                    "> ",
-                    Style::default()
-                        .fg(theme.accent_success)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                ("  ", Style::default().fg(theme.text_secondary))
-            };
-            lines.push(Line::from(vec![
-                Span::styled(prefix, style),
-                Span::styled(tab.label(), style),
-            ]));
+        // Layout:
+        //   Line 0: search input  (always visible)
+        //   Line 1: thin separator
+        //   Lines 2+: alphabetical tab list, filtered by search
+        if area.height < 3 {
+            return;
         }
-        f.render_widget(Paragraph::new(lines), area);
+        let search_area = Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: 1,
+        };
+        let sep_area = Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: 1,
+        };
+        let tabs_area = Rect {
+            x: area.x,
+            y: area.y + 2,
+            width: area.width,
+            height: area.height - 2,
+        };
+
+        // Search input.
+        let prefix_style = Style::default().fg(theme.text_muted);
+        let query_style = if self.sidebar_search_active {
+            Style::default()
+                .fg(theme.accent_info)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.text_secondary)
+        };
+        let mut search_spans: Vec<Span> = Vec::with_capacity(4);
+        search_spans.push(Span::styled("Search: ", prefix_style));
+        if self.sidebar_search.is_empty() && !self.sidebar_search_active {
+            // Hint when idle and empty.
+            search_spans.push(Span::styled(
+                "press /",
+                Style::default()
+                    .fg(theme.text_muted)
+                    .add_modifier(Modifier::DIM),
+            ));
+        } else {
+            search_spans.push(Span::styled(self.sidebar_search.clone(), query_style));
+            if self.sidebar_search_active {
+                // Visible cursor block at end of input.
+                search_spans.push(Span::styled(
+                    "_",
+                    Style::default()
+                        .fg(theme.accent_info)
+                        .add_modifier(Modifier::REVERSED),
+                ));
+            }
+        }
+        f.render_widget(Paragraph::new(Line::from(search_spans)), search_area);
+
+        let sep_text = "─".repeat(area.width as usize);
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                sep_text,
+                Style::default().fg(theme.border_inactive),
+            ))),
+            sep_area,
+        );
+
+        // Filtered tab list.
+        let visible = self.sidebar_visible_indices();
+        let mut lines: Vec<Line> = Vec::with_capacity(visible.len().max(1));
+        if visible.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "no match",
+                Style::default()
+                    .fg(theme.text_muted)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+        } else {
+            for tab_idx in visible {
+                let tab = SettingsTab::ALL[tab_idx];
+                let is_active = tab_idx == self.active_tab;
+                let (prefix, style) = if is_active {
+                    (
+                        "> ",
+                        Style::default()
+                            .fg(theme.accent_success)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    ("  ", Style::default().fg(theme.text_secondary))
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(tab.label(), style),
+                ]));
+            }
+        }
+        f.render_widget(Paragraph::new(lines), tabs_area);
     }
 
     fn field_height(&self, tab: usize, field_idx: usize) -> u16 {
