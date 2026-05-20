@@ -2,6 +2,7 @@ use crate::flags::FlagSource;
 use crate::tui::icons::{self, IconId};
 use crate::tui::screens::{draw_keybinds_bar, sanitize_for_terminal};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::WidgetKind;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -60,11 +61,35 @@ impl SettingsScreen {
     }
 
     fn field_height(&self, tab: usize, field_idx: usize) -> u16 {
-        if self
-            .feedback_for(tab, field_idx)
-            .is_some_and(|fb| !fb.message.is_empty())
+        if let Some(field) = self
+            .fields_per_tab
+            .get(tab)
+            .and_then(|fs| fs.get(field_idx))
         {
-            2
+            match &field.widget {
+                // Dynamic-cardinality widgets render a bordered Block with a
+                // sub-tab strip + per-entry field group (Map) or a row table
+                // (Rows). One row is not enough — give them the height to
+                // display the empty state hint or a full entry group.
+                WidgetKind::DynamicMap(w) => {
+                    // Block border (2) + sub-tab strip (2) + entry fields, or
+                    // the 3-line empty-state hint. `entry_fields` is the
+                    // upper bound on visible rows when an entry is active.
+                    let entry_rows = w.entry_fields.len() as u16;
+                    (entry_rows + 4).max(8)
+                }
+                WidgetKind::DynamicRows(_) => 10,
+                _ => {
+                    if self
+                        .feedback_for(tab, field_idx)
+                        .is_some_and(|fb| !fb.message.is_empty())
+                    {
+                        2
+                    } else {
+                        1
+                    }
+                }
+            }
         } else {
             1
         }
