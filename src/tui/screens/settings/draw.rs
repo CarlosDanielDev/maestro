@@ -110,35 +110,56 @@ impl SettingsScreen {
 
         // Filtered tab list.
         let visible = self.sidebar_visible_indices();
-        let mut lines: Vec<Line> = Vec::with_capacity(visible.len().max(1));
         if visible.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "no match",
-                Style::default()
-                    .fg(theme.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-            )));
-        } else {
-            for tab_idx in visible {
-                let tab = SettingsTab::ALL[tab_idx];
-                let is_active = tab_idx == self.active_tab;
-                let (prefix, style) = if is_active {
-                    (
-                        "> ",
-                        Style::default()
-                            .fg(theme.accent_success)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                } else {
-                    ("  ", Style::default().fg(theme.text_secondary))
-                };
-                lines.push(Line::from(vec![
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    "no match",
+                    Style::default()
+                        .fg(theme.text_muted)
+                        .add_modifier(Modifier::ITALIC),
+                ))),
+                tabs_area,
+            );
+            return;
+        }
+
+        // Render each tab as its own row so the active row can be painted
+        // with a filled background (selection_bg) for clearer focus
+        // affordance — `> ` prefix alone reads as a glyph, not a state.
+        for (i, tab_idx) in visible.iter().enumerate() {
+            if i as u16 >= tabs_area.height {
+                break;
+            }
+            let tab = SettingsTab::ALL[*tab_idx];
+            let is_active = *tab_idx == self.active_tab;
+            let row_area = Rect {
+                x: tabs_area.x,
+                y: tabs_area.y + i as u16,
+                width: tabs_area.width,
+                height: 1,
+            };
+            if is_active {
+                render_focused_row_bg(f, row_area, theme);
+            }
+            let (prefix, style) = if is_active {
+                (
+                    "▸ ",
+                    Style::default()
+                        .fg(theme.selection_fg)
+                        .bg(theme.selection_bg)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+                )
+            } else {
+                ("  ", Style::default().fg(theme.text_secondary))
+            };
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
                     Span::styled(prefix, style),
                     Span::styled(tab.label(), style),
-                ]));
-            }
+                ])),
+                row_area,
+            );
         }
-        f.render_widget(Paragraph::new(lines), tabs_area);
     }
 
     fn field_height(&self, tab: usize, field_idx: usize) -> u16 {

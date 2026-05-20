@@ -34,6 +34,8 @@ impl Screen for SettingsScreen {
         // Sidebar search input. When active, captures every key event so
         // chars type into the query, Backspace pops, Enter/Esc exit. Esc
         // also clears the query; Enter keeps it so the filter sticks.
+        // After every mutation we clamp `active_tab` onto the visible
+        // (filtered) set so the selection bar always stays in view.
         if self.sidebar_search_active {
             match *code {
                 KeyCode::Esc => {
@@ -51,6 +53,7 @@ impl Screen for SettingsScreen {
                 }
                 _ => {}
             }
+            self.clamp_active_to_visible();
             return ScreenAction::None;
         }
 

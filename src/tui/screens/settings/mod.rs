@@ -241,27 +241,69 @@ impl SettingsScreen {
             .collect()
     }
 
-    // Tab navigation walks the canonical SettingsTab::ALL order (the
-    // historical ordering preserved by existing tests). The sidebar
-    // visualizes tabs alphabetically — see ALPHABETICAL_INDICES — but
-    // Tab/BackTab still advance by enum index. A future PR can unify
-    // by walking ALPHABETICAL_INDICES once the test suite is migrated.
+    // Tab navigation walks the canonical SettingsTab::ALL order while the
+    // sidebar search is empty (preserves existing tests). When a search
+    // query narrows the visible list, Tab/BackTab walk only the visible
+    // alphabetical subset so the selection bar always stays inside the
+    // user's field of view.
     fn next_tab(&mut self) {
-        self.active_tab = (self.active_tab + 1) % SettingsTab::ALL.len();
+        if self.sidebar_search.is_empty() {
+            self.active_tab = (self.active_tab + 1) % SettingsTab::ALL.len();
+        } else {
+            let visible = self.sidebar_visible_indices();
+            if visible.is_empty() {
+                return;
+            }
+            let pos = visible
+                .iter()
+                .position(|&idx| idx == self.active_tab)
+                .unwrap_or(0);
+            self.active_tab = visible[(pos + 1) % visible.len()];
+        }
         self.field_index = 0;
         self.scroll_offset = 0;
         self.flags_selected = 0;
     }
 
     fn prev_tab(&mut self) {
-        self.active_tab = if self.active_tab == 0 {
-            SettingsTab::ALL.len() - 1
+        if self.sidebar_search.is_empty() {
+            self.active_tab = if self.active_tab == 0 {
+                SettingsTab::ALL.len() - 1
+            } else {
+                self.active_tab - 1
+            };
         } else {
-            self.active_tab - 1
-        };
+            let visible = self.sidebar_visible_indices();
+            if visible.is_empty() {
+                return;
+            }
+            let pos = visible
+                .iter()
+                .position(|&idx| idx == self.active_tab)
+                .unwrap_or(0);
+            let prev = if pos == 0 { visible.len() - 1 } else { pos - 1 };
+            self.active_tab = visible[prev];
+        }
         self.field_index = 0;
         self.scroll_offset = 0;
         self.flags_selected = 0;
+    }
+
+    /// Move `active_tab` onto the first visible tab when the current
+    /// active is filtered out by the sidebar search. Call after every
+    /// modification of `sidebar_search` so the user never loses sight
+    /// of which tab is selected.
+    pub(super) fn clamp_active_to_visible(&mut self) {
+        let visible = self.sidebar_visible_indices();
+        if visible.is_empty() {
+            return;
+        }
+        if !visible.contains(&self.active_tab) {
+            self.active_tab = visible[0];
+            self.field_index = 0;
+            self.scroll_offset = 0;
+            self.flags_selected = 0;
+        }
     }
 
     fn active_widget_needs_insert(&self) -> bool {
