@@ -7,6 +7,7 @@
 
 #[allow(dead_code)]
 mod core;
+#[allow(dead_code)]
 pub(crate) mod docs_render;
 #[allow(dead_code)]
 pub(crate) mod dynamic;
