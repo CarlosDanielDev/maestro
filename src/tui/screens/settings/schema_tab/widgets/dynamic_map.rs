@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{Frame, layout::Rect};
 
 use crate::config::schema::FieldSchema;
@@ -151,26 +151,23 @@ impl DynamicMapWidget {
                 self.attempt_undo();
                 WidgetAction::None
             }
-            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // `[` / `]` switch entries while focus is on the subtab strip.
+            // We avoid them when an EntryField is focused so they remain
+            // available as literals for inner text widgets.
+            KeyCode::Char(']') if matches!(self.focus, MapFocus::SubtabStrip) => {
                 self.next_tab();
                 WidgetAction::None
             }
-            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('[') if matches!(self.focus, MapFocus::SubtabStrip) => {
                 self.prev_tab();
                 WidgetAction::None
             }
             KeyCode::Down | KeyCode::Tab => {
-                if matches!(self.focus, MapFocus::SubtabStrip) && self.active_entry().is_some() {
-                    self.focus = MapFocus::EntryField(0);
-                }
+                self.focus_next_field();
                 WidgetAction::None
             }
-            KeyCode::Up => {
-                if let MapFocus::EntryField(0) = self.focus {
-                    self.focus = MapFocus::SubtabStrip;
-                } else if let MapFocus::EntryField(n) = self.focus {
-                    self.focus = MapFocus::EntryField(n - 1);
-                }
+            KeyCode::Up | KeyCode::BackTab => {
+                self.focus_prev_field();
                 WidgetAction::None
             }
             _ => {
@@ -183,6 +180,26 @@ impl DynamicMapWidget {
                 }
                 WidgetAction::None
             }
+        }
+    }
+
+    fn focus_next_field(&mut self) {
+        match self.focus {
+            MapFocus::SubtabStrip if self.active_entry().is_some() => {
+                self.focus = MapFocus::EntryField(0);
+            }
+            MapFocus::EntryField(n) if n + 1 < self.entry_fields.len() => {
+                self.focus = MapFocus::EntryField(n + 1);
+            }
+            _ => {}
+        }
+    }
+
+    fn focus_prev_field(&mut self) {
+        match self.focus {
+            MapFocus::EntryField(0) => self.focus = MapFocus::SubtabStrip,
+            MapFocus::EntryField(n) => self.focus = MapFocus::EntryField(n - 1),
+            _ => {}
         }
     }
 
@@ -307,7 +324,7 @@ impl DynamicMapWidget {
     }
 
     pub fn edit_hint(&self) -> (&'static str, &'static str) {
-        ("a/d/Ctrl←→", "Add/Del/Switch")
+        ("a/d/[/]", "Add/Del/Switch")
     }
 
     pub fn serialize_to_toml(&self) -> toml::Value {

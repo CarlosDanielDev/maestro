@@ -94,8 +94,18 @@ impl Screen for SettingsScreen {
             (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
                 if self.active_tab() == SettingsTab::Flags {
                     self.flags_selected = self.flags_selected.saturating_sub(1);
+                } else if self.field_index > 0 {
+                    self.field_index -= 1;
                 } else {
-                    self.field_index = self.field_index.saturating_sub(1);
+                    // Outer can't move up; delegate so multi-line widgets
+                    // (DynamicMap / DynamicRows) can advance their own
+                    // internal focus state.
+                    let idx = self.field_index;
+                    let tab = self.active_tab;
+                    let key_event = KeyEvent::new(*code, *modifiers);
+                    if let Some(field) = self.fields_per_tab[tab].get_mut(idx) {
+                        field.widget.handle_input(key_event);
+                    }
                 }
                 ScreenAction::None
             }
@@ -107,6 +117,15 @@ impl Screen for SettingsScreen {
                     }
                 } else if self.field_count() > 0 && self.field_index + 1 < self.field_count() {
                     self.field_index += 1;
+                } else {
+                    // Outer can't move down; delegate so multi-line widgets
+                    // can step through their entry-field rows.
+                    let idx = self.field_index;
+                    let tab = self.active_tab;
+                    let key_event = KeyEvent::new(*code, *modifiers);
+                    if let Some(field) = self.fields_per_tab[tab].get_mut(idx) {
+                        field.widget.handle_input(key_event);
+                    }
                 }
                 ScreenAction::None
             }

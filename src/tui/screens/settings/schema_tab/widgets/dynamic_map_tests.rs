@@ -105,27 +105,78 @@ fn add_modal_collision_keeps_modal_open() {
 }
 
 #[test]
-fn ctrl_right_advances_tab() {
+fn bracket_right_advances_tab() {
     let (mut w, _) = fresh_with_clock();
     for id in ["alpha", "bravo"] {
         w.handle_input(ev(KeyCode::Char('a')));
         typed_seq(&mut w, id);
         w.handle_input(ev(KeyCode::Enter));
     }
-    w.handle_input(ev_ctrl(KeyCode::Right));
+    // After Submit, focus is on EntryField(0); step Up to the subtab strip
+    // so `]` is interpreted as next-tab and not delegated to the inner field.
+    w.handle_input(ev(KeyCode::Up));
+    w.handle_input(ev(KeyCode::Char(']')));
     assert_eq!(w.active_index(), Some(0));
 }
 
 #[test]
-fn ctrl_left_moves_back() {
+fn bracket_left_moves_back() {
     let (mut w, _) = fresh_with_clock();
     for id in ["alpha", "bravo"] {
         w.handle_input(ev(KeyCode::Char('a')));
         typed_seq(&mut w, id);
         w.handle_input(ev(KeyCode::Enter));
     }
-    w.handle_input(ev_ctrl(KeyCode::Left));
+    w.handle_input(ev(KeyCode::Up));
+    w.handle_input(ev(KeyCode::Char('[')));
     assert_eq!(w.active_index(), Some(0));
+}
+
+#[test]
+fn bracket_ignored_when_entry_field_focused() {
+    let (mut w, _) = fresh_with_clock();
+    for id in ["alpha", "bravo"] {
+        w.handle_input(ev(KeyCode::Char('a')));
+        typed_seq(&mut w, id);
+        w.handle_input(ev(KeyCode::Enter));
+    }
+    // Focus is on EntryField(0); `]` must be delegated to the inner widget
+    // (so users can type the literal bracket into a text field) instead of
+    // switching tabs.
+    let before = w.active_index();
+    w.handle_input(ev(KeyCode::Char(']')));
+    assert_eq!(w.active_index(), before);
+}
+
+#[test]
+fn down_advances_through_entry_fields() {
+    let (mut w, _) = fresh_with_clock();
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "alpha");
+    w.handle_input(ev(KeyCode::Enter));
+    // Submit puts focus on EntryField(0); Down walks to (1), (2), ... until
+    // saturated.
+    let len = w.entry_fields.len();
+    assert!(len >= 2);
+    assert_eq!(*w.focus(), MapFocus::EntryField(0));
+    w.handle_input(ev(KeyCode::Down));
+    assert_eq!(*w.focus(), MapFocus::EntryField(1));
+    // Saturates at the last entry-field index.
+    for _ in 0..(len + 4) {
+        w.handle_input(ev(KeyCode::Down));
+    }
+    assert_eq!(*w.focus(), MapFocus::EntryField(len - 1));
+}
+
+#[test]
+fn up_from_first_entry_field_returns_to_subtab_strip() {
+    let (mut w, _) = fresh_with_clock();
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "alpha");
+    w.handle_input(ev(KeyCode::Enter));
+    assert_eq!(*w.focus(), MapFocus::EntryField(0));
+    w.handle_input(ev(KeyCode::Up));
+    assert_eq!(*w.focus(), MapFocus::SubtabStrip);
 }
 
 #[test]
