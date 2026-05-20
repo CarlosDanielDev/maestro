@@ -175,6 +175,7 @@ maestro/
 │   │   ├── schema/                        # Submodule tree for the config schema registry  [Issue #713]
 │   │   │   ├── docs_render.rs             # Pure renderer module: walks a TableSchema and emits a Markdown table block; used by the autogen system to produce AUTOGEN-marked sections in docs/configuration.md  [Issue #717]
 │   │   │   ├── docs_render_tests.rs       # Sibling test module for docs_render.rs loaded via `#[path]`; unit tests for the renderer covering all FieldKind leaf variants and NestedTable flattening  [Issue #717]
+│   │   │   ├── docs_render_dynamic_tests.rs # Sibling test module loaded via `#[path]`; insta + unit tests for `FieldKind::Map` and `FieldKind::VecOfStruct` dynamic-section rendering (heading, prose, entry-field table)  [Issue #793]
 │   │   │   └── registry/                  # Const &'static [TableSchema] registry covering 17 tables / 52 fields
 │   │   │       ├── mod.rs                 # Registry module facade; re-exports the combined table slice
 │   │   │       ├── core.rs                # Core registry entries: adapt, agents, budget, gates, github, models, modes, notifications, plugins, project, review, runtime, sessions, tui, turboquant, views

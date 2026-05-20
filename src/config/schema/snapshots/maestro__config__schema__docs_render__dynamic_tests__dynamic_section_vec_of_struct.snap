@@ -1,0 +1,14 @@
+---
+source: src/config/schema/docs_render_dynamic_tests.rs
+assertion_line: 209
+expression: body
+---
+
+### `[[sessions.completion_gates.commands]]` — array-of-tables (order-sensitive)
+
+Each `[[sessions.completion_gates.commands]]` block defines one entry. The list is **order-sensitive — declaration order is execution order.** Add, remove, or reorder entries via the Settings UI or by hand-editing `maestro.toml`. Each entry has the following fields:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | unset | Display name for the gate command. |
+| `command` | string | unset | Shell command executed by the gate. |

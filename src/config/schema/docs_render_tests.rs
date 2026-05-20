@@ -218,7 +218,7 @@ fn render_table_body_has_header_and_one_row_per_leaf() {
             "Sub",
         ),
     ];
-    let body = render_table_body(fields);
+    let body = render_table_body("demo", fields);
     assert!(body.starts_with("| Field | Type | Default | Description |\n|---|---|---|---|\n"));
     let data_rows = body.lines().filter(|l| l.starts_with("| `")).count();
     assert_eq!(data_rows, 2, "two non-nested leaf rows");
@@ -337,3 +337,5 @@ fn flatten_schema_includes_nested_dotted_tables() {
     assert!(map.contains_key("sessions.conflict"));
     assert!(map.contains_key("gates.ci_auto_fix"));
 }
+
+// Dynamic-section tests live in `docs_render_dynamic_tests.rs`.
