@@ -4,6 +4,7 @@ use crate::adapt::types::{
 };
 use crate::provider::types::ProviderKind;
 use crate::tui::screens::Screen;
+use crate::tui::screens::adapt::types::AdaptResults;
 use crate::tui::screens::adapt::{AdaptScreen, AdaptStep};
 use crate::tui::screens::milestone_wizard::{
     AiGeneratedPlan, MilestoneCreationResult, MilestoneWizardScreen, MilestoneWizardStep,
@@ -71,6 +72,12 @@ fn draw_wizard_ai_structuring_loading(
 
 fn adapt_screen(kind: ProviderKind) -> AdaptScreen {
     let mut screen = AdaptScreen::with_provider_kind(kind);
+    // `with_provider_kind` reads `.maestro/adapt-cache.json` to restore
+    // resumable state. That made this fixture non-deterministic — local dev
+    // hit a populated cache while CI's Coverage Tiers job runs tests
+    // single-threaded on a fresh checkout with no cache. Reset to a clean
+    // baseline so the snapshot reflects only what this fixture sets.
+    screen.results = AdaptResults::default();
     screen.step = AdaptStep::Complete;
     screen.results.plan = Some(AdaptPlan {
         milestones: vec![PlannedMilestone {
