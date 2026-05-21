@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::config::AgentConfig;
+use crate::tui::screens::settings::schema_tab::widgets::dynamic_map::MapFocus;
 
 #[test]
 fn settings_tab_all_includes_agents_at_index_seven() {
@@ -155,6 +156,66 @@ alert_threshold_pct = 80
     assert!(
         saved.contains("# This guardrail comment must survive saves"),
         "comment must survive saves, got:\n{saved}"
+    );
+}
+
+#[test]
+fn providers_tab_up_arrow_walks_back_through_dynamic_map_entry_fields() {
+    // Repro for the navigation bug where pressing Up while focused on an
+    // entry field inside the Providers DynamicMap jumped straight to the
+    // Default-provider dropdown above, skipping every other entry field
+    // and trapping the user — they could walk Down through the field list
+    // but couldn't walk back Up to fix earlier values.
+    let toml_str = "[project]\nrepo = \"owner/repo\"\nbase_branch = \"main\"\n\
+[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+[github]\n[notifications]\n[agents]\ndefault = \"claude\"\n\
+[agents.claude]\nkind = \"claude\"\ncommand = \"claude\"\n";
+    let config: Config = toml::from_str(toml_str).expect("parse");
+    let mut screen = SettingsScreen::new(config, make_flags());
+    screen.jump_to_tab(SettingsTab::Agents);
+    assert_eq!(screen.field_index, 0, "Providers tab opens on the dropdown");
+
+    // Down from the dropdown lands on the DynamicMap with focus=SubtabStrip.
+    screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+    assert_eq!(screen.field_index, 1);
+
+    // Two more Downs step into the entry-field rows.
+    screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+    screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+    assert_eq!(screen.field_index, 1);
+    {
+        let WidgetKind::DynamicMap(dm) = &screen.fields_per_tab[7][1].widget else {
+            panic!("expected DynamicMap at idx 1");
+        };
+        assert!(
+            matches!(dm.focus(), MapFocus::EntryField(_)),
+            "after two Downs inside DynamicMap focus must be on an EntryField, got {:?}",
+            dm.focus()
+        );
+    }
+
+    // Up walks back through entry fields BEFORE escaping to the dropdown.
+    screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+    assert_eq!(
+        screen.field_index, 1,
+        "Up at a deeper EntryField must keep focus inside the DynamicMap"
+    );
+
+    // Another Up lands on SubtabStrip; still inside the DynamicMap.
+    screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+    assert_eq!(screen.field_index, 1);
+    {
+        let WidgetKind::DynamicMap(dm) = &screen.fields_per_tab[7][1].widget else {
+            panic!("expected DynamicMap at idx 1");
+        };
+        assert_eq!(dm.focus(), &MapFocus::SubtabStrip);
+    }
+
+    // Only once focus is at the SubtabStrip boundary does Up escape to the dropdown.
+    screen.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+    assert_eq!(
+        screen.field_index, 0,
+        "Up at SubtabStrip top boundary must exit DynamicMap to the dropdown"
     );
 }
 

@@ -137,17 +137,22 @@ impl Screen for SettingsScreen {
             (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
                 if self.active_tab() == SettingsTab::Flags {
                     self.flags_selected = self.flags_selected.saturating_sub(1);
-                } else if self.field_index > 0 {
-                    self.field_index -= 1;
                 } else {
-                    // Outer can't move up; delegate so multi-line widgets
-                    // (DynamicMap / DynamicRows) can advance their own
-                    // internal focus state.
+                    // Delegate first so DynamicMap/DynamicRows can walk
+                    // back through their internal focus state. Only when
+                    // the widget reports it is at the top boundary
+                    // (return value `false`) does the outer cursor climb
+                    // up to the previous field — that's how Up can return
+                    // to the Default-provider dropdown above the agents
+                    // DynamicMap instead of skipping entry fields.
                     let idx = self.field_index;
                     let tab = self.active_tab;
-                    let key_event = KeyEvent::new(*code, *modifiers);
-                    if let Some(field) = self.fields_per_tab[tab].get_mut(idx) {
-                        field.widget.handle_input(key_event);
+                    let inner_consumed = self.fields_per_tab[tab]
+                        .get_mut(idx)
+                        .map(|f| f.widget.try_focus_prev())
+                        .unwrap_or(false);
+                    if !inner_consumed && self.field_index > 0 {
+                        self.field_index -= 1;
                     }
                 }
                 ScreenAction::None
@@ -158,16 +163,18 @@ impl Screen for SettingsScreen {
                     if self.flags_selected < max {
                         self.flags_selected += 1;
                     }
-                } else if self.field_count() > 0 && self.field_index + 1 < self.field_count() {
-                    self.field_index += 1;
                 } else {
-                    // Outer can't move down; delegate so multi-line widgets
-                    // can step through their entry-field rows.
                     let idx = self.field_index;
                     let tab = self.active_tab;
-                    let key_event = KeyEvent::new(*code, *modifiers);
-                    if let Some(field) = self.fields_per_tab[tab].get_mut(idx) {
-                        field.widget.handle_input(key_event);
+                    let inner_consumed = self.fields_per_tab[tab]
+                        .get_mut(idx)
+                        .map(|f| f.widget.try_focus_next())
+                        .unwrap_or(false);
+                    if !inner_consumed
+                        && self.field_count() > 0
+                        && self.field_index + 1 < self.field_count()
+                    {
+                        self.field_index += 1;
                     }
                 }
                 ScreenAction::None

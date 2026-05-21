@@ -273,6 +273,38 @@ impl DynamicMapWidget {
         }
     }
 
+    /// Walk inner focus one step backward without consuming the outer
+    /// SettingsScreen Up arrow. Returns true when focus moved so the
+    /// outer can leave `field_index` alone — only a return of `false`
+    /// signals the boundary (`SubtabStrip`) and lets the outer cursor
+    /// climb up to the previous field.
+    pub fn try_focus_prev(&mut self) -> bool {
+        if !matches!(self.focus, MapFocus::EntryField(_)) {
+            return false;
+        }
+        let before = self.focus.clone();
+        self.focus_prev_field();
+        self.focus != before
+    }
+
+    /// Mirror of [`try_focus_prev`] for the Down arrow. Returns true when
+    /// focus advanced into (or further inside) the entry-field group.
+    pub fn try_focus_next(&mut self) -> bool {
+        match self.focus {
+            MapFocus::SubtabStrip if self.active_entry().is_some() => {
+                let before = self.focus.clone();
+                self.focus_next_field();
+                self.focus != before
+            }
+            MapFocus::EntryField(_) => {
+                let before = self.focus.clone();
+                self.focus_next_field();
+                self.focus != before
+            }
+            _ => false,
+        }
+    }
+
     fn focus_next_field(&mut self) {
         let visible = self.visible_field_indices();
         match self.focus {

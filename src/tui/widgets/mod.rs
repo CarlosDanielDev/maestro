@@ -107,6 +107,28 @@ impl WidgetKind {
         }
     }
 
+    /// Walk inner focus one step up. Returns `true` only when the widget
+    /// actually moved its internal focus — non-dynamic widgets always
+    /// return `false`, letting the outer settings cursor advance instead.
+    /// SettingsScreen uses this to keep the Up arrow inside a
+    /// DynamicMap/DynamicRows widget until it hits the top boundary.
+    pub fn try_focus_prev(&mut self) -> bool {
+        match self {
+            Self::DynamicMap(w) => w.try_focus_prev(),
+            Self::DynamicRows(w) => w.try_focus_prev(),
+            _ => false,
+        }
+    }
+
+    /// Mirror of [`try_focus_prev`] for the Down arrow.
+    pub fn try_focus_next(&mut self) -> bool {
+        match self {
+            Self::DynamicMap(w) => w.try_focus_next(),
+            Self::DynamicRows(w) => w.try_focus_next(),
+            _ => false,
+        }
+    }
+
     pub fn needs_insert_mode(&self) -> bool {
         match self {
             Self::TextInput(w) => w.editing,

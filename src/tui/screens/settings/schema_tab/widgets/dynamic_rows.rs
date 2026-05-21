@@ -156,6 +156,30 @@ impl DynamicRowsWidget {
         }
     }
 
+    /// Walk row focus one step up without consuming the outer
+    /// SettingsScreen Up arrow. Returns true when focus moved so the
+    /// outer can leave `field_index` alone.
+    pub fn try_focus_prev(&mut self) -> bool {
+        if let RowFocus::Row(n) = self.focus
+            && n > 0
+        {
+            self.focus = RowFocus::Row(n - 1);
+            return true;
+        }
+        false
+    }
+
+    /// Mirror of [`try_focus_prev`] for the Down arrow.
+    pub fn try_focus_next(&mut self) -> bool {
+        if let RowFocus::Row(n) = self.focus
+            && n + 1 < self.rows.len()
+        {
+            self.focus = RowFocus::Row(n + 1);
+            return true;
+        }
+        false
+    }
+
     fn move_focus(&mut self, delta: i32) {
         if let RowFocus::Row(n) = self.focus {
             let len = self.rows.len() as i32;
