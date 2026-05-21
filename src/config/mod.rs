@@ -248,7 +248,9 @@ impl Config {
 
     /// Identifier of the configured default agent provider (mirrors
     /// `agents.default`). Returns "claude" when no `[agents]` table is
-    /// present so the historical default path keeps working.
+    /// present so the historical default path keeps working. Public
+    /// surface for future provider-aware UI; no internal caller yet.
+    #[allow(dead_code)]
     pub fn default_provider_id(&self) -> &str {
         self.agents.default.as_str()
     }
