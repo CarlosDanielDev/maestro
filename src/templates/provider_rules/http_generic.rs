@@ -78,6 +78,10 @@ impl TemplateProviderRules for HttpGenericRules {
     fn skill_link(&self, name: &str) -> Result<String, TemplateError> {
         super::read_skill_body(name)
     }
+
+    fn vcs_provider_cmd(&self) -> Result<String, TemplateError> {
+        Ok("gh".to_string())
+    }
 }
 
 #[cfg(test)]

@@ -679,3 +679,37 @@ fn roundtrip_tool_use_bash_command_preview_preserved_through_parse_and_handle() 
 
     assert_eq!(managed.session.current_activity, "$ cargo test --lib");
 }
+
+// ---------------------------------------------------------------------------
+// Issue #770 — CostUpdate end-to-end semantics
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cost_update_from_fake_parser_pipes_into_session_cost_usd() {
+    let mut managed = ManagedSession::new(make_running_session("s"));
+    let events = vec![StreamEvent::CostUpdate { cost_usd: 0.42 }];
+    for event in &events {
+        managed.handle_event(event);
+    }
+    assert!((managed.session.cost_usd - 0.42).abs() < f64::EPSILON);
+}
+
+#[test]
+fn sequential_cost_updates_replace_not_accumulate() {
+    let mut managed = ManagedSession::new(make_running_session("s"));
+    managed.handle_event(&StreamEvent::CostUpdate { cost_usd: 0.10 });
+    managed.handle_event(&StreamEvent::CostUpdate { cost_usd: 0.30 });
+    managed.handle_event(&StreamEvent::CostUpdate { cost_usd: 0.42 });
+    assert!(
+        (managed.session.cost_usd - 0.42).abs() < f64::EPSILON,
+        "CostUpdate must replace, not accumulate"
+    );
+}
+
+#[test]
+fn cost_update_zero_frame_overwrites_to_zero() {
+    let mut managed = ManagedSession::new(make_running_session("s"));
+    managed.handle_event(&StreamEvent::CostUpdate { cost_usd: 1.50 });
+    managed.handle_event(&StreamEvent::CostUpdate { cost_usd: 0.0 });
+    assert!((managed.session.cost_usd - 0.0).abs() < f64::EPSILON);
+}

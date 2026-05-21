@@ -1,8 +1,9 @@
 //! Placeholder-expansion engine for canonical command templates.
 //!
-//! Hand-written tokenizer (not regex). Five hard-coded placeholder kinds:
-//! `INVOKE_SUBAGENT`, `HOOK_GATE`, `INCLUDE`, `SUBAGENT_LIST`, `SKILL`.
-//! Unknown placeholders fail closed with `TemplateError::UnknownPlaceholder`.
+//! Hand-written tokenizer (not regex). Six hard-coded placeholder kinds:
+//! `INVOKE_SUBAGENT`, `HOOK_GATE`, `INCLUDE`, `SUBAGENT_LIST`, `SKILL`,
+//! `VCS_PROVIDER_CMD`. Unknown placeholders fail closed with
+//! `TemplateError::UnknownPlaceholder`.
 
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
@@ -38,6 +39,7 @@ pub(crate) enum PlaceholderKind {
     Include,
     SubagentList,
     Skill,
+    VcsProviderCmd,
 }
 
 impl PlaceholderKind {
@@ -48,6 +50,7 @@ impl PlaceholderKind {
             "INCLUDE" => Some(Self::Include),
             "SUBAGENT_LIST" => Some(Self::SubagentList),
             "SKILL" => Some(Self::Skill),
+            "VCS_PROVIDER_CMD" => Some(Self::VcsProviderCmd),
             _ => None,
         }
     }
@@ -59,6 +62,7 @@ impl PlaceholderKind {
             Self::Include => &["path"],
             Self::SubagentList => &[],
             Self::Skill => &["name"],
+            Self::VcsProviderCmd => &[],
         }
     }
 }
@@ -146,6 +150,7 @@ fn expand(
             let n = lookup("name")?;
             rules.skill_link(n)
         }
+        PlaceholderKind::VcsProviderCmd => rules.vcs_provider_cmd(),
     }
 }
 

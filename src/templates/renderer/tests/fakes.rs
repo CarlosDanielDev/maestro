@@ -30,6 +30,9 @@ impl TemplateProviderRules for RecursiveIncludeRules {
     fn skill_link(&self, _: &str) -> Result<String, TemplateError> {
         Err(unsupported("SKILL"))
     }
+    fn vcs_provider_cmd(&self) -> Result<String, TemplateError> {
+        Err(unsupported("VCS_PROVIDER_CMD"))
+    }
 }
 
 pub(super) struct TerminatingIncludeRules {
@@ -60,6 +63,9 @@ impl TemplateProviderRules for TerminatingIncludeRules {
         Ok(String::new())
     }
     fn skill_link(&self, _: &str) -> Result<String, TemplateError> {
+        Ok(String::new())
+    }
+    fn vcs_provider_cmd(&self) -> Result<String, TemplateError> {
         Ok(String::new())
     }
 }

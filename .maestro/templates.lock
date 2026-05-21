@@ -10,7 +10,7 @@ sha256 = "2b41e840d26886a3118969b369ad1a12d7fa051478bef6e940ca3e1a2b5b3adf"
 [files.".claude/commands/plan-feature.md"]
 provider = "claude"
 command = "plan-feature"
-sha256 = "13432433bcec294866608875aee60d8dba6f74b229009252111ccc9bbe023fcc"
+sha256 = "95068bbb4c9cf222a5ba37285b4fc48a0a28c22e17aad3fab465fa1bd84450df"
 
 [files.".claude/commands/pushup.md"]
 provider = "claude"

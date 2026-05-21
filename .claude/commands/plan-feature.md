@@ -7,6 +7,7 @@ description: Plan a feature across the project, creating API contracts first, th
 placeholders:
   - INCLUDE
   - SUBAGENT_LIST
+  - VCS_PROVIDER_CMD
 includes:
   - core/premises.md
   - core/dependency-graph.md
