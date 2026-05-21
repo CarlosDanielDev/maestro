@@ -79,7 +79,7 @@ impl WorkAssignmentTrait for WorkAssignmentService {
             let model = ctx
                 .model_router
                 .map(|r| r.resolve(&item.issue).to_string())
-                .unwrap_or_else(|| ctx.config.sessions.default_model.clone());
+                .unwrap_or_else(|| ctx.config.effective_default_model());
 
             if is_heavy {
                 heavy_count += 1;

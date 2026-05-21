@@ -10,7 +10,10 @@ use crate::config::Config;
 
 const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[sessions.completion_gates]\nenabled = true\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n[github]\n[notifications]\nslack_webhook_url = \"\"\n";
 
-const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 53;
+// Decremented from 53 → 51 after `default_model` and `permission_mode`
+// were removed from SESSIONS_FIELDS in favor of per-provider configuration
+// (live on `[agents.<id>]`).
+const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 51;
 const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 3;
 
 const EMPTY: &[FieldSchema] = &[];

@@ -128,7 +128,7 @@ impl PromptBuilder {
             safety_guards = safety_guards,
             reasoning_steps = reasoning_steps,
             base_branch = config.project.base_branch,
-            model = config.sessions.default_model,
+            model = config.effective_default_model(),
             mode = config.sessions.default_mode,
         )
     }

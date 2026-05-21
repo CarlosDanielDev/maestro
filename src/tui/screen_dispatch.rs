@@ -679,7 +679,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // 2. Pool-level session config. Affects the next-launched
             // session; already-running sessions keep their spawn-time
             // values (Claude reads its flags once at process start).
-            let new_permission_mode = config.sessions.permission_mode.clone();
+            let new_permission_mode = config.effective_default_permission_mode();
             app.pool.set_permission_mode(new_permission_mode.clone());
             app.pool
                 .set_allowed_tools(config.sessions.allowed_tools.clone());
@@ -724,7 +724,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             ));
             app.model_router = Some(crate::models::ModelRouter::new(
                 config.models.routing.clone(),
-                config.sessions.default_model.clone(),
+                config.effective_default_model(),
             ));
             app.notifications =
                 crate::commands::setup::build_notification_dispatcher(&config.notifications);

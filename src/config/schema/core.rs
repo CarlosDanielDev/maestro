@@ -64,15 +64,12 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         validator: None,
         presentation: None,
     },
-    FieldSchema {
-        key: "default_model",
-        label: "Default Model",
-        help: "Claude CLI model used when sessions don't specify one",
-        default: DefaultValue::Str("opus"),
-        kind: FieldKind::String,
-        validator: Some(validate_non_empty),
-        presentation: None,
-    },
+    // `default_model` and `permission_mode` removed from the Sessions
+    // schema in favor of per-provider configuration. Both fields stay on
+    // SessionsConfig (serde defaults preserve old TOML round-trip), but
+    // the renderer surfaces them via `[agents.<id>].model` and
+    // `[agents.<id>].permission_mode` now. `default_mode` stays — it's
+    // a maestro-level mode (orchestrator vs vibe), not a provider concept.
     FieldSchema {
         key: "default_mode",
         label: "Default Mode",
@@ -80,15 +77,6 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         default: DefaultValue::Str("orchestrator"),
         kind: FieldKind::String,
         validator: Some(validate_non_empty),
-        presentation: None,
-    },
-    FieldSchema {
-        key: "permission_mode",
-        label: "Permission Mode",
-        help: "Claude CLI permission flow — `bypassPermissions` disables prompts",
-        default: DefaultValue::Str("default"),
-        kind: FieldKind::Enum(PERMISSION_MODES),
-        validator: None,
         presentation: None,
     },
     FieldSchema {

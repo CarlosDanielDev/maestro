@@ -99,12 +99,13 @@ fn sync_schema_tabs(screen: &mut SettingsScreen) {
     }
 }
 
-/// Sessions bypass toggle is a bespoke derived view of `permission_mode`.
-/// The schema sync writes the dropdown's value first; this hook then
-/// downgrades back to "default" only when the toggle is off and the
-/// dropdown is still pointed at "bypassPermissions". When the toggle is
-/// on, the dropdown wins on conflict — matches legacy "dropdown last"
-/// semantics. See `settings_sessions_parity.rs` for the contract.
+/// Sessions bypass toggle is the sole UI surface for
+/// `sessions.permission_mode` after the schema-driven dropdown was
+/// removed (per-provider permission_mode lives on the Providers tab).
+/// Toggle ON → "bypassPermissions"; toggle OFF → "default" (only when
+/// the current value is the bypass sentinel, so a non-default
+/// permission_mode set via TOML hand-edit is preserved on a toggle
+/// that's already off).
 fn sync_sessions_bypass_override(screen: &mut SettingsScreen) {
     let Some(fields) = screen.fields_per_tab.get(1) else {
         return;
@@ -112,7 +113,9 @@ fn sync_sessions_bypass_override(screen: &mut SettingsScreen) {
     let Some(WidgetKind::Toggle(w)) = widget_by_label(fields, BYPASS_LABEL) else {
         return;
     };
-    if !w.value && screen.config.sessions.permission_mode == "bypassPermissions" {
+    if w.value {
+        screen.config.sessions.permission_mode = "bypassPermissions".to_string();
+    } else if screen.config.sessions.permission_mode == "bypassPermissions" {
         screen.config.sessions.permission_mode = "default".to_string();
     }
 }
