@@ -12,9 +12,7 @@ fn initially_not_dirty() {
 fn modify_makes_dirty() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     // Toggle desktop notification
-    for _ in 0..4 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Notifications);
     screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
     assert!(screen.is_dirty());
 }
@@ -24,9 +22,7 @@ fn ctrl_r_resets_dirty() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     let orig_desktop = screen.config.notifications.desktop;
     // Modify
-    for _ in 0..4 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Notifications);
     screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
     assert!(screen.is_dirty());
     // Reset
@@ -45,9 +41,7 @@ fn ctrl_r_resets_dirty() {
 fn esc_with_dirty_shows_confirmation() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     // Modify
-    for _ in 0..4 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Notifications);
     screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
     assert!(screen.is_dirty());
     // Esc should trigger confirmation, not pop
@@ -77,9 +71,7 @@ fn confirm_discard_n_cancels() {
 fn ctrl_s_saves_and_returns_update_config() {
     let (mut screen, _f) = screen_with_config_path();
     // Modify
-    for _ in 0..4 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Notifications);
     screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
     assert!(screen.is_dirty());
     // Save
@@ -117,9 +109,7 @@ alert_threshold_pct = 80
     let mut screen =
         SettingsScreen::new(config, make_flags()).with_config_path(f.path().to_path_buf());
     // Modify desktop notifications
-    for _ in 0..4 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Notifications);
     screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
     // Save
     let ctrl_s = Event::Key(KeyEvent {

@@ -11,8 +11,11 @@ pub(super) fn build_fields(config: &Config) -> Vec<SettingsField> {
         BYPASS_LABEL,
         config.sessions.permission_mode == "bypassPermissions",
     )));
-    // Place between `default_mode` (idx 3) and `permission_mode` (idx 4).
-    let insert_at = 4.min(fields.len());
+    // Place right after `default_mode` (idx 2 after default_model and
+    // permission_mode were removed from SESSIONS_FIELDS). The bypass
+    // toggle is now the sole UI for `sessions.permission_mode` —
+    // per-provider permission_mode lives on the Providers tab.
+    let insert_at = 3.min(fields.len());
     fields.insert(insert_at, bypass);
     fields
 }

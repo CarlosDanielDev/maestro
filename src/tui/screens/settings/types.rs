@@ -17,6 +17,8 @@ pub enum SettingsTab {
     Notifications,
     Gates,
     Review,
+    Agents,
+    Modes,
     Theme,
     Layout,
     Flags,
@@ -33,11 +35,34 @@ impl SettingsTab {
         Self::Notifications,
         Self::Gates,
         Self::Review,
+        Self::Agents,
+        Self::Modes,
         Self::Theme,
         Self::Layout,
         Self::Flags,
         Self::TurboQuant,
         Self::Advanced,
+    ];
+
+    /// Indices into [`Self::ALL`] in alphabetical-by-label order. Used by
+    /// the Settings sidebar so the on-screen list is sorted while the
+    /// canonical enum (and any `active_tab` index already stored or
+    /// serialized) remains stable.
+    pub const ALPHABETICAL_INDICES: &'static [usize] = &[
+        13, // Advanced
+        7,  // Agents
+        2,  // Budget
+        11, // Flags
+        5,  // Gates
+        3,  // GitHub
+        10, // Layout
+        8,  // Modes
+        4,  // Notifications
+        0,  // Project
+        6,  // Review
+        1,  // Sessions
+        9,  // Theme
+        12, // TurboQuant
     ];
 
     pub fn label(&self) -> &'static str {
@@ -49,6 +74,8 @@ impl SettingsTab {
             Self::Notifications => "Notifications",
             Self::Gates => "Gates",
             Self::Review => "Review",
+            Self::Agents => "Providers",
+            Self::Modes => "Modes",
             Self::Theme => "Theme",
             Self::Layout => "Layout",
             Self::Flags => "Flags",
@@ -82,4 +109,11 @@ pub struct SettingsScreen {
     pub(super) caveman_state: CavemanModeState,
     pub(super) pending_caveman_toggle: Option<bool>,
     pub(super) caveman_status_flash: Option<(String, std::time::Instant)>,
+    /// Substring query that filters the sidebar tab list. Case-insensitive.
+    /// Empty = all tabs visible.
+    pub(super) sidebar_search: String,
+    /// True while the search input owns key events. Toggled by `/` (enter)
+    /// and `Esc` / `Enter` (exit). When false, key events route to the
+    /// normal settings handler.
+    pub(super) sidebar_search_active: bool,
 }

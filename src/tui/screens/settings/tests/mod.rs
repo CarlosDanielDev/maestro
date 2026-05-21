@@ -34,8 +34,10 @@ fn screen_with_config_path() -> (SettingsScreen, tempfile::NamedTempFile) {
     (screen, f)
 }
 
+mod agents_tab;
 mod basic;
 mod dirty;
 mod flags_validation;
 mod integration;
 mod keybinds_save_caveman;
+mod sidebar_search;

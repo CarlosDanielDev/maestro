@@ -1,0 +1,28 @@
+---
+source: src/tui/snapshot_tests/schema_tab_modals.rs
+expression: terminal.backend()
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"          ╔══════════════════════[ Add agent ]═══════════════════════╗          "
+"          ║Identifier (a-z, 0-9, -, _):                              ║          "
+"          ║>                                                         ║          "
+"          ║                                                          ║          "
+"          ║                                                          ║          "
+"          ║               [Enter] confirm  [Esc] cancel              ║          "
+"          ║                                                          ║          "
+"          ║                                                          ║          "
+"          ╚══════════════════════════════════════════════════════════╝          "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

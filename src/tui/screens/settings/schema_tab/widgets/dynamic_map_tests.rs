@@ -105,27 +105,258 @@ fn add_modal_collision_keeps_modal_open() {
 }
 
 #[test]
-fn ctrl_right_advances_tab() {
+fn bracket_right_advances_tab() {
     let (mut w, _) = fresh_with_clock();
     for id in ["alpha", "bravo"] {
         w.handle_input(ev(KeyCode::Char('a')));
         typed_seq(&mut w, id);
         w.handle_input(ev(KeyCode::Enter));
     }
-    w.handle_input(ev_ctrl(KeyCode::Right));
+    // After Submit, focus is on EntryField(0); step Up to the subtab strip
+    // so `]` is interpreted as next-tab and not delegated to the inner field.
+    w.handle_input(ev(KeyCode::Up));
+    w.handle_input(ev(KeyCode::Char(']')));
     assert_eq!(w.active_index(), Some(0));
 }
 
 #[test]
-fn ctrl_left_moves_back() {
+fn bracket_left_moves_back() {
     let (mut w, _) = fresh_with_clock();
     for id in ["alpha", "bravo"] {
         w.handle_input(ev(KeyCode::Char('a')));
         typed_seq(&mut w, id);
         w.handle_input(ev(KeyCode::Enter));
     }
-    w.handle_input(ev_ctrl(KeyCode::Left));
+    w.handle_input(ev(KeyCode::Up));
+    w.handle_input(ev(KeyCode::Char('[')));
     assert_eq!(w.active_index(), Some(0));
+}
+
+#[test]
+fn bracket_ignored_when_entry_field_focused() {
+    let (mut w, _) = fresh_with_clock();
+    for id in ["alpha", "bravo"] {
+        w.handle_input(ev(KeyCode::Char('a')));
+        typed_seq(&mut w, id);
+        w.handle_input(ev(KeyCode::Enter));
+    }
+    // Focus is on EntryField(0); `]` must be delegated to the inner widget
+    // (so users can type the literal bracket into a text field) instead of
+    // switching tabs.
+    let before = w.active_index();
+    w.handle_input(ev(KeyCode::Char(']')));
+    assert_eq!(w.active_index(), before);
+}
+
+#[test]
+fn agents_kind_subprocess_hides_http_only_fields() {
+    use crate::config::schema::dynamic::AGENTS_ENTRY_FIELDS;
+    use std::sync::Arc;
+    let clock: Arc<FakeClock> = Arc::new(FakeClock::new());
+    let mut w = DynamicMapWidget::with_clock(
+        "agents",
+        "agents",
+        AGENTS_ENTRY_FIELDS,
+        None,
+        clock.clone() as Arc<dyn Clock>,
+    );
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "claude");
+    w.handle_input(ev(KeyCode::Enter));
+    // kind defaults to "claude" (subprocess). HTTP-only fields must not
+    // appear in the visible index list.
+    let visible = w.visible_field_indices();
+    let visible_keys: Vec<&str> = visible
+        .iter()
+        .map(|&i| AGENTS_ENTRY_FIELDS[i].key)
+        .collect();
+    for hidden in ["base_url", "api_key_env", "request_timeout_secs"] {
+        assert!(
+            !visible_keys.contains(&hidden),
+            "subprocess kind must hide `{hidden}`; visible = {:?}",
+            visible_keys
+        );
+    }
+    for shown in [
+        "kind",
+        "enabled",
+        "command",
+        "model",
+        "extra_args",
+        "permission_mode",
+        "allowed_tools",
+        "sandbox",
+    ] {
+        assert!(
+            visible_keys.contains(&shown),
+            "subprocess kind must show `{shown}`; visible = {:?}",
+            visible_keys
+        );
+    }
+}
+
+#[test]
+fn agents_kind_http_hides_subprocess_only_fields() {
+    use crate::config::schema::dynamic::AGENTS_ENTRY_FIELDS;
+    use std::sync::Arc;
+    let clock: Arc<FakeClock> = Arc::new(FakeClock::new());
+    let mut w = DynamicMapWidget::with_clock(
+        "agents",
+        "agents",
+        AGENTS_ENTRY_FIELDS,
+        None,
+        clock.clone() as Arc<dyn Clock>,
+    );
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "ollama");
+    w.handle_input(ev(KeyCode::Enter));
+    // Switch kind from default "claude" to "ollama" by walking the
+    // Dropdown to position of "ollama" in AGENT_KINDS:
+    // [claude, codex, qwen, opencode, ollama, minimax] — 4 Right presses.
+    assert_eq!(*w.focus(), MapFocus::EntryField(0));
+    for _ in 0..4 {
+        w.handle_input(ev(KeyCode::Right));
+    }
+    let visible = w.visible_field_indices();
+    let visible_keys: Vec<&str> = visible
+        .iter()
+        .map(|&i| AGENTS_ENTRY_FIELDS[i].key)
+        .collect();
+    for hidden in [
+        "command",
+        "permission_mode",
+        "sandbox",
+        "allowed_tools",
+        "extra_args",
+    ] {
+        assert!(
+            !visible_keys.contains(&hidden),
+            "http kind must hide `{hidden}`; visible = {:?}",
+            visible_keys
+        );
+    }
+    for shown in [
+        "kind",
+        "enabled",
+        "base_url",
+        "model",
+        "api_key_env",
+        "request_timeout_secs",
+    ] {
+        assert!(
+            visible_keys.contains(&shown),
+            "http kind must show `{shown}`; visible = {:?}",
+            visible_keys
+        );
+    }
+}
+
+#[test]
+fn switching_kind_clamps_focus_off_now_hidden_field() {
+    use crate::config::schema::dynamic::AGENTS_ENTRY_FIELDS;
+    use std::sync::Arc;
+    let clock: Arc<FakeClock> = Arc::new(FakeClock::new());
+    let mut w = DynamicMapWidget::with_clock(
+        "agents",
+        "agents",
+        AGENTS_ENTRY_FIELDS,
+        None,
+        clock.clone() as Arc<dyn Clock>,
+    );
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "claude");
+    w.handle_input(ev(KeyCode::Enter));
+    // Walk down to `command` (field 2 — subprocess-only). Validate.
+    w.handle_input(ev(KeyCode::Down));
+    w.handle_input(ev(KeyCode::Down));
+    assert_eq!(*w.focus(), MapFocus::EntryField(2));
+    // Go back to kind, switch to ollama.
+    w.handle_input(ev(KeyCode::Up));
+    w.handle_input(ev(KeyCode::Up));
+    assert_eq!(*w.focus(), MapFocus::EntryField(0));
+    for _ in 0..4 {
+        w.handle_input(ev(KeyCode::Right));
+    }
+    // Walk Down from kind — must land on a VISIBLE field, never on
+    // `command` (now hidden under http kind).
+    w.handle_input(ev(KeyCode::Down));
+    let visible = w.visible_field_indices();
+    if let MapFocus::EntryField(n) = *w.focus() {
+        assert!(
+            visible.contains(&n),
+            "after switching kind, focus {} must be on a visible field; visible = {:?}",
+            n,
+            visible
+        );
+        assert_ne!(
+            AGENTS_ENTRY_FIELDS[n].key, "command",
+            "focus must not land on now-hidden `command`"
+        );
+    } else {
+        panic!("expected EntryField focus");
+    }
+}
+
+#[test]
+fn d_typed_into_text_field_does_not_open_remove_modal() {
+    // Regression: user types "opencode" into a String field; the inner
+    // 'd' should land in the TextInput buffer, NOT trigger the Remove-
+    // entry shortcut. Pre-fix, DynamicMap.handle_input matched
+    // Char('d') before delegating, so the modal opened mid-word.
+    let (mut w, _) = fresh_with_clock();
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "claude");
+    w.handle_input(ev(KeyCode::Enter));
+    // Focus is EntryField(0). Walk Down to a String field — TEST_AGENT_FIELDS
+    // index 2 is `command` (String). 0 = kind (Enum), 1 = enabled (Bool),
+    // 2 = command (String).
+    w.handle_input(ev(KeyCode::Down));
+    w.handle_input(ev(KeyCode::Down));
+    assert_eq!(*w.focus(), MapFocus::EntryField(2));
+    // Enter insert mode on the TextInput.
+    w.handle_input(ev(KeyCode::Enter));
+    // Type "opencode" — the `d` and `a` must stay characters, not open
+    // Remove / Add modals.
+    typed_seq(&mut w, "opencode");
+    assert!(
+        w.add_modal().is_none(),
+        "`a` typed while editing must not open Add modal"
+    );
+    assert!(
+        w.remove_modal().is_none(),
+        "`d` typed while editing must not open Remove modal"
+    );
+}
+
+#[test]
+fn down_advances_through_entry_fields() {
+    let (mut w, _) = fresh_with_clock();
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "alpha");
+    w.handle_input(ev(KeyCode::Enter));
+    // Submit puts focus on EntryField(0); Down walks to (1), (2), ... until
+    // saturated.
+    let len = w.entry_fields.len();
+    assert!(len >= 2);
+    assert_eq!(*w.focus(), MapFocus::EntryField(0));
+    w.handle_input(ev(KeyCode::Down));
+    assert_eq!(*w.focus(), MapFocus::EntryField(1));
+    // Saturates at the last entry-field index.
+    for _ in 0..(len + 4) {
+        w.handle_input(ev(KeyCode::Down));
+    }
+    assert_eq!(*w.focus(), MapFocus::EntryField(len - 1));
+}
+
+#[test]
+fn up_from_first_entry_field_returns_to_subtab_strip() {
+    let (mut w, _) = fresh_with_clock();
+    w.handle_input(ev(KeyCode::Char('a')));
+    typed_seq(&mut w, "alpha");
+    w.handle_input(ev(KeyCode::Enter));
+    assert_eq!(*w.focus(), MapFocus::EntryField(0));
+    w.handle_input(ev(KeyCode::Up));
+    assert_eq!(*w.focus(), MapFocus::SubtabStrip);
 }
 
 #[test]
@@ -190,7 +421,13 @@ fn d_with_no_entries_is_noop() {
 #[test]
 fn edit_hint_is_static() {
     let (w, _) = fresh_with_clock();
-    let (k, l) = w.edit_hint();
-    assert!(!k.is_empty());
-    assert!(!l.is_empty());
+    let hints = w.edit_hint();
+    assert!(
+        !hints.is_empty(),
+        "edit_hint must return ≥1 (key, label) pair"
+    );
+    for (k, l) in hints {
+        assert!(!k.is_empty());
+        assert!(!l.is_empty());
+    }
 }

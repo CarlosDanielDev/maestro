@@ -18,6 +18,7 @@ mod milestone_wizard;
 mod overview;
 mod roadmap;
 mod schema_tab;
+mod schema_tab_modals;
 mod settings_advanced_parity;
 mod settings_budget_parity;
 mod settings_gates_parity;

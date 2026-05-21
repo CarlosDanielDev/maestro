@@ -107,6 +107,28 @@ impl WidgetKind {
         }
     }
 
+    /// Walk inner focus one step up. Returns `true` only when the widget
+    /// actually moved its internal focus — non-dynamic widgets always
+    /// return `false`, letting the outer settings cursor advance instead.
+    /// SettingsScreen uses this to keep the Up arrow inside a
+    /// DynamicMap/DynamicRows widget until it hits the top boundary.
+    pub fn try_focus_prev(&mut self) -> bool {
+        match self {
+            Self::DynamicMap(w) => w.try_focus_prev(),
+            Self::DynamicRows(w) => w.try_focus_prev(),
+            _ => false,
+        }
+    }
+
+    /// Mirror of [`try_focus_prev`] for the Down arrow.
+    pub fn try_focus_next(&mut self) -> bool {
+        match self {
+            Self::DynamicMap(w) => w.try_focus_next(),
+            Self::DynamicRows(w) => w.try_focus_next(),
+            _ => false,
+        }
+    }
+
     pub fn needs_insert_mode(&self) -> bool {
         match self {
             Self::TextInput(w) => w.editing,
@@ -117,14 +139,18 @@ impl WidgetKind {
         }
     }
 
-    /// Short `(key, label)` hint describing how to edit the focused widget.
-    pub fn edit_hint(&self) -> (&'static str, &'static str) {
+    /// One or more `(key, label)` hints describing how to edit the focused
+    /// widget. Returns a slice so widgets with multiple verbs (DynamicMap
+    /// add/del + switch entry) can surface every chord as its own boxed
+    /// `[key] label` entry in the keybind bar — collapsing them into a
+    /// single string produced unreadable hints like `[a/d/[/]]`.
+    pub fn edit_hint(&self) -> &'static [(&'static str, &'static str)] {
         match self {
-            Self::Toggle(_) => ("Space", "Toggle"),
-            Self::Dropdown(_) => ("←/→", "Change"),
-            Self::NumberStepper(_) => ("←/→", "Adjust"),
-            Self::TextInput(_) => ("Enter", "Edit"),
-            Self::ListEditor(_) => ("Enter", "Edit list"),
+            Self::Toggle(_) => &[("Space", "Toggle")],
+            Self::Dropdown(_) => &[("←/→", "Change")],
+            Self::NumberStepper(_) => &[("←/→", "Adjust")],
+            Self::TextInput(_) => &[("Enter", "Edit")],
+            Self::ListEditor(_) => &[("Enter", "Edit list")],
             Self::DynamicMap(w) => w.edit_hint(),
             Self::DynamicRows(w) => w.edit_hint(),
         }
@@ -138,30 +164,30 @@ mod tests {
     #[test]
     fn edit_hint_toggle() {
         let w = WidgetKind::Toggle(Toggle::new("x", false));
-        assert_eq!(w.edit_hint(), ("Space", "Toggle"));
+        assert_eq!(w.edit_hint(), &[("Space", "Toggle")]);
     }
 
     #[test]
     fn edit_hint_dropdown() {
         let w = WidgetKind::Dropdown(Dropdown::new("x", vec!["a".into()], 0));
-        assert_eq!(w.edit_hint(), ("←/→", "Change"));
+        assert_eq!(w.edit_hint(), &[("←/→", "Change")]);
     }
 
     #[test]
     fn edit_hint_number_stepper() {
         let w = WidgetKind::NumberStepper(NumberStepper::new("x", 1, 0, 10));
-        assert_eq!(w.edit_hint(), ("←/→", "Adjust"));
+        assert_eq!(w.edit_hint(), &[("←/→", "Adjust")]);
     }
 
     #[test]
     fn edit_hint_text_input() {
         let w = WidgetKind::TextInput(TextInput::new("x", ""));
-        assert_eq!(w.edit_hint(), ("Enter", "Edit"));
+        assert_eq!(w.edit_hint(), &[("Enter", "Edit")]);
     }
 
     #[test]
     fn edit_hint_list_editor() {
         let w = WidgetKind::ListEditor(ListEditor::new("x", vec![]));
-        assert_eq!(w.edit_hint(), ("Enter", "Edit list"));
+        assert_eq!(w.edit_hint(), &[("Enter", "Edit list")]);
     }
 }

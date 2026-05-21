@@ -246,6 +246,44 @@ impl Config {
         Ok(())
     }
 
+    /// Identifier of the configured default agent provider (mirrors
+    /// `agents.default`). Returns "claude" when no `[agents]` table is
+    /// present so the historical default path keeps working. Public
+    /// surface for future provider-aware UI; no internal caller yet.
+    #[allow(dead_code)]
+    pub fn default_provider_id(&self) -> &str {
+        self.agents.default.as_str()
+    }
+
+    /// Model that the default agent provider will use. Prefers
+    /// `agents.<default>.model`; falls back to the legacy
+    /// `sessions.default_model` field when the agent record is missing
+    /// or has an empty model — both for callers that resolve a model
+    /// outside `resolve_agent` (prompts, work_assigner, etc.) and for
+    /// configs that haven't migrated their per-provider model yet.
+    pub fn effective_default_model(&self) -> String {
+        self.agents
+            .entries
+            .get(&self.agents.default)
+            .and_then(|a| a.model.clone())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| self.sessions.default_model.clone())
+    }
+
+    /// Permission mode that the default agent provider will use.
+    /// Same precedence as [`Self::effective_default_model`] but for
+    /// the `permission_mode` field.
+    pub fn effective_default_permission_mode(&self) -> String {
+        self.agents
+            .entries
+            .get(&self.agents.default)
+            .and_then(|a| a.permission_mode.clone())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| self.sessions.permission_mode.clone())
+    }
+
     pub fn resolve_agent(&self, agent_id: Option<&str>) -> Result<ResolvedAgentConfig> {
         let id = agent_id.unwrap_or(self.agents.default.as_str());
         if self.agents.entries.is_empty() {

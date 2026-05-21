@@ -29,13 +29,7 @@ fn flags_tab_has_no_widget_fields() {
 fn flags_navigation_up_down() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
     // Navigate to Flags tab
-    let flags_idx = SettingsTab::ALL
-        .iter()
-        .position(|t| *t == SettingsTab::Flags)
-        .unwrap();
-    for _ in 0..flags_idx {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Flags);
     assert_eq!(screen.active_tab(), SettingsTab::Flags);
     assert_eq!(screen.flags_selected, 0);
 
@@ -59,13 +53,7 @@ fn flags_navigation_up_down() {
 #[test]
 fn flags_navigation_bounded_by_flag_count() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    let flags_idx = SettingsTab::ALL
-        .iter()
-        .position(|t| *t == SettingsTab::Flags)
-        .unwrap();
-    for _ in 0..flags_idx {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Flags);
     // Press Down more times than there are flags
     for _ in 0..20 {
         screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
@@ -77,13 +65,7 @@ fn flags_navigation_bounded_by_flag_count() {
 #[test]
 fn flags_tab_read_only_ignores_widget_keys() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    let flags_idx = SettingsTab::ALL
-        .iter()
-        .position(|t| *t == SettingsTab::Flags)
-        .unwrap();
-    for _ in 0..flags_idx {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Flags);
     // Space, Enter, 'l' should all be no-ops
     let action = screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
     assert_eq!(action, ScreenAction::None);
@@ -94,14 +76,7 @@ fn flags_tab_read_only_ignores_widget_keys() {
 #[test]
 fn advanced_tab_still_works_after_flags_reindex() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    // Navigate to Advanced tab (last)
-    let adv_idx = SettingsTab::ALL
-        .iter()
-        .position(|t| *t == SettingsTab::Advanced)
-        .unwrap();
-    for _ in 0..adv_idx {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Advanced);
     assert_eq!(screen.active_tab(), SettingsTab::Advanced);
     assert!(screen.field_count() > 0, "Advanced tab must have fields");
 
@@ -146,6 +121,7 @@ fn valid_config_has_no_validation_errors() {
 #[test]
 fn validation_runs_on_field_change() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
+    screen.jump_to_tab(SettingsTab::Project);
     assert!(!screen.has_validation_errors());
     // Navigate to Project tab, field 0 (repo), enter edit mode, clear value
     screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
@@ -174,7 +150,10 @@ fn save_blocked_when_validation_errors_exist() {
         state: KeyEventState::NONE,
     });
     let action = screen.handle_input(&ctrl_s, InputMode::Normal);
-    assert_eq!(action, ScreenAction::None);
+    // Save failure now returns a LogActivity so the truncated header flash
+    // has a permanent home in the activity log. Header flash is set
+    // independently (see save_with_validation_errors_populates_save_error_flash).
+    assert!(matches!(action, ScreenAction::LogActivity { .. }));
 }
 
 #[test]
@@ -275,21 +254,23 @@ fn sessions_tab_contains_hollow_retry_widgets() {
     // max_concurrent, stall_timeout_secs, default_model, default_mode,
     // bypass_review_corrections, permission_mode, max_retries,
     // retry_cooldown_secs).
-    match &fields[8].widget {
+    // Indices shifted by -2 after default_model and permission_mode were
+    // removed from SESSIONS_FIELDS in favor of per-provider configuration.
+    match &fields[6].widget {
         WidgetKind::Dropdown(d) => assert_eq!(d.label, "hollow_retry.policy"),
-        _ => panic!("expected Dropdown at field 8 (hollow_retry.policy)"),
+        _ => panic!("expected Dropdown at field 6 (hollow_retry.policy)"),
     }
-    match &fields[9].widget {
+    match &fields[7].widget {
         WidgetKind::NumberStepper(s) => {
             assert_eq!(s.label, "hollow_retry.work_max_retries")
         }
-        _ => panic!("expected NumberStepper at field 9 (work_max_retries)"),
+        _ => panic!("expected NumberStepper at field 7 (work_max_retries)"),
     }
-    match &fields[10].widget {
+    match &fields[8].widget {
         WidgetKind::NumberStepper(s) => {
             assert_eq!(s.label, "hollow_retry.consultation_max_retries")
         }
-        _ => panic!("expected NumberStepper at field 10 (consultation_max_retries)"),
+        _ => panic!("expected NumberStepper at field 8 (consultation_max_retries)"),
     }
 }
 
@@ -297,8 +278,8 @@ fn sessions_tab_contains_hollow_retry_widgets() {
 fn sessions_tab_hollow_retry_policy_defaults_to_intent_aware() {
     let screen = SettingsScreen::new(make_config(), make_flags());
     let fields = &screen.fields_per_tab[1];
-    let WidgetKind::Dropdown(d) = &fields[8].widget else {
-        panic!("field 8 must be Dropdown");
+    let WidgetKind::Dropdown(d) = &fields[6].widget else {
+        panic!("field 6 must be Dropdown (hollow_retry.policy)");
     };
     // Options order: [always, intent-aware, never] → default index 1.
     assert_eq!(d.selected, 1);
@@ -312,7 +293,7 @@ fn sessions_tab_hollow_retry_sync_writes_policy_to_config() {
     if let Some(WidgetKind::Dropdown(d)) = screen
         .fields_per_tab
         .get_mut(1)
-        .and_then(|fs| fs.get_mut(8))
+        .and_then(|fs| fs.get_mut(6))
         .map(|f| &mut f.widget)
     {
         d.selected = 2;
@@ -330,7 +311,7 @@ fn sessions_tab_hollow_retry_sync_writes_steppers_to_config() {
     if let Some(WidgetKind::NumberStepper(s)) = screen
         .fields_per_tab
         .get_mut(1)
-        .and_then(|fs| fs.get_mut(9))
+        .and_then(|fs| fs.get_mut(7))
         .map(|f| &mut f.widget)
     {
         s.value = 5;
@@ -338,7 +319,7 @@ fn sessions_tab_hollow_retry_sync_writes_steppers_to_config() {
     if let Some(WidgetKind::NumberStepper(s)) = screen
         .fields_per_tab
         .get_mut(1)
-        .and_then(|fs| fs.get_mut(10))
+        .and_then(|fs| fs.get_mut(8))
         .map(|f| &mut f.widget)
     {
         s.value = 3;

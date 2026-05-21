@@ -11,7 +11,7 @@ use crate::tui::activity_log::LogLevel;
 #[cfg(test)]
 pub(crate) fn default_model_and_mode(config: Option<&crate::config::Config>) -> (String, String) {
     let model = config
-        .map(|c| c.sessions.default_model.clone())
+        .map(|c| c.effective_default_model())
         .unwrap_or_else(|| "opus".to_string());
     let mode = config
         .map(|c| c.sessions.default_mode.clone())

@@ -8,10 +8,13 @@
 use super::*;
 use crate::config::Config;
 
-const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n[github]\n[notifications]\nslack_webhook_url = \"\"\n";
+const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[sessions.completion_gates]\nenabled = true\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n[github]\n[notifications]\nslack_webhook_url = \"\"\n";
 
-const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 52;
-const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 0;
+// Decremented from 53 → 51 after `default_model` and `permission_mode`
+// were removed from SESSIONS_FIELDS in favor of per-provider configuration
+// (live on `[agents.<id>]`).
+const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 51;
+const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 3;
 
 const EMPTY: &[FieldSchema] = &[];
 
@@ -69,7 +72,9 @@ fn walk_table_paths(
                 let next_prefix = format!("{prefix}.{}", field.key);
                 walk_table_paths(toml_val, &next_prefix, inner, walked, dynamic_slots);
             }
-            FieldKind::Map { .. } | FieldKind::VecOfStruct { .. } => {
+            FieldKind::Map { .. }
+            | FieldKind::FlattenedMap { .. }
+            | FieldKind::VecOfStruct { .. } => {
                 *dynamic_slots += 1;
             }
             _ => {
@@ -173,7 +178,9 @@ fn schema_default_value_variant_matches_field_kind() {
                     | (DefaultValue::Nested, FieldKind::NestedTable(_))
                     | (
                         DefaultValue::Empty,
-                        FieldKind::Map { .. } | FieldKind::VecOfStruct { .. },
+                        FieldKind::Map { .. }
+                            | FieldKind::FlattenedMap { .. }
+                            | FieldKind::VecOfStruct { .. },
                     ),
             );
             assert!(
@@ -358,6 +365,7 @@ fn dynamic_field_kinds_have_stable_debug_shape() {
     const TINY: &[FieldSchema] = &[];
 
     let map_kind = FieldKind::Map { entry_fields: TINY };
+    let flat_kind = FieldKind::FlattenedMap { entry_fields: TINY };
     let vec_kind = FieldKind::VecOfStruct { entry_fields: TINY };
 
     let map_debug_a = format!("{map_kind:?}");
@@ -369,6 +377,12 @@ fn dynamic_field_kinds_have_stable_debug_shape() {
     assert_eq!(
         map_debug_a, map_debug_b,
         "FieldKind::Map Debug must be idempotent"
+    );
+
+    let flat_debug = format!("{flat_kind:?}");
+    assert!(
+        flat_debug.starts_with("FlattenedMap { entry_fields:"),
+        "FieldKind::FlattenedMap Debug must start with 'FlattenedMap {{ entry_fields:', got: {flat_debug:?}"
     );
 
     let vec_debug_a = format!("{vec_kind:?}");
@@ -388,11 +402,163 @@ fn dynamic_field_kinds_are_const_constructible() {
     const _MAP: FieldKind = FieldKind::Map {
         entry_fields: EMPTY,
     };
+    const _FLAT: FieldKind = FieldKind::FlattenedMap {
+        entry_fields: EMPTY,
+    };
     const _VEC: FieldKind = FieldKind::VecOfStruct {
         entry_fields: EMPTY,
     };
     const _FIELD_MAP: FieldSchema = dummy_field(_MAP, DefaultValue::Empty);
+    const _FIELD_FLAT: FieldSchema = dummy_field(_FLAT, DefaultValue::Empty);
     const _FIELD_VEC: FieldSchema = dummy_field(_VEC, DefaultValue::Empty);
     assert!(matches!(_FIELD_MAP.kind, FieldKind::Map { .. }));
+    assert!(matches!(_FIELD_FLAT.kind, FieldKind::FlattenedMap { .. }));
     assert!(matches!(_FIELD_VEC.kind, FieldKind::VecOfStruct { .. }));
+}
+
+#[test]
+fn flattened_map_default_resolves_to_subtabs() {
+    let field = dummy_field(
+        FieldKind::FlattenedMap {
+            entry_fields: EMPTY,
+        },
+        DefaultValue::Empty,
+    );
+    assert!(
+        matches!(field.resolved_presentation(), Some(Presentation::Subtabs)),
+        "FlattenedMap with presentation:None must resolve to Subtabs, got {:?}",
+        field.resolved_presentation()
+    );
+}
+
+#[test]
+fn agents_table_registered_with_flattened_map() {
+    let schema = schema_for_config();
+    let agents_table = schema
+        .iter()
+        .find(|t| t.name == "agents")
+        .expect("agents TableSchema must be registered");
+    assert_eq!(agents_table.label, "Agents");
+    let flattened = agents_table
+        .fields
+        .iter()
+        .find(|f| matches!(f.kind, FieldKind::FlattenedMap { .. }))
+        .expect("agents table must expose a FlattenedMap field");
+    let FieldKind::FlattenedMap { entry_fields } = flattened.kind else {
+        panic!("expected FlattenedMap variant");
+    };
+    assert_eq!(
+        entry_fields.len(),
+        11,
+        "AGENTS_ENTRY_FIELDS must lock at 11 scalar/list fields"
+    );
+}
+
+#[test]
+fn agents_entry_fields_use_actual_rust_field_names() {
+    let schema = schema_for_config();
+    let agents_table = schema.iter().find(|t| t.name == "agents").unwrap();
+    let FieldKind::FlattenedMap { entry_fields } = agents_table
+        .fields
+        .iter()
+        .find(|f| matches!(f.kind, FieldKind::FlattenedMap { .. }))
+        .unwrap()
+        .kind
+    else {
+        panic!();
+    };
+    let keys: Vec<&str> = entry_fields.iter().map(|f| f.key).collect();
+    for required in [
+        "kind",
+        "enabled",
+        "command",
+        "base_url",
+        "model",
+        "extra_args",
+        "permission_mode",
+        "allowed_tools",
+        "sandbox",
+        "request_timeout_secs",
+        "api_key_env",
+    ] {
+        assert!(
+            keys.contains(&required),
+            "AGENTS_ENTRY_FIELDS missing required key `{required}` — found {keys:?}"
+        );
+    }
+}
+
+#[test]
+fn modes_table_registered_with_three_entry_fields() {
+    let schema = schema_for_config();
+    let modes_table = schema
+        .iter()
+        .find(|t| t.name == "modes")
+        .expect("modes TableSchema must be registered");
+    let FieldKind::FlattenedMap { entry_fields } = modes_table
+        .fields
+        .iter()
+        .find(|f| matches!(f.kind, FieldKind::FlattenedMap { .. }))
+        .unwrap()
+        .kind
+    else {
+        panic!();
+    };
+    assert_eq!(entry_fields.len(), 3);
+    let keys: Vec<&str> = entry_fields.iter().map(|f| f.key).collect();
+    assert!(keys.contains(&"system_prompt"));
+    assert!(keys.contains(&"allowed_tools"));
+    assert!(keys.contains(&"permission_mode"));
+}
+
+#[test]
+fn sessions_completion_gates_nested_table_has_commands_vec_of_struct() {
+    let schema = schema_for_config();
+    let sessions_table = schema.iter().find(|t| t.name == "sessions").unwrap();
+    let gates_field = sessions_table
+        .fields
+        .iter()
+        .find(|f| f.key == "completion_gates")
+        .expect("sessions schema must include completion_gates");
+    let FieldKind::NestedTable(inner) = gates_field.kind else {
+        panic!("completion_gates must be NestedTable");
+    };
+    let commands_field = inner
+        .iter()
+        .find(|f| f.key == "commands")
+        .expect("completion_gates must contain a commands field");
+    let FieldKind::VecOfStruct { entry_fields } = commands_field.kind else {
+        panic!("commands must be VecOfStruct");
+    };
+    assert_eq!(entry_fields.len(), 3);
+    let keys: Vec<&str> = entry_fields.iter().map(|f| f.key).collect();
+    assert_eq!(keys, &["name", "run", "required"]);
+}
+
+#[test]
+fn agent_kinds_mirror_rust_enum_variants() {
+    use crate::config::AgentKind;
+    let schema_variants = super::dynamic::AGENT_KINDS;
+    let rust_variants: Vec<&'static str> = [
+        AgentKind::Claude,
+        AgentKind::Codex,
+        AgentKind::Qwen,
+        AgentKind::Opencode,
+        AgentKind::Ollama,
+        AgentKind::Minimax,
+    ]
+    .iter()
+    .map(|k| k.as_str())
+    .collect();
+    for v in &rust_variants {
+        assert!(
+            schema_variants.contains(v),
+            "AGENT_KINDS missing Rust enum variant `{v}`"
+        );
+    }
+    assert_eq!(
+        schema_variants.len(),
+        rust_variants.len(),
+        "AGENT_KINDS must list every AgentKind variant"
+    );
 }

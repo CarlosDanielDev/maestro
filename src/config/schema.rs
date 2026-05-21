@@ -7,7 +7,13 @@
 
 #[allow(dead_code)]
 mod core;
+// docs_render is consumed only by src/integration_tests/docs_gen.rs (also
+// #[cfg(test)]). Gate it the same way so non-test builds don't compile
+// dead-code paths that produced ~14 dead_code warnings in `cargo check`.
+#[cfg(test)]
 pub(crate) mod docs_render;
+#[allow(dead_code)]
+pub(crate) mod dynamic;
 #[allow(dead_code)]
 mod extras;
 
@@ -82,6 +88,16 @@ pub enum FieldKind {
     Map {
         entry_fields: &'static [FieldSchema],
     },
+    /// Like [`FieldKind::Map`] but entries live at the parent table's level
+    /// directly — there is no intermediate sub-key. Used for `#[serde(flatten)]`
+    /// maps such as `agents.<id>`, `modes.<id>`, `teams.<id>`, where each entry
+    /// is rendered as `[<table>.<id>]` rather than `[<table>.entries.<id>]`.
+    /// Defaults to [`Presentation::Subtabs`]. The renderer writes back by
+    /// replacing every existing table-valued key under the parent table while
+    /// preserving any scalar siblings (e.g. `agents.default`).
+    FlattenedMap {
+        entry_fields: &'static [FieldSchema],
+    },
     /// Ordered array-of-tables. Entries share `entry_fields`; reorder is part
     /// of the edit verb set. Defaults to [`Presentation::Rows`]. Renderer
     /// wiring lands in a follow-up — A.1 ships the type only.
@@ -120,7 +136,7 @@ impl FieldSchema {
             return Some(explicit);
         }
         match self.kind {
-            FieldKind::Map { .. } => Some(Presentation::Subtabs),
+            FieldKind::Map { .. } | FieldKind::FlattenedMap { .. } => Some(Presentation::Subtabs),
             FieldKind::VecOfStruct { .. } => Some(Presentation::Rows),
             FieldKind::Bool
             | FieldKind::Int { .. }
@@ -175,6 +191,38 @@ pub(crate) const BUDGET_TABLE: TableSchema = TableSchema {
     fields: core::BUDGET_FIELDS,
 };
 
+pub(crate) const AGENTS_TABLE: TableSchema = TableSchema {
+    name: "agents",
+    label: "Agents",
+    fields: &[FieldSchema {
+        key: "entries",
+        label: "Entries",
+        help: "Configured agent providers — one entry per `[agents.<id>]` table",
+        default: DefaultValue::Empty,
+        kind: FieldKind::FlattenedMap {
+            entry_fields: dynamic::AGENTS_ENTRY_FIELDS,
+        },
+        validator: None,
+        presentation: Some(Presentation::Subtabs),
+    }],
+};
+
+pub(crate) const MODES_TABLE: TableSchema = TableSchema {
+    name: "modes",
+    label: "Modes",
+    fields: &[FieldSchema {
+        key: "entries",
+        label: "Entries",
+        help: "Configured session modes — one entry per `[modes.<id>]` table",
+        default: DefaultValue::Empty,
+        kind: FieldKind::FlattenedMap {
+            entry_fields: dynamic::MODES_ENTRY_FIELDS,
+        },
+        validator: None,
+        presentation: Some(Presentation::Subtabs),
+    }],
+};
+
 #[allow(dead_code)]
 const SCHEMA: &[TableSchema] = &[
     PROJECT_TABLE,
@@ -204,6 +252,8 @@ const SCHEMA: &[TableSchema] = &[
         label: "Review",
         fields: extras::REVIEW_FIELDS,
     },
+    AGENTS_TABLE,
+    MODES_TABLE,
     TableSchema {
         name: "tui",
         label: "TUI",

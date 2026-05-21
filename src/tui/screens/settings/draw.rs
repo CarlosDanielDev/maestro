@@ -2,6 +2,7 @@ use crate::flags::FlagSource;
 use crate::tui::icons::{self, IconId};
 use crate::tui::screens::{draw_keybinds_bar, sanitize_for_terminal};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::WidgetKind;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -38,33 +39,159 @@ fn render_focused_row_bg(f: &mut Frame, area: Rect, theme: &Theme) {
 }
 
 impl SettingsScreen {
-    fn draw_tab_bar(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let mut spans = Vec::new();
-        for (i, tab) in SettingsTab::ALL.iter().enumerate() {
-            let style = if i == self.active_tab {
+    fn draw_sidebar(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        // Layout:
+        //   Line 0: search input  (always visible)
+        //   Line 1: thin separator
+        //   Lines 2+: alphabetical tab list, filtered by search
+        if area.height < 3 {
+            return;
+        }
+        let search_area = Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: 1,
+        };
+        let sep_area = Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: 1,
+        };
+        let tabs_area = Rect {
+            x: area.x,
+            y: area.y + 2,
+            width: area.width,
+            height: area.height - 2,
+        };
+
+        // Search input.
+        let prefix_style = Style::default().fg(theme.text_muted);
+        let query_style = if self.sidebar_search_active {
+            Style::default()
+                .fg(theme.accent_info)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.text_secondary)
+        };
+        let mut search_spans: Vec<Span> = Vec::with_capacity(4);
+        search_spans.push(Span::styled("Search: ", prefix_style));
+        if self.sidebar_search.is_empty() && !self.sidebar_search_active {
+            // Hint when idle and empty.
+            search_spans.push(Span::styled(
+                "press /",
                 Style::default()
-                    .fg(theme.accent_success)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
-            } else {
-                Style::default().fg(theme.text_secondary)
-            };
-            if i > 0 {
-                spans.push(Span::styled(
-                    " │ ",
-                    Style::default().fg(theme.border_inactive),
+                    .fg(theme.text_muted)
+                    .add_modifier(Modifier::DIM),
+            ));
+        } else {
+            search_spans.push(Span::styled(self.sidebar_search.clone(), query_style));
+            if self.sidebar_search_active {
+                // Visible cursor block at end of input.
+                search_spans.push(Span::styled(
+                    "_",
+                    Style::default()
+                        .fg(theme.accent_info)
+                        .add_modifier(Modifier::REVERSED),
                 ));
             }
-            spans.push(Span::styled(tab.label(), style));
         }
-        f.render_widget(Paragraph::new(Line::from(spans)), area);
+        f.render_widget(Paragraph::new(Line::from(search_spans)), search_area);
+
+        let sep_text = "─".repeat(area.width as usize);
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                sep_text,
+                Style::default().fg(theme.border_inactive),
+            ))),
+            sep_area,
+        );
+
+        // Filtered tab list.
+        let visible = self.sidebar_visible_indices();
+        if visible.is_empty() {
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    "no match",
+                    Style::default()
+                        .fg(theme.text_muted)
+                        .add_modifier(Modifier::ITALIC),
+                ))),
+                tabs_area,
+            );
+            return;
+        }
+
+        // Render each tab as its own row so the active row can be painted
+        // with a filled background (selection_bg) for clearer focus
+        // affordance — `> ` prefix alone reads as a glyph, not a state.
+        for (i, tab_idx) in visible.iter().enumerate() {
+            if i as u16 >= tabs_area.height {
+                break;
+            }
+            let tab = SettingsTab::ALL[*tab_idx];
+            let is_active = *tab_idx == self.active_tab;
+            let row_area = Rect {
+                x: tabs_area.x,
+                y: tabs_area.y + i as u16,
+                width: tabs_area.width,
+                height: 1,
+            };
+            if is_active {
+                render_focused_row_bg(f, row_area, theme);
+            }
+            let (prefix, style) = if is_active {
+                (
+                    "▸ ",
+                    Style::default()
+                        .fg(theme.selection_fg)
+                        .bg(theme.selection_bg)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+                )
+            } else {
+                ("  ", Style::default().fg(theme.text_secondary))
+            };
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(tab.label(), style),
+                ])),
+                row_area,
+            );
+        }
     }
 
     fn field_height(&self, tab: usize, field_idx: usize) -> u16 {
-        if self
-            .feedback_for(tab, field_idx)
-            .is_some_and(|fb| !fb.message.is_empty())
+        if let Some(field) = self
+            .fields_per_tab
+            .get(tab)
+            .and_then(|fs| fs.get(field_idx))
         {
-            2
+            match &field.widget {
+                // Dynamic-cardinality widgets render a bordered Block with a
+                // sub-tab strip + per-entry field group (Map) or a row table
+                // (Rows). One row is not enough — give them the height to
+                // display the empty state hint or a full entry group.
+                WidgetKind::DynamicMap(w) => {
+                    // Block border (2) + sub-tab strip (2) + entry fields, or
+                    // the 3-line empty-state hint. `entry_fields` is the
+                    // upper bound on visible rows when an entry is active.
+                    let entry_rows = w.entry_fields.len() as u16;
+                    (entry_rows + 4).max(8)
+                }
+                WidgetKind::DynamicRows(_) => 10,
+                _ => {
+                    if self
+                        .feedback_for(tab, field_idx)
+                        .is_some_and(|fb| !fb.message.is_empty())
+                    {
+                        2
+                    } else {
+                        1
+                    }
+                }
+            }
         } else {
             1
         }
@@ -115,7 +242,11 @@ impl SettingsScreen {
                 width: area.width,
                 height: h,
             };
-            if focused {
+            // Single-line scalar fields get an orange filled focus row.
+            // Multi-line widgets (DynamicMap, DynamicRows) render their own
+            // focus chrome via the `focused` arg below — painting a height-1
+            // strip on top of them produces a stray orange stripe.
+            if focused && h == 1 {
                 render_focused_row_bg(
                     f,
                     Rect {
@@ -240,31 +371,50 @@ impl SettingsScreen {
             return;
         }
 
-        let chunks = Layout::default()
+        let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // tab bar
-                Constraint::Length(1), // separator
-                Constraint::Min(1),    // field list
+                Constraint::Min(1),    // sidebar + content
                 Constraint::Length(1), // keybinds
             ])
             .split(inner);
 
-        self.draw_tab_bar(f, chunks[0], theme);
+        // Sidebar (left) | vertical separator | content (right).
+        // Sidebar width = longest label + 4 (prefix + breathing room),
+        // clamped to a reasonable upper bound. 18 covers "Notifications"
+        // (13 chars) + 2-char prefix + 3-char gutter.
+        let sidebar_width: u16 = 18;
+        let horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(sidebar_width),
+                Constraint::Length(1), // vertical separator
+                Constraint::Min(1),    // content
+            ])
+            .split(vertical[0]);
 
-        let sep = "─".repeat(inner.width as usize);
+        self.draw_sidebar(f, horizontal[0], theme);
+
+        let sep_col = "│".repeat(horizontal[1].height as usize);
         f.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                sep,
-                Style::default().fg(theme.border_inactive),
-            ))),
-            chunks[1],
+            Paragraph::new(
+                sep_col
+                    .chars()
+                    .map(|c| {
+                        Line::from(Span::styled(
+                            c.to_string(),
+                            Style::default().fg(theme.border_inactive),
+                        ))
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            horizontal[1],
         );
 
         if self.active_tab() == SettingsTab::Flags {
-            self.draw_feature_flags(f, chunks[2], theme);
+            self.draw_feature_flags(f, horizontal[2], theme);
         } else {
-            self.draw_fields(f, chunks[2], theme);
+            self.draw_fields(f, horizontal[2], theme);
         }
 
         if self.confirm_discard {
@@ -278,29 +428,28 @@ impl SettingsScreen {
                     ),
                     Span::styled("(y/n)", Style::default().fg(theme.text_secondary)),
                 ])),
-                chunks[3],
+                vertical[1],
             );
         } else if self.active_tab() == SettingsTab::Flags {
             draw_keybinds_bar(
                 f,
-                chunks[3],
+                vertical[1],
                 &[("Tab", "Tab"), ("↑/↓", "Navigate"), ("Esc", "Back")],
                 theme,
             );
         } else {
-            let edit_hint = self
+            let edit_hints: &'static [(&'static str, &'static str)] = self
                 .current_fields()
                 .get(self.field_index)
-                .map(|field| field.widget.edit_hint());
-            let mut entries: Vec<(&str, &str)> = Vec::with_capacity(5);
+                .map(|field| field.widget.edit_hint())
+                .unwrap_or(&[]);
+            let mut entries: Vec<(&str, &str)> = Vec::with_capacity(4 + edit_hints.len());
             entries.push(("Tab", "Tab"));
             entries.push(("↑/↓", "Field"));
-            if let Some((key, label)) = edit_hint {
-                entries.push((key, label));
-            }
+            entries.extend(edit_hints.iter().copied());
             entries.push(("Ctrl+s", "Save"));
             entries.push(("Esc", "Back"));
-            draw_keybinds_bar(f, chunks[3], &entries, theme);
+            draw_keybinds_bar(f, vertical[1], &entries, theme);
         }
     }
 }

@@ -34,6 +34,7 @@ fn keybinds_row(s: &str) -> String {
 #[test]
 fn keybind_bar_project_text_input_shows_enter_edit() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
+    screen.jump_to_tab(SettingsTab::Project);
     let output = render_settings_to_string(&mut screen, 80, 10);
     let row = keybinds_row(&output);
     assert!(
@@ -49,10 +50,7 @@ fn keybind_bar_project_text_input_shows_enter_edit() {
 #[test]
 fn keybind_bar_turboquant_toggle_shows_space_toggle() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    for _ in 0..10 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
-    assert_eq!(screen.active_tab(), SettingsTab::TurboQuant);
+    screen.jump_to_tab(SettingsTab::TurboQuant);
     assert_eq!(screen.field_index, 0);
     let output = render_settings_to_string(&mut screen, 80, 10);
     let row = keybinds_row(&output);
@@ -69,9 +67,7 @@ fn keybind_bar_turboquant_toggle_shows_space_toggle() {
 #[test]
 fn keybind_bar_turboquant_dropdown_shows_arrows_change() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    for _ in 0..10 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::TurboQuant);
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
     assert_eq!(screen.field_index, 2);
@@ -87,9 +83,7 @@ fn keybind_bar_turboquant_dropdown_shows_arrows_change() {
 #[test]
 fn keybind_bar_flags_tab_has_no_widget_hints() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    for _ in 0..9 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Flags);
     assert_eq!(screen.active_tab(), SettingsTab::Flags);
     let output = render_settings_to_string(&mut screen, 80, 10);
     let row = keybinds_row(&output);
@@ -106,9 +100,7 @@ fn keybind_bar_flags_tab_has_no_widget_hints() {
 #[test]
 fn keybind_bar_list_editor_still_shows_save_esc_at_80_cols() {
     let mut screen = SettingsScreen::new(make_config(), make_flags());
-    for _ in 0..11 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Advanced);
     assert_eq!(screen.active_tab(), SettingsTab::Advanced);
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
     screen.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
@@ -147,9 +139,7 @@ fn ctrl_s_event() -> Event {
 }
 
 fn dirty_screen(screen: &mut SettingsScreen) {
-    for _ in 0..4 {
-        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
-    }
+    screen.jump_to_tab(SettingsTab::Notifications);
     screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal);
     assert!(screen.is_dirty(), "pre-condition: screen must be dirty");
 }
@@ -198,8 +188,8 @@ fn ctrl_s_without_config_path_sets_error_flash() {
     let action = screen.handle_input(&ctrl_s_event(), InputMode::Normal);
 
     assert!(
-        matches!(action, ScreenAction::None),
-        "must return None when save fails, got {:?}",
+        matches!(action, ScreenAction::LogActivity { .. }),
+        "must return LogActivity when save fails (mirrors header flash to activity log), got {:?}",
         action
     );
     assert!(
@@ -263,12 +253,7 @@ fn screen_with_caveman(state: CavemanModeState) -> SettingsScreen {
 }
 
 fn navigate_to_advanced_caveman_row(screen: &mut SettingsScreen) {
-    for _ in 0..11 {
-        screen.handle_input(
-            &crate::tui::screens::test_helpers::key_event(KeyCode::Tab),
-            InputMode::Normal,
-        );
-    }
+    screen.jump_to_tab(SettingsTab::Advanced);
     assert_eq!(screen.active_tab(), SettingsTab::Advanced);
     for _ in 0..3 {
         screen.handle_input(
@@ -351,7 +336,7 @@ fn space_when_state_is_error_shows_status_explanation() {
 fn set_caveman_state_updates_underlying_widget_value() {
     let mut screen = screen_with_caveman(CavemanModeState::ExplicitFalse);
     screen.set_caveman_state(CavemanModeState::ExplicitTrue);
-    let advanced = &screen.fields_per_tab[11];
+    let advanced = &screen.fields_per_tab[13];
     let toggle = advanced
         .iter()
         .find_map(|f| match &f.widget {

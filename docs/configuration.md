@@ -155,6 +155,8 @@ model = "qwen3"
 
 `maestro doctor` validates provider setup: with no explicit `[agents]`, it checks the implicit Claude CLI; with explicit `[agents]`, it checks every enabled agent; the default agent is required, others are optional warnings. Use `enabled = false` for configured examples that are not ready to run.
 
+**Settings UI:** The **Agents** tab (index 7) in the TUI settings screen (`maestro tui` → Settings → Agents) edits `[agents]` entries interactively via the schema-driven renderer. Each `[agents.<id>]` sub-table appears as a collapsible DynamicMap entry. Saving validates that `agents.default` references an existing entry; a mismatch surfaces as a Save banner error rather than writing a broken config. Implemented in #792. Note: `[agents]` and `[modes]` are intentionally excluded from the AUTOGEN marker system (tracked in `SCHEMA_BACKFILL_PENDING`) because per-provider prose outlives what the schema can emit.
+
 *Source: `src/config/agents.rs`.*
 
 ## `[budget]`
@@ -318,6 +320,8 @@ system_prompt = "You are reviewing a pull request."
 allowed_tools = ["Read", "Grep"]
 permission_mode = "default"
 ```
+
+**Settings UI:** The **Modes** tab (index 8) in the TUI settings screen (`maestro tui` → Settings → Modes) edits `[modes]` entries interactively via the schema-driven renderer. Each `[modes.<id>]` sub-table appears as a collapsible DynamicMap entry. Implemented in #792.
 
 *Source: `src/config/modes.rs`.*
 
@@ -517,7 +521,7 @@ Legacy `sessions.hollow_max_retries = N` is auto-merged into this section with a
 
 ### `[sessions.completion_gates]`
 
-In-session gates run before the orchestrator releases the worktree.
+In-session gates run before the orchestrator releases the worktree. The **Sessions** tab in the TUI settings screen now exposes `completion_gates` as a `NestedTable` group: the `enabled` toggle and the `commands` row table (backed by `[[sessions.completion_gates.commands]]`) are editable inline without leaving the tab. Use the DynamicRows widget (Add/Remove, Alt+↑/↓ reorder) to manage the command list interactively (#792).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

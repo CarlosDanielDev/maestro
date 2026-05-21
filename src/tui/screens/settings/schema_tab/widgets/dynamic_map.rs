@@ -4,12 +4,25 @@
 
 use std::sync::Arc;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{Frame, layout::Rect};
 
 use crate::config::schema::FieldSchema;
+use crate::config::schema::dynamic::agent_field_visible_for_kind;
 use crate::tui::theme::Theme;
-use crate::tui::widgets::WidgetAction;
+use crate::tui::widgets::{WidgetAction, WidgetKind};
+
+/// Display label used in modal titles and other user-facing strings.
+/// The section_path is the TOML key path (e.g. `"agents"`); for the
+/// sake of UX clarity the `[agents]` table is presented as "provider"
+/// in the TUI. Other section_paths fall back to themselves.
+fn display_name_for(section_path: &str) -> &str {
+    if section_path.ends_with("agents") {
+        "provider"
+    } else {
+        section_path
+    }
+}
 
 use super::super::modals::ModalAction;
 use super::super::modals::add_entry::AddEntryModal;
@@ -70,6 +83,13 @@ impl DynamicMapWidget {
             let mut keys: Vec<&String> = table.keys().collect();
             keys.sort();
             for k in keys {
+                let entry_value = table.get(k);
+                // Flattened maps share the table with scalar siblings
+                // (e.g. `agents.default`). Skip non-table values so the
+                // scalar siblings are not misread as entries.
+                if !entry_value.map(|v| v.is_table()).unwrap_or(false) {
+                    continue;
+                }
                 if validate_identifier(k, &[]).is_err() {
                     tracing::warn!(
                         section = %section_path,
@@ -82,7 +102,7 @@ impl DynamicMapWidget {
                     &section_path,
                     k.clone(),
                     entry_fields,
-                    table.get(k),
+                    entry_value,
                 ));
             }
         }
@@ -131,6 +151,18 @@ impl DynamicMapWidget {
             return self.dispatch_remove(action);
         }
 
+        // While an inner text-editing widget owns input, every key goes
+        // straight to it — otherwise typing "opencode" into a String
+        // field would route `d` to the Remove-entry shortcut below.
+        if let MapFocus::EntryField(n) = self.focus
+            && let Some(active) = self.active_idx
+            && let Some(entry) = self.entries.get_mut(active)
+            && let Some(field) = entry.fields.get_mut(n)
+            && field.widget.needs_insert_mode()
+        {
+            return field.widget.handle_input(key);
+        }
+
         match key.code {
             KeyCode::Char('a') => {
                 self.open_add_modal();
@@ -144,26 +176,23 @@ impl DynamicMapWidget {
                 self.attempt_undo();
                 WidgetAction::None
             }
-            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // `[` / `]` switch entries while focus is on the subtab strip.
+            // We avoid them when an EntryField is focused so they remain
+            // available as literals for inner text widgets.
+            KeyCode::Char(']') if matches!(self.focus, MapFocus::SubtabStrip) => {
                 self.next_tab();
                 WidgetAction::None
             }
-            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('[') if matches!(self.focus, MapFocus::SubtabStrip) => {
                 self.prev_tab();
                 WidgetAction::None
             }
             KeyCode::Down | KeyCode::Tab => {
-                if matches!(self.focus, MapFocus::SubtabStrip) && self.active_entry().is_some() {
-                    self.focus = MapFocus::EntryField(0);
-                }
+                self.focus_next_field();
                 WidgetAction::None
             }
-            KeyCode::Up => {
-                if let MapFocus::EntryField(0) = self.focus {
-                    self.focus = MapFocus::SubtabStrip;
-                } else if let MapFocus::EntryField(n) = self.focus {
-                    self.focus = MapFocus::EntryField(n - 1);
-                }
+            KeyCode::Up | KeyCode::BackTab => {
+                self.focus_prev_field();
                 WidgetAction::None
             }
             _ => {
@@ -172,9 +201,134 @@ impl DynamicMapWidget {
                     && let Some(entry) = self.entries.get_mut(active)
                     && let Some(field) = entry.fields.get_mut(n)
                 {
-                    return field.widget.handle_input(key);
+                    let action = field.widget.handle_input(key);
+                    // Changing `kind` can hide the currently focused field
+                    // (e.g. switching to `ollama` hides `command`). Snap
+                    // focus to the nearest visible field so the cursor
+                    // never sits on a row the user can't see.
+                    self.clamp_focus_to_visible();
+                    return action;
                 }
                 WidgetAction::None
+            }
+        }
+    }
+
+    /// Subset of `entry_fields` indices that should render and accept
+    /// focus for the currently active entry. Convenience wrapper over
+    /// [`Self::visible_field_indices_for`] using `self.active_idx`.
+    pub(super) fn visible_field_indices(&self) -> Vec<usize> {
+        let active = self.active_idx.unwrap_or(0);
+        self.visible_field_indices_for(active)
+    }
+
+    /// Subset of `entry_fields` indices visible for the entry at
+    /// `entry_idx`. For `[agents.<id>]` this hides kind-incompatible
+    /// rows (e.g. base_url when kind is a subprocess agent). All
+    /// other section_paths fall through to the full index list.
+    pub(super) fn visible_field_indices_for(&self, entry_idx: usize) -> Vec<usize> {
+        let all: Vec<usize> = (0..self.entry_fields.len()).collect();
+        if !self.section_path.ends_with("agents") {
+            return all;
+        }
+        let Some(entry) = self.entries.get(entry_idx) else {
+            return all;
+        };
+        let kind_value = entry
+            .fields
+            .iter()
+            .zip(self.entry_fields.iter())
+            .find(|(_, fs)| fs.key == "kind")
+            .and_then(|(sf, _)| match &sf.widget {
+                WidgetKind::Dropdown(d) => Some(d.selected_value().to_string()),
+                WidgetKind::TextInput(t) => Some(t.value.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        self.entry_fields
+            .iter()
+            .enumerate()
+            .filter(|(_, fs)| agent_field_visible_for_kind(fs.key, &kind_value))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// If focus is on an EntryField that is no longer in the visible set
+    /// (e.g. user switched `kind` away from the one that included it),
+    /// snap to the nearest visible field — preferring the next one, then
+    /// the previous, then back to SubtabStrip if nothing remains.
+    fn clamp_focus_to_visible(&mut self) {
+        if let MapFocus::EntryField(n) = self.focus {
+            let visible = self.visible_field_indices();
+            if visible.contains(&n) {
+                return;
+            }
+            if let Some(next) = visible.iter().find(|&&i| i > n).copied() {
+                self.focus = MapFocus::EntryField(next);
+            } else if let Some(prev) = visible.iter().rev().find(|&&i| i < n).copied() {
+                self.focus = MapFocus::EntryField(prev);
+            } else {
+                self.focus = MapFocus::SubtabStrip;
+            }
+        }
+    }
+
+    /// Walk inner focus one step backward without consuming the outer
+    /// SettingsScreen Up arrow. Returns true when focus moved so the
+    /// outer can leave `field_index` alone — only a return of `false`
+    /// signals the boundary (`SubtabStrip`) and lets the outer cursor
+    /// climb up to the previous field.
+    pub fn try_focus_prev(&mut self) -> bool {
+        if !matches!(self.focus, MapFocus::EntryField(_)) {
+            return false;
+        }
+        let before = self.focus.clone();
+        self.focus_prev_field();
+        self.focus != before
+    }
+
+    /// Mirror of [`try_focus_prev`] for the Down arrow. Returns true when
+    /// focus advanced into (or further inside) the entry-field group.
+    pub fn try_focus_next(&mut self) -> bool {
+        match self.focus {
+            MapFocus::SubtabStrip if self.active_entry().is_some() => {
+                let before = self.focus.clone();
+                self.focus_next_field();
+                self.focus != before
+            }
+            MapFocus::EntryField(_) => {
+                let before = self.focus.clone();
+                self.focus_next_field();
+                self.focus != before
+            }
+            _ => false,
+        }
+    }
+
+    fn focus_next_field(&mut self) {
+        let visible = self.visible_field_indices();
+        match self.focus {
+            MapFocus::SubtabStrip if self.active_entry().is_some() => {
+                if let Some(&first) = visible.first() {
+                    self.focus = MapFocus::EntryField(first);
+                }
+            }
+            MapFocus::EntryField(n) => {
+                if let Some(next) = visible.iter().find(|&&idx| idx > n).copied() {
+                    self.focus = MapFocus::EntryField(next);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn focus_prev_field(&mut self) {
+        let visible = self.visible_field_indices();
+        if let MapFocus::EntryField(n) = self.focus {
+            let prev = visible.iter().rev().find(|&&idx| idx < n).copied();
+            match prev {
+                Some(idx) => self.focus = MapFocus::EntryField(idx),
+                None => self.focus = MapFocus::SubtabStrip,
             }
         }
     }
@@ -199,8 +353,9 @@ impl DynamicMapWidget {
 
     fn open_add_modal(&mut self) {
         let existing: Vec<String> = self.entries.iter().map(|e| e.id.clone()).collect();
+        let display_name = display_name_for(&self.section_path);
         self.add_modal = Some(AddEntryModal::new(
-            format!("Add {} entry", self.section_path),
+            format!("Add {} entry", display_name),
             existing,
         ));
         self.focus = MapFocus::AddModal;
@@ -299,14 +454,18 @@ impl DynamicMapWidget {
         false
     }
 
-    pub fn edit_hint(&self) -> (&'static str, &'static str) {
-        ("a/d/Ctrl←→", "Add/Del/Switch")
+    pub fn edit_hint(&self) -> &'static [(&'static str, &'static str)] {
+        &[("a/d", "Add/Del"), ("[ ]", "Prev/Next")]
     }
 
     pub fn serialize_to_toml(&self) -> toml::Value {
         let mut t = toml::map::Map::new();
-        for entry in &self.entries {
-            t.insert(entry.id.clone(), entry.to_toml(self.entry_fields));
+        for (i, entry) in self.entries.iter().enumerate() {
+            let visible = self.visible_field_indices_for(i);
+            t.insert(
+                entry.id.clone(),
+                entry.to_toml_filtered(self.entry_fields, &visible),
+            );
         }
         toml::Value::Table(t)
     }

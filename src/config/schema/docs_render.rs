@@ -80,6 +80,7 @@ pub(crate) fn render_type_string(kind: &FieldKind) -> String {
         FieldKind::StringList => "array of string".to_string(),
         FieldKind::NestedTable(_) => "table".to_string(),
         FieldKind::Map { .. } => "dynamic map".to_string(),
+        FieldKind::FlattenedMap { .. } => "dynamic map (flattened)".to_string(),
         FieldKind::VecOfStruct { .. } => "array of table".to_string(),
     }
 }
@@ -113,7 +114,10 @@ fn escape_pipes(s: &str) -> String {
 pub(crate) fn render_field_row(field: &FieldSchema) -> Option<String> {
     if matches!(
         field.kind,
-        FieldKind::NestedTable(_) | FieldKind::Map { .. } | FieldKind::VecOfStruct { .. }
+        FieldKind::NestedTable(_)
+            | FieldKind::Map { .. }
+            | FieldKind::FlattenedMap { .. }
+            | FieldKind::VecOfStruct { .. }
     ) {
         return None;
     }
@@ -184,7 +188,7 @@ pub(crate) fn render_table_body(name: &str, fields: &[FieldSchema]) -> String {
     }
     for field in fields {
         match field.kind {
-            FieldKind::Map { entry_fields } => {
+            FieldKind::Map { entry_fields } | FieldKind::FlattenedMap { entry_fields } => {
                 out.push_str(&render_dynamic_map_section(name, entry_fields));
             }
             FieldKind::VecOfStruct { entry_fields } => {

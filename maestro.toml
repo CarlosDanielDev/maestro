@@ -127,7 +127,7 @@ agent_graph_enabled = true
 [teams]
 
 [agents]
-default = "claude"
+default = "opencode"
 
 [agents.claude]
 kind = "claude"
@@ -136,3 +136,20 @@ command = "claude"
 model = "opus"
 permission_mode = "bypassPermissions"
 allowed_tools = []
+sandbox = ""
+
+[agents.minimax]
+kind = "minimax"
+enabled = true
+base_url = "https://api.minimax.io/v1"
+model = "MiniMax-M2.7"
+request_timeout_secs = 120
+api_key_env = "MINIMAX_API_KEY"
+
+[agents.opencode]
+kind = "opencode"
+enabled = true
+command = "opencode"
+model = "opencode-go/deepseek-v4-pro"
+permission_mode = "bypassPermissions"
+sandbox = ""

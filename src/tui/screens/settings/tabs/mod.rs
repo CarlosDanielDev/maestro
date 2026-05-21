@@ -1,9 +1,11 @@
 pub mod advanced;
+pub mod agents;
 pub mod budget;
 pub mod flags;
 pub mod gates;
 pub mod github;
 pub mod layout;
+pub mod modes;
 pub mod notifications;
 pub mod project;
 pub mod review;
@@ -25,6 +27,10 @@ fn field(widget: WidgetKind) -> SettingsField {
 pub(super) const BYPASS_LABEL: &str =
     "bypass_review_corrections (DANGER: auto-accepts all review fixes)";
 
+/// Label of the Providers-tab Dropdown that mirrors `agents.default`.
+/// Lives at index 0 of the Providers tab, above the DynamicMap entries.
+pub(super) const DEFAULT_PROVIDER_LABEL: &str = "Default provider";
+
 /// Look up a schema table by name. Panics with a uniform message if the
 /// `const SCHEMA` registry does not contain `name` — a programmer error
 /// caught at SettingsScreen::new time, never at runtime from user input.
@@ -44,6 +50,8 @@ pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
         notifications::build_fields(config),
         gates::build_fields(config),
         review::build_fields(config),
+        agents::build_fields(config),
+        modes::build_fields(config),
         theme::build_fields(config),
         layout::build_fields(config),
         vec![],
@@ -53,8 +61,8 @@ pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
 }
 
 /// Map a settings tab index to the schema table that drives it. `None`
-/// means the tab has no widgets (Flags, idx 9) or spans more than one
-/// TOML table — Theme (idx 7) and Advanced (idx 11) are handled by
+/// means the tab has no widgets (Flags, idx 11) or spans more than one
+/// TOML table — Theme (idx 9) and Advanced (idx 13) are handled by
 /// `sync_multi_table` below.
 fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
     let name = match idx {
@@ -65,8 +73,10 @@ fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
         4 => "notifications",
         5 => "gates",
         6 => "review",
-        8 => "tui.layout",
-        10 => "turboquant",
+        7 => "agents",
+        8 => "modes",
+        10 => "tui.layout",
+        12 => "turboquant",
         _ => return None,
     };
     Some(schema_table(name))
@@ -75,11 +85,26 @@ fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
 pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
     sync_schema_tabs(screen);
     sync_sessions_bypass_override(screen);
-    sync_multi_table(7, &["tui.theme", "tui"], screen);
+    sync_agents_default_override(screen);
+    sync_multi_table(9, &["tui.theme", "tui"], screen);
     sync_theme_screen_local(screen);
     sync_notifications_empty_url_collapse(screen);
-    sync_multi_table(11, &["concurrency", "monitoring"], screen);
+    sync_multi_table(13, &["concurrency", "monitoring"], screen);
     sync_advanced_caveman(screen);
+}
+
+/// Mirror the Providers-tab Default-provider dropdown back into
+/// `config.agents.default`. The dropdown is injected at idx 0 of the
+/// tab by `tabs/agents.rs::build_fields` and its options are the
+/// currently-configured entry ids.
+fn sync_agents_default_override(screen: &mut SettingsScreen) {
+    let Some(fields) = screen.fields_per_tab.get(7) else {
+        return;
+    };
+    let Some(WidgetKind::Dropdown(d)) = widget_by_label(fields, DEFAULT_PROVIDER_LABEL) else {
+        return;
+    };
+    screen.config.agents.default = d.selected_value().to_string();
 }
 
 fn sync_schema_tabs(screen: &mut SettingsScreen) {
@@ -93,12 +118,13 @@ fn sync_schema_tabs(screen: &mut SettingsScreen) {
     }
 }
 
-/// Sessions bypass toggle is a bespoke derived view of `permission_mode`.
-/// The schema sync writes the dropdown's value first; this hook then
-/// downgrades back to "default" only when the toggle is off and the
-/// dropdown is still pointed at "bypassPermissions". When the toggle is
-/// on, the dropdown wins on conflict — matches legacy "dropdown last"
-/// semantics. See `settings_sessions_parity.rs` for the contract.
+/// Sessions bypass toggle is the sole UI surface for
+/// `sessions.permission_mode` after the schema-driven dropdown was
+/// removed (per-provider permission_mode lives on the Providers tab).
+/// Toggle ON → "bypassPermissions"; toggle OFF → "default" (only when
+/// the current value is the bypass sentinel, so a non-default
+/// permission_mode set via TOML hand-edit is preserved on a toggle
+/// that's already off).
 fn sync_sessions_bypass_override(screen: &mut SettingsScreen) {
     let Some(fields) = screen.fields_per_tab.get(1) else {
         return;
@@ -106,7 +132,9 @@ fn sync_sessions_bypass_override(screen: &mut SettingsScreen) {
     let Some(WidgetKind::Toggle(w)) = widget_by_label(fields, BYPASS_LABEL) else {
         return;
     };
-    if !w.value && screen.config.sessions.permission_mode == "bypassPermissions" {
+    if w.value {
+        screen.config.sessions.permission_mode = "bypassPermissions".to_string();
+    } else if screen.config.sessions.permission_mode == "bypassPermissions" {
         screen.config.sessions.permission_mode = "default".to_string();
     }
 }
@@ -139,7 +167,7 @@ fn sync_notifications_empty_url_collapse(screen: &mut SettingsScreen) {
 
 /// Theme tab field 0 is `live_preview` (screen-local, not in schema).
 fn sync_theme_screen_local(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(7) else {
+    let Some(fields) = screen.fields_per_tab.get(9) else {
         return;
     };
     if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
@@ -150,7 +178,7 @@ fn sync_theme_screen_local(screen: &mut SettingsScreen) {
 /// Caveman toggle (Advanced tab) is bespoke; route through existing
 /// `pending_caveman_toggle` flow.
 fn sync_advanced_caveman(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(11) else {
+    let Some(fields) = screen.fields_per_tab.get(13) else {
         return;
     };
     let prev = screen.caveman_state.as_bool().unwrap_or(false);

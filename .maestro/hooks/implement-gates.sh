@@ -22,6 +22,7 @@ issue_number="${1:-}"
 shift || true
 
 dirty_tree_action="auto"
+include_untracked=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -32,6 +33,8 @@ while [ $# -gt 0 ]; do
       echo "implement-gates: unknown --dirty-tree-action value: ${1#*=}" >&2
       exit 1
       ;;
+    --include-untracked)    include_untracked=1 ;;
+    --no-include-untracked) include_untracked=0 ;;
     *)
       echo "implement-gates: unknown argument: $1" >&2
       exit 1
@@ -120,11 +123,42 @@ if [ -n "$(git status --porcelain)" ]; then
     printf '%s\n' "$list" | head -5
   }
 
+  do_stash() {
+    # G2: honest stash. git stash push exits 0 even on "No local changes to
+    # save" (untracked-only working tree). Capture its output, branch on the
+    # real result, and tell the truth.
+    local stash_args=("push" "-m" "auto-stash before /implement #${issue_number}")
+    if [ "$include_untracked" = "1" ]; then
+      stash_args=("push" "-u" "-m" "auto-stash before /implement #${issue_number} (untracked included)")
+    fi
+
+    local stash_output
+    stash_output=$(git stash "${stash_args[@]}" 2>&1) || {
+      echo "implement-gates: git stash failed:" >&2
+      printf '%s\n' "$stash_output" >&2
+      exit 6
+    }
+
+    if printf '%s' "$stash_output" | grep -q "No local changes to save"; then
+      local untracked
+      untracked=$(git status --porcelain | grep '^??' | cut -c4-)
+      echo "implement-gates: WARN: auto-stash skipped — no tracked changes to stash."
+      if [ -n "$untracked" ]; then
+        echo "implement-gates: untracked files retained on disk:"
+        printf '%s\n' "$untracked" | sed 's/^/  - /'
+        if [ "$include_untracked" = "0" ]; then
+          echo "implement-gates: pass --include-untracked to stash these too (default keeps them in tree)."
+        fi
+      fi
+    else
+      printf '%s\n' "$stash_output" | sed 's/^/implement-gates: /'
+      surface_stash_list
+    fi
+  }
+
   case "$resolved_action" in
     stash)
-      git stash push -m "auto-stash before /implement #${issue_number}"
-      echo "implement-gates: stashed as 'auto-stash before /implement #${issue_number}'"
-      surface_stash_list
+      do_stash
       ;;
     abort)
       echo "implement-gates: aborting on dirty tree (--dirty-tree-action=abort)"
@@ -139,9 +173,7 @@ if [ -n "$(git status --porcelain)" ]; then
       read -r choice
       case "$choice" in
         S|s)
-          git stash push -m "auto-stash before /implement #${issue_number}"
-          echo "implement-gates: stashed as 'auto-stash before /implement #${issue_number}'"
-          surface_stash_list
+          do_stash
           ;;
         *)
           echo "implement-gates: aborting on dirty tree"

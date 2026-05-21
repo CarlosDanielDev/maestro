@@ -43,7 +43,9 @@ impl SettingsScreen {
             original_config: config.clone(),
             config,
             config_path: None,
-            active_tab: 0,
+            // Open on the first alphabetical tab so the sidebar selection
+            // matches the visible order from the moment the screen opens.
+            active_tab: SettingsTab::ALPHABETICAL_INDICES[0],
             field_index: 0,
             fields_per_tab,
             scroll_offset: 0,
@@ -58,6 +60,8 @@ impl SettingsScreen {
             caveman_state: CavemanModeState::Default,
             pending_caveman_toggle: None,
             caveman_status_flash: None,
+            sidebar_search: String::new(),
+            sidebar_search_active: false,
         };
         screen.run_all_validations();
         screen
@@ -76,7 +80,7 @@ impl SettingsScreen {
     pub fn set_caveman_state(&mut self, state: CavemanModeState) {
         let bool_value = state.as_bool().unwrap_or(false);
         self.caveman_state = state;
-        if let Some(fields) = self.fields_per_tab.get_mut(11)
+        if let Some(fields) = self.fields_per_tab.get_mut(13)
             && let Some(field) = fields
                 .iter_mut()
                 .find(|f| f.widget.label() == CAVEMAN_LABEL)
@@ -125,6 +129,12 @@ impl SettingsScreen {
                 "No config file resolved — cannot save. Run `maestro init` to create one."
             );
         };
+        // Cross-entry validation gate: surfaces `agents.default` referring to
+        // a missing entry (and any future cross-entry rules) in the Save banner.
+        self.config
+            .agents
+            .validate()
+            .with_context(|| "settings cross-entry validation".to_string())?;
         self.config
             .save(path)
             .with_context(|| format!("saving settings to {}", path.display()))?;
@@ -201,22 +211,102 @@ impl SettingsScreen {
         self.current_fields().len()
     }
 
+    /// Position of the currently active tab inside
+    /// [`SettingsTab::ALPHABETICAL_INDICES`]. Returns 0 if the active tab
+    /// is somehow missing from the alphabetical view (should be unreachable
+    /// while ALPHABETICAL_INDICES mirrors ALL).
+    #[allow(dead_code)] // reserved for follow-up that unifies Tab key with sidebar order
+    pub(super) fn alphabetical_position(&self) -> usize {
+        SettingsTab::ALPHABETICAL_INDICES
+            .iter()
+            .position(|&idx| idx == self.active_tab)
+            .unwrap_or(0)
+    }
+
+    /// Subset of [`SettingsTab::ALPHABETICAL_INDICES`] whose labels match
+    /// the current sidebar search (case-insensitive substring). Empty
+    /// search returns all alphabetical indices.
+    pub(super) fn sidebar_visible_indices(&self) -> Vec<usize> {
+        if self.sidebar_search.is_empty() {
+            return SettingsTab::ALPHABETICAL_INDICES.to_vec();
+        }
+        let needle = self.sidebar_search.to_lowercase();
+        SettingsTab::ALPHABETICAL_INDICES
+            .iter()
+            .copied()
+            .filter(|&idx| {
+                SettingsTab::ALL[idx]
+                    .label()
+                    .to_lowercase()
+                    .contains(&needle)
+            })
+            .collect()
+    }
+
+    // Tab navigation always walks alphabetical order so the on-screen
+    // sidebar position matches what `Tab` advances to. Filtered search
+    // narrows the walk to visible matches only.
     fn next_tab(&mut self) {
-        self.active_tab = (self.active_tab + 1) % SettingsTab::ALL.len();
+        let visible = self.sidebar_visible_indices();
+        if visible.is_empty() {
+            return;
+        }
+        let pos = visible
+            .iter()
+            .position(|&idx| idx == self.active_tab)
+            .unwrap_or(0);
+        self.active_tab = visible[(pos + 1) % visible.len()];
         self.field_index = 0;
         self.scroll_offset = 0;
         self.flags_selected = 0;
     }
 
     fn prev_tab(&mut self) {
-        self.active_tab = if self.active_tab == 0 {
-            SettingsTab::ALL.len() - 1
-        } else {
-            self.active_tab - 1
-        };
+        let visible = self.sidebar_visible_indices();
+        if visible.is_empty() {
+            return;
+        }
+        let pos = visible
+            .iter()
+            .position(|&idx| idx == self.active_tab)
+            .unwrap_or(0);
+        let prev = if pos == 0 { visible.len() - 1 } else { pos - 1 };
+        self.active_tab = visible[prev];
         self.field_index = 0;
         self.scroll_offset = 0;
         self.flags_selected = 0;
+    }
+
+    /// Test helper: jump to a named tab without relying on Tab keystroke
+    /// counts. After switching to alphabetical Tab navigation the
+    /// `for _ in 0..N { Tab }` pattern across the test suite became
+    /// fragile, so production code paths still use next_tab/prev_tab
+    /// while tests use this direct setter.
+    #[cfg(test)]
+    pub(super) fn jump_to_tab(&mut self, tab: SettingsTab) {
+        if let Some(idx) = SettingsTab::ALL.iter().position(|t| *t == tab) {
+            self.active_tab = idx;
+            self.field_index = 0;
+            self.scroll_offset = 0;
+            self.flags_selected = 0;
+        }
+    }
+
+    /// Move `active_tab` onto the first visible tab when the current
+    /// active is filtered out by the sidebar search. Call after every
+    /// modification of `sidebar_search` so the user never loses sight
+    /// of which tab is selected.
+    pub(super) fn clamp_active_to_visible(&mut self) {
+        let visible = self.sidebar_visible_indices();
+        if visible.is_empty() {
+            return;
+        }
+        if !visible.contains(&self.active_tab) {
+            self.active_tab = visible[0];
+            self.field_index = 0;
+            self.scroll_offset = 0;
+            self.flags_selected = 0;
+        }
     }
 
     fn active_widget_needs_insert(&self) -> bool {

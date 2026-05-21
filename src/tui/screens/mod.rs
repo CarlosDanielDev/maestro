@@ -180,6 +180,14 @@ pub enum ScreenAction {
         mode: team_wizard::TeamWizardMode,
         preselect: Option<team_wizard::TeamLaunchInput>,
     },
+    /// Push a one-shot line into the in-app Activity Log. Mirrors a
+    /// transient header/inline flash so the message has a permanent home
+    /// the user can scroll back to.
+    LogActivity {
+        tag: String,
+        message: String,
+        level: crate::tui::activity_log::LogLevel,
+    },
 }
 
 /// Configuration for launching a conflict-fix session.

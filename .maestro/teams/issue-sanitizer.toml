@@ -1,0 +1,6 @@
+extends = ""
+primitive = "verdict-only"
+min_agents = ["claude"]
+reviewer = "opencode"
+
+[role_overrides]

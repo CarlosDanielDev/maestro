@@ -14,7 +14,7 @@ use crate::tui::screens::settings::schema_tab::sync::sync_to_config;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::WidgetKind;
 
-const LAYOUT_TAB_INDEX: usize = 8;
+const LAYOUT_TAB_INDEX: usize = 10;
 
 const MINIMAL_TOML: &str = concat!(
     "[project]\nrepo = \"owner/repo\"\nbase_branch = \"main\"\n",

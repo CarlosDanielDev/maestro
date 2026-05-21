@@ -29,6 +29,7 @@ const MINIMAL_TOML: &str = concat!(
     "[sessions.hollow_retry]\npolicy = \"intent-aware\"\nwork_max_retries = 2\nconsultation_max_retries = 0\n",
     "[sessions.context_overflow]\noverflow_threshold_pct = 70\nauto_fork = true\ncommit_prompt_pct = 50\nmax_fork_depth = 5\n",
     "[sessions.conflict]\nenabled = true\npolicy = \"warn\"\n",
+    "[sessions.completion_gates]\nenabled = true\n",
     "[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n",
     "[github]\n",
     "[notifications]\nslack_webhook_url = \"\"\n",
@@ -63,13 +64,15 @@ fn render_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buf
     terminal.backend().buffer().clone()
 }
 
+// `default_model` and `permission_mode` removed from the Sessions
+// schema in favor of per-provider configuration on the Providers tab.
+// The TOML fields stay on SessionsConfig (back-compat); only the
+// schema-renderer surface drops them.
 const EXPECTED_LABELS: [&str; 17] = [
     "max_concurrent",
     "stall_timeout_secs",
-    "default_model",
     "default_mode",
     BYPASS_LABEL,
-    "permission_mode",
     "max_retries",
     "retry_cooldown_secs",
     "hollow_retry.policy",
@@ -81,6 +84,8 @@ const EXPECTED_LABELS: [&str; 17] = [
     "context_overflow.max_fork_depth",
     "conflict.enabled",
     "conflict.policy",
+    "completion_gates.enabled",
+    "completion_gates.commands",
 ];
 
 #[test]
@@ -104,11 +109,23 @@ fn sessions_tab_flag_on_field_count_and_labels() {
 }
 
 #[test]
-fn sessions_tab_flag_on_bypass_toggle_pinned_at_index_4() {
+fn sessions_tab_completion_gates_commands_renders_dynamic_rows() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
-    let WidgetKind::Toggle(t) = &fields[4].widget else {
-        panic!("field[4] must be Toggle for bypass_review_corrections");
+    let last = fields.last().expect("Sessions tab must have a last field");
+    assert!(
+        matches!(last.widget, WidgetKind::DynamicRows(_)),
+        "last field of Sessions tab must be DynamicRows widget for completion_gates.commands"
+    );
+}
+
+#[test]
+fn sessions_tab_flag_on_bypass_toggle_pinned_at_index_3() {
+    // Index shifted from 4 to 3 after default_model removed from SESSIONS_FIELDS.
+    let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
+    let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
+    let WidgetKind::Toggle(t) = &fields[3].widget else {
+        panic!("field[3] must be Toggle for bypass_review_corrections");
     };
     assert_eq!(t.label, BYPASS_LABEL);
 }
@@ -146,13 +163,13 @@ fn sessions_sync_flag_on_writes_outer_default_and_nested_fields() {
     if let WidgetKind::NumberStepper(ref mut w) = fields[0].widget {
         w.value = 5;
     }
-    if let WidgetKind::Dropdown(ref mut w) = fields[8].widget {
+    if let WidgetKind::Dropdown(ref mut w) = fields[6].widget {
         w.selected = 0; // hollow_retry.policy = always
     }
-    if let WidgetKind::Toggle(ref mut w) = fields[12].widget {
+    if let WidgetKind::Toggle(ref mut w) = fields[10].widget {
         w.value = false; // context_overflow.auto_fork
     }
-    if let WidgetKind::Dropdown(ref mut w) = fields[16].widget {
+    if let WidgetKind::Dropdown(ref mut w) = fields[14].widget {
         w.selected = 2; // conflict.policy = kill
     }
 
@@ -170,49 +187,33 @@ fn sessions_sync_flag_on_writes_outer_default_and_nested_fields() {
     ));
 }
 
+// `sessions_bypass_toggle_on_then_dropdown_*` removed: the permission_mode
+// dropdown that those tests exercised has been deleted from the Sessions
+// schema in favor of per-provider configuration. Bypass toggle behavior
+// is now covered standalone by `sessions_bypass_toggle_only_drives_permission_mode`.
+
 #[test]
-fn sessions_bypass_toggle_on_then_dropdown_acceptedits_keeps_acceptedits() {
+fn sessions_bypass_toggle_only_drives_permission_mode() {
+    // After removing the permission_mode dropdown from SESSIONS_FIELDS,
+    // the bypass toggle is the sole UI surface that writes
+    // `sessions.permission_mode`. Toggle ON → bypassPermissions; OFF →
+    // default. Per-provider permission_mode lives on the Providers tab.
     let mut config = test_config();
     config.sessions.permission_mode = "default".into();
     let mut screen = SettingsScreen::new(config, FeatureFlags::default());
     let fields = &mut screen.fields_per_tab[SESSIONS_TAB_INDEX];
 
-    if let WidgetKind::Toggle(ref mut w) = fields[4].widget {
+    if let WidgetKind::Toggle(ref mut w) = fields[3].widget {
         w.value = true;
     }
-    if let WidgetKind::Dropdown(ref mut w) = fields[5].widget {
-        let idx = w.options.iter().position(|s| s == "acceptEdits").unwrap();
-        w.selected = idx;
-    }
-
     screen.sync_widgets_to_config();
+    assert_eq!(screen.config.sessions.permission_mode, "bypassPermissions");
 
-    assert_eq!(
-        screen.config.sessions.permission_mode, "acceptEdits",
-        "dropdown wins over bypass toggle"
-    );
-}
-
-#[test]
-fn sessions_bypass_toggle_off_reverts_bypass_to_default() {
-    let mut config = test_config();
-    config.sessions.permission_mode = "bypassPermissions".into();
-    let mut screen = SettingsScreen::new(config, FeatureFlags::default());
     let fields = &mut screen.fields_per_tab[SESSIONS_TAB_INDEX];
-
-    if let WidgetKind::Toggle(ref mut w) = fields[4].widget {
+    if let WidgetKind::Toggle(ref mut w) = fields[3].widget {
         w.value = false;
     }
-    // Dropdown still shows bypassPermissions (initial state) — sync will
-    // re-apply the dropdown's value after the toggle pre-hook reverts it.
-    // Net effect: dropdown wins, so permission_mode stays bypassPermissions.
-    // To actually revert via the toggle, the dropdown must also be moved.
-    if let WidgetKind::Dropdown(ref mut w) = fields[5].widget {
-        let idx = w.options.iter().position(|s| s == "default").unwrap();
-        w.selected = idx;
-    }
     screen.sync_widgets_to_config();
-
     assert_eq!(screen.config.sessions.permission_mode, "default");
 }
 
