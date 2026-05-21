@@ -8,6 +8,37 @@ const LAYOUT_MODES: &[&str] = &["vertical", "horizontal"];
 const LAYOUT_DENSITIES: &[&str] = &["default", "comfortable", "compact"];
 const QUANT_STRATEGIES: &[&str] = &["turboquant", "polarquant", "qjl"];
 const QUANT_APPLY: &[&str] = &["keys", "values", "both"];
+const MASCOT_STYLES: &[&str] = &["sprite", "ascii"];
+
+pub(super) const REVIEW_REVIEWERS_ENTRY_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "name",
+        label: "Name",
+        help: "Display name for the reviewer (e.g. `lint-bot`, `doc-bot`)",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: Some(validate_non_empty),
+        presentation: None,
+    },
+    FieldSchema {
+        key: "command",
+        label: "Command",
+        help: "Command template — `{pr_number}` and `{branch}` are substituted at dispatch",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: Some(validate_non_empty),
+        presentation: None,
+    },
+    FieldSchema {
+        key: "required",
+        label: "Required",
+        help: "If true, this reviewer failing blocks merge",
+        default: DefaultValue::Bool(false),
+        kind: FieldKind::Bool,
+        validator: None,
+        presentation: None,
+    },
+];
 
 pub(super) const GATES_CI_AUTO_FIX_FIELDS: &[FieldSchema] = &[
     FieldSchema {
@@ -111,17 +142,48 @@ pub(super) const REVIEW_FIELDS: &[FieldSchema] = &[
         validator: Some(validate_non_empty),
         presentation: None,
     },
+    FieldSchema {
+        key: "reviewers",
+        label: "Reviewers",
+        help: "Multi-reviewer council — if non-empty overrides `command`",
+        default: DefaultValue::Empty,
+        kind: FieldKind::VecOfStruct {
+            entry_fields: REVIEW_REVIEWERS_ENTRY_FIELDS,
+        },
+        validator: None,
+        presentation: Some(super::Presentation::Rows),
+    },
 ];
 
-pub(super) const TUI_FIELDS: &[FieldSchema] = &[FieldSchema {
-    key: "ascii_icons",
-    label: "ASCII Icons",
-    help: "Use ASCII-only icons in terminals without emoji support",
-    default: DefaultValue::Bool(false),
-    kind: FieldKind::Bool,
-    validator: None,
-    presentation: None,
-}];
+pub(super) const TUI_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "ascii_icons",
+        label: "ASCII Icons",
+        help: "Use ASCII-only icons in terminals without emoji support",
+        default: DefaultValue::Bool(false),
+        kind: FieldKind::Bool,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "show_mascot",
+        label: "Show Mascot",
+        help: "Show the Clawd mascot companion in the TUI",
+        default: DefaultValue::Bool(true),
+        kind: FieldKind::Bool,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "mascot_style",
+        label: "Mascot Style",
+        help: "Visual style for the mascot — `sprite` is pixel art, `ascii` is Unicode block art",
+        default: DefaultValue::Str("sprite"),
+        kind: FieldKind::Enum(MASCOT_STYLES),
+        validator: None,
+        presentation: None,
+    },
+];
 
 pub(super) const TUI_THEME_FIELDS: &[FieldSchema] = &[FieldSchema {
     key: "preset",
@@ -230,6 +292,45 @@ pub(super) const TURBOQUANT_FIELDS: &[FieldSchema] = &[
         validator: None,
         presentation: None,
     },
+    FieldSchema {
+        key: "fork_handoff_budget",
+        label: "Fork Handoff Budget",
+        help: "Token budget for fork-handoff compression",
+        default: DefaultValue::Int(4096),
+        kind: FieldKind::Int {
+            min: 256,
+            max: 65_536,
+            step: 256,
+        },
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "system_prompt_budget",
+        label: "System Prompt Budget",
+        help: "Token budget for system-prompt compaction",
+        default: DefaultValue::Int(2048),
+        kind: FieldKind::Int {
+            min: 256,
+            max: 65_536,
+            step: 256,
+        },
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "knowledge_budget",
+        label: "Knowledge Budget",
+        help: "Token budget for knowledge-base compression",
+        default: DefaultValue::Int(4096),
+        kind: FieldKind::Int {
+            min: 256,
+            max: 65_536,
+            step: 256,
+        },
+        validator: None,
+        presentation: None,
+    },
 ];
 
 pub(super) const CONCURRENCY_FIELDS: &[FieldSchema] = &[
@@ -252,6 +353,19 @@ pub(super) const CONCURRENCY_FIELDS: &[FieldSchema] = &[
         help: "Labels that mark a task as resource-intensive",
         default: DefaultValue::StrList(&[]),
         kind: FieldKind::StringList,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "team_max_parallel",
+        label: "Team Max Parallel",
+        help: "Cap on parallel team runs — `0` falls back to the global `maestro team launch --max-parallel`",
+        default: DefaultValue::Int(0),
+        kind: FieldKind::Int {
+            min: 0,
+            max: 64,
+            step: 1,
+        },
         validator: None,
         presentation: None,
     },

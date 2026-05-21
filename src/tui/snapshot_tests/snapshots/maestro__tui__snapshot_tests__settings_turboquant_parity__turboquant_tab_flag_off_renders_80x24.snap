@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/settings_turboquant_parity.rs
-assertion_line: 107
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -11,9 +10,9 @@ Buffer {
         "strategy:  turboquant                                                         ",
         "apply_to:  both                                                               ",
         "○ auto_on_overflow                                                              ",
-        "                                                                                ",
-        "                                                                                ",
-        "                                                                                ",
+        "fork_handoff_budget: < 4096 >                                                   ",
+        "system_prompt_budget: < 2048 >                                                  ",
+        "knowledge_budget: < 4096 >                                                      ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -46,5 +45,14 @@ Buffer {
         x: 0, y: 4, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
         x: 2, y: 4, fg: White, bg: Reset, underline: Reset, modifier: NONE,
         x: 18, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 5, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 21, y: 5, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 29, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 6, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 22, y: 6, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 30, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 7, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 18, y: 7, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 26, y: 7, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

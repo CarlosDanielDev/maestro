@@ -151,12 +151,13 @@ pub fn build_validator_map() -> std::collections::HashMap<FieldKey, ValidatorFn>
     // Sessions tab (1)
     m.insert((1, 0), validate_max_concurrent as ValidatorFn);
     m.insert((1, 1), validate_stall_timeout_secs as ValidatorFn);
-    // (1, 9): context_overflow.overflow_threshold_pct (post default_model
-    // and permission_mode removal). Layout: [0]max_concurrent,
-    // [1]stall_timeout_secs, [2]default_mode, [3]bypass_review_corrections,
-    // [4]max_retries, [5]retry_cooldown_secs, [6..8]hollow_retry.*,
-    // [9]context_overflow.overflow_threshold_pct, ...
-    m.insert((1, 9), validate_overflow_threshold_pct as ValidatorFn);
+    // (1, 12): context_overflow.overflow_threshold_pct after #788 added
+    // allowed_tools, max_prompt_history, guardrail_prompt. Layout:
+    // [0]max_concurrent, [1]stall_timeout_secs, [2]default_mode,
+    // [3]bypass_review_corrections, [4]allowed_tools, [5]max_retries,
+    // [6]retry_cooldown_secs, [7]max_prompt_history, [8]guardrail_prompt,
+    // [9..11]hollow_retry.*, [12]context_overflow.overflow_threshold_pct.
+    m.insert((1, 12), validate_overflow_threshold_pct as ValidatorFn);
     // Budget tab (2)
     m.insert((2, 0), validate_per_session_usd as ValidatorFn);
     m.insert((2, 1), validate_total_usd as ValidatorFn);
@@ -190,7 +191,9 @@ mod tests {
             ((0, 1), "base_branch"),
             ((1, 0), "max_concurrent"),
             ((1, 1), "stall_timeout_secs"),
-            ((1, 9), "context_overflow.overflow_threshold_pct"),
+            // Shifted from idx 9 → 12 after #788 added allowed_tools,
+            // max_prompt_history, guardrail_prompt to SESSIONS_FIELDS.
+            ((1, 12), "context_overflow.overflow_threshold_pct"),
             ((4, 2), "slack_webhook_url"),
             ((5, 3), "ci_max_wait_secs"),
         ];
@@ -497,7 +500,7 @@ alert_threshold_pct = 80
         assert!(map.contains_key(&(0, 1))); // base_branch
         assert!(map.contains_key(&(1, 0))); // max_concurrent
         assert!(map.contains_key(&(1, 1))); // stall_timeout_secs
-        assert!(map.contains_key(&(1, 9))); // context_overflow.overflow_threshold_pct
+        assert!(map.contains_key(&(1, 12))); // context_overflow.overflow_threshold_pct (post #788 shift)
         assert!(map.contains_key(&(2, 0))); // per_session_usd
         assert!(map.contains_key(&(2, 1))); // total_usd
         assert!(map.contains_key(&(2, 2))); // alert_threshold_pct

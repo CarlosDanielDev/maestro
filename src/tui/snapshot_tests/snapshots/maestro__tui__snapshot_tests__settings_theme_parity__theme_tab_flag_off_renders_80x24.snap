@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/settings_theme_parity.rs
-assertion_line: 110
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -9,8 +8,8 @@ Buffer {
         "○ live_preview                                                                  ",
         "preset:  dark                                                                 ",
         "○ ascii_icons                                                                   ",
-        "                                                                                ",
-        "                                                                                ",
+        "✓ show_mascot                                                                   ",
+        "mascot_style:  sprite                                                         ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -40,5 +39,11 @@ Buffer {
         x: 0, y: 2, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
         x: 2, y: 2, fg: White, bg: Reset, underline: Reset, modifier: NONE,
         x: 13, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 3, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
+        x: 2, y: 3, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 13, y: 3, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 4, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 14, y: 4, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 24, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

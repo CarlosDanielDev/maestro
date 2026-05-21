@@ -60,15 +60,24 @@ fn project_tab_flag_off_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[0];
 
-    assert_eq!(fields.len(), 4, "project tab must have exactly 4 fields");
+    assert_eq!(
+        fields.len(),
+        9,
+        "project tab must have 7 schema fields + 2 action toggles"
+    );
     assert_eq!(fields[0].widget.label(), "repo");
     assert_eq!(fields[1].widget.label(), "base_branch");
+    assert_eq!(fields[2].widget.label(), "language");
+    assert_eq!(fields[3].widget.label(), "languages");
+    assert_eq!(fields[4].widget.label(), "build_command");
+    assert_eq!(fields[5].widget.label(), "test_command");
+    assert_eq!(fields[6].widget.label(), "run_command");
     assert_eq!(
-        fields[2].widget.label(),
+        fields[7].widget.label(),
         "Reset Settings (re-detect project stack)"
     );
     assert_eq!(
-        fields[3].widget.label(),
+        fields[8].widget.label(),
         "Normalize Agent Config (add [agents])"
     );
 }
@@ -80,17 +89,22 @@ fn project_tab_flag_on_field_count_and_labels() {
 
     assert_eq!(
         fields.len(),
-        4,
-        "project tab must have exactly 4 fields (schema-on path)"
+        9,
+        "project tab must have 7 schema fields + 2 actions (schema-on path)"
     );
     assert_eq!(fields[0].widget.label(), "repo");
     assert_eq!(fields[1].widget.label(), "base_branch");
+    assert_eq!(fields[2].widget.label(), "language");
+    assert_eq!(fields[3].widget.label(), "languages");
+    assert_eq!(fields[4].widget.label(), "build_command");
+    assert_eq!(fields[5].widget.label(), "test_command");
+    assert_eq!(fields[6].widget.label(), "run_command");
     assert_eq!(
-        fields[2].widget.label(),
+        fields[7].widget.label(),
         "Reset Settings (re-detect project stack)"
     );
     assert_eq!(
-        fields[3].widget.label(),
+        fields[8].widget.label(),
         "Normalize Agent Config (add [agents])"
     );
 }

@@ -68,9 +68,18 @@ fn review_tab_flag_off_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[REVIEW_TAB_INDEX];
 
-    assert_eq!(fields.len(), 2, "review tab must have exactly 2 fields");
+    assert_eq!(
+        fields.len(),
+        3,
+        "review tab must have enabled + command + reviewers VecOfStruct"
+    );
     assert_eq!(fields[0].widget.label(), "enabled");
     assert_eq!(fields[1].widget.label(), "command");
+    assert_eq!(fields[2].widget.label(), "reviewers");
+    assert!(
+        matches!(fields[2].widget, WidgetKind::DynamicRows(_)),
+        "reviewers must render as DynamicRows"
+    );
 }
 
 #[test]
@@ -80,11 +89,12 @@ fn review_tab_flag_on_field_count_and_labels() {
 
     assert_eq!(
         fields.len(),
-        2,
-        "review tab must have exactly 2 fields (schema-on path)"
+        3,
+        "review tab must have 3 fields (schema-on path)"
     );
     assert_eq!(fields[0].widget.label(), "enabled");
     assert_eq!(fields[1].widget.label(), "command");
+    assert_eq!(fields[2].widget.label(), "reviewers");
 }
 
 #[test]
