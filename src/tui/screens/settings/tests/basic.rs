@@ -188,7 +188,10 @@ fn a_key_from_scalar_field_routes_to_tab_dynamic_widget() {
     );
     let target_widget = &screen.fields_per_tab[screen.active_tab][target_field].widget;
     assert!(
-        matches!(target_widget, WidgetKind::DynamicRows(_) | WidgetKind::DynamicMap(_)),
+        matches!(
+            target_widget,
+            WidgetKind::DynamicRows(_) | WidgetKind::DynamicMap(_)
+        ),
         "target field must be the dynamic-cardinality widget, got {:?}",
         target_widget.label()
     );

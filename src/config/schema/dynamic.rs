@@ -42,9 +42,7 @@ pub(crate) fn agent_field_visible_for_kind(field_key: &str, kind_value: &str) ->
         return true;
     }
     match field_key {
-        "command" | "permission_mode" | "sandbox" | "allowed_tools" | "extra_args" => {
-            is_subprocess
-        }
+        "command" | "permission_mode" | "sandbox" | "allowed_tools" | "extra_args" => is_subprocess,
         "base_url" | "api_key_env" | "request_timeout_secs" => is_http,
         _ => true,
     }

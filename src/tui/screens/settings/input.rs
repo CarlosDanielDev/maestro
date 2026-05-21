@@ -208,22 +208,20 @@ impl Screen for SettingsScreen {
                             )
                         })
                         .unwrap_or(false);
-                    if !current_is_dynamic {
-                        if let Some(target_idx) =
-                            self.fields_per_tab[tab].iter().position(|f| {
-                                matches!(
-                                    f.widget,
-                                    crate::tui::widgets::WidgetKind::DynamicMap(_)
-                                        | crate::tui::widgets::WidgetKind::DynamicRows(_)
-                                )
-                            })
-                        {
-                            self.field_index = target_idx;
-                            if let Some(field) = self.fields_per_tab[tab].get_mut(target_idx) {
-                                field.widget.handle_input(key_event);
-                            }
-                            return ScreenAction::None;
+                    if !current_is_dynamic
+                        && let Some(target_idx) = self.fields_per_tab[tab].iter().position(|f| {
+                            matches!(
+                                f.widget,
+                                crate::tui::widgets::WidgetKind::DynamicMap(_)
+                                    | crate::tui::widgets::WidgetKind::DynamicRows(_)
+                            )
+                        })
+                    {
+                        self.field_index = target_idx;
+                        if let Some(field) = self.fields_per_tab[tab].get_mut(target_idx) {
+                            field.widget.handle_input(key_event);
                         }
+                        return ScreenAction::None;
                     }
                 }
                 // Special-case Project action rows: Enter/Space triggers

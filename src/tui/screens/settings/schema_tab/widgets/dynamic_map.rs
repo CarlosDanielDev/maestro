@@ -282,11 +282,7 @@ impl DynamicMapWidget {
                 }
             }
             MapFocus::EntryField(n) => {
-                if let Some(next) = visible
-                    .iter()
-                    .find(|&&idx| idx > n)
-                    .copied()
-                {
+                if let Some(next) = visible.iter().find(|&&idx| idx > n).copied() {
                     self.focus = MapFocus::EntryField(next);
                 }
             }
@@ -296,19 +292,12 @@ impl DynamicMapWidget {
 
     fn focus_prev_field(&mut self) {
         let visible = self.visible_field_indices();
-        match self.focus {
-            MapFocus::EntryField(n) => {
-                let prev = visible
-                    .iter()
-                    .rev()
-                    .find(|&&idx| idx < n)
-                    .copied();
-                match prev {
-                    Some(idx) => self.focus = MapFocus::EntryField(idx),
-                    None => self.focus = MapFocus::SubtabStrip,
-                }
+        if let MapFocus::EntryField(n) = self.focus {
+            let prev = visible.iter().rev().find(|&&idx| idx < n).copied();
+            match prev {
+                Some(idx) => self.focus = MapFocus::EntryField(idx),
+                None => self.focus = MapFocus::SubtabStrip,
             }
-            _ => {}
         }
     }
 

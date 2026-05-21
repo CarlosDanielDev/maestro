@@ -235,7 +235,14 @@ fn agents_kind_http_hides_subprocess_only_fields() {
             visible_keys
         );
     }
-    for shown in ["kind", "enabled", "base_url", "model", "api_key_env", "request_timeout_secs"] {
+    for shown in [
+        "kind",
+        "enabled",
+        "base_url",
+        "model",
+        "api_key_env",
+        "request_timeout_secs",
+    ] {
         assert!(
             visible_keys.contains(&shown),
             "http kind must show `{shown}`; visible = {:?}",
@@ -282,8 +289,7 @@ fn switching_kind_clamps_focus_off_now_hidden_field() {
             visible
         );
         assert_ne!(
-            AGENTS_ENTRY_FIELDS[n].key,
-            "command",
+            AGENTS_ENTRY_FIELDS[n].key, "command",
             "focus must not land on now-hidden `command`"
         );
     } else {
@@ -416,7 +422,10 @@ fn d_with_no_entries_is_noop() {
 fn edit_hint_is_static() {
     let (w, _) = fresh_with_clock();
     let hints = w.edit_hint();
-    assert!(!hints.is_empty(), "edit_hint must return ≥1 (key, label) pair");
+    assert!(
+        !hints.is_empty(),
+        "edit_hint must return ≥1 (key, label) pair"
+    );
     for (k, l) in hints {
         assert!(!k.is_empty());
         assert!(!l.is_empty());
