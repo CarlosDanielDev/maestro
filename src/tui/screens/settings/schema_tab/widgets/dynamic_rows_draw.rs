@@ -3,10 +3,10 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Row, Table},
+    widgets::{Paragraph, Row, Table},
 };
 
 use crate::tui::theme::Theme;
@@ -19,18 +19,22 @@ pub(super) fn draw(
     f: &mut Frame,
     area: Rect,
     theme: &Theme,
-    focused: bool,
+    _focused: bool,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!(" {} ", widget.label))
-        .border_style(Style::default().fg(if focused {
-            theme.border_active
-        } else {
-            theme.border_inactive
-        }));
-    f.render_widget(block.clone(), area);
-    let inner = block.inner(area);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(area);
+    let header_area = chunks[0];
+    let inner = chunks[1];
+
+    let header = Paragraph::new(Line::from(Span::styled(
+        format!("{}:", widget.label),
+        Style::default()
+            .fg(theme.text_secondary)
+            .add_modifier(Modifier::BOLD),
+    )));
+    f.render_widget(header, header_area);
 
     if widget.rows().is_empty() {
         let hint = Paragraph::new(vec![
@@ -59,7 +63,8 @@ pub(super) fn draw(
                 .collect();
             let style = if Some(idx) == widget.focused_row() {
                 Style::default()
-                    .fg(theme.accent_info)
+                    .fg(theme.selection_fg)
+                    .bg(theme.selection_bg)
                     .add_modifier(Modifier::BOLD | Modifier::REVERSED)
             } else {
                 Style::default().fg(theme.text_primary)
@@ -86,7 +91,7 @@ pub(super) fn draw(
         && let Some(label) = widget.undo_label()
     {
         let banner_y = area.y + area.height.saturating_sub(1);
-        let banner_area = Rect::new(area.x + 1, banner_y, area.width.saturating_sub(2), 1);
+        let banner_area = Rect::new(area.x, banner_y, area.width, 1);
         let banner = Paragraph::new(Line::from(Span::styled(
             format!("Removed '{}' — [u] to undo", label),
             Style::default()

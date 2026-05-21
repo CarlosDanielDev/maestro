@@ -21,7 +21,7 @@ Buffer {
         "✓ conflict.enabled                                                              ",
         "conflict.policy:  warn                                                        ",
         "✓ completion_gates.enabled                                                      ",
-        "┌ completion_gates.commands ───────────────────────────────────────────────────┐",
+        "No rows yet.                                                                    ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -78,7 +78,7 @@ Buffer {
         x: 0, y: 15, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
         x: 2, y: 15, fg: White, bg: Reset, underline: Reset, modifier: NONE,
         x: 26, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 0, y: 16, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
-        x: 0, y: 17, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 16, fg: DarkGray, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 12, y: 16, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

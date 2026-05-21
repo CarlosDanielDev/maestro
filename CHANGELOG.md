@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Settings schema-tab modals (Add/Remove) now use the standard double-bordered themed block instead of a green-filled popup (#808).
+- `DynamicMapWidget` and `DynamicRowsWidget` no longer wrap themselves in a bordered `Block`; they now render a flat `<label>:` header (styled with `theme.text_secondary` + BOLD) followed by the sub-tab strip or table. `field_height` in `draw.rs` reduced by 1 row per widget kind (DynamicMap: +3 with `.max(7)`; DynamicRows: 8) to reclaim the removed border row. `DynamicRowsWidget::insert_row` also mirrors the Add-modal identifier into the first String column (so a typed `fmt` shows up as the row name instead of vanishing), and the focused-row highlight switches from `theme.accent_info` to the standard `theme.selection_fg/bg` REVERSED used by the rest of the settings rows (#809).
 
 ### Changed
 - `config`: TOML migrations now preserve comments, blank lines, and key order via `toml_edit`. The internal helper module exposes a shared `ensure_field` primitive for future single-key migrations. (#718)

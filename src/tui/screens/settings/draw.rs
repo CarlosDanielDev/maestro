@@ -169,18 +169,18 @@ impl SettingsScreen {
             .and_then(|fs| fs.get(field_idx))
         {
             match &field.widget {
-                // Dynamic-cardinality widgets render a bordered Block with a
-                // sub-tab strip + per-entry field group (Map) or a row table
-                // (Rows). One row is not enough — give them the height to
-                // display the empty state hint or a full entry group.
+                // Dynamic-cardinality widgets render a flat header + sub-tab
+                // strip + per-entry field group (Map) or a row table (Rows).
+                // One row is not enough — give them the height to display
+                // the empty state hint or a full entry group.
                 WidgetKind::DynamicMap(w) => {
-                    // Block border (2) + sub-tab strip (2) + entry fields, or
+                    // Flat header (1) + sub-tab strip (2) + entry fields, or
                     // the 3-line empty-state hint. `entry_fields` is the
                     // upper bound on visible rows when an entry is active.
                     let entry_rows = w.entry_fields.len() as u16;
-                    (entry_rows + 4).max(8)
+                    (entry_rows + 3).max(7)
                 }
-                WidgetKind::DynamicRows(_) => 10,
+                WidgetKind::DynamicRows(_) => 8,
                 _ => {
                     if self
                         .feedback_for(tab, field_idx)
