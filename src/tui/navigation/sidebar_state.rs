@@ -1,3 +1,4 @@
+/// Top-level sidebar bucket — `Home` is a singleton; the other five (`Run`/`Plan`/`Review`/`Insights`/`System`) group tools
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Bucket {
     Home,
@@ -8,6 +9,7 @@ pub enum Bucket {
     System,
 }
 
+/// Every addressable sidebar tool — `Home` singleton plus 19 bucketed tools across Run/Plan/Review/Insights/System
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToolId {
     Home,
@@ -33,6 +35,7 @@ pub enum ToolId {
 }
 
 impl ToolId {
+    /// Returns the `Bucket` that owns this tool
     pub fn bucket(self) -> Bucket {
         use ToolId::*;
         match self {
@@ -48,6 +51,7 @@ impl ToolId {
     }
 }
 
+/// Runtime state for the sidebar — tracks the active bucket and tool and whether the panel is collapsed
 #[derive(Debug, Clone)]
 pub struct SidebarState {
     pub active_bucket: Bucket,
@@ -66,6 +70,7 @@ impl Default for SidebarState {
 }
 
 impl SidebarState {
+    /// Activates `tool` and syncs `active_bucket` to its owning bucket
     pub fn select(&mut self, tool: ToolId) {
         self.active_tool = tool;
         self.active_bucket = tool.bucket();
@@ -86,12 +91,33 @@ mod tests {
 
     #[test]
     fn tool_id_bucket_is_consistent() {
-        assert_eq!(ToolId::RunSessions.bucket(), Bucket::Run);
-        assert_eq!(ToolId::PlanIssues.bucket(), Bucket::Plan);
-        assert_eq!(ToolId::ReviewPrs.bucket(), Bucket::Review);
-        assert_eq!(ToolId::InsightsCost.bucket(), Bucket::Insights);
-        assert_eq!(ToolId::SystemSettings.bucket(), Bucket::System);
-        assert_eq!(ToolId::Home.bucket(), Bucket::Home);
+        use ToolId::*;
+        let cases: &[(ToolId, Bucket)] = &[
+            (Home, Bucket::Home),
+            (RunSessions, Bucket::Run),
+            (RunInteractions, Bucket::Run),
+            (RunQueue, Bucket::Run),
+            (RunAdapt, Bucket::Run),
+            (RunPrompt, Bucket::Run),
+            (PlanIssues, Bucket::Plan),
+            (PlanMilestones, Bucket::Plan),
+            (PlanRoadmap, Bucket::Plan),
+            (PlanPrd, Bucket::Plan),
+            (ReviewPrs, Bucket::Review),
+            (ReviewCi, Bucket::Review),
+            (ReviewReleases, Bucket::Review),
+            (InsightsCost, Bucket::Insights),
+            (InsightsTokens, Bucket::Insights),
+            (InsightsTurboquant, Bucket::Insights),
+            (InsightsAgents, Bucket::Insights),
+            (InsightsStats, Bucket::Insights),
+            (SystemSettings, Bucket::System),
+            (SystemTeams, Bucket::System),
+        ];
+        assert_eq!(cases.len(), 20);
+        for (tool, expected) in cases {
+            assert_eq!(tool.bucket(), *expected, "bucket mismatch for {:?}", tool);
+        }
     }
 
     #[test]
