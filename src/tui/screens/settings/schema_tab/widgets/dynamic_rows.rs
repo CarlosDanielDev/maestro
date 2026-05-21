@@ -7,9 +7,9 @@ use std::sync::Arc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Frame, layout::Rect};
 
-use crate::config::schema::FieldSchema;
+use crate::config::schema::{FieldKind, FieldSchema};
 use crate::tui::theme::Theme;
-use crate::tui::widgets::WidgetAction;
+use crate::tui::widgets::{WidgetAction, WidgetKind};
 
 use super::super::modals::ModalAction;
 use super::super::modals::add_entry::AddEntryModal;
@@ -277,7 +277,19 @@ impl DynamicRowsWidget {
     }
 
     fn insert_row(&mut self, id: String) {
-        let entry = EntryState::build(&self.section_path, id, self.entry_fields, None);
+        let mut entry = EntryState::build(&self.section_path, id.clone(), self.entry_fields, None);
+        // VecOfStruct rows have no identity key, so the typed identifier
+        // would otherwise vanish on submit. Mirror it into the first String
+        // column so the user sees a labeled row instead of an empty cell.
+        if let Some(idx) = self
+            .entry_fields
+            .iter()
+            .position(|fs| matches!(fs.kind, FieldKind::String))
+            && let Some(sf) = entry.fields.get_mut(idx)
+            && let WidgetKind::TextInput(t) = &mut sf.widget
+        {
+            t.value = id;
+        }
         let new_idx = self.rows.len();
         self.rows.push(entry);
         self.focus = RowFocus::Row(new_idx);

@@ -63,7 +63,8 @@ pub(super) fn draw(
                 .collect();
             let style = if Some(idx) == widget.focused_row() {
                 Style::default()
-                    .fg(theme.accent_info)
+                    .fg(theme.selection_fg)
+                    .bg(theme.selection_bg)
                     .add_modifier(Modifier::BOLD | Modifier::REVERSED)
             } else {
                 Style::default().fg(theme.text_primary)
