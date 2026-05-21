@@ -19,17 +19,22 @@ fn settings_tab_all_includes_modes_at_index_eight() {
 }
 
 #[test]
-fn agents_tab_has_a_dynamic_map_widget() {
+fn agents_tab_has_default_provider_dropdown_and_dynamic_map() {
     let screen = SettingsScreen::new(make_config(), make_flags());
     let fields = &screen.fields_per_tab[7];
     assert!(
-        !fields.is_empty(),
-        "Agents tab (index 7) must have at least one field"
+        fields.len() >= 2,
+        "Providers tab (idx 7) must have at least the Default-provider Dropdown + DynamicMap entries"
     );
     assert!(
-        matches!(fields[0].widget, WidgetKind::DynamicMap(_)),
-        "Agents tab's first field must be a DynamicMap widget, got {:?}",
+        matches!(fields[0].widget, WidgetKind::Dropdown(_)),
+        "field[0] must be the Default-provider Dropdown, got {:?}",
         fields[0].widget.label()
+    );
+    assert!(
+        matches!(fields[1].widget, WidgetKind::DynamicMap(_)),
+        "field[1] must be the entries DynamicMap, got {:?}",
+        fields[1].widget.label()
     );
 }
 
@@ -45,6 +50,33 @@ fn modes_tab_has_a_dynamic_map_widget() {
         matches!(fields[0].widget, WidgetKind::DynamicMap(_)),
         "Modes tab's first field must be a DynamicMap widget"
     );
+}
+
+#[test]
+fn agents_default_dropdown_sync_writes_to_config() {
+    // Build a config with two agent entries so the Default-provider
+    // dropdown has more than one option to select between.
+    let toml_str = "[project]\nrepo = \"owner/repo\"\nbase_branch = \"main\"\n\
+[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+[github]\n[notifications]\n[agents]\ndefault = \"claude\"\n\
+[agents.claude]\nkind = \"claude\"\ncommand = \"claude\"\n\
+[agents.opencode]\nkind = \"opencode\"\ncommand = \"opencode\"\n";
+    let config: Config = toml::from_str(toml_str).expect("parse");
+    let mut screen = SettingsScreen::new(config, make_flags());
+    assert_eq!(screen.config.agents.default, "claude");
+    // Flip the Dropdown to the "opencode" option, then sync.
+    let fields = &mut screen.fields_per_tab[7];
+    let WidgetKind::Dropdown(ref mut d) = fields[0].widget else {
+        panic!("field[0] must be the Default-provider Dropdown");
+    };
+    let idx = d
+        .options
+        .iter()
+        .position(|s| s == "opencode")
+        .expect("`opencode` option must exist");
+    d.selected = idx;
+    screen.sync_widgets_to_config();
+    assert_eq!(screen.config.agents.default, "opencode");
 }
 
 #[test]

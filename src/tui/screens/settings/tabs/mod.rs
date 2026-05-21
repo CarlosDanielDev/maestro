@@ -27,6 +27,10 @@ fn field(widget: WidgetKind) -> SettingsField {
 pub(super) const BYPASS_LABEL: &str =
     "bypass_review_corrections (DANGER: auto-accepts all review fixes)";
 
+/// Label of the Providers-tab Dropdown that mirrors `agents.default`.
+/// Lives at index 0 of the Providers tab, above the DynamicMap entries.
+pub(super) const DEFAULT_PROVIDER_LABEL: &str = "Default provider";
+
 /// Look up a schema table by name. Panics with a uniform message if the
 /// `const SCHEMA` registry does not contain `name` — a programmer error
 /// caught at SettingsScreen::new time, never at runtime from user input.
@@ -81,11 +85,26 @@ fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
 pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
     sync_schema_tabs(screen);
     sync_sessions_bypass_override(screen);
+    sync_agents_default_override(screen);
     sync_multi_table(9, &["tui.theme", "tui"], screen);
     sync_theme_screen_local(screen);
     sync_notifications_empty_url_collapse(screen);
     sync_multi_table(13, &["concurrency", "monitoring"], screen);
     sync_advanced_caveman(screen);
+}
+
+/// Mirror the Providers-tab Default-provider dropdown back into
+/// `config.agents.default`. The dropdown is injected at idx 0 of the
+/// tab by `tabs/agents.rs::build_fields` and its options are the
+/// currently-configured entry ids.
+fn sync_agents_default_override(screen: &mut SettingsScreen) {
+    let Some(fields) = screen.fields_per_tab.get(7) else {
+        return;
+    };
+    let Some(WidgetKind::Dropdown(d)) = widget_by_label(fields, DEFAULT_PROVIDER_LABEL) else {
+        return;
+    };
+    screen.config.agents.default = d.selected_value().to_string();
 }
 
 fn sync_schema_tabs(screen: &mut SettingsScreen) {
