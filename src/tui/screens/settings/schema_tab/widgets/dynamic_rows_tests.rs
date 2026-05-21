@@ -157,3 +157,128 @@ fn d_with_no_rows_is_noop() {
     w.handle_input(ev(KeyCode::Char('d')));
     assert!(w.rows().is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Issue #809 — flat-render (no surrounding Block) tests for DynamicRowsWidget.
+// ---------------------------------------------------------------------------
+
+use ratatui::style::Modifier;
+use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+const BOX_GLYPHS: &[char] = &['┌', '─', '┐', '│', '└', '┘', '╔', '═', '╗', '║', '╚', '╝'];
+
+fn render_rows(widget: &DynamicRowsWidget, width: u16, height: u16) -> ratatui::buffer::Buffer {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal
+        .draw(|f| {
+            widget.draw(f, f.area(), &crate::tui::theme::Theme::dark(), false);
+        })
+        .unwrap();
+    terminal.backend().buffer().clone()
+}
+
+fn assert_no_border_glyphs(buf: &ratatui::buffer::Buffer) {
+    for y in 0..buf.area.height {
+        for x in 0..buf.area.width {
+            let sym = buf[(x, y)].symbol();
+            for &bc in BOX_GLYPHS {
+                assert!(
+                    !sym.contains(bc),
+                    "unexpected border glyph {:?} at ({}, {}); symbol={:?}",
+                    bc,
+                    x,
+                    y,
+                    sym
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn draw_does_not_paint_block_borders_empty_state() {
+    let (w, _) = fresh();
+    let buf = render_rows(&w, 80, 8);
+    assert_no_border_glyphs(&buf);
+}
+
+#[test]
+fn draw_does_not_paint_block_borders_with_rows() {
+    let (mut w, _) = fresh();
+    add_n(&mut w, 1);
+    let buf = render_rows(&w, 80, 8);
+    assert_no_border_glyphs(&buf);
+}
+
+#[test]
+fn draw_renders_label_as_header_with_colon_on_row_0() {
+    let (w, _) = fresh();
+    let buf = render_rows(&w, 80, 8);
+    let row0: String = (0..80u16)
+        .map(|x| buf[(x, 0)].symbol().to_owned())
+        .collect();
+    assert!(
+        row0.contains("completion_gates.commands:"),
+        "header row 0 must contain 'completion_gates.commands:'; got: {:?}",
+        row0
+    );
+}
+
+#[test]
+fn draw_renders_label_as_header_with_text_secondary_style() {
+    let (w, _) = fresh();
+    let buf = render_rows(&w, 80, 8);
+    let theme = crate::tui::theme::Theme::dark();
+    let non_space: Vec<_> = (0..80u16)
+        .map(|x| buf[(x, 0)].clone())
+        .filter(|c| c.symbol() != " ")
+        .collect();
+    assert!(
+        !non_space.is_empty(),
+        "row 0 must contain non-space header text"
+    );
+    for cell in &non_space {
+        assert_eq!(
+            cell.style().fg,
+            Some(theme.text_secondary),
+            "header cell fg must be text_secondary; symbol={:?}",
+            cell.symbol()
+        );
+        assert!(
+            cell.style().add_modifier.contains(Modifier::BOLD),
+            "header cell must have BOLD modifier; symbol={:?}",
+            cell.symbol()
+        );
+    }
+}
+
+#[test]
+fn draw_undo_banner_starts_at_column_0() {
+    let (mut w, _) = fresh();
+    add_n(&mut w, 1);
+    w.handle_input(ev(KeyCode::Char('d')));
+    w.handle_input(ev(KeyCode::Char('y')));
+    assert!(w.undo_active(), "undo must be active after row delete");
+
+    let mut terminal = Terminal::new(TestBackend::new(80, 8)).unwrap();
+    terminal
+        .draw(|f| {
+            w.draw(
+                f,
+                Rect::new(0, 0, 80, 8),
+                &crate::tui::theme::Theme::dark(),
+                false,
+            );
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+
+    let last_row: String = (0..80u16)
+        .map(|x| buf[(x, 7)].symbol().to_owned())
+        .collect();
+    assert!(
+        last_row.starts_with("Removed '"),
+        "undo banner must start at column 0 (no border +1 offset); got: {:?}",
+        last_row
+    );
+}
