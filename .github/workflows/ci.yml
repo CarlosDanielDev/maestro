@@ -76,6 +76,16 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash scripts/check-file-size.sh
 
+  # Verifies every provider entry point (.claude/CLAUDE.md, .codex/AGENTS.md,
+  # AGENTS.md, GEMINI.md) embeds the canonical Golden Rules block from
+  # .maestro/templates/core/golden-rules.md. No untrusted input.
+  rules-drift:
+    name: Golden Rules Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-rules-drift.sh
+
   deny:
     # Supply-chain gate: advisories, wildcards, licenses, registries.
     # Ignore list for transitive-only unmaintained advisories is documented
