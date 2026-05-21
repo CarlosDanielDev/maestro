@@ -127,7 +127,7 @@ agent_graph_enabled = true
 [teams]
 
 [agents]
-default = "claude"
+default = "opencode"
 
 [agents.claude]
 kind = "claude"

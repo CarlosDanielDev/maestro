@@ -664,6 +664,16 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 .as_ref()
                 .map(|c| c.sessions.max_concurrent != config.sessions.max_concurrent)
                 .unwrap_or(false);
+            // Default-provider change is live for new sessions but old
+            // sessions keep their spawn-time agent. Surface both facts
+            // in the activity log so the user knows they don't need to
+            // restart maestro.
+            let default_provider_changed = app
+                .config
+                .as_ref()
+                .map(|c| c.agents.default != config.agents.default)
+                .unwrap_or(false);
+            let new_default_provider = config.agents.default.clone();
 
             // 1. Visual + flags (cheap, always safe).
             crate::icon_mode::init_from_config(config.tui.ascii_icons);
@@ -763,6 +773,15 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         config.sessions.max_concurrent
                     ),
                     crate::tui::activity_log::LogLevel::Warn,
+                );
+            }
+            if default_provider_changed {
+                app.activity_log.push_simple(
+                    "SETTINGS".into(),
+                    format!(
+                        "Default provider → `{new_default_provider}`. Live for new sessions; running sessions keep their original provider until they finish."
+                    ),
+                    crate::tui::activity_log::LogLevel::Info,
                 );
             }
 
