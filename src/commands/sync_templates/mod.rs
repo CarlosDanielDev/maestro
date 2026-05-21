@@ -12,6 +12,7 @@
 
 pub mod banner;
 pub mod diff;
+pub mod golden_rules;
 pub mod lockfile;
 pub mod registry;
 pub mod runner;

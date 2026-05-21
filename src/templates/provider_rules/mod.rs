@@ -101,6 +101,11 @@ pub trait TemplateProviderRules: Send + Sync {
 
     fn skill_link(&self, name: &str) -> Result<String, TemplateError>;
 
+    /// Render the per-provider VCS CLI command (e.g. `gh` for GitHub-aligned
+    /// providers, `az repos` for Azure DevOps). Substituted wherever a
+    /// canonical command embeds `{{VCS_PROVIDER_CMD}}`.
+    fn vcs_provider_cmd(&self) -> Result<String, TemplateError>;
+
     /// `true` for the fail-closed [`NullRules`] stub. Concrete providers
     /// inherit the default `false` and may render templates. Consumers such
     /// as `maestro sync-templates` use this to skip providers whose rules
@@ -154,6 +159,13 @@ impl TemplateProviderRules for NullRules {
     fn skill_link(&self, _name: &str) -> Result<String, TemplateError> {
         Err(TemplateError::UnsupportedByProvider {
             name: "SKILL".to_string(),
+            reason: "no provider rules registered (NullRules)".to_string(),
+        })
+    }
+
+    fn vcs_provider_cmd(&self) -> Result<String, TemplateError> {
+        Err(TemplateError::UnsupportedByProvider {
+            name: "VCS_PROVIDER_CMD".to_string(),
             reason: "no provider rules registered (NullRules)".to_string(),
         })
     }

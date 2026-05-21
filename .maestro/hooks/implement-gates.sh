@@ -184,6 +184,32 @@ if [ -n "$(git status --porcelain)" ]; then
   esac
 fi
 
+# Gate 6.5: CHANGELOG-induced snapshot drift.
+#
+# The landing screen embeds CHANGELOG.md via include_str! and renders trend
+# bars from .entries.iter().take(24). Any edit to CHANGELOG.md can shift the
+# landing_welcome_* snapshots. Gate 7 would catch this with a generic
+# baseline failure; this gate surfaces it sooner with an actionable message.
+# Scope: any modification to CHANGELOG.md in the diff between HEAD and main.
+# Exit 0 silently when CHANGELOG.md is untouched (no false positives).
+# shellcheck source=./lib-changelog.sh
+. "$(dirname "$0")/lib-changelog.sh"
+changelog_diff_base="$(resolve_changelog_diff_base)"
+if [ -n "$changelog_diff_base" ]; then
+  if changelog_changed_vs_base "$changelog_diff_base"; then
+    echo "implement-gates: CHANGELOG.md modified vs ${changelog_diff_base} — verifying landing snapshots"
+    if ! cargo test --lib tui::snapshot_tests::landing -- --include-ignored \
+         > "$GATE_LOG_DIR/landing-snapshot.log" 2>&1; then
+      echo "implement-gates: snapshot drift detected — run cargo insta accept or revert CHANGELOG" >&2
+      echo "implement-gates: See $GATE_LOG_DIR/landing-snapshot.log" >&2
+      exit 3
+    fi
+    echo "implement-gates: landing snapshots clean"
+  fi
+else
+  echo "implement-gates: WARN: neither main nor origin/main is reachable — skipping CHANGELOG drift gate" >&2
+fi
+
 # Gate 7: baseline cargo test must be green.
 if ! cargo test --quiet > "$GATE_LOG_DIR/baseline.log" 2>&1; then
   echo "implement-gates: BASELINE NOT GREEN — existing tests are failing before /implement ran." >&2

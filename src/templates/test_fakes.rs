@@ -29,6 +29,9 @@ impl TemplateProviderRules for FakeRules {
     fn skill_link(&self, name: &str) -> Result<String, TemplateError> {
         Ok(format!("[SKILL name={name}]"))
     }
+    fn vcs_provider_cmd(&self) -> Result<String, TemplateError> {
+        Ok("[VCS]".to_string())
+    }
 }
 
 pub(crate) fn unsupported(name: &str) -> TemplateError {

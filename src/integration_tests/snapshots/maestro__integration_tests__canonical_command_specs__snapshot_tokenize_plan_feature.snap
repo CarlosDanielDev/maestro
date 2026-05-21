@@ -1,6 +1,5 @@
 ---
 source: src/integration_tests/canonical_command_specs.rs
-assertion_line: 391
 expression: "snapshot_tokens(\"plan-feature\")"
 ---
 [
@@ -18,6 +17,10 @@ expression: "snapshot_tokens(\"plan-feature\")"
         [],
     ),
     (
+        "VCS_PROVIDER_CMD",
+        [],
+    ),
+    (
         "INCLUDE",
         [
             (
@@ -25,5 +28,13 @@ expression: "snapshot_tokens(\"plan-feature\")"
                 "core/dependency-graph.md",
             ),
         ],
+    ),
+    (
+        "VCS_PROVIDER_CMD",
+        [],
+    ),
+    (
+        "VCS_PROVIDER_CMD",
+        [],
     ),
 ]

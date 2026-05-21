@@ -608,8 +608,17 @@ pub enum StreamEvent {
     },
     /// Tool result received
     ToolResult { tool: String, is_error: bool },
-    /// Cost update from usage data
-    #[allow(dead_code)] // Reason: cost tracking event — to be emitted by budget enforcer
+    /// Cost update from a non-terminal usage frame.
+    ///
+    /// Emitted by parsers when a provider reports cost on a frame distinct from
+    /// the terminal `Completed` event (e.g. mid-turn usage snapshots). The handler
+    /// in `ManagedSession::handle_event` replaces `Session.cost_usd` with the
+    /// reported value. Parsers MUST drop frames where `cost_usd` is `NaN` or
+    /// negative (see `parse_result` in `src/session/parser.rs`).
+    ///
+    /// Currently no shipped provider emits this variant; it is reserved for
+    /// future split-frame providers and exercised end-to-end by tests in
+    /// `src/integration_tests/stream_parsing.rs`.
     CostUpdate { cost_usd: f64 },
     /// Session completed
     Completed { cost_usd: f64 },

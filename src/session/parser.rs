@@ -317,6 +317,7 @@ fn parse_result(v: &Value) -> Vec<StreamEvent> {
                 .and_then(|u| u.get("cost_usd"))
                 .and_then(|c| c.as_f64())
         })
+        .filter(|c| c.is_finite() && *c >= 0.0)
         .unwrap_or(0.0);
 
     if let Some(usage) = v.get("usage") {
@@ -1144,6 +1145,52 @@ mod tests {
                 );
             }
             other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Issue #770 — parse_result rejects NaN/negative/non-finite cost
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn parse_result_null_cost_falls_back_to_zero() {
+        let line = r#"{"type":"result","cost_usd":null,"duration_ms":30000}"#;
+        let completed = parse_stream_line(line)
+            .into_iter()
+            .find(|e| matches!(e, StreamEvent::Completed { .. }))
+            .expect("Completed event");
+        match completed {
+            StreamEvent::Completed { cost_usd } => assert_eq!(cost_usd, 0.0),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn parse_result_negative_cost_rejected_to_zero() {
+        let line = r#"{"type":"result","cost_usd":-1.5,"duration_ms":30000}"#;
+        let completed = parse_stream_line(line)
+            .into_iter()
+            .find(|e| matches!(e, StreamEvent::Completed { .. }))
+            .expect("Completed event");
+        match completed {
+            StreamEvent::Completed { cost_usd } => assert_eq!(
+                cost_usd, 0.0,
+                "negative cost must be rejected at parser boundary"
+            ),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn parse_result_stringified_infinity_rejected_to_zero() {
+        let line = r#"{"type":"result","cost_usd":"Infinity","duration_ms":30000}"#;
+        let completed = parse_stream_line(line)
+            .into_iter()
+            .find(|e| matches!(e, StreamEvent::Completed { .. }))
+            .expect("Completed event");
+        match completed {
+            StreamEvent::Completed { cost_usd } => assert_eq!(cost_usd, 0.0),
+            _ => unreachable!(),
         }
     }
 }

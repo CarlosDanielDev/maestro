@@ -27,6 +27,26 @@ pub struct Manifest {
     pub providers: BTreeMap<String, ManifestProvider>,
     #[serde(default)]
     pub subagents: Vec<ManifestSubagent>,
+    /// Golden Rules entry-file sync configuration (issue #839).
+    #[serde(default)]
+    pub golden_rules: Option<ManifestGoldenRules>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestGoldenRules {
+    /// Path to the canonical golden-rules body, relative to `templates_root`.
+    pub source: String,
+    #[serde(default)]
+    pub targets: Vec<ManifestGoldenRulesTarget>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestGoldenRulesTarget {
+    pub id: String,
+    /// Repo-relative path to the entry file (e.g. `.claude/CLAUDE.md`).
+    pub entry_file: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -66,6 +86,8 @@ pub struct ManifestProvider {
     pub target_dir: String,
     #[serde(default)]
     pub inline_skills: bool,
+    #[serde(default)]
+    pub vcs_provider_cmd: String,
 }
 
 fn default_templates_root() -> String {
@@ -116,6 +138,10 @@ impl Manifest {
 
     pub fn subagents(&self) -> &[ManifestSubagent] {
         &self.subagents
+    }
+
+    pub fn golden_rules(&self) -> Option<&ManifestGoldenRules> {
+        self.golden_rules.as_ref()
     }
 }
 

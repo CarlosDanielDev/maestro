@@ -35,22 +35,55 @@ required_args = []
 description = "reference a skill knowledge base"
 required_args = ["name"]
 
+[placeholders.VCS_PROVIDER_CMD]
+description = "render the VCS provider CLI command (e.g. `gh`, `az repos`)"
+required_args = []
+
 # ── Per-provider metadata (parsed; consumed by L2 in #703-#705) ─────────
 
 [providers.claude]
 display_name = "Claude Code"
 target_dir = ".claude/commands"
 inline_skills = false
+vcs_provider_cmd = "gh"
 
 [providers.codex]
 display_name = "Codex CLI"
 target_dir = ".codex/commands"
 inline_skills = true
+vcs_provider_cmd = "gh"
 
 [providers.http_generic]
 display_name = "Generic HTTP provider"
 target_dir = ""
 inline_skills = true
+vcs_provider_cmd = "gh"
+
+# ── Golden Rules entry points (issue #839) ──────────────────────────────
+# `maestro sync-templates` rewrites the block between
+# `<!-- BEGIN GOLDEN-RULES … -->` and `<!-- END GOLDEN-RULES -->` markers
+# in each entry_file with the body of the canonical source. Drift between
+# canonical and any target fails `--check`. `scripts/check-rules-drift.sh`
+# is retained as a secondary safety net for non-Rust CI lanes.
+
+[golden_rules]
+source = "core/golden-rules.md"
+
+[[golden_rules.targets]]
+id = "claude"
+entry_file = ".claude/CLAUDE.md"
+
+[[golden_rules.targets]]
+id = "codex"
+entry_file = ".codex/AGENTS.md"
+
+[[golden_rules.targets]]
+id = "agents-md"
+entry_file = "AGENTS.md"
+
+[[golden_rules.targets]]
+id = "gemini"
+entry_file = "GEMINI.md"
 
 # ── Subagent registry (rendered by {{SUBAGENT_LIST}}) ────────────────────
 # Order in this file = order in the rendered Markdown table. Drift between

@@ -5,6 +5,7 @@ description: Plan a feature across the project, creating API contracts first, th
 placeholders:
   - INCLUDE
   - SUBAGENT_LIST
+  - VCS_PROVIDER_CMD
 includes:
   - core/premises.md
   - core/dependency-graph.md
@@ -60,7 +61,7 @@ For every API endpoint identified:
 
 If the feature is large enough for a milestone:
 ```bash
-gh api repos/<owner>/<repo>/milestones -f title="..." -f state=open -f description="..."
+{{VCS_PROVIDER_CMD}} api repos/<owner>/<repo>/milestones -f title="..." -f state=open -f description="..."
 ```
 
 ### Phase 4: ISSUES — Create with Traceability
@@ -104,7 +105,7 @@ The dependency-graph format and per-issue `## Blocked By` rules are canonical:
 
 ## Error Handling
 
-- If `gh` CLI fails → suggest `gh auth login`
+- If `{{VCS_PROVIDER_CMD}}` CLI fails → suggest `{{VCS_PROVIDER_CMD}} auth login`
 - If description is too vague → ask clarifying questions
 - If contract already exists → reuse it
 - If milestone exists → reuse it

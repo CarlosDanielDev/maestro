@@ -17,6 +17,7 @@ use crate::templates::{TemplateError, TemplateProviderRules, render_command_for_
 use super::SyncTemplatesArgs;
 use super::banner::with_banner;
 use super::diff::line_diff;
+use super::golden_rules::{self, GoldenRulesError};
 use super::lockfile::{FileEntry, Lockfile, sha256_hex};
 use super::registry::{COMMANDS, PROVIDERS, ProviderEntry, entries_for};
 
@@ -42,6 +43,14 @@ pub enum SyncTemplatesError {
     },
     #[error("serializing lockfile: {0}")]
     LockfileSerialize(Box<toml::ser::Error>),
+    #[error("golden-rules sync: {0}")]
+    GoldenRules(#[from] GoldenRulesError),
+    #[error("loading manifest at `{path}`: {source}")]
+    ManifestLoad {
+        path: PathBuf,
+        #[source]
+        source: Box<TemplateError>,
+    },
 }
 
 pub trait SyncFs: Send + Sync {
@@ -125,7 +134,8 @@ impl<'a> SyncRunner<'a> {
             return Err(SyncTemplatesError::UnknownProvider(filter.to_string()));
         }
 
-        let plans = self.build_plans(args.provider.as_deref())?;
+        let mut plans = self.build_plans(args.provider.as_deref())?;
+        plans.extend(self.build_golden_rules_plans(args.provider.as_deref())?);
 
         if args.check {
             return self.run_check(&plans);
@@ -139,6 +149,23 @@ impl<'a> SyncRunner<'a> {
             ));
         }
         self.run_write(&plans)
+    }
+
+    fn build_golden_rules_plans(
+        &self,
+        provider_filter: Option<&str>,
+    ) -> Result<Vec<RenderPlan>, SyncTemplatesError> {
+        let plans =
+            golden_rules::build_entry_plans(self.repo_root, self.fs.as_ref(), provider_filter)?;
+        Ok(plans
+            .into_iter()
+            .map(|p| RenderPlan {
+                provider_id: p.target_id,
+                command: "golden-rules".to_string(),
+                target: RenderTarget::Repo(p.entry_path),
+                content: p.content,
+            })
+            .collect())
     }
 
     fn build_plans(
@@ -168,8 +195,8 @@ impl<'a> SyncRunner<'a> {
                 let content = with_banner(&rendered, command);
                 let target = self.resolve_target(entry, rules, command);
                 plans.push(RenderPlan {
-                    provider_id: entry.id,
-                    command,
+                    provider_id: entry.id.to_string(),
+                    command: (*command).to_string(),
                     target,
                     content,
                 });
@@ -280,8 +307,8 @@ impl RenderTarget {
 }
 
 struct RenderPlan {
-    provider_id: &'static str,
-    command: &'static str,
+    provider_id: String,
+    command: String,
     target: RenderTarget,
     content: String,
 }

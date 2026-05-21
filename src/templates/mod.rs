@@ -9,7 +9,7 @@
 #![deny(clippy::expect_used)]
 
 mod error;
-mod manifest;
+pub mod manifest;
 pub mod provider_rules;
 pub mod rendered_cache;
 mod renderer;
@@ -175,6 +175,9 @@ mod tests {
                 Ok("LIST".to_string())
             }
             fn skill_link(&self, _: &str) -> Result<String, TemplateError> {
+                Ok(String::new())
+            }
+            fn vcs_provider_cmd(&self) -> Result<String, TemplateError> {
                 Ok(String::new())
             }
         }

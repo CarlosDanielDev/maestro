@@ -33,7 +33,9 @@ pub use dispatch::{DispatchContext, compose_prompt, dispatch_subagent, parse_res
 #[allow(unused_imports)]
 pub use loader::Loader;
 #[allow(unused_imports)]
-pub use orchestrator::build_system_prompt;
+pub use orchestrator::{
+    FragmentSource, FsFragmentSource, build_system_prompt, canonical_fragment_root,
+};
 #[allow(unused_imports)]
 pub use primitives::{NextStep, PrimitiveMachine, PrimitiveOutput, make_machine};
 #[allow(unused_imports)]

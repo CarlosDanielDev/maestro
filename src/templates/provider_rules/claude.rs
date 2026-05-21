@@ -63,6 +63,10 @@ impl TemplateProviderRules for ClaudeRules {
             "the `{name}` skill (.claude/skills/{name}/SKILL.md)"
         ))
     }
+
+    fn vcs_provider_cmd(&self) -> Result<String, TemplateError> {
+        Ok("gh".to_string())
+    }
 }
 
 #[cfg(test)]
