@@ -138,6 +138,14 @@ permission_mode = "bypassPermissions"
 allowed_tools = []
 sandbox = ""
 
+[agents.claude-sonnet]
+kind = "claude"
+enabled = true
+command = "claude"
+model = "sonnet"
+permission_mode = "auto"
+sandbox = ""
+
 [agents.minimax]
 kind = "minimax"
 enabled = true
