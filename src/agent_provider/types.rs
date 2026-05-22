@@ -127,6 +127,8 @@ pub struct AgentProviderDefinition {
     pub model: Option<String>,
     pub request_timeout_secs: Option<u64>,
     pub api_key_env: Option<String>,
+    /// Ollama-only context window in tokens. Drives the context-fill gauge.
+    pub num_ctx: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -257,12 +259,13 @@ impl AgentProviderFactory {
                     .unwrap_or_else(|| "http://localhost:11434".to_string());
                 Ok(Self {
                     default_provider: Arc::new(
-                        crate::agent_provider::ollama::OllamaProvider::new(
+                        crate::agent_provider::ollama::OllamaProvider::with_num_ctx(
                             provider.id.clone(),
                             base_url,
                             model,
                             provider.request_timeout_secs.unwrap_or(120),
                             provider.api_key_env.clone(),
+                            provider.num_ctx,
                         )
                         .map_err(crate::agent_provider::ollama::OllamaError::into_agent_error)?,
                     ),

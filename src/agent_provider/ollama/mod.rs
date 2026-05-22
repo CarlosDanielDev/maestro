@@ -11,6 +11,8 @@ pub mod types;
 pub use http::OllamaHttpClient;
 pub use types::OllamaError;
 
+use crate::session::types::StreamEvent;
+
 use super::types::{
     AgentError, AgentHealthCheck, AgentOutputFormat, AgentProvider, AgentProviderEvent,
     AgentProviderId, AgentProviderKind, AgentRequest, AgentRunResult, AgentRunStarted,
@@ -22,6 +24,7 @@ pub struct OllamaProvider {
     id: String,
     model: String,
     http: OllamaHttpClient,
+    num_ctx: Option<u32>,
 }
 
 impl OllamaProvider {
@@ -32,11 +35,23 @@ impl OllamaProvider {
         request_timeout_secs: u64,
         api_key_env: Option<String>,
     ) -> Result<Self, OllamaError> {
+        Self::with_num_ctx(id, base_url, model, request_timeout_secs, api_key_env, None)
+    }
+
+    pub fn with_num_ctx(
+        id: impl Into<String>,
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+        request_timeout_secs: u64,
+        api_key_env: Option<String>,
+        num_ctx: Option<u32>,
+    ) -> Result<Self, OllamaError> {
         let timeout = Duration::from_secs(request_timeout_secs);
         Ok(Self {
             id: id.into(),
             model: model.into(),
             http: OllamaHttpClient::new(base_url, timeout, api_key_env)?,
+            num_ctx,
         })
     }
 }
@@ -123,6 +138,22 @@ impl AgentProvider for OllamaProvider {
                     };
                     match next {
                         Ok(event) => {
+                            // Derive a ContextUpdate from the shared SSE
+                            // parser's TokenUpdate when num_ctx is configured.
+                            // The SSE parser is provider-agnostic; only Ollama
+                            // surfaces context fill, so the transform lives in
+                            // the provider rather than the parser. Cap at 1.0
+                            // so a buggy backend returning > num_ctx tokens
+                            // doesn't surface as a percentage above 100%.
+                            if let StreamEvent::TokenUpdate { ref usage } = event
+                                && let Some(num_ctx) = self.num_ctx
+                                && num_ctx > 0
+                            {
+                                let pct = (usage.input_tokens as f64) / f64::from(num_ctx);
+                                let _ = events.send(AgentProviderEvent::Stream(
+                                    StreamEvent::ContextUpdate { context_pct: pct.min(1.0) },
+                                ));
+                            }
                             let _ = events.send(AgentProviderEvent::Stream(event));
                         }
                         Err(err) => {
@@ -143,6 +174,116 @@ mod tests {
     use crate::session::types::StreamEvent;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn emits_context_update_from_usage_block_when_num_ctx_set() {
+        let base_url = spawn_test_server(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n\
+             data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4096,\"completion_tokens\":10}}\n\n\
+             data: [DONE]\n\n",
+        )
+        .await;
+        let provider =
+            OllamaProvider::with_num_ctx("ollama", base_url, "llama3.2", 5, None, Some(8192))
+                .expect("provider");
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        provider
+            .run(
+                AgentRequest::stream_json("say hi".to_string(), "llama3.2".to_string()),
+                tx,
+                CancellationToken::new(),
+            )
+            .await
+            .expect("run");
+
+        let mut saw_context_update = false;
+        let mut context_pct = 0.0_f64;
+        while let Some(event) = rx.recv().await {
+            if let AgentProviderEvent::Stream(StreamEvent::ContextUpdate { context_pct: pct }) =
+                event
+            {
+                saw_context_update = true;
+                context_pct = pct;
+                break;
+            }
+        }
+
+        assert!(
+            saw_context_update,
+            "expected ContextUpdate when num_ctx is configured"
+        );
+        assert!(
+            (context_pct - 0.5).abs() < 1e-9,
+            "expected 4096/8192 = 0.5, got {context_pct}"
+        );
+    }
+
+    #[tokio::test]
+    async fn does_not_emit_context_update_when_num_ctx_unset() {
+        let base_url = spawn_test_server(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n\
+             data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4096,\"completion_tokens\":10}}\n\n\
+             data: [DONE]\n\n",
+        )
+        .await;
+        let provider =
+            OllamaProvider::new("ollama", base_url, "llama3.2", 5, None).expect("provider");
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        provider
+            .run(
+                AgentRequest::stream_json("say hi".to_string(), "llama3.2".to_string()),
+                tx,
+                CancellationToken::new(),
+            )
+            .await
+            .expect("run");
+
+        while let Some(event) = rx.recv().await {
+            if matches!(
+                event,
+                AgentProviderEvent::Stream(StreamEvent::ContextUpdate { .. })
+            ) {
+                panic!("ContextUpdate should not be emitted when num_ctx is None");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn caps_context_pct_at_one_when_input_exceeds_num_ctx() {
+        let base_url = spawn_test_server(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n\
+             data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20000,\"completion_tokens\":10}}\n\n\
+             data: [DONE]\n\n",
+        )
+        .await;
+        let provider =
+            OllamaProvider::with_num_ctx("ollama", base_url, "llama3.2", 5, None, Some(8192))
+                .expect("provider");
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        provider
+            .run(
+                AgentRequest::stream_json("say hi".to_string(), "llama3.2".to_string()),
+                tx,
+                CancellationToken::new(),
+            )
+            .await
+            .expect("run");
+
+        let mut pct_value = 0.0_f64;
+        while let Some(event) = rx.recv().await {
+            if let AgentProviderEvent::Stream(StreamEvent::ContextUpdate { context_pct }) = event {
+                pct_value = context_pct;
+                break;
+            }
+        }
+        assert!(
+            (pct_value - 1.0).abs() < 1e-9,
+            "context_pct should be capped at 1.0, got {pct_value}"
+        );
+    }
 
     #[tokio::test]
     async fn streams_openai_compatible_sse() {

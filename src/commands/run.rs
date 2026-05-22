@@ -287,7 +287,7 @@ pub(crate) fn provider_for_agent(
                     anyhow::anyhow!("agents.{}.model is required for ollama", resolved.id)
                 })?;
             Ok(std::sync::Arc::new(
-                crate::agent_provider::OllamaProvider::new(
+                crate::agent_provider::OllamaProvider::with_num_ctx(
                     resolved.id.clone(),
                     resolved
                         .config
@@ -297,6 +297,7 @@ pub(crate) fn provider_for_agent(
                     model,
                     resolved.config.request_timeout_secs.unwrap_or(120),
                     resolved.config.api_key_env.clone(),
+                    resolved.config.num_ctx,
                 )
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?,
             ))
