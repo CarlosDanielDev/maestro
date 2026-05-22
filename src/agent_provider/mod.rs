@@ -1,4 +1,5 @@
 pub mod claude;
+pub mod claude_pricing;
 pub mod codex;
 pub mod minimax;
 pub mod ollama;

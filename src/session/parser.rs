@@ -1,4 +1,5 @@
 use super::types::{StreamEvent, TokenUsage};
+use crate::agent_provider::claude_pricing;
 use serde_json::Value;
 
 /// Find a valid char boundary at or after `max_bytes` for safe string slicing.
@@ -92,12 +93,23 @@ pub fn parse_stream_line(line: &str) -> Vec<StreamEvent> {
         }],
     };
 
-    // Extract context percentage from message.usage (present in assistant events).
-    // The Claude CLI reports input_tokens (new) + cache_read_input_tokens (prior context)
-    // but no max_input_tokens. We compute total and use model context limits.
+    // Extract context percentage + token usage + computed cost from
+    // `message.usage` (present in assistant events). The Claude CLI reports
+    // input_tokens (new) + cache_read_input_tokens (prior context) but no
+    // max_input_tokens. We compute total and use model context limits.
     if let Some(msg) = v.get("message")
         && let Some(usage) = msg.get("usage")
     {
+        let model = msg.get("model").and_then(|m| m.as_str()).unwrap_or("");
+
+        if let Some(token_usage) = extract_token_usage(usage) {
+            let cost_usd = claude_pricing::compute_cost(model, &token_usage);
+            events.push(StreamEvent::TokenUpdate { usage: token_usage });
+            if cost_usd.is_finite() && cost_usd > 0.0 {
+                events.push(StreamEvent::CostUpdate { cost_usd });
+            }
+        }
+
         let input = usage
             .get("input_tokens")
             .and_then(|t| t.as_f64())
@@ -116,9 +128,7 @@ pub fn parse_stream_line(line: &str) -> Vec<StreamEvent> {
             let max = usage
                 .get("max_input_tokens")
                 .and_then(|t| t.as_f64())
-                .unwrap_or_else(|| {
-                    model_max_input_tokens(msg.get("model").and_then(|m| m.as_str()).unwrap_or(""))
-                });
+                .unwrap_or_else(|| model_max_input_tokens(model));
             if max > 0.0 {
                 events.push(StreamEvent::ContextUpdate {
                     context_pct: total_input / max,
@@ -991,6 +1001,78 @@ mod tests {
             }
             other => panic!("Expected ContextUpdate, got {:?}", other),
         }
+    }
+
+    // --- TokenUpdate + CostUpdate from assistant message.usage (#771) ---
+
+    #[test]
+    fn parse_assistant_event_with_usage_emits_token_update_and_cost_update() {
+        // Recorded fixture: cache_creation=1_000, cache_read=5_000, input=200, output=400
+        // on Sonnet 4.x → cost = 0.01185 (asserted in claude_pricing tests).
+        let line = r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","type":"text","text":"hi","usage":{"input_tokens":200,"output_tokens":400,"cache_read_input_tokens":5000,"cache_creation_input_tokens":1000}}}"#;
+        let events = parse_stream_line(line);
+
+        let token_event = events
+            .iter()
+            .find_map(|e| match e {
+                StreamEvent::TokenUpdate { usage } => Some(usage),
+                _ => None,
+            })
+            .expect("expected TokenUpdate from assistant frame with usage");
+        assert_eq!(token_event.input_tokens, 200);
+        assert_eq!(token_event.output_tokens, 400);
+        assert_eq!(token_event.cache_read_tokens, 5_000);
+        assert_eq!(token_event.cache_creation_tokens, 1_000);
+
+        let cost = events
+            .iter()
+            .find_map(|e| match e {
+                StreamEvent::CostUpdate { cost_usd } => Some(*cost_usd),
+                _ => None,
+            })
+            .expect("expected CostUpdate from assistant frame with usage");
+        assert!(
+            (cost - 0.011_85).abs() < 1e-9,
+            "expected fixture cost 0.01185, got {cost}"
+        );
+    }
+
+    #[test]
+    fn parse_assistant_event_unknown_model_emits_token_update_but_no_cost_update() {
+        // Unknown model → pricing returns 0.0 → no CostUpdate emitted.
+        let line = r#"{"type":"assistant","message":{"model":"future-model","type":"text","text":"hi","usage":{"input_tokens":100,"output_tokens":50}}}"#;
+        let events = parse_stream_line(line);
+
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::TokenUpdate { .. })),
+            "unknown model should still emit TokenUpdate"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::CostUpdate { .. })),
+            "unknown model should not emit CostUpdate (cost would be 0.0)"
+        );
+    }
+
+    #[test]
+    fn parse_assistant_event_without_usage_emits_no_token_or_cost_update() {
+        let line = r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","type":"text","text":"hi"}}"#;
+        let events = parse_stream_line(line);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::TokenUpdate { .. })),
+            "no usage block → no TokenUpdate"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::CostUpdate { .. })),
+            "no usage block → no CostUpdate"
+        );
     }
 
     #[test]
