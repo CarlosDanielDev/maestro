@@ -17,6 +17,7 @@ use super::types::{
 use crate::session::types::StreamEvent;
 
 mod parser;
+mod pricing;
 pub use parser::OpenCodeJsonParser;
 
 const OPENCODE_INSTALL_MESSAGE: &str = "opencode CLI not found; install with `brew install anomalyco/tap/opencode`, \
@@ -276,10 +277,11 @@ impl AgentProvider for OpenCodeProvider {
         let _ = events.send(AgentProviderEvent::Started(AgentRunStarted { process_id }));
 
         let stdout_events = events.clone();
+        let stdout_model = request.model.clone();
         let stdout_task = tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
-            let mut parser = OpenCodeJsonParser::default();
+            let mut parser = OpenCodeJsonParser::with_model(stdout_model);
             let mut got_result = false;
 
             while let Ok(Some(line)) = lines.next_line().await {
