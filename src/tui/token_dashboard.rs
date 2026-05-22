@@ -9,6 +9,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+pub mod provider_rollup;
+
 /// Draw the token dashboard view showing token consumption analytics.
 pub fn draw_token_dashboard(
     f: &mut Frame,

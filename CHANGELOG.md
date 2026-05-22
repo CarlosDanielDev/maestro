@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-frame token count clamped at `TOKEN_COUNT_CAP = 100_000_000` across all four parsers (Claude, Codex, OpenCode, OpenAI-compatible SSE); values above the cap clamp and emit a new `StreamEvent::Warning { code: "token_count_clamped", message }` variant (#846).
 - Ollama `num_ctx` surfaced in TUI Settings — new `FieldSchema` entry (Int 0..1_000_000, step 1024) visible only for Ollama-kind agents; `docs/configuration.md` agents table updated with the `num_ctx` row (#844).
 - MiniMax `--force-quota` spawns emit a structured `StreamEvent::Warning { code: "quota_forced" }` event; `QuotaState` bumped to schema v2 (v1 files promoted via read shim, `forced_count = 0`); `MinimaxQuota::record_forced` / `forced_count()` API added; home-screen stats bar shows a "QUOTA: forced N in window" badge when non-zero (#845).
+- Budget pre-spawn projection trait + provider rollup view-model (foundation for #776 follow-ups #849/#850): `src/budget/projector.rs` (pure projection fns), `src/budget/quota_snapshot.rs` (`QuotaSnapshot` trait), `src/tui/token_dashboard/provider_rollup.rs` (per-provider rollup view-model); `check_pre_spawn()` + `PreSpawnDecision` added to `src/budget.rs`; `pub limit()` / `used_in_window()` accessors on MiniMax quota (#848).
 
 ## [0.29.0] - 2026-05-21
 
