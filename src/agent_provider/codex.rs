@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) mod parser;
+pub(crate) mod pricing;
 
 use super::types::{
     AgentError, AgentHealthCheck, AgentOutputFormat, AgentProvider, AgentProviderEvent,
@@ -293,10 +294,11 @@ impl AgentProvider for CodexProvider {
         let _ = events.send(AgentProviderEvent::Started(AgentRunStarted { process_id }));
 
         let stdout_events = events.clone();
+        let stdout_model = request.model.clone();
         let stdout_task = tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
-            let mut parser = CodexStreamParser::default();
+            let mut parser = CodexStreamParser::with_model(stdout_model);
             let mut got_result = false;
 
             while let Ok(Some(line)) = lines.next_line().await {

@@ -1,6 +1,70 @@
 use super::*;
 
 #[test]
+fn turn_completed_emits_cost_update_when_model_known() {
+    // gpt-5-codex pricing: input=2.50, output=10.00, cache=0.25 USD per MTok.
+    // 10 input + 5 output + 2 cache → 2.5*10 + 10*5 + 0.25*2 = 25 + 50 + 0.5 = 75.5
+    // 75.5 / 1_000_000 = 0.0000755 USD.
+    let mut parser = CodexStreamParser::with_model("gpt-5-codex");
+    let events = parser.parse_line(
+        r#"{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5,"cached_input_tokens":2}}"#,
+    );
+
+    let cost = events
+        .iter()
+        .find_map(|event| match event {
+            StreamEvent::CostUpdate { cost_usd } => Some(*cost_usd),
+            _ => None,
+        })
+        .expect("turn.completed with known model should emit CostUpdate");
+    assert!(
+        (cost - 0.000_075_5).abs() < 1e-12,
+        "expected 0.0000755, got {cost}"
+    );
+
+    let completed_cost = events
+        .iter()
+        .find_map(|event| match event {
+            StreamEvent::Completed { cost_usd } => Some(*cost_usd),
+            _ => None,
+        })
+        .expect("turn.completed should emit Completed");
+    assert!((completed_cost - cost).abs() < 1e-12);
+}
+
+#[test]
+fn turn_completed_with_unknown_model_keeps_zero_cost() {
+    // Default parser → model is empty string → unknown → cost stays 0.
+    let mut parser = CodexStreamParser::default();
+    let events = parser
+        .parse_line(r#"{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}"#);
+
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, StreamEvent::CostUpdate { .. })),
+        "unknown model should not emit CostUpdate"
+    );
+    assert!(events.iter().any(|event| matches!(
+        event,
+        StreamEvent::Completed { cost_usd } if *cost_usd == 0.0
+    )));
+}
+
+#[test]
+fn turn_completed_with_zero_usage_emits_no_cost_update() {
+    let mut parser = CodexStreamParser::with_model("gpt-5-codex");
+    let events = parser
+        .parse_line(r#"{"type":"turn.completed","usage":{"input_tokens":0,"output_tokens":0}}"#);
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, StreamEvent::CostUpdate { .. })),
+        "zero usage should not emit CostUpdate"
+    );
+}
+
+#[test]
 fn parser_maps_codex_jsonl_to_stream_events() {
     let mut parser = CodexStreamParser::default();
     let events: Vec<StreamEvent> = [
