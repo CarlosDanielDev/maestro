@@ -169,6 +169,8 @@ impl AgentProvider for MinimaxProvider {
             // or the CLI's `--force-quota` flag (process-wide static flipped
             // at bootstrap; avoids threading through session spawn paths).
             let forced = request.force || force_quota_enabled();
+            let mut bypassed = false;
+            let mut forced_pct: Option<u8> = None;
             match quota.check() {
                 QuotaStatus::Ok { .. } => {}
                 QuotaStatus::Warn { pct } => {
@@ -189,11 +191,34 @@ impl AgentProvider for MinimaxProvider {
                         pct,
                         "MiniMax spawn forced over quota refusal threshold",
                     );
+                    bypassed = true;
+                    // The structured event is emitted AFTER record_forced
+                    // succeeds (below) so the displayed `count` always matches
+                    // the persisted `forced_count`. The `pct` is captured
+                    // here because the post-record read would include the
+                    // freshly recorded request.
+                    forced_pct = Some(pct);
                 }
             }
-            quota
-                .record()
+            let record_result = if bypassed {
+                quota.record_forced()
+            } else {
+                quota.record()
+            };
+            record_result
                 .map_err(|err| AgentError::Config(format!("MiniMax quota persistence: {err}")))?;
+
+            if let Some(pct) = forced_pct {
+                let count = quota.forced_count();
+                let _ = events.send(AgentProviderEvent::Stream(
+                    crate::session::types::StreamEvent::Warning {
+                        code: "quota_forced".to_string(),
+                        message: format!(
+                            "MiniMax 5h quota at {pct}%; spawn forced (count: {count})"
+                        ),
+                    },
+                ));
+            }
         }
 
         let mut stream = self

@@ -246,6 +246,12 @@ pub struct App {
     /// Last-seen mtime of `~/.maestro/last-pr-created`. Prevents re-firing
     /// `TuiCommand::PrCreated` on every tick when the marker hasn't moved.
     pub(crate) last_pr_marker_mtime: Option<std::time::SystemTime>,
+    /// Number of MiniMax spawns that bypassed the 5h quota refusal via
+    /// `--force-quota` since the App started (#845). Updated by the event
+    /// handler when it sees a `StreamEvent::Warning { code: "quota_forced" }`.
+    /// Read by the home-screen stats bar to surface a "QUOTA: forced N"
+    /// badge once the count is non-zero.
+    pub minimax_forced_count_5h: u32,
 }
 
 impl App {
@@ -378,6 +384,7 @@ impl App {
             git_ops: Box::new(crate::git::CliGitOps),
             home_dir_override: None,
             last_pr_marker_mtime: None,
+            minimax_forced_count_5h: 0,
         };
         if let Some(error) = state_load_error {
             app.activity_log.push_simple(

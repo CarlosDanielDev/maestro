@@ -247,3 +247,68 @@ async fn spawn_test_server(response: &'static str) -> String {
     });
     format!("http://{addr}")
 }
+
+// ---- #845 structured event + forced_count bookkeeping ----
+
+#[tokio::test]
+async fn pre_spawn_gate_when_forced_emits_warning_and_increments_forced_count() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("minimax-quota.json");
+    let quota = std::sync::Arc::new(
+        crate::agent_provider::minimax::MinimaxQuota::open_with(
+            path,
+            Box::new(crate::agent_provider::minimax::quota::SystemClock),
+            100,
+        )
+        .expect("quota"),
+    );
+    for _ in 0..95 {
+        quota.record().expect("record");
+    }
+    assert_eq!(quota.forced_count(), 0);
+
+    let base_url = spawn_test_server(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n\
+         data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
+         data: [DONE]\n\n",
+    )
+    .await;
+    let provider = MinimaxProvider::new_with_api_key_lookup(
+        "minimax",
+        base_url,
+        "MiniMax-M2.7",
+        5,
+        Some("MINIMAX_API_KEY".to_string()),
+        |_| Some("test-key".to_string()),
+    )
+    .expect("provider")
+    .with_quota(quota.clone());
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let mut request = AgentRequest::stream_json("hi".to_string(), "MiniMax-M2.7".to_string());
+    request.force = true;
+    provider
+        .run(request, tx, CancellationToken::new())
+        .await
+        .expect("forced spawn should succeed past gate");
+
+    // Drain channel and look for the Warning event.
+    let mut seen_warning = false;
+    while let Ok(evt) = rx.try_recv() {
+        if let AgentProviderEvent::Stream(StreamEvent::Warning { code, message }) = evt {
+            assert_eq!(code, "quota_forced");
+            assert!(message.contains("MiniMax"));
+            seen_warning = true;
+        }
+    }
+    assert!(
+        seen_warning,
+        "forced spawn must emit a StreamEvent::Warning with code quota_forced"
+    );
+
+    assert_eq!(
+        quota.forced_count(),
+        1,
+        "forced_count must increment after a forced spawn"
+    );
+}

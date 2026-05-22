@@ -2,15 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/CarlosDanielDev/maestro/docs/api-contracts/minimax-quota.json",
   "title": "MiniMax Quota State",
-  "description": "Persisted 5-hour sliding-window quota state for the MiniMax free tier. Written to ~/.maestro/minimax-quota.json and protected by an fs2 advisory file lock. Unknown fields are rejected by #[serde(deny_unknown_fields)] in the Rust struct.",
+  "description": "Persisted 5-hour sliding-window quota state for the MiniMax free tier. Written to ~/.maestro/minimax-quota.json and protected by an fs2 advisory file lock. Unknown fields are rejected by #[serde(deny_unknown_fields)] in the Rust struct. Schema is at v2 (#845); v1 files are accepted via a read shim in `MinimaxQuota::open_with` that promotes them in place to v2 with `forced_count = 0` and rewrites on the next save.",
   "type": "object",
   "required": ["schema_version", "requests"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 1,
-      "description": "Schema version sentinel. Any value other than 1 causes MinimaxQuota::open_with to return an UnsupportedSchemaVersion error."
+      "const": 2,
+      "description": "Schema version sentinel. Writers always emit 2. Readers accept 1 (migrated in place by the v1→v2 shim) or 2 (strict). Any other value causes MinimaxQuota::open_with to return an UnsupportedSchemaVersion error."
     },
     "requests": {
       "type": "array",
@@ -20,6 +20,12 @@
         "format": "date-time",
         "description": "UTC timestamp in RFC 3339 format, e.g. 2026-05-21T12:00:00Z"
       }
+    },
+    "forced_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Number of `--force-quota` bypasses recorded in the current 5h window (#845). Resets to 0 when window pruning leaves `requests` empty. Surfaced as a 'QUOTA: forced N in window' footer badge on the home screen when non-zero. Added in v2; v1 files default to 0 via the read shim."
     }
   }
 }

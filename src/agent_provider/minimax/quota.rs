@@ -24,7 +24,7 @@ pub const DEFAULT_FIVE_HOUR_REQUEST_LIMIT: u32 = 4_500;
 const FIVE_HOUR_WINDOW: Duration = Duration::hours(5);
 const WARN_PCT: u8 = 80;
 const REFUSE_PCT: u8 = 95;
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 /// Injectable clock so tests can advance time without sleeping.
 pub trait Clock: Send + Sync + std::fmt::Debug {
@@ -70,6 +70,21 @@ pub enum MinimaxQuotaError {
 struct QuotaState {
     schema_version: u32,
     requests: VecDeque<DateTime<Utc>>,
+    /// Count of `--force-quota` bypasses recorded in the current 5h window.
+    /// Resets to 0 when window pruning leaves `requests` empty (#845).
+    #[serde(default)]
+    forced_count: u32,
+}
+
+/// Strict v1 shape used only by the migration path in [`load_state`].
+/// v1 files have no `forced_count` field; the read shim promotes them
+/// in-place to v2 with `forced_count = 0` (#845).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QuotaStateV1 {
+    #[allow(dead_code)]
+    schema_version: u32,
+    requests: VecDeque<DateTime<Utc>>,
 }
 
 #[derive(Debug)]
@@ -103,6 +118,7 @@ impl MinimaxQuota {
                 QuotaState {
                     schema_version: SCHEMA_VERSION,
                     requests: VecDeque::new(),
+                    forced_count: 0,
                 }
             }
             Err(err) => return Err(err),
@@ -127,6 +143,26 @@ impl MinimaxQuota {
     /// in-memory mutex is dropped before file I/O so concurrent reads
     /// aren't blocked by a slow disk.
     pub fn record(&self) -> Result<(), MinimaxQuotaError> {
+        self.record_internal(false)
+    }
+
+    /// Record one request that bypassed the refusal gate via `--force-quota`
+    /// (#845). Increments `forced_count` in addition to the normal record
+    /// behavior so the TUI footer can surface how many forced spawns happened
+    /// in the current 5h window.
+    pub fn record_forced(&self) -> Result<(), MinimaxQuotaError> {
+        self.record_internal(true)
+    }
+
+    /// Current `forced_count` for the active 5h window (#845).
+    pub fn forced_count(&self) -> u32 {
+        self.state
+            .lock()
+            .expect("quota mutex poisoned")
+            .forced_count
+    }
+
+    fn record_internal(&self, forced: bool) -> Result<(), MinimaxQuotaError> {
         let now = self.clock.now();
         let cutoff = now - FIVE_HOUR_WINDOW;
         let snapshot = {
@@ -136,10 +172,19 @@ impl MinimaxQuota {
             {
                 guard.requests.pop_front();
             }
+            // Whole window aged out — reset the forced-spawn counter so it
+            // stays scoped to the active window per #845.
+            if guard.requests.is_empty() {
+                guard.forced_count = 0;
+            }
             guard.requests.push_back(now);
+            if forced {
+                guard.forced_count = guard.forced_count.saturating_add(1);
+            }
             QuotaState {
                 schema_version: guard.schema_version,
                 requests: guard.requests.clone(),
+                forced_count: guard.forced_count,
             }
         };
         save_state(&self.path, &snapshot)?;
@@ -187,18 +232,46 @@ fn load_state(path: &Path) -> Result<QuotaState, MinimaxQuotaError> {
         path: path.to_path_buf(),
         source,
     })?;
-    let state: QuotaState =
+    // Two-stage deserialize to support v1 → v2 in-place migration (#845).
+    // Parse into a typed envelope just for the version sentinel, then
+    // dispatch to the version-specific shape (each with deny_unknown_fields).
+    let envelope: serde_json::Value =
         serde_json::from_str(&buf).map_err(|source| MinimaxQuotaError::Malformed {
             path: path.to_path_buf(),
             source,
         })?;
-    if state.schema_version != SCHEMA_VERSION {
-        return Err(MinimaxQuotaError::UnknownSchemaVersion {
+    let version = envelope
+        .get("schema_version")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    match version {
+        1 => {
+            let v1: QuotaStateV1 = serde_json::from_value(envelope).map_err(|source| {
+                MinimaxQuotaError::Malformed {
+                    path: path.to_path_buf(),
+                    source,
+                }
+            })?;
+            Ok(QuotaState {
+                schema_version: SCHEMA_VERSION,
+                requests: v1.requests,
+                forced_count: 0,
+            })
+        }
+        2 => {
+            let state: QuotaState = serde_json::from_value(envelope).map_err(|source| {
+                MinimaxQuotaError::Malformed {
+                    path: path.to_path_buf(),
+                    source,
+                }
+            })?;
+            Ok(state)
+        }
+        other => Err(MinimaxQuotaError::UnknownSchemaVersion {
             path: path.to_path_buf(),
-            found: state.schema_version,
-        });
+            found: other,
+        }),
     }
-    Ok(state)
 }
 
 fn save_state(path: &Path, state: &QuotaState) -> Result<(), MinimaxQuotaError> {
