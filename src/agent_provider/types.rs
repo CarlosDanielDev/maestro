@@ -63,6 +63,10 @@ pub struct AgentRequest {
     pub permission_mode: Option<String>,
     pub allowed_tools: Vec<String>,
     pub system_prompt_appendix: Option<String>,
+    /// Bypass per-provider pre-spawn gates (e.g. MiniMax quota refusal at
+    /// 95%). Defaults to false; CLI flag `--force-quota` flips it on. The
+    /// gate still records the spawn and logs a warning at higher levels.
+    pub force: bool,
 }
 
 impl AgentRequest {
@@ -76,6 +80,7 @@ impl AgentRequest {
             permission_mode: None,
             allowed_tools: Vec::new(),
             system_prompt_appendix: None,
+            force: false,
         }
     }
 
@@ -89,6 +94,7 @@ impl AgentRequest {
             permission_mode: None,
             allowed_tools: Vec::new(),
             system_prompt_appendix: None,
+            force: false,
         }
     }
 }

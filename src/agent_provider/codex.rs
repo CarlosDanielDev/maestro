@@ -396,6 +396,5 @@ fn codex_yolo_enabled(mode: Option<&str>) -> bool {
         Some("bypassPermissions" | "yolo")
     )
 }
-
 #[cfg(test)]
 mod tests;

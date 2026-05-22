@@ -394,6 +394,7 @@ fn opencode_auth_path() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from(".local/share"))
         .join("opencode/auth.json")
 }
-
+#[cfg(test)]
+mod cost_tests;
 #[cfg(test)]
 mod tests;

@@ -1,14 +1,18 @@
 #![deny(clippy::unwrap_used)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 mod client;
+pub mod pricing;
+pub mod quota;
 pub mod types;
 
 pub use client::MinimaxClient;
+pub use quota::{MinimaxQuota, QuotaStatus};
 pub use types::MinimaxError;
 
 use super::types::{
@@ -19,11 +23,28 @@ use super::types::{
 
 const DEFAULT_API_KEY_ENV: &str = "MINIMAX_API_KEY";
 
+/// Process-wide bypass for the MiniMax pre-spawn quota gate. Set once at
+/// CLI bootstrap when `--force-quota` is passed; read by every subsequent
+/// `MinimaxProvider::run`. Avoids threading the flag through session
+/// spawn + AgentRequest plumbing.
+static FORCE_QUOTA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Flip the process-wide force-quota flag on. Idempotent.
+pub fn set_force_quota() {
+    FORCE_QUOTA.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Read the process-wide force-quota flag.
+fn force_quota_enabled() -> bool {
+    FORCE_QUOTA.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Debug, Clone)]
 pub struct MinimaxProvider {
     id: String,
     model: String,
     http: MinimaxClient,
+    quota: Option<Arc<MinimaxQuota>>,
 }
 
 impl MinimaxProvider {
@@ -54,7 +75,16 @@ impl MinimaxProvider {
             id: id.into(),
             model: model.into(),
             http,
+            quota: None,
         })
+    }
+
+    /// Attach a `MinimaxQuota` tracker so the pre-spawn gate fires before
+    /// each chat request. Returning `Self` makes this composable with the
+    /// existing constructors.
+    pub fn with_quota(mut self, quota: Arc<MinimaxQuota>) -> Self {
+        self.quota = Some(quota);
+        self
     }
 
     #[cfg(test)]
@@ -129,6 +159,43 @@ impl AgentProvider for MinimaxProvider {
             request.model.as_str()
         };
 
+        // Pre-spawn quota gate (5-hour rolling window). At >= 95% the
+        // gate refuses the spawn unless the request carries the
+        // `--force-quota` flag. The gate records the request after
+        // the policy check and before HTTP work begins so concurrent
+        // processes serialize through the file lock.
+        if let Some(quota) = self.quota.as_ref() {
+            // Honor either per-request `force` (future TUI re-spawn flow)
+            // or the CLI's `--force-quota` flag (process-wide static flipped
+            // at bootstrap; avoids threading through session spawn paths).
+            let forced = request.force || force_quota_enabled();
+            match quota.check() {
+                QuotaStatus::Ok { .. } => {}
+                QuotaStatus::Warn { pct } => {
+                    tracing::warn!(
+                        provider = %self.id,
+                        pct,
+                        "MiniMax 5h quota approaching limit",
+                    );
+                }
+                QuotaStatus::Refused { pct } if !forced => {
+                    return Err(AgentError::Config(format!(
+                        "MiniMax 5h quota at {pct}% — refusing spawn. Pass --force-quota to bypass.",
+                    )));
+                }
+                QuotaStatus::Refused { pct } => {
+                    tracing::warn!(
+                        provider = %self.id,
+                        pct,
+                        "MiniMax spawn forced over quota refusal threshold",
+                    );
+                }
+            }
+            quota
+                .record()
+                .map_err(|err| AgentError::Config(format!("MiniMax quota persistence: {err}")))?;
+        }
+
         let mut stream = self
             .http
             .chat_stream(model, &request.prompt)
@@ -166,165 +233,5 @@ impl AgentProvider for MinimaxProvider {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::session::types::StreamEvent;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
-
-    #[tokio::test]
-    async fn streams_openai_compatible_sse() {
-        let base_url = spawn_test_server(
-            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n\
-             data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n\
-             data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
-             data: [DONE]\n\n",
-        )
-        .await;
-        let provider = MinimaxProvider::new_with_api_key_lookup(
-            "minimax",
-            base_url,
-            "MiniMax-M2.7",
-            5,
-            Some("MINIMAX_API_KEY".to_string()),
-            |_| Some("test-key".to_string()),
-        )
-        .expect("provider");
-        let (tx, mut rx) = mpsc::unbounded_channel();
-
-        provider
-            .run(
-                AgentRequest::stream_json("say hi".to_string(), "MiniMax-M2.7".to_string()),
-                tx,
-                CancellationToken::new(),
-            )
-            .await
-            .expect("run");
-
-        assert!(matches!(
-            rx.recv().await,
-            Some(AgentProviderEvent::Started(_))
-        ));
-        assert!(matches!(
-            rx.recv().await,
-            Some(AgentProviderEvent::Stream(StreamEvent::AssistantMessage { text })) if text == "hello"
-        ));
-        assert!(matches!(
-            rx.recv().await,
-            Some(AgentProviderEvent::Stream(StreamEvent::Completed { .. }))
-        ));
-    }
-
-    #[tokio::test]
-    async fn maps_unauthorized_status() {
-        let base_url = spawn_test_server(
-            "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\n\r\n\
-             {\"error\":\"invalid key\"}",
-        )
-        .await;
-        let provider = MinimaxProvider::new_with_api_key_lookup(
-            "minimax",
-            base_url,
-            "MiniMax-M2.7",
-            5,
-            Some("MINIMAX_API_KEY".to_string()),
-            |_| Some("test-key".to_string()),
-        )
-        .expect("provider");
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let err = provider
-            .run(
-                AgentRequest::stream_json("say hi".to_string(), "MiniMax-M2.7".to_string()),
-                tx,
-                CancellationToken::new(),
-            )
-            .await
-            .expect_err("401 should fail");
-
-        assert!(
-            err.to_string()
-                .contains("invalid MINIMAX_API_KEY — check your key at platform.minimax.io")
-        );
-    }
-
-    #[tokio::test]
-    async fn missing_api_key_uses_env_var_name_only() {
-        let base_url = spawn_test_server(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{\"data\":[]}",
-        )
-        .await;
-        let provider = MinimaxProvider::new_with_api_key_lookup(
-            "minimax",
-            base_url,
-            "MiniMax-M2.7",
-            5,
-            Some("MINIMAX_API_KEY".to_string()),
-            |_| None,
-        )
-        .expect("provider");
-        let err = provider.health_check().await.expect_err("missing key");
-        let rendered = err.to_string();
-
-        assert!(rendered.contains("set MINIMAX_API_KEY to your MiniMax API key"));
-        assert!(!rendered.contains("secret-value"));
-    }
-
-    #[tokio::test]
-    async fn health_check_passes_when_models_endpoint_is_reachable() {
-        let base_url = spawn_test_server(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{\"data\":[]}",
-        )
-        .await;
-        let provider = MinimaxProvider::new_with_api_key_lookup(
-            "minimax",
-            base_url,
-            "MiniMax-M2.7",
-            5,
-            Some("MINIMAX_API_KEY".to_string()),
-            |_| Some("test-key".to_string()),
-        )
-        .expect("provider");
-
-        let health = provider.health_check().await.expect("health check");
-
-        assert!(health.available);
-        assert!(health.message.contains("models endpoint reachable"));
-    }
-
-    #[tokio::test]
-    async fn health_check_maps_unauthorized_without_exposing_key_value() {
-        let base_url = spawn_test_server(
-            "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\n\r\n\
-             {\"error\":\"invalid key\"}",
-        )
-        .await;
-        let provider = MinimaxProvider::new_with_api_key_lookup(
-            "minimax",
-            base_url,
-            "MiniMax-M2.7",
-            5,
-            Some("MINIMAX_API_KEY".to_string()),
-            |_| Some("secret-value".to_string()),
-        )
-        .expect("provider");
-
-        let err = provider.health_check().await.expect_err("401");
-        let rendered = err.to_string();
-
-        assert!(rendered.contains("invalid MINIMAX_API_KEY"));
-        assert!(!rendered.contains("secret-value"));
-    }
-
-    async fn spawn_test_server(response: &'static str) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                let mut request = vec![0_u8; 2048];
-                let _ = socket.read(&mut request).await;
-                let _ = socket.write_all(response.as_bytes()).await;
-            }
-        });
-        format!("http://{addr}")
-    }
-}
+#[path = "tests.rs"]
+mod tests;
