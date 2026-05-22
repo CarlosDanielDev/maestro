@@ -93,13 +93,19 @@ impl MinimaxQuota {
         clock: Box<dyn Clock>,
         limit: u32,
     ) -> Result<Self, MinimaxQuotaError> {
-        let state = if path.exists() {
-            load_state(&path)?
-        } else {
-            QuotaState {
-                schema_version: SCHEMA_VERSION,
-                requests: VecDeque::new(),
+        // Open-and-branch instead of `path.exists()` first to avoid a
+        // TOCTOU window between the check and the open.
+        let state = match load_state(&path) {
+            Ok(state) => state,
+            Err(MinimaxQuotaError::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::NotFound =>
+            {
+                QuotaState {
+                    schema_version: SCHEMA_VERSION,
+                    requests: VecDeque::new(),
+                }
             }
+            Err(err) => return Err(err),
         };
         Ok(Self {
             path,
@@ -203,15 +209,21 @@ fn save_state(path: &Path, state: &QuotaState) -> Result<(), MinimaxQuotaError> 
         })?;
     }
     let tmp = path.with_extension("json.tmp");
-    let mut tmp_file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(&tmp)
-        .map_err(|source| MinimaxQuotaError::Io {
-            path: tmp.clone(),
-            source,
-        })?;
+    // Clean up any stale tmp file from a prior crashed write. We do NOT
+    // follow symlinks here — std::fs::remove_file unlinks the symlink
+    // itself rather than the target.
+    let _ = std::fs::remove_file(&tmp);
+    let mut opts = OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut tmp_file = opts.open(&tmp).map_err(|source| MinimaxQuotaError::Io {
+        path: tmp.clone(),
+        source,
+    })?;
     tmp_file
         .lock_exclusive()
         .map_err(|source| MinimaxQuotaError::Io {
@@ -222,7 +234,7 @@ fn save_state(path: &Path, state: &QuotaState) -> Result<(), MinimaxQuotaError> 
         path: path.to_path_buf(),
         source,
     })?;
-    let write_result = tmp_file.write_all(&json);
+    let write_result = tmp_file.write_all(&json).and_then(|_| tmp_file.sync_all());
     let _ = tmp_file.unlock();
     write_result.map_err(|source| MinimaxQuotaError::Io {
         path: tmp.clone(),
@@ -232,6 +244,14 @@ fn save_state(path: &Path, state: &QuotaState) -> Result<(), MinimaxQuotaError> 
         path: path.to_path_buf(),
         source,
     })?;
+    // Best-effort fsync on the parent directory so the rename is durable
+    // across power loss. Ignored on platforms (Windows) where the dir
+    // open is unsupported.
+    if let Some(parent) = path.parent()
+        && let Ok(dir) = File::open(parent)
+    {
+        let _ = dir.sync_all();
+    }
     Ok(())
 }
 

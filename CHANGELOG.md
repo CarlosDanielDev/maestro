@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Per-provider cost / token / quota emission (milestone v0.29.5 Level 1): the Claude stream-json parser computes `cost_usd` per assistant frame from new `claude_pricing.rs` (Opus / Sonnet / Haiku 4.x; cache-read at 10% of input, cache-write at 125%); Codex's `parse_turn_completed` computes cost from new `codex/pricing.rs` (gpt-5-codex, gpt-5, o3); OpenCode's parser falls back to `opencode/pricing.rs` when telemetry reports `cost: 0`; the shared OpenAI-compatible SSE parser now extracts `prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens` from the final frame; Ollama emits a `ContextUpdate` derived from the new `[agents.<id>].num_ctx` config; MiniMax gains a file-locked 5-hour sliding-window quota (`~/.maestro/minimax-quota.json`) with a pre-spawn gate that warns at 80% and refuses at 95% unless the new `--force-quota` CLI flag is set (#771 #772 #773 #774 #775).
+
 ## [0.29.0] - 2026-05-21
 
 Schema-driven settings — the entire Settings screen is now rendered from a single declarative schema (`FieldSchema` + `FieldKind`) instead of hand-coded per-tab modules. `[agents]`, `[modes]`, and `[[sessions.completion_gates.commands]]` gain in-TUI add/remove/reorder via the new `DynamicMapWidget` and `DynamicRowsWidget` primitives. `maestro.toml` saves preserve comments, blank lines, and key order via `toml_edit`. `docs/configuration.md` is now auto-generated from the schema and guarded by a CI drift check. Slash-command guardrails (`/auto`, `/implement`, `/pushup`) gain programmatic gates that survive context resets.
