@@ -12,9 +12,16 @@ const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[sessi
 
 // Decremented from 53 → 51 after `default_model` and `permission_mode`
 // were removed from SESSIONS_FIELDS in favor of per-provider configuration
-// (live on `[agents.<id>]`).
-const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 51;
-const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 3;
+// (live on `[agents.<id>]`). Bumped 51 → 93 in #788 after backfilling
+// project/sessions/review/tui/turboquant/concurrency sections.
+// Walker breakdown: +5 (project) +3 (sessions: allowed_tools, max_prompt_history,
+// guardrail_prompt) +0 (review: only reviewers VecOfStruct added) +2 (tui:
+// show_mascot, mascot_style) +0 (tui.theme top-level: overrides is NestedTable)
+// +28 (tui.theme.overrides leaves) +3 (turboquant token budgets) +1
+// (concurrency.team_max_parallel) = +42.
+const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 93;
+// Bumped 3 → 4 in #788 — `review.reviewers` registered as VecOfStruct.
+const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 4;
 
 const EMPTY: &[FieldSchema] = &[];
 
@@ -79,8 +86,20 @@ fn walk_table_paths(
             }
             _ => {
                 let path = format!("{prefix}.{}", field.key);
+                // Fields whose Rust type is `Option<T>` with
+                // `#[serde(skip_serializing_if = "Option::is_none")]` are
+                // omitted from the serialized default Config when their value
+                // is `None`. The schema marks these "optional-unset" using
+                // the sentinel defaults `DefaultValue::Str("")`,
+                // `Int(0)`, or `StrList(&[])` (which the renderer prints as
+                // `unset` / `\`0\`` / `\`[]\``). The walker must accept a
+                // missing path for these sentinels.
+                let is_optional_unset = matches!(
+                    field.default,
+                    DefaultValue::Str("") | DefaultValue::Int(0) | DefaultValue::StrList(&[])
+                );
                 assert!(
-                    resolve(toml_val, &path).is_some(),
+                    resolve(toml_val, &path).is_some() || is_optional_unset,
                     "schema path not found in serialized Config: {path}"
                 );
                 *walked += 1;
@@ -533,6 +552,159 @@ fn sessions_completion_gates_nested_table_has_commands_vec_of_struct() {
     assert_eq!(entry_fields.len(), 3);
     let keys: Vec<&str> = entry_fields.iter().map(|f| f.key).collect();
     assert_eq!(keys, &["name", "run", "required"]);
+}
+
+// ---------------------------------------------------------------------------
+// Section coverage backfill (#788): every table below now has every field
+// documented in `docs/configuration.md`. These tests lock the field set so
+// future drift triggers a compile/runtime failure rather than silently
+// re-adding entries to `SCHEMA_BACKFILL_PENDING`.
+// ---------------------------------------------------------------------------
+
+fn keys_of(table_name: &str) -> Vec<&'static str> {
+    schema_for_config()
+        .iter()
+        .find(|t| t.name == table_name)
+        .unwrap_or_else(|| panic!("table {table_name} not in schema_for_config()"))
+        .fields
+        .iter()
+        .map(|f| f.key)
+        .collect()
+}
+
+#[test]
+fn project_table_has_init_detection_fields() {
+    let keys = keys_of("project");
+    for required in [
+        "repo",
+        "base_branch",
+        "language",
+        "languages",
+        "build_command",
+        "test_command",
+        "run_command",
+    ] {
+        assert!(
+            keys.contains(&required),
+            "PROJECT_FIELDS missing `{required}` — found {keys:?}"
+        );
+    }
+}
+
+#[test]
+fn sessions_table_has_top_level_runtime_fields() {
+    let keys = keys_of("sessions");
+    for required in ["allowed_tools", "max_prompt_history", "guardrail_prompt"] {
+        assert!(
+            keys.contains(&required),
+            "SESSIONS_FIELDS missing `{required}` — found {keys:?}"
+        );
+    }
+}
+
+#[test]
+fn review_table_has_reviewers_vec_of_struct() {
+    let review_table = schema_for_config()
+        .iter()
+        .find(|t| t.name == "review")
+        .expect("review table must be registered");
+    let reviewers = review_table
+        .fields
+        .iter()
+        .find(|f| f.key == "reviewers")
+        .expect("review.reviewers must be present");
+    let FieldKind::VecOfStruct { entry_fields } = reviewers.kind else {
+        panic!(
+            "review.reviewers must be VecOfStruct, got {:?}",
+            reviewers.kind
+        );
+    };
+    let entry_keys: Vec<&str> = entry_fields.iter().map(|f| f.key).collect();
+    assert_eq!(entry_keys, &["name", "command", "required"]);
+}
+
+#[test]
+fn tui_table_has_mascot_fields() {
+    let keys = keys_of("tui");
+    for required in ["ascii_icons", "show_mascot", "mascot_style"] {
+        assert!(
+            keys.contains(&required),
+            "TUI_FIELDS missing `{required}` — found {keys:?}"
+        );
+    }
+}
+
+#[test]
+fn tui_theme_overrides_lists_every_themeoverrides_field() {
+    let overrides = schema_for_config()
+        .iter()
+        .find(|t| t.name == "tui.theme.overrides")
+        .expect("tui.theme.overrides top-level table must be registered");
+    assert_eq!(
+        overrides.fields.len(),
+        28,
+        "tui.theme.overrides must enumerate all 28 ThemeOverrides color fields"
+    );
+    let keys: Vec<&str> = overrides.fields.iter().map(|f| f.key).collect();
+    for required in [
+        "branding_fg",
+        "branding_bg",
+        "text_primary",
+        "text_secondary",
+        "text_muted",
+        "border_active",
+        "border_inactive",
+        "border_focused",
+        "accent_success",
+        "accent_warning",
+        "accent_error",
+        "accent_info",
+        "accent_identifier",
+        "gauge_low",
+        "gauge_medium",
+        "gauge_high",
+        "gauge_background",
+        "notification_critical",
+        "notification_blocker",
+        "notification_default",
+        "keybind_key",
+        "keybind_label_bg",
+        "keybind_label_fg",
+        "selection_bg",
+        "selection_fg",
+        "title_accent",
+        "fkey_badge_bg",
+        "fkey_badge_fg",
+    ] {
+        assert!(
+            keys.contains(&required),
+            "tui.theme.overrides missing `{required}` — found {keys:?}"
+        );
+    }
+}
+
+#[test]
+fn turboquant_table_has_token_budget_fields() {
+    let keys = keys_of("turboquant");
+    for required in [
+        "fork_handoff_budget",
+        "system_prompt_budget",
+        "knowledge_budget",
+    ] {
+        assert!(
+            keys.contains(&required),
+            "TURBOQUANT_FIELDS missing `{required}` — found {keys:?}"
+        );
+    }
+}
+
+#[test]
+fn concurrency_table_has_team_max_parallel() {
+    let keys = keys_of("concurrency");
+    assert!(
+        keys.contains(&"team_max_parallel"),
+        "CONCURRENCY_FIELDS missing `team_max_parallel` — found {keys:?}"
+    );
 }
 
 #[test]

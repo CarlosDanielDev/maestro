@@ -61,19 +61,22 @@ fn render_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buf
     terminal.backend().buffer().clone()
 }
 
-const EXPECTED_LABELS: [&str; 5] = [
+const EXPECTED_LABELS: [&str; 8] = [
     "enabled",
     "bit_width",
     "strategy",
     "apply_to",
     "auto_on_overflow",
+    "fork_handoff_budget",
+    "system_prompt_budget",
+    "knowledge_budget",
 ];
 
 #[test]
 fn turboquant_tab_flag_off_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[TURBOQUANT_TAB_INDEX];
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), 8);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
         assert_eq!(fields[i].widget.label(), *expected, "field[{i}] label");
     }
@@ -83,7 +86,7 @@ fn turboquant_tab_flag_off_field_count_and_labels() {
 fn turboquant_tab_flag_on_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[TURBOQUANT_TAB_INDEX];
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), 8);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
         assert_eq!(fields[i].widget.label(), *expected, "field[{i}] label");
     }

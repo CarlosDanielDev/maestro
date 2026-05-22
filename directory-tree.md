@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-19 12:00 (UTC)
+> Last updated: 2026-05-21 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -177,6 +177,7 @@ maestro/
 │   │   │   ├── docs_render_tests.rs       # Sibling test module for docs_render.rs loaded via `#[path]`; unit tests for the renderer covering all FieldKind leaf variants and NestedTable flattening  [Issue #717]
 │   │   │   ├── docs_render_dynamic_tests.rs # Sibling test module loaded via `#[path]`; insta + unit tests for `FieldKind::Map` and `FieldKind::VecOfStruct` dynamic-section rendering (heading, prose, entry-field table)  [Issue #793]
 │   │   │   ├── dynamic.rs                 # `FieldKind::FlattenedMap` schema variant — entries live at the parent table level directly (used for `agents.<id>` and `modes.<id>`); `AGENTS_TABLE` and `MODES_TABLE` const schemas; `truncated_titles` helper for sub-tab strip overflow when 12+ entries  [Issue #792]
+│   │   │   ├── theme.rs                   # `TUI_THEME_OVERRIDES_FIELDS` const slice — 28 optional color-override `FieldSchema` entries for `[tui.theme.overrides]`; each field accepts a named color, hex string, or 256-color index; default rendered as `unset` via `DefaultValue::Str("")`  [Issue #788]
 │   │   │   └── registry/                  # Const &'static [TableSchema] registry covering 17 tables / 52 fields
 │   │   │       ├── mod.rs                 # Registry module facade; re-exports the combined table slice
 │   │   │       ├── core.rs                # Core registry entries: adapt, agents, budget, gates, github, models, modes, notifications, plugins, project, review, runtime, sessions, tui, turboquant, views

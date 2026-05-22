@@ -180,11 +180,15 @@ alert_threshold_pct = 80
 
 ## `[concurrency]`
 
+<!-- BEGIN AUTOGEN:concurrency -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `heavy_task_labels` | array of string | `[]` | Issue labels that mark a task as resource-intensive. |
-| `heavy_task_limit` | integer | `2` | Max concurrent "heavy" tasks (independent of `[sessions].max_concurrent`). |
-| `team_max_parallel` | integer | unset | Optional cap on parallel team runs. Today `maestro team launch --max-parallel` defaults to `3` and ignores this key; tracked as a follow-up. |
+|---|---|---|---|
+| `heavy_task_limit` | int (1..=10) | `2` | Maximum simultaneous heavy tasks |
+| `heavy_task_labels` | array of string | `[]` | Labels that mark a task as resource-intensive |
+| `team_max_parallel` | int (0..=64) | `0` | Cap on parallel team runs — `0` falls back to the global `maestro team launch --max-parallel` |
+<!-- END AUTOGEN:concurrency -->
+
+> `team_max_parallel = 0` falls back to the `maestro team launch --max-parallel` default (currently `3`); the key is honored when set to a positive integer.
 
 ```toml
 [concurrency]
@@ -377,15 +381,19 @@ timeout_secs = 30
 
 ## `[project]`
 
+<!-- BEGIN AUTOGEN:project -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `repo` | string | `""` | `owner/repo` slug. Threaded into `gh --repo` shellouts. |
-| `base_branch` | string | `"main"` | Default branch for PRs and worktree base. |
-| `language` | string | unset (auto-detected by `maestro init`) | Primary stack id (`rust`, `node`, `python`, `go`). |
-| `languages` | array of string | unset | All detected stacks when polyglot. |
-| `build_command` | string | unset | Stack-appropriate build command (e.g. `cargo build`). |
-| `test_command` | string | unset | Stack-appropriate test command (e.g. `cargo test`). |
-| `run_command` | string | unset | Stack-appropriate run command (e.g. `cargo run`). |
+|---|---|---|---|
+| `repo` | string | unset | GitHub `owner/repo` or Azure DevOps project — used by `gh`/`az` CLI calls |
+| `base_branch` | string | `main` | Default branch worktrees fork from |
+| `language` | string | unset | Primary detected stack id (e.g. `rust`, `node`, `python`, `go`) — set by `maestro init` |
+| `languages` | array of string | `[]` | All detected stack ids when the project is polyglot |
+| `build_command` | string | unset | Stack-appropriate build command (e.g. `cargo build`, `npm run build`) |
+| `test_command` | string | unset | Stack-appropriate test command (e.g. `cargo test`, `npm test`) |
+| `run_command` | string | unset | Stack-appropriate run command (e.g. `cargo run`, `npm start`) |
+<!-- END AUTOGEN:project -->
+
+> `language`, `languages`, `build_command`, `test_command`, `run_command` are auto-detected by `maestro init` and may be left unset.
 
 ```toml
 [project]
@@ -440,19 +448,22 @@ repo = "myorg/myrepo"
 
 Automated review-dispatch configuration. Triggered after PR creation when `enabled = true`.
 
+<!-- BEGIN AUTOGEN:review -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `enabled` | bool | `false` | Whether review dispatch runs. |
-| `command` | string | `"gh pr review {pr_number} --comment --body 'Automated review by Maestro'"` | Template with `{pr_number}` and `{branch}` placeholders. Used only when `reviewers` is empty. |
-| `reviewers` | array of table | `[]` | If non-empty, overrides `command` with a multi-reviewer council. |
+|---|---|---|---|
+| `enabled` | bool | `false` | Dispatch the review command on PR creation |
+| `command` | string | `gh pr review {pr_number} --comment --body 'Automated review by Maestro'` | Template — `{pr_number}` and `{branch}` are substituted at dispatch |
 
-### `[[review.reviewers]]`
+### `[[review]]` — array-of-tables (order-sensitive)
+
+Each `[[review]]` block defines one entry. The list is **order-sensitive — declaration order is execution order.** Add, remove, or reorder entries via the Settings UI or by hand-editing `maestro.toml`. Each entry has the following fields:
 
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `name` | string | — | Display name. |
-| `command` | string | — | Command template (same placeholders as `command`). |
-| `required` | bool | `false` | If true, this reviewer's failure blocks merge. |
+|---|---|---|---|
+| `name` | string | unset | Display name for the reviewer (e.g. `lint-bot`, `doc-bot`) |
+| `command` | string | unset | Command template — `{pr_number}` and `{branch}` are substituted at dispatch |
+| `required` | bool | `false` | If true, this reviewer failing blocks merge |
+<!-- END AUTOGEN:review -->
 
 ```toml
 [review]
@@ -472,18 +483,20 @@ command = "scripts/doc-review.sh {pr_number}"
 
 ## `[sessions]`
 
+<!-- BEGIN AUTOGEN:sessions -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `max_concurrent` | integer | `3` | Concurrent sessions cap. |
-| `stall_timeout_secs` | integer | `300` | Seconds before a silent session is declared stalled. |
-| `default_model` | string | `"opus"` | Falls through to `[agents.claude].model` when the Claude agent inherits. |
-| `default_mode` | string | `"orchestrator"` | Mode used when `maestro run --mode` is omitted. |
-| `permission_mode` | string enum | `"default"` | Claude permission flow: `default`, `acceptEdits`, `bypassPermissions`, `dontAsk`, `plan`, `auto`. |
-| `allowed_tools` | array of string | `[]` | Tool whitelist passed to Claude. Empty = all. |
-| `max_retries` | integer | `2` | Retry cap on failed/stalled sessions. |
-| `retry_cooldown_secs` | integer | `60` | Cooldown between retries. |
-| `max_prompt_history` | integer | `100` | Prompt-history ring size. |
-| `guardrail_prompt` | string | unset (auto-detected from `[project].language`) | Custom guardrail injected into the system prompt. |
+|---|---|---|---|
+| `max_concurrent` | int (1..=20) | `3` | Maximum simultaneous Claude sessions |
+| `stall_timeout_secs` | int (30..=3600, step 30) | `300` | Mark a session stalled after no output for this many seconds |
+| `default_mode` | string | `orchestrator` | Session mode used when none is set explicitly |
+| `allowed_tools` | array of string | `[]` | Tool whitelist passed to Claude — empty means all tools |
+| `max_retries` | int (0..=10) | `2` | Retries for failed or stalled sessions |
+| `retry_cooldown_secs` | int (0..=600, step 10) | `60` | Cooldown between retries |
+| `max_prompt_history` | int (0..=10000, step 10) | `100` | Maximum prompt-history entries retained per session |
+| `guardrail_prompt` | string | unset | Custom guardrail injected into the system prompt — empty falls back to language-based default |
+<!-- END AUTOGEN:sessions -->
+
+> `default_model` and `permission_mode` were moved to `[agents.<id>]` in v0.27.0 (per-provider config). The TOML keys still parse for back-compat; new configs set them on the agent entry instead.
 
 ### `[sessions.hollow_retry]`
 
@@ -615,11 +628,13 @@ For tier-resolution rules, the `maestro team` CLI surface, and cookbook walkthro
 
 ## `[tui]`
 
+<!-- BEGIN AUTOGEN:tui -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `ascii_icons` | bool | `false` | Force ASCII glyphs (no Nerd Font). |
-| `show_mascot` | bool | `true` | Show the Clawd mascot. |
-| `mascot_style` | string enum | `"sprite"` | `sprite` (pixel-art) or `ascii` (Unicode block art). |
+|---|---|---|---|
+| `ascii_icons` | bool | `false` | Use ASCII-only icons in terminals without emoji support |
+| `show_mascot` | bool | `true` | Show the Clawd mascot companion in the TUI |
+| `mascot_style` | enum (`sprite`, `ascii`) | `sprite` | Visual style for the mascot — `sprite` is pixel art, `ascii` is Unicode block art |
+<!-- END AUTOGEN:tui -->
 
 ### `[tui.layout]`
 
@@ -634,7 +649,48 @@ For tier-resolution rules, the `maestro team` CLI surface, and cookbook walkthro
 
 ### `[tui.theme]`
 
-Owned by `crate::tui::theme::ThemeConfig` (`src/tui/theme.rs`). Schema is open for evolution; defaults are stable. See the source for the current shape until a dedicated theme reference exists.
+<!-- BEGIN AUTOGEN:tui.theme -->
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `preset` | enum (`dark`, `light`, `retro`) | `dark` | Color preset applied to the TUI |
+<!-- END AUTOGEN:tui.theme -->
+
+### `[tui.theme.overrides]`
+
+Per-field color overrides applied on top of the preset. Each override accepts a named color (`red`, `darkgray`, `lightcyan`, …), a hex string (`#RRGGBB`), or a 256-color index (`0`–`255`). Validation lives in `SerializableColor::deserialize` (`src/tui/theme.rs`); leaving a field `unset` keeps the preset value.
+
+<!-- BEGIN AUTOGEN:tui.theme.overrides -->
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `branding_fg` | string | unset | Foreground color of the maestro branding badge — name, hex, or 256-color index |
+| `branding_bg` | string | unset | Background color of the maestro branding badge — name, hex, or 256-color index |
+| `text_primary` | string | unset | Primary text color — name, hex, or 256-color index |
+| `text_secondary` | string | unset | Secondary text color (subdued labels) — name, hex, or 256-color index |
+| `text_muted` | string | unset | Muted text color (deprecated or low-priority text) — name, hex, or 256-color index |
+| `border_active` | string | unset | Active panel border color — name, hex, or 256-color index |
+| `border_inactive` | string | unset | Inactive panel border color — name, hex, or 256-color index |
+| `border_focused` | string | unset | Focused panel border color — name, hex, or 256-color index |
+| `accent_success` | string | unset | Success accent color (gates passed, completion) — name, hex, or 256-color index |
+| `accent_warning` | string | unset | Warning accent color — name, hex, or 256-color index |
+| `accent_error` | string | unset | Error accent color — name, hex, or 256-color index |
+| `accent_info` | string | unset | Info accent color — name, hex, or 256-color index |
+| `accent_identifier` | string | unset | Identifier accent color (IDs, session keys) — name, hex, or 256-color index |
+| `gauge_low` | string | unset | Low-tier gauge color (under 40 percent) — name, hex, or 256-color index |
+| `gauge_medium` | string | unset | Medium-tier gauge color — name, hex, or 256-color index |
+| `gauge_high` | string | unset | High-tier gauge color — name, hex, or 256-color index |
+| `gauge_background` | string | unset | Gauge background color — name, hex, or 256-color index |
+| `notification_critical` | string | unset | Critical notification color — name, hex, or 256-color index |
+| `notification_blocker` | string | unset | Blocker notification color — name, hex, or 256-color index |
+| `notification_default` | string | unset | Default notification color — name, hex, or 256-color index |
+| `keybind_key` | string | unset | Keybind hint key color — name, hex, or 256-color index |
+| `keybind_label_bg` | string | unset | Keybind hint label background — name, hex, or 256-color index |
+| `keybind_label_fg` | string | unset | Keybind hint label foreground — name, hex, or 256-color index |
+| `selection_bg` | string | unset | Selected-row background color — name, hex, or 256-color index |
+| `selection_fg` | string | unset | Selected-row foreground color — name, hex, or 256-color index |
+| `title_accent` | string | unset | Title bar accent color — name, hex, or 256-color index |
+| `fkey_badge_bg` | string | unset | F-key badge background color — name, hex, or 256-color index |
+| `fkey_badge_fg` | string | unset | F-key badge foreground color — name, hex, or 256-color index |
+<!-- END AUTOGEN:tui.theme.overrides -->
 
 ```toml
 [tui]
@@ -647,24 +703,33 @@ mode = "vertical"
 density = "default"
 preview_ratio = 50
 activity_log_height = 25
+
+[tui.theme]
+preset = "dark"
+
+[tui.theme.overrides]
+text_primary = "magenta"
+border_active = "#00ffaa"
 ```
 
-*Source: `src/config/tui.rs`, `src/tui/theme.rs`, `src/mascot/mod.rs`.*
+*Source: `src/config/tui.rs`, `src/config/schema/theme.rs` (autogen), `src/tui/theme.rs`, `src/mascot/mod.rs`.*
 
 ## `[turboquant]`
 
 TurboQuant vector-quantization configuration. See [`docs/research/`](research/) for design notes.
 
+<!-- BEGIN AUTOGEN:turboquant -->
 | Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `enabled` | bool | `false` | Master switch. |
-| `bit_width` | integer (1–8) | `4` | Quantization bit width. |
-| `strategy` | string enum | `"turboquant"` | `turboquant`, `polarquant`, `qjl`. |
-| `apply_to` | string enum | `"both"` | `keys`, `values`, `both`. |
-| `auto_on_overflow` | bool | `false` | Auto-enable on context overflow. |
-| `fork_handoff_budget` | integer | `4096` | Token budget for fork-handoff compression. |
-| `system_prompt_budget` | integer | `2048` | Token budget for system-prompt compaction. |
-| `knowledge_budget` | integer | `4096` | Token budget for knowledge-base compression. |
+|---|---|---|---|
+| `enabled` | bool | `false` | Compress contexts before forking or compacting |
+| `bit_width` | int (1..=8) | `4` | Bits per coefficient used by the quantizer |
+| `strategy` | enum (`turboquant`, `polarquant`, `qjl`) | `turboquant` | Quantization algorithm |
+| `apply_to` | enum (`keys`, `values`, `both`) | `both` | Vector components to compress |
+| `auto_on_overflow` | bool | `false` | Enable compression automatically when context overflows |
+| `fork_handoff_budget` | int (256..=65536, step 256) | `4096` | Token budget for fork-handoff compression |
+| `system_prompt_budget` | int (256..=65536, step 256) | `2048` | Token budget for system-prompt compaction |
+| `knowledge_budget` | int (256..=65536, step 256) | `4096` | Token budget for knowledge-base compression |
+<!-- END AUTOGEN:turboquant -->
 
 ```toml
 [turboquant]

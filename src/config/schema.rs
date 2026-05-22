@@ -16,6 +16,8 @@ pub(crate) mod docs_render;
 pub(crate) mod dynamic;
 #[allow(dead_code)]
 mod extras;
+#[allow(dead_code)]
+mod theme;
 
 /// Default value for a [`FieldSchema`]. Mirrors [`FieldKind`] so the entire
 /// schema can live in a `const` (no heap, no `toml::Value`, no `String`).
@@ -263,6 +265,11 @@ const SCHEMA: &[TableSchema] = &[
         name: "tui.theme",
         label: "Theme",
         fields: extras::TUI_THEME_FIELDS,
+    },
+    TableSchema {
+        name: "tui.theme.overrides",
+        label: "Theme Overrides",
+        fields: theme::TUI_THEME_OVERRIDES_FIELDS,
     },
     TableSchema {
         name: "tui.layout",

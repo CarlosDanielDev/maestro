@@ -66,15 +66,19 @@ fn render_tab(fields: &[SettingsField], width: u16, height: u16) -> ratatui::buf
 
 // `default_model` and `permission_mode` removed from the Sessions
 // schema in favor of per-provider configuration on the Providers tab.
-// The TOML fields stay on SessionsConfig (back-compat); only the
-// schema-renderer surface drops them.
-const EXPECTED_LABELS: [&str; 17] = [
+// #788 added `allowed_tools`, `max_prompt_history`, `guardrail_prompt`
+// alongside the existing scalar fields; the bypass toggle stays pinned
+// right after `default_mode`.
+const EXPECTED_LABELS: [&str; 20] = [
     "max_concurrent",
     "stall_timeout_secs",
     "default_mode",
     BYPASS_LABEL,
+    "allowed_tools",
     "max_retries",
     "retry_cooldown_secs",
+    "max_prompt_history",
+    "guardrail_prompt",
     "hollow_retry.policy",
     "hollow_retry.work_max_retries",
     "hollow_retry.consultation_max_retries",
@@ -92,7 +96,7 @@ const EXPECTED_LABELS: [&str; 17] = [
 fn sessions_tab_flag_off_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
-    assert_eq!(fields.len(), 17);
+    assert_eq!(fields.len(), 20);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
         assert_eq!(fields[i].widget.label(), *expected, "field[{i}] label");
     }
@@ -102,7 +106,7 @@ fn sessions_tab_flag_off_field_count_and_labels() {
 fn sessions_tab_flag_on_field_count_and_labels() {
     let screen = SettingsScreen::new(test_config(), FeatureFlags::default());
     let fields = &screen.fields_per_tab[SESSIONS_TAB_INDEX];
-    assert_eq!(fields.len(), 17);
+    assert_eq!(fields.len(), 20);
     for (i, expected) in EXPECTED_LABELS.iter().enumerate() {
         assert_eq!(fields[i].widget.label(), *expected, "field[{i}] label");
     }
@@ -163,13 +167,13 @@ fn sessions_sync_flag_on_writes_outer_default_and_nested_fields() {
     if let WidgetKind::NumberStepper(ref mut w) = fields[0].widget {
         w.value = 5;
     }
-    if let WidgetKind::Dropdown(ref mut w) = fields[6].widget {
+    if let WidgetKind::Dropdown(ref mut w) = fields[9].widget {
         w.selected = 0; // hollow_retry.policy = always
     }
-    if let WidgetKind::Toggle(ref mut w) = fields[10].widget {
+    if let WidgetKind::Toggle(ref mut w) = fields[13].widget {
         w.value = false; // context_overflow.auto_fork
     }
-    if let WidgetKind::Dropdown(ref mut w) = fields[14].widget {
+    if let WidgetKind::Dropdown(ref mut w) = fields[17].widget {
         w.selected = 2; // conflict.policy = kill
     }
 

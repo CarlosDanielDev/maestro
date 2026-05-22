@@ -92,23 +92,14 @@ fn docs_gen_all_schema_tables_have_markers() {
     // Schema tables expected to be wrapped in AUTOGEN markers. Sections where
     // the schema is incomplete relative to docs/configuration.md are listed
     // in `SCHEMA_BACKFILL_PENDING` until a follow-up backfills them.
-    const SCHEMA_BACKFILL_PENDING: &[&str] = &[
-        "project",
-        "sessions",
-        "review",
-        "tui",
-        "tui.theme",
-        "turboquant",
-        "concurrency",
-        // agents/modes ship the schema in #792 (TUI wiring). The hand-written
-        // `[agents]` and `[modes]` sections in docs/configuration.md include
-        // provider-specific notes (HTTP-vs-subprocess defaults, model
-        // fallbacks, `maestro doctor` checks) the schema does not capture, so
-        // docs autogen lands as a follow-up alongside the docs-render
-        // refactor that supports the FlattenedMap variant.
-        "agents",
-        "modes",
-    ];
+    //
+    // #788 closed the project/sessions/review/tui/tui.theme/turboquant/
+    // concurrency backfill. agents/modes remain deferred because their
+    // hand-written sections in docs/configuration.md include provider-
+    // specific notes (HTTP-vs-subprocess defaults, model fallbacks,
+    // `maestro doctor` checks) the schema does not capture; autogen lands
+    // alongside the docs-render refactor for `FlattenedMap`.
+    const SCHEMA_BACKFILL_PENDING: &[&str] = &["agents", "modes"];
 
     let path = doc_path();
     let existing =
