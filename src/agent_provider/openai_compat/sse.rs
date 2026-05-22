@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use crate::session::types::StreamEvent;
+use crate::session::types::{StreamEvent, TokenUsage};
 
 #[derive(Debug, Clone, Default)]
 pub struct OpenAiCompatibleSseParser {
@@ -121,13 +121,25 @@ impl OpenAiCompatibleSseParser {
             });
         }
 
+        let usage_event = value.get("usage").and_then(parse_openai_usage);
+
         match choice.get("finish_reason").and_then(Value::as_str) {
             Some("stop") if !self.completed => {
+                if let Some(usage) = usage_event.clone() {
+                    events.push(StreamEvent::TokenUpdate { usage });
+                }
                 self.completed = true;
                 events.push(StreamEvent::Completed { cost_usd: 0.0 });
             }
-            Some("stop") => {}
+            Some("stop") => {
+                if let Some(usage) = usage_event.clone() {
+                    events.push(StreamEvent::TokenUpdate { usage });
+                }
+            }
             Some("tool_calls") => {
+                if let Some(usage) = usage_event.clone() {
+                    events.push(StreamEvent::TokenUpdate { usage });
+                }
                 events.push(StreamEvent::ToolUse {
                     tool: "tool_calls".to_string(),
                     file_path: None,
@@ -138,11 +150,42 @@ impl OpenAiCompatibleSseParser {
             Some(other) => events.push(StreamEvent::Unknown {
                 raw: format!("unexpected finish_reason: {other}"),
             }),
-            None => {}
+            None => {
+                if let Some(usage) = usage_event {
+                    events.push(StreamEvent::TokenUpdate { usage });
+                }
+            }
         }
 
         events
     }
+}
+
+/// Build a `TokenUsage` from the OpenAI-compatible `usage` block emitted on
+/// the final streaming frame. Returns `None` when the block carries no
+/// non-zero token count, so downstream handlers don't see noisy zero events.
+fn parse_openai_usage(usage: &Value) -> Option<TokenUsage> {
+    let prompt = usage
+        .get("prompt_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let completion = usage
+        .get("completion_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let cached = usage
+        .pointer("/prompt_tokens_details/cached_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if prompt == 0 && completion == 0 && cached == 0 {
+        return None;
+    }
+    Some(TokenUsage {
+        input_tokens: prompt,
+        output_tokens: completion,
+        cache_read_tokens: cached,
+        cache_creation_tokens: 0,
+    })
 }
 
 fn find_frame_end(buffer: &[u8]) -> Option<(usize, usize)> {
@@ -289,6 +332,78 @@ mod tests {
         let events = parse_all("data: [DONE]\n\n");
 
         assert!(matches!(&events[..], [StreamEvent::Completed { .. }]));
+    }
+
+    #[test]
+    fn usage_block_on_stop_frame_emits_token_update() {
+        let events = parse_all(
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":45,\"total_tokens\":165}}\n\n\
+             data: [DONE]\n\n",
+        );
+
+        let usage = events
+            .iter()
+            .find_map(|event| match event {
+                StreamEvent::TokenUpdate { usage } => Some(usage),
+                _ => None,
+            })
+            .expect("expected TokenUpdate from final SSE frame with usage block");
+        assert_eq!(usage.input_tokens, 120);
+        assert_eq!(usage.output_tokens, 45);
+        assert_eq!(usage.cache_read_tokens, 0);
+
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::Completed { .. })),
+            "Completed event must still be emitted alongside TokenUpdate"
+        );
+    }
+
+    #[test]
+    fn usage_block_with_cached_tokens_populates_cache_read() {
+        let events = parse_all(
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":200,\"completion_tokens\":50,\"prompt_tokens_details\":{\"cached_tokens\":100}}}\n\n",
+        );
+
+        let usage = events
+            .iter()
+            .find_map(|event| match event {
+                StreamEvent::TokenUpdate { usage } => Some(usage),
+                _ => None,
+            })
+            .expect("expected TokenUpdate");
+        assert_eq!(usage.input_tokens, 200);
+        assert_eq!(usage.output_tokens, 50);
+        assert_eq!(usage.cache_read_tokens, 100);
+    }
+
+    #[test]
+    fn usage_block_all_zero_emits_no_token_update() {
+        let events = parse_all(
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":0,\"completion_tokens\":0,\"total_tokens\":0}}\n\n",
+        );
+
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::TokenUpdate { .. })),
+            "all-zero usage must not emit TokenUpdate"
+        );
+    }
+
+    #[test]
+    fn frames_without_usage_block_emit_no_token_update() {
+        let events = parse_all(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n",
+        );
+
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::TokenUpdate { .. })),
+            "frames without usage block emit no TokenUpdate"
+        );
     }
 
     #[test]
