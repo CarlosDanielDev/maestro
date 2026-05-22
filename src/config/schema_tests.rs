@@ -468,8 +468,8 @@ fn agents_table_registered_with_flattened_map() {
     };
     assert_eq!(
         entry_fields.len(),
-        11,
-        "AGENTS_ENTRY_FIELDS must lock at 11 scalar/list fields"
+        12,
+        "AGENTS_ENTRY_FIELDS must lock at 12 scalar/list fields"
     );
 }
 
@@ -499,12 +499,41 @@ fn agents_entry_fields_use_actual_rust_field_names() {
         "sandbox",
         "request_timeout_secs",
         "api_key_env",
+        "num_ctx",
     ] {
         assert!(
             keys.contains(&required),
             "AGENTS_ENTRY_FIELDS missing required key `{required}` — found {keys:?}"
         );
     }
+}
+
+#[test]
+fn agents_num_ctx_field_has_int_bounds_for_ollama_context_window() {
+    use crate::config::schema::dynamic::AGENTS_ENTRY_FIELDS;
+    let f = AGENTS_ENTRY_FIELDS
+        .iter()
+        .find(|f| f.key == "num_ctx")
+        .expect("num_ctx field must exist in AGENTS_ENTRY_FIELDS");
+    match f.kind {
+        FieldKind::Int { min, max, step } => {
+            assert_eq!(min, 0);
+            assert_eq!(max, 1_000_000);
+            assert_eq!(step, 1024);
+        }
+        ref other => panic!("expected FieldKind::Int, got {other:?}"),
+    }
+}
+
+#[test]
+fn agents_num_ctx_visible_only_for_ollama_kind() {
+    use crate::config::schema::dynamic::agent_field_visible_for_kind;
+    assert!(agent_field_visible_for_kind("num_ctx", "ollama"));
+    assert!(!agent_field_visible_for_kind("num_ctx", "claude"));
+    assert!(!agent_field_visible_for_kind("num_ctx", "codex"));
+    assert!(!agent_field_visible_for_kind("num_ctx", "qwen"));
+    assert!(!agent_field_visible_for_kind("num_ctx", "opencode"));
+    assert!(!agent_field_visible_for_kind("num_ctx", "minimax"));
 }
 
 #[test]

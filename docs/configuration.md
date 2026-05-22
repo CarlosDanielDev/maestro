@@ -115,6 +115,7 @@ Each `[agents.<id>]` table has these fields:
 | `cli_flags` | reserved | table | `{}` | Parsed and preserved for future provider-specific flags. |
 | `request_timeout_secs` | HTTP | integer | `120` | HTTP request timeout. |
 | `api_key_env` | HTTP | string | MiniMax: `MINIMAX_API_KEY`; Ollama: unset | Environment variable used for bearer auth. |
+| `num_ctx` | Ollama | integer | unset | Context window in tokens passed to Ollama as `num_ctx` (#844). When unset, Ollama's per-model default applies. |
 
 Subprocess agents (`claude`, `codex`, `qwen`, `opencode`) require `command` and reject `base_url`. HTTP agents (`ollama`, `minimax`) require `base_url` and reject `command`.
 
