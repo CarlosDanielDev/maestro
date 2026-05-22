@@ -74,6 +74,11 @@ pub struct AgentConfig {
     pub request_timeout_secs: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
+    /// Ollama-only: context window in tokens, surfaced in the TUI's
+    /// context-fill gauge. Ignored for non-Ollama agents. Unset → gauge
+    /// is hidden for that session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub num_ctx: Option<u32>,
 }
 
 impl AgentConfig {
@@ -100,6 +105,7 @@ impl AgentConfig {
             cli_flags: BTreeMap::new(),
             request_timeout_secs: None,
             api_key_env: None,
+            num_ctx: None,
         }
     }
 
@@ -206,6 +212,8 @@ struct AgentConfigRaw {
     request_timeout_secs: Option<u64>,
     #[serde(default)]
     api_key_env: Option<String>,
+    #[serde(default)]
+    num_ctx: Option<u32>,
 }
 
 impl From<AgentConfigRaw> for AgentConfig {
@@ -252,6 +260,7 @@ impl From<AgentConfigRaw> for AgentConfig {
             cli_flags: raw.cli_flags,
             request_timeout_secs,
             api_key_env,
+            num_ctx: raw.num_ctx,
         }
     }
 }

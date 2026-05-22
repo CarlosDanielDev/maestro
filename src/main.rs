@@ -241,6 +241,7 @@ async fn main() -> anyhow::Result<()> {
             disable_flags,
             role,
             no_splash,
+            force_quota,
         }) => {
             cmd_run(
                 prompt,
@@ -260,6 +261,7 @@ async fn main() -> anyhow::Result<()> {
                 role.map(Into::into),
                 no_splash,
                 cli.bypass_review,
+                force_quota,
             )
             .await
         }

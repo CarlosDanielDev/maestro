@@ -1,13 +1,26 @@
 use serde_json::Value;
 
+use super::pricing;
 use crate::session::types::{StreamEvent, TokenUsage};
 
 #[derive(Debug, Default)]
 pub struct OpenCodeJsonParser {
     stdout_bytes: Vec<u8>,
+    model: String,
 }
 
 impl OpenCodeJsonParser {
+    /// Build a parser that knows its session model so `step_finish` frames
+    /// missing or reporting `cost: 0` fall back to the per-model pricing
+    /// table. The factory path keeps `default()` (empty model → fallback
+    /// returns 0, matching the previous behavior).
+    pub fn with_model(model: impl Into<String>) -> Self {
+        Self {
+            stdout_bytes: Vec::new(),
+            model: model.into(),
+        }
+    }
+
     pub fn parse_line(&mut self, line: &str) -> Vec<StreamEvent> {
         self.stdout_bytes.extend_from_slice(line.as_bytes());
         self.stdout_bytes.push(b'\n');
@@ -27,7 +40,7 @@ impl OpenCodeJsonParser {
             Some("step_start") => Vec::new(),
             Some("text") => parse_text_event(&value),
             Some("tool_use") => parse_tool_use_event(&value),
-            Some("step_finish") => parse_step_finish_event(&value),
+            Some("step_finish") => parse_step_finish_event(&value, &self.model),
             Some("error") => vec![StreamEvent::Error {
                 message: opencode_error_message(&value),
             }],
@@ -93,7 +106,7 @@ fn parse_tool_use_event(value: &Value) -> Vec<StreamEvent> {
     ]
 }
 
-fn parse_step_finish_event(value: &Value) -> Vec<StreamEvent> {
+fn parse_step_finish_event(value: &Value, model: &str) -> Vec<StreamEvent> {
     let Some(part) = value.get("part") else {
         return vec![StreamEvent::Unknown {
             raw: value.to_string(),
@@ -101,15 +114,37 @@ fn parse_step_finish_event(value: &Value) -> Vec<StreamEvent> {
     };
 
     let mut events = Vec::new();
-    if let Some(tokens) = part.get("tokens") {
+    let token_usage = part.get("tokens").map(parse_opencode_tokens);
+    if let Some(usage) = token_usage.as_ref() {
         events.push(StreamEvent::TokenUpdate {
-            usage: parse_opencode_tokens(tokens),
+            usage: usage.clone(),
+        });
+    }
+
+    // Use telemetry-reported cost when finite and positive; otherwise fall
+    // back to the per-model pricing table. OpenCode reports `cost: 0` for
+    // many providers even when tokens were consumed, so the fallback fires
+    // any time the telemetry would otherwise hide the real spend.
+    let telemetry_cost = part
+        .get("cost")
+        .and_then(Value::as_f64)
+        .filter(|c| c.is_finite() && *c > 0.0);
+    let computed_cost = telemetry_cost.unwrap_or_else(|| {
+        token_usage
+            .as_ref()
+            .map(|usage| pricing::compute_cost(model, usage))
+            .unwrap_or(0.0)
+    });
+
+    if computed_cost.is_finite() && computed_cost > 0.0 {
+        events.push(StreamEvent::CostUpdate {
+            cost_usd: computed_cost,
         });
     }
 
     match part.get("reason").and_then(Value::as_str) {
         Some("stop") => events.push(StreamEvent::Completed {
-            cost_usd: part.get("cost").and_then(Value::as_f64).unwrap_or(0.0),
+            cost_usd: computed_cost,
         }),
         Some("tool-calls") => {}
         Some(reason) => events.push(StreamEvent::Unknown {

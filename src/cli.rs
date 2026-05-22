@@ -140,6 +140,12 @@ pub enum Commands {
         /// Skip the startup splash screen
         #[arg(long)]
         no_splash: bool,
+
+        /// Bypass MiniMax 5-hour quota refusal at 95% (use sparingly — the
+        /// quota gate exists to prevent the rolling window from being
+        /// exhausted by parallel maestro processes).
+        #[arg(long)]
+        force_quota: bool,
     },
     /// Show queued/pending issues from GitHub
     Queue,

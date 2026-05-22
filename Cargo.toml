@@ -51,6 +51,7 @@ tempfile = "3"
 thiserror = "2"
 shlex = "1"
 directories = "5"
+fs2 = "0.4"
 
 [features]
 # Off-by-default for one release. When enabled, `Config::save_into_str` detects

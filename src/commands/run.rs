@@ -27,7 +27,14 @@ pub async fn cmd_run(
     role_override: Option<crate::session::role::Role>,
     no_splash: bool,
     bypass_review: bool,
+    force_quota: bool,
 ) -> anyhow::Result<()> {
+    // `force_quota` is exposed to downstream provider gates via a process
+    // -wide flag so it doesn't have to thread through every session spawn
+    // path. MinimaxProvider reads the flag in its pre-spawn quota check.
+    if force_quota {
+        crate::agent_provider::minimax::set_force_quota();
+    }
     let loaded = Config::find_and_load_with_path()?;
     let config = loaded.config.clone();
     let resolved_agent = config.resolve_agent(agent.as_deref())?;
@@ -287,7 +294,7 @@ pub(crate) fn provider_for_agent(
                     anyhow::anyhow!("agents.{}.model is required for ollama", resolved.id)
                 })?;
             Ok(std::sync::Arc::new(
-                crate::agent_provider::OllamaProvider::new(
+                crate::agent_provider::OllamaProvider::with_num_ctx(
                     resolved.id.clone(),
                     resolved
                         .config
@@ -297,6 +304,7 @@ pub(crate) fn provider_for_agent(
                     model,
                     resolved.config.request_timeout_secs.unwrap_or(120),
                     resolved.config.api_key_env.clone(),
+                    resolved.config.num_ctx,
                 )
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?,
             ))
@@ -308,24 +316,46 @@ pub(crate) fn provider_for_agent(
                 .clone()
                 .filter(|model| !model.trim().is_empty())
                 .unwrap_or_else(|| "MiniMax-M2.7".to_string());
-            Ok(std::sync::Arc::new(
-                crate::agent_provider::MinimaxProvider::new(
-                    resolved.id.clone(),
-                    resolved
-                        .config
-                        .base_url
-                        .clone()
-                        .unwrap_or_else(|| "https://api.minimax.io/v1".to_string()),
-                    model,
-                    resolved.config.request_timeout_secs.unwrap_or(120),
-                    resolved
-                        .config
-                        .api_key_env
-                        .clone()
-                        .or_else(|| Some("MINIMAX_API_KEY".to_string())),
-                )
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?,
-            ))
+            let provider = crate::agent_provider::MinimaxProvider::new(
+                resolved.id.clone(),
+                resolved
+                    .config
+                    .base_url
+                    .clone()
+                    .unwrap_or_else(|| "https://api.minimax.io/v1".to_string()),
+                model,
+                resolved.config.request_timeout_secs.unwrap_or(120),
+                resolved
+                    .config
+                    .api_key_env
+                    .clone()
+                    .or_else(|| Some("MINIMAX_API_KEY".to_string())),
+            )
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            // Best-effort quota tracker: if the home dir is missing or the
+            // file is malformed we fall back to "no gate" rather than
+            // failing the spawn, so the provider keeps working when the
+            // state file is unavailable.
+            let provider = if let Some(path) = minimax_quota_path() {
+                match crate::agent_provider::minimax::MinimaxQuota::open(path) {
+                    Ok(quota) => provider.with_quota(std::sync::Arc::new(quota)),
+                    Err(err) => {
+                        tracing::warn!(error = %err, "MiniMax quota disabled");
+                        provider
+                    }
+                }
+            } else {
+                provider
+            };
+            Ok(std::sync::Arc::new(provider))
         }
     }
+}
+
+fn minimax_quota_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").map(|home| {
+        std::path::PathBuf::from(home)
+            .join(".maestro")
+            .join("minimax-quota.json")
+    })
 }

@@ -1,0 +1,260 @@
+//! 5-hour sliding-window request quota for MiniMax.
+//!
+//! MiniMax's free tier exposes a 5-hour rolling 4,500-request window. This
+//! module tracks recent request timestamps in memory, persists them to
+//! `~/.maestro/minimax-quota.json`, and serializes cross-process access via
+//! a `fs2` advisory file lock so two parallel `maestro` invocations don't
+//! double-spend the same window.
+//!
+//! The `Clock` trait is injected so tests can drive the window deterministic
+//! ally. Production uses `SystemClock` (chrono's `Utc::now`).
+
+use std::collections::VecDeque;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use chrono::{DateTime, Duration, Utc};
+use fs2::FileExt;
+use serde::{Deserialize, Serialize};
+
+/// Default 5-hour-window request cap for the free MiniMax tier.
+pub const DEFAULT_FIVE_HOUR_REQUEST_LIMIT: u32 = 4_500;
+const FIVE_HOUR_WINDOW: Duration = Duration::hours(5);
+const WARN_PCT: u8 = 80;
+const REFUSE_PCT: u8 = 95;
+const SCHEMA_VERSION: u32 = 1;
+
+/// Injectable clock so tests can advance time without sleeping.
+pub trait Clock: Send + Sync + std::fmt::Debug {
+    fn now(&self) -> DateTime<Utc>;
+}
+
+#[derive(Debug)]
+pub struct SystemClock;
+impl Clock for SystemClock {
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now()
+    }
+}
+
+/// Result of a pre-spawn quota check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuotaStatus {
+    Ok { pct: u8 },
+    Warn { pct: u8 },
+    Refused { pct: u8 },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum MinimaxQuotaError {
+    #[error("MiniMax quota file at {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("MiniMax quota file at {path} has unsupported schema_version {found}")]
+    UnknownSchemaVersion { path: PathBuf, found: u32 },
+    #[error("MiniMax quota file at {path} is malformed: {source}")]
+    Malformed {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct QuotaState {
+    schema_version: u32,
+    requests: VecDeque<DateTime<Utc>>,
+}
+
+#[derive(Debug)]
+pub struct MinimaxQuota {
+    path: PathBuf,
+    clock: Box<dyn Clock>,
+    limit: u32,
+    state: Mutex<QuotaState>,
+}
+
+impl MinimaxQuota {
+    /// Open or create the quota file at `path`. Uses `SystemClock` and the
+    /// default 4,500-request cap.
+    pub fn open(path: PathBuf) -> Result<Self, MinimaxQuotaError> {
+        Self::open_with(path, Box::new(SystemClock), DEFAULT_FIVE_HOUR_REQUEST_LIMIT)
+    }
+
+    /// Open or create with an injected clock + limit, for tests.
+    pub fn open_with(
+        path: PathBuf,
+        clock: Box<dyn Clock>,
+        limit: u32,
+    ) -> Result<Self, MinimaxQuotaError> {
+        // Open-and-branch instead of `path.exists()` first to avoid a
+        // TOCTOU window between the check and the open.
+        let state = match load_state(&path) {
+            Ok(state) => state,
+            Err(MinimaxQuotaError::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::NotFound =>
+            {
+                QuotaState {
+                    schema_version: SCHEMA_VERSION,
+                    requests: VecDeque::new(),
+                }
+            }
+            Err(err) => return Err(err),
+        };
+        Ok(Self {
+            path,
+            clock,
+            limit,
+            state: Mutex::new(state),
+        })
+    }
+
+    /// Check if a spawn is allowed without recording it. Returns the bucket
+    /// the current window falls in: `Ok`, `Warn` (≥ 80%), or `Refused`
+    /// (≥ 95%). Caller decides whether to honor a force flag.
+    pub fn check(&self) -> QuotaStatus {
+        let pct = self.current_pct();
+        bucket(pct)
+    }
+
+    /// Record one request against the window and persist to disk. The
+    /// in-memory mutex is dropped before file I/O so concurrent reads
+    /// aren't blocked by a slow disk.
+    pub fn record(&self) -> Result<(), MinimaxQuotaError> {
+        let now = self.clock.now();
+        let cutoff = now - FIVE_HOUR_WINDOW;
+        let snapshot = {
+            let mut guard = self.state.lock().expect("quota mutex poisoned");
+            while let Some(front) = guard.requests.front()
+                && *front < cutoff
+            {
+                guard.requests.pop_front();
+            }
+            guard.requests.push_back(now);
+            QuotaState {
+                schema_version: guard.schema_version,
+                requests: guard.requests.clone(),
+            }
+        };
+        save_state(&self.path, &snapshot)?;
+        Ok(())
+    }
+
+    fn current_pct(&self) -> u8 {
+        if self.limit == 0 {
+            return 0;
+        }
+        let now = self.clock.now();
+        let cutoff = now - FIVE_HOUR_WINDOW;
+        let count = {
+            let guard = self.state.lock().expect("quota mutex poisoned");
+            guard.requests.iter().filter(|ts| **ts >= cutoff).count()
+        };
+        let pct_f = (count as f64) * 100.0 / f64::from(self.limit);
+        pct_f.min(100.0).round() as u8
+    }
+}
+
+fn bucket(pct: u8) -> QuotaStatus {
+    if pct >= REFUSE_PCT {
+        QuotaStatus::Refused { pct }
+    } else if pct >= WARN_PCT {
+        QuotaStatus::Warn { pct }
+    } else {
+        QuotaStatus::Ok { pct }
+    }
+}
+
+fn load_state(path: &Path) -> Result<QuotaState, MinimaxQuotaError> {
+    let mut file = File::open(path).map_err(|source| MinimaxQuotaError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    file.lock_shared().map_err(|source| MinimaxQuotaError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut buf = String::new();
+    let read_result = file.read_to_string(&mut buf);
+    let _ = file.unlock();
+    read_result.map_err(|source| MinimaxQuotaError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let state: QuotaState =
+        serde_json::from_str(&buf).map_err(|source| MinimaxQuotaError::Malformed {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if state.schema_version != SCHEMA_VERSION {
+        return Err(MinimaxQuotaError::UnknownSchemaVersion {
+            path: path.to_path_buf(),
+            found: state.schema_version,
+        });
+    }
+    Ok(state)
+}
+
+fn save_state(path: &Path, state: &QuotaState) -> Result<(), MinimaxQuotaError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| MinimaxQuotaError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    // Clean up any stale tmp file from a prior crashed write. We do NOT
+    // follow symlinks here — std::fs::remove_file unlinks the symlink
+    // itself rather than the target.
+    let _ = std::fs::remove_file(&tmp);
+    let mut opts = OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut tmp_file = opts.open(&tmp).map_err(|source| MinimaxQuotaError::Io {
+        path: tmp.clone(),
+        source,
+    })?;
+    tmp_file
+        .lock_exclusive()
+        .map_err(|source| MinimaxQuotaError::Io {
+            path: tmp.clone(),
+            source,
+        })?;
+    let json = serde_json::to_vec_pretty(state).map_err(|source| MinimaxQuotaError::Malformed {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let write_result = tmp_file.write_all(&json).and_then(|_| tmp_file.sync_all());
+    let _ = tmp_file.unlock();
+    write_result.map_err(|source| MinimaxQuotaError::Io {
+        path: tmp.clone(),
+        source,
+    })?;
+    std::fs::rename(&tmp, path).map_err(|source| MinimaxQuotaError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    // Best-effort fsync on the parent directory so the rename is durable
+    // across power loss. Ignored on platforms (Windows) where the dir
+    // open is unsupported.
+    if let Some(parent) = path.parent()
+        && let Ok(dir) = File::open(parent)
+    {
+        let _ = dir.sync_all();
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "quota_tests.rs"]
+mod tests;

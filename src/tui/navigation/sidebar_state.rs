@@ -1,3 +1,8 @@
+// Scaffold for the sidebar redesign; consumed by the upcoming navigation
+// rewrite. Allow dead_code here so the build is clean until the call sites
+// land — the inline tests still exercise the scaffold for correctness.
+#![allow(dead_code)]
+
 /// Top-level sidebar bucket — `Home` is a singleton; the other five (`Run`/`Plan`/`Review`/`Insights`/`System`) group tools
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Bucket {

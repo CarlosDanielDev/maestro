@@ -105,6 +105,7 @@ fn factory_accepts_qwen_provider() {
             model: None,
             request_timeout_secs: None,
             api_key_env: None,
+            num_ctx: None,
         }],
     })
     .expect("qwen provider config should build factory");
@@ -124,6 +125,7 @@ fn factory_accepts_codex_provider() {
             model: None,
             request_timeout_secs: None,
             api_key_env: None,
+            num_ctx: None,
         }],
     })
     .expect("codex provider config should build factory");
@@ -143,6 +145,7 @@ fn factory_accepts_opencode_provider() {
             model: Some("anthropic/claude-sonnet-4-5".to_string()),
             request_timeout_secs: None,
             api_key_env: None,
+            num_ctx: None,
         }],
     })
     .expect("opencode provider config should build factory");
@@ -166,6 +169,7 @@ fn factory_accepts_ollama_provider() {
             model: Some("llama3.2".to_string()),
             request_timeout_secs: Some(5),
             api_key_env: None,
+            num_ctx: None,
         }],
     })
     .expect("ollama provider config should build factory");
@@ -310,6 +314,7 @@ fn factory_accepts_minimax_provider() {
             model: Some("MiniMax-M2.7".to_string()),
             request_timeout_secs: Some(5),
             api_key_env: Some("MINIMAX_API_KEY".to_string()),
+            num_ctx: None,
         }],
     })
     .expect("minimax provider config should build factory");

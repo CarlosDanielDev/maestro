@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use crate::session::types::StreamEvent;
+use crate::session::types::{StreamEvent, TokenUsage};
 
 #[derive(Debug, Clone, Default)]
 pub struct OpenAiCompatibleSseParser {
@@ -121,7 +121,19 @@ impl OpenAiCompatibleSseParser {
             });
         }
 
-        match choice.get("finish_reason").and_then(Value::as_str) {
+        // Emit TokenUpdate before the finish_reason transitions so handlers
+        // see the final token tally before Completed (or before the next tool
+        // call). The unexpected-finish-reason branch is the one exception:
+        // there we don't surface either, since the frame is being treated as
+        // malformed downstream.
+        let finish_reason = choice.get("finish_reason").and_then(Value::as_str);
+        if !matches!(finish_reason, Some(other) if other != "stop" && other != "tool_calls")
+            && let Some(usage) = value.get("usage").and_then(parse_openai_usage)
+        {
+            events.push(StreamEvent::TokenUpdate { usage });
+        }
+
+        match finish_reason {
             Some("stop") if !self.completed => {
                 self.completed = true;
                 events.push(StreamEvent::Completed { cost_usd: 0.0 });
@@ -143,6 +155,33 @@ impl OpenAiCompatibleSseParser {
 
         events
     }
+}
+
+/// Build a `TokenUsage` from the OpenAI-compatible `usage` block emitted on
+/// the final streaming frame. Returns `None` when the block carries no
+/// non-zero token count, so downstream handlers don't see noisy zero events.
+fn parse_openai_usage(usage: &Value) -> Option<TokenUsage> {
+    let prompt = usage
+        .get("prompt_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let completion = usage
+        .get("completion_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let cached = usage
+        .pointer("/prompt_tokens_details/cached_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if prompt == 0 && completion == 0 && cached == 0 {
+        return None;
+    }
+    Some(TokenUsage {
+        input_tokens: prompt,
+        output_tokens: completion,
+        cache_read_tokens: cached,
+        cache_creation_tokens: 0,
+    })
 }
 
 fn find_frame_end(buffer: &[u8]) -> Option<(usize, usize)> {
@@ -177,138 +216,5 @@ fn error_message(error: &Value) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse_all(input: &str) -> Vec<StreamEvent> {
-        let mut parser = OpenAiCompatibleSseParser::new();
-        let mut events = parser.push_chunk(input).expect("parse chunk");
-        events.extend(parser.finish().expect("finish parser"));
-        events
-    }
-
-    #[test]
-    fn valid_stream_maps_content_tool_calls_stop_and_done() {
-        let events = parse_all(
-            "event: completion.chunk\n\
-             data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n\
-             data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call_1\"}]},\"finish_reason\":null}]}\n\n\
-             data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n\
-             data: {\"choices\":[{\"delta\":{\"content\":\" world\"},\"finish_reason\":\"stop\"}]}\n\n\
-             data: [DONE]\n\n",
-        );
-
-        assert!(matches!(&events[0], StreamEvent::AssistantMessage { text } if text == "hello"));
-        assert!(matches!(&events[1], StreamEvent::ToolUse { tool, .. } if tool == "tool_calls"));
-        assert!(matches!(&events[2], StreamEvent::ToolUse { tool, .. } if tool == "tool_calls"));
-        assert!(matches!(&events[3], StreamEvent::AssistantMessage { text } if text == " world"));
-        assert!(matches!(&events[4], StreamEvent::Completed { .. }));
-        assert_eq!(events.len(), 5);
-    }
-
-    #[test]
-    fn malformed_json_inside_data_becomes_unknown() {
-        let events = parse_all("data: {\"choices\": [}\n\n");
-
-        assert!(matches!(&events[..], [StreamEvent::Unknown { raw }] if raw == "{\"choices\": [}"));
-    }
-
-    #[test]
-    fn unexpected_finish_reason_becomes_unknown() {
-        let events =
-            parse_all("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n");
-
-        assert!(
-            matches!(&events[..], [StreamEvent::Unknown { raw }] if raw == "unexpected finish_reason: length")
-        );
-    }
-
-    #[test]
-    fn missing_choices_array_becomes_unknown() {
-        let events =
-            parse_all("data: {\"id\":\"chatcmpl_1\",\"object\":\"chat.completion.chunk\"}\n\n");
-
-        assert!(
-            matches!(&events[..], [StreamEvent::Unknown { raw }] if raw.contains("\"chatcmpl_1\""))
-        );
-    }
-
-    #[test]
-    fn premature_stream_end_parses_remaining_frame() {
-        let events = parse_all(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"tail\"},\"finish_reason\":null}]}",
-        );
-
-        assert!(matches!(&events[..], [StreamEvent::AssistantMessage { text }] if text == "tail"));
-    }
-
-    #[test]
-    fn preserves_utf8_split_across_byte_chunks() {
-        let frame =
-            "data: {\"choices\":[{\"delta\":{\"content\":\"olá\"},\"finish_reason\":null}]}\n\n";
-        let split = frame
-            .as_bytes()
-            .windows("á".len())
-            .position(|window| window == "á".as_bytes())
-            .expect("accented byte");
-        let mut parser = OpenAiCompatibleSseParser::new();
-
-        let first = parser
-            .push_bytes(&frame.as_bytes()[..split + 1])
-            .expect("first chunk");
-        let second = parser
-            .push_bytes(&frame.as_bytes()[split + 1..])
-            .expect("second chunk");
-
-        assert!(first.is_empty());
-        assert!(matches!(&second[..], [StreamEvent::AssistantMessage { text }] if text == "olá"));
-    }
-
-    #[test]
-    fn multiline_data_fields_are_joined_with_newlines() {
-        let events = parse_all(
-            "data: {\"choices\":[\n\
-             data: {\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}\n\
-             data: ]}\n\n",
-        );
-
-        assert!(matches!(&events[..], [StreamEvent::AssistantMessage { text }] if text == "hello"));
-    }
-
-    #[test]
-    fn top_level_error_maps_to_error_event() {
-        let events = parse_all("data: {\"error\":{\"message\":\"bad request\"}}\n\n");
-
-        assert!(
-            matches!(&events[..], [StreamEvent::Error { message }] if message == "bad request")
-        );
-    }
-
-    #[test]
-    fn done_without_prior_frames_completes_stream() {
-        let events = parse_all("data: [DONE]\n\n");
-
-        assert!(matches!(&events[..], [StreamEvent::Completed { .. }]));
-    }
-
-    #[test]
-    fn representative_success_snapshot() {
-        let events = parse_all(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\r\n\r\n\
-             data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\r\n\r\n",
-        );
-
-        insta::assert_debug_snapshot!("openai_compatible_sse_success", events);
-    }
-
-    #[test]
-    fn representative_failure_snapshot() {
-        let events = parse_all(
-            "data: {\"error\":{\"message\":\"quota exceeded\"}}\n\n\
-             data: {\"choices\": [}\n\n\
-             data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n",
-        );
-
-        insta::assert_debug_snapshot!("openai_compatible_sse_failure", events);
-    }
-}
+#[path = "sse_tests.rs"]
+mod tests;

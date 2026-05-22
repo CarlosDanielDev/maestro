@@ -2,14 +2,26 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
+use super::pricing;
 use crate::session::types::{StreamEvent, TokenUsage};
 
 #[derive(Debug, Default)]
 pub(crate) struct CodexStreamParser {
     tool_names_by_id: HashMap<String, String>,
+    model: String,
 }
 
 impl CodexStreamParser {
+    /// Build a parser that knows its session's model, enabling cost computation
+    /// from the `turn.completed` `usage` block. Codex `turn.completed` frames do
+    /// not include the model — so the provider supplies it at construction.
+    pub(crate) fn with_model(model: impl Into<String>) -> Self {
+        Self {
+            tool_names_by_id: HashMap::new(),
+            model: model.into(),
+        }
+    }
+
     pub(crate) fn parse_line(&mut self, line: &str) -> Vec<StreamEvent> {
         let line = line.trim();
         if line.is_empty() {
@@ -103,12 +115,16 @@ impl CodexStreamParser {
 
     fn parse_turn_completed(&self, v: &Value) -> Vec<StreamEvent> {
         let mut events = Vec::new();
+        let mut cost_usd = 0.0;
         if let Some(usage) = v.get("usage").or_else(|| v.pointer("/turn/usage")) {
-            events.push(StreamEvent::TokenUpdate {
-                usage: parse_usage(usage),
-            });
+            let token_usage = parse_usage(usage);
+            cost_usd = pricing::compute_cost(&self.model, &token_usage);
+            if cost_usd.is_finite() && cost_usd > 0.0 {
+                events.push(StreamEvent::CostUpdate { cost_usd });
+            }
+            events.push(StreamEvent::TokenUpdate { usage: token_usage });
         }
-        events.push(StreamEvent::Completed { cost_usd: 0.0 });
+        events.push(StreamEvent::Completed { cost_usd });
         events
     }
 }

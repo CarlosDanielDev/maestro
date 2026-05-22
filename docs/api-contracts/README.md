@@ -14,4 +14,5 @@ JSON Schema files (Draft 2020-12) for every external data payload that crosses a
 | File | Payload | Added |
 |------|---------|-------|
 | `azure-devops-iterations.json` | Azure DevOps iteration classification nodes from `az boards iteration project list/create`; parsed into provider-neutral milestones | #463 |
+| `minimax-quota.json` | Persisted 5-hour sliding-window quota state for the MiniMax free tier; written to `~/.maestro/minimax-quota.json`; `schema_version: 1` + `additionalProperties: false` hardening | #775 |
 | `review-comment.json` | Structured JSON block embedded in `/review` slash-command PR comments; parsed by the TUI to render the concerns panel and drive the accept/reject flow | #327 |
