@@ -117,7 +117,7 @@ impl CodexStreamParser {
         let mut events = Vec::new();
         let mut cost_usd = 0.0;
         if let Some(usage) = v.get("usage").or_else(|| v.pointer("/turn/usage")) {
-            let token_usage = parse_usage(usage);
+            let token_usage = parse_usage(usage, &mut events);
             cost_usd = pricing::compute_cost(&self.model, &token_usage);
             if cost_usd.is_finite() && cost_usd > 0.0 {
                 events.push(StreamEvent::CostUpdate { cost_usd });
@@ -259,21 +259,37 @@ fn parse_codex_message(item: &Value) -> Vec<StreamEvent> {
     }
 }
 
-fn parse_usage(usage: &Value) -> TokenUsage {
+fn parse_usage(usage: &Value, warnings: &mut Vec<StreamEvent>) -> TokenUsage {
     TokenUsage {
-        input_tokens: usage_u64(usage, &["input_tokens", "prompt_tokens"]),
-        output_tokens: usage_u64(usage, &["output_tokens", "completion_tokens"]),
-        cache_read_tokens: usage_u64(
-            usage,
-            &[
-                "cache_read_input_tokens",
-                "cached_input_tokens",
-                "cache_read_tokens",
-            ],
+        input_tokens: sanitize_field(
+            "input_tokens",
+            usage_u64(usage, &["input_tokens", "prompt_tokens"]),
+            warnings,
         ),
-        cache_creation_tokens: usage_u64(
-            usage,
-            &["cache_creation_input_tokens", "cache_creation_tokens"],
+        output_tokens: sanitize_field(
+            "output_tokens",
+            usage_u64(usage, &["output_tokens", "completion_tokens"]),
+            warnings,
+        ),
+        cache_read_tokens: sanitize_field(
+            "cache_read_input_tokens",
+            usage_u64(
+                usage,
+                &[
+                    "cache_read_input_tokens",
+                    "cached_input_tokens",
+                    "cache_read_tokens",
+                ],
+            ),
+            warnings,
+        ),
+        cache_creation_tokens: sanitize_field(
+            "cache_creation_input_tokens",
+            usage_u64(
+                usage,
+                &["cache_creation_input_tokens", "cache_creation_tokens"],
+            ),
+            warnings,
         ),
     }
 }
@@ -282,6 +298,27 @@ fn usage_u64(usage: &Value, keys: &[&str]) -> u64 {
     keys.iter()
         .find_map(|key| usage.get(*key).and_then(Value::as_u64))
         .unwrap_or(0)
+}
+
+/// Clamp a single Codex-reported token field; record a `Warning` when the
+/// raw value was above [`crate::session::types::TOKEN_COUNT_CAP`] (#846).
+fn sanitize_field(field: &str, raw: u64, warnings: &mut Vec<StreamEvent>) -> u64 {
+    use crate::session::types::{TOKEN_COUNT_CAP, sanitize_token_count};
+    let capped = sanitize_token_count(raw);
+    if capped < raw {
+        tracing::warn!(
+            provider = "codex",
+            field,
+            raw,
+            cap = TOKEN_COUNT_CAP,
+            "token count above cap; clamping"
+        );
+        warnings.push(StreamEvent::Warning {
+            code: "token_count_clamped".to_string(),
+            message: format!("codex: {field}={raw} clamped to {TOKEN_COUNT_CAP}"),
+        });
+    }
+    capped
 }
 
 fn json_value_from_maybe_string(value: &Value) -> Option<Value> {

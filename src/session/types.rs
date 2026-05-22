@@ -177,6 +177,28 @@ pub struct ConflictFixContext {
     pub conflicting_files: Vec<String>,
 }
 
+/// Per-field upper bound for token counts emitted in a single frame.
+///
+/// Values above this cap are treated as upstream corruption (malicious,
+/// MITM'd, or buggy providers): each parser clamps to this value and
+/// emits a `StreamEvent::Warning` with code `"token_count_clamped"` so
+/// operators see the misbehavior. Chosen at 100M because the largest
+/// shipped context windows are ~10M; 10× headroom leaves room for
+/// legitimate growth while still bounding `f64` cost arithmetic well
+/// inside finite range.
+pub const TOKEN_COUNT_CAP: u64 = 100_000_000;
+
+/// Clamp a raw upstream token count to [`TOKEN_COUNT_CAP`].
+///
+/// Callers must emit a `StreamEvent::Warning` whenever the return value
+/// differs from the input — see the per-parser `sanitize_*` helpers in
+/// `src/session/parser.rs`, `src/agent_provider/codex/parser.rs`,
+/// `src/agent_provider/opencode/parser.rs`, and
+/// `src/agent_provider/openai_compat/sse.rs`.
+pub fn sanitize_token_count(raw: u64) -> u64 {
+    raw.min(TOKEN_COUNT_CAP)
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TokenUsage {
     pub input_tokens: u64,
@@ -632,6 +654,13 @@ pub enum StreamEvent {
     Thinking { text: String },
     /// Raw line we couldn't parse
     Unknown { raw: String },
+    /// Provider-emitted operational anomaly worth surfacing in the activity
+    /// log and structured log. Distinct from [`StreamEvent::Error`] (terminal)
+    /// and [`StreamEvent::Unknown`] (parse failure). `code` is a stable
+    /// kebab/snake_case tag callers branch on (e.g. `"quota_forced"`,
+    /// `"token_count_clamped"`); `message` is human-readable for the TUI and
+    /// log file.
+    Warning { code: String, message: String },
 }
 
 #[cfg(test)]
@@ -1709,5 +1738,80 @@ mod tests {
         let stripped = json.replace(r#","active_command":null"#, "");
         let rt: Session = serde_json::from_str(&stripped).unwrap();
         assert!(rt.active_command.is_none());
+    }
+
+    // ---- #846 token-count sanitization ----
+
+    #[test]
+    fn token_count_cap_value_is_100_million() {
+        assert_eq!(TOKEN_COUNT_CAP, 100_000_000_u64);
+    }
+
+    #[test]
+    fn sanitize_token_count_passes_through_below_cap() {
+        assert_eq!(sanitize_token_count(0), 0);
+        assert_eq!(sanitize_token_count(1), 1);
+        assert_eq!(
+            sanitize_token_count(TOKEN_COUNT_CAP - 1),
+            TOKEN_COUNT_CAP - 1
+        );
+    }
+
+    #[test]
+    fn sanitize_token_count_keeps_cap_value() {
+        assert_eq!(sanitize_token_count(TOKEN_COUNT_CAP), TOKEN_COUNT_CAP);
+    }
+
+    #[test]
+    fn sanitize_token_count_clamps_above_cap() {
+        assert_eq!(sanitize_token_count(TOKEN_COUNT_CAP + 1), TOKEN_COUNT_CAP);
+        assert_eq!(sanitize_token_count(u64::MAX), TOKEN_COUNT_CAP);
+    }
+
+    #[test]
+    fn cost_per_kilo_token_finite_after_cap() {
+        let capped = sanitize_token_count(u64::MAX);
+        let usage = TokenUsage {
+            input_tokens: capped,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+        };
+        let cost = usage.cost_per_kilo_token(1.0);
+        assert!(
+            cost.is_finite(),
+            "cost must be finite after cap, got {cost}"
+        );
+        assert!(cost >= 0.0);
+    }
+
+    // ---- #845 / #846 StreamEvent::Warning variant ----
+
+    #[test]
+    fn stream_event_warning_holds_code_and_message() {
+        let e = StreamEvent::Warning {
+            code: "quota_forced".to_string(),
+            message: "MiniMax spawn forced over quota".to_string(),
+        };
+        match e {
+            StreamEvent::Warning { code, message } => {
+                assert_eq!(code, "quota_forced");
+                assert!(message.contains("MiniMax"));
+            }
+            other => panic!("expected Warning, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stream_event_warning_token_cap_code() {
+        let e = StreamEvent::Warning {
+            code: "token_count_clamped".to_string(),
+            message: "claude: input_tokens=999 capped to 100000000".to_string(),
+        };
+        if let StreamEvent::Warning { code, .. } = e {
+            assert_eq!(code, "token_count_clamped");
+        } else {
+            panic!("expected Warning");
+        }
     }
 }

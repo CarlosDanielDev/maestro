@@ -102,7 +102,7 @@ pub fn parse_stream_line(line: &str) -> Vec<StreamEvent> {
     {
         let model = msg.get("model").and_then(|m| m.as_str()).unwrap_or("");
 
-        if let Some(token_usage) = extract_token_usage(usage) {
+        if let Some(token_usage) = extract_token_usage(usage, &mut events) {
             let cost_usd = claude_pricing::compute_cost(model, &token_usage);
             events.push(StreamEvent::TokenUpdate { usage: token_usage });
             if cost_usd.is_finite() && cost_usd > 0.0 {
@@ -253,23 +253,43 @@ fn parse_tool_result(v: &Value) -> StreamEvent {
 }
 
 /// Extract TokenUsage from a `usage` JSON object if token fields are present.
-fn extract_token_usage(usage: &Value) -> Option<TokenUsage> {
-    let input = usage
-        .get("input_tokens")
-        .and_then(|t| t.as_u64())
-        .unwrap_or(0);
-    let output = usage
-        .get("output_tokens")
-        .and_then(|t| t.as_u64())
-        .unwrap_or(0);
-    let cache_read = usage
-        .get("cache_read_input_tokens")
-        .and_then(|t| t.as_u64())
-        .unwrap_or(0);
-    let cache_creation = usage
-        .get("cache_creation_input_tokens")
-        .and_then(|t| t.as_u64())
-        .unwrap_or(0);
+///
+/// Per-field values above [`crate::session::types::TOKEN_COUNT_CAP`] are
+/// clamped to the cap and a `StreamEvent::Warning` is appended to
+/// `warnings` so the operator sees the upstream is misbehaving (#846).
+fn extract_token_usage(usage: &Value, warnings: &mut Vec<StreamEvent>) -> Option<TokenUsage> {
+    let input = sanitize_field(
+        "input_tokens",
+        usage
+            .get("input_tokens")
+            .and_then(|t| t.as_u64())
+            .unwrap_or(0),
+        warnings,
+    );
+    let output = sanitize_field(
+        "output_tokens",
+        usage
+            .get("output_tokens")
+            .and_then(|t| t.as_u64())
+            .unwrap_or(0),
+        warnings,
+    );
+    let cache_read = sanitize_field(
+        "cache_read_input_tokens",
+        usage
+            .get("cache_read_input_tokens")
+            .and_then(|t| t.as_u64())
+            .unwrap_or(0),
+        warnings,
+    );
+    let cache_creation = sanitize_field(
+        "cache_creation_input_tokens",
+        usage
+            .get("cache_creation_input_tokens")
+            .and_then(|t| t.as_u64())
+            .unwrap_or(0),
+        warnings,
+    );
 
     if input > 0 || output > 0 || cache_read > 0 || cache_creation > 0 {
         Some(TokenUsage {
@@ -283,11 +303,32 @@ fn extract_token_usage(usage: &Value) -> Option<TokenUsage> {
     }
 }
 
+/// Clamp one upstream-reported token field; record a `Warning` when the value
+/// was above [`crate::session::types::TOKEN_COUNT_CAP`].
+fn sanitize_field(field: &str, raw: u64, warnings: &mut Vec<StreamEvent>) -> u64 {
+    use crate::session::types::{TOKEN_COUNT_CAP, sanitize_token_count};
+    let capped = sanitize_token_count(raw);
+    if capped < raw {
+        tracing::warn!(
+            provider = "claude",
+            field,
+            raw,
+            cap = TOKEN_COUNT_CAP,
+            "token count above cap; clamping"
+        );
+        warnings.push(StreamEvent::Warning {
+            code: "token_count_clamped".to_string(),
+            message: format!("claude: {field}={raw} clamped to {TOKEN_COUNT_CAP}"),
+        });
+    }
+    capped
+}
+
 fn parse_system_event(v: &Value) -> Vec<StreamEvent> {
     let mut events = Vec::new();
 
     if let Some(usage) = v.get("usage") {
-        if let Some(token_usage) = extract_token_usage(usage) {
+        if let Some(token_usage) = extract_token_usage(usage, &mut events) {
             events.push(StreamEvent::TokenUpdate { usage: token_usage });
         }
 
@@ -331,7 +372,7 @@ fn parse_result(v: &Value) -> Vec<StreamEvent> {
         .unwrap_or(0.0);
 
     if let Some(usage) = v.get("usage") {
-        if let Some(token_usage) = extract_token_usage(usage) {
+        if let Some(token_usage) = extract_token_usage(usage, &mut events) {
             events.push(StreamEvent::TokenUpdate { usage: token_usage });
         }
 
@@ -1274,5 +1315,46 @@ mod tests {
             StreamEvent::Completed { cost_usd } => assert_eq!(cost_usd, 0.0),
             _ => unreachable!(),
         }
+    }
+
+    // ---- #846 token-count sanitization ----
+
+    #[test]
+    fn claude_parser_caps_giant_input_tokens_and_emits_warning() {
+        use crate::session::types::TOKEN_COUNT_CAP;
+        let line = r#"{"type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":999999999999,"output_tokens":1}}}"#;
+        let events = parse_stream_line(line);
+
+        let token_update = events
+            .iter()
+            .find_map(|e| match e {
+                StreamEvent::TokenUpdate { usage } => Some(usage),
+                _ => None,
+            })
+            .expect("TokenUpdate must be emitted");
+        assert_eq!(
+            token_update.input_tokens, TOKEN_COUNT_CAP,
+            "input_tokens must be clamped to cap"
+        );
+        assert_eq!(token_update.output_tokens, 1);
+
+        let warning = events.iter().find_map(|e| match e {
+            StreamEvent::Warning { code, message } => Some((code.as_str(), message.clone())),
+            _ => None,
+        });
+        let (code, _) = warning.expect("Warning must be emitted when capping");
+        assert_eq!(code, "token_count_clamped");
+    }
+
+    #[test]
+    fn claude_parser_below_cap_emits_no_warning() {
+        let line = r#"{"type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":200}}}"#;
+        let events = parse_stream_line(line);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::Warning { .. })),
+            "no warning for in-range tokens"
+        );
     }
 }

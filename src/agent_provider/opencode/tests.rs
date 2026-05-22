@@ -330,3 +330,44 @@ fn make_executable(path: &std::path::Path) {
 
 #[cfg(not(unix))]
 fn make_executable(_path: &std::path::Path) {}
+
+// ---- #846 token-count sanitization ----
+
+#[test]
+fn opencode_parser_caps_giant_input_tokens_and_emits_warning() {
+    use crate::session::types::TOKEN_COUNT_CAP;
+    let mut parser = OpenCodeJsonParser::with_model("anthropic/claude-sonnet-4-5");
+    let events = parser.parse_line(
+        r#"{"type":"step_finish","part":{"type":"step-finish","reason":"stop","tokens":{"input":999999999999,"output":1,"cache":{"read":0,"write":0}},"cost":0}}"#,
+    );
+
+    let token_update = events
+        .iter()
+        .find_map(|e| match e {
+            StreamEvent::TokenUpdate { usage } => Some(usage),
+            _ => None,
+        })
+        .expect("TokenUpdate must be emitted");
+    assert_eq!(token_update.input_tokens, TOKEN_COUNT_CAP);
+
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            StreamEvent::Warning { code, .. } if code == "token_count_clamped"
+        )),
+        "Warning with token_count_clamped must be emitted"
+    );
+}
+
+#[test]
+fn opencode_parser_below_cap_emits_no_warning() {
+    let mut parser = OpenCodeJsonParser::with_model("anthropic/claude-sonnet-4-5");
+    let events = parser.parse_line(
+        r#"{"type":"step_finish","part":{"type":"step-finish","reason":"stop","tokens":{"input":100,"output":50,"cache":{"read":0,"write":0}},"cost":0.001}}"#,
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, StreamEvent::Warning { .. })),
+    );
+}

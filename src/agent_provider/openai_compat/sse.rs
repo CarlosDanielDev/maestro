@@ -128,7 +128,9 @@ impl OpenAiCompatibleSseParser {
         // malformed downstream.
         let finish_reason = choice.get("finish_reason").and_then(Value::as_str);
         if !matches!(finish_reason, Some(other) if other != "stop" && other != "tool_calls")
-            && let Some(usage) = value.get("usage").and_then(parse_openai_usage)
+            && let Some(usage) = value
+                .get("usage")
+                .and_then(|u| parse_openai_usage(u, &mut events))
         {
             events.push(StreamEvent::TokenUpdate { usage });
         }
@@ -160,19 +162,35 @@ impl OpenAiCompatibleSseParser {
 /// Build a `TokenUsage` from the OpenAI-compatible `usage` block emitted on
 /// the final streaming frame. Returns `None` when the block carries no
 /// non-zero token count, so downstream handlers don't see noisy zero events.
-fn parse_openai_usage(usage: &Value) -> Option<TokenUsage> {
-    let prompt = usage
-        .get("prompt_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let completion = usage
-        .get("completion_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let cached = usage
-        .pointer("/prompt_tokens_details/cached_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
+///
+/// Per-field values above [`crate::session::types::TOKEN_COUNT_CAP`] are
+/// clamped to the cap and a `StreamEvent::Warning` is pushed into
+/// `warnings` (#846).
+fn parse_openai_usage(usage: &Value, warnings: &mut Vec<StreamEvent>) -> Option<TokenUsage> {
+    let prompt = sanitize_field(
+        "prompt_tokens",
+        usage
+            .get("prompt_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        warnings,
+    );
+    let completion = sanitize_field(
+        "completion_tokens",
+        usage
+            .get("completion_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        warnings,
+    );
+    let cached = sanitize_field(
+        "prompt_tokens_details.cached_tokens",
+        usage
+            .pointer("/prompt_tokens_details/cached_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        warnings,
+    );
     if prompt == 0 && completion == 0 && cached == 0 {
         return None;
     }
@@ -182,6 +200,27 @@ fn parse_openai_usage(usage: &Value) -> Option<TokenUsage> {
         cache_read_tokens: cached,
         cache_creation_tokens: 0,
     })
+}
+
+/// Clamp a single OpenAI-compatible token field; record a `Warning` when the
+/// raw value was above [`crate::session::types::TOKEN_COUNT_CAP`] (#846).
+fn sanitize_field(field: &str, raw: u64, warnings: &mut Vec<StreamEvent>) -> u64 {
+    use crate::session::types::{TOKEN_COUNT_CAP, sanitize_token_count};
+    let capped = sanitize_token_count(raw);
+    if capped < raw {
+        tracing::warn!(
+            provider = "openai-compat",
+            field,
+            raw,
+            cap = TOKEN_COUNT_CAP,
+            "token count above cap; clamping"
+        );
+        warnings.push(StreamEvent::Warning {
+            code: "token_count_clamped".to_string(),
+            message: format!("openai-compat: {field}={raw} clamped to {TOKEN_COUNT_CAP}"),
+        });
+    }
+    capped
 }
 
 fn find_frame_end(buffer: &[u8]) -> Option<(usize, usize)> {

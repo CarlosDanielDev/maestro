@@ -114,7 +114,9 @@ fn parse_step_finish_event(value: &Value, model: &str) -> Vec<StreamEvent> {
     };
 
     let mut events = Vec::new();
-    let token_usage = part.get("tokens").map(parse_opencode_tokens);
+    let token_usage = part
+        .get("tokens")
+        .map(|tokens| parse_opencode_tokens(tokens, &mut events));
     if let Some(usage) = token_usage.as_ref() {
         events.push(StreamEvent::TokenUpdate {
             usage: usage.clone(),
@@ -158,19 +160,56 @@ fn parse_step_finish_event(value: &Value, model: &str) -> Vec<StreamEvent> {
     events
 }
 
-fn parse_opencode_tokens(tokens: &Value) -> TokenUsage {
+fn parse_opencode_tokens(tokens: &Value, warnings: &mut Vec<StreamEvent>) -> TokenUsage {
     TokenUsage {
-        input_tokens: tokens.get("input").and_then(Value::as_u64).unwrap_or(0),
-        output_tokens: tokens.get("output").and_then(Value::as_u64).unwrap_or(0),
-        cache_read_tokens: tokens
-            .pointer("/cache/read")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        cache_creation_tokens: tokens
-            .pointer("/cache/write")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
+        input_tokens: sanitize_field(
+            "input",
+            tokens.get("input").and_then(Value::as_u64).unwrap_or(0),
+            warnings,
+        ),
+        output_tokens: sanitize_field(
+            "output",
+            tokens.get("output").and_then(Value::as_u64).unwrap_or(0),
+            warnings,
+        ),
+        cache_read_tokens: sanitize_field(
+            "cache.read",
+            tokens
+                .pointer("/cache/read")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            warnings,
+        ),
+        cache_creation_tokens: sanitize_field(
+            "cache.write",
+            tokens
+                .pointer("/cache/write")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            warnings,
+        ),
     }
+}
+
+/// Clamp a single OpenCode-reported token field; record a `Warning` when the
+/// raw value was above [`crate::session::types::TOKEN_COUNT_CAP`] (#846).
+fn sanitize_field(field: &str, raw: u64, warnings: &mut Vec<StreamEvent>) -> u64 {
+    use crate::session::types::{TOKEN_COUNT_CAP, sanitize_token_count};
+    let capped = sanitize_token_count(raw);
+    if capped < raw {
+        tracing::warn!(
+            provider = "opencode",
+            field,
+            raw,
+            cap = TOKEN_COUNT_CAP,
+            "token count above cap; clamping"
+        );
+        warnings.push(StreamEvent::Warning {
+            code: "token_count_clamped".to_string(),
+            message: format!("opencode: {field}={raw} clamped to {TOKEN_COUNT_CAP}"),
+        });
+    }
+    capped
 }
 
 fn extract_opencode_file_path(input: &Value) -> Option<String> {
