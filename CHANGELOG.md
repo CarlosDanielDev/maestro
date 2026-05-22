@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Per-provider cost / token / quota emission (milestone v0.29.5 Level 1): the Claude stream-json parser computes `cost_usd` per assistant frame from new `claude_pricing.rs` (Opus / Sonnet / Haiku 4.x; cache-read at 10% of input, cache-write at 125%); Codex's `parse_turn_completed` computes cost from new `codex/pricing.rs` (gpt-5-codex, gpt-5, o3); OpenCode's parser falls back to `opencode/pricing.rs` when telemetry reports `cost: 0`; the shared OpenAI-compatible SSE parser now extracts `prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens` from the final frame; Ollama emits a `ContextUpdate` derived from the new `[agents.<id>].num_ctx` config; MiniMax gains a file-locked 5-hour sliding-window quota (`~/.maestro/minimax-quota.json`) with a pre-spawn gate that warns at 80% and refuses at 95% unless the new `--force-quota` CLI flag is set (#771 #772 #773 #774 #775).
+- Per-frame token count clamped at `TOKEN_COUNT_CAP = 100_000_000` across all four parsers (Claude, Codex, OpenCode, OpenAI-compatible SSE); values above the cap clamp and emit a new `StreamEvent::Warning { code: "token_count_clamped", message }` variant (#846).
+- Ollama `num_ctx` surfaced in TUI Settings — new `FieldSchema` entry (Int 0..1_000_000, step 1024) visible only for Ollama-kind agents; `docs/configuration.md` agents table updated with the `num_ctx` row (#844).
+- MiniMax `--force-quota` spawns emit a structured `StreamEvent::Warning { code: "quota_forced" }` event; `QuotaState` bumped to schema v2 (v1 files promoted via read shim, `forced_count = 0`); `MinimaxQuota::record_forced` / `forced_count()` API added; home-screen stats bar shows a "QUOTA: forced N in window" badge when non-zero (#845).
 
 ## [0.29.0] - 2026-05-21
 

@@ -82,6 +82,9 @@ impl SessionLogger {
             StreamEvent::Unknown { raw } => {
                 format!("[{}] UNKNOWN: {}\n", timestamp, raw)
             }
+            StreamEvent::Warning { code, message } => {
+                format!("[{}] WARNING [{}]: {}\n", timestamp, code, message)
+            }
         };
 
         file.write_all(entry.as_bytes())?;

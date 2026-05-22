@@ -352,6 +352,10 @@ impl ManagedSession {
                 }
             }
             StreamEvent::Unknown { .. } => {}
+            StreamEvent::Warning { code, message } => {
+                self.session
+                    .log_activity(format!("WARNING [{code}]: {message}"));
+            }
         }
     }
 }

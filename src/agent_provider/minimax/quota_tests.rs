@@ -139,3 +139,71 @@ fn deny_unknown_fields_rejects_extra_keys() {
     let err = MinimaxQuota::open_with(path, handle, 100).expect_err("unknown field should fail");
     assert!(matches!(err, MinimaxQuotaError::Malformed { .. }));
 }
+
+// ---- #845 schema v2 + forced_count tracking ----
+
+#[test]
+fn fresh_quota_has_forced_count_zero() {
+    let (_dir, path) = tmp_path("forced-fresh");
+    let (_clock, handle) = shared_clock(0);
+    let quota = MinimaxQuota::open_with(path, handle, 100).unwrap();
+    assert_eq!(quota.forced_count(), 0);
+}
+
+#[test]
+fn record_forced_increments_count_and_persists() {
+    let (_dir, path) = tmp_path("forced-record");
+    let (_clock, handle) = shared_clock(0);
+    let quota = MinimaxQuota::open_with(path.clone(), handle, 100).unwrap();
+    quota.record_forced().unwrap();
+    quota.record_forced().unwrap();
+    assert_eq!(quota.forced_count(), 2);
+
+    let (_clock2, handle2) = shared_clock(0);
+    let reopened = MinimaxQuota::open_with(path, handle2, 100).unwrap();
+    assert_eq!(reopened.forced_count(), 2);
+}
+
+#[test]
+fn forced_count_resets_when_window_empties_after_record() {
+    let (_dir, path) = tmp_path("forced-reset");
+    let (clock, handle) = shared_clock(0);
+    let quota = MinimaxQuota::open_with(path, handle, 100).unwrap();
+
+    quota.record_forced().unwrap();
+    assert_eq!(quota.forced_count(), 1);
+
+    clock.fetch_add(6 * 3_600, Ordering::SeqCst);
+    quota.record().unwrap();
+    assert_eq!(
+        quota.forced_count(),
+        0,
+        "forced_count must reset to 0 after window aged out"
+    );
+}
+
+#[test]
+fn load_v1_file_promotes_to_v2_with_forced_count_zero() {
+    let (_dir, path) = tmp_path("v1-migrate");
+    std::fs::write(
+        &path,
+        r#"{"schema_version":1,"requests":["2024-01-01T00:00:00Z","2024-01-01T01:00:00Z"]}"#,
+    )
+    .unwrap();
+    let (_clock, handle) = shared_clock(0);
+    let quota = MinimaxQuota::open_with(path, handle, 100).unwrap();
+    assert_eq!(quota.forced_count(), 0);
+}
+
+#[test]
+fn load_v2_file_round_trips_forced_count() {
+    let (_dir, path) = tmp_path("v2-rt");
+    std::fs::write(
+        &path,
+        r#"{"schema_version":2,"requests":[],"forced_count":7}"#,
+    )
+    .unwrap();
+    let (_clock, handle) = shared_clock(0);
+    let quota = MinimaxQuota::open_with(path, handle, 100).unwrap();
+    assert_eq!(quota.forced_count(), 7);
+}

@@ -215,3 +215,53 @@ fn parser_maps_current_codex_todo_updates() {
         ] if tool == "TodoWrite" && result_tool == "TodoWrite"
     ));
 }
+
+// ---- #846 token-count sanitization ----
+
+#[test]
+fn codex_parser_caps_giant_input_tokens_and_emits_warning() {
+    use crate::session::types::TOKEN_COUNT_CAP;
+    let mut parser = CodexStreamParser::with_model("gpt-5");
+    let events = parser.parse_line(
+        r#"{"type":"turn.completed","usage":{"input_tokens":999999999999,"output_tokens":1}}"#,
+    );
+
+    let token_update = events
+        .iter()
+        .find_map(|e| match e {
+            StreamEvent::TokenUpdate { usage } => Some(usage),
+            _ => None,
+        })
+        .expect("TokenUpdate must be emitted");
+    assert_eq!(token_update.input_tokens, TOKEN_COUNT_CAP);
+
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            StreamEvent::Warning { code, .. } if code == "token_count_clamped"
+        )),
+        "Warning with token_count_clamped must be emitted"
+    );
+
+    // Cost stays finite after cap.
+    let cost = events.iter().find_map(|e| match e {
+        StreamEvent::Completed { cost_usd } => Some(*cost_usd),
+        _ => None,
+    });
+    if let Some(c) = cost {
+        assert!(c.is_finite() && c >= 0.0, "cost must be finite, got {c}");
+    }
+}
+
+#[test]
+fn codex_parser_below_cap_emits_no_warning() {
+    let mut parser = CodexStreamParser::with_model("gpt-5");
+    let events = parser.parse_line(
+        r#"{"type":"turn.completed","usage":{"input_tokens":500,"output_tokens":100}}"#,
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, StreamEvent::Warning { .. })),
+    );
+}

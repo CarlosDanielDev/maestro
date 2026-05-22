@@ -57,6 +57,11 @@ impl HomeScreen {
                 .unwrap_or(0),
             sessions_active: self.stats.sessions_active,
             sessions_total: self.stats.sessions_total,
+            minimax_forced_count: if self.stats.minimax_forced_count > 0 {
+                Some(self.stats.minimax_forced_count)
+            } else {
+                None
+            },
         };
         self.sync_stats_bar_marquee(&stats_data);
         StatsBar::new(stats_data, theme).render_with_marquee(

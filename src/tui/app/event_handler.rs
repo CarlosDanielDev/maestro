@@ -315,6 +315,22 @@ impl App {
                     self.context_monitor
                         .record_context(session_id, *context_pct);
                 }
+                StreamEvent::Warning { code, message } => {
+                    // Surface every Warning in the activity log so operators
+                    // see them even before the structured footer ships.
+                    self.activity_log.push_simple(
+                        label,
+                        format!("WARNING [{code}]: {message}"),
+                        LogLevel::Warn,
+                    );
+                    // Quota-forced bookkeeping for the home-screen footer
+                    // badge (#845). Saturating to defend against
+                    // pathological event floods.
+                    if code == "quota_forced" {
+                        self.minimax_forced_count_5h =
+                            self.minimax_forced_count_5h.saturating_add(1);
+                    }
+                }
                 _ => {}
             }
         }

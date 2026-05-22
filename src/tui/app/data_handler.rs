@@ -180,6 +180,7 @@ impl App {
                     milestone_active,
                     sessions_active: active,
                     sessions_total: total,
+                    minimax_forced_count: self.minimax_forced_count_5h,
                 };
                 if let Some(ref mut screen) = self.screen_state.home_screen {
                     screen.set_suggestions(suggestions);

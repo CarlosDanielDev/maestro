@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-21 12:00 (UTC)
+> Last updated: 2026-05-21 14:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -634,6 +634,8 @@ maestro/
 │   │       ├── dropdown.rs                # Dropdown selection widget with keyboard navigation
 │   │       ├── list_editor.rs             # Editable list widget for adding and removing string items
 │   │       ├── number_stepper.rs          # Numeric increment/decrement stepper widget
+│   │       ├── stats_bar.rs               # StatsBar widget: home-screen footer bar showing per-window cost, token, and quota metrics; renders a "QUOTA: forced N in window" badge when MiniMax forced_count > 0  [Issue #845]
+│   │       ├── stats_bar_tests.rs         # Sibling test module for stats_bar.rs (attached via #[cfg(test)] #[path]); split to stay under the 400-LOC cap  [Issue #845]
 │   │       ├── text_input.rs              # Single-line text input widget with cursor support
 │   │       └── toggle.rs                 # Boolean toggle widget for settings and forms; draw() routes through icons::get(IconId::CheckboxOn/Off) instead of hardcoded literals, eliminating the DRY drift that caused blank indicators on iTerm2 + some Nerd Font installs  [Issue #433]
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]

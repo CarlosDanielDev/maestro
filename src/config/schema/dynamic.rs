@@ -44,6 +44,7 @@ pub(crate) fn agent_field_visible_for_kind(field_key: &str, kind_value: &str) ->
     match field_key {
         "command" | "permission_mode" | "sandbox" | "allowed_tools" | "extra_args" => is_subprocess,
         "base_url" | "api_key_env" | "request_timeout_secs" => is_http,
+        "num_ctx" => kind_value == "ollama",
         _ => true,
     }
 }
@@ -59,7 +60,8 @@ pub(crate) const PERMISSION_MODES: &[&str] = &[
     "auto",
 ];
 
-/// Entry fields for `[agents.<id>]`. 11 scalar/list fields per spec §6.3.
+/// Entry fields for `[agents.<id>]`. 12 scalar/list fields per spec §6.3
+/// (11 from v0.29.0 + `num_ctx` for Ollama context-window control, #844).
 /// `env`, `config_overrides`, `cli_flags` deferred to v0.30.0 (§7).
 pub(crate) const AGENTS_ENTRY_FIELDS: &[FieldSchema] = &[
     FieldSchema {
@@ -104,6 +106,19 @@ pub(crate) const AGENTS_ENTRY_FIELDS: &[FieldSchema] = &[
         help: "Model identifier override",
         default: DefaultValue::Str(""),
         kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "num_ctx",
+        label: "Context Window (num_ctx)",
+        help: "Ollama context window in tokens (#844). Hidden for non-Ollama kinds. 0 = unset (use Ollama default).",
+        default: DefaultValue::Int(0),
+        kind: FieldKind::Int {
+            min: 0,
+            max: 1_000_000,
+            step: 1024,
+        },
         validator: None,
         presentation: None,
     },

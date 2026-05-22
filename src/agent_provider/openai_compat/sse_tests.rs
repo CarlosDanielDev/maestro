@@ -200,3 +200,42 @@ fn representative_failure_snapshot() {
 
     insta::assert_debug_snapshot!("openai_compatible_sse_failure", events);
 }
+
+// ---- #846 token-count sanitization ----
+
+#[test]
+fn sse_parser_caps_giant_prompt_tokens_and_emits_warning() {
+    use crate::session::types::TOKEN_COUNT_CAP;
+    let chunk = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\
+        \"usage\":{\"prompt_tokens\":999999999999,\"completion_tokens\":1}}\n\ndata: [DONE]\n\n";
+    let events = parse_all(chunk);
+
+    let token_update = events
+        .iter()
+        .find_map(|e| match e {
+            StreamEvent::TokenUpdate { usage } => Some(usage),
+            _ => None,
+        })
+        .expect("TokenUpdate must be emitted");
+    assert_eq!(token_update.input_tokens, TOKEN_COUNT_CAP);
+
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            StreamEvent::Warning { code, .. } if code == "token_count_clamped"
+        )),
+        "Warning with token_count_clamped must be emitted"
+    );
+}
+
+#[test]
+fn sse_parser_below_cap_emits_no_warning() {
+    let chunk = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\
+        \"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":200}}\n\ndata: [DONE]\n\n";
+    let events = parse_all(chunk);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, StreamEvent::Warning { .. })),
+    );
+}

@@ -9,6 +9,9 @@ pub struct ProjectStats {
     pub milestone_active: Option<MilestoneStats>,
     pub sessions_active: usize,
     pub sessions_total: usize,
+    /// `--force-quota` bypass count in the current MiniMax 5h window (#845).
+    /// Surfaced as a footer badge when non-zero.
+    pub minimax_forced_count: u32,
 }
 
 /// Active milestone progress data.
