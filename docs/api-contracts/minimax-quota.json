@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CarlosDanielDev/maestro/docs/api-contracts/minimax-quota.json",
+  "title": "MiniMax Quota State",
+  "description": "Persisted 5-hour sliding-window quota state for the MiniMax free tier. Written to ~/.maestro/minimax-quota.json and protected by an fs2 advisory file lock. Unknown fields are rejected by #[serde(deny_unknown_fields)] in the Rust struct.",
+  "type": "object",
+  "required": ["schema_version", "requests"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version sentinel. Any value other than 1 causes MinimaxQuota::open_with to return an UnsupportedSchemaVersion error."
+    },
+    "requests": {
+      "type": "array",
+      "description": "RFC 3339 timestamps (UTC) of every request recorded in the current 5-hour rolling window. Entries older than 5 hours are pruned on every read.",
+      "items": {
+        "type": "string",
+        "format": "date-time",
+        "description": "UTC timestamp in RFC 3339 format, e.g. 2026-05-21T12:00:00Z"
+      }
+    }
+  }
+}
