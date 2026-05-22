@@ -121,25 +121,25 @@ impl OpenAiCompatibleSseParser {
             });
         }
 
-        let usage_event = value.get("usage").and_then(parse_openai_usage);
+        // Emit TokenUpdate before the finish_reason transitions so handlers
+        // see the final token tally before Completed (or before the next tool
+        // call). The unexpected-finish-reason branch is the one exception:
+        // there we don't surface either, since the frame is being treated as
+        // malformed downstream.
+        let finish_reason = choice.get("finish_reason").and_then(Value::as_str);
+        if !matches!(finish_reason, Some(other) if other != "stop" && other != "tool_calls")
+            && let Some(usage) = value.get("usage").and_then(parse_openai_usage)
+        {
+            events.push(StreamEvent::TokenUpdate { usage });
+        }
 
-        match choice.get("finish_reason").and_then(Value::as_str) {
+        match finish_reason {
             Some("stop") if !self.completed => {
-                if let Some(usage) = usage_event.clone() {
-                    events.push(StreamEvent::TokenUpdate { usage });
-                }
                 self.completed = true;
                 events.push(StreamEvent::Completed { cost_usd: 0.0 });
             }
-            Some("stop") => {
-                if let Some(usage) = usage_event.clone() {
-                    events.push(StreamEvent::TokenUpdate { usage });
-                }
-            }
+            Some("stop") => {}
             Some("tool_calls") => {
-                if let Some(usage) = usage_event.clone() {
-                    events.push(StreamEvent::TokenUpdate { usage });
-                }
                 events.push(StreamEvent::ToolUse {
                     tool: "tool_calls".to_string(),
                     file_path: None,
@@ -150,11 +150,7 @@ impl OpenAiCompatibleSseParser {
             Some(other) => events.push(StreamEvent::Unknown {
                 raw: format!("unexpected finish_reason: {other}"),
             }),
-            None => {
-                if let Some(usage) = usage_event {
-                    events.push(StreamEvent::TokenUpdate { usage });
-                }
-            }
+            None => {}
         }
 
         events
