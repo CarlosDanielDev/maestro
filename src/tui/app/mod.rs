@@ -276,10 +276,19 @@ impl App {
     ) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (data_tx, data_rx) = mpsc::unbounded_channel();
-        let (state, state_load_error) = match store.load() {
+        let (mut state, state_load_error) = match store.load() {
             Ok(state) => (state, None),
             Err(e) => (MaestroState::default(), Some(e.to_string())),
         };
+        // Restore the persisted aggregate cost so the top-bar `$X/Y`
+        // reading survives a maestro restart. The state file already
+        // carries `total_cost_usd` AND the `sessions` array with each
+        // session's `cost_usd`; we sync the cached field to the sum so
+        // both halves of the on-disk record agree before App reads it
+        // (defends against older state files that may have a stale
+        // `total_cost_usd` value). 2026-05-23 fix.
+        state.update_total_cost();
+        let restored_total_cost = state.total_cost_usd;
         let mut pool = SessionPool::new(max_concurrent, worktree_mgr, event_tx);
         pool.set_permission_mode(permission_mode.clone());
         pool.set_allowed_tools(allowed_tools.clone());
@@ -315,7 +324,7 @@ impl App {
             store,
             turboquant_adapter: None,
             running: true,
-            total_cost: 0.0,
+            total_cost: restored_total_cost,
             start_time: Utc::now(),
             event_rx,
             work_assignment_service: None,
@@ -1093,6 +1102,106 @@ enabled = true
             app.tui_mode,
             TuiMode::Settings,
             "toggle must only act on Overview/AgentGraph"
+        );
+    }
+
+    /// Regression for 2026-05-23: `App::new` hardcoded `total_cost = 0.0`
+    /// instead of reading the value the previous run had persisted via
+    /// `StateStore::save`. The state file already carried both
+    /// `total_cost_usd` AND a `sessions` array with each `cost_usd`, so
+    /// the data was on disk — App just never read it. After a restart
+    /// the top-bar `$X.XX/Y.YY` reading reset to zero even though
+    /// session history was intact.
+    #[test]
+    fn app_new_restores_total_cost_from_persisted_state() {
+        use crate::session::types::{Session, SessionStatus};
+        use crate::session::worktree::MockWorktreeManager;
+        use crate::state::store::StateStore;
+        use crate::state::types::MaestroState;
+
+        let mut state = MaestroState::default();
+        let mut s1 = Session::new(
+            "first".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+            None,
+        );
+        s1.status = SessionStatus::Completed;
+        s1.cost_usd = 0.42;
+        let mut s2 = Session::new(
+            "second".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(2),
+            None,
+        );
+        s2.status = SessionStatus::Completed;
+        s2.cost_usd = 0.18;
+        state.sessions.push(s1);
+        state.sessions.push(s2);
+        state.update_total_cost();
+
+        let path =
+            std::env::temp_dir().join(format!("total-cost-restore-{}.json", uuid::Uuid::new_v4()));
+        let store = StateStore::new(path);
+        store.save(&state).expect("seed save");
+
+        let app = App::new(
+            store,
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        );
+
+        assert!(
+            (app.total_cost - 0.60).abs() < f64::EPSILON,
+            "App::new must restore total_cost from persisted state.total_cost_usd; got {}",
+            app.total_cost
+        );
+    }
+
+    #[test]
+    fn app_new_recomputes_total_cost_when_state_field_drifts() {
+        use crate::session::types::{Session, SessionStatus};
+        use crate::session::worktree::MockWorktreeManager;
+        use crate::state::store::StateStore;
+        use crate::state::types::MaestroState;
+
+        // Older state files might carry a stale `total_cost_usd` value
+        // that doesn't match the actual `sessions` sum. App::new should
+        // re-sum to defend against drift.
+        let mut state = MaestroState::default();
+        let mut s = Session::new(
+            "session".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+            None,
+        );
+        s.status = SessionStatus::Completed;
+        s.cost_usd = 1.23;
+        state.sessions.push(s);
+        state.total_cost_usd = 0.0; // deliberately stale
+
+        let path =
+            std::env::temp_dir().join(format!("total-cost-drift-{}.json", uuid::Uuid::new_v4()));
+        let store = StateStore::new(path);
+        store.save(&state).expect("seed save");
+
+        let app = App::new(
+            store,
+            3,
+            Box::new(MockWorktreeManager::new()),
+            "bypassPermissions".into(),
+            vec![],
+        );
+
+        assert!(
+            (app.total_cost - 1.23).abs() < f64::EPSILON,
+            "App::new must recompute total_cost from sessions when the persisted field is stale; got {}",
+            app.total_cost
         );
     }
 
