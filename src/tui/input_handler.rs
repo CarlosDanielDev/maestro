@@ -183,12 +183,33 @@ async fn handle_secondary_mode_keys(app: &mut App, key: &KeyEvent) -> Option<Key
         app::TuiMode::LogViewer(id) => Some(handle_log_viewer(app, key, id).await),
         app::TuiMode::GateOutputViewer(_) => Some(handle_gate_output_viewer(app, key)),
         app::TuiMode::ConfirmKill(id) => Some(handle_confirm_kill(app, key, id).await),
+        app::TuiMode::BudgetPreSpawn { session_id } => {
+            Some(handle_budget_prespawn(app, key, session_id).await)
+        }
         app::TuiMode::SessionSwitcher => {
             handle_session_switcher(app, key);
             Some(KeyAction::Consumed)
         }
         _ => None,
     }
+}
+
+async fn handle_budget_prespawn(
+    app: &mut App,
+    key: &KeyEvent,
+    session_id: uuid::Uuid,
+) -> KeyAction {
+    use crossterm::event::KeyCode;
+    let chord = match key.code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => 'y',
+        KeyCode::Char('n') | KeyCode::Char('N') => 'n',
+        KeyCode::Char('s') | KeyCode::Char('S') => 's',
+        // Modal MUST consume reserved Dashboard chords without dispatching.
+        // Anything else stays in the modal — no fall-through to outer chords.
+        _ => return KeyAction::Consumed,
+    };
+    app.resolve_budget_prespawn(chord, session_id).await;
+    KeyAction::Consumed
 }
 
 fn handle_queue_execution(app: &mut App, key: &KeyEvent) -> KeyAction {

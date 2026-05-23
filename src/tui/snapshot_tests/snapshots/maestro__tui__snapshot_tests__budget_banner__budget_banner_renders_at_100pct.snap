@@ -1,0 +1,7 @@
+---
+source: src/tui/snapshot_tests/budget_banner.rs
+expression: terminal.backend()
+---
+"  BUDGET EXCEEDED: $50.00 of $50.00                                             "
+"                                                                                "
+"                                                                                "

@@ -1,0 +1,28 @@
+---
+source: src/tui/snapshot_tests/budget_prespawn.rs
+expression: terminal.backend()
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"               ╔════════════════[ Budget Alert ]════════════════╗               "
+"               ║Pre-spawn cost exceeds the configured budget.   ║               "
+"               ║  Projected total: $52.00                       ║               "
+"               ║  Limit:           $50.00                       ║               "
+"               ║  [y]es [n]o [s]kip                             ║               "
+"               ║                                                ║               "
+"               ║                                                ║               "
+"               ╚════════════════════════════════════════════════╝               "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

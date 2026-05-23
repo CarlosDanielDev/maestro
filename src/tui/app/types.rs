@@ -80,6 +80,16 @@ pub enum TuiMode {
     /// (`t` jumps to Launch with the issue pre-selected), and the
     /// milestone screen (`t` jumps to Launch with the milestone slice).
     TeamWizard,
+    /// Pre-spawn budget gate modal (#776/#850). Opens before
+    /// `managed.spawn` when the projected cost would cross the alert
+    /// threshold or exceed the configured `total_usd` limit. Single-letter
+    /// chords only: `y` (proceed), `n` (cancel session), `s` (skip-once).
+    /// The projected total and limit are recomputed at render time from
+    /// `App.budget_enforcer` and `App.budget_projector` so the variant
+    /// itself stays `Copy + Eq` (only `session_id: Uuid`).
+    BudgetPreSpawn {
+        session_id: uuid::Uuid,
+    },
 }
 
 impl TuiMode {
@@ -125,6 +135,7 @@ impl TuiMode {
             Self::GateOutputViewer(_) => "Gate Output",
             Self::CiErrorReview => "CI Error Review",
             Self::TeamWizard => "Teams",
+            Self::BudgetPreSpawn { .. } => "Budget Alert",
         }
     }
 }
@@ -643,6 +654,7 @@ mod tests {
             TuiMode::Fullscreen(id),
             TuiMode::LogViewer(id),
             TuiMode::ConfirmKill(id),
+            TuiMode::BudgetPreSpawn { session_id: id },
         ];
         for mode in variants {
             let label = mode.breadcrumb_label();

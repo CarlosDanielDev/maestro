@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MiniMax `--force-quota` spawns emit a structured `StreamEvent::Warning { code: "quota_forced" }` event; `QuotaState` bumped to schema v2 (v1 files promoted via read shim, `forced_count = 0`); `MinimaxQuota::record_forced` / `forced_count()` API added; home-screen stats bar shows a "QUOTA: forced N in window" badge when non-zero (#845).
 - Budget pre-spawn projection trait + provider rollup view-model (foundation for #776 follow-ups #849/#850): `src/budget/projector.rs` (pure projection fns), `src/budget/quota_snapshot.rs` (`QuotaSnapshot` trait), `src/tui/token_dashboard/provider_rollup.rs` (per-provider rollup view-model); `check_pre_spawn()` + `PreSpawnDecision` added to `src/budget.rs`; `pub limit()` / `used_in_window()` accessors on MiniMax quota (#848).
 - Token dashboard now renders per-provider rollup (cost / context / quota) — first user-visible surface of the #776 budget observability umbrella. Foundation from #848; consumed via `provider_rollup::build_provider_rows` (#849).
+- Pre-spawn budget gate modal (`[y]es/[n]o/[s]kip` chords) + 80% global budget banner — completes the #776 budget observability umbrella alongside #848 (foundation) and #849 (rollup view).
 
 ## [0.29.0] - 2026-05-21
 

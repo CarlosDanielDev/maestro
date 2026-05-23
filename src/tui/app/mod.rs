@@ -26,6 +26,7 @@ pub mod work_assigner;
 pub use types::*;
 
 use crate::budget::BudgetEnforcer;
+use crate::budget::projector::BudgetProjector;
 use crate::config::Config;
 use crate::continuous::ContinuousModeState;
 use crate::mascot::MascotAnimator;
@@ -124,6 +125,17 @@ pub struct App {
     /// the `[g]` keybinding handler has a stable injection point.
     pub gate_runner: Box<dyn crate::gates::runner::GateCheck>,
     pub budget_enforcer: Option<BudgetEnforcer>,
+    /// Per-session next-turn cost projection for the pre-spawn gate
+    /// (#776/#850). `None` by default — when absent OR when
+    /// `budget_enforcer` is also absent, the gate is a no-op (Allow).
+    /// Production wires `DefaultBudgetProjector` from config; tests
+    /// inject `FakeBudgetProjector` via `with_budget_projector`.
+    pub budget_projector: Option<Box<dyn BudgetProjector>>,
+    /// Session ids for which the pre-spawn gate (#776/#850) has been
+    /// dismissed by the user (modal `[y]` or `[s]`). The next spawn
+    /// attempt for these ids bypasses the gate. Cleared lazily as
+    /// sessions transition to terminal states.
+    pub(crate) budget_skip_once: std::collections::HashSet<uuid::Uuid>,
     pub model_router: Option<ModelRouter>,
     pub progress_tracker: ProgressTracker,
     pub notifications: NotificationDispatcher,
@@ -315,6 +327,8 @@ impl App {
             health_monitor: Box::new(HealthMonitor::new()),
             gate_runner: Box::new(crate::gates::runner::GateRunner),
             budget_enforcer: None,
+            budget_projector: None,
+            budget_skip_once: std::collections::HashSet::new(),
             model_router: None,
             progress_tracker: ProgressTracker::new(),
             notifications: NotificationDispatcher::new(false),
@@ -473,6 +487,14 @@ impl App {
         runner: Box<dyn crate::gates::runner::GateCheck>,
     ) -> Self {
         self.gate_runner = runner;
+        self
+    }
+
+    /// Builder: inject a budget projector for the pre-spawn gate (#776/#850).
+    /// Production wires `DefaultBudgetProjector` from config; tests inject
+    /// `FakeBudgetProjector`. Default is `None` (gate is no-op).
+    pub fn with_budget_projector(mut self, projector: Box<dyn BudgetProjector>) -> Self {
+        self.budget_projector = Some(projector);
         self
     }
 

@@ -3,6 +3,8 @@ pub(crate) mod agent_badge;
 pub(crate) mod agent_graph;
 pub mod app;
 mod background_tasks;
+pub mod budget_banner;
+pub mod budget_prespawn;
 pub mod clipboard;
 pub mod clipboard_toast;
 pub mod cost_dashboard;

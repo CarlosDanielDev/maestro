@@ -1,3 +1,4 @@
+use crate::budget::BudgetEnforcer;
 use crate::continuous::ContinuousModeState;
 use crate::mascot::MascotStyle;
 use crate::mascot::animator::SystemClock;
@@ -90,6 +91,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             crate::tui::widgets::bypass_indicator::BypassIndicatorState::Active,
         );
     }
+
+    // Budget alert banner (#776/#850) — overlays the top status bar
+    // row when the global budget enforcer reports `Alert(pct)` or `Kill`.
+    // No-op when enforcer is None or under threshold.
+    let banner_area = Rect::new(chunks[0].x, chunks[0].y, chunks[0].width, 1);
+    let _budget_banner_drawn = crate::tui::budget_banner::draw_budget_banner_if_alerting(
+        f,
+        app.budget_enforcer.as_ref(),
+        app.total_cost,
+        banner_area,
+        &theme,
+    );
 
     // Aged out before render so the empty-toast frame draws cleanly.
     app.tick_copy_toast(std::time::Instant::now());
@@ -629,6 +642,28 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 );
             }
         }
+        TuiMode::BudgetPreSpawn { session_id } => {
+            // Render the home dashboard underneath the modal so the user sees
+            // context. Then overlay the modal at the centered sub-rect.
+            let sessions = app.pool.all_sessions();
+            app.panel_view.draw_with_claims(
+                f,
+                &sessions,
+                Some(&app.pool.file_claims),
+                chunks[1],
+                &theme,
+                spinner_tick,
+            );
+            let (projected_total, limit) = budget_prespawn_values(app, session_id);
+            let area = crate::tui::budget_prespawn::modal_rect(chunks[1]);
+            crate::tui::budget_prespawn::draw_budget_prespawn(
+                f,
+                projected_total,
+                limit,
+                area,
+                &theme,
+            );
+        }
     }
 
     // Only render activity log area when visible
@@ -876,6 +911,29 @@ fn dashboard_mascot_layout(style: MascotStyle) -> DashboardMascotLayout {
             inner_min_height: 16,
         },
     }
+}
+
+/// Compute (projected_total, limit) for the pre-spawn modal (#776/#850).
+/// Reads `App.budget_projector` against the parked session and
+/// `App.budget_enforcer.total_limit()`. Returns `(0.0, 0.0)` when either
+/// side is missing — the gate dispatch path only opens the modal when
+/// both are present, so this branch is defensive only.
+fn budget_prespawn_values(app: &App, session_id: uuid::Uuid) -> (f64, f64) {
+    let projected = app
+        .pool
+        .get_session(session_id)
+        .and_then(|session| {
+            app.budget_projector
+                .as_ref()
+                .map(|proj| proj.projected_turn_cost(session))
+        })
+        .unwrap_or(0.0);
+    let limit = app
+        .budget_enforcer
+        .as_ref()
+        .map(BudgetEnforcer::total_limit)
+        .unwrap_or(0.0);
+    (app.total_cost + projected, limit)
 }
 
 fn should_show_dashboard_mascot_panel(

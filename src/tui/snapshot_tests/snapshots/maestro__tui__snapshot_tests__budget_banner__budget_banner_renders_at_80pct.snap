@@ -1,0 +1,7 @@
+---
+source: src/tui/snapshot_tests/budget_banner.rs
+expression: terminal.backend()
+---
+"  BUDGET ALERT: 80% of $50.00 used ($40.00 so far)                              "
+"                                                                                "
+"                                                                                "
