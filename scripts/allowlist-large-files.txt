@@ -5,7 +5,7 @@
 #
 # Phase 1b triage (complete as of 2026-04-22): every entry has a real
 # deadline, owner, and split plan. Deadlines grouped by category:
-#   - Outliers (>1500 LOC, highest-priority splits): 2026-05-22 (1 month)
+#   - Outliers (>1500 LOC, highest-priority splits): 2026-06-22 (extended once from 2026-05-22)
 #   - Core modules (business logic, session/state/adapt/provider/config/cli): 2026-06-22 (2 months)
 #   - TUI screens and rendering: 2026-07-22 (3 months)
 #   - Test files (parallel priority to TUI because they drive confidence): 2026-08-22 (4 months)
@@ -14,9 +14,9 @@
 # back on habitual extensions.
 
 # --- Outliers (> 1500 LOC, immediate priority) ---
-src/tui/screens/settings/mod.rs # deadline: 2026-05-22, owner: @carlos, ticket: #TBD, plan: split into theme_editor, keybind_editor, general_prefs submodules — draw-logic-per-section already delineated
-src/provider/github/client.rs # deadline: 2026-05-22, owner: @carlos, ticket: #TBD, plan: split by resource (issues, PRs, milestones, workflows) into separate submodules with shared request helpers
-src/config.rs # deadline: 2026-05-22, owner: @carlos, ticket: #TBD, plan: split maestro.toml parsing from defaults from serialization; move ThemeConfig out to resolve layer debt (see docs/layers-debt.txt)
+src/tui/screens/settings/mod.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split into theme_editor, keybind_editor, general_prefs submodules — draw-logic-per-section already delineated
+src/provider/github/client.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split by resource (issues, PRs, milestones, workflows) into separate submodules with shared request helpers
+src/config.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split maestro.toml parsing from defaults from serialization; move ThemeConfig out to resolve layer debt (see docs/layers-debt.txt)
 src/tui/app/tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #TBD, plan: break into per-scenario test files under tui/app/tests/ (state transitions, event handling, rendering)
 
 # --- Core modules (2-month deadline) ---
@@ -34,7 +34,7 @@ src/adapt/knowledge.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, pla
 src/adapt/prompts.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split prompt-templates from invocation
 src/provider/github/ci.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split CI-status parsing from workflow-run fetching
 src/provider/github/types.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split types by resource (issues/PRs/milestones)
-src/turboquant/adapter.rs # deadline: 2026-05-22, owner: @carlos, ticket: #TBD, plan: OUTLIER — split per compression strategy (turboquant, summary, rolling) into strategy submodules
+src/turboquant/adapter.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: OUTLIER — split per compression strategy (turboquant, summary, rolling) into strategy submodules
 src/sanitize/scanner.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split pattern-registry from match-execution
 src/cli.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split clap command tree from dispatch logic
 src/prompts.rs # deadline: 2026-06-22, owner: @carlos, ticket: #TBD, plan: split content from template-resolution helpers
