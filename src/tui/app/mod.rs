@@ -264,6 +264,12 @@ pub struct App {
     /// Read by the home-screen stats bar to surface a "QUOTA: forced N"
     /// badge once the count is non-zero.
     pub minimax_forced_count_5h: u32,
+    /// MiniMax 5h sliding-window quota tracker (#769). Wired by the
+    /// dashboard command before App starts so the token dashboard's
+    /// Quota column renders live data via `MinimaxQuotaSnapshots`
+    /// instead of the `NoQuotaSnapshots` placeholder. Best-effort —
+    /// stays `None` if the quota file cannot be opened.
+    pub minimax_quota: Option<std::sync::Arc<crate::agent_provider::minimax::quota::MinimaxQuota>>,
 }
 
 impl App {
@@ -408,6 +414,7 @@ impl App {
             home_dir_override: None,
             last_pr_marker_mtime: None,
             minimax_forced_count_5h: 0,
+            minimax_quota: None,
         };
         if let Some(error) = state_load_error {
             app.activity_log.push_simple(
@@ -504,6 +511,18 @@ impl App {
     /// `FakeBudgetProjector`. Default is `None` (gate is no-op).
     pub fn with_budget_projector(mut self, projector: Box<dyn BudgetProjector>) -> Self {
         self.budget_projector = Some(projector);
+        self
+    }
+
+    /// Builder: wire a `MinimaxQuota` shared across the dashboard render
+    /// and (where applicable) the provider that records spawns (#769).
+    /// Production opens this once from `~/.maestro/minimax-quota.json`
+    /// and clones the `Arc` to the App; tests inject a temp-dir quota.
+    pub fn with_minimax_quota(
+        mut self,
+        quota: std::sync::Arc<crate::agent_provider::minimax::quota::MinimaxQuota>,
+    ) -> Self {
+        self.minimax_quota = Some(quota);
         self
     }
 
@@ -1551,6 +1570,52 @@ enabled = true
                 .collect();
             assert!(mirrored.contains(&42));
             assert!(mirrored.contains(&99));
+        }
+    }
+
+    /// Tests for #769 — MiniMax quota wired through App so the live
+    /// token dashboard renders the quota gauge instead of `-`.
+    mod minimax_quota_wiring_tests {
+        use super::*;
+        use crate::agent_provider::minimax::quota::MinimaxQuota;
+        use crate::session::worktree::MockWorktreeManager;
+        use crate::state::store::StateStore;
+        use std::sync::Arc;
+
+        fn make_app() -> App {
+            let tmp = std::env::temp_dir().join(format!("769-app-{}.json", uuid::Uuid::new_v4()));
+            App::new(
+                StateStore::new(tmp),
+                3,
+                Box::new(MockWorktreeManager::new()),
+                "bypassPermissions".into(),
+                vec![],
+            )
+        }
+
+        #[test]
+        fn app_default_has_no_minimax_quota() {
+            let app = make_app();
+            assert!(
+                app.minimax_quota.is_none(),
+                "default App must start with minimax_quota: None"
+            );
+        }
+
+        #[test]
+        fn app_with_minimax_quota_sets_field() {
+            let tmp_quota =
+                std::env::temp_dir().join(format!("769-quota-{}.json", uuid::Uuid::new_v4()));
+            let quota = Arc::new(MinimaxQuota::open(tmp_quota).expect("open quota"));
+            let app = make_app().with_minimax_quota(quota.clone());
+            let stored = app
+                .minimax_quota
+                .as_ref()
+                .expect("with_minimax_quota must set the field");
+            assert!(
+                Arc::ptr_eq(stored, &quota),
+                "with_minimax_quota must store the same Arc allocation"
+            );
         }
     }
 }

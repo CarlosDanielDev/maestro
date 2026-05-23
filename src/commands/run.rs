@@ -352,7 +352,7 @@ pub(crate) fn provider_for_agent(
     }
 }
 
-fn minimax_quota_path() -> Option<std::path::PathBuf> {
+pub(crate) fn minimax_quota_path() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(|home| {
         std::path::PathBuf::from(home)
             .join(".maestro")

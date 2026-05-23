@@ -128,6 +128,15 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         )
     };
 
+    // Wire MiniMax quota for the token dashboard's Quota column (#769).
+    // Best-effort — if the file is missing or malformed the dashboard
+    // falls back to the `NoQuotaSnapshots` placeholder and prints `-`.
+    if let Some(quota_path) = crate::commands::run::minimax_quota_path()
+        && let Ok(quota) = crate::agent_provider::minimax::MinimaxQuota::open(quota_path)
+    {
+        app = app.with_minimax_quota(std::sync::Arc::new(quota));
+    }
+
     app.gh_auth_ok = gh_auth_ok;
 
     app.screen_state.home_screen = Some(crate::tui::screens::HomeScreen::new(
