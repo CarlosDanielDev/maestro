@@ -72,31 +72,7 @@ impl ProviderQuotaSnapshots for MinimaxQuotaSnapshots {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-
-    /// Test fake — returns whatever the caller seeded for each provider id.
-    struct FakeProviderQuotaSnapshots {
-        entries: HashMap<String, QuotaRow>,
-    }
-
-    impl FakeProviderQuotaSnapshots {
-        fn new() -> Self {
-            Self {
-                entries: HashMap::new(),
-            }
-        }
-
-        fn with(mut self, provider_id: &str, row: QuotaRow) -> Self {
-            self.entries.insert(provider_id.to_string(), row);
-            self
-        }
-    }
-
-    impl ProviderQuotaSnapshots for FakeProviderQuotaSnapshots {
-        fn quota_for(&self, provider_id: &str) -> Option<QuotaRow> {
-            self.entries.get(provider_id).copied()
-        }
-    }
+    use crate::budget::test_support::FakeProviderQuotaSnapshots;
 
     #[test]
     fn fake_quota_snapshots_returns_row_for_known_provider() {

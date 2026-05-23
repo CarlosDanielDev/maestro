@@ -1,4 +1,5 @@
 use crate::budget::quota_snapshot::{ProviderQuotaSnapshots, QuotaBucket, QuotaRow};
+use crate::budget::sanitize::sanitize_cost;
 use crate::session::types::{Session, TokenUsage};
 use crate::tui::theme::Theme;
 use crate::util::formatting::format_tokens;
@@ -12,7 +13,7 @@ use ratatui::{
 
 pub mod provider_rollup;
 
-use provider_rollup::{ProviderRow, build_provider_rows, provider_context_window, sanitize_cost};
+use provider_rollup::{ProviderRow, build_provider_rows, provider_context_window};
 
 /// Zero-quota source used by the public `draw_token_dashboard` entry point
 /// when no `App.minimax_quota` is wired. Production now picks between this

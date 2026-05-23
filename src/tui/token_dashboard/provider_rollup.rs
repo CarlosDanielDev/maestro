@@ -4,13 +4,15 @@
 //! (#849) consumes `ProviderRow` values produced here. Tests do not
 //! require a terminal.
 //!
-//! Sanitization (`sanitize_cost`, `sanitize_pct`) drops NaN / negative /
-//! Infinity values to safe defaults at view-model assembly so the render
-//! layer in #849 never sees them.
+//! Sanitization helpers `sanitize_cost` / `sanitize_pct` live in
+//! `crate::budget::sanitize` and drop NaN / negative / Infinity values to
+//! safe defaults at view-model assembly so the render layer in #849 never
+//! sees them.
 
 use std::collections::BTreeMap;
 
 use crate::budget::quota_snapshot::{ProviderQuotaSnapshots, QuotaRow};
+use crate::budget::sanitize::sanitize_cost;
 use crate::session::types::Session;
 
 /// One row in the per-provider rollup table.
@@ -91,29 +93,6 @@ pub fn provider_context_window(provider_id: &str, _model: &str) -> Option<u32> {
     }
 }
 
-/// Clamp cost values to a sane range: NaN / Infinity / negative → 0.0.
-/// Applied at view-model assembly time, NOT inside the render layer.
-pub fn sanitize_cost(cost: f64) -> f64 {
-    if !cost.is_finite() || cost.is_sign_negative() {
-        0.0
-    } else {
-        cost
-    }
-}
-
-/// Clamp percent values to `[0.0, 1.0]`. NaN / negative → 0.0; >1.0 → 1.0.
-/// Applied at view-model assembly time so the render layer never receives
-/// values that would underflow gauge math.
-pub fn sanitize_pct(pct: f64) -> f64 {
-    if pct.is_nan() || pct < 0.0 {
-        0.0
-    } else if pct > 1.0 {
-        1.0
-    } else {
-        pct
-    }
-}
-
 fn display_name_for(provider_id: &str) -> String {
     let mut chars = provider_id.chars();
     match chars.next() {
@@ -126,31 +105,8 @@ fn display_name_for(provider_id: &str) -> String {
 mod tests {
     use super::*;
     use crate::budget::quota_snapshot::{QuotaBucket, QuotaRow};
+    use crate::budget::test_support::FakeProviderQuotaSnapshots;
     use crate::session::types::Session;
-    use std::collections::HashMap;
-
-    struct FakeProviderQuotaSnapshots {
-        entries: HashMap<String, QuotaRow>,
-    }
-
-    impl FakeProviderQuotaSnapshots {
-        fn new() -> Self {
-            Self {
-                entries: HashMap::new(),
-            }
-        }
-
-        fn with(mut self, provider_id: &str, row: QuotaRow) -> Self {
-            self.entries.insert(provider_id.to_string(), row);
-            self
-        }
-    }
-
-    impl ProviderQuotaSnapshots for FakeProviderQuotaSnapshots {
-        fn quota_for(&self, provider_id: &str) -> Option<QuotaRow> {
-            self.entries.get(provider_id).copied()
-        }
-    }
 
     fn make_session(agent_id: Option<&str>, cost: f64, model: &str) -> Session {
         let mut s = Session::new(
@@ -312,57 +268,5 @@ mod tests {
     #[test]
     fn provider_context_window_unknown_provider_returns_none() {
         assert_eq!(provider_context_window("nonexistent", "model-x"), None);
-    }
-
-    // ── Seam 3: sanitize_cost / sanitize_pct ──────────────────────────────
-
-    #[test]
-    fn sanitize_cost_nan_returns_zero() {
-        assert_eq!(sanitize_cost(f64::NAN), 0.0);
-    }
-
-    #[test]
-    fn sanitize_cost_negative_returns_zero() {
-        assert_eq!(sanitize_cost(-1.5), 0.0);
-    }
-
-    #[test]
-    fn sanitize_cost_normal_passes_through() {
-        assert_eq!(sanitize_cost(0.42), 0.42);
-    }
-
-    #[test]
-    fn sanitize_cost_zero_passes_through() {
-        assert_eq!(sanitize_cost(0.0), 0.0);
-    }
-
-    #[test]
-    fn sanitize_cost_infinity_returns_zero() {
-        assert_eq!(sanitize_cost(f64::INFINITY), 0.0);
-    }
-
-    #[test]
-    fn sanitize_pct_nan_returns_zero() {
-        assert_eq!(sanitize_pct(f64::NAN), 0.0);
-    }
-
-    #[test]
-    fn sanitize_pct_negative_returns_zero() {
-        assert_eq!(sanitize_pct(-0.5), 0.0);
-    }
-
-    #[test]
-    fn sanitize_pct_above_one_clamps_to_one() {
-        assert_eq!(sanitize_pct(1.5), 1.0);
-    }
-
-    #[test]
-    fn sanitize_pct_normal_passes_through() {
-        assert_eq!(sanitize_pct(0.75), 0.75);
-    }
-
-    #[test]
-    fn sanitize_pct_exactly_one_passes_through() {
-        assert_eq!(sanitize_pct(1.0), 1.0);
     }
 }
