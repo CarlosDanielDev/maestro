@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 use uuid::Uuid;
 
+pub mod projector;
+pub mod quota_snapshot;
+
 /// Action the enforcer recommends after a budget check.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BudgetAction {
@@ -10,6 +13,18 @@ pub enum BudgetAction {
     Alert(u8),
     /// Budget exceeded — kill the session or all sessions.
     Kill,
+}
+
+/// Decision returned by `BudgetEnforcer::check_pre_spawn`. Used by the TUI
+/// pre-spawn gate (#776/#850) to decide whether to spawn, warn, or block.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PreSpawnDecision {
+    /// Projection well under threshold — spawn proceeds.
+    Allow,
+    /// Projection ≥ `alert_threshold_pct` — show modal, user confirms or cancels.
+    Warn { projected_total: f64, limit: f64 },
+    /// Projection ≥ limit — show modal with the user's choice tilted toward cancel.
+    Block { projected_total: f64, limit: f64 },
 }
 
 /// Trait for budget enforcement, enabling mock injection in tests.
@@ -93,6 +108,38 @@ impl BudgetEnforcer {
     /// Get total limit for display.
     pub fn total_limit(&self) -> f64 {
         self.total_usd
+    }
+
+    /// Pre-spawn projection check used by the TUI gate (#776/#850). Returns
+    /// `Allow` when `current_total + projected_turn_cost` is under the alert
+    /// threshold, `Warn` when it crosses `alert_threshold_pct`, `Block` when
+    /// it meets-or-exceeds the configured `total_usd` limit. Mirrors the
+    /// `>= limit` semantics of `check_global`.
+    pub fn check_pre_spawn(
+        &self,
+        current_total: f64,
+        projected_turn_cost: f64,
+    ) -> PreSpawnDecision {
+        let limit = self.total_usd;
+        if limit <= 0.0 {
+            return PreSpawnDecision::Allow;
+        }
+        let projected_total = current_total + projected_turn_cost;
+        if projected_total >= limit {
+            return PreSpawnDecision::Block {
+                projected_total,
+                limit,
+            };
+        }
+        let pct = (projected_total / limit) * 100.0;
+        if pct >= f64::from(self.alert_threshold_pct) {
+            PreSpawnDecision::Warn {
+                projected_total,
+                limit,
+            }
+        } else {
+            PreSpawnDecision::Allow
+        }
     }
 }
 
@@ -188,5 +235,70 @@ mod tests {
         let enforcer = BudgetEnforcer::new(10.0, 100.0, 80);
         assert_eq!(enforcer.check_session(9.0), BudgetAction::Alert(90));
         assert_eq!(enforcer.check_global(90.0), BudgetAction::Alert(90));
+    }
+
+    // ── check_pre_spawn — pre-spawn gate (#776/#848) ────────────────────
+
+    #[test]
+    fn check_pre_spawn_allows_when_projected_under_threshold() {
+        let enforcer = BudgetEnforcer::new(5.0, 50.0, 80);
+        assert_eq!(enforcer.check_pre_spawn(10.0, 2.0), PreSpawnDecision::Allow);
+    }
+
+    #[test]
+    fn check_pre_spawn_warns_when_projected_crosses_threshold() {
+        let enforcer = BudgetEnforcer::new(5.0, 50.0, 80);
+        // 38 + 4 = 42; 42/50 = 84% >= 80% but < limit.
+        assert_eq!(
+            enforcer.check_pre_spawn(38.0, 4.0),
+            PreSpawnDecision::Warn {
+                projected_total: 42.0,
+                limit: 50.0,
+            }
+        );
+    }
+
+    #[test]
+    fn check_pre_spawn_blocks_when_projected_exceeds_limit() {
+        let enforcer = BudgetEnforcer::new(5.0, 50.0, 80);
+        // 48 + 4 = 52 > 50.
+        assert_eq!(
+            enforcer.check_pre_spawn(48.0, 4.0),
+            PreSpawnDecision::Block {
+                projected_total: 52.0,
+                limit: 50.0,
+            }
+        );
+    }
+
+    #[test]
+    fn check_pre_spawn_blocks_when_projected_equals_limit() {
+        let enforcer = BudgetEnforcer::new(5.0, 50.0, 80);
+        // Mirrors check_global >= semantics: at-limit blocks.
+        assert_eq!(
+            enforcer.check_pre_spawn(46.0, 4.0),
+            PreSpawnDecision::Block {
+                projected_total: 50.0,
+                limit: 50.0,
+            }
+        );
+    }
+
+    #[test]
+    fn check_pre_spawn_blocks_when_far_exceeds() {
+        let enforcer = BudgetEnforcer::new(5.0, 50.0, 80);
+        assert_eq!(
+            enforcer.check_pre_spawn(60.0, 5.0),
+            PreSpawnDecision::Block {
+                projected_total: 65.0,
+                limit: 50.0,
+            }
+        );
+    }
+
+    #[test]
+    fn check_pre_spawn_zero_total_limit_always_allows() {
+        let enforcer = BudgetEnforcer::new(5.0, 0.0, 80);
+        assert_eq!(enforcer.check_pre_spawn(0.0, 99.0), PreSpawnDecision::Allow);
     }
 }

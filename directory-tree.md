@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-21 14:00 (UTC)
+> Last updated: 2026-05-22 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -185,7 +185,9 @@ maestro/
 │   │   ├── tui.rs                         # TuiConfig (theme, mascot_style "sprite"|"ascii", default "sprite")
 │   │   └── turboquant.rs                  # TurboQuantConfig
 │   ├── continuous.rs                      # ContinuousModeState and ContinuousFailure structs; state machine for --continuous / -C flag: auto-advances to next ready issue, pauses loop on failure waiting for user decision (skip / retry / quit)  [Issue #85]
-│   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks  [Phase 3]
+│   ├── budget.rs                          # BudgetEnforcer: per-session and global budget checks; `mod projector`, `mod quota_snapshot` declared; `check_pre_spawn()` + `PreSpawnDecision` added  [Phase 3, Issue #848]
+│   │   ├── projector.rs                   # Budget pre-spawn projector — pure fns; projects remaining headroom before a session starts  [Issue #848]
+│   │   └── quota_snapshot.rs              # `QuotaSnapshot` trait — provider-agnostic read interface for quota state; implemented by MiniMax quota  [Issue #848]
 │   ├── doctor.rs                          # Preflight checks: CheckSeverity, CheckResult, DoctorReport, run_all_checks(), print_report(); validate_preflight() (public, fails fast on required check failures); build_claude_cli_result() (pub(crate), pure/testable); check_claude_cli() elevated to Required severity; build_gh_auth_result() (pure, testable); check_az_identity(); 10 check functions  [Issue #49, #34, #52]
 │   ├── git.rs                             # GitOps trait, CliGitOps: commit and push operations; list_remote_branches() on GitOps trait and CliGitOps impl — filters remote refs by prefix for orphan branch detection; has_commits_ahead(branch, base) on GitOps trait and CliGitOps impl — checks whether a branch has commits not yet on base (wired into auto-PR zero-commit gate by #520); WIP_SUBJECT_PREFIX/SUFFIX constants; three new GitOps trait methods: backup_wip(branch) creates a WIP sentinel commit, amend_clean_and_push(branch) amends the WIP commit with final content and pushes, head_is_wip_backup(branch) detects whether HEAD is a WIP sentinel; CliGitOps impls for all three; `--` separator before branch positional in all git push calls and leading-`-` refusal in commit_and_push() for flag-injection hardening; MockGitOps extracted to git_mock.rs; unit tests extracted to git_tests.rs  [Phase 3, Issue #159, #514, #520, #562]
 │   ├── git_mock.rs                        # MockGitOps: extracted from git.rs to keep both files under the 400-LOC cap; configurable per-method stubs (with_commits_ahead(), with_backup_wip(), with_amend_clean_and_push(), with_head_is_wip_backup()); used by unit tests and App::with_git_ops() test builder  [Issue #562]
@@ -480,7 +482,8 @@ maestro/
 │   │   ├── spinner_graph_tests.rs         # Sibling test file for graph_node_frame; linked via #[cfg(test)] #[path = "spinner_graph_tests.rs"] mod graph_tests in spinner.rs  [Issue #529]
 │   │   ├── shell_launcher.rs              # ShellLauncher trait + OsShellLauncher impl (spawns $SHELL rooted at a worktree path via std::process::Command); test-fake impl for unit tests  [Issue #560]
 │   │   ├── summary.rs                     # Compact per-session summary row widget used in panel and list views
-│   │   ├── token_dashboard.rs             # Token usage dashboard widget: per-session and aggregate token counts; TQ Ratio column removed (#346)
+│   │   ├── token_dashboard.rs             # Token usage dashboard widget: per-session and aggregate token counts; TQ Ratio column removed (#346); `pub mod provider_rollup` declared  [Issue #848]
+│   │   │   └── provider_rollup.rs         # `ProviderRollup` view-model — pure aggregation of per-provider token/cost totals for the token dashboard  [Issue #848]
 │   │   ├── turboquant_dashboard.rs        # TurboQuant savings dashboard: classify_savings(), aggregate_savings(), AggregateSavings; renders "Estimated Savings (projection)" header when no real handoff data exists, "Actual Savings" when at least one session has fork-handoff compression metrics; ACTUAL / proj. kind markers per row  [Issue #346]
 │   │   ├── snapshot_tests/                # TUI snapshot tests using insta (169+ tests, 19 views)  [Issue #16, #490, #526, #527, #528, #539, #543, #560, #568, #569, #664, #714, #715, #716, #785]
 │   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules; mod agent_graph, mod agent_graph_dispatcher, mod agent_graph_keybinding_hint, mod agent_personalities, mod activity_log_dispatch, mod completion_overlay, mod team_wizard, mod schema_tab, mod settings_project_parity, and 10 additional settings_*_parity modules wired (including settings_budget_parity added in #785)  [Issue #526, #527, #528, #539, #543, #560, #664, #714, #715, #716, #785]
@@ -992,7 +995,7 @@ maestro/
 | `src/agent_provider/minimax/mod.rs` | `MiniMaxProvider` impl; pre-spawn quota gate (warn ≥ 80%, refuse ≥ 95% unless `--force-quota`); `template_rules()` override returns `http_generic_rules()` (Issues #705, #775) |
 | `src/agent_provider/minimax/client.rs` | MiniMax HTTP client |
 | `src/agent_provider/minimax/pricing.rs` | Per-model MiniMax pricing — free tier always returns `0.0`; shape preserved for paid-tier future (Issue #775) |
-| `src/agent_provider/minimax/quota.rs` | 5-hour sliding-window request quota for MiniMax free tier; `fs2` advisory file lock; `Clock` trait for deterministic tests; state persisted to `~/.maestro/minimax-quota.json`; `schema_version: 1` + `#[serde(deny_unknown_fields)]` hardening (Issue #775) |
+| `src/agent_provider/minimax/quota.rs` | 5-hour sliding-window request quota for MiniMax free tier; `fs2` advisory file lock; `Clock` trait for deterministic tests; state persisted to `~/.maestro/minimax-quota.json`; `schema_version: 1` + `#[serde(deny_unknown_fields)]` hardening; `pub limit()` and `pub used_in_window()` accessors added for `QuotaSnapshot` impl (Issue #775, #848) |
 | `src/agent_provider/minimax/tests.rs` | MiniMax provider tests |
 | `src/agent_provider/minimax/types.rs` | MiniMax-specific types |
 | `src/agent_provider/mod.rs` | Agent provider module facade |

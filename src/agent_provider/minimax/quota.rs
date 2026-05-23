@@ -162,6 +162,27 @@ impl MinimaxQuota {
             .forced_count
     }
 
+    /// Configured request limit for the 5h window. Stable; exposed for the
+    /// `ProviderQuotaSnapshots` adapter that surfaces quota state in the TUI
+    /// (#848).
+    pub fn limit(&self) -> u32 {
+        self.limit
+    }
+
+    /// Live request count within the active 5h window. Locks the internal
+    /// mutex briefly to count entries newer than `now - 5h`. Returns 0 on
+    /// poisoning (caller — typically the TUI rollup — treats absence as
+    /// "no quota data" rather than crashing — #848 hard rule §2).
+    pub fn used_in_window(&self) -> u32 {
+        let Ok(guard) = self.state.lock() else {
+            return 0;
+        };
+        let now = self.clock.now();
+        let cutoff = now - FIVE_HOUR_WINDOW;
+        let count = guard.requests.iter().filter(|ts| **ts >= cutoff).count();
+        u32::try_from(count).unwrap_or(u32::MAX)
+    }
+
     fn record_internal(&self, forced: bool) -> Result<(), MinimaxQuotaError> {
         let now = self.clock.now();
         let cutoff = now - FIVE_HOUR_WINDOW;
