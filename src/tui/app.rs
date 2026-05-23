@@ -34,6 +34,7 @@ use crate::tui::screens::SessionConfig;
 use crate::tui::screens::milestone::MilestoneEntry;
 use crate::work::assigner::WorkAssigner;
 use chrono::Utc;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -158,6 +159,8 @@ pub struct App {
     pub pending_commands: Vec<TuiCommand>,
     /// Sessions ready to be launched (created from background IssueFetched events).
     pub pending_session_launches: Vec<Session>,
+    /// Image paths received via paste/drag-and-drop for the next session launch.
+    pub pending_images: Vec<PathBuf>,
     /// Sender for background data fetch results.
     pub data_tx: mpsc::UnboundedSender<TuiDataEvent>,
     /// Receiver for background data fetch results.
@@ -213,6 +216,7 @@ impl App {
             milestone_screen: None,
             pending_commands: Vec::new(),
             pending_session_launches: Vec::new(),
+            pending_images: Vec::new(),
             data_tx,
             data_rx,
         }
@@ -232,8 +236,69 @@ impl App {
         self.config = Some(config);
     }
 
+    /// Handle a paste event (from Ctrl+V or drag-and-drop).
+    /// Validates any image paths found in the pasted text and stores them
+    /// for use in the next session launch.
+    pub fn handle_paste(&mut self, text: &str) {
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let path = PathBuf::from(trimmed);
+            match crate::session::image::validate_image_path(&path) {
+                Ok(()) => {
+                    let num = self.pending_images.len() + 1;
+                    self.pending_images.push(path);
+                    self.activity_log.push_simple(
+                        "Images".into(),
+                        format!("Image [{}] staged: {}", num, trimmed),
+                        LogLevel::Info,
+                    );
+                }
+                Err(e) => {
+                    // Only log when the path looks like it might be an image
+                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                        let lower = ext.to_lowercase();
+                        if crate::session::image::VALID_IMAGE_EXTENSIONS.contains(&lower.as_str())
+                            || lower == "txt"
+                        {
+                            // Intentional image extension or common paste artifact
+                        } else {
+                            continue;
+                        }
+                    }
+                    self.activity_log.push_simple(
+                        "Images".into(),
+                        format!("Skipped ({}): {}", e, trimmed),
+                        LogLevel::Warn,
+                    );
+                }
+            }
+        }
+    }
+
     /// Add a session and try to promote/spawn it.
-    pub async fn add_session(&mut self, session: Session) -> anyhow::Result<()> {
+    pub async fn add_session(&mut self, mut session: Session) -> anyhow::Result<()> {
+        // Attach any pending images from paste/drag-and-drop
+        if !self.pending_images.is_empty() {
+            let count = self.pending_images.len();
+            let images = std::mem::take(&mut self.pending_images);
+            let filenames: Vec<PathBuf> = images
+                .iter()
+                .map(|p| PathBuf::from(p.file_name().unwrap_or_default()))
+                .collect();
+            if let Some(section) = crate::session::image::image_section_for_prompt(&filenames) {
+                session.prompt = format!("{}\n\n{}", session.prompt, section);
+            }
+            session.image_paths.extend(images);
+            self.activity_log.push_simple(
+                "Images".into(),
+                format!("Attached {} staged image(s) to session", count),
+                LogLevel::Info,
+            );
+        }
+
         let label = session_label(&session);
         self.activity_log
             .push_simple(label.clone(), "Enqueuing session...".into(), LogLevel::Info);
@@ -1717,3 +1782,202 @@ fn session_label(session: &Session) -> String {
 }
 
 use crate::util::truncate_at_char_boundary;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::worktree::MockWorktreeManager;
+
+    fn make_store() -> StateStore {
+        let tmp = std::env::temp_dir().join(format!("maestro-test-{}.json", uuid::Uuid::new_v4()));
+        StateStore::new(tmp)
+    }
+
+    fn make_worktree_mgr() -> Box<dyn WorktreeManager + Send> {
+        Box::new(MockWorktreeManager::new())
+    }
+
+    fn make_app() -> App {
+        App::new(
+            make_store(),
+            2,
+            make_worktree_mgr(),
+            "bypassPermissions".into(),
+            vec![],
+        )
+    }
+
+    // --- pending_images initial state ---
+
+    #[test]
+    fn pending_images_defaults_to_empty() {
+        let app = make_app();
+        assert!(app.pending_images.is_empty());
+    }
+
+    // --- handle_paste ---
+
+    #[test]
+    fn handle_paste_stores_valid_image_paths() {
+        let mut app = make_app();
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("screenshot.png");
+        let jpg = dir.path().join("photo.jpg");
+        std::fs::write(&png, b"").unwrap();
+        std::fs::write(&jpg, b"").unwrap();
+
+        let text = format!("{}\n{}", png.display(), jpg.display());
+        app.handle_paste(&text);
+
+        assert_eq!(app.pending_images.len(), 2);
+        assert!(app.pending_images.contains(&png));
+        assert!(app.pending_images.contains(&jpg));
+    }
+
+    #[test]
+    fn handle_paste_ignores_invalid_paths() {
+        let mut app = make_app();
+        app.handle_paste("/nonexistent/file.png");
+        assert!(app.pending_images.is_empty());
+    }
+
+    #[test]
+    fn handle_paste_ignores_empty_text() {
+        let mut app = make_app();
+        app.handle_paste("");
+        app.handle_paste("\n\n");
+        assert!(app.pending_images.is_empty());
+    }
+
+    #[test]
+    fn handle_paste_handles_mixed_paths() {
+        let mut app = make_app();
+        let dir = tempfile::tempdir().unwrap();
+        let valid = dir.path().join("ui.png");
+        std::fs::write(&valid, b"").unwrap();
+
+        let text = format!(
+            "{}\n/nonexistent/bad.png\nsome random text\n{}",
+            valid.display(),
+            dir.path().join("diagram.svg").display(),
+        );
+        let svg = dir.path().join("diagram.svg");
+        std::fs::write(&svg, b"").unwrap();
+
+        app.handle_paste(&text);
+
+        assert_eq!(app.pending_images.len(), 2);
+        assert!(app.pending_images.contains(&valid));
+        assert!(app.pending_images.contains(&svg));
+    }
+
+    #[test]
+    fn handle_paste_skips_non_image_extensions() {
+        let mut app = make_app();
+        let dir = tempfile::tempdir().unwrap();
+        let txt = dir.path().join("notes.txt");
+        std::fs::write(&txt, b"hello").unwrap();
+
+        app.handle_paste(&txt.display().to_string());
+        // .txt is not a valid image extension
+        assert!(app.pending_images.is_empty());
+    }
+
+    #[test]
+    fn handle_paste_strips_whitespace_from_paths() {
+        let mut app = make_app();
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("test.png");
+        std::fs::write(&png, b"").unwrap();
+
+        app.handle_paste(&format!("  {}  ", png.display()));
+        assert_eq!(app.pending_images.len(), 1);
+    }
+
+    // --- add_session with pending_images ---
+
+    #[test]
+    fn add_session_attaches_pending_images() {
+        let mut app = make_app();
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("screenshot.png");
+        std::fs::write(&png, b"").unwrap();
+        app.pending_images = vec![png.clone()];
+
+        let session = Session::new(
+            "test prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(app.add_session(session)).unwrap();
+
+        // pending_images should be consumed
+        assert!(app.pending_images.is_empty());
+
+        // The session should have the image
+        let sessions = app.pool.all_sessions();
+        let queued = sessions.iter().find(|s| s.issue_number.is_none()).unwrap();
+        assert_eq!(queued.image_paths.len(), 1);
+        assert!(queued.image_paths.contains(&png));
+    }
+
+    #[test]
+    fn add_session_appends_image_section_to_prompt() {
+        let mut app = make_app();
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("screenshot.png");
+        std::fs::write(&png, b"").unwrap();
+        app.pending_images = vec![png];
+
+        let session = Session::new(
+            "test prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(app.add_session(session)).unwrap();
+
+        let sessions = app.pool.all_sessions();
+        let queued = sessions.iter().find(|s| s.issue_number.is_none()).unwrap();
+        assert!(queued.prompt.contains("Attached Images"));
+        assert!(queued.prompt.contains("screenshot.png"));
+    }
+
+    #[test]
+    fn add_session_clears_pending_images_after_use() {
+        let mut app = make_app();
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("a.png");
+        std::fs::write(&png, b"").unwrap();
+        app.pending_images = vec![png];
+
+        let session = Session::new("test".into(), "opus".into(), "orchestrator".into(), None);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(app.add_session(session)).unwrap();
+
+        assert!(app.pending_images.is_empty());
+    }
+
+    #[test]
+    fn add_session_without_pending_images_does_not_modify_prompt() {
+        let mut app = make_app();
+
+        let session = Session::new(
+            "original prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+        );
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(app.add_session(session)).unwrap();
+
+        let sessions = app.pool.all_sessions();
+        let queued = sessions.iter().find(|s| s.issue_number.is_none()).unwrap();
+        assert!(!queued.prompt.contains("Attached Images"));
+        assert_eq!(queued.prompt, "original prompt");
+        assert!(queued.image_paths.is_empty());
+    }
+}
