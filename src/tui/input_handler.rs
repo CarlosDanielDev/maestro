@@ -232,8 +232,7 @@ fn handle_queue_execution(app: &mut App, key: &KeyEvent) -> KeyAction {
             {
                 exec.apply_decision(FailureAction::Skip);
                 if exec.is_finished() {
-                    app.completion_summary = Some(app.build_completion_summary());
-                    app.tui_mode = app::TuiMode::CompletionSummary;
+                    app.open_completion_summary();
                 } else {
                     app.advance_queue_and_launch();
                 }
@@ -244,8 +243,7 @@ fn handle_queue_execution(app: &mut App, key: &KeyEvent) -> KeyAction {
                 && matches!(exec.phase(), ExecutorPhase::AwaitingDecision { .. })
             {
                 exec.apply_decision(FailureAction::Abort);
-                app.completion_summary = Some(app.build_completion_summary());
-                app.tui_mode = app::TuiMode::CompletionSummary;
+                app.open_completion_summary();
             }
         }
         _ => {}
@@ -266,15 +264,16 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
     }
     match (key.code, key.modifiers) {
         (KeyCode::Enter, _) | (KeyCode::Esc, _) | (KeyCode::Char('s'), _) => {
-            // Dismiss the modal in place — Esc/Enter/[s] all close the
-            // overlay without resetting the navigation stack. The
-            // previous code routed these through `transition_to_dashboard`
-            // which wiped nav history and forced a full Dashboard rebuild
-            // every time the user just wanted to close the modal
-            // (2026-05-22 UX fix).
+            // Dismiss the modal and pop back to the screen the user was
+            // on before the modal opened. `open_completion_summary`
+            // pushes the prior mode onto `nav_stack`, so
+            // `navigate_back_or_dashboard` pops to that prior mode
+            // (Overview/Detail/etc.). Falls back to Dashboard — NEVER
+            // ConfirmExit — when the stack is empty. Reported 2026-05-23
+            // (Esc on completion modal was bouncing to the Quit dialog).
             app.completion_summary = None;
             app.completion_summary_dismissed = true;
-            app.tui_mode = app::TuiMode::Overview;
+            app.navigate_back_or_dashboard();
         }
         (KeyCode::Char('o'), _) => {
             open_first_completion_pr(app);
@@ -957,18 +956,24 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             };
         }
         (KeyCode::Esc, _) => {
-            app.navigate_back();
+            // Match Dashboard's Esc semantics: pop nav stack, fall back
+            // to Dashboard on empty stack — NEVER ConfirmExit. The user
+            // canonical exit paths are `q`, `Ctrl+X`, and `F4`. Reported
+            // 2026-05-23 (LaunchSession cleared the stack, so after
+            // dismissing the completion modal the next `Esc` from
+            // Overview was triggering the Quit dialog).
+            app.navigate_back_or_dashboard();
         }
         (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
+            // Honor the advertised `[Enter] Detail` chord. Pre-2026-05-23
+            // code routed terminal (Completed/Errored/etc.) sessions to
+            // `toggle_session_summary` — a popup that conflicted with the
+            // hint shown in the top-bar. Detail works for terminal
+            // sessions too (renders the recorded transcript), so use one
+            // path for both states.
             let selected = app.panel_view.selected_index();
-            if let Some(id) = app.pool.session_id_at_index(selected)
-                && let Some(session) = app.pool.get_session(id)
-            {
-                if session.status.is_terminal() {
-                    app.toggle_session_summary(id);
-                } else {
-                    app.navigate_to(app::TuiMode::Detail(id));
-                }
+            if let Some(id) = app.pool.session_id_at_index(selected) {
+                app.navigate_to(app::TuiMode::Detail(id));
             }
         }
         (KeyCode::Char(c), _) if c.is_ascii_digit() && c != '0' => {
@@ -2112,36 +2117,193 @@ mod tests {
             should_fail: false,
         };
         let mut app = make_app().with_shell_launcher(Box::new(launcher));
-        app.tui_mode = TuiMode::CompletionSummary;
+        // Simulate the real flow: user navigated to Overview, modal
+        // auto-opened via `open_completion_summary` which pushes
+        // Overview onto `nav_stack`.
+        app.navigate_to(TuiMode::CompletionSummary);
         app.completion_summary = Some(completed_summary());
 
         handle_completion_summary(&mut app, &key('s'));
 
-        // [s] dismisses the modal in place — restores the underlying
-        // Overview screen instead of jumping to Dashboard and wiping
-        // navigation state (2026-05-22 UX fix).
+        // [s] pops the nav stack back to the prior mode (Overview)
+        // instead of falling through to ConfirmExit on an empty stack
+        // (2026-05-23 UX fix).
         assert_eq!(app.tui_mode, TuiMode::Overview);
         assert!(app.completion_summary.is_none());
         assert!(app.completion_summary_dismissed);
         assert!(calls.lock().expect("mutex").is_empty());
     }
 
+    /// Regression for 2026-05-23: empty `nav_stack` (e.g. modal opens on
+    /// a fresh Overview with no prior navigation) must fall back to
+    /// Dashboard on dismiss, NOT ConfirmExit.
     #[test]
-    fn completion_summary_s_key_preserves_nav_stack() {
+    fn completion_summary_s_key_falls_back_to_dashboard_on_empty_stack() {
         let mut app = make_app();
-        // Simulate the user navigating Overview → Detail → CompletionSummary.
-        app.navigate_to(TuiMode::Detail(uuid::Uuid::nil()));
-        let nav_depth_before = app.nav_stack.depth();
         app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(completed_summary());
+        // Note: no navigate_to push — stack is empty.
+
+        handle_completion_summary(&mut app, &key('s'));
+
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Dashboard,
+            "[s] with empty stack must fall back to Dashboard, NEVER ConfirmExit"
+        );
+        assert!(!matches!(app.tui_mode, TuiMode::ConfirmExit));
+    }
+
+    /// Regression for 2026-05-23: dismissing the completion modal pops
+    /// back to Overview (correct), but the user's next `Esc` from
+    /// Overview triggered ConfirmExit because the launch path cleared
+    /// the nav stack. Overview now matches Dashboard's Esc semantics —
+    /// falls back to Dashboard on empty stack, NEVER ConfirmExit.
+    #[test]
+    fn overview_esc_falls_back_to_dashboard_when_stack_empty() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        assert_eq!(app.nav_stack.depth(), 0);
+
+        handle_overview_keys(&mut app, &key_code(KeyCode::Esc));
+
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Dashboard,
+            "Esc on Overview with empty stack must fall back to Dashboard"
+        );
+        assert!(!matches!(app.tui_mode, TuiMode::ConfirmExit));
+    }
+
+    #[test]
+    fn overview_esc_pops_back_when_stack_has_history() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Landing;
+        app.navigate_to(TuiMode::Overview);
+        let depth_before = app.nav_stack.depth();
+        assert!(depth_before >= 1);
+
+        handle_overview_keys(&mut app, &key_code(KeyCode::Esc));
+
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Landing,
+            "Esc on Overview must pop back to the previous mode"
+        );
+    }
+
+    /// Regression for 2026-05-23: `[Enter] Detail` on Overview routed
+    /// terminal (Completed/Errored) sessions to `toggle_session_summary`
+    /// (a popup), contradicting the top-bar chord hint. Unify both
+    /// states under Detail navigation.
+    #[test]
+    fn overview_enter_navigates_to_detail_for_terminal_session() {
+        use crate::session::types::{Session, SessionStatus};
+
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        let mut session = Session::new(
+            "test".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(1),
+            None,
+        );
+        session.status = SessionStatus::Completed;
+        let id = session.id;
+        app.pool.enqueue(session);
+
+        handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
+
+        assert!(
+            matches!(app.tui_mode, TuiMode::Detail(found) if found == id),
+            "Enter on terminal session must navigate to Detail; got {:?}",
+            app.tui_mode
+        );
+    }
+
+    #[test]
+    fn overview_enter_navigates_to_detail_for_running_session() {
+        use crate::session::types::{Session, SessionStatus};
+
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        let mut session = Session::new(
+            "test".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(2),
+            None,
+        );
+        session.status = SessionStatus::Running;
+        let id = session.id;
+        app.pool.enqueue(session);
+
+        handle_overview_keys(&mut app, &key_code(KeyCode::Enter));
+
+        assert!(
+            matches!(app.tui_mode, TuiMode::Detail(found) if found == id),
+            "Enter on running session must navigate to Detail; got {:?}",
+            app.tui_mode
+        );
+    }
+
+    /// Regression for 2026-05-23: `ScreenAction::LaunchSession` (and its
+    /// 4 siblings) used to call `nav_stack.clear()` before setting
+    /// `tui_mode = Overview`. That wiped the stable anchors (Landing,
+    /// Dashboard) below the launch wizard — every session start lost
+    /// the Welcome breadcrumb. Replace the current wizard without
+    /// touching the stack.
+    #[test]
+    fn launch_session_action_preserves_nav_stack_anchors() {
+        use crate::tui::screen_dispatch::handle_screen_action;
+        use crate::tui::screens::{ScreenAction, SessionConfig as ScreenSessionConfig};
+
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Landing;
+        app.navigate_to(TuiMode::Dashboard);
+        app.navigate_to(TuiMode::PromptInput);
+        let breadcrumbs_before: Vec<TuiMode> = app.nav_stack.breadcrumbs().to_vec();
+        assert_eq!(breadcrumbs_before.len(), 2, "fixture must have Landing + Dashboard");
+
+        let cfg = ScreenSessionConfig {
+            issue_number: Some(1),
+            title: "test".to_string(),
+            custom_prompt: None,
+            agent_id: None,
+        };
+        handle_screen_action(&mut app, ScreenAction::LaunchSession(cfg));
+
+        assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert_eq!(
+            app.nav_stack.breadcrumbs(),
+            breadcrumbs_before.as_slice(),
+            "LaunchSession must preserve nav_stack anchors (Welcome/Dashboard)"
+        );
+    }
+
+    #[test]
+    fn completion_summary_s_key_pops_back_to_previous_mode() {
+        let mut app = make_app();
+        // Simulate Overview → Detail → CompletionSummary via real
+        // navigation. [s] must pop the modal off the stack and land on
+        // Detail (the screen the user was on before the modal opened),
+        // NOT jump to ConfirmExit. Reported 2026-05-23.
+        let detail_id = uuid::Uuid::nil();
+        app.navigate_to(TuiMode::Detail(detail_id));
+        app.navigate_to(TuiMode::CompletionSummary);
         app.completion_summary = Some(completed_summary());
 
         handle_completion_summary(&mut app, &key('s'));
 
         assert_eq!(
-            app.nav_stack.depth(),
-            nav_depth_before,
-            "[s] dismiss must NOT touch nav_stack — modal closes in place"
+            app.tui_mode,
+            TuiMode::Detail(detail_id),
+            "[s] dismiss must restore the prior mode via nav_stack pop"
         );
+        assert!(app.completion_summary.is_none());
+        assert!(app.completion_summary_dismissed);
+        assert!(!matches!(app.tui_mode, TuiMode::ConfirmExit));
     }
 
     #[test]

@@ -728,8 +728,7 @@ async fn event_loop(
                     );
                 }
                 app.continuous_mode = None;
-                app.completion_summary = Some(app.build_completion_summary());
-                app.tui_mode = app::TuiMode::CompletionSummary;
+                app.open_completion_summary();
                 continue;
             }
         }
@@ -754,8 +753,7 @@ async fn event_loop(
                     if let Some(ref mut exec) = app.queue_executor {
                         exec.mark_success();
                         if exec.is_finished() {
-                            app.completion_summary = Some(app.build_completion_summary());
-                            app.tui_mode = app::TuiMode::CompletionSummary;
+                            app.open_completion_summary();
                         } else {
                             app.advance_queue_and_launch();
                         }
@@ -788,8 +786,7 @@ async fn event_loop(
                 return Ok(());
             }
 
-            app.completion_summary = Some(app.build_completion_summary());
-            app.tui_mode = app::TuiMode::CompletionSummary;
+            app.open_completion_summary();
         }
     }
 }
