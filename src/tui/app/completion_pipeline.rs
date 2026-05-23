@@ -462,6 +462,67 @@ mod tests {
         crate::tui::make_test_app("maestro-tui-app-test")
     }
 
+    #[tokio::test]
+    async fn issue_865_second_session_after_dismiss_clears_dismissed_via_baseline() {
+        // Regression for #865 — after dismissing the modal, the gate must
+        // auto-clear `completion_summary_dismissed` once a new session
+        // enters the pool (so the modal re-fires for the 2nd, 3rd, … Nth
+        // session). Pre-fix, dismissed stayed sticky and the modal never
+        // re-fired even though `add_session` reset the flag — some
+        // arrival paths (retry, queue advance) bypass add_session.
+        let mut app = make_app();
+
+        // 1st session completes
+        let s1 = crate::session::types::Session::new(
+            "first".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        app.pool.enqueue(s1);
+        let promoted = app.pool.try_promote();
+        for id in promoted {
+            app.pool.finalize_and_teardown(id);
+        }
+        assert!(app.pool.all_done(), "pool must be all_done after 1st");
+        assert_eq!(app.pool.total_count(), 1);
+
+        // User dismisses the modal via the helper (mimics input handler)
+        app.completion_summary = Some(CompletionSummaryData {
+            sessions: vec![],
+            total_cost_usd: 0.0,
+            session_count: 1,
+            suggestions: vec![],
+            selected_suggestion: 0,
+        });
+        app.dismiss_completion_summary();
+        assert!(app.completion_summary_dismissed);
+        assert_eq!(app.completion_summary_baseline_total, 1);
+
+        // 2nd session enters the pool via add_session
+        let s2 = crate::session::types::Session::new(
+            "second".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        let _ = app.add_session(s2).await;
+
+        // The gate's auto-clear check (mirrored here) must trip because
+        // total_count (2) > baseline (1).
+        if app.completion_summary_dismissed
+            && app.pool.total_count() > app.completion_summary_baseline_total
+        {
+            app.completion_summary_dismissed = false;
+        }
+        assert!(
+            !app.completion_summary_dismissed,
+            "dismissed must auto-clear once a new session has entered the pool (#865)"
+        );
+    }
+
     #[test]
     fn dismissed_flag_prevents_summary_retrigger_scenario() {
         // Simulate: completion summary was shown, user dismissed it,

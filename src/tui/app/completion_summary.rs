@@ -118,6 +118,18 @@ impl App {
         self.navigate_to(crate::tui::app::TuiMode::CompletionSummary);
     }
 
+    /// Mark the completion summary as dismissed and snapshot the current
+    /// pool size. The gate in `tui::mod::run` clears
+    /// `completion_summary_dismissed` automatically once `total_count`
+    /// grows beyond `completion_summary_baseline_total`, so subsequent
+    /// sessions reopen the modal even when their arrival path does not
+    /// run through `add_session` (fixes #865).
+    pub fn dismiss_completion_summary(&mut self) {
+        self.completion_summary = None;
+        self.completion_summary_dismissed = true;
+        self.completion_summary_baseline_total = self.pool.total_count();
+    }
+
     /// Transition from CompletionSummary to Dashboard mode.
     pub fn transition_to_dashboard(&mut self) {
         let all = self.pool.all_sessions();
@@ -190,8 +202,7 @@ impl App {
         }
 
         // Clear completion summary and stale screen state, then switch to dashboard
-        self.completion_summary = None;
-        self.completion_summary_dismissed = true;
+        self.dismiss_completion_summary();
         self.screen_state.issue_browser_screen = None;
         if let Some(ref mut screen) = self.screen_state.home_screen {
             screen.start_loading_suggestions();

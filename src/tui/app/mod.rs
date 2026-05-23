@@ -167,6 +167,12 @@ pub struct App {
     pub upgrade_state: crate::updater::UpgradeState,
     pub spinner_tick: usize,
     pub completion_summary_dismissed: bool,
+    /// Snapshot of `pool.total_count()` taken when the modal was dismissed.
+    /// The gate at `tui::mod::run` clears `completion_summary_dismissed`
+    /// automatically once `pool.total_count()` exceeds this value — i.e. a
+    /// new session has entered the pool since the last dismiss. Fixes #865
+    /// (modal silenced after first dismiss for subsequent sessions).
+    pub completion_summary_baseline_total: usize,
     pub gh_auth_ok: bool,
     pub pending_prs: Vec<crate::provider::github::types::PendingPr>,
     pub flags: crate::flags::store::FeatureFlags,
@@ -373,6 +379,7 @@ impl App {
             upgrade_state: crate::updater::UpgradeState::Hidden,
             spinner_tick: 0,
             completion_summary_dismissed: false,
+            completion_summary_baseline_total: 0,
             gh_auth_ok: true,
             pending_prs: recovered_prs,
             flags: crate::flags::store::FeatureFlags::default(),

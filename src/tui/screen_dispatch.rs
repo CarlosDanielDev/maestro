@@ -857,27 +857,33 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::RetryHollow(session_id) => {
-            // Queue a retry for the hollow session
-            if let Some(managed) = app.pool.get_active_mut(session_id) {
-                let policy = app
-                    .config
-                    .as_ref()
-                    .map(|c| crate::session::retry::RetryPolicy::from_config(&c.sessions));
-                if let Some(policy) = policy {
-                    let progress = app.progress_tracker.get(&session_id).cloned();
-                    let retry = policy.prepare_retry(&managed.session, progress.as_ref(), None);
-                    let label = crate::tui::app::helpers::session_label(&managed.session);
-                    let _ = managed.session.transition_to(
+            // Queue a retry for the hollow session. By the time the user
+            // presses [r] the hollow session has already been moved to
+            // `finished`, so `pool.get_active_mut` returns None (#869).
+            // Look it up across every bucket via `get_session_mut`.
+            let policy = app
+                .config
+                .as_ref()
+                .map(|c| crate::session::retry::RetryPolicy::from_config(&c.sessions));
+            let progress = app.progress_tracker.get(&session_id).cloned();
+            let retry_payload = policy.and_then(|policy| {
+                app.pool.get_session_mut(session_id).map(|session| {
+                    let label = crate::tui::app::helpers::session_label(session);
+                    let retry = policy.prepare_retry(session, progress.as_ref(), None);
+                    let _ = session.transition_to(
                         crate::session::types::SessionStatus::Retrying,
                         TransitionReason::RetryTriggered,
                     );
-                    app.activity_log.push_simple(
-                        label,
-                        "Manual retry (hollow completion)".into(),
-                        crate::tui::activity_log::LogLevel::Warn,
-                    );
-                    app.pending_session_launches.push(retry);
-                }
+                    (retry, label)
+                })
+            });
+            if let Some((retry, label)) = retry_payload {
+                app.activity_log.push_simple(
+                    label,
+                    "Manual retry (hollow completion)".into(),
+                    crate::tui::activity_log::LogLevel::Warn,
+                );
+                app.pending_session_launches.push(retry);
             }
             app.screen_state.hollow_retry_screen = None;
             app.tui_mode = app::TuiMode::Overview;

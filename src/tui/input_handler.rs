@@ -271,16 +271,14 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
             // (Overview/Detail/etc.). Falls back to Dashboard — NEVER
             // ConfirmExit — when the stack is empty. Reported 2026-05-23
             // (Esc on completion modal was bouncing to the Quit dialog).
-            app.completion_summary = None;
-            app.completion_summary_dismissed = true;
+            app.dismiss_completion_summary();
             app.navigate_back_or_dashboard();
         }
         (KeyCode::Char('o'), _) => {
             open_first_completion_pr(app);
         }
         (KeyCode::Char('i'), _) => {
-            app.completion_summary = None;
-            app.completion_summary_dismissed = true;
+            app.dismiss_completion_summary();
             let mut screen = screens::IssueBrowserScreen::new(vec![]);
             screen.loading = true;
             app.screen_state.issue_browser_screen = Some(screen);
@@ -300,7 +298,7 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
             app.transition_to_dashboard();
         }
         (KeyCode::Char('q'), _) => {
-            app.completion_summary_dismissed = true;
+            app.dismiss_completion_summary();
             app.navigate_to(app::TuiMode::ConfirmExit);
         }
         (KeyCode::Char('l'), _) => {
@@ -310,12 +308,14 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
             // the nav-stack push AND fell back to Overview when the
             // summary was empty — losing context. If no session exists,
             // leave the modal open instead of redirecting.
-            if let Some(ref summary) = app.completion_summary
-                && let Some(first) = summary.sessions.first()
+            if let Some(sid) = app
+                .completion_summary
+                .as_ref()
+                .and_then(|s| s.sessions.first())
+                .map(|line| line.session_id)
             {
-                let sid = first.session_id;
                 app.log_viewer_scroll = 0;
-                app.completion_summary_dismissed = true;
+                app.dismiss_completion_summary();
                 app.navigate_to(app::TuiMode::LogViewer(sid));
             }
         }
@@ -455,16 +455,14 @@ fn handle_completion_summary_failed_gates(app: &mut App, key: &KeyEvent) -> KeyA
         (KeyCode::Char('r'), _) => {
             if let Some(sl) = first_failed.as_ref() {
                 app.spawn_resume_implement_session(sl);
-                app.completion_summary = None;
-                app.completion_summary_dismissed = true;
+                app.dismiss_completion_summary();
                 app.tui_mode = app::TuiMode::Overview;
             }
         }
         (KeyCode::Char('q'), _) => {
             // Recovery `[q]` closes the modal, NOT ConfirmExit — the
             // success-modal disambiguation is asserted by tests.
-            app.completion_summary = None;
-            app.completion_summary_dismissed = true;
+            app.dismiss_completion_summary();
             app.tui_mode = app::TuiMode::Overview;
         }
         (KeyCode::Char('v'), _) => {
@@ -724,6 +722,32 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
     // Shift+Q opens TurboQuant A/B dashboard
     if key.code == KeyCode::Char('Q') && !is_text_input_mode(app) {
         app.navigate_to(app::TuiMode::TurboquantDashboard);
+        return true;
+    }
+
+    // Shift+M toggles the session-complete modal (#866). Persists to
+    // `~/.maestro/maestro.toml` so the preference survives restarts.
+    if key.code == KeyCode::Char('M') && !is_text_input_mode(app) {
+        if let Some(ref mut config) = app.config {
+            let new_state = !config.tui.modal_on_complete;
+            config.tui.modal_on_complete = new_state;
+            let label = if new_state {
+                "[Modal] Session-complete ON"
+            } else {
+                "[Modal] Session-complete OFF"
+            };
+            app.activity_log
+                .push_simple("MOD".into(), label.into(), LogLevel::Info);
+            if let Some(path) = app.config_path.clone()
+                && let Err(e) = config.save_into_existing(&path)
+            {
+                app.activity_log.push_simple(
+                    "MOD".into(),
+                    format!("Persist failed: {e}"),
+                    LogLevel::Warn,
+                );
+            }
+        }
         return true;
     }
 
