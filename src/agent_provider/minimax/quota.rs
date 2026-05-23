@@ -102,6 +102,19 @@ impl MinimaxQuota {
         Self::open_with(path, Box::new(SystemClock), DEFAULT_FIVE_HOUR_REQUEST_LIMIT)
     }
 
+    /// Best-effort open at the canonical path `$HOME/.maestro/minimax-quota.json`.
+    /// Returns `None` when `$HOME` is unset or the file fails to open / parse —
+    /// callers fall back to a no-quota render path. Shared by the `cmd_run`
+    /// spawn-gate wiring and the `cmd_dashboard` TUI-render wiring (#769).
+    pub fn open_default() -> Option<Self> {
+        let path = std::env::var_os("HOME").map(|home| {
+            std::path::PathBuf::from(home)
+                .join(".maestro")
+                .join("minimax-quota.json")
+        })?;
+        Self::open(path).ok()
+    }
+
     /// Open or create with an injected clock + limit, for tests.
     pub fn open_with(
         path: PathBuf,
