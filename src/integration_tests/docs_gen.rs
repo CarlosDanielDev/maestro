@@ -94,12 +94,13 @@ fn docs_gen_all_schema_tables_have_markers() {
     // in `SCHEMA_BACKFILL_PENDING` until a follow-up backfills them.
     //
     // #788 closed the project/sessions/review/tui/tui.theme/turboquant/
-    // concurrency backfill. agents/modes remain deferred because their
-    // hand-written sections in docs/configuration.md include provider-
-    // specific notes (HTTP-vs-subprocess defaults, model fallbacks,
-    // `maestro doctor` checks) the schema does not capture; autogen lands
-    // alongside the docs-render refactor for `FlattenedMap`.
-    const SCHEMA_BACKFILL_PENDING: &[&str] = &["agents", "modes"];
+    // concurrency backfill. agents/modes/teams remain deferred because
+    // their hand-written sections in docs/configuration.md include
+    // provider-specific notes (HTTP-vs-subprocess defaults, model
+    // fallbacks, `maestro doctor` checks, team-preset extends/bindings
+    // semantics) the schema does not capture; autogen lands alongside the
+    // docs-render refactor for `FlattenedMap`.
+    const SCHEMA_BACKFILL_PENDING: &[&str] = &["agents", "modes", "teams"];
 
     let path = doc_path();
     let existing =

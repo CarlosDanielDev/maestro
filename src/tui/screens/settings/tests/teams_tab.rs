@@ -1,0 +1,180 @@
+//! Tests for the Teams tab (`SettingsTab::Teams`, index 9) and the
+//! cross-entry `extends` validator surfaced via the Save banner.
+//!
+//! Issue #803 — wire `[teams.<id>]` through the schema renderer + the
+//! StringList ↔ flattened-keys round-trip adapter.
+
+use super::*;
+use crate::orchestration::team::TeamConfig;
+use crate::orchestration::types::Primitive;
+use crate::tui::screens::settings::schema_tab::build::from_schema;
+use crate::tui::screens::settings::schema_tab::sync::sync_to_config;
+
+const TEAMS_TAB_INDEX: usize = 9;
+
+fn teams_table() -> &'static crate::config::schema::TableSchema {
+    crate::config::schema::schema_for_config()
+        .iter()
+        .find(|t| t.name == "teams")
+        .expect("teams schema must be registered")
+}
+
+#[test]
+fn settings_tab_all_includes_teams_at_index_nine() {
+    assert_eq!(SettingsTab::ALL[TEAMS_TAB_INDEX], SettingsTab::Teams);
+    assert_eq!(SettingsTab::ALL[TEAMS_TAB_INDEX].label(), "Teams");
+}
+
+#[test]
+fn teams_tab_has_a_dynamic_map_widget() {
+    let screen = SettingsScreen::new(make_config(), make_flags());
+    let fields = &screen.fields_per_tab[TEAMS_TAB_INDEX];
+    assert_eq!(
+        fields.len(),
+        1,
+        "Teams tab must have exactly the FlattenedMap entries widget"
+    );
+    assert!(
+        matches!(fields[0].widget, WidgetKind::DynamicMap(_)),
+        "Teams tab's first field must be a DynamicMap widget"
+    );
+}
+
+#[test]
+fn teams_tab_decoder_collapses_bindings_into_list_editor() {
+    let toml_str = "[project]\nrepo = \"owner/repo\"\nbase_branch = \"main\"\n\
+[sessions]\n[budget]\nper_session_usd = 5.0\ntotal_usd = 50.0\nalert_threshold_pct = 80\n\
+[github]\n[notifications]\n\
+[teams.worker-pool]\nprimitive = \"pipeline\"\nimplementer = \"claude\"\nreviewer = \"opencode\"\n";
+    let config: Config = toml::from_str(toml_str).expect("toml parses");
+    let fields = from_schema(teams_table(), &config);
+    let WidgetKind::DynamicMap(ref dm) = fields[0].widget else {
+        panic!("teams tab must render as DynamicMap");
+    };
+    let entry = dm.entries().first().expect("one team entry");
+    assert_eq!(entry.id, "worker-pool");
+    // bindings is field index 3 (extends/primitive/min_agents/bindings).
+    let WidgetKind::ListEditor(le) = &entry.fields[3].widget else {
+        panic!(
+            "bindings must render as ListEditor, got {:?}",
+            entry.fields[3].widget.label()
+        );
+    };
+    let mut items = le.items.clone();
+    items.sort();
+    assert_eq!(items, vec!["implementer=claude", "reviewer=opencode"]);
+}
+
+#[test]
+fn teams_tab_encoder_writes_top_level_scalar_bindings() -> anyhow::Result<()> {
+    let mut config: Config = toml::from_str(MINIMAL_SETTINGS_TOML).unwrap();
+    let mut bindings = std::collections::HashMap::new();
+    bindings.insert(
+        "coder".to_string(),
+        toml::Value::String("claude".to_string()),
+    );
+    config.teams.insert(
+        "worker-pool".to_string(),
+        TeamConfig {
+            extends: String::new(),
+            primitive: Some(Primitive::Pipeline),
+            min_agents: None,
+            bindings,
+            role_overrides: std::collections::HashMap::new(),
+        },
+    );
+
+    let fields = from_schema(teams_table(), &config);
+    let mut config2 = config.clone();
+    sync_to_config(teams_table(), &fields, &mut config2)?;
+
+    let team = config2
+        .teams
+        .get("worker-pool")
+        .expect("worker-pool must survive sync");
+    assert_eq!(
+        team.bindings.get("coder").and_then(|v| v.as_str()),
+        Some("claude"),
+        "encoder must restore `coder = \"claude\"` as a top-level binding key"
+    );
+    Ok(())
+}
+
+#[test]
+fn teams_tab_reload_after_save_re_collapses_bindings() -> anyhow::Result<()> {
+    use std::io::Write;
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    write!(f, "{}", MINIMAL_SETTINGS_TOML).unwrap();
+    let mut config = Config::load(f.path())?;
+
+    let mut bindings = std::collections::HashMap::new();
+    bindings.insert(
+        "implementer".to_string(),
+        toml::Value::String("claude".to_string()),
+    );
+    config.teams.insert(
+        "alpha".to_string(),
+        TeamConfig {
+            extends: String::new(),
+            primitive: Some(Primitive::Pipeline),
+            min_agents: None,
+            bindings,
+            role_overrides: std::collections::HashMap::new(),
+        },
+    );
+    config.save(f.path())?;
+
+    let reloaded = Config::load(f.path())?;
+    let fields = from_schema(teams_table(), &reloaded);
+    let WidgetKind::DynamicMap(ref dm) = fields[0].widget else {
+        panic!("expected DynamicMap");
+    };
+    let entry = dm.entries().first().expect("one team after reload");
+    assert_eq!(entry.id, "alpha");
+    let WidgetKind::ListEditor(le) = &entry.fields[3].widget else {
+        panic!("bindings field must be ListEditor");
+    };
+    assert!(
+        le.items.contains(&"implementer=claude".to_string()),
+        "bindings must survive the full disk round-trip — got {:?}",
+        le.items
+    );
+    Ok(())
+}
+
+#[test]
+fn teams_with_unknown_extends_blocks_save_with_banner() {
+    let (mut screen, _f) = screen_with_config_path();
+    screen.config.teams.insert(
+        "orphan".to_string(),
+        TeamConfig {
+            extends: "ghost-parent".to_string(),
+            primitive: Some(Primitive::Pipeline),
+            min_agents: None,
+            bindings: std::collections::HashMap::new(),
+            role_overrides: std::collections::HashMap::new(),
+        },
+    );
+
+    let ctrl_s = Event::Key(KeyEvent {
+        code: KeyCode::Char('s'),
+        modifiers: KeyModifiers::CONTROL,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    });
+    screen.handle_input(&ctrl_s, InputMode::Normal);
+
+    let flash = screen
+        .save_error_flash
+        .as_ref()
+        .map(|(msg, _)| msg.as_str())
+        .unwrap_or("");
+    assert!(
+        flash.contains("teams.orphan.extends"),
+        "save banner must surface the teams path, got: {flash:?}"
+    );
+    assert!(
+        flash.contains("ghost-parent"),
+        "save banner must name the unknown parent, got: {flash:?}"
+    );
+}

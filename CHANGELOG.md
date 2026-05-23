@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cargo run -- cost` now prints a per-provider rollup section (`=== Per-provider breakdown ===`) grouped by `agent_id` with a `(free)` marker for zero-cost providers (Ollama-local, MiniMax-sponsored), above the per-session list — closes AC #4 of the v0.29.5 observability umbrella (#769).
 - Token dashboard Quota column is live for MiniMax sessions: the dashboard command opens `~/.maestro/minimax-quota.json` best-effort and wires `Arc<MinimaxQuota>` through new `App.minimax_quota` + `App::with_minimax_quota` to `draw_token_dashboard_with_quota`, replacing the `NoQuotaSnapshots` placeholder from #850 (#769).
 - v0.29.5 observability umbrella closed: unified cost / token / quota tracking across all five agent providers (Claude, Codex, OpenCode, MiniMax, Ollama) — verifies the work landed across #770–#776 and the Level 1.5/2 hardening (#844, #845, #846, #848, #849, #850) (#769).
+- feat(tui/settings): wire Teams tab through schema renderer with bindings round-trip adapter (#803).
 
 ## [0.29.0] - 2026-05-21
 

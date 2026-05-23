@@ -225,6 +225,22 @@ pub(crate) const MODES_TABLE: TableSchema = TableSchema {
     }],
 };
 
+pub(crate) const TEAMS_TABLE: TableSchema = TableSchema {
+    name: "teams",
+    label: "Teams",
+    fields: &[FieldSchema {
+        key: "entries",
+        label: "Entries",
+        help: "Configured teams — one entry per `[teams.<id>]` table",
+        default: DefaultValue::Empty,
+        kind: FieldKind::FlattenedMap {
+            entry_fields: dynamic::TEAMS_ENTRY_FIELDS,
+        },
+        validator: None,
+        presentation: Some(Presentation::Subtabs),
+    }],
+};
+
 #[allow(dead_code)]
 const SCHEMA: &[TableSchema] = &[
     PROJECT_TABLE,
@@ -256,6 +272,7 @@ const SCHEMA: &[TableSchema] = &[
     },
     AGENTS_TABLE,
     MODES_TABLE,
+    TEAMS_TABLE,
     TableSchema {
         name: "tui",
         label: "TUI",

@@ -8,6 +8,7 @@
 
 use crate::config::schema::{DefaultValue, FieldKind, FieldSchema};
 use crate::tui::screens::settings::SettingsField;
+use crate::tui::screens::settings::schema_tab::teams_bindings::collapse_team_bindings_into_array;
 use crate::tui::widgets::{Dropdown, ListEditor, NumberStepper, TextInput, Toggle, WidgetKind};
 
 pub struct EntryState {
@@ -23,6 +24,13 @@ impl EntryState {
         existing: Option<&toml::Value>,
     ) -> Self {
         let id = id.into();
+        // Section-specific reshape: `[teams.<id>]` stores bindings as
+        // top-level scalar keys on the entry table (`#[serde(flatten)]`).
+        // Fold them into a synthetic `bindings = [...]` array so the
+        // `StringList` builder finds the field where it expects it. No-op
+        // for every other section.
+        let collapsed = collapse_team_bindings_into_array(section_path, existing);
+        let existing = collapsed.as_ref().or(existing);
         let mut fields = Vec::with_capacity(entry_fields.len());
         for fs in entry_fields {
             let label = label_for(section_path, &id, fs.key);

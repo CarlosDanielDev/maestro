@@ -18,7 +18,8 @@ const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[sessi
 // session-history toggle).
 const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 94;
 // Bumped 3 → 4 in #788 — `review.reviewers` registered as VecOfStruct.
-const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 4;
+// Bumped 4 → 5 in #803 — `teams` registered as FlattenedMap.
+const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 5;
 
 const EMPTY: &[FieldSchema] = &[];
 
@@ -730,6 +731,86 @@ fn concurrency_table_has_team_max_parallel() {
     assert!(
         keys.contains(&"team_max_parallel"),
         "CONCURRENCY_FIELDS missing `team_max_parallel` — found {keys:?}"
+    );
+}
+
+#[test]
+fn teams_table_registered_with_flattened_map() {
+    let schema = schema_for_config();
+    let teams_table = schema
+        .iter()
+        .find(|t| t.name == "teams")
+        .expect("teams TableSchema must be registered");
+    assert_eq!(teams_table.label, "Teams");
+    let entries_field = teams_table
+        .fields
+        .iter()
+        .find(|f| matches!(f.kind, FieldKind::FlattenedMap { .. }))
+        .expect("teams table must expose a FlattenedMap field");
+    let FieldKind::FlattenedMap { entry_fields } = entries_field.kind else {
+        panic!("expected FlattenedMap variant");
+    };
+    assert_eq!(
+        entry_fields.len(),
+        4,
+        "TEAMS_ENTRY_FIELDS must be 4: extends/primitive/min_agents/bindings"
+    );
+    let keys: Vec<&str> = entry_fields.iter().map(|f| f.key).collect();
+    assert_eq!(keys, &["extends", "primitive", "min_agents", "bindings"]);
+}
+
+#[test]
+fn teams_entry_primitive_default_is_in_allowed_list() {
+    let schema = schema_for_config();
+    let teams_table = schema.iter().find(|t| t.name == "teams").unwrap();
+    let FieldKind::FlattenedMap { entry_fields } = teams_table
+        .fields
+        .iter()
+        .find(|f| matches!(f.kind, FieldKind::FlattenedMap { .. }))
+        .unwrap()
+        .kind
+    else {
+        panic!();
+    };
+    let prim = entry_fields
+        .iter()
+        .find(|f| f.key == "primitive")
+        .expect("primitive field present");
+    let FieldKind::Enum(variants) = prim.kind else {
+        panic!("expected Enum");
+    };
+    let DefaultValue::Str(default) = prim.default else {
+        panic!("expected Str default");
+    };
+    assert!(
+        variants.contains(&default),
+        "primitive default `{default}` must appear in allowed variants {variants:?}"
+    );
+}
+
+#[test]
+fn team_primitives_mirror_rust_enum_variants() {
+    use crate::orchestration::types::Primitive;
+    let rust_labels: Vec<&'static str> = [
+        Primitive::Pipeline,
+        Primitive::FanOut,
+        Primitive::SinglePass,
+        Primitive::VerdictOnly,
+    ]
+    .iter()
+    .map(|p| p.label())
+    .collect();
+    let schema_variants = super::dynamic::TEAM_PRIMITIVES;
+    for v in &rust_labels {
+        assert!(
+            schema_variants.contains(v),
+            "TEAM_PRIMITIVES missing Primitive variant `{v}`"
+        );
+    }
+    assert_eq!(
+        schema_variants.len(),
+        rust_labels.len(),
+        "TEAM_PRIMITIVES must list every Primitive variant"
     );
 }
 

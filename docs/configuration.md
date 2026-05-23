@@ -592,7 +592,7 @@ required = true
 
 ## `[teams]`
 
-Per-preset overrides keyed by team name. Built-in presets ship inside the binary and resolve from `~/.config/maestro/teams/` (user tier) and `<repo>/.maestro/teams/` (project tier); the `[teams.<name>]` entries here layer project-tier overrides on top.
+Per-preset overrides keyed by team name. Built-in presets ship inside the binary and resolve from `~/.config/maestro/teams/` (user tier) and `<repo>/.maestro/teams/` (project tier); the `[teams.<name>]` entries here layer project-tier overrides on top. `[teams.<id>]` entries are also editable from the TUI via **Settings → Teams tab** (in addition to the file-edit and `maestro team` wizard paths) as of v0.29.5 (#803).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

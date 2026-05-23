@@ -10,6 +10,7 @@ pub mod notifications;
 pub mod project;
 pub mod review;
 pub mod sessions;
+pub mod teams;
 pub mod theme;
 pub mod turboquant;
 
@@ -43,26 +44,27 @@ pub(super) fn schema_table(name: &'static str) -> &'static TableSchema {
 
 pub(super) fn build_fields(config: &Config) -> Vec<Vec<SettingsField>> {
     vec![
-        project::build_fields(config),
-        sessions::build_fields(config),
-        budget::build_fields(config),
-        github::build_fields(config),
-        notifications::build_fields(config),
-        gates::build_fields(config),
-        review::build_fields(config),
-        agents::build_fields(config),
-        modes::build_fields(config),
-        theme::build_fields(config),
-        layout::build_fields(config),
-        vec![],
-        turboquant::build_fields(config),
-        advanced::build_fields(config),
+        project::build_fields(config),       // 0
+        sessions::build_fields(config),      // 1
+        budget::build_fields(config),        // 2
+        github::build_fields(config),        // 3
+        notifications::build_fields(config), // 4
+        gates::build_fields(config),         // 5
+        review::build_fields(config),        // 6
+        agents::build_fields(config),        // 7
+        modes::build_fields(config),         // 8
+        teams::build_fields(config),         // 9  (#803)
+        theme::build_fields(config),         // 10
+        layout::build_fields(config),        // 11
+        vec![],                              // 12 (Flags — no widgets)
+        turboquant::build_fields(config),    // 13
+        advanced::build_fields(config),      // 14
     ]
 }
 
 /// Map a settings tab index to the schema table that drives it. `None`
-/// means the tab has no widgets (Flags, idx 11) or spans more than one
-/// TOML table — Theme (idx 9) and Advanced (idx 13) are handled by
+/// means the tab has no widgets (Flags, idx 12) or spans more than one
+/// TOML table — Theme (idx 10) and Advanced (idx 14) are handled by
 /// `sync_multi_table` below.
 fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
     let name = match idx {
@@ -75,8 +77,9 @@ fn schema_table_for_tab(idx: usize) -> Option<&'static TableSchema> {
         6 => "review",
         7 => "agents",
         8 => "modes",
-        10 => "tui.layout",
-        12 => "turboquant",
+        9 => "teams",
+        11 => "tui.layout",
+        13 => "turboquant",
         _ => return None,
     };
     Some(schema_table(name))
@@ -86,10 +89,10 @@ pub(super) fn sync_widgets_to_config(screen: &mut SettingsScreen) {
     sync_schema_tabs(screen);
     sync_sessions_bypass_override(screen);
     sync_agents_default_override(screen);
-    sync_multi_table(9, &["tui.theme", "tui"], screen);
+    sync_multi_table(10, &["tui.theme", "tui"], screen);
     sync_theme_screen_local(screen);
     sync_notifications_empty_url_collapse(screen);
-    sync_multi_table(13, &["concurrency", "monitoring"], screen);
+    sync_multi_table(14, &["concurrency", "monitoring"], screen);
     sync_advanced_caveman(screen);
 }
 
@@ -167,7 +170,7 @@ fn sync_notifications_empty_url_collapse(screen: &mut SettingsScreen) {
 
 /// Theme tab field 0 is `live_preview` (screen-local, not in schema).
 fn sync_theme_screen_local(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(9) else {
+    let Some(fields) = screen.fields_per_tab.get(10) else {
         return;
     };
     if let Some(WidgetKind::Toggle(w)) = fields.first().map(|f| &f.widget) {
@@ -178,7 +181,7 @@ fn sync_theme_screen_local(screen: &mut SettingsScreen) {
 /// Caveman toggle (Advanced tab) is bespoke; route through existing
 /// `pending_caveman_toggle` flow.
 fn sync_advanced_caveman(screen: &mut SettingsScreen) {
-    let Some(fields) = screen.fields_per_tab.get(13) else {
+    let Some(fields) = screen.fields_per_tab.get(14) else {
         return;
     };
     let prev = screen.caveman_state.as_bool().unwrap_or(false);

@@ -41,3 +41,4 @@ mod flags_validation;
 mod integration;
 mod keybinds_save_caveman;
 mod sidebar_search;
+mod teams_tab;

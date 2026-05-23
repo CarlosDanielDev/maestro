@@ -19,6 +19,7 @@ pub enum SettingsTab {
     Review,
     Agents,
     Modes,
+    Teams,
     Theme,
     Layout,
     Flags,
@@ -37,6 +38,7 @@ impl SettingsTab {
         Self::Review,
         Self::Agents,
         Self::Modes,
+        Self::Teams,
         Self::Theme,
         Self::Layout,
         Self::Flags,
@@ -44,25 +46,30 @@ impl SettingsTab {
         Self::Advanced,
     ];
 
-    /// Indices into [`Self::ALL`] in alphabetical-by-label order. Used by
-    /// the Settings sidebar so the on-screen list is sorted while the
-    /// canonical enum (and any `active_tab` index already stored or
-    /// serialized) remains stable.
+    /// Indices into [`Self::ALL`] in alphabetical-by-VARIANT-NAME order.
+    /// Used by the Settings sidebar so the on-screen list is stable while
+    /// the canonical enum (and any `active_tab` index already stored or
+    /// serialized) is unaffected.
+    ///
+    /// Note: `Agents.label() == "Providers"` — the sidebar position follows
+    /// the variant name, not the rendered label. Pre-existing convention
+    /// from before the Agents → Providers label rename.
     pub const ALPHABETICAL_INDICES: &'static [usize] = &[
-        13, // Advanced
-        7,  // Agents
+        14, // Advanced
+        7,  // Agents (label "Providers")
         2,  // Budget
-        11, // Flags
+        12, // Flags
         5,  // Gates
         3,  // GitHub
-        10, // Layout
+        11, // Layout
         8,  // Modes
         4,  // Notifications
         0,  // Project
         6,  // Review
         1,  // Sessions
-        9,  // Theme
-        12, // TurboQuant
+        9,  // Teams
+        10, // Theme
+        13, // TurboQuant
     ];
 
     pub fn label(&self) -> &'static str {
@@ -76,6 +83,7 @@ impl SettingsTab {
             Self::Review => "Review",
             Self::Agents => "Providers",
             Self::Modes => "Modes",
+            Self::Teams => "Teams",
             Self::Theme => "Theme",
             Self::Layout => "Layout",
             Self::Flags => "Flags",

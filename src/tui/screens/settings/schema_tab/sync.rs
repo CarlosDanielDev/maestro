@@ -9,6 +9,9 @@
 use crate::config::Config;
 use crate::config::schema::{FieldKind, FieldSchema, TableSchema};
 use crate::tui::screens::settings::SettingsField;
+use crate::tui::screens::settings::schema_tab::teams_bindings::{
+    TEAMS_SECTION_PATH, explode_bindings_array_to_top_level,
+};
 use crate::tui::screens::settings::validation::ValidationFeedback;
 use crate::tui::widgets::WidgetKind;
 
@@ -101,7 +104,17 @@ fn merge_flattened_map(
 
     if let Some(entries) = widget_table.as_table() {
         for (k, v) in entries {
-            parent_table.insert(k.clone(), v.clone());
+            let mut value = v.clone();
+            // Teams-only post-step: `TeamConfig.bindings` is `#[serde(flatten)]`,
+            // so the StringList of `role=agent` items must explode back into
+            // top-level scalar keys on the entry table before serde sees it.
+            if table_name == TEAMS_SECTION_PATH
+                && prefix.is_empty()
+                && let Some(entry_tbl) = value.as_table_mut()
+            {
+                explode_bindings_array_to_top_level(entry_tbl);
+            }
+            parent_table.insert(k.clone(), value);
         }
     }
 }
