@@ -1,35 +1,12 @@
 use super::*;
-use crate::budget::quota_snapshot::{ProviderQuotaSnapshots, QuotaBucket, QuotaRow};
+use crate::budget::quota_snapshot::{QuotaBucket, QuotaRow};
+use crate::budget::test_support::FakeProviderQuotaSnapshots;
 use crate::session::types::SessionStatus;
 use crate::tui::theme::Theme;
 use crate::tui::token_dashboard::{draw_token_dashboard, draw_token_dashboard_with_quota};
 use insta::assert_snapshot;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
-use std::collections::HashMap;
-
-struct FakeProviderQuotaSnapshots {
-    entries: HashMap<String, QuotaRow>,
-}
-
-impl FakeProviderQuotaSnapshots {
-    fn new() -> Self {
-        Self {
-            entries: HashMap::new(),
-        }
-    }
-
-    fn with(mut self, provider_id: &str, row: QuotaRow) -> Self {
-        self.entries.insert(provider_id.to_string(), row);
-        self
-    }
-}
-
-impl ProviderQuotaSnapshots for FakeProviderQuotaSnapshots {
-    fn quota_for(&self, provider_id: &str) -> Option<QuotaRow> {
-        self.entries.get(provider_id).copied()
-    }
-}
 
 #[test]
 fn token_dashboard_rollup_three_providers_120x40() {

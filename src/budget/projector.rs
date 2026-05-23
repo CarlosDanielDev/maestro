@@ -9,6 +9,7 @@
 //!
 //! Tests inject `FakeBudgetProjector` (defined inline in test mods).
 
+use crate::budget::sanitize::sanitize_cost;
 use crate::session::types::Session;
 
 /// Project the next-turn USD cost for a session.
@@ -42,12 +43,7 @@ impl DefaultBudgetProjector {
 impl BudgetProjector for DefaultBudgetProjector {
     fn projected_turn_cost(&self, session: &Session) -> f64 {
         let floor = self.floor();
-        let cost = session.cost_usd;
-        let usable = if !cost.is_finite() || cost.is_sign_negative() {
-            0.0
-        } else {
-            cost
-        };
+        let usable = sanitize_cost(session.cost_usd);
         if usable > floor { usable } else { floor }
     }
 }
