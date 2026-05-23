@@ -157,6 +157,12 @@ impl RetryPolicy {
         new_session.issue_title = original.issue_title.clone();
         new_session.origin = original.origin;
         new_session.active_command = original.active_command.clone();
+        // Preserve the original agent so the retry runs on the same
+        // provider. Without this, `Session::new` defaults `agent_id` to
+        // `None` and the pool routes the retry through the current
+        // `selected_agent_id`, silently switching providers (e.g. a
+        // minimax session retrying as claude). Surfaced 2026-05-22.
+        new_session.agent_id = original.agent_id.clone();
         new_session
     }
 }
@@ -349,6 +355,29 @@ mod tests {
         let retry = policy.prepare_retry(&original, None, None);
         assert_eq!(retry.model, "opus");
         assert_eq!(retry.mode, "orchestrator");
+    }
+
+    /// Regression for 2026-05-22: retry of a hollow session running on
+    /// `agent:minimax` silently switched to `agent:claude` because
+    /// `Session::new` defaults `agent_id` to `None` and the pool's
+    /// fallback routed through `App.selected_agent_id`. Copy the
+    /// original's `agent_id` onto the retry so the provider stays put.
+    #[test]
+    fn prepare_retry_preserves_agent_id() {
+        let policy = RetryPolicy::new(2, 0, legacy_hollow(1));
+        let mut original = make_session(SessionStatus::Stalled, 0);
+        original.agent_id = Some("minimax".to_string());
+        let retry = policy.prepare_retry(&original, None, None);
+        assert_eq!(retry.agent_id.as_deref(), Some("minimax"));
+    }
+
+    #[test]
+    fn prepare_retry_preserves_none_agent_id() {
+        let policy = RetryPolicy::new(2, 0, legacy_hollow(1));
+        let mut original = make_session(SessionStatus::Stalled, 0);
+        original.agent_id = None;
+        let retry = policy.prepare_retry(&original, None, None);
+        assert!(retry.agent_id.is_none());
     }
 
     #[test]
