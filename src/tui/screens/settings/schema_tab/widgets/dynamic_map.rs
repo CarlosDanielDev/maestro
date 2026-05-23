@@ -163,6 +163,16 @@ impl DynamicMapWidget {
             return field.widget.handle_input(key);
         }
 
+        // ListEditor owns its own `a` / `d` / Enter chords (Add / Delete /
+        // Edit list item). When focus is on a ListEditor entry field, defer
+        // these keys to the inner widget so users can edit `bindings` /
+        // `extra_args` / `allowed_tools` lists — otherwise the outer
+        // DynamicMap eats `a`/`d` for its own Add Entry / Remove Entry
+        // modals.
+        if self.focused_field_owns_chord(key) {
+            return self.delegate_to_focused_field(key);
+        }
+
         match key.code {
             KeyCode::Char('a') => {
                 self.open_add_modal();
@@ -455,7 +465,64 @@ impl DynamicMapWidget {
     }
 
     pub fn edit_hint(&self) -> &'static [(&'static str, &'static str)] {
+        // When focus is on an entry-field whose widget owns its own chords
+        // (ListEditor `a/d/Enter`, TextInput `Enter`, …), surface that
+        // widget's hint instead of the outer Add/Del/Prev/Next chords —
+        // otherwise the bar misleads users editing a `bindings` /
+        // `extra_args` ListEditor into pressing `a` for the wrong modal.
+        if let MapFocus::EntryField(n) = self.focus
+            && let Some(active) = self.active_idx
+            && let Some(entry) = self.entries.get(active)
+            && let Some(field) = entry.fields.get(n)
+        {
+            return field.widget.edit_hint();
+        }
         &[("a/d", "Add/Del"), ("[ ]", "Prev/Next")]
+    }
+
+    /// True when the focused entry-field widget claims `key` as one of its
+    /// own chords. Today only `ListEditor` does (it owns `a`, `d`, and
+    /// `Enter` in its non-editing mode). Other widget kinds either ignore
+    /// these keys or only react to them while in insert mode (handled by
+    /// the `needs_insert_mode()` gate above).
+    fn focused_field_owns_chord(&self, key: KeyEvent) -> bool {
+        let MapFocus::EntryField(n) = self.focus else {
+            return false;
+        };
+        let Some(active) = self.active_idx else {
+            return false;
+        };
+        let Some(entry) = self.entries.get(active) else {
+            return false;
+        };
+        let Some(field) = entry.fields.get(n) else {
+            return false;
+        };
+        match field.widget {
+            WidgetKind::ListEditor(_) => matches!(
+                key.code,
+                KeyCode::Char('a') | KeyCode::Char('d') | KeyCode::Enter
+            ),
+            _ => false,
+        }
+    }
+
+    fn delegate_to_focused_field(&mut self, key: KeyEvent) -> WidgetAction {
+        let MapFocus::EntryField(n) = self.focus else {
+            return WidgetAction::None;
+        };
+        let Some(active) = self.active_idx else {
+            return WidgetAction::None;
+        };
+        let Some(entry) = self.entries.get_mut(active) else {
+            return WidgetAction::None;
+        };
+        let Some(field) = entry.fields.get_mut(n) else {
+            return WidgetAction::None;
+        };
+        let action = field.widget.handle_input(key);
+        self.clamp_focus_to_visible();
+        action
     }
 
     pub fn serialize_to_toml(&self) -> toml::Value {

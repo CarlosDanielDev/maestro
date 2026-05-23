@@ -143,6 +143,131 @@ fn teams_tab_reload_after_save_re_collapses_bindings() -> anyhow::Result<()> {
 }
 
 #[test]
+fn pressing_a_on_bindings_field_adds_list_item_not_team() {
+    // Regression: outer DynamicMap used to intercept `a` for the
+    // Add-Team-Entry modal even when focus was on a child ListEditor
+    // field, making it impossible to add a `bindings` entry. Fix
+    // delegates ListEditor-owned chords (`a`, `d`, Enter) to the inner
+    // widget when focus is on a ListEditor entry-field. See #803.
+    use crate::tui::screens::settings::schema_tab::widgets::dynamic_map::{
+        DynamicMapWidget, MapFocus,
+    };
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    let mut existing = toml::map::Map::new();
+    let mut entry = toml::map::Map::new();
+    entry.insert("extends".into(), toml::Value::String("".into()));
+    entry.insert("primitive".into(), toml::Value::String("pipeline".into()));
+    existing.insert("worker-pool".into(), toml::Value::Table(entry));
+    let existing_val = toml::Value::Table(existing);
+
+    let mut widget = DynamicMapWidget::new(
+        "entries",
+        "teams",
+        crate::config::schema::dynamic::TEAMS_ENTRY_FIELDS,
+        Some(&existing_val),
+    );
+    // Move focus down to the bindings field (index 3) on the existing entry.
+    widget.handle_input(key(KeyCode::Tab)); // SubtabStrip -> EntryField(0) extends
+    widget.handle_input(key(KeyCode::Tab)); // -> EntryField(1) primitive
+    widget.handle_input(key(KeyCode::Tab)); // -> EntryField(2) min_agents
+    widget.handle_input(key(KeyCode::Tab)); // -> EntryField(3) bindings
+    assert_eq!(*widget.focus(), MapFocus::EntryField(3));
+
+    // Pressing `a` while focused on the bindings ListEditor must enter
+    // its insert mode (RequestInsertMode), NOT open the Add-Team modal.
+    widget.handle_input(key(KeyCode::Char('a')));
+    assert_eq!(
+        *widget.focus(),
+        MapFocus::EntryField(3),
+        "focus must stay on the bindings field, not jump to AddModal"
+    );
+    assert!(
+        widget.needs_insert_mode(),
+        "ListEditor must be in insert mode after `a`"
+    );
+
+    // Type a binding and commit with Enter.
+    for c in "coder=claude".chars() {
+        widget.handle_input(key(KeyCode::Char(c)));
+    }
+    widget.handle_input(key(KeyCode::Enter));
+
+    // Inspect the entry; the bindings ListEditor must have the new item.
+    let entry = widget
+        .entries()
+        .iter()
+        .find(|e| e.id == "worker-pool")
+        .expect("worker-pool present");
+    let WidgetKind::ListEditor(ref le) = entry.fields[3].widget else {
+        panic!("bindings field must be ListEditor");
+    };
+    assert!(
+        le.items.contains(&"coder=claude".to_string()),
+        "bindings list must contain `coder=claude`, got {:?}",
+        le.items
+    );
+}
+
+#[test]
+fn edit_hint_on_bindings_field_shows_listeditor_chord_not_team_chord() {
+    use crate::tui::screens::settings::schema_tab::widgets::dynamic_map::DynamicMapWidget;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    let mut existing = toml::map::Map::new();
+    let mut entry = toml::map::Map::new();
+    entry.insert("primitive".into(), toml::Value::String("pipeline".into()));
+    existing.insert("alpha".into(), toml::Value::Table(entry));
+    let val = toml::Value::Table(existing);
+
+    let mut widget = DynamicMapWidget::new(
+        "entries",
+        "teams",
+        crate::config::schema::dynamic::TEAMS_ENTRY_FIELDS,
+        Some(&val),
+    );
+
+    // SubtabStrip focus: outer Add/Del hint.
+    let hint = widget.edit_hint();
+    assert!(
+        hint.iter().any(|(k, _)| *k == "a/d"),
+        "SubtabStrip focus must surface the outer a/d Add/Del chord"
+    );
+
+    // Move focus onto the bindings ListEditor (idx 3).
+    for _ in 0..4 {
+        widget.handle_input(key(KeyCode::Tab));
+    }
+    let hint = widget.edit_hint();
+    assert!(
+        hint.iter().any(|(k, _)| *k == "Enter"),
+        "ListEditor-focused hint must surface the Enter chord, got {hint:?}"
+    );
+    assert!(
+        !hint.iter().any(|(k, _)| *k == "a/d"),
+        "ListEditor-focused hint must NOT show the outer a/d chord, got {hint:?}"
+    );
+}
+
+#[test]
 fn teams_with_unknown_extends_blocks_save_with_banner() {
     let (mut screen, _f) = screen_with_config_path();
     screen.config.teams.insert(
