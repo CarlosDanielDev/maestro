@@ -177,7 +177,13 @@ impl App {
             screen.start_loading_suggestions();
         }
         self.pending_commands.push(TuiCommand::FetchSuggestionData);
-        self.navigate_to_root();
+        // Push Dashboard onto the nav stack instead of clearing it — `Esc`
+        // from the dashboard then pops back to the screen the user was on
+        // before the completion modal opened, instead of jumping straight
+        // to ConfirmExit (the previous `navigate_to_root` behavior wiped
+        // navigation history every time the user pressed `[d] Dashboard`
+        // from the Session Complete modal — 2026-05-22 UX fix).
+        self.navigate_to(crate::tui::app::TuiMode::Dashboard);
     }
 }
 

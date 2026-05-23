@@ -265,11 +265,16 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
         return handle_completion_summary_failed_gates(app, key);
     }
     match (key.code, key.modifiers) {
-        (KeyCode::Enter, _) | (KeyCode::Esc, _) => {
-            app.transition_to_dashboard();
-        }
-        (KeyCode::Char('s'), _) => {
-            app.transition_to_dashboard();
+        (KeyCode::Enter, _) | (KeyCode::Esc, _) | (KeyCode::Char('s'), _) => {
+            // Dismiss the modal in place — Esc/Enter/[s] all close the
+            // overlay without resetting the navigation stack. The
+            // previous code routed these through `transition_to_dashboard`
+            // which wiped nav history and forced a full Dashboard rebuild
+            // every time the user just wanted to close the modal
+            // (2026-05-22 UX fix).
+            app.completion_summary = None;
+            app.completion_summary_dismissed = true;
+            app.tui_mode = app::TuiMode::Overview;
         }
         (KeyCode::Char('o'), _) => {
             open_first_completion_pr(app);
@@ -281,15 +286,18 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
             screen.loading = true;
             app.screen_state.issue_browser_screen = Some(screen);
             app.pending_commands.push(app::TuiCommand::FetchIssues);
-            app.tui_mode = app::TuiMode::IssueBrowser;
+            app.navigate_to(app::TuiMode::IssueBrowser);
         }
         (KeyCode::Char('r'), _) => {
             app.screen_state.prompt_input_screen = Some(app::helpers::create_prompt_input_screen(
                 &app.prompt_history,
             ));
-            app.tui_mode = app::TuiMode::PromptInput;
+            app.navigate_to(app::TuiMode::PromptInput);
         }
         (KeyCode::Char('d'), _) => {
+            // `transition_to_dashboard` now pushes Dashboard onto the
+            // nav stack (instead of clearing it), so `Esc` from the
+            // dashboard returns the user to the screen they came from.
             app.transition_to_dashboard();
         }
         (KeyCode::Char('q'), _) => {
@@ -297,17 +305,19 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
             app.navigate_to(app::TuiMode::ConfirmExit);
         }
         (KeyCode::Char('l'), _) => {
-            if let Some(ref summary) = app.completion_summary {
-                if let Some(first) = summary.sessions.first() {
-                    let sid = first.session_id;
-                    app.log_viewer_scroll = 0;
-                    app.completion_summary = None;
-                    app.tui_mode = app::TuiMode::LogViewer(sid);
-                } else {
-                    app.tui_mode = app::TuiMode::Overview;
-                }
-            } else {
-                app.tui_mode = app::TuiMode::Overview;
+            // [l] Logs: navigate (push onto stack) to the LogViewer for
+            // the first session so `Esc` returns to wherever the user
+            // was. Previous code set `tui_mode` directly which skipped
+            // the nav-stack push AND fell back to Overview when the
+            // summary was empty — losing context. If no session exists,
+            // leave the modal open instead of redirecting.
+            if let Some(ref summary) = app.completion_summary
+                && let Some(first) = summary.sessions.first()
+            {
+                let sid = first.session_id;
+                app.log_viewer_scroll = 0;
+                app.completion_summary_dismissed = true;
+                app.navigate_to(app::TuiMode::LogViewer(sid));
             }
         }
         (KeyCode::Char('f'), _) => {
@@ -2107,10 +2117,83 @@ mod tests {
 
         handle_completion_summary(&mut app, &key('s'));
 
-        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+        // [s] dismisses the modal in place — restores the underlying
+        // Overview screen instead of jumping to Dashboard and wiping
+        // navigation state (2026-05-22 UX fix).
+        assert_eq!(app.tui_mode, TuiMode::Overview);
         assert!(app.completion_summary.is_none());
         assert!(app.completion_summary_dismissed);
         assert!(calls.lock().expect("mutex").is_empty());
+    }
+
+    #[test]
+    fn completion_summary_s_key_preserves_nav_stack() {
+        let mut app = make_app();
+        // Simulate the user navigating Overview → Detail → CompletionSummary.
+        app.navigate_to(TuiMode::Detail(uuid::Uuid::nil()));
+        let nav_depth_before = app.nav_stack.depth();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(completed_summary());
+
+        handle_completion_summary(&mut app, &key('s'));
+
+        assert_eq!(
+            app.nav_stack.depth(),
+            nav_depth_before,
+            "[s] dismiss must NOT touch nav_stack — modal closes in place"
+        );
+    }
+
+    #[test]
+    fn completion_summary_d_key_pushes_dashboard_onto_nav_stack() {
+        let mut app = make_app();
+        app.navigate_to(TuiMode::Detail(uuid::Uuid::nil()));
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(completed_summary());
+        let depth_before = app.nav_stack.depth();
+
+        handle_completion_summary(&mut app, &key('d'));
+
+        assert_eq!(app.tui_mode, TuiMode::Dashboard);
+        // Esc from Dashboard should return the user to whatever they
+        // were on before — `transition_to_dashboard` must push instead
+        // of wiping the stack (2026-05-22 UX fix).
+        assert!(
+            app.nav_stack.depth() >= depth_before,
+            "[d] Dashboard must push onto nav_stack, not clear it"
+        );
+    }
+
+    #[test]
+    fn completion_summary_l_key_navigates_to_log_viewer() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        let summary = completed_summary();
+        let first_id = summary.sessions.first().expect("test fixture").session_id;
+        app.completion_summary = Some(summary);
+
+        handle_completion_summary(&mut app, &key('l'));
+
+        assert!(matches!(app.tui_mode, TuiMode::LogViewer(id) if id == first_id));
+        assert!(app.completion_summary_dismissed);
+        // Post-match auto-clear nulls the summary on any non-scroll key.
+        assert!(app.completion_summary.is_none());
+    }
+
+    #[test]
+    fn completion_summary_l_key_with_no_sessions_keeps_modal_open() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        let mut empty_summary = completed_summary();
+        empty_summary.sessions.clear();
+        app.completion_summary = Some(empty_summary);
+
+        handle_completion_summary(&mut app, &key('l'));
+
+        // No sessions = no LogViewer to open; user should stay on the
+        // overlay rather than fall through to Overview (the old code
+        // routed them off the modal even when [l] was a no-op).
+        assert!(!matches!(app.tui_mode, TuiMode::LogViewer(_)));
     }
 
     #[test]
