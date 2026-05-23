@@ -3,6 +3,7 @@ pub(crate) mod agent_badge;
 pub(crate) mod agent_graph;
 pub mod app;
 mod background_tasks;
+pub mod breadcrumb;
 pub mod budget_banner;
 pub mod budget_prespawn;
 pub mod clipboard;
@@ -764,7 +765,27 @@ async fn event_loop(
             }
         }
 
-        if app.all_done()
+        // #865: clear the dismissed flag automatically once a new session
+        // has entered the pool since the last dismiss. Without this, the
+        // modal stays silenced forever after the first dismiss because
+        // some session-arrival paths (retry, queue advance, etc.) do not
+        // run through `add_session`. `completion_summary_baseline_total`
+        // is captured by `dismiss_completion_summary` whenever the modal
+        // is dismissed.
+        if app.completion_summary_dismissed
+            && app.pool.total_count() > app.completion_summary_baseline_total
+        {
+            app.completion_summary_dismissed = false;
+        }
+
+        let modal_on_complete = app
+            .config
+            .as_ref()
+            .map(|c| c.tui.modal_on_complete)
+            .unwrap_or(true);
+
+        if modal_on_complete
+            && app.all_done()
             && app.continuous_mode.is_none()
             && app.queue_executor.is_none()
             && app.completion_summary.is_none()

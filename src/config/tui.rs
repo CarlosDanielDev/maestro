@@ -16,6 +16,11 @@ pub struct TuiConfig {
     /// `"ascii"` (legacy Unicode block-character art).
     #[serde(default)]
     pub mascot_style: crate::mascot::MascotStyle,
+    /// Fire the "Session Complete" modal when all sessions finish.
+    /// Default `true`. Toggled at runtime via the `MOD` header chip
+    /// (Shift+M) and persisted under `[tui] modal_on_complete` (#866).
+    #[serde(default = "default_modal_on_complete")]
+    pub modal_on_complete: bool,
 }
 
 impl Default for TuiConfig {
@@ -26,11 +31,16 @@ impl Default for TuiConfig {
             ascii_icons: false,
             show_mascot: default_show_mascot(),
             mascot_style: crate::mascot::MascotStyle::default(),
+            modal_on_complete: default_modal_on_complete(),
         }
     }
 }
 
 fn default_show_mascot() -> bool {
+    true
+}
+
+fn default_modal_on_complete() -> bool {
     true
 }
 

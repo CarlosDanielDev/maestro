@@ -1024,25 +1024,41 @@ fn draw_status_bar_inner(
         sep.clone(),
     ];
 
-    // Breadcrumb trail
+    // Breadcrumb trail — elide the middle with `…` on narrow widths (#867)
+    // to keep the rightmost crumb (current screen) visible. The budget is
+    // ~1/3 of the header width; the rest of the bar (agents / cost / clock)
+    // takes the remaining 2/3.
     {
         let crumb_sep = format!(" {} ", icons::get(IconId::ChevronRight));
-        for mode in app.nav_stack.breadcrumbs() {
-            spans.push(Span::styled(
-                mode.breadcrumb_label(),
-                Style::default().fg(theme.text_muted),
-            ));
-            spans.push(Span::styled(
-                crumb_sep.clone(),
-                Style::default().fg(theme.border_inactive),
-            ));
+        let parents: Vec<&str> = app
+            .nav_stack
+            .breadcrumbs()
+            .iter()
+            .map(|m| m.breadcrumb_label())
+            .collect();
+        let current_label = app.tui_mode.breadcrumb_label();
+        let mut labels = parents.clone();
+        labels.push(current_label);
+        let max_breadcrumb_width = (area.width / 3).max(20);
+        let displayed =
+            crate::tui::breadcrumb::elide_breadcrumbs(&labels, max_breadcrumb_width, &crumb_sep);
+        let last_idx = displayed.len().saturating_sub(1);
+        for (i, label) in displayed.iter().enumerate() {
+            let style = if i == last_idx {
+                Style::default()
+                    .fg(theme.accent_info)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.text_muted)
+            };
+            spans.push(Span::styled(label.clone(), style));
+            if i != last_idx {
+                spans.push(Span::styled(
+                    crumb_sep.clone(),
+                    Style::default().fg(theme.border_inactive),
+                ));
+            }
         }
-        spans.push(Span::styled(
-            app.tui_mode.breadcrumb_label(),
-            Style::default()
-                .fg(theme.accent_info)
-                .add_modifier(Modifier::BOLD),
-        ));
         spans.push(sep.clone());
     }
 
@@ -1104,6 +1120,27 @@ fn draw_status_bar_inner(
             )
         } else {
             Span::styled("TQ:OFF", Style::default().fg(theme.text_secondary))
+        });
+    }
+
+    // MOD badge — session-complete modal on/off (#866). Shift+M toggles.
+    {
+        spans.push(sep.clone());
+        let modal_on = app
+            .config
+            .as_ref()
+            .map(|c| c.tui.modal_on_complete)
+            .unwrap_or(true);
+        spans.push(if modal_on {
+            Span::styled(
+                "MOD:ON",
+                Style::default()
+                    .fg(theme.branding_fg)
+                    .bg(theme.accent_success)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Span::styled("MOD:OFF", Style::default().fg(theme.text_secondary))
         });
     }
 
