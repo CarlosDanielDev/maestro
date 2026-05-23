@@ -387,6 +387,10 @@ impl TeamWizardScreen {
         self.launch.manual_issues = issues;
     }
 
+    pub fn set_launch_manual_issue_input_for_test(&mut self, input: &str) {
+        self.launch.manual_issue_input = input.to_string();
+    }
+
     pub fn build_plan_preview_for_test(&mut self) {
         self.build_plan_preview();
     }
@@ -412,6 +416,7 @@ fn apply_initial_input(launch: &mut LaunchPayload, input: &TeamLaunchInput) {
         TeamLaunchInput::Issue { number, title } => {
             launch.input_kind = LaunchInputKind::Issue;
             launch.manual_issue_title = title.clone();
+            launch.manual_issue_input = number.to_string();
             launch.manual_issues = vec![*number];
         }
         TeamLaunchInput::Milestone {

@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - v0.29.5 observability umbrella closed: unified cost / token / quota tracking across all five agent providers (Claude, Codex, OpenCode, MiniMax, Ollama) — verifies the work landed across #770–#776 and the Level 1.5/2 hardening (#844, #845, #846, #848, #849, #850) (#769).
 - feat(tui/settings): wire Teams tab through schema renderer with bindings round-trip adapter (#803).
 
+### Fixed
+- Team Wizard Launch: added `IssuePicker` step (Step 2/8) so users can enter an issue number when selecting the Issue input kind; also adds `manual_issue_input` to `LaunchPayload` and renames the step-total guard to `launch_step_total_is_eight` (#805).
+
 ## [0.29.0] - 2026-05-21
 
 Schema-driven settings — the entire Settings screen is now rendered from a single declarative schema (`FieldSchema` + `FieldKind`) instead of hand-coded per-tab modules. `[agents]`, `[modes]`, and `[[sessions.completion_gates.commands]]` gain in-TUI add/remove/reorder via the new `DynamicMapWidget` and `DynamicRowsWidget` primitives. `maestro.toml` saves preserve comments, blank lines, and key order via `toml_edit`. `docs/configuration.md` is now auto-generated from the schema and guarded by a CI drift check. Slash-command guardrails (`/auto`, `/implement`, `/pushup`) gain programmatic gates that survive context resets.
