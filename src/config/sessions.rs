@@ -82,6 +82,12 @@ pub struct SessionsConfig {
     pub hollow_retry: HollowRetryConfig,
     /// Maximum number of prompt history entries to retain. Default: 100.
     pub max_prompt_history: usize,
+    /// Cap on persisted session history. Maestro saves the last N
+    /// completed sessions to `~/.maestro/maestro-state.json` so the
+    /// top-bar `$X.XX/Y.YY` reading and per-session breakdown survive
+    /// restarts. `0` disables history entirely (state.sessions is wiped
+    /// on every save and `total_cost_usd` resets to 0). Default: 10.
+    pub session_history_cap: usize,
     /// Context overflow detection and auto-fork configuration.
     pub context_overflow: ContextOverflowConfig,
     /// Conflict detection policy configuration.
@@ -121,6 +127,8 @@ struct SessionsConfigRaw {
     hollow_retry: Option<HollowRetryConfig>,
     #[serde(default = "default_max_prompt_history")]
     max_prompt_history: usize,
+    #[serde(default = "default_session_history_cap")]
+    session_history_cap: usize,
     #[serde(default)]
     context_overflow: ContextOverflowConfig,
     #[serde(default)]
@@ -144,6 +152,7 @@ impl From<SessionsConfigRaw> for SessionsConfig {
             retry_cooldown_secs: raw.retry_cooldown_secs,
             hollow_retry: merge_legacy_hollow(raw.hollow_retry, raw.hollow_max_retries),
             max_prompt_history: raw.max_prompt_history,
+            session_history_cap: raw.session_history_cap,
             context_overflow: raw.context_overflow,
             conflict: raw.conflict,
             guardrail_prompt: raw.guardrail_prompt,
@@ -297,6 +306,9 @@ fn default_consultation_max_retries() -> u32 {
 }
 pub(crate) fn default_max_prompt_history() -> usize {
     100
+}
+pub(crate) fn default_session_history_cap() -> usize {
+    10
 }
 fn default_true() -> bool {
     true

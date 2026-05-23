@@ -13,13 +13,10 @@ const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[sessi
 // Decremented from 53 → 51 after `default_model` and `permission_mode`
 // were removed from SESSIONS_FIELDS in favor of per-provider configuration
 // (live on `[agents.<id>]`). Bumped 51 → 93 in #788 after backfilling
-// project/sessions/review/tui/turboquant/concurrency sections.
-// Walker breakdown: +5 (project) +3 (sessions: allowed_tools, max_prompt_history,
-// guardrail_prompt) +0 (review: only reviewers VecOfStruct added) +2 (tui:
-// show_mascot, mascot_style) +0 (tui.theme top-level: overrides is NestedTable)
-// +28 (tui.theme.overrides leaves) +3 (turboquant token budgets) +1
-// (concurrency.team_max_parallel) = +42.
-const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 93;
+// project/sessions/review/tui/turboquant/concurrency sections. Bumped
+// 93 → 94 on 2026-05-23 for `sessions.session_history_cap` (persisted
+// session-history toggle).
+const EXPECTED_STATIC_NON_NESTED_FIELDS: usize = 94;
 // Bumped 3 → 4 in #788 — `review.reviewers` registered as VecOfStruct.
 const EXPECTED_DYNAMIC_CARDINALITY_SLOTS: usize = 4;
 

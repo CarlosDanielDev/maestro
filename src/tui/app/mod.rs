@@ -773,7 +773,15 @@ impl App {
 
     fn sync_state(&mut self) {
         self.state.sessions = self.pool.all_sessions().into_iter().cloned().collect();
-        self.state.update_total_cost();
+        // Cap historical (terminal) sessions per
+        // `[sessions].session_history_cap`; active sessions stay intact.
+        // Defaults to 10 if config is missing.
+        let cap = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.session_history_cap)
+            .unwrap_or(10);
+        self.state.cap_session_history(cap);
         self.total_cost = self.state.total_cost_usd;
         self.state.last_updated = Some(Utc::now());
         // Mirror in-memory pending completions to persisted state so a

@@ -132,6 +132,38 @@ impl MaestroState {
         self.total_cost_usd = self.sessions.iter().map(|s| s.cost_usd).sum();
     }
 
+    /// Trim persisted session history to `cap` most-recent terminal
+    /// entries, keeping all non-terminal sessions intact (active /
+    /// queued / paused work is never evicted by the history cap).
+    /// `cap == 0` clears history entirely and zeros `total_cost_usd`.
+    /// Recomputes `total_cost_usd` from the surviving sessions so the
+    /// on-disk aggregate stays in sync with the array. Added 2026-05-23.
+    pub fn cap_session_history(&mut self, cap: usize) {
+        let (terminal, active): (Vec<Session>, Vec<Session>) = self
+            .sessions
+            .drain(..)
+            .partition(|s| s.status.is_terminal());
+
+        let mut terminal = terminal;
+        if cap == 0 {
+            terminal.clear();
+        } else if terminal.len() > cap {
+            // Sort newest first by `finished_at` (fall back to
+            // `started_at` for sessions that finished without timing
+            // — defensive; should not normally happen).
+            terminal.sort_by(|a, b| {
+                let ka = a.finished_at.or(a.started_at);
+                let kb = b.finished_at.or(b.started_at);
+                kb.cmp(&ka)
+            });
+            terminal.truncate(cap);
+        }
+
+        self.sessions = active;
+        self.sessions.extend(terminal);
+        self.update_total_cost();
+    }
+
     /// Record a fork relationship.
     pub fn record_fork(&mut self, parent_id: uuid::Uuid, child_id: uuid::Uuid) {
         self.fork_lineage.insert(child_id, parent_id);
@@ -202,6 +234,110 @@ mod tests {
         state.record_fork(mid_id, leaf_id);
         let chain = state.fork_chain(leaf_id);
         assert_eq!(chain, vec![root_id, mid_id, leaf_id]);
+    }
+
+    fn make_terminal_session(cost: f64, finished_offset_secs: i64) -> Session {
+        let mut s = Session::new(
+            "test".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        s.status = crate::session::types::SessionStatus::Completed;
+        s.cost_usd = cost;
+        s.started_at = Some(chrono::Utc::now() - chrono::Duration::seconds(60));
+        s.finished_at =
+            Some(chrono::Utc::now() - chrono::Duration::seconds(60 - finished_offset_secs));
+        s
+    }
+
+    fn make_active_session(cost: f64) -> Session {
+        let mut s = Session::new(
+            "active".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        s.status = crate::session::types::SessionStatus::Running;
+        s.cost_usd = cost;
+        s.started_at = Some(chrono::Utc::now());
+        s
+    }
+
+    #[test]
+    fn cap_session_history_zero_clears_all_terminal_sessions() {
+        let mut state = MaestroState::default();
+        state.sessions.push(make_terminal_session(0.10, 1));
+        state.sessions.push(make_terminal_session(0.20, 2));
+        state.sessions.push(make_active_session(0.05));
+
+        state.cap_session_history(0);
+
+        assert_eq!(state.sessions.len(), 1, "active session must survive cap=0");
+        assert!(matches!(
+            state.sessions[0].status,
+            crate::session::types::SessionStatus::Running
+        ));
+        assert!(
+            (state.total_cost_usd - 0.05).abs() < f64::EPSILON,
+            "total_cost_usd recomputed from surviving sessions only; got {}",
+            state.total_cost_usd
+        );
+    }
+
+    #[test]
+    fn cap_session_history_keeps_n_most_recent_terminals() {
+        let mut state = MaestroState::default();
+        // Three terminal sessions, increasing finished_at.
+        state.sessions.push(make_terminal_session(0.10, 10));
+        state.sessions.push(make_terminal_session(0.20, 20));
+        state.sessions.push(make_terminal_session(0.30, 30));
+
+        state.cap_session_history(2);
+
+        assert_eq!(state.sessions.len(), 2, "cap=2 must keep 2 terminals");
+        // Newest two are cost 0.30 + 0.20.
+        let total: f64 = state.sessions.iter().map(|s| s.cost_usd).sum();
+        assert!(
+            (total - 0.50).abs() < f64::EPSILON,
+            "newest two by finished_at sum to 0.50; got {}",
+            total
+        );
+        assert!((state.total_cost_usd - 0.50).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn cap_session_history_never_evicts_active_sessions() {
+        let mut state = MaestroState::default();
+        for i in 0..5 {
+            state.sessions.push(make_terminal_session(0.10, i as i64));
+        }
+        state.sessions.push(make_active_session(0.99));
+
+        state.cap_session_history(2);
+
+        let active_count = state
+            .sessions
+            .iter()
+            .filter(|s| !s.status.is_terminal())
+            .count();
+        assert_eq!(active_count, 1, "active session must survive any cap");
+        // 2 terminals + 1 active = 3 total
+        assert_eq!(state.sessions.len(), 3);
+    }
+
+    #[test]
+    fn cap_session_history_no_op_when_count_under_cap() {
+        let mut state = MaestroState::default();
+        state.sessions.push(make_terminal_session(0.10, 1));
+        state.sessions.push(make_terminal_session(0.20, 2));
+
+        state.cap_session_history(10);
+
+        assert_eq!(state.sessions.len(), 2, "below cap = no truncation");
+        assert!((state.total_cost_usd - 0.30).abs() < f64::EPSILON);
     }
 
     #[test]
