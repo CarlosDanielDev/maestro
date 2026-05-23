@@ -110,9 +110,17 @@ impl App {
     pub fn transition_to_dashboard(&mut self) {
         let all = self.pool.all_sessions();
 
-        // Save session state
+        // Save session state. Apply the persisted-history cap from
+        // `[sessions].session_history_cap` (default 10, 0 = disabled)
+        // so the on-disk record doesn't grow unboundedly and the user
+        // can opt out of restart-time cost continuity.
         self.state.sessions = all.iter().copied().cloned().collect();
-        self.state.update_total_cost();
+        let cap = self
+            .config
+            .as_ref()
+            .map(|c| c.sessions.session_history_cap)
+            .unwrap_or(10);
+        self.state.cap_session_history(cap);
         self.state.last_updated = Some(chrono::Utc::now());
         if let Err(e) = self.store.save(&self.state) {
             let message = e.to_string();

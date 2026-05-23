@@ -494,6 +494,7 @@ command = "scripts/doc-review.sh {pr_number}"
 | `max_retries` | int (0..=10) | `2` | Retries for failed or stalled sessions |
 | `retry_cooldown_secs` | int (0..=600, step 10) | `60` | Cooldown between retries |
 | `max_prompt_history` | int (0..=10000, step 10) | `100` | Maximum prompt-history entries retained per session |
+| `session_history_cap` | int (0..=1000) | `10` | How many completed sessions to persist across restarts (0 disables history — top-bar cost resets on relaunch) |
 | `guardrail_prompt` | string | unset | Custom guardrail injected into the system prompt — empty falls back to language-based default |
 <!-- END AUTOGEN:sessions -->
 

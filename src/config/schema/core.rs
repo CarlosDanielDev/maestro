@@ -173,6 +173,19 @@ pub(super) const SESSIONS_FIELDS: &[FieldSchema] = &[
         presentation: None,
     },
     FieldSchema {
+        key: "session_history_cap",
+        label: "Session History Cap",
+        help: "How many completed sessions to persist across restarts (0 disables history — top-bar cost resets on relaunch)",
+        default: DefaultValue::Int(10),
+        kind: FieldKind::Int {
+            min: 0,
+            max: 1000,
+            step: 1,
+        },
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
         key: "guardrail_prompt",
         label: "Guardrail Prompt",
         help: "Custom guardrail injected into the system prompt — empty falls back to language-based default",

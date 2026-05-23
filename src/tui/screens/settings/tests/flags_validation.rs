@@ -250,26 +250,27 @@ fn cross_field_validation_ci_wait_vs_poll() {
 fn sessions_tab_contains_hollow_retry_widgets() {
     let screen = SettingsScreen::new(make_config(), make_flags());
     let fields = &screen.fields_per_tab[1];
-    // Field order after #788 backfill (allowed_tools, max_prompt_history,
-    // guardrail_prompt added): max_concurrent(0), stall(1), default_mode(2),
-    // bypass(3), allowed_tools(4), max_retries(5), retry_cooldown(6),
-    // max_prompt_history(7), guardrail_prompt(8),
-    // hollow_retry.policy(9), .work_max_retries(10), .consultation_max_retries(11).
-    match &fields[9].widget {
-        WidgetKind::Dropdown(d) => assert_eq!(d.label, "hollow_retry.policy"),
-        _ => panic!("expected Dropdown at field 9 (hollow_retry.policy)"),
-    }
+    // Field order after the 2026-05-23 `session_history_cap` insert
+    // (between max_prompt_history and guardrail_prompt):
+    // max_concurrent(0), stall(1), default_mode(2), bypass(3),
+    // allowed_tools(4), max_retries(5), retry_cooldown(6),
+    // max_prompt_history(7), session_history_cap(8), guardrail_prompt(9),
+    // hollow_retry.policy(10), .work_max_retries(11), .consultation_max_retries(12).
     match &fields[10].widget {
-        WidgetKind::NumberStepper(s) => {
-            assert_eq!(s.label, "hollow_retry.work_max_retries")
-        }
-        _ => panic!("expected NumberStepper at field 10 (work_max_retries)"),
+        WidgetKind::Dropdown(d) => assert_eq!(d.label, "hollow_retry.policy"),
+        _ => panic!("expected Dropdown at field 10 (hollow_retry.policy)"),
     }
     match &fields[11].widget {
         WidgetKind::NumberStepper(s) => {
+            assert_eq!(s.label, "hollow_retry.work_max_retries")
+        }
+        _ => panic!("expected NumberStepper at field 11 (work_max_retries)"),
+    }
+    match &fields[12].widget {
+        WidgetKind::NumberStepper(s) => {
             assert_eq!(s.label, "hollow_retry.consultation_max_retries")
         }
-        _ => panic!("expected NumberStepper at field 11 (consultation_max_retries)"),
+        _ => panic!("expected NumberStepper at field 12 (consultation_max_retries)"),
     }
 }
 
@@ -277,8 +278,8 @@ fn sessions_tab_contains_hollow_retry_widgets() {
 fn sessions_tab_hollow_retry_policy_defaults_to_intent_aware() {
     let screen = SettingsScreen::new(make_config(), make_flags());
     let fields = &screen.fields_per_tab[1];
-    let WidgetKind::Dropdown(d) = &fields[9].widget else {
-        panic!("field 9 must be Dropdown (hollow_retry.policy)");
+    let WidgetKind::Dropdown(d) = &fields[10].widget else {
+        panic!("field 10 must be Dropdown (hollow_retry.policy)");
     };
     // Options order: [always, intent-aware, never] → default index 1.
     assert_eq!(d.selected, 1);
@@ -292,7 +293,7 @@ fn sessions_tab_hollow_retry_sync_writes_policy_to_config() {
     if let Some(WidgetKind::Dropdown(d)) = screen
         .fields_per_tab
         .get_mut(1)
-        .and_then(|fs| fs.get_mut(9))
+        .and_then(|fs| fs.get_mut(10))
         .map(|f| &mut f.widget)
     {
         d.selected = 2;
@@ -310,7 +311,7 @@ fn sessions_tab_hollow_retry_sync_writes_steppers_to_config() {
     if let Some(WidgetKind::NumberStepper(s)) = screen
         .fields_per_tab
         .get_mut(1)
-        .and_then(|fs| fs.get_mut(10))
+        .and_then(|fs| fs.get_mut(11))
         .map(|f| &mut f.widget)
     {
         s.value = 5;
@@ -318,7 +319,7 @@ fn sessions_tab_hollow_retry_sync_writes_steppers_to_config() {
     if let Some(WidgetKind::NumberStepper(s)) = screen
         .fields_per_tab
         .get_mut(1)
-        .and_then(|fs| fs.get_mut(11))
+        .and_then(|fs| fs.get_mut(12))
         .map(|f| &mut f.widget)
     {
         s.value = 3;
