@@ -2,15 +2,15 @@
 source: src/tui/snapshot_tests/team_wizard.rs
 expression: t.backend()
 ---
-"╔═════════════════════════[ Step 8/8: Launch Failed ]══════════════════════════╗"
+"╔══════════════════════════[ Step 3/8: Issue Number ]══════════════════════════╗"
 "║                                                                              ║"
 "╚══════════════════════════════════════════════════════════════════════════════╝"
-"╔══════════════════════════════[ Launch Failed ]═══════════════════════════════╗"
+"╔═══════════════════════════════[ Issue Number ]═══════════════════════════════╗"
+"║Enter the issue number (digits only)                                          ║"
 "║                                                                              ║"
-"║                                dispatch error                                ║"
+"║>                                                                             ║"
 "║                                                                              ║"
-"║                            Press Enter to return.                            ║"
-"║                                                                              ║"
+"║[Enter] continue   [Esc] back                                                 ║"
 "║                                                                              ║"
 "║                                                                              ║"
 "║                                                                              ║"
@@ -24,5 +24,5 @@ expression: t.backend()
 "║                                                                              ║"
 "║                                                                              ║"
 "╚══════════════════════════════════════════════════════════════════════════════╝"
-"                             [r] retry   [Esc] back                             "
-"                                                                                "
+"                              Enter an issue number                             "
+"        [digits] type   [Backspace] erase   [Enter] continue   [Esc] back       "

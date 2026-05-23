@@ -299,6 +299,7 @@ impl TeamWizardScreen {
             |f, body_area| match step {
                 LaunchStep::TeamPicker => self.draw_launch_team_picker(f, body_area, theme),
                 LaunchStep::InputPicker => self.draw_launch_input_picker(f, body_area, theme),
+                LaunchStep::IssuePicker => self.draw_launch_issue_picker(f, body_area, theme),
                 LaunchStep::PlanPreview => self.draw_launch_plan_preview(f, body_area, theme),
                 LaunchStep::Confirm => self.draw_launch_confirm(f, body_area, theme),
                 LaunchStep::Executing => self.draw_terminal_state(
@@ -382,6 +383,32 @@ impl TeamWizardScreen {
         }
         f.render_widget(
             Paragraph::new(lines).block(theme.styled_block("Input", false)),
+            area,
+        );
+    }
+
+    fn draw_launch_issue_picker(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let buffer = sanitize_for_terminal(&self.launch.manual_issue_input);
+        let lines = vec![
+            Line::from(Span::styled(
+                "Enter the issue number (digits only)",
+                Style::default().fg(theme.text_secondary),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                format!("> {buffer}"),
+                Style::default()
+                    .fg(theme.text_primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "[Enter] continue   [Esc] back",
+                Style::default().fg(theme.text_secondary),
+            )),
+        ];
+        f.render_widget(
+            Paragraph::new(lines).block(theme.styled_block("Issue Number", false)),
             area,
         );
     }
@@ -668,6 +695,9 @@ fn launch_footer_hint(step: LaunchStep) -> &'static str {
     match step {
         LaunchStep::TeamPicker => "[↑/↓ j/k] pick   [Enter] choose   [Esc] back",
         LaunchStep::InputPicker => "[↑/↓ j/k] pick   [Enter] continue   [Esc] back",
+        LaunchStep::IssuePicker => {
+            "[digits] type   [Backspace] erase   [Enter] continue   [Esc] back"
+        }
         LaunchStep::PlanPreview => "[Enter] confirm   [Esc] back",
         LaunchStep::Confirm => "[Enter] launch   [Esc] back",
         LaunchStep::Executing => "Dispatching…",

@@ -43,6 +43,15 @@ impl TeamWizardScreen {
                 self.launch_input_focus_inc()
             }
             (LaunchStep::InputPicker, KeyCode::Enter) => self.launch_commit_input(),
+            (LaunchStep::IssuePicker, KeyCode::Backspace) => {
+                self.launch.manual_issue_input.pop();
+            }
+            (LaunchStep::IssuePicker, KeyCode::Char(c))
+                if c.is_ascii_digit() && self.launch.manual_issue_input.len() < 10 =>
+            {
+                self.launch.manual_issue_input.push(c);
+            }
+            (LaunchStep::IssuePicker, KeyCode::Enter) => self.launch_commit_issue_number(),
             (LaunchStep::PlanPreview, KeyCode::Enter) => self.launch_confirm_plan(),
             (LaunchStep::Confirm, KeyCode::Enter) => self.launch_dispatch(),
             (LaunchStep::LaunchFailed, KeyCode::Char('r')) => {
@@ -73,13 +82,7 @@ impl TeamWizardScreen {
                 }
             }
             LaunchStep::InputPicker => match self.launch.input_kind {
-                LaunchInputKind::Issue => {
-                    if self.launch.manual_issue().is_some() {
-                        None
-                    } else {
-                        Some("Issue not selected")
-                    }
-                }
+                LaunchInputKind::Issue => None,
                 LaunchInputKind::IssueSet | LaunchInputKind::Milestone => {
                     if self.launch.manual_issues.is_empty() {
                         Some("No issues selected")
@@ -89,6 +92,17 @@ impl TeamWizardScreen {
                 }
                 LaunchInputKind::IdeaInbox => None,
             },
+            LaunchStep::IssuePicker => {
+                let trimmed = self.launch.manual_issue_input.trim();
+                if trimmed.is_empty() {
+                    return Some("Enter an issue number");
+                }
+                match trimmed.parse::<u64>() {
+                    Ok(n) if n > 0 => None,
+                    Ok(_) => Some("Issue number must be greater than 0"),
+                    Err(_) => Some("Enter a valid issue number"),
+                }
+            }
             LaunchStep::PlanPreview => match &self.launch.preflight {
                 Some(Ok(())) => None,
                 Some(Err(_)) => Some("Pre-flight failed — fix blockers"),
@@ -130,8 +144,34 @@ impl TeamWizardScreen {
     }
 
     fn launch_commit_input(&mut self) {
-        if let Some(kind) = INPUT_KINDS.get(self.launch.input_focus) {
-            self.launch.input_kind = *kind;
+        let Some(kind) = INPUT_KINDS.get(self.launch.input_focus).copied() else {
+            return;
+        };
+        self.launch.input_kind = kind;
+        match kind {
+            LaunchInputKind::Issue => {
+                self.launch_step = LaunchStep::IssuePicker;
+            }
+            LaunchInputKind::IssueSet | LaunchInputKind::Milestone => {
+                if self.launch.manual_issues.is_empty() {
+                    return;
+                }
+                self.launch_step = LaunchStep::PlanPreview;
+                self.build_plan_preview();
+            }
+            LaunchInputKind::IdeaInbox => {
+                self.launch_step = LaunchStep::PlanPreview;
+                self.build_plan_preview();
+            }
+        }
+    }
+
+    fn launch_commit_issue_number(&mut self) {
+        let trimmed = self.launch.manual_issue_input.trim();
+        if let Ok(n) = trimmed.parse::<u64>()
+            && n > 0
+        {
+            self.launch.manual_issues = vec![n];
             self.try_advance();
         }
     }

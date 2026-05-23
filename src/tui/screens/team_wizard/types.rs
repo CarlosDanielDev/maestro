@@ -91,6 +91,7 @@ pub enum LaunchStep {
     #[default]
     TeamPicker,
     InputPicker,
+    IssuePicker,
     PlanPreview,
     Confirm,
     Executing,
@@ -102,6 +103,7 @@ impl LaunchStep {
     pub const ALL: &'static [Self] = &[
         Self::TeamPicker,
         Self::InputPicker,
+        Self::IssuePicker,
         Self::PlanPreview,
         Self::Confirm,
         Self::Executing,
@@ -113,6 +115,7 @@ impl LaunchStep {
         match self {
             Self::TeamPicker => "Team",
             Self::InputPicker => "Input",
+            Self::IssuePicker => "Issue Number",
             Self::PlanPreview => "Plan",
             Self::Confirm => "Confirm",
             Self::Executing => "Executing",
@@ -280,6 +283,7 @@ pub struct LaunchPayload {
     pub selected_team: Option<String>,
     pub input_kind: LaunchInputKind,
     pub manual_issue_title: String,
+    pub manual_issue_input: String,
     pub manual_issues: Vec<u64>,
     pub primary_milestone: Option<u64>,
     pub plan: Option<PlanPreview>,
@@ -465,8 +469,8 @@ mod tests {
     // ── LaunchStep ───────────────────────────────────────────────────────
 
     #[test]
-    fn launch_step_total_is_seven() {
-        assert_eq!(LaunchStep::total(), 7);
+    fn launch_step_total_is_eight() {
+        assert_eq!(LaunchStep::total(), 8);
     }
 
     #[test]
@@ -477,6 +481,30 @@ mod tests {
     #[test]
     fn launch_step_team_picker_next_is_input_picker() {
         assert_eq!(LaunchStep::TeamPicker.next(), Some(LaunchStep::InputPicker));
+    }
+
+    #[test]
+    fn launch_step_input_picker_next_is_issue_picker() {
+        assert_eq!(
+            LaunchStep::InputPicker.next(),
+            Some(LaunchStep::IssuePicker)
+        );
+    }
+
+    #[test]
+    fn launch_step_issue_picker_next_is_plan_preview() {
+        assert_eq!(
+            LaunchStep::IssuePicker.next(),
+            Some(LaunchStep::PlanPreview)
+        );
+    }
+
+    #[test]
+    fn launch_step_issue_picker_previous_is_input_picker() {
+        assert_eq!(
+            LaunchStep::IssuePicker.previous(),
+            Some(LaunchStep::InputPicker)
+        );
     }
 
     #[test]

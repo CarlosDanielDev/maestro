@@ -487,3 +487,134 @@ fn apply_delete_result_err_transitions_to_delete_failed() {
     s.apply_delete_result(Err("permission denied".into()));
     assert_eq!(s.manage_step(), ManageStep::DeleteFailed);
 }
+
+// ── Launch IssuePicker (issue #805) ─────────────────────────────────────
+
+#[test]
+fn launch_input_picker_issue_kind_enter_advances_to_issue_picker() {
+    let mut s = fresh();
+    s.apply_resolved_teams(vec![pipeline_team()]);
+    s.set_known_agents(vec!["claude".into()]);
+    s.set_launch_team_for_test("default-coder");
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::InputPicker);
+    s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(s.launch_step(), LaunchStep::IssuePicker);
+}
+
+#[test]
+fn launch_issue_picker_enter_with_empty_buffer_does_not_advance() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(s.launch_step(), LaunchStep::IssuePicker);
+    assert_eq!(s.validation_error(), Some("Enter an issue number"));
+}
+
+#[test]
+fn launch_issue_picker_enter_with_non_numeric_buffer_does_not_advance() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.set_launch_manual_issue_input_for_test("abc");
+    s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(s.launch_step(), LaunchStep::IssuePicker);
+    assert_eq!(s.validation_error(), Some("Enter a valid issue number"));
+}
+
+#[test]
+fn launch_issue_picker_enter_with_zero_rejected() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.set_launch_manual_issue_input_for_test("0");
+    s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(s.launch_step(), LaunchStep::IssuePicker);
+    assert_eq!(
+        s.validation_error(),
+        Some("Issue number must be greater than 0")
+    );
+}
+
+#[test]
+fn launch_issue_picker_enter_with_valid_number_populates_manual_issues_and_advances() {
+    let mut s = fresh();
+    s.apply_resolved_teams(vec![pipeline_team()]);
+    s.set_known_agents(vec!["claude".into()]);
+    s.set_launch_team_for_test("default-coder");
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.launch.input_kind = LaunchInputKind::Issue;
+    s.handle_input(&key_event(KeyCode::Char('4')), InputMode::Normal);
+    s.handle_input(&key_event(KeyCode::Char('2')), InputMode::Normal);
+    s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(s.launch_payload().manual_issues, vec![42u64]);
+    assert_eq!(s.launch_step(), LaunchStep::PlanPreview);
+}
+
+#[test]
+fn launch_issue_picker_esc_returns_to_input_picker() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.launch.input_kind = LaunchInputKind::Issue;
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+    assert_eq!(s.launch_step(), LaunchStep::InputPicker);
+    assert_eq!(s.launch_payload().input_kind, LaunchInputKind::Issue);
+}
+
+#[test]
+fn launch_issue_picker_backspace_pops_last_digit() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.set_launch_manual_issue_input_for_test("42");
+    s.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
+    assert_eq!(s.launch_payload().manual_issue_input, "4");
+}
+
+#[test]
+fn launch_issue_picker_digit_keystroke_appends_to_buffer() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.handle_input(&key_event(KeyCode::Char('4')), InputMode::Normal);
+    s.handle_input(&key_event(KeyCode::Char('2')), InputMode::Normal);
+    assert_eq!(s.launch_payload().manual_issue_input, "42");
+}
+
+#[test]
+fn launch_issue_picker_non_digit_keystroke_ignored() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
+    assert_eq!(s.launch_payload().manual_issue_input, "");
+}
+
+#[test]
+fn launch_issue_picker_buffer_capped_at_ten_digits() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    for _ in 0..12 {
+        s.handle_input(&key_event(KeyCode::Char('1')), InputMode::Normal);
+    }
+    assert_eq!(s.launch_payload().manual_issue_input.len(), 10);
+}
+
+#[test]
+fn launch_input_picker_issue_set_enter_skips_issue_picker() {
+    let mut s = fresh();
+    s.apply_resolved_teams(vec![pipeline_team()]);
+    s.set_known_agents(vec!["claude".into()]);
+    s.set_launch_team_for_test("default-coder");
+    s.set_launch_input_for_test(LaunchInputKind::IssueSet, None);
+    s.set_launch_manual_issues_for_test(vec![1, 2]);
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::InputPicker);
+    s.launch.input_focus = 1;
+    s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(s.launch_step(), LaunchStep::PlanPreview);
+}

@@ -201,6 +201,15 @@ fn launch_input_picker_80x24() {
 }
 
 #[test]
+fn launch_issue_picker_80x24() {
+    let mut s = populated_launch_screen();
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.set_launch_team_for_test("default-coder");
+    let t = draw_team_wizard(&mut s, 80, 24);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
 fn launch_plan_preview_green_80x24() {
     let mut s = TeamWizardScreen::with_entry(
         ProviderKind::default(),
