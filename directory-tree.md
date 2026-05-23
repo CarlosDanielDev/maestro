@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-23 12:00 (UTC)
+> Last updated: 2026-05-23 18:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -573,6 +573,9 @@ maestro/
 │   │       │   ├── compose.rs             # Compose flow steps: Source → Primitive → Roles → Overrides → Save; name validator enforces ^[A-Za-z0-9_-]{1,64}$, rejects Windows-reserved stems and leading -/_; optimistic Success transition (Saving interim state deferred to dispatcher wiring — follow-up)
 │   │       │   ├── launch.rs              # Launch flow steps: TeamPicker → InputPicker → PlanPreview → Confirm
 │   │       │   ├── manage.rs              # Manage flow: preset list, Edit (jumps to Compose with Extends), Delete with confirmation; optimistic Delete transition (Deleting interim state deferred to dispatcher wiring — follow-up)
+│   │       │   ├── clipboard.rs           # Ctrl+V paste on IssuePicker: clipboard read + parse_pasted_issue_token parser (bare number, #NNN, GitHub URL) (#875)
+│   │       │   ├── issue_paste.rs         # parse_pasted_issue_token: pure parser extracted from clipboard.rs so it is unit-testable without a system clipboard (#875)
+│   │       │   ├── launch_plan.rs         # launch_plan extraction module: refactor to keep launch.rs under the 400-LOC cap; holds plan-preview helpers (#877)
 │   │       │   ├── test_helpers.rs        # Test fakes: TeamWizardBuilder, make_compose_screen(), make_launch_screen(), make_manage_screen() helpers for unit tests
 │   │       │   └── tests.rs               # Inline unit tests for wizard state machines and key-event handling
 │   │       ├── milestone_health/          # Milestone Review wizard screen components  [Issue #500]
@@ -1136,9 +1139,12 @@ maestro/
 | `src/tui/screens/team_wizard/compose.rs` | Compose flow step handlers (Source → Primitive → Roles → Overrides → Save); save name validator enforces `^[A-Za-z0-9_-]{1,64}$`, rejects Windows-reserved stems (CON, PRN, AUX, NUL, COM1–9, LPT1–9) and leading `-`/`_`; optimistic Success transition — `Saving` interim state is a follow-up once dispatcher wiring lands (Issue #664) |
 | `src/tui/screens/team_wizard/launch.rs` | Launch flow step handlers (TeamPicker → InputPicker → PlanPreview → Confirm) (Issue #664) |
 | `src/tui/screens/team_wizard/manage.rs` | Manage flow: list user-tier presets, Edit (jumps to Compose with `Extends`), Delete with confirmation; optimistic Delete transition — `Deleting` interim state is a follow-up (Issue #664) |
+| `src/tui/screens/team_wizard/clipboard.rs` | `Ctrl+V` paste handler on IssuePicker: reads system clipboard and delegates to `parse_pasted_issue_token`; accepts bare numbers, `#NNN`, and GitHub issue URLs (Issue #875) |
+| `src/tui/screens/team_wizard/issue_paste.rs` | `parse_pasted_issue_token`: pure parser (no I/O); unit-testable without a system clipboard; extracted from clipboard.rs (Issue #875) |
+| `src/tui/screens/team_wizard/launch_plan.rs` | Plan-preview helpers extracted from `launch.rs` to keep that file under the 400-LOC cap (Issue #877) |
 | `src/tui/screens/team_wizard/test_helpers.rs` | Test fakes: `TeamWizardBuilder`, `make_compose_screen()`, `make_launch_screen()`, `make_manage_screen()` helpers for unit tests (Issue #664) |
 | `src/tui/screens/team_wizard/tests.rs` | Inline unit tests for wizard state machines and key-event routing (Issue #664) |
-| `src/tui/snapshot_tests/team_wizard.rs` | ~33 snapshot tests across all three flows × three sizes (60×20, 80×24, 120×40) for heads; terminal states (Success, Error, Confirm) at 80×24; actual count is ~33, less than the 73 estimated by the QA blueprint (representative subset approach) (Issue #664) |
+| `src/tui/snapshot_tests/team_wizard.rs` | ~34 snapshot tests across all three flows × three sizes (60×20, 80×24, 120×40) for heads; terminal states (Success, Error, Confirm) at 80×24; includes new `launch_issue_picker_autocomplete_80x24` baseline (Issues #664, #876) |
 | `src/tui/screens/milestone_wizard/` | Milestone creation wizard screen: multi-step TUI wizard for authoring GitHub milestones (Issue #447) |
 | `src/tui/screens/milestone_wizard/mod.rs` | `MilestoneWizardScreen`: three persistent `TextAreaField`s (`goal_field`, `non_goals_field`, `doc_buffer_field`); analogous migration to `IssueWizardScreen` (Issue #447) |
 | `src/tui/screens/milestone_wizard/types.rs` | `MilestoneWizardStep` state machine and form payload types |

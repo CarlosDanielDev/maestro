@@ -1,14 +1,15 @@
 //! Launch flow — TeamPicker → InputPicker → PlanPreview → Confirm.
 
-use super::types::{LaunchInputKind, LaunchStep, PlanPreview, PreflightBlock, PreflightSummary};
+use super::issue_paste::parse_pasted_issue_token;
+use super::launch_plan::{map_preflight_failure, plan_from_scheduler, plan_issue_count};
+use super::types::{LaunchInputKind, LaunchStep, PreflightBlock, PreflightSummary};
 use super::{ScreenAction, TeamWizardMode, TeamWizardScreen};
 use crate::orchestration::cost::estimate_cost_usd;
 use crate::orchestration::dag::IssueState;
-use crate::orchestration::preflight::{PreflightFailure, preflight_sync};
+use crate::orchestration::preflight::preflight_sync;
 use crate::orchestration::scheduler::Scheduler;
 use crate::orchestration::types::TeamInput;
-use crate::orchestration::validation::ValidationError;
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 
 const INPUT_KINDS: &[LaunchInputKind] = &[
     LaunchInputKind::Issue,
@@ -18,9 +19,34 @@ const INPUT_KINDS: &[LaunchInputKind] = &[
 ];
 
 impl TeamWizardScreen {
-    pub(super) fn handle_launch(&mut self, code: KeyCode) -> ScreenAction {
+    pub(super) fn handle_launch(&mut self, code: KeyCode, modifiers: KeyModifiers) -> ScreenAction {
+        // #875 — Ctrl+V paste on IssuePicker, regardless of autocomplete focus.
+        if self.launch_step() == LaunchStep::IssuePicker
+            && modifiers.contains(KeyModifiers::CONTROL)
+            && code == KeyCode::Char('v')
+        {
+            if let Some(txt) = self.clipboard.read()
+                && let Some(token) = parse_pasted_issue_token(&txt)
+            {
+                self.launch.manual_issue_input = token;
+                self.launch.autocomplete_focus = None;
+            }
+            return ScreenAction::None;
+        }
+
         if matches!(code, KeyCode::Esc) {
-            return self.handle_launch_back();
+            // #877 — terminal states either swallow Esc (Executing — orphans
+            // the background task otherwise) or treat it as "close wizard"
+            // (LaunchSuccess / LaunchFailed). Retreating from a terminal
+            // step would walk the user backward into Executing, leaving the
+            // wizard stuck with no path forward.
+            match self.launch_step() {
+                LaunchStep::Executing => return ScreenAction::None,
+                LaunchStep::LaunchSuccess | LaunchStep::LaunchFailed => {
+                    return ScreenAction::Pop;
+                }
+                _ => return self.handle_launch_back(),
+            }
         }
         if matches!(
             (self.launch_step(), code),
@@ -43,17 +69,29 @@ impl TeamWizardScreen {
                 self.launch_input_focus_inc()
             }
             (LaunchStep::InputPicker, KeyCode::Enter) => self.launch_commit_input(),
+            // #876 — autocomplete focus on IssuePicker
+            (LaunchStep::IssuePicker, KeyCode::Down) => {
+                self.launch_autocomplete_focus_inc();
+            }
+            (LaunchStep::IssuePicker, KeyCode::Up) => {
+                self.launch_autocomplete_focus_dec();
+            }
+            (LaunchStep::IssuePicker, KeyCode::Tab) => {
+                self.launch_autocomplete_commit();
+            }
             (LaunchStep::IssuePicker, KeyCode::Backspace) => {
                 self.launch.manual_issue_input.pop();
+                self.launch.autocomplete_focus = None;
             }
             (LaunchStep::IssuePicker, KeyCode::Char(c))
                 if c.is_ascii_digit() && self.launch.manual_issue_input.len() < 10 =>
             {
                 self.launch.manual_issue_input.push(c);
+                self.launch.autocomplete_focus = None;
             }
             (LaunchStep::IssuePicker, KeyCode::Enter) => self.launch_commit_issue_number(),
             (LaunchStep::PlanPreview, KeyCode::Enter) => self.launch_confirm_plan(),
-            (LaunchStep::Confirm, KeyCode::Enter) => self.launch_dispatch(),
+            (LaunchStep::Confirm, KeyCode::Enter) => return self.launch_dispatch(),
             (LaunchStep::LaunchFailed, KeyCode::Char('r')) => {
                 self.launch_step = LaunchStep::PlanPreview;
                 self.failure_reason = None;
@@ -61,6 +99,39 @@ impl TeamWizardScreen {
             _ => {}
         }
         ScreenAction::None
+    }
+
+    fn launch_autocomplete_focus_inc(&mut self) {
+        let candidates = self.autocomplete_candidates();
+        if candidates.is_empty() {
+            return;
+        }
+        let next = match self.launch.autocomplete_focus {
+            None => 0,
+            Some(i) if i + 1 < candidates.len() => i + 1,
+            Some(i) => i,
+        };
+        self.launch.autocomplete_focus = Some(next);
+    }
+
+    fn launch_autocomplete_focus_dec(&mut self) {
+        if self.autocomplete_candidates().is_empty() {
+            return;
+        }
+        if let Some(i) = self.launch.autocomplete_focus {
+            self.launch.autocomplete_focus = Some(i.saturating_sub(1));
+        }
+    }
+
+    fn launch_autocomplete_commit(&mut self) {
+        let candidates = self.autocomplete_candidates();
+        let Some(idx) = self.launch.autocomplete_focus else {
+            return;
+        };
+        if let Some(n) = candidates.get(idx) {
+            self.launch.manual_issue_input = n.to_string();
+            self.launch.autocomplete_focus = None;
+        }
     }
 
     pub(super) fn handle_launch_back(&mut self) -> ScreenAction {
@@ -182,8 +253,34 @@ impl TeamWizardScreen {
         }
     }
 
-    fn launch_dispatch(&mut self) {
+    /// Build the LaunchTeam action and transition to Executing. The
+    /// dispatcher (`screen_dispatch.rs`) re-resolves the team from the
+    /// wizard's `resolved_teams` cache, builds the Scheduler, and fans the
+    /// run out per-level. The wizard listens for `apply_launch_result`.
+    fn launch_dispatch(&mut self) -> ScreenAction {
+        let Some(team_name) = self.launch.selected_team.clone() else {
+            return ScreenAction::None;
+        };
+        if !self.resolved_teams.contains_key(&team_name) {
+            return ScreenAction::None;
+        }
+        let team_input = match self.launch.input_kind {
+            LaunchInputKind::Issue => match self.launch.manual_issue() {
+                Some(n) => TeamInput::Issue { number: n },
+                None => return ScreenAction::None,
+            },
+            LaunchInputKind::IssueSet | LaunchInputKind::Milestone => TeamInput::IssueSet {
+                primary_milestone: self.launch.primary_milestone,
+                issues: self.launch.manual_issues.clone(),
+            },
+            LaunchInputKind::IdeaInbox => TeamInput::IdeaInbox,
+        };
         self.launch_step = LaunchStep::Executing;
+        ScreenAction::LaunchTeam {
+            team_name,
+            input: team_input,
+            max_parallel: self.launch.max_parallel.max(1),
+        }
     }
 
     pub fn apply_launch_result(&mut self, result: Result<(), String>) {
@@ -297,59 +394,4 @@ impl TeamWizardScreen {
             Err(summary)
         }
     }
-}
-
-fn map_preflight_failure(failure: PreflightFailure) -> Vec<PreflightBlock> {
-    match failure {
-        PreflightFailure::Validation(errs) => {
-            errs.into_iter().filter_map(map_validation_error).collect()
-        }
-        PreflightFailure::AgentUnhealthy { id, reason } => vec![PreflightBlock::AgentUnhealthy {
-            agent_id: id,
-            message: reason,
-        }],
-        PreflightFailure::L2ProviderUnavailable => vec![PreflightBlock::AgentUnhealthy {
-            agent_id: "claude".into(),
-            message: "L2 provider unavailable".into(),
-        }],
-        PreflightFailure::DagCycle(_) | PreflightFailure::MalformedBlockedBy { .. } => Vec::new(),
-    }
-}
-
-fn map_validation_error(err: ValidationError) -> Option<PreflightBlock> {
-    match err {
-        ValidationError::MissingRequiredRole { role, .. } => {
-            Some(PreflightBlock::MissingRoleBinding { role })
-        }
-        ValidationError::AgentNotConfigured { agent, .. } => Some(PreflightBlock::AgentUnhealthy {
-            agent_id: agent,
-            message: "agent not configured".into(),
-        }),
-        ValidationError::ModeNotConfigured { mode, .. } => Some(PreflightBlock::AgentUnhealthy {
-            agent_id: mode,
-            message: "mode not configured".into(),
-        }),
-        ValidationError::ClaudeNotInMinAgents { .. } => {
-            Some(PreflightBlock::MissingClaudeInMinAgents)
-        }
-    }
-}
-
-fn plan_from_scheduler(scheduler: &Scheduler, original_count: usize, cost_usd: f64) -> PlanPreview {
-    let levels: Vec<Vec<u64>> = scheduler.run.plan.clone();
-    let final_count: usize = levels.iter().map(|l| l.len()).sum();
-    PlanPreview {
-        team_name: scheduler.team.name.clone(),
-        primitive: scheduler.team.primitive,
-        levels,
-        auto_added: scheduler.auto_added.clone(),
-        original_count,
-        final_count,
-        estimated_cost_usd: cost_usd,
-        max_parallel: scheduler.max_parallel,
-    }
-}
-
-fn plan_issue_count(scheduler: &Scheduler) -> usize {
-    scheduler.run.plan.iter().map(|l| l.len()).sum()
 }

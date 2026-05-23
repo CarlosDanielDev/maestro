@@ -2272,6 +2272,70 @@ mod tests {
         );
     }
 
+    /// Regression: `ScreenAction::LaunchTeam` must transition the wizard's
+    /// `launch_step` from `Executing` to `LaunchSuccess` after the dispatcher
+    /// fans out per-issue `LaunchSession` configs. Reported during bundle
+    /// PR #880 manual QA — the wizard appeared stuck at Step 6/8 even though
+    /// sessions were actually running.
+    #[test]
+    fn launch_team_action_transitions_wizard_to_launch_success() {
+        use crate::orchestration::team::{ResolvedTeam, SourceTier};
+        use crate::orchestration::types::{Primitive, TeamInput};
+        use crate::tui::screen_dispatch::handle_screen_action;
+        use crate::tui::screens::team_wizard::types::{
+            LaunchInputKind, LaunchStep, TeamWizardMode,
+        };
+        use crate::tui::screens::{ScreenAction, TeamWizardScreen};
+        use std::collections::HashMap;
+
+        let mut app = make_app();
+        app.tui_mode = TuiMode::TeamWizard;
+
+        let team = ResolvedTeam {
+            name: "default-coder".into(),
+            primitive: Primitive::Pipeline,
+            min_agents: vec!["claude".into()],
+            bindings: HashMap::new(),
+            source_tier: SourceTier::BuiltIn,
+        };
+
+        let mut screen = TeamWizardScreen::new(Default::default());
+        screen.apply_resolved_teams(vec![team]);
+        screen.set_known_agents(vec!["claude".into()]);
+        screen.set_launch_team_for_test("default-coder");
+        screen.set_launch_input_for_test(LaunchInputKind::Issue, Some(42));
+        screen.switch_mode(TeamWizardMode::Launch);
+        screen.set_launch_step_for_test(LaunchStep::Executing);
+        app.screen_state.team_wizard_screen = Some(screen);
+
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchTeam {
+                team_name: "default-coder".into(),
+                input: TeamInput::Issue { number: 42 },
+                max_parallel: 1,
+            },
+        );
+
+        let final_step = app
+            .screen_state
+            .team_wizard_screen
+            .as_ref()
+            .expect("wizard preserved")
+            .launch_step();
+        assert_eq!(
+            final_step,
+            LaunchStep::LaunchSuccess,
+            "wizard must advance to LaunchSuccess after LaunchTeam dispatcher runs"
+        );
+        assert!(
+            app.pending_commands
+                .iter()
+                .any(|cmd| matches!(cmd, app::TuiCommand::LaunchSessions(_))),
+            "dispatcher must queue LaunchSessions"
+        );
+    }
+
     /// Regression for 2026-05-23: `ScreenAction::LaunchSession` (and its
     /// 4 siblings) used to call `nav_stack.clear()` before setting
     /// `tui_mode = Overview`. That wiped the stable anchors (Landing,

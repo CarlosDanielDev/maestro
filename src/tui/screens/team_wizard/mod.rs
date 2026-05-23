@@ -9,9 +9,12 @@
 
 #![allow(dead_code)]
 
+pub mod clipboard;
 mod compose;
 mod draw;
+mod issue_paste;
 mod launch;
+mod launch_plan;
 mod manage;
 pub mod types;
 
@@ -62,6 +65,9 @@ pub struct TeamWizardScreen {
     /// returns to the Manage list instead of popping the wizard, preserving
     /// the navigation context the user came from.
     pub(super) editing_existing: bool,
+    /// Clipboard read seam — owned, never shared. Defaults to the system
+    /// backend; tests inject `StubClipboard` via `with_clipboard_for_test`.
+    pub(super) clipboard: Box<dyn clipboard::IssueClipboard>,
 }
 
 impl TeamWizardScreen {
@@ -101,7 +107,20 @@ impl TeamWizardScreen {
             use_nerd_font: false,
             failure_reason: None,
             editing_existing: false,
+            clipboard: Box::new(clipboard::SystemIssueClipboard),
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_clipboard_for_test(
+        provider_kind: ProviderKind,
+        mode: TeamWizardMode,
+        preselect: Option<TeamLaunchInput>,
+        clipboard: Box<dyn clipboard::IssueClipboard>,
+    ) -> Self {
+        let mut s = Self::with_entry(provider_kind, mode, preselect);
+        s.clipboard = clipboard;
+        s
     }
 
     pub fn set_spinner_context(&mut self, spinner_tick: usize, use_nerd_font: bool) {
@@ -196,6 +215,12 @@ impl TeamWizardScreen {
     /// Replace the issue-meta cache used by Launch's plan preview.
     pub fn apply_issue_metas(&mut self, metas: HashMap<IssueNumber, IssueMeta>) {
         self.issue_metas = metas;
+    }
+
+    /// Read-only borrow of the issue-meta cache. Used by the dispatcher when
+    /// rebuilding a `Scheduler` for a LaunchTeam fan-out (#877).
+    pub fn issue_metas(&self) -> &HashMap<IssueNumber, IssueMeta> {
+        &self.issue_metas
     }
 
     pub fn set_known_agents(&mut self, agents: Vec<String>) {
@@ -391,6 +416,30 @@ impl TeamWizardScreen {
         self.launch.manual_issue_input = input.to_string();
     }
 
+    pub fn set_autocomplete_focus_for_test(&mut self, focus: Option<usize>) {
+        self.launch.autocomplete_focus = focus;
+    }
+
+    /// Top-N (=5) Open issues whose decimal number starts with the current
+    /// IssuePicker buffer. Sorted ascending. Excludes Closed issues. Empty
+    /// when the buffer is empty.
+    pub fn autocomplete_candidates(&self) -> Vec<u64> {
+        let buffer = self.launch.manual_issue_input.trim();
+        if buffer.is_empty() {
+            return Vec::new();
+        }
+        let mut out: Vec<u64> = self
+            .issue_metas
+            .iter()
+            .filter(|(_, m)| m.state == crate::orchestration::dag::IssueState::Open)
+            .filter(|(n, _)| n.to_string().starts_with(buffer))
+            .map(|(n, _)| *n)
+            .collect();
+        out.sort();
+        out.truncate(5);
+        out
+    }
+
     pub fn build_plan_preview_for_test(&mut self) {
         self.build_plan_preview();
     }
@@ -471,6 +520,7 @@ impl Screen for TeamWizardScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
         let Event::Key(KeyEvent {
             code,
+            modifiers,
             kind: KeyEventKind::Press,
             ..
         }) = event
@@ -481,7 +531,7 @@ impl Screen for TeamWizardScreen {
         match self.mode {
             TeamWizardMode::Home => self.handle_home(*code),
             TeamWizardMode::Compose => self.handle_compose(*code),
-            TeamWizardMode::Launch => self.handle_launch(*code),
+            TeamWizardMode::Launch => self.handle_launch(*code, *modifiers),
             TeamWizardMode::Manage => self.handle_manage(*code),
         }
     }

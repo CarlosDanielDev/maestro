@@ -210,6 +210,22 @@ fn launch_issue_picker_80x24() {
 }
 
 #[test]
+fn launch_issue_picker_autocomplete_80x24() {
+    let mut s = populated_launch_screen();
+    s.set_launch_team_for_test("default-coder");
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = HashMap::new();
+    for n in [1u64, 10, 12, 100, 101, 200] {
+        metas.insert(n, make_meta(n, IssueState::Open, Some(1), &[]));
+    }
+    s.apply_issue_metas(metas);
+    s.set_launch_manual_issue_input_for_test("1");
+    s.set_autocomplete_focus_for_test(Some(0));
+    let t = draw_team_wizard(&mut s, 80, 24);
+    assert_snapshot!(t.backend());
+}
+
+#[test]
 fn launch_plan_preview_green_80x24() {
     let mut s = TeamWizardScreen::with_entry(
         ProviderKind::default(),

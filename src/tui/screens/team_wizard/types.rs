@@ -291,6 +291,10 @@ pub struct LaunchPayload {
     pub max_parallel: usize,
     pub team_focus: usize,
     pub input_focus: usize,
+    /// IssuePicker autocomplete focus index into `autocomplete_candidates()`.
+    /// Reset to `None` on every buffer mutation; advanced by `Up`/`Down`;
+    /// consumed by `Tab` (#876).
+    pub autocomplete_focus: Option<usize>,
 }
 
 impl LaunchPayload {

@@ -3,6 +3,7 @@ use super::screens::{self, Screen, ScreenAction};
 use crate::provider::types::Issue;
 use crate::session::transition::TransitionReason;
 use crossterm::event::Event;
+use std::collections::BTreeSet;
 
 /// Fire wizard step-entry hooks so internal transitions (Enter advances
 /// inside the wizard) trigger the same fetch/launch side effects as a
@@ -569,6 +570,14 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         .team_wizard_screen
                         .get_or_insert_with(|| screens::TeamWizardScreen::new(provider_kind));
                     populate_team_wizard_data(screen, app.config.as_ref());
+                    // Warm the issue_metas cache so the IssuePicker
+                    // autocomplete (#876) renders suggestions on first
+                    // entry. Previously the cache was only populated
+                    // when the user visited the Issue Browser first, an
+                    // undocumented prereq — surfaced during #880 manual QA.
+                    if screen.issue_metas().is_empty() {
+                        app.pending_commands.push(app::TuiCommand::FetchIssues);
+                    }
                 }
                 _ => {}
             }
@@ -828,6 +837,77 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 .push(app::TuiCommand::LaunchSession(config));
             app.tui_mode = app::TuiMode::Overview;
         }
+        ScreenAction::LaunchTeam {
+            team_name,
+            input,
+            max_parallel,
+        } => {
+            // #877 — wire `launch_dispatch` to a real fan-out. v1: re-resolve
+            // the team from the wizard's cache, build the Scheduler to get
+            // the level DAG, then fan out one `LaunchSession` per planned
+            // issue. The team-runner consolidation (proper `SessionManager::
+            // run_team` with L2 routing) lands in a follow-up.
+            let agent_id = app.selected_agent_id();
+            let scheduler_outcome = {
+                let Some(screen) = app.screen_state.team_wizard_screen.as_mut() else {
+                    tracing::warn!("LaunchTeam dispatched without an active team wizard");
+                    return;
+                };
+                let Some(team) = screen.resolved_teams().get(&team_name).cloned() else {
+                    screen.apply_launch_result(Err(format!(
+                        "Team `{}` no longer in wizard cache",
+                        screens::sanitize_for_terminal(&team_name)
+                    )));
+                    return;
+                };
+                let issue_metas = screen.issue_metas().clone();
+                let result = crate::orchestration::scheduler::Scheduler::from_input(
+                    team.clone(),
+                    input,
+                    issue_metas,
+                    max_parallel.max(1),
+                );
+                match result {
+                    Ok(scheduler) => {
+                        let configs: Vec<screens::SessionConfig> = scheduler
+                            .run
+                            .plan
+                            .iter()
+                            .flat_map(|level| level.iter())
+                            .map(|n| screens::SessionConfig {
+                                issue_number: Some(*n),
+                                title: format!("#{n}"),
+                                custom_prompt: None,
+                                agent_id: Some(agent_id.clone()),
+                            })
+                            .collect();
+                        if configs.is_empty() {
+                            screen.apply_launch_result(Err(
+                                "Scheduler produced an empty plan".to_string()
+                            ));
+                            None
+                        } else {
+                            screen.apply_launch_result(Ok(()));
+                            tracing::warn!(
+                                target: "team_wizard.launch",
+                                team = ?team.name,
+                                "LaunchTeam fanned out via LaunchSession path \
+                                 (real SessionManager::run_team pending follow-up)"
+                            );
+                            Some(configs)
+                        }
+                    }
+                    Err(e) => {
+                        screen.apply_launch_result(Err(format!("Scheduler error: {e}")));
+                        None
+                    }
+                }
+            };
+            if let Some(configs) = scheduler_outcome {
+                app.pending_commands
+                    .push(app::TuiCommand::LaunchSessions(configs));
+            }
+        }
         ScreenAction::LaunchSessions(configs) => {
             let agent_id = app.selected_agent_id();
             let configs = configs
@@ -939,8 +1019,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 .unwrap_or_default();
             let mut screen = screens::TeamWizardScreen::with_entry(provider_kind, mode, preselect);
             populate_team_wizard_data(&mut screen, app.config.as_ref());
+            let need_metas_fetch = screen.issue_metas().is_empty();
             app.screen_state.team_wizard_screen = Some(screen);
             app.navigate_to(app::TuiMode::TeamWizard);
+            if need_metas_fetch {
+                app.pending_commands.push(app::TuiCommand::FetchIssues);
+            }
         }
         ScreenAction::StartAdaptPipeline(config) => {
             if let Some(ref mut screen) = app.screen_state.adapt_screen {
@@ -1053,6 +1137,25 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
     }
 }
 
+/// Build the known-agent list visible in the Team Wizard's Compose picker.
+/// Unions the team-side agent ids (already extracted into `team_agents`)
+/// with the user's `[agents.*]` config — but **excludes** entries flagged
+/// `enabled = false` (#806). Pure function; test seam for the disabled-agent
+/// filter contract.
+pub(crate) fn build_known_agents_from_config(
+    mut team_agents: BTreeSet<String>,
+    agents: Option<&crate::config::AgentsConfig>,
+) -> Vec<String> {
+    if let Some(cfg) = agents {
+        for (id, entry) in &cfg.entries {
+            if entry.enabled {
+                team_agents.insert(id.clone());
+            }
+        }
+    }
+    team_agents.into_iter().collect()
+}
+
 /// Synchronously populate the team-wizard screen with resolved teams, the
 /// known-agent set, and a best-effort health-check cache so the Roles step
 /// has agents to bind. Real `doctor::run_health_check` async wiring is a
@@ -1076,27 +1179,21 @@ fn populate_team_wizard_data(
         }
     };
 
-    let mut agent_ids: BTreeSet<String> = BTreeSet::new();
+    let mut team_agents: BTreeSet<String> = BTreeSet::new();
     for team in resolved.values() {
         for agent in &team.min_agents {
-            agent_ids.insert(agent.clone());
+            team_agents.insert(agent.clone());
         }
         for binding in team.bindings.values() {
             if !binding.agent.is_empty() {
-                agent_ids.insert(binding.agent.clone());
+                team_agents.insert(binding.agent.clone());
             }
         }
     }
-    if let Some(cfg) = config {
-        for id in cfg.agents.entries.keys() {
-            agent_ids.insert(id.clone());
-        }
-    }
+    let known_agents = build_known_agents_from_config(team_agents, config.map(|c| &c.agents));
 
     let teams: Vec<_> = resolved.into_values().collect();
     screen.apply_resolved_teams(teams);
-
-    let known_agents: Vec<String> = agent_ids.iter().cloned().collect();
     let health: Vec<AgentHealthCheck> = known_agents
         .iter()
         .map(|id| AgentHealthCheck {
@@ -1108,4 +1205,81 @@ fn populate_team_wizard_data(
         .collect();
     screen.set_known_agents(known_agents);
     screen.apply_health_check(health);
+}
+
+#[cfg(test)]
+mod build_known_agents_tests {
+    use super::build_known_agents_from_config;
+    use crate::config::{AgentConfig, AgentKind, AgentsConfig};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn mk_agent(kind: AgentKind, enabled: bool) -> AgentConfig {
+        AgentConfig {
+            kind,
+            enabled,
+            command: Some("placeholder".into()),
+            base_url: None,
+            model: None,
+            env: BTreeMap::new(),
+            extra_args: Vec::new(),
+            permission_mode: None,
+            allowed_tools: Vec::new(),
+            sandbox: None,
+            json: None,
+            ephemeral: None,
+            profile: None,
+            config_overrides: BTreeMap::new(),
+            cli_flags: BTreeMap::new(),
+            request_timeout_secs: None,
+            api_key_env: None,
+            num_ctx: None,
+        }
+    }
+
+    fn agents_with(entries: Vec<(&str, AgentKind, bool)>) -> AgentsConfig {
+        let mut map = BTreeMap::new();
+        for (id, kind, enabled) in entries {
+            map.insert(id.to_string(), mk_agent(kind, enabled));
+        }
+        AgentsConfig {
+            default: "claude".to_string(),
+            entries: map,
+        }
+    }
+
+    #[test]
+    fn excludes_disabled_agents() {
+        let cfg = agents_with(vec![
+            ("qwen-enabled", AgentKind::Qwen, true),
+            ("qwen-disabled", AgentKind::Qwen, false),
+        ]);
+        let result = build_known_agents_from_config(BTreeSet::new(), Some(&cfg));
+        assert!(result.contains(&"qwen-enabled".to_string()));
+        assert!(!result.contains(&"qwen-disabled".to_string()));
+    }
+
+    #[test]
+    fn team_side_agents_pass_through_even_with_disabled_config() {
+        let cfg = agents_with(vec![("qwen-disabled", AgentKind::Qwen, false)]);
+        let team_agents = BTreeSet::from(["claude".to_string()]);
+        let result = build_known_agents_from_config(team_agents, Some(&cfg));
+        assert!(result.contains(&"claude".to_string()));
+        assert!(!result.contains(&"qwen-disabled".to_string()));
+    }
+
+    #[test]
+    fn enabled_config_agents_union_with_team_agents() {
+        let cfg = agents_with(vec![("qwen-fast", AgentKind::Qwen, true)]);
+        let team_agents = BTreeSet::from(["claude".to_string()]);
+        let result = build_known_agents_from_config(team_agents, Some(&cfg));
+        assert!(result.contains(&"claude".to_string()));
+        assert!(result.contains(&"qwen-fast".to_string()));
+    }
+
+    #[test]
+    fn no_config_returns_team_agents_only() {
+        let team_agents = BTreeSet::from(["claude".to_string()]);
+        let result = build_known_agents_from_config(team_agents, None);
+        assert_eq!(result, vec!["claude".to_string()]);
+    }
 }
