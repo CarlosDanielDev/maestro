@@ -20,6 +20,7 @@ use super::types::{
     AgentProviderId, AgentProviderKind, AgentRequest, AgentRunResult, AgentRunStarted,
     ParserBinding,
 };
+use crate::session::types::StreamEvent;
 
 const DEFAULT_API_KEY_ENV: &str = "MINIMAX_API_KEY";
 
@@ -159,11 +160,22 @@ impl AgentProvider for MinimaxProvider {
             request.model.as_str()
         };
 
+        // User-visible activity hint so the session card surfaces
+        // "Connecting to MiniMax server..." instead of just the generic
+        // Spawning spinner. The HTTP handshake can take 10s+ on cold
+        // routes; this tells the user the wait is intentional.
+        let _ = events.send(AgentProviderEvent::Stream(StreamEvent::AssistantMessage {
+            text: format!("Connecting to MiniMax ({model})..."),
+        }));
+
+        let t_total = std::time::Instant::now();
+
         // Pre-spawn quota gate (5-hour rolling window). At >= 95% the
         // gate refuses the spawn unless the request carries the
         // `--force-quota` flag. The gate records the request after
         // the policy check and before HTTP work begins so concurrent
         // processes serialize through the file lock.
+        let t_quota = std::time::Instant::now();
         if let Some(quota) = self.quota.as_ref() {
             // Honor either per-request `force` (future TUI re-spawn flow)
             // or the CLI's `--force-quota` flag (process-wide static flipped
@@ -221,11 +233,36 @@ impl AgentProvider for MinimaxProvider {
             }
         }
 
+        let quota_elapsed = t_quota.elapsed();
+
+        let t_http = std::time::Instant::now();
         let mut stream = self
             .http
             .chat_stream(model, &request.prompt)
             .await
             .map_err(MinimaxError::into_agent_error)?;
+        let http_handshake_elapsed = t_http.elapsed();
+        tracing::info!(
+            provider = %self.id,
+            model = %model,
+            quota_ms = quota_elapsed.as_millis() as u64,
+            http_handshake_ms = http_handshake_elapsed.as_millis() as u64,
+            total_ms = t_total.elapsed().as_millis() as u64,
+            "MiniMax spawn timing breakdown",
+        );
+        // Surface a slow-handshake warning once the wait exceeds 5s so the
+        // user has structured data to share when reporting "minimax is
+        // slow" — the activity log + tracing entry both name the elapsed
+        // milliseconds and the model.
+        if http_handshake_elapsed.as_secs() >= 5 {
+            let _ = events.send(AgentProviderEvent::Stream(StreamEvent::Warning {
+                code: "minimax_slow_handshake".to_string(),
+                message: format!(
+                    "MiniMax HTTP handshake took {}ms (model: {model}); server-side latency or cold route",
+                    http_handshake_elapsed.as_millis()
+                ),
+            }));
+        }
         let _ = events.send(AgentProviderEvent::Started(AgentRunStarted {
             process_id: None,
         }));
