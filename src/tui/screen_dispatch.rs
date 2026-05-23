@@ -776,6 +776,13 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 );
             }
             if default_provider_changed {
+                // Honor the "Live for new sessions" promise: refresh
+                // `App.selected_agent_id` and the pool's per-agent
+                // provider map so the very next spawn picks the new
+                // default. Previously this only ran at startup via
+                // `App::configure`, which forced a restart to take
+                // effect.
+                app.apply_agents_config(&config);
                 app.activity_log.push_simple(
                     "SETTINGS".into(),
                     format!(

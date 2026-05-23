@@ -530,6 +530,19 @@ impl App {
             .push_simple("NOTIFICATIONS".into(), msg, LogLevel::Warn);
     }
 
+    /// Re-apply the `[agents]` section of an already-staged `Config` to
+    /// the runtime: refresh `selected_agent_id` from the new default and
+    /// rebuild the per-agent provider map used by `spawn`. Called from
+    /// the Settings save handler so a "Default provider → X" change
+    /// takes effect on the *next* spawn instead of waiting for a restart
+    /// (the log message has always claimed `Live for new sessions` —
+    /// this finally honors it).
+    pub fn apply_agents_config(&mut self, config: &Config) {
+        self.selected_agent_id = default_enabled_agent_id(config);
+        self.pool
+            .set_agent_providers(build_agent_provider_map(config));
+    }
+
     pub fn configure(&mut self, config: Config) {
         self.session_config.apply_config(&config.sessions);
         if self.bypass_active {
@@ -785,6 +798,56 @@ mod tests {
 
     fn make_app() -> crate::tui::app::App {
         crate::tui::make_test_app("maestro-tui-app-test")
+    }
+
+    fn agents_toml(default: &str) -> Config {
+        let toml = format!(
+            "[project]\nrepo = \"owner/repo\"\n\
+             [sessions]\n\
+             [budget]\n\
+             [github]\n[notifications]\n\
+             [agents]\ndefault = \"{default}\"\n\
+             [agents.claude]\nkind = \"claude\"\nenabled = true\ncommand = \"claude\"\n\
+             [agents.opencode]\nkind = \"opencode\"\nenabled = true\ncommand = \"opencode\"\n\
+             [agents.minimax]\nkind = \"minimax\"\nenabled = true\ncommand = \"minimax\"\n"
+        );
+        toml::from_str(&toml).expect("test config parse")
+    }
+
+    /// Regression for the "Default provider → X. Live for new sessions" bug
+    /// surfaced by the user video on 2026-05-22: changing the default
+    /// provider in the Settings screen updated `config.agents.default`
+    /// but `App.selected_agent_id` retained the prior value, so new
+    /// sessions kept spawning with the old agent until maestro restarted.
+    #[test]
+    fn apply_agents_config_updates_selected_agent_id_to_new_default() {
+        let mut app = make_app();
+        app.selected_agent_id = "claude".to_string();
+
+        let new_config = agents_toml("opencode");
+        app.apply_agents_config(&new_config);
+
+        assert_eq!(
+            app.selected_agent_id, "opencode",
+            "selected_agent_id must reflect the new default after settings apply"
+        );
+    }
+
+    #[test]
+    fn apply_agents_config_falls_back_when_default_is_disabled() {
+        let mut app = make_app();
+        app.selected_agent_id = "claude".to_string();
+
+        let mut new_config = agents_toml("minimax");
+        if let Some(agent) = new_config.agents.entries.get_mut("minimax") {
+            agent.enabled = false;
+        }
+        app.apply_agents_config(&new_config);
+
+        assert_ne!(
+            app.selected_agent_id, "minimax",
+            "selected_agent_id must NOT pick a disabled default; should fall back to an enabled entry"
+        );
     }
 
     fn make_app_with_flags(flags: crate::flags::store::FeatureFlags) -> App {
