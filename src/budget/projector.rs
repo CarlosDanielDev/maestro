@@ -51,45 +51,37 @@ impl BudgetProjector for DefaultBudgetProjector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::types::Session;
+    use crate::budget::test_support::make_session;
 
-    fn make_session_with_cost(cost: f64) -> Session {
-        let mut s = Session::new(
-            "test".to_string(),
-            "claude-opus-4-5".to_string(),
-            "orchestrator".to_string(),
-            None,
-            None,
-        );
-        s.cost_usd = cost;
-        s
-    }
+    /// Model string is irrelevant to projection math; tag with a placeholder
+    /// so call-sites don't read as Claude-specific.
+    const TEST_MODEL: &str = "test-model";
 
     #[test]
     fn default_budget_projector_zero_history_returns_floor() {
         let projector = DefaultBudgetProjector::new(5.0, 0.10);
-        let session = make_session_with_cost(0.0);
+        let session = make_session(None, 0.0, TEST_MODEL);
         assert_eq!(projector.projected_turn_cost(&session), 0.50);
     }
 
     #[test]
     fn default_budget_projector_with_history_returns_max_of_delta_and_floor() {
         let projector = DefaultBudgetProjector::new(5.0, 0.10);
-        let session = make_session_with_cost(0.80);
+        let session = make_session(None, 0.80, TEST_MODEL);
         assert_eq!(projector.projected_turn_cost(&session), 0.80);
     }
 
     #[test]
     fn default_budget_projector_nan_cost_returns_floor() {
         let projector = DefaultBudgetProjector::new(5.0, 0.10);
-        let session = make_session_with_cost(f64::NAN);
+        let session = make_session(None, f64::NAN, TEST_MODEL);
         assert_eq!(projector.projected_turn_cost(&session), 0.50);
     }
 
     #[test]
     fn default_budget_projector_cost_below_floor_returns_floor() {
         let projector = DefaultBudgetProjector::new(5.0, 0.10);
-        let session = make_session_with_cost(0.10);
+        let session = make_session(None, 0.10, TEST_MODEL);
         assert_eq!(projector.projected_turn_cost(&session), 0.50);
     }
 }
