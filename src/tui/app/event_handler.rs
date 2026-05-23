@@ -316,19 +316,31 @@ impl App {
                         .record_context(session_id, *context_pct);
                 }
                 StreamEvent::Warning { code, message } => {
-                    // Surface every Warning in the activity log so operators
-                    // see them even before the structured footer ships.
-                    self.activity_log.push_simple(
-                        label,
-                        format!("WARNING [{code}]: {message}"),
-                        LogLevel::Warn,
-                    );
-                    // Quota-forced bookkeeping for the home-screen footer
-                    // badge (#845). Saturating to defend against
-                    // pathological event floods.
-                    if code == "quota_forced" {
-                        self.minimax_forced_count_5h =
-                            self.minimax_forced_count_5h.saturating_add(1);
+                    // `session_spawned` is a lifecycle marker carried on the
+                    // Warning channel by the non-blocking spawn handshake
+                    // (#803). It transitions Spawning → Running inside
+                    // `ManagedSession::handle_event` above; suppressing it
+                    // here keeps "WARNING [session_spawned]" out of the
+                    // operator activity log where it would be misleading
+                    // noise.
+                    if code == crate::session::manager::SESSION_SPAWNED_CODE {
+                        // no-op — already handled by managed.handle_event
+                    } else {
+                        // Surface every other Warning in the activity log so
+                        // operators see them even before the structured
+                        // footer ships.
+                        self.activity_log.push_simple(
+                            label,
+                            format!("WARNING [{code}]: {message}"),
+                            LogLevel::Warn,
+                        );
+                        // Quota-forced bookkeeping for the home-screen
+                        // footer badge (#845). Saturating to defend against
+                        // pathological event floods.
+                        if code == "quota_forced" {
+                            self.minimax_forced_count_5h =
+                                self.minimax_forced_count_5h.saturating_add(1);
+                        }
                     }
                 }
                 _ => {}

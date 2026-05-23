@@ -2,12 +2,24 @@ use super::types::{Session, SessionStatus, StreamEvent};
 use crate::agent_provider::{
     AgentError, AgentProvider, AgentProviderEvent, AgentRequest, ClaudeProvider,
 };
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use chrono::Utc;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+/// Sentinel `StreamEvent::Warning.code` used by the spawn handshake to
+/// carry the "provider started" signal back to the main event loop without
+/// blocking the spawn caller. The optional process id (subprocess
+/// providers only) rides in `message` as a base-10 integer; HTTP providers
+/// send an empty `message`.
+///
+/// Consumers MUST treat this code as a lifecycle marker — NOT as a warning
+/// to surface in the activity log. The handler in
+/// `App::handle_session_event` and `ManagedSession::handle_event`
+/// special-cases it before the generic Warning path runs.
+pub const SESSION_SPAWNED_CODE: &str = "session_spawned";
 
 /// Events sent from a session back to the coordinator/TUI.
 #[derive(Debug, Clone)]
@@ -95,6 +107,27 @@ impl ManagedSession {
     }
 
     /// Start the configured agent provider and stream events back to Maestro.
+    ///
+    /// **Non-blocking.** The call transitions the session to
+    /// [`SessionStatus::Spawning`] synchronously, kicks off two background
+    /// tasks (one for the provider, one to forward events back), and
+    /// returns immediately. The session remains in `Spawning` until the
+    /// provider sends its first event:
+    ///
+    /// * `AgentProviderEvent::Started` → forwarded as
+    ///   `StreamEvent::Warning { code: SESSION_SPAWNED_CODE, message: pid }`.
+    ///   The main thread translates this into the
+    ///   `Spawning → Running` transition and stamps `session.pid`.
+    /// * `AgentProviderEvent::Stream(StreamEvent::Error { .. })` → forwarded
+    ///   verbatim; `ManagedSession::handle_event` runs the
+    ///   `Spawning → Errored` transition.
+    ///
+    /// This was made non-blocking in #803 because providers that perform a
+    /// network handshake before `Started` (currently `minimax`, future
+    /// HTTP-only providers) used to freeze the TUI's main event loop until
+    /// the round-trip completed, then snap the screen to the session view
+    /// with no visible "connecting…" feedback. Now the existing
+    /// `Spawning` animation in `spinner.rs` is visible during the wait.
     pub async fn spawn(&mut self, tx: mpsc::UnboundedSender<SessionEvent>) -> Result<()> {
         use crate::session::transition::TransitionReason;
         let _ = self
@@ -108,6 +141,7 @@ impl ManagedSession {
         let cancel = CancellationToken::new();
         self.cancel_token = Some(cancel.clone());
         let (provider_tx, mut provider_rx) = mpsc::unbounded_channel();
+        let session_id = self.session.id;
 
         tokio::spawn(async move {
             if let Err(err) = provider.run(request, provider_tx.clone(), cancel).await {
@@ -120,56 +154,49 @@ impl ManagedSession {
             }
         });
 
-        let first_event = match provider_rx.recv().await {
-            Some(event) => event,
-            None => {
-                let err = anyhow!("{provider_id} provider exited before startup");
-                let _ = self
-                    .session
-                    .transition_to(SessionStatus::Errored, TransitionReason::StreamError);
-                self.session.log_activity(format!("Spawn failed: {err}"));
-                return Err(err);
-            }
-        };
-
-        let started = match first_event {
-            AgentProviderEvent::Started(started) => started,
-            AgentProviderEvent::Stream(StreamEvent::Error { message }) => {
-                let err = anyhow!(message);
-                let _ = self
-                    .session
-                    .transition_to(SessionStatus::Errored, TransitionReason::StreamError);
-                self.session.log_activity(format!("Spawn failed: {err}"));
-                return Err(err);
-            }
-            AgentProviderEvent::Stream(event) => {
-                let _ = tx.send(SessionEvent {
-                    session_id: self.session.id,
-                    event,
-                });
-                crate::agent_provider::AgentRunStarted { process_id: None }
-            }
-        };
-
-        self.session.pid = started.process_id;
-        let _ = self
-            .session
-            .transition_to(SessionStatus::Running, TransitionReason::Spawned);
-        match started.process_id {
-            Some(pid) => self
-                .session
-                .log_activity(format!("Session spawned (pid: {})", pid)),
-            None => self.session.log_activity("Session spawned".into()),
-        }
-
-        let session_id = self.session.id;
         tokio::spawn(async move {
+            let mut handshake_done = false;
             while let Some(event) = provider_rx.recv().await {
-                if let AgentProviderEvent::Stream(event) = event {
-                    let _ = tx.send(SessionEvent { session_id, event });
+                match event {
+                    AgentProviderEvent::Started(started) => {
+                        if handshake_done {
+                            // Provider should only emit Started once; ignore
+                            // duplicates instead of double-transitioning.
+                            continue;
+                        }
+                        handshake_done = true;
+                        let pid_msg = started
+                            .process_id
+                            .map(|p| p.to_string())
+                            .unwrap_or_default();
+                        let _ = tx.send(SessionEvent {
+                            session_id,
+                            event: StreamEvent::Warning {
+                                code: SESSION_SPAWNED_CODE.to_string(),
+                                message: pid_msg,
+                            },
+                        });
+                    }
+                    AgentProviderEvent::Stream(stream_event) => {
+                        handshake_done =
+                            handshake_done || matches!(stream_event, StreamEvent::Error { .. });
+                        let _ = tx.send(SessionEvent {
+                            session_id,
+                            event: stream_event,
+                        });
+                    }
                 }
             }
+            if !handshake_done {
+                let _ = tx.send(SessionEvent {
+                    session_id,
+                    event: StreamEvent::Error {
+                        message: format!("{provider_id} provider exited before startup"),
+                    },
+                });
+            }
         });
+
         Ok(())
     }
 
@@ -330,6 +357,25 @@ impl ManagedSession {
                 self.session.current_activity = "Error".into();
                 self.session.log_activity(format!("Error: {}", message));
             }
+            StreamEvent::Warning { code, message } if code == SESSION_SPAWNED_CODE => {
+                // Non-blocking spawn handshake (see `spawn` docs): translate
+                // the synthetic Spawned marker into the Spawning → Running
+                // transition + pid stamp that the old blocking code did
+                // inline on the spawn caller.
+                if matches!(self.session.status, SessionStatus::Spawning) {
+                    let pid = message.parse::<u32>().ok();
+                    self.session.pid = pid;
+                    let _ = self.session.transition_to(
+                        SessionStatus::Running,
+                        crate::session::transition::TransitionReason::Spawned,
+                    );
+                    let activity = match pid {
+                        Some(p) => format!("Session spawned (pid: {p})"),
+                        None => "Session spawned".into(),
+                    };
+                    self.session.log_activity(activity);
+                }
+            }
             StreamEvent::ContextUpdate { context_pct } => {
                 self.session.context_pct = *context_pct;
                 self.session
@@ -472,21 +518,91 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_invalid_binary_returns_error_without_panic() {
+    async fn spawn_invalid_binary_surfaces_error_via_channel() {
+        // Post-#803 semantics: spawn() returns Ok immediately and the
+        // session sits in Spawning until the background drain task
+        // delivers either SESSION_SPAWNED_CODE or StreamEvent::Error.
+        // For an invalid binary the provider fails before sending any
+        // event, so the drain task synthesizes the "exited before
+        // startup" Error.
         let mut ms = make_managed("test");
         ms.set_claude_binary_for_test("/definitely/not/a/claude/binary");
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
 
-        let result = ms.spawn(tx).await;
+        ms.spawn(tx).await.expect("spawn returns immediately");
+        assert_eq!(ms.session.status, SessionStatus::Spawning);
 
-        assert!(result.is_err());
+        let evt = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("error event arrives within timeout")
+            .expect("channel still open");
+        assert!(matches!(evt.event, StreamEvent::Error { .. }));
+
+        // Feed the event through handle_event to drive the
+        // Spawning → Errored transition the App would do.
+        ms.handle_event(&evt.event);
         assert_eq!(ms.session.status, SessionStatus::Errored);
         assert!(
             ms.session
                 .activity_log
                 .iter()
-                .any(|entry| entry.message.contains("Spawn failed")),
+                .any(|entry| entry.message.starts_with("Error:")),
             "spawn failure should be recorded in the session activity log"
+        );
+    }
+
+    #[test]
+    fn handle_event_session_spawned_warning_transitions_to_running() {
+        // Sentinel `Warning { code = SESSION_SPAWNED_CODE }` is the
+        // lifecycle marker emitted by the non-blocking spawn handshake.
+        // It must transition Spawning → Running and stamp pid; for any
+        // other status it must be a no-op so a stray late-arrival event
+        // can't yank a Completed session back to Running.
+        let mut ms = make_managed("test");
+        ms.session.status = SessionStatus::Spawning;
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_SPAWNED_CODE.to_string(),
+            message: "12345".to_string(),
+        });
+        assert_eq!(ms.session.status, SessionStatus::Running);
+        assert_eq!(ms.session.pid, Some(12345));
+        assert!(
+            ms.session
+                .activity_log
+                .iter()
+                .any(|entry| entry.message.contains("Session spawned (pid: 12345)"))
+        );
+    }
+
+    #[test]
+    fn handle_event_session_spawned_warning_noop_when_not_spawning() {
+        let mut ms = make_managed("test");
+        ms.session.status = SessionStatus::Completed;
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_SPAWNED_CODE.to_string(),
+            message: "999".to_string(),
+        });
+        assert_eq!(ms.session.status, SessionStatus::Completed);
+        assert_eq!(ms.session.pid, None);
+    }
+
+    #[test]
+    fn handle_event_session_spawned_warning_handles_empty_pid_message() {
+        // HTTP providers (minimax, ollama) have no pid; the drain task
+        // emits an empty message in that case.
+        let mut ms = make_managed("test");
+        ms.session.status = SessionStatus::Spawning;
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_SPAWNED_CODE.to_string(),
+            message: String::new(),
+        });
+        assert_eq!(ms.session.status, SessionStatus::Running);
+        assert_eq!(ms.session.pid, None);
+        assert!(
+            ms.session
+                .activity_log
+                .iter()
+                .any(|entry| entry.message == "Session spawned")
         );
     }
 

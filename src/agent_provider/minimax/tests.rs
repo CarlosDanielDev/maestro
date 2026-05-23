@@ -123,6 +123,14 @@ async fn streams_openai_compatible_sse() {
         .await
         .expect("run");
 
+    // The provider emits a "Connecting to MiniMax..." activity hint
+    // BEFORE the HTTP handshake so the session card has visible feedback
+    // during the wait. The Started event then follows the handshake.
+    assert!(matches!(
+        rx.recv().await,
+        Some(AgentProviderEvent::Stream(StreamEvent::AssistantMessage { text }))
+            if text.starts_with("Connecting to MiniMax")
+    ));
     assert!(matches!(
         rx.recv().await,
         Some(AgentProviderEvent::Started(_))

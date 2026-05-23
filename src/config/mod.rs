@@ -243,6 +243,10 @@ impl Config {
 
         self.agents.validate()?;
 
+        if !self.teams.is_empty() {
+            crate::orchestration::team::validate_extends(&self.teams)?;
+        }
+
         Ok(())
     }
 

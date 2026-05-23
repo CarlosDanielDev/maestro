@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 use crate::orchestration::types::{Primitive, TeamRole};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -65,6 +66,32 @@ pub enum SourceTier {
     Project,
 }
 
+/// Shallow cross-entry validation for the settings-screen save path.
+///
+/// Every `teams.<child>.extends` value (if non-empty after trim) must
+/// reference another configured team in `all`. Built-in presets are loaded
+/// from a separate source at runtime and are NOT visible to `Config`; we
+/// accept any extends value that resolves to a key in `all`, leaving
+/// built-in resolution to `Loader` at session-start time.
+///
+/// Intentionally shallow — no cycle detection. A cycle like
+/// `a.extends = "b"; b.extends = "a"` surfaces at `Loader` time as a
+/// resolution error rather than a save-time block. Cycle detection is
+/// tracked as a v0.30.0 follow-up.
+pub fn validate_extends(all: &HashMap<String, TeamConfig>) -> Result<()> {
+    for (child, cfg) in all {
+        let parent = cfg.extends.trim();
+        if parent.is_empty() {
+            continue;
+        }
+        if all.contains_key(parent) {
+            continue;
+        }
+        anyhow::bail!("teams.{child}.extends references unknown team `{parent}`");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +141,41 @@ unknown_field = "boom"
         // reject unknown roles later.
         let config: TeamConfig = toml::from_str(toml).unwrap();
         assert!(config.bindings.contains_key("unknown_field"));
+    }
+
+    fn empty_team(extends: &str) -> TeamConfig {
+        TeamConfig {
+            extends: extends.to_string(),
+            primitive: Some(Primitive::Pipeline),
+            min_agents: None,
+            bindings: HashMap::new(),
+            role_overrides: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn validate_extends_accepts_root_and_existing_parent() {
+        let mut all = HashMap::new();
+        all.insert("root".to_string(), empty_team(""));
+        all.insert("child".to_string(), empty_team("root"));
+        validate_extends(&all).expect("root and known parent are accepted");
+    }
+
+    #[test]
+    fn validate_extends_rejects_dangling_parent() {
+        let mut all = HashMap::new();
+        all.insert("orphan".to_string(), empty_team("missing-parent"));
+        let err = validate_extends(&all).unwrap_err().to_string();
+        assert!(
+            err.contains("teams.orphan.extends references unknown team `missing-parent`"),
+            "error message must name child + parent, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_extends_treats_whitespace_as_empty() {
+        let mut all = HashMap::new();
+        all.insert("ws".to_string(), empty_team("   "));
+        validate_extends(&all).expect("whitespace-only extends must be treated as root");
     }
 }

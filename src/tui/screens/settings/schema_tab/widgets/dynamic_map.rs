@@ -163,6 +163,16 @@ impl DynamicMapWidget {
             return field.widget.handle_input(key);
         }
 
+        // ListEditor owns its own `a` / `d` / Enter chords (Add / Delete /
+        // Edit list item). When focus is on a ListEditor entry field, defer
+        // these keys to the inner widget so users can edit `bindings` /
+        // `extra_args` / `allowed_tools` lists — otherwise the outer
+        // DynamicMap eats `a`/`d` for its own Add Entry / Remove Entry
+        // modals.
+        if self.focused_field_owns_chord(key) {
+            return self.delegate_to_focused_field(key);
+        }
+
         match key.code {
             KeyCode::Char('a') => {
                 self.open_add_modal();
@@ -454,8 +464,128 @@ impl DynamicMapWidget {
         false
     }
 
+    /// Total vertical lines the widget would like to occupy when rendered.
+    /// Used by the settings screen's `field_height` so multi-line per-entry
+    /// fields (notably `ListEditor` empty-state hints and edit prompts) are
+    /// not clipped to a single row.
+    ///
+    /// Header (1) + tabstrip (2) + sum of per-row heights when entries
+    /// exist; the empty-state hint takes 4 lines (header + "No entries" +
+    /// blank + `[a] add first entry`).
+    pub fn desired_height(&self) -> u16 {
+        let header = 1u16;
+        if self.entries.is_empty() {
+            return header + 3;
+        }
+        let tabstrip = 2u16;
+        let body = self.active_entry_body_height();
+        header + tabstrip + body
+    }
+
+    fn active_entry_body_height(&self) -> u16 {
+        let Some(active) = self.active_idx else {
+            return 0;
+        };
+        let Some(entry) = self.entries.get(active) else {
+            return 0;
+        };
+        let visible = self.visible_field_indices();
+        visible
+            .iter()
+            .map(|&idx| {
+                let focused = matches!(self.focus, MapFocus::EntryField(n) if n == idx);
+                entry
+                    .fields
+                    .get(idx)
+                    .map(|f| entry_row_height(&f.widget, focused))
+                    .unwrap_or(1)
+            })
+            .sum()
+    }
+
+    /// Per-field row heights for the currently active entry, paired with
+    /// the field-index in `entry_fields`. Used by `dynamic_map_draw` to
+    /// build the per-row layout constraints.
+    pub(super) fn active_entry_row_heights(&self) -> Vec<(usize, u16)> {
+        let Some(active) = self.active_idx else {
+            return Vec::new();
+        };
+        let Some(entry) = self.entries.get(active) else {
+            return Vec::new();
+        };
+        self.visible_field_indices()
+            .into_iter()
+            .map(|idx| {
+                let focused = matches!(self.focus, MapFocus::EntryField(n) if n == idx);
+                let h = entry
+                    .fields
+                    .get(idx)
+                    .map(|f| entry_row_height(&f.widget, focused))
+                    .unwrap_or(1);
+                (idx, h)
+            })
+            .collect()
+    }
+
     pub fn edit_hint(&self) -> &'static [(&'static str, &'static str)] {
+        // When focus is on an entry-field whose widget owns its own chords
+        // (ListEditor `a/d/Enter`, TextInput `Enter`, …), surface that
+        // widget's hint instead of the outer Add/Del/Prev/Next chords —
+        // otherwise the bar misleads users editing a `bindings` /
+        // `extra_args` ListEditor into pressing `a` for the wrong modal.
+        if let MapFocus::EntryField(n) = self.focus
+            && let Some(active) = self.active_idx
+            && let Some(entry) = self.entries.get(active)
+            && let Some(field) = entry.fields.get(n)
+        {
+            return field.widget.edit_hint();
+        }
         &[("a/d", "Add/Del"), ("[ ]", "Prev/Next")]
+    }
+
+    /// True when the focused entry-field widget claims `key` as one of its
+    /// own chords. Today only `ListEditor` does (it owns `a`, `d`, and
+    /// `Enter` in its non-editing mode). Other widget kinds either ignore
+    /// these keys or only react to them while in insert mode (handled by
+    /// the `needs_insert_mode()` gate above).
+    fn focused_field_owns_chord(&self, key: KeyEvent) -> bool {
+        let MapFocus::EntryField(n) = self.focus else {
+            return false;
+        };
+        let Some(active) = self.active_idx else {
+            return false;
+        };
+        let Some(entry) = self.entries.get(active) else {
+            return false;
+        };
+        let Some(field) = entry.fields.get(n) else {
+            return false;
+        };
+        match field.widget {
+            WidgetKind::ListEditor(_) => matches!(
+                key.code,
+                KeyCode::Char('a') | KeyCode::Char('d') | KeyCode::Enter
+            ),
+            _ => false,
+        }
+    }
+
+    fn delegate_to_focused_field(&mut self, key: KeyEvent) -> WidgetAction {
+        let MapFocus::EntryField(n) = self.focus else {
+            return WidgetAction::None;
+        };
+        let Some(active) = self.active_idx else {
+            return WidgetAction::None;
+        };
+        let Some(entry) = self.entries.get_mut(active) else {
+            return WidgetAction::None;
+        };
+        let Some(field) = entry.fields.get_mut(n) else {
+            return WidgetAction::None;
+        };
+        let action = field.widget.handle_input(key);
+        self.clamp_focus_to_visible();
+        action
     }
 
     pub fn serialize_to_toml(&self) -> toml::Value {
@@ -484,5 +614,39 @@ impl DynamicMapWidget {
 
     pub(super) fn remove_modal(&self) -> Option<&RemoveConfirmModal> {
         self.remove_modal.as_ref()
+    }
+}
+
+/// Vertical lines a single per-entry field row needs. `ListEditor` is the
+/// only widget that ever exceeds 1 line — it draws an `[a]/[d]` hint when
+/// focused-empty, an input prompt when editing, and one line per item.
+/// All other widgets render in a single line.
+///
+/// Caps item rendering at `MAX_LIST_ROWS` so an entry with hundreds of
+/// items doesn't push other fields off-screen; long lists scroll inside
+/// the widget (deferred to a follow-up).
+fn entry_row_height(widget: &WidgetKind, focused: bool) -> u16 {
+    const MAX_LIST_ROWS: u16 = 4;
+    match widget {
+        WidgetKind::ListEditor(le) => {
+            let items = (le.items.len() as u16).min(MAX_LIST_ROWS);
+            if le.editing {
+                // label + items (capped) + input prompt
+                1 + items + 1
+            } else if focused {
+                if le.items.is_empty() {
+                    // label + `[a] Add  [d] Delete` hint
+                    2
+                } else {
+                    // label + items + hint
+                    1 + items + 1
+                }
+            } else if items == 0 {
+                1
+            } else {
+                1 + items
+            }
+        }
+        _ => 1,
     }
 }

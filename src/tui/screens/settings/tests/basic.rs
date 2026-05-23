@@ -198,6 +198,74 @@ fn a_key_from_scalar_field_routes_to_tab_dynamic_widget() {
 }
 
 #[test]
+fn alphabetical_indices_match_all_length() {
+    assert_eq!(
+        SettingsTab::ALPHABETICAL_INDICES.len(),
+        SettingsTab::ALL.len(),
+        "ALPHABETICAL_INDICES must have one entry per SettingsTab variant"
+    );
+}
+
+#[test]
+fn alphabetical_indices_are_unique_and_in_range() {
+    let n = SettingsTab::ALL.len();
+    let mut seen = vec![false; n];
+    for &idx in SettingsTab::ALPHABETICAL_INDICES {
+        assert!(
+            idx < n,
+            "ALPHABETICAL_INDICES contains out-of-range index {idx}"
+        );
+        assert!(
+            !seen[idx],
+            "ALPHABETICAL_INDICES contains duplicate index {idx}"
+        );
+        seen[idx] = true;
+    }
+}
+
+#[test]
+fn alphabetical_indices_produce_variant_name_sorted_order() {
+    // Pre-existing convention: the sidebar sorts by VARIANT NAME, not by
+    // displayed label. `Agents` has label "Providers" but sits between
+    // Advanced and Budget in the alphabetical list. Locking this here so
+    // a future label rename doesn't silently break the ordering.
+    let variant_names: Vec<String> = SettingsTab::ALPHABETICAL_INDICES
+        .iter()
+        .map(|&i| format!("{:?}", SettingsTab::ALL[i]))
+        .collect();
+    let mut sorted = variant_names.clone();
+    sorted.sort();
+    assert_eq!(
+        variant_names, sorted,
+        "ALPHABETICAL_INDICES must be sorted by variant name"
+    );
+}
+
+#[test]
+fn teams_tab_is_registered_between_modes_and_theme() {
+    let positions: Vec<(usize, SettingsTab)> = SettingsTab::ALL
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, t)| {
+            matches!(
+                t,
+                SettingsTab::Modes | SettingsTab::Teams | SettingsTab::Theme
+            )
+        })
+        .collect();
+    assert_eq!(
+        positions
+            .iter()
+            .map(|(_, t)| *t)
+            .collect::<Vec<SettingsTab>>(),
+        vec![SettingsTab::Modes, SettingsTab::Teams, SettingsTab::Theme],
+        "Teams must sit between Modes and Theme in SettingsTab::ALL"
+    );
+    assert_eq!(SettingsTab::Teams.label(), "Teams");
+}
+
+#[test]
 fn all_tabs_have_fields_except_flags() {
     let screen = SettingsScreen::new(make_config(), make_flags());
     for (i, tab) in SettingsTab::ALL.iter().enumerate() {

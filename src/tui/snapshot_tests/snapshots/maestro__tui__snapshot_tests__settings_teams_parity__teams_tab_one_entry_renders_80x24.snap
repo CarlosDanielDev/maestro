@@ -1,0 +1,38 @@
+---
+source: src/tui/snapshot_tests/settings_teams_parity.rs
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 80, height: 24 },
+    content: [
+        "teams.worker-pool.primitive:  pipeline                                        ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: White, bg: Reset, underline: Reset, modifier: NONE,
+        x: 29, y: 0, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 41, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}

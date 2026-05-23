@@ -80,7 +80,11 @@ impl SettingsScreen {
     pub fn set_caveman_state(&mut self, state: CavemanModeState) {
         let bool_value = state.as_bool().unwrap_or(false);
         self.caveman_state = state;
-        if let Some(fields) = self.fields_per_tab.get_mut(13)
+        let advanced_idx = SettingsTab::ALL
+            .iter()
+            .position(|t| *t == SettingsTab::Advanced)
+            .unwrap_or(0);
+        if let Some(fields) = self.fields_per_tab.get_mut(advanced_idx)
             && let Some(field) = fields
                 .iter_mut()
                 .find(|f| f.widget.label() == CAVEMAN_LABEL)
@@ -135,6 +139,11 @@ impl SettingsScreen {
             .agents
             .validate()
             .with_context(|| "settings cross-entry validation".to_string())?;
+        // `teams.<id>.extends` referring to an unknown team (#803).
+        if !self.config.teams.is_empty() {
+            crate::orchestration::team::validate_extends(&self.config.teams)
+                .with_context(|| "settings cross-entry validation".to_string())?;
+        }
         self.config
             .save(path)
             .with_context(|| format!("saving settings to {}", path.display()))?;

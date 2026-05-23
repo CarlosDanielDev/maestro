@@ -6,7 +6,9 @@ use super::roundtrip_overlay::{load_fixture, temp_file_with};
 use super::*;
 use crate::config::agents::{AgentConfig, AgentKind};
 use crate::config::sessions::CompletionGateEntry;
-use std::collections::BTreeMap;
+use crate::orchestration::team::TeamConfig;
+use crate::orchestration::types::Primitive;
+use std::collections::{BTreeMap, HashMap};
 
 const FIXTURE_DIR: &str = "tests/fixtures/dynamic_config";
 
@@ -221,6 +223,75 @@ fn array_of_tables_reorder_without_feature_falls_back_to_wholesale_rewrite() {
         "wholesale-rewrite path is documented to drop per-element comments on \
          moved rows; the feature-on path keeps them. Without this distinction \
          the test would not exercise the fallback:\n{after}"
+    );
+}
+
+fn worker_pool_team() -> TeamConfig {
+    let mut bindings: HashMap<String, toml::Value> = HashMap::new();
+    bindings.insert(
+        "implementer".to_string(),
+        toml::Value::String("claude".to_string()),
+    );
+    bindings.insert(
+        "reviewer".to_string(),
+        toml::Value::String("opencode".to_string()),
+    );
+    TeamConfig {
+        extends: String::new(),
+        primitive: Some(Primitive::Pipeline),
+        min_agents: Some(vec!["claude".to_string()]),
+        bindings,
+        role_overrides: HashMap::new(),
+    }
+}
+
+#[test]
+fn add_teams_entry_emits_block_with_top_level_bindings() {
+    let (before, mut cfg) = load_fixture(FIXTURE_DIR, "teams_add.toml.before");
+    cfg.teams
+        .insert("worker-pool".to_string(), worker_pool_team());
+
+    let after = cfg
+        .save_into_str(&before)
+        .expect("save_into_str must succeed");
+
+    assert!(
+        after.contains("[teams.worker-pool]"),
+        "team block must be emitted as a header:\n{after}"
+    );
+    assert!(
+        after.contains("implementer = \"claude\""),
+        "implementer binding must be a top-level scalar key:\n{after}"
+    );
+    assert!(
+        after.contains("reviewer = \"opencode\""),
+        "reviewer binding must be a top-level scalar key:\n{after}"
+    );
+    assert!(
+        !after.contains("bindings = ["),
+        "bindings must NOT serialize as an inline array key — that's the TUI shape only:\n{after}"
+    );
+    assert!(
+        after.contains("# === Teams ===")
+            && after.contains("# Marker comment that must survive a teams-add operation"),
+        "neighbor comments must survive the add:\n{after}"
+    );
+}
+
+#[test]
+fn teams_round_trip_is_idempotent() {
+    let (before, mut cfg) = load_fixture(FIXTURE_DIR, "teams_add.toml.before");
+    cfg.teams
+        .insert("worker-pool".to_string(), worker_pool_team());
+
+    let pass1 = cfg.save_into_str(&before).expect("first save");
+    let tmp2 = temp_file_with(&pass1);
+    let cfg2 = Config::load(tmp2.path()).expect("pass1 must parse");
+    let pass2 = cfg2.save_into_str(&pass1).expect("second save");
+
+    assert_eq!(
+        pass1, pass2,
+        "second save with no mutations must be byte-identical:\nfirst:\n{pass1}\nsecond:\n{pass2}"
     );
 }
 

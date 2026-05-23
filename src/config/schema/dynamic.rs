@@ -213,6 +213,57 @@ pub(crate) const MODES_ENTRY_FIELDS: &[FieldSchema] = &[
     },
 ];
 
+/// Allowed `teams.<id>.primitive` values. Mirrors `Primitive` variants
+/// in `src/orchestration/types.rs` (kebab-case via #[serde(rename_all)]).
+/// A drift test in `schema_tests.rs` locks these against the Rust enum.
+pub(crate) const TEAM_PRIMITIVES: &[&str] = &["pipeline", "fan-out", "single-pass", "verdict-only"];
+
+/// Entry fields for `[teams.<id>]`. 4 fields per spec §6.3 + #803.
+/// `role_overrides` is deferred — surfaced in a v0.30.0 follow-up so the
+/// rich-form bindings sub-table can be edited from the TUI.
+/// `bindings` is a `StringList` of `"role=agent"` pairs; the sync-time
+/// adapter in `schema_tab/teams_bindings.rs` explodes each pair into a
+/// top-level scalar key on `[teams.<id>]` so `TeamConfig.bindings`
+/// (`#[serde(flatten)]`) round-trips losslessly.
+pub(crate) const TEAMS_ENTRY_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "extends",
+        label: "Extends",
+        help: "Parent preset name — empty means root (built-in)",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "primitive",
+        label: "Primitive",
+        help: "Execution shape — pipeline / fan-out / single-pass / verdict-only",
+        default: DefaultValue::Str("pipeline"),
+        kind: FieldKind::Enum(TEAM_PRIMITIVES),
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "min_agents",
+        label: "Minimum Agents",
+        help: "Agents that must be configured for the team to spawn",
+        default: DefaultValue::StrList(&[]),
+        kind: FieldKind::StringList,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "bindings",
+        label: "Bindings",
+        help: "Role → agent mappings as `role=agent` pairs (e.g. `coder=claude`)",
+        default: DefaultValue::StrList(&[]),
+        kind: FieldKind::StringList,
+        validator: None,
+        presentation: None,
+    },
+];
+
 /// Entry fields for `[[sessions.completion_gates.commands]]`. 3 fields per
 /// spec §6.3. Renderer wires this through a `DynamicRowsWidget` appended at
 /// the end of the Sessions tab.

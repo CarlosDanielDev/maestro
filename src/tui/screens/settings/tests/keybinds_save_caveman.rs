@@ -336,7 +336,11 @@ fn space_when_state_is_error_shows_status_explanation() {
 fn set_caveman_state_updates_underlying_widget_value() {
     let mut screen = screen_with_caveman(CavemanModeState::ExplicitFalse);
     screen.set_caveman_state(CavemanModeState::ExplicitTrue);
-    let advanced = &screen.fields_per_tab[13];
+    let advanced_idx = SettingsTab::ALL
+        .iter()
+        .position(|t| *t == SettingsTab::Advanced)
+        .expect("Advanced variant must be registered");
+    let advanced = &screen.fields_per_tab[advanced_idx];
     let toggle = advanced
         .iter()
         .find_map(|f| match &f.widget {

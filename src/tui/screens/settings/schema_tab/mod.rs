@@ -15,6 +15,8 @@ pub(crate) mod modals;
 #[allow(dead_code)]
 pub(crate) mod sync;
 #[allow(dead_code)]
+pub(crate) mod teams_bindings;
+#[allow(dead_code)]
 pub(crate) mod widgets;
 
 #[cfg(test)]

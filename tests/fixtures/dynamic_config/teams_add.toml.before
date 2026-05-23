@@ -1,0 +1,21 @@
+# maestro config for issue #803 teams round-trip test
+[project]
+repo = "owner/repo"
+base_branch = "main"
+
+[sessions]
+max_concurrent = 3
+
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+
+[github]
+
+[notifications]
+slack_webhook_url = ""
+
+# === Teams ===
+# Marker comment that must survive a teams-add operation
+[budget.alerts]

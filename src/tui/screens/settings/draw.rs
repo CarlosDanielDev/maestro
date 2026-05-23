@@ -174,11 +174,13 @@ impl SettingsScreen {
                 // One row is not enough — give them the height to display
                 // the empty state hint or a full entry group.
                 WidgetKind::DynamicMap(w) => {
-                    // Flat header (1) + sub-tab strip (2) + entry fields, or
-                    // the 3-line empty-state hint. `entry_fields` is the
-                    // upper bound on visible rows when an entry is active.
-                    let entry_rows = w.entry_fields.len() as u16;
-                    (entry_rows + 3).max(7)
+                    // Ask the widget how much space it needs — variable per
+                    // active entry, since `ListEditor` fields can ask for 2
+                    // (label + hint), 3+ (label + items + input prompt),
+                    // etc. Floor at 7 so the empty-state hint + sub-tab
+                    // strip have breathing room consistent with snapshot
+                    // tests.
+                    w.desired_height().max(7)
                 }
                 WidgetKind::DynamicRows(_) => 8,
                 _ => {

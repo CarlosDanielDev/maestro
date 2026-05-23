@@ -18,7 +18,7 @@ use crate::tui::screens::settings::SettingsScreen;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::WidgetKind;
 
-const ADVANCED_TAB_INDEX: usize = 13;
+const ADVANCED_TAB_INDEX: usize = 14;
 const CAVEMAN_LABEL: &str = "caveman_mode";
 
 const MINIMAL_TOML: &str = concat!(
