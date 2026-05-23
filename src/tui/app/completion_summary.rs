@@ -106,6 +106,18 @@ impl App {
         self.navigate_to(crate::tui::app::TuiMode::SessionSummary);
     }
 
+    /// Build the completion-summary overlay and navigate to its mode.
+    /// Funnels every production entry site (event-loop tick when
+    /// `all_done`, continuous-mode end, queue-executor finish) so the
+    /// prior `tui_mode` lands on `nav_stack`. Pressing `Esc`/`Enter`/`[s]`
+    /// from the modal pops back to where the user was, instead of
+    /// falling through to ConfirmExit. Added 2026-05-23.
+    pub fn open_completion_summary(&mut self) {
+        let summary = self.build_completion_summary();
+        self.completion_summary = Some(summary);
+        self.navigate_to(crate::tui::app::TuiMode::CompletionSummary);
+    }
+
     /// Transition from CompletionSummary to Dashboard mode.
     pub fn transition_to_dashboard(&mut self) {
         let all = self.pool.all_sessions();
@@ -177,7 +189,13 @@ impl App {
             screen.start_loading_suggestions();
         }
         self.pending_commands.push(TuiCommand::FetchSuggestionData);
-        self.navigate_to_root();
+        // Push Dashboard onto the nav stack instead of clearing it — `Esc`
+        // from the dashboard then pops back to the screen the user was on
+        // before the completion modal opened, instead of jumping straight
+        // to ConfirmExit (the previous `navigate_to_root` behavior wiped
+        // navigation history every time the user pressed `[d] Dashboard`
+        // from the Session Complete modal — 2026-05-22 UX fix).
+        self.navigate_to(crate::tui::app::TuiMode::Dashboard);
     }
 }
 

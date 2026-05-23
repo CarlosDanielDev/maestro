@@ -813,14 +813,19 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             let config = config.with_agent_id(app.selected_agent_id());
             app.pending_commands
                 .push(app::TuiCommand::LaunchUnifiedSession(config));
-            app.nav_stack.clear();
+            // Replace the current wizard (PromptInput/IssueBrowser/etc.) with
+            // Overview WITHOUT clearing the nav stack. The wizard is current,
+            // not on the stack, so the stable anchors below it (Landing,
+            // Dashboard) survive — Esc from the post-session Overview pops
+            // back through them as the user expects. Wiping the stack
+            // (previous behavior) lost the Welcome breadcrumb at every
+            // session start. Reported 2026-05-23.
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchSession(config) => {
             let config = config.with_agent_id(app.selected_agent_id());
             app.pending_commands
                 .push(app::TuiCommand::LaunchSession(config));
-            app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchSessions(configs) => {
@@ -831,7 +836,6 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 .collect();
             app.pending_commands
                 .push(app::TuiCommand::LaunchSessions(configs));
-            app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchPromptSession(config) => {
@@ -840,13 +844,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             app.screen_state.adapt_follow_up_screen = None;
             app.pending_commands
                 .push(app::TuiCommand::LaunchPromptSession(config));
-            app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchConflictFix(config) => {
             app.spawn_conflict_fix_session(&config);
             app.completion_summary = None;
-            app.nav_stack.clear();
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchCiFix(config) => {
