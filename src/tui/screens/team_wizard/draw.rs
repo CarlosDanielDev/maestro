@@ -389,9 +389,9 @@ impl TeamWizardScreen {
 
     fn draw_launch_issue_picker(&self, f: &mut Frame, area: Rect, theme: &Theme) {
         let buffer = sanitize_for_terminal(&self.launch.manual_issue_input);
-        let lines = vec![
+        let mut lines = vec![
             Line::from(Span::styled(
-                "Enter the issue number (digits only)",
+                "Enter issue number — paste with Ctrl+V or pick from suggestions",
                 Style::default().fg(theme.text_secondary),
             )),
             Line::from(""),
@@ -401,12 +401,26 @@ impl TeamWizardScreen {
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "[Enter] continue   [Esc] back",
-                Style::default().fg(theme.text_secondary),
-            )),
         ];
+
+        let candidates = self.autocomplete_candidates();
+        if !candidates.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Suggestions:",
+                Style::default().fg(theme.text_secondary),
+            )));
+            for (i, n) in candidates.iter().enumerate() {
+                let focused = self.launch.autocomplete_focus == Some(i);
+                lines.push(focused_line(theme, &format!("#{n}"), focused));
+            }
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "[Ctrl+V] paste   [↑/↓] suggest   [Tab] accept   [Enter] continue   [Esc] back",
+            Style::default().fg(theme.text_secondary),
+        )));
         f.render_widget(
             Paragraph::new(lines).block(theme.styled_block("Issue Number", false)),
             area,
@@ -696,11 +710,11 @@ fn launch_footer_hint(step: LaunchStep) -> &'static str {
         LaunchStep::TeamPicker => "[↑/↓ j/k] pick   [Enter] choose   [Esc] back",
         LaunchStep::InputPicker => "[↑/↓ j/k] pick   [Enter] continue   [Esc] back",
         LaunchStep::IssuePicker => {
-            "[digits] type   [Backspace] erase   [Enter] continue   [Esc] back"
+            "[digits] type   [Ctrl+V] paste   [↑/↓] suggest   [Tab] accept   [Enter] continue   [Esc] back"
         }
         LaunchStep::PlanPreview => "[Enter] confirm   [Esc] back",
         LaunchStep::Confirm => "[Enter] launch   [Esc] back",
-        LaunchStep::Executing => "Dispatching…",
+        LaunchStep::Executing => "Launch in progress — Esc disabled until result",
         LaunchStep::LaunchSuccess => "[Enter] return",
         LaunchStep::LaunchFailed => "[r] retry   [Esc] back",
     }

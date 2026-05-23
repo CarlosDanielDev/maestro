@@ -301,7 +301,7 @@ impl ManagedSession {
                 self.session.log_activity(log_msg);
 
                 if let Some(path) = file_path
-                    && matches!(tool.as_str(), "Read" | "Edit" | "Write" | "Glob" | "Grep")
+                    && is_file_touching_tool(tool.as_str())
                     && !self.session.files_touched.contains(path)
                 {
                     self.session.files_touched_previous = self.session.files_touched.len();
@@ -412,6 +412,17 @@ fn format_elapsed(d: std::time::Duration) -> String {
     } else {
         format!("{}ms", d.as_millis())
     }
+}
+
+/// Tool names that touch a file and should bump `files_touched`. Matches
+/// both Claude's PascalCase convention (`Read`, `Edit`) and opencode /
+/// other providers' lowercase (`read`, `edit`, `write`, `glob`, `grep`,
+/// `patch`). Case-insensitive comparison; unknown tools are ignored.
+fn is_file_touching_tool(tool: &str) -> bool {
+    matches!(
+        tool.to_ascii_lowercase().as_str(),
+        "read" | "edit" | "write" | "glob" | "grep" | "patch" | "multiedit"
+    )
 }
 
 use crate::util::truncate_at_char_boundary;
@@ -683,5 +694,76 @@ mod tests {
         ms.handle_event(&StreamEvent::Completed { cost_usd: 0.0 });
         assert_eq!(ms.session.status, SessionStatus::Killed);
         assert!(!ms.session.is_hollow_completion);
+    }
+
+    #[test]
+    fn is_file_touching_tool_accepts_claude_pascalcase() {
+        assert!(is_file_touching_tool("Read"));
+        assert!(is_file_touching_tool("Edit"));
+        assert!(is_file_touching_tool("Write"));
+        assert!(is_file_touching_tool("Glob"));
+        assert!(is_file_touching_tool("Grep"));
+    }
+
+    #[test]
+    fn is_file_touching_tool_accepts_opencode_lowercase() {
+        assert!(is_file_touching_tool("read"));
+        assert!(is_file_touching_tool("edit"));
+        assert!(is_file_touching_tool("write"));
+        assert!(is_file_touching_tool("glob"));
+        assert!(is_file_touching_tool("grep"));
+        assert!(is_file_touching_tool("patch"));
+        assert!(is_file_touching_tool("multiedit"));
+    }
+
+    #[test]
+    fn is_file_touching_tool_rejects_non_file_tools() {
+        assert!(!is_file_touching_tool("Bash"));
+        assert!(!is_file_touching_tool("bash"));
+        assert!(!is_file_touching_tool("WebSearch"));
+        assert!(!is_file_touching_tool(""));
+        assert!(!is_file_touching_tool("unknown"));
+    }
+
+    #[test]
+    fn opencode_lowercase_read_event_populates_files_touched() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::ToolUse {
+            tool: "read".into(),
+            file_path: Some("src/main.rs".into()),
+            command_preview: None,
+            subagent_name: None,
+        });
+        assert_eq!(ms.session.files_touched, vec!["src/main.rs".to_string()]);
+    }
+
+    #[test]
+    fn opencode_lowercase_edit_event_populates_files_touched() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::ToolUse {
+            tool: "edit".into(),
+            file_path: Some("src/lib.rs".into()),
+            command_preview: None,
+            subagent_name: None,
+        });
+        assert_eq!(ms.session.files_touched, vec!["src/lib.rs".to_string()]);
+    }
+
+    #[test]
+    fn duplicate_tool_use_does_not_double_count_files() {
+        let mut ms = make_managed_with_start("test", 10);
+        ms.handle_event(&StreamEvent::ToolUse {
+            tool: "read".into(),
+            file_path: Some("src/main.rs".into()),
+            command_preview: None,
+            subagent_name: None,
+        });
+        ms.handle_event(&StreamEvent::ToolUse {
+            tool: "Read".into(),
+            file_path: Some("src/main.rs".into()),
+            command_preview: None,
+            subagent_name: None,
+        });
+        assert_eq!(ms.session.files_touched.len(), 1);
     }
 }

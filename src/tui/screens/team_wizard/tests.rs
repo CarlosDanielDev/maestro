@@ -8,11 +8,11 @@ use super::types::{
 use super::{Screen, ScreenAction, TeamWizardScreen};
 use crate::orchestration::dag::IssueState;
 use crate::orchestration::team::SourceTier;
-use crate::orchestration::types::{Primitive, TeamRole};
+use crate::orchestration::types::{Primitive, TeamInput, TeamRole};
 use crate::provider::types::ProviderKind;
 use crate::tui::navigation::InputMode;
-use crate::tui::screens::test_helpers::key_event;
-use crossterm::event::KeyCode;
+use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
+use crossterm::event::{KeyCode, KeyModifiers};
 
 fn fresh() -> TeamWizardScreen {
     TeamWizardScreen::new(ProviderKind::default())
@@ -617,4 +617,383 @@ fn launch_input_picker_issue_set_enter_skips_issue_picker() {
     s.launch.input_focus = 1;
     s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
     assert_eq!(s.launch_step(), LaunchStep::PlanPreview);
+}
+
+// ── #877 — launch dispatch wiring ───────────────────────────────────────
+
+#[test]
+fn launch_dispatch_returns_launch_team_action_with_issue_input() {
+    let mut s = fresh();
+    s.apply_resolved_teams(vec![pipeline_team()]);
+    s.set_known_agents(vec!["claude".into()]);
+    s.set_launch_team_for_test("default-coder");
+    s.launch.input_kind = LaunchInputKind::Issue;
+    s.launch.manual_issues = vec![42];
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::Confirm);
+    let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(
+        action,
+        ScreenAction::LaunchTeam {
+            team_name: "default-coder".into(),
+            input: TeamInput::Issue { number: 42 },
+            max_parallel: 3,
+        }
+    );
+    assert_eq!(s.launch_step(), LaunchStep::Executing);
+}
+
+#[test]
+fn launch_dispatch_returns_launch_team_action_with_idea_inbox() {
+    let mut s = fresh();
+    s.apply_resolved_teams(vec![pipeline_team()]);
+    s.set_known_agents(vec!["claude".into()]);
+    s.set_launch_team_for_test("default-coder");
+    s.launch.input_kind = LaunchInputKind::IdeaInbox;
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::Confirm);
+    let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(
+        action,
+        ScreenAction::LaunchTeam {
+            team_name: "default-coder".into(),
+            input: TeamInput::IdeaInbox,
+            max_parallel: 3,
+        }
+    );
+}
+
+#[test]
+fn launch_dispatch_no_team_selected_returns_none() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::Confirm);
+    let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(action, ScreenAction::None);
+    assert_eq!(s.launch_step(), LaunchStep::Confirm);
+}
+
+#[test]
+fn esc_on_executing_step_is_swallowed() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::Executing);
+    let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+    assert_eq!(action, ScreenAction::None);
+    assert_eq!(s.launch_step(), LaunchStep::Executing);
+    assert_eq!(s.mode(), TeamWizardMode::Launch);
+}
+
+#[test]
+fn esc_on_launch_success_pops_screen_does_not_retreat() {
+    // Regression: pressing Esc on the LaunchSuccess "Launched" step used to
+    // call `handle_launch_back` → `retreat()` which walked the user back to
+    // Executing. Combined with the Esc-on-Executing swallow this stranded
+    // the wizard with no forward path. Esc on terminal states must Pop.
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::LaunchSuccess);
+    let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+    assert_eq!(action, ScreenAction::Pop);
+    assert_eq!(s.launch_step(), LaunchStep::LaunchSuccess);
+}
+
+#[test]
+fn esc_on_launch_failed_pops_screen_does_not_retreat() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::LaunchFailed);
+    let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
+    assert_eq!(action, ScreenAction::Pop);
+    assert_eq!(s.launch_step(), LaunchStep::LaunchFailed);
+}
+
+// ── #875 — Ctrl+V paste behaviour ───────────────────────────────────────
+
+#[test]
+fn ctrl_v_paste_populates_issue_buffer() {
+    use super::clipboard::testing::StubClipboard;
+    let mut s = TeamWizardScreen::with_clipboard_for_test(
+        ProviderKind::default(),
+        TeamWizardMode::Launch,
+        None,
+        Box::new(StubClipboard::with_text("#777")),
+    );
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.handle_input(
+        &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
+        InputMode::Normal,
+    );
+    assert_eq!(s.launch_payload().manual_issue_input, "777");
+}
+
+#[test]
+fn ctrl_v_paste_non_numeric_leaves_buffer_unchanged() {
+    use super::clipboard::testing::StubClipboard;
+    let mut s = TeamWizardScreen::with_clipboard_for_test(
+        ProviderKind::default(),
+        TeamWizardMode::Launch,
+        None,
+        Box::new(StubClipboard::with_text("abc")),
+    );
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.handle_input(
+        &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
+        InputMode::Normal,
+    );
+    assert_eq!(s.launch_payload().manual_issue_input, "");
+}
+
+#[test]
+fn ctrl_v_paste_with_empty_clipboard_is_noop() {
+    use super::clipboard::testing::StubClipboard;
+    let mut s = TeamWizardScreen::with_clipboard_for_test(
+        ProviderKind::default(),
+        TeamWizardMode::Launch,
+        None,
+        Box::new(StubClipboard::empty()),
+    );
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.set_launch_manual_issue_input_for_test("99");
+    s.handle_input(
+        &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
+        InputMode::Normal,
+    );
+    assert_eq!(s.launch_payload().manual_issue_input, "99");
+}
+
+#[test]
+fn ctrl_v_paste_ignored_outside_issue_picker_step() {
+    use super::clipboard::testing::StubClipboard;
+    let mut s = TeamWizardScreen::with_clipboard_for_test(
+        ProviderKind::default(),
+        TeamWizardMode::Launch,
+        None,
+        Box::new(StubClipboard::with_text("#42")),
+    );
+    // Leave default step (TeamPicker)
+    let before_step = s.launch_step();
+    s.handle_input(
+        &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
+        InputMode::Normal,
+    );
+    assert_eq!(s.launch_step(), before_step);
+    assert_eq!(s.launch_payload().manual_issue_input, "");
+}
+
+#[test]
+fn ctrl_v_paste_truncates_long_issue_number() {
+    use super::clipboard::testing::StubClipboard;
+    let mut s = TeamWizardScreen::with_clipboard_for_test(
+        ProviderKind::default(),
+        TeamWizardMode::Launch,
+        None,
+        Box::new(StubClipboard::with_text("12345678901234")),
+    );
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.handle_input(
+        &key_event_with_modifiers(KeyCode::Char('v'), KeyModifiers::CONTROL),
+        InputMode::Normal,
+    );
+    assert_eq!(s.launch_payload().manual_issue_input.len(), 10);
+    assert_eq!(s.launch_payload().manual_issue_input, "1234567890");
+}
+
+// ── #876 — Autocomplete candidates + key arms ───────────────────────────
+
+#[test]
+fn autocomplete_candidates_empty_buffer_returns_empty() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = std::collections::HashMap::new();
+    metas.insert(1u64, make_issue_meta(1, IssueState::Open, None, &[]));
+    metas.insert(10u64, make_issue_meta(10, IssueState::Open, None, &[]));
+    s.apply_issue_metas(metas);
+    assert!(s.autocomplete_candidates().is_empty());
+}
+
+#[test]
+fn autocomplete_candidates_filters_by_prefix() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = std::collections::HashMap::new();
+    for n in [1u64, 10, 12, 100, 101, 200] {
+        metas.insert(n, make_issue_meta(n, IssueState::Open, None, &[]));
+    }
+    s.apply_issue_metas(metas);
+
+    s.set_launch_manual_issue_input_for_test("1");
+    assert_eq!(s.autocomplete_candidates(), vec![1, 10, 12, 100, 101]);
+
+    s.set_launch_manual_issue_input_for_test("10");
+    assert_eq!(s.autocomplete_candidates(), vec![10, 100, 101]);
+
+    s.set_launch_manual_issue_input_for_test("5");
+    assert!(s.autocomplete_candidates().is_empty());
+}
+
+#[test]
+fn autocomplete_candidates_excludes_closed_issues() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = std::collections::HashMap::new();
+    metas.insert(42u64, make_issue_meta(42, IssueState::Closed, None, &[]));
+    s.apply_issue_metas(metas);
+    s.set_launch_manual_issue_input_for_test("4");
+    assert!(s.autocomplete_candidates().is_empty());
+}
+
+#[test]
+fn autocomplete_candidates_top_five_only() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = std::collections::HashMap::new();
+    for n in [1u64, 10, 11, 12, 13, 14, 15, 100, 101, 111] {
+        metas.insert(n, make_issue_meta(n, IssueState::Open, None, &[]));
+    }
+    s.apply_issue_metas(metas);
+    s.set_launch_manual_issue_input_for_test("1");
+    let cands = s.autocomplete_candidates();
+    assert_eq!(cands.len(), 5);
+    assert_eq!(cands, vec![1, 10, 11, 12, 13]);
+}
+
+#[test]
+fn autocomplete_candidates_with_no_metas_returns_empty() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.set_launch_manual_issue_input_for_test("42");
+    assert!(s.autocomplete_candidates().is_empty());
+}
+
+#[test]
+fn arrow_down_moves_autocomplete_focus() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = std::collections::HashMap::new();
+    for n in [1u64, 10, 12] {
+        metas.insert(n, make_issue_meta(n, IssueState::Open, None, &[]));
+    }
+    s.apply_issue_metas(metas);
+    s.set_launch_manual_issue_input_for_test("1");
+
+    assert_eq!(s.launch_payload().autocomplete_focus, None);
+    s.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+    assert_eq!(s.launch_payload().autocomplete_focus, Some(0));
+    s.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+    assert_eq!(s.launch_payload().autocomplete_focus, Some(1));
+}
+
+#[test]
+fn arrow_up_clamps_at_zero() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = std::collections::HashMap::new();
+    for n in [1u64, 10, 12] {
+        metas.insert(n, make_issue_meta(n, IssueState::Open, None, &[]));
+    }
+    s.apply_issue_metas(metas);
+    s.set_launch_manual_issue_input_for_test("1");
+    s.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+    assert_eq!(s.launch_payload().autocomplete_focus, Some(0));
+    s.handle_input(&key_event(KeyCode::Up), InputMode::Normal);
+    assert_eq!(s.launch_payload().autocomplete_focus, Some(0));
+}
+
+#[test]
+fn autocomplete_focus_stays_none_on_down_when_no_candidates() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+    assert_eq!(s.launch_payload().autocomplete_focus, None);
+}
+
+#[test]
+fn tab_with_focused_candidate_replaces_buffer() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = std::collections::HashMap::new();
+    for n in [1u64, 10, 12] {
+        metas.insert(n, make_issue_meta(n, IssueState::Open, None, &[]));
+    }
+    s.apply_issue_metas(metas);
+    s.set_launch_manual_issue_input_for_test("1");
+    s.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+    s.handle_input(&key_event(KeyCode::Down), InputMode::Normal);
+    s.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+    assert_eq!(s.launch_payload().manual_issue_input, "10");
+    assert_eq!(s.launch_payload().autocomplete_focus, None);
+}
+
+#[test]
+fn tab_with_no_candidates_is_noop() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+    assert_eq!(s.launch_payload().manual_issue_input, "");
+    assert_eq!(s.launch_payload().autocomplete_focus, None);
+}
+
+#[test]
+fn enter_ignores_autocomplete_focus() {
+    let mut s = fresh();
+    s.apply_resolved_teams(vec![pipeline_team()]);
+    s.set_known_agents(vec!["claude".into()]);
+    s.set_launch_team_for_test("default-coder");
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    s.launch.input_kind = LaunchInputKind::Issue;
+    let mut metas = std::collections::HashMap::new();
+    metas.insert(42u64, make_issue_meta(42, IssueState::Open, Some(1), &[]));
+    metas.insert(420u64, make_issue_meta(420, IssueState::Open, Some(1), &[]));
+    s.apply_issue_metas(metas);
+    s.set_launch_manual_issue_input_for_test("42");
+    s.set_autocomplete_focus_for_test(Some(1));
+    s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(s.launch_payload().manual_issues, vec![42u64]);
+    assert_eq!(s.launch_step(), LaunchStep::PlanPreview);
+}
+
+#[test]
+fn backspace_resets_autocomplete_focus() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = std::collections::HashMap::new();
+    for n in [1u64, 10, 12] {
+        metas.insert(n, make_issue_meta(n, IssueState::Open, None, &[]));
+    }
+    s.apply_issue_metas(metas);
+    s.set_launch_manual_issue_input_for_test("12");
+    s.set_autocomplete_focus_for_test(Some(2));
+    s.handle_input(&key_event(KeyCode::Backspace), InputMode::Normal);
+    assert_eq!(s.launch_payload().autocomplete_focus, None);
+    assert_eq!(s.launch_payload().manual_issue_input, "1");
+}
+
+#[test]
+fn digit_keystroke_resets_autocomplete_focus() {
+    let mut s = fresh();
+    s.switch_mode(TeamWizardMode::Launch);
+    s.set_launch_step_for_test(LaunchStep::IssuePicker);
+    let mut metas = std::collections::HashMap::new();
+    for n in [1u64, 10, 12] {
+        metas.insert(n, make_issue_meta(n, IssueState::Open, None, &[]));
+    }
+    s.apply_issue_metas(metas);
+    s.set_launch_manual_issue_input_for_test("1");
+    s.set_autocomplete_focus_for_test(Some(0));
+    s.handle_input(&key_event(KeyCode::Char('0')), InputMode::Normal);
+    assert_eq!(s.launch_payload().autocomplete_focus, None);
+    assert_eq!(s.launch_payload().manual_issue_input, "10");
 }

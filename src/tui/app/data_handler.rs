@@ -91,6 +91,44 @@ impl App {
     pub fn handle_data_event(&mut self, evt: TuiDataEvent) {
         match evt {
             TuiDataEvent::Issues(Ok(issues)) => {
+                // Mirror the fetched list into the Team Wizard's
+                // issue_metas cache so the IssuePicker autocomplete
+                // (#876) has data. Mirror on every Issues fetch (cheap
+                // — Vec<Issue> -> HashMap copy) so navigating back into
+                // the wizard always sees the freshest open-issue list.
+                let warmed = if let Some(ref mut screen) = self.screen_state.team_wizard_screen {
+                    let mut metas = std::collections::HashMap::new();
+                    for issue in &issues {
+                        let state = match issue.state.to_ascii_lowercase().as_str() {
+                            "open" => crate::orchestration::dag::IssueState::Open,
+                            _ => crate::orchestration::dag::IssueState::Closed,
+                        };
+                        metas.insert(
+                            issue.number,
+                            crate::orchestration::dag::IssueMeta {
+                                number: issue.number,
+                                state,
+                                milestone: issue.milestone,
+                                blocked_by: Vec::new(),
+                            },
+                        );
+                    }
+                    let count = metas.len();
+                    screen.apply_issue_metas(metas);
+                    Some(count)
+                } else {
+                    None
+                };
+                if let Some(count) = warmed {
+                    self.activity_log.push_simple(
+                        "TeamWizard".into(),
+                        format!(
+                            "Issue cache warmed: {} issue(s) available for autocomplete",
+                            count
+                        ),
+                        LogLevel::Info,
+                    );
+                }
                 if let Some(ref mut screen) = self.screen_state.issue_browser_screen {
                     screen.set_issues(issues);
                 }
@@ -676,6 +714,96 @@ mod tests {
         assert_eq!(
             app.pending_session_launches[0].agent_id.as_deref(),
             Some("codex")
+        );
+    }
+
+    #[test]
+    fn issues_event_warms_team_wizard_issue_metas_when_open() {
+        use crate::orchestration::dag::IssueState;
+        use crate::tui::screens::TeamWizardScreen;
+
+        let mut app = crate::tui::make_test_app("issues-event-warms-wizard-metas");
+        app.screen_state.team_wizard_screen = Some(TeamWizardScreen::new(Default::default()));
+
+        let mut open_issue = issue_with_labels(&[]);
+        open_issue.number = 805;
+        let mut closed_issue = issue_with_labels(&[]);
+        closed_issue.number = 700;
+        closed_issue.state = "closed".to_string();
+
+        app.handle_data_event(TuiDataEvent::Issues(Ok(vec![open_issue, closed_issue])));
+
+        let screen = app
+            .screen_state
+            .team_wizard_screen
+            .as_ref()
+            .expect("wizard preserved");
+        let metas = screen.issue_metas();
+        assert_eq!(metas.len(), 2, "all fetched issues populate the cache");
+        assert_eq!(metas.get(&805).map(|m| m.state), Some(IssueState::Open));
+        assert_eq!(metas.get(&700).map(|m| m.state), Some(IssueState::Closed));
+    }
+
+    #[test]
+    fn issues_event_replaces_team_wizard_metas_on_fetch() {
+        // Each FetchIssues result replaces the wizard cache (treats the
+        // fetch as authoritative). Lets the user re-enter the wizard and
+        // get a freshly-warmed cache without stale issue numbers.
+        use crate::orchestration::dag::{IssueMeta, IssueState};
+        use crate::tui::screens::TeamWizardScreen;
+
+        let mut app = crate::tui::make_test_app("issues-event-replaces-metas");
+        let mut screen = TeamWizardScreen::new(Default::default());
+        let mut pre = std::collections::HashMap::new();
+        pre.insert(
+            42u64,
+            IssueMeta {
+                number: 42,
+                state: IssueState::Open,
+                milestone: Some(1),
+                blocked_by: vec![],
+            },
+        );
+        screen.apply_issue_metas(pre);
+        app.screen_state.team_wizard_screen = Some(screen);
+
+        let mut fresh = issue_with_labels(&[]);
+        fresh.number = 999;
+        app.handle_data_event(TuiDataEvent::Issues(Ok(vec![fresh])));
+
+        let metas = app
+            .screen_state
+            .team_wizard_screen
+            .as_ref()
+            .unwrap()
+            .issue_metas();
+        assert_eq!(metas.len(), 1, "fresh fetch replaces prior cache");
+        assert!(!metas.contains_key(&42), "stale issue evicted");
+        assert!(metas.contains_key(&999), "fresh issue present");
+    }
+
+    #[test]
+    fn issues_event_emits_activity_log_when_team_wizard_open() {
+        use crate::tui::screens::TeamWizardScreen;
+
+        let mut app = crate::tui::make_test_app("issues-event-emits-log");
+        app.screen_state.team_wizard_screen = Some(TeamWizardScreen::new(Default::default()));
+
+        let issue = issue_with_labels(&[]);
+        app.handle_data_event(TuiDataEvent::Issues(Ok(vec![issue])));
+
+        let messages: Vec<String> = app
+            .activity_log
+            .entries()
+            .iter()
+            .map(|e| e.message.clone())
+            .collect();
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.contains("Issue cache warmed") && m.contains("1 issue")),
+            "expected activity log entry; got {:?}",
+            messages
         );
     }
 }

@@ -131,6 +131,16 @@ pub enum ScreenAction {
     RefreshSuggestions,
     /// Launch a unified session for multiple issues (single branch, single PR).
     LaunchUnifiedSession(UnifiedSessionConfig),
+    /// Dispatch a Team Wizard run. Carries the resolved team name + the user's
+    /// input selection plus the wizard's concurrency cap. The dispatcher
+    /// re-resolves the `ResolvedTeam` from the wizard's cache, builds a
+    /// `Scheduler`, fans out per-level via `LaunchSession`, and routes the
+    /// outcome back through `TeamWizardScreen::apply_launch_result`.
+    LaunchTeam {
+        team_name: String,
+        input: crate::orchestration::types::TeamInput,
+        max_parallel: usize,
+    },
     /// Launch a sequential queue execution from confirmed queue.
     LaunchQueue(Vec<SessionConfig>),
     /// Launch a conflict-fix session for a PR with merge conflicts.
