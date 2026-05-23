@@ -31,6 +31,7 @@ mod settings_sessions_parity;
 mod settings_theme_parity;
 mod settings_turboquant_parity;
 mod team_wizard;
+mod token_dashboard_provider_rollup;
 mod turboquant_dashboard;
 
 use chrono::{TimeZone, Utc};
@@ -74,6 +75,23 @@ pub fn make_session(status: SessionStatus, issue_number: Option<u64>) -> Session
     s.current_activity = "Writing tests".to_string();
     s.last_message = "Analyzing codebase...".to_string();
     s.issue_title = issue_number.map(|_| "Add login flow".to_string());
+    s
+}
+
+/// Build a Session with an explicit `agent_id`, `cost_usd`, and `context_pct`
+/// for the provider-rollup snapshot tests (#849). Pins `started_at` /
+/// `finished_at` like `make_session` so elapsed-time rendering is stable.
+pub fn make_session_with_agent(
+    status: SessionStatus,
+    issue_number: Option<u64>,
+    agent_id: &str,
+    cost_usd: f64,
+    context_pct: f64,
+) -> Session {
+    let mut s = make_session(status, issue_number);
+    s.agent_id = Some(agent_id.to_string());
+    s.cost_usd = cost_usd;
+    s.context_pct = context_pct;
     s
 }
 
