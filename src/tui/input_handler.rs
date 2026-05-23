@@ -2264,7 +2264,11 @@ mod tests {
         app.navigate_to(TuiMode::Dashboard);
         app.navigate_to(TuiMode::PromptInput);
         let breadcrumbs_before: Vec<TuiMode> = app.nav_stack.breadcrumbs().to_vec();
-        assert_eq!(breadcrumbs_before.len(), 2, "fixture must have Landing + Dashboard");
+        assert_eq!(
+            breadcrumbs_before.len(),
+            2,
+            "fixture must have Landing + Dashboard"
+        );
 
         let cfg = ScreenSessionConfig {
             issue_number: Some(1),
