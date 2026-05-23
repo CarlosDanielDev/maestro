@@ -14,9 +14,10 @@ pub mod provider_rollup;
 
 use provider_rollup::{ProviderRow, build_provider_rows, provider_context_window, sanitize_cost};
 
-/// Zero-quota source used by the public `draw_token_dashboard` entry point.
-/// #850 will swap this for `MinimaxQuotaSnapshots` once `App.budget_projector`
-/// is wired. Tests inject their own fake via `draw_token_dashboard_with_quota`.
+/// Zero-quota source used by the public `draw_token_dashboard` entry point
+/// when no `App.minimax_quota` is wired. Production now picks between this
+/// and `MinimaxQuotaSnapshots` at the App layer (#769). Tests inject their
+/// own fake via `draw_token_dashboard_with_quota`.
 struct NoQuotaSnapshots;
 
 impl ProviderQuotaSnapshots for NoQuotaSnapshots {
@@ -26,8 +27,10 @@ impl ProviderQuotaSnapshots for NoQuotaSnapshots {
 }
 
 /// Draw the token dashboard view showing per-provider rollup + aggregate +
-/// per-session breakdown. Public entry point; passes a `NoQuotaSnapshots`
-/// stub so quota cells render as `-` until #850 wires the live source.
+/// per-session breakdown. Public entry point used when no live quota
+/// source is available; passes `NoQuotaSnapshots` so quota cells render
+/// as `-`. The dashboard command's wire-up picks the live variant via
+/// `draw_token_dashboard_with_quota` (#769).
 pub fn draw_token_dashboard(
     f: &mut Frame,
     sessions: &[&Session],

@@ -799,6 +799,26 @@ Run sessions from GitHub issues or a prompt.
 
 No flags beyond the global `--bypass-review`. Read state, no config equivalents.
 
+`maestro cost` prints a spending report in two sections:
+
+1. **Summary** — `Total: $X.XX` read from persistent state.
+2. **Per-provider breakdown** — one line per `agent_id` (BTreeMap order, alphabetical), showing aggregate cost and session count. Providers with zero cost show a `(free)` marker. Sessions with no `agent_id` group under `unknown`.
+
+Example output:
+```
+=== Maestro Spending Report ===
+Total: $0.42
+
+=== Per-provider breakdown ===
+  claude     $0.40 (3 sessions)
+  minimax    $0.02 (1 session)
+
+  #12     $0.20 (completed)
+  #14     $0.20 (completed)
+  #15     $0.02 (completed)
+  #16     $0.00 (completed) (free)
+```
+
 `test-slack` exercises `[notifications].slack_webhook_url` and `[notifications].slack_rate_limit_per_min`.
 
 ### `maestro add <ISSUE_NUMBER>`

@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Budget pre-spawn projection trait + provider rollup view-model (foundation for #776 follow-ups #849/#850): `src/budget/projector.rs` (pure projection fns), `src/budget/quota_snapshot.rs` (`QuotaSnapshot` trait), `src/tui/token_dashboard/provider_rollup.rs` (per-provider rollup view-model); `check_pre_spawn()` + `PreSpawnDecision` added to `src/budget.rs`; `pub limit()` / `used_in_window()` accessors on MiniMax quota (#848).
 - Token dashboard now renders per-provider rollup (cost / context / quota) — first user-visible surface of the #776 budget observability umbrella. Foundation from #848; consumed via `provider_rollup::build_provider_rows` (#849).
 - Pre-spawn budget gate modal (`[y]es/[n]o/[s]kip` chords) + 80% global budget banner — completes the #776 budget observability umbrella alongside #848 (foundation) and #849 (rollup view).
+- `cargo run -- cost` now prints a per-provider rollup section (`=== Per-provider breakdown ===`) grouped by `agent_id` with a `(free)` marker for zero-cost providers (Ollama-local, MiniMax-sponsored), above the per-session list — closes AC #4 of the v0.29.5 observability umbrella (#769).
+- Token dashboard Quota column is live for MiniMax sessions: the dashboard command opens `~/.maestro/minimax-quota.json` best-effort and wires `Arc<MinimaxQuota>` through new `App.minimax_quota` + `App::with_minimax_quota` to `draw_token_dashboard_with_quota`, replacing the `NoQuotaSnapshots` placeholder from #850 (#769).
+- v0.29.5 observability umbrella closed: unified cost / token / quota tracking across all five agent providers (Claude, Codex, OpenCode, MiniMax, Ollama) — verifies the work landed across #770–#776 and the Level 1.5/2 hardening (#844, #845, #846, #848, #849, #850) (#769).
 
 ## [0.29.0] - 2026-05-21
 

@@ -333,13 +333,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::TokenDashboard => {
             let sessions = app.pool.all_sessions();
-            crate::tui::token_dashboard::draw_token_dashboard(
-                f,
-                &sessions,
-                app.total_cost,
-                chunks[1],
-                &theme,
-            );
+            draw_token_dashboard_with_app_quota(f, app, &sessions, chunks[1], &theme);
         }
         TuiMode::Sanitize => {
             if let Some(ref mut screen) = app.screen_state.sanitize_screen {
@@ -494,13 +488,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 Some(&TuiMode::TokenDashboard) => {
                     let sessions: Vec<&crate::session::types::Session> =
                         app.pool.all_sessions().into_iter().collect();
-                    crate::tui::token_dashboard::draw_token_dashboard(
-                        f,
-                        &sessions,
-                        app.total_cost,
-                        chunks[1],
-                        &theme,
-                    );
+                    draw_token_dashboard_with_app_quota(f, app, &sessions, chunks[1], &theme);
                 }
                 Some(&TuiMode::TurboquantDashboard) => {
                     let sessions: Vec<&crate::session::types::Session> =
@@ -1846,6 +1834,40 @@ pub(crate) fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str>
     } else {
         let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
         std::borrow::Cow::Owned(format!("{}...", truncated))
+    }
+}
+
+/// Pick between live (`MinimaxQuotaSnapshots`) and placeholder
+/// (`NoQuotaSnapshots`) quota source based on what the App holds (#769).
+fn draw_token_dashboard_with_app_quota(
+    f: &mut Frame,
+    app: &App,
+    sessions: &[&crate::session::types::Session],
+    area: Rect,
+    theme: &crate::tui::theme::Theme,
+) {
+    match &app.minimax_quota {
+        Some(quota) => {
+            let snapshots =
+                crate::budget::quota_snapshot::MinimaxQuotaSnapshots::new(quota.clone());
+            crate::tui::token_dashboard::draw_token_dashboard_with_quota(
+                f,
+                sessions,
+                app.total_cost,
+                &snapshots,
+                area,
+                theme,
+            );
+        }
+        None => {
+            crate::tui::token_dashboard::draw_token_dashboard(
+                f,
+                sessions,
+                app.total_cost,
+                area,
+                theme,
+            );
+        }
     }
 }
 

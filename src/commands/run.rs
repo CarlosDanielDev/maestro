@@ -336,26 +336,14 @@ pub(crate) fn provider_for_agent(
             // file is malformed we fall back to "no gate" rather than
             // failing the spawn, so the provider keeps working when the
             // state file is unavailable.
-            let provider = if let Some(path) = minimax_quota_path() {
-                match crate::agent_provider::minimax::MinimaxQuota::open(path) {
-                    Ok(quota) => provider.with_quota(std::sync::Arc::new(quota)),
-                    Err(err) => {
-                        tracing::warn!(error = %err, "MiniMax quota disabled");
-                        provider
-                    }
+            let provider = match crate::agent_provider::minimax::MinimaxQuota::open_default() {
+                Some(quota) => provider.with_quota(std::sync::Arc::new(quota)),
+                None => {
+                    tracing::debug!("MiniMax quota disabled (HOME unset or file unreadable)");
+                    provider
                 }
-            } else {
-                provider
             };
             Ok(std::sync::Arc::new(provider))
         }
     }
-}
-
-fn minimax_quota_path() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME").map(|home| {
-        std::path::PathBuf::from(home)
-            .join(".maestro")
-            .join("minimax-quota.json")
-    })
 }
