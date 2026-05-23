@@ -418,6 +418,13 @@ impl App {
         if !promoted_ids.is_empty() {
             let tx = self.pool.event_tx();
             for id in promoted_ids {
+                // Pre-spawn budget gate (#776/#850). Same semantics as
+                // `session_lifecycle.rs:add_session` — projection crossing
+                // the alert threshold or limit parks the session and
+                // raises the modal.
+                if self.try_enter_prespawn_gate(id) {
+                    break;
+                }
                 if let Some(managed) = self.pool.get_active_mut(id) {
                     let label = session_label(&managed.session);
                     self.activity_log.push_simple(

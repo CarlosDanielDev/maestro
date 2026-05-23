@@ -719,6 +719,27 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::BudgetPreSpawn { .. } => (
+            "Budget Alert",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "y",
+                    action: "Proceed",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "n",
+                    action: "Cancel",
+                    priority: 1,
+                },
+                InlineHint {
+                    key: "s",
+                    action: "Skip-once",
+                    priority: 2,
+                },
+            ],
+        ),
     };
 
     let fkeys = build_fkeys(fkey_vis, has_session, is_running, is_terminal);

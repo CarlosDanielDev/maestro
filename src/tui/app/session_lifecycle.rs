@@ -19,6 +19,14 @@ impl App {
         let promoted_ids = self.pool.try_promote();
         let tx = self.pool.event_tx();
         for id in promoted_ids {
+            // Pre-spawn budget gate (#776/#850). Park the session in the
+            // pool without calling `managed.spawn` when the projection
+            // crosses `alert_threshold_pct` or exceeds `total_usd`. The
+            // modal in `TuiMode::BudgetPreSpawn` lets the user proceed
+            // (y), cancel (n), or skip-once (s).
+            if self.try_enter_prespawn_gate(id) {
+                break;
+            }
             if let Some(managed) = self.pool.get_active_mut(id) {
                 let session_label = session_label(&managed.session);
                 self.activity_log.push_simple(
