@@ -105,21 +105,7 @@ fn display_name_for(provider_id: &str) -> String {
 mod tests {
     use super::*;
     use crate::budget::quota_snapshot::{QuotaBucket, QuotaRow};
-    use crate::budget::test_support::FakeProviderQuotaSnapshots;
-    use crate::session::types::Session;
-
-    fn make_session(agent_id: Option<&str>, cost: f64, model: &str) -> Session {
-        let mut s = Session::new(
-            "test".to_string(),
-            model.to_string(),
-            "orchestrator".to_string(),
-            None,
-            None,
-        );
-        s.agent_id = agent_id.map(|x| x.to_string());
-        s.cost_usd = cost;
-        s
-    }
+    use crate::budget::test_support::{FakeProviderQuotaSnapshots, make_session};
 
     // ── Seam 1: build_provider_rows ──────────────────────────────────────
 
