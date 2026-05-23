@@ -219,6 +219,67 @@ fn pressing_a_on_bindings_field_adds_list_item_not_team() {
 }
 
 #[test]
+fn desired_height_grows_for_bindings_listeditor_input() {
+    // Regression for the "list hidden" bug: per-entry rows used to be
+    // forced to a single line each via Constraint::Length(1), clipping
+    // the `[a] Add  [d] Delete` empty-state hint and the input prompt
+    // on the `bindings` ListEditor. After the fix, the widget reports
+    // a desired_height that grows when a ListEditor row is focused or
+    // editing so the surrounding settings draw can give it the rows it
+    // needs.
+    use crate::tui::screens::settings::schema_tab::widgets::dynamic_map::{
+        DynamicMapWidget, MapFocus,
+    };
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    let mut existing = toml::map::Map::new();
+    let mut entry = toml::map::Map::new();
+    entry.insert("primitive".into(), toml::Value::String("pipeline".into()));
+    existing.insert("alpha".into(), toml::Value::Table(entry));
+    let val = toml::Value::Table(existing);
+
+    let mut widget = DynamicMapWidget::new(
+        "entries",
+        "teams",
+        crate::config::schema::dynamic::TEAMS_ENTRY_FIELDS,
+        Some(&val),
+    );
+    // Baseline (focus on SubtabStrip): all 4 fields at 1 line each.
+    let base = widget.desired_height();
+
+    // Focus bindings (idx 3, empty ListEditor) — should grow by +1 for
+    // the `[a] Add  [d] Delete` hint that now has somewhere to render.
+    for _ in 0..4 {
+        widget.handle_input(key(KeyCode::Tab));
+    }
+    assert_eq!(*widget.focus(), MapFocus::EntryField(3));
+    let focused = widget.desired_height();
+    assert!(
+        focused > base,
+        "focused bindings ListEditor must grow desired_height: base={base} focused={focused}"
+    );
+
+    // Enter edit mode on the bindings ListEditor — should grow further to
+    // accommodate the input prompt row.
+    widget.handle_input(key(KeyCode::Char('a')));
+    assert!(widget.needs_insert_mode(), "ListEditor in edit mode");
+    let editing = widget.desired_height();
+    assert!(
+        editing >= focused,
+        "editing bindings ListEditor must not shrink desired_height: focused={focused} editing={editing}"
+    );
+}
+
+#[test]
 fn edit_hint_on_bindings_field_shows_listeditor_chord_not_team_chord() {
     use crate::tui::screens::settings::schema_tab::widgets::dynamic_map::DynamicMapWidget;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};

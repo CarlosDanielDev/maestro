@@ -74,8 +74,8 @@ pub(super) fn draw(
         f.render_widget(tabs, chunks[0]);
 
         if let Some(entry) = widget.active_entry() {
-            let visible = widget.visible_field_indices();
-            draw_entry_fields(f, chunks[1], theme, entry, widget.focus(), &visible);
+            let row_heights = widget.active_entry_row_heights();
+            draw_entry_fields(f, chunks[1], theme, entry, widget.focus(), &row_heights);
         }
     }
 
@@ -186,18 +186,20 @@ fn draw_entry_fields(
     theme: &Theme,
     entry: &EntryState,
     focus: &MapFocus,
-    visible_indices: &[usize],
+    row_heights: &[(usize, u16)],
 ) {
-    let n = visible_indices.len() as u16;
-    if n == 0 {
+    if row_heights.is_empty() {
         return;
     }
-    let constraints: Vec<Constraint> = (0..n).map(|_| Constraint::Length(1)).collect();
+    let constraints: Vec<Constraint> = row_heights
+        .iter()
+        .map(|(_, h)| Constraint::Length(*h))
+        .collect();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
-    for (row_idx, &field_idx) in visible_indices.iter().enumerate() {
+    for (row_idx, &(field_idx, _h)) in row_heights.iter().enumerate() {
         let Some(sf) = entry.fields.get(field_idx) else {
             continue;
         };
