@@ -125,14 +125,19 @@ pub fn mode_keymap(
                     priority: 1,
                 },
                 InlineHint {
+                    key: "L",
+                    action: "Call Log",
+                    priority: 2,
+                },
+                InlineHint {
                     key: "l",
                     action: "Logs",
-                    priority: 2,
+                    priority: 3,
                 },
                 InlineHint {
                     key: "k",
                     action: "Kill",
-                    priority: 3,
+                    priority: 4,
                 },
             ],
         ),
