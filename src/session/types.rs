@@ -362,6 +362,12 @@ pub struct Session {
     /// `docs/adr/002-agent-personalities.md` § Data Model.
     #[serde(default)]
     pub role: super::role::Role,
+    /// Persisted stream events for the per-agent call-log viewer (#868).
+    /// Capped at [`Session::CALL_LOG_CAP`]; oldest entries are dropped on
+    /// overflow. `serde(default)` so existing state files load without the
+    /// field present.
+    #[serde(default)]
+    pub call_log: Vec<CallLogEntry>,
     /// Set once after the "consultation satisfied — retry skipped" log line
     /// has been emitted, so the completion pipeline doesn't re-log each tick.
     #[serde(skip)]
@@ -474,6 +480,30 @@ impl Session {
             active_command: None,
             consultation_skip_logged: false,
             adapt_follow_up_considered: false,
+            call_log: Vec::new(),
+        }
+    }
+
+    /// Maximum number of [`CallLogEntry`] entries kept on a session.
+    /// Mirrors the activity-log cap but ×5 because one prompt can produce
+    /// many tool calls and tool results (#868).
+    pub const CALL_LOG_CAP: usize = 500;
+
+    /// Append a stream event to the persisted call log. Drops
+    /// [`StreamEvent::Unknown`] (parse failure noise) and drains the oldest
+    /// entries once [`Self::CALL_LOG_CAP`] is exceeded.
+    pub fn append_call_log(&mut self, event: &StreamEvent) {
+        let Some(kind) = CallLogKind::from_event(event) else {
+            return;
+        };
+        self.call_log.push(CallLogEntry {
+            timestamp: Utc::now(),
+            kind,
+            payload_json: render_event_payload(event),
+        });
+        if self.call_log.len() > Self::CALL_LOG_CAP {
+            let excess = self.call_log.len() - Self::CALL_LOG_CAP;
+            self.call_log.drain(..excess);
         }
     }
 
@@ -661,6 +691,151 @@ pub enum StreamEvent {
     /// `"token_count_clamped"`); `message` is human-readable for the TUI and
     /// log file.
     Warning { code: String, message: String },
+}
+
+/// Persisted classification of a [`StreamEvent`] kept in [`Session::call_log`]
+/// for the per-agent call-log viewer (#868). [`StreamEvent::Unknown`] is
+/// deliberately omitted — parse failures are not user-facing events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallLogKind {
+    AssistantMessage,
+    ToolUse,
+    ToolResult,
+    CostUpdate,
+    Completed,
+    Error,
+    ContextUpdate,
+    TokenUpdate,
+    Thinking,
+    Warning,
+}
+
+impl CallLogKind {
+    /// Map a [`StreamEvent`] to its log kind. Returns `None` for
+    /// `StreamEvent::Unknown` so parse-failure noise stays out of the log.
+    pub fn from_event(event: &StreamEvent) -> Option<Self> {
+        match event {
+            StreamEvent::AssistantMessage { .. } => Some(Self::AssistantMessage),
+            StreamEvent::ToolUse { .. } => Some(Self::ToolUse),
+            StreamEvent::ToolResult { .. } => Some(Self::ToolResult),
+            StreamEvent::CostUpdate { .. } => Some(Self::CostUpdate),
+            StreamEvent::Completed { .. } => Some(Self::Completed),
+            StreamEvent::Error { .. } => Some(Self::Error),
+            StreamEvent::ContextUpdate { .. } => Some(Self::ContextUpdate),
+            StreamEvent::TokenUpdate { .. } => Some(Self::TokenUpdate),
+            StreamEvent::Thinking { .. } => Some(Self::Thinking),
+            StreamEvent::Warning { .. } => Some(Self::Warning),
+            StreamEvent::Unknown { .. } => None,
+        }
+    }
+
+    /// Short stable label rendered in the call-log row.
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::AssistantMessage => "AssistantMsg",
+            Self::ToolUse => "ToolUse",
+            Self::ToolResult => "ToolResult",
+            Self::CostUpdate => "CostUpdate",
+            Self::Completed => "Completed",
+            Self::Error => "Error",
+            Self::ContextUpdate => "Context",
+            Self::TokenUpdate => "TokenUpdate",
+            Self::Thinking => "Thinking",
+            Self::Warning => "Warning",
+        }
+    }
+}
+
+/// One entry in [`Session::call_log`]. `payload_json` is the JSON-pretty
+/// rendering captured at insertion time so the call-log viewer renders the
+/// same payload it parsed, even after the session ends.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallLogEntry {
+    pub timestamp: DateTime<Utc>,
+    pub kind: CallLogKind,
+    pub payload_json: String,
+}
+
+/// Per-text-field cap inside [`render_event_payload`]. Mirrors the
+/// `last_message` 10 KB cap (`src/session/manager.rs`); prevents a runaway
+/// provider from bloating `Session.call_log` and the on-disk state file.
+const PAYLOAD_TEXT_CAP: usize = 10_000;
+
+/// Truncate `s` to at most [`PAYLOAD_TEXT_CAP`] bytes at a UTF-8 boundary,
+/// appending a `…[truncated]` marker if cut.
+fn cap_text(s: &str) -> String {
+    if s.len() <= PAYLOAD_TEXT_CAP {
+        return s.to_string();
+    }
+    let boundary = crate::util::formatting::truncate_at_char_boundary(s, PAYLOAD_TEXT_CAP);
+    format!("{}…[truncated]", &s[..boundary])
+}
+
+/// Render a [`StreamEvent`] payload to JSON-pretty form for the call-log
+/// viewer's expanded panel. Each variant is rendered with stable keys so
+/// snapshot tests remain deterministic. Large text fields are capped at
+/// [`PAYLOAD_TEXT_CAP`] to bound on-disk growth.
+pub fn render_event_payload(event: &StreamEvent) -> String {
+    let value = match event {
+        StreamEvent::AssistantMessage { text } => serde_json::json!({
+            "type": "AssistantMessage",
+            "text": cap_text(text),
+        }),
+        StreamEvent::ToolUse {
+            tool,
+            file_path,
+            command_preview,
+            subagent_name,
+        } => serde_json::json!({
+            "type": "ToolUse",
+            "tool": tool,
+            "file_path": file_path,
+            "command_preview": command_preview,
+            "subagent_name": subagent_name,
+        }),
+        StreamEvent::ToolResult { tool, is_error } => serde_json::json!({
+            "type": "ToolResult",
+            "tool": tool,
+            "is_error": is_error,
+        }),
+        StreamEvent::CostUpdate { cost_usd } => serde_json::json!({
+            "type": "CostUpdate",
+            "cost_usd": cost_usd,
+        }),
+        StreamEvent::Completed { cost_usd } => serde_json::json!({
+            "type": "Completed",
+            "cost_usd": cost_usd,
+        }),
+        StreamEvent::Error { message } => serde_json::json!({
+            "type": "Error",
+            "message": cap_text(message),
+        }),
+        StreamEvent::ContextUpdate { context_pct } => serde_json::json!({
+            "type": "ContextUpdate",
+            "context_pct": context_pct,
+        }),
+        StreamEvent::TokenUpdate { usage } => serde_json::json!({
+            "type": "TokenUpdate",
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "total_tokens": usage.total_tokens(),
+        }),
+        StreamEvent::Thinking { text } => serde_json::json!({
+            "type": "Thinking",
+            "text": cap_text(text),
+        }),
+        StreamEvent::Warning { code, message } => serde_json::json!({
+            "type": "Warning",
+            "code": code,
+            "message": cap_text(message),
+        }),
+        StreamEvent::Unknown { raw } => serde_json::json!({
+            "type": "Unknown",
+            "raw": cap_text(raw),
+        }),
+    };
+    serde_json::to_string_pretty(&value).unwrap_or_else(|_| "<render error>".to_string())
 }
 
 #[cfg(test)]
@@ -1812,6 +1987,233 @@ mod tests {
             assert_eq!(code, "token_count_clamped");
         } else {
             panic!("expected Warning");
+        }
+    }
+
+    // =========================================================================
+    // Issue #868 — CallLogEntry / Session::append_call_log
+    // =========================================================================
+
+    fn make_assistant_event() -> StreamEvent {
+        StreamEvent::AssistantMessage {
+            text: "Analyzing codebase".into(),
+        }
+    }
+
+    fn make_tool_use_event() -> StreamEvent {
+        StreamEvent::ToolUse {
+            tool: "Read".into(),
+            file_path: Some("src/lib.rs".into()),
+            command_preview: None,
+            subagent_name: None,
+        }
+    }
+
+    fn make_unknown_event() -> StreamEvent {
+        StreamEvent::Unknown {
+            raw: "not json".into(),
+        }
+    }
+
+    fn fresh_session() -> Session {
+        Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None)
+    }
+
+    #[test]
+    fn append_call_log_adds_entry_for_known_event() {
+        let mut s = fresh_session();
+        s.append_call_log(&make_assistant_event());
+        assert_eq!(s.call_log.len(), 1);
+    }
+
+    #[test]
+    fn append_call_log_unknown_event_is_dropped() {
+        let mut s = fresh_session();
+        s.append_call_log(&make_unknown_event());
+        assert!(s.call_log.is_empty());
+    }
+
+    #[test]
+    fn append_call_log_entry_has_correct_kind() {
+        let mut s = fresh_session();
+        s.append_call_log(&make_tool_use_event());
+        assert_eq!(s.call_log[0].kind, CallLogKind::ToolUse);
+    }
+
+    #[test]
+    fn append_call_log_entry_payload_json_is_non_empty() {
+        let mut s = fresh_session();
+        s.append_call_log(&make_assistant_event());
+        assert!(!s.call_log[0].payload_json.is_empty());
+    }
+
+    #[test]
+    fn append_call_log_respects_cap_drains_oldest() {
+        let mut s = fresh_session();
+        let total = Session::CALL_LOG_CAP + 10;
+        for _ in 0..total {
+            s.append_call_log(&make_assistant_event());
+        }
+        assert_eq!(s.call_log.len(), Session::CALL_LOG_CAP);
+    }
+
+    #[test]
+    fn append_call_log_cap_preserves_most_recent_entries() {
+        let mut s = fresh_session();
+        for _ in 0..Session::CALL_LOG_CAP {
+            s.append_call_log(&make_tool_use_event());
+        }
+        s.append_call_log(&make_assistant_event());
+        assert_eq!(
+            s.call_log.last().unwrap().kind,
+            CallLogKind::AssistantMessage
+        );
+    }
+
+    #[test]
+    fn call_log_defaults_to_empty_on_new_session() {
+        let s = fresh_session();
+        assert!(s.call_log.is_empty());
+    }
+
+    #[test]
+    fn call_log_field_survives_serde_round_trip() {
+        let mut s = fresh_session();
+        s.append_call_log(&make_assistant_event());
+        let json = serde_json::to_string(&s).unwrap();
+        let s2: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(s2.call_log.len(), 1);
+        assert_eq!(s2.call_log[0].kind, CallLogKind::AssistantMessage);
+    }
+
+    #[test]
+    fn call_log_missing_from_json_deserializes_as_empty() {
+        let json = r#"{
+            "id":"00000000-0000-0000-0000-000000000000",
+            "status":"queued",
+            "prompt":"p","issue_number":null,
+            "model":"opus","mode":"orchestrator",
+            "started_at":null,"finished_at":null,
+            "cost_usd":0.0,"context_pct":0.0,
+            "current_activity":"","last_message":"",
+            "activity_log":[],"files_touched":[],
+            "pid":null
+        }"#;
+        let s: Session = serde_json::from_str(json).unwrap();
+        assert!(s.call_log.is_empty());
+    }
+
+    #[test]
+    fn call_log_kind_from_event_covers_all_renderable_variants() {
+        let cases: &[(StreamEvent, CallLogKind)] = &[
+            (
+                StreamEvent::AssistantMessage { text: "hi".into() },
+                CallLogKind::AssistantMessage,
+            ),
+            (
+                StreamEvent::ToolUse {
+                    tool: "Read".into(),
+                    file_path: None,
+                    command_preview: None,
+                    subagent_name: None,
+                },
+                CallLogKind::ToolUse,
+            ),
+            (
+                StreamEvent::ToolResult {
+                    tool: "Read".into(),
+                    is_error: false,
+                },
+                CallLogKind::ToolResult,
+            ),
+            (
+                StreamEvent::CostUpdate { cost_usd: 0.01 },
+                CallLogKind::CostUpdate,
+            ),
+            (
+                StreamEvent::Completed { cost_usd: 0.5 },
+                CallLogKind::Completed,
+            ),
+            (
+                StreamEvent::Error {
+                    message: "oops".into(),
+                },
+                CallLogKind::Error,
+            ),
+            (
+                StreamEvent::ContextUpdate { context_pct: 0.42 },
+                CallLogKind::ContextUpdate,
+            ),
+            (
+                StreamEvent::TokenUpdate {
+                    usage: TokenUsage::default(),
+                },
+                CallLogKind::TokenUpdate,
+            ),
+            (
+                StreamEvent::Thinking { text: "...".into() },
+                CallLogKind::Thinking,
+            ),
+            (
+                StreamEvent::Warning {
+                    code: "quota_forced".into(),
+                    message: "rate limited".into(),
+                },
+                CallLogKind::Warning,
+            ),
+        ];
+        for (event, expected) in cases {
+            assert_eq!(
+                CallLogKind::from_event(event),
+                Some(*expected),
+                "wrong kind for {event:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn call_log_kind_from_event_unknown_returns_none() {
+        let event = StreamEvent::Unknown {
+            raw: "garbage".into(),
+        };
+        assert_eq!(CallLogKind::from_event(&event), None);
+    }
+
+    #[test]
+    fn render_event_payload_caps_large_assistant_text() {
+        let big = "x".repeat(20_000);
+        let event = StreamEvent::AssistantMessage { text: big.clone() };
+        let rendered = render_event_payload(&event);
+        assert!(rendered.len() < 20_000);
+        assert!(rendered.contains("…[truncated]"));
+    }
+
+    #[test]
+    fn render_event_payload_small_text_not_truncated() {
+        let event = StreamEvent::AssistantMessage {
+            text: "short".into(),
+        };
+        let rendered = render_event_payload(&event);
+        assert!(!rendered.contains("[truncated]"));
+        assert!(rendered.contains("short"));
+    }
+
+    #[test]
+    fn call_log_kind_label_non_empty_for_every_variant() {
+        let kinds = [
+            CallLogKind::AssistantMessage,
+            CallLogKind::ToolUse,
+            CallLogKind::ToolResult,
+            CallLogKind::CostUpdate,
+            CallLogKind::Completed,
+            CallLogKind::Error,
+            CallLogKind::ContextUpdate,
+            CallLogKind::TokenUpdate,
+            CallLogKind::Thinking,
+            CallLogKind::Warning,
+        ];
+        for kind in &kinds {
+            assert!(!kind.label().is_empty(), "empty label for {kind:?}");
         }
     }
 }

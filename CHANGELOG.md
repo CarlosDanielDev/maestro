@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Team Wizard Launch: `Ctrl+V` paste on IssuePicker step — new `tui::screens::team_wizard::clipboard` module + `parse_pasted_issue_token` parser; accepts bare numbers, `#NNN`, and GitHub issue URLs (#875).
 - Team Wizard Launch: autocomplete from `issue_metas` on IssuePicker step — new `LaunchPayload.autocomplete_focus` field; new snapshot `launch_issue_picker_autocomplete_80x24` (#876).
+- Per-agent call-log viewer: `[L]` in the Detail screen opens a new `TuiMode::CallLog(Uuid)` view backed by `src/tui/call_log/` (`mod.rs` formatters, `state.rs` scroll state, `draw.rs` renderer); `Session.call_log` (capped at 500 entries via `append_call_log`) persists `CallLogEntry` records with `render_event_payload` 10 KB per-field cap; 5 insta snapshots added (#868).
 
 ### Fixed
 - Team Wizard Launch: added `IssuePicker` step (Step 2/8) so users can enter an issue number when selecting the Issue input kind; also adds `manual_issue_input` to `LaunchPayload` and renames the step-total guard to `launch_step_total_is_eight` (#805).

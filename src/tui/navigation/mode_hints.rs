@@ -125,14 +125,19 @@ pub fn mode_keymap(
                     priority: 1,
                 },
                 InlineHint {
+                    key: "L",
+                    action: "Call Log",
+                    priority: 2,
+                },
+                InlineHint {
                     key: "l",
                     action: "Logs",
-                    priority: 2,
+                    priority: 3,
                 },
                 InlineHint {
                     key: "k",
                     action: "Kill",
-                    priority: 3,
+                    priority: 4,
                 },
             ],
         ),
@@ -364,6 +369,32 @@ pub fn mode_keymap(
                     key: "q",
                     action: "Quit",
                     priority: 6,
+                },
+            ],
+        ),
+        TuiMode::CallLog(_) => (
+            "Call Log",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "Esc",
+                    action: "Back",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "Enter",
+                    action: "Expand",
+                    priority: 1,
+                },
+                InlineHint {
+                    key: "j/k",
+                    action: "Move",
+                    priority: 2,
+                },
+                InlineHint {
+                    key: "g/G",
+                    action: "Top/Bot",
+                    priority: 3,
                 },
             ],
         ),

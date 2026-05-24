@@ -90,6 +90,10 @@ pub enum TuiMode {
     BudgetPreSpawn {
         session_id: uuid::Uuid,
     },
+    /// Per-agent call-log viewer (#868). Reached from `Detail(id)` via the
+    /// `L` chord. Renders the session's persisted stream events with an
+    /// optional expanded payload pane.
+    CallLog(uuid::Uuid),
 }
 
 impl TuiMode {
@@ -136,6 +140,7 @@ impl TuiMode {
             Self::CiErrorReview => "CI Error Review",
             Self::TeamWizard => "Teams",
             Self::BudgetPreSpawn { .. } => "Budget Alert",
+            Self::CallLog(_) => "Call Log",
         }
     }
 }

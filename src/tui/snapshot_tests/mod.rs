@@ -5,6 +5,7 @@ mod agent_graph_keybinding_hint;
 mod agent_personalities;
 mod budget_banner;
 mod budget_prespawn;
+mod call_log;
 mod caveman_row;
 mod completion_overlay;
 mod copy_keybinding_hint;

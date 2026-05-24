@@ -187,6 +187,10 @@ pub struct App {
     pub session_ui_state: std::collections::HashMap<uuid::Uuid, SessionUiState>,
     pub log_viewer_scroll: u16,
     pub log_viewer_cache: crate::tui::log_viewer::LogViewerCache,
+    /// State for the per-agent call-log viewer (#868). Reset on every
+    /// `L`-chord entry so the cursor starts at the top of the most recent
+    /// session's log.
+    pub call_log_state: crate::tui::call_log::state::CallLogState,
     pub session_summary_state: Option<crate::tui::app::types::SessionSummaryState>,
     pub show_activity_log: bool,
     /// Marquee animation state for the top status bar (#417). Scrolls
@@ -397,6 +401,7 @@ impl App {
             session_ui_state: std::collections::HashMap::new(),
             log_viewer_scroll: 0,
             log_viewer_cache: crate::tui::log_viewer::LogViewerCache::default(),
+            call_log_state: crate::tui::call_log::state::CallLogState::default(),
             session_summary_state: None,
             show_activity_log: true,
             resource_monitor: Box::new(crate::system::SysInfoMonitor::new(1000)),

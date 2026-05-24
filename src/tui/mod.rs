@@ -6,6 +6,7 @@ mod background_tasks;
 pub mod breadcrumb;
 pub mod budget_banner;
 pub mod budget_prespawn;
+pub mod call_log;
 pub mod clipboard;
 pub mod clipboard_toast;
 pub mod cost_dashboard;
