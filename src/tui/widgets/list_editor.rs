@@ -152,13 +152,67 @@ impl ListEditor {
                 ),
             ]));
         } else if focused {
+            // Empty + focused gets a discoverable hint in accent_info
+            // (instead of the muted [a] Add [d] Delete row used when
+            // the list already has items proving it's editable). #900
+            // surfaced the prior muted hint as essentially invisible on
+            // freshly-added entries — the field looked broken.
+            let (hint, style) = if self.items.is_empty() {
+                (
+                    "  (empty — [a] Add to start)",
+                    Style::default()
+                        .fg(theme.accent_info)
+                        .add_modifier(Modifier::ITALIC),
+                )
+            } else {
+                (
+                    "  [a] Add  [d] Delete",
+                    Style::default().fg(theme.text_muted),
+                )
+            };
+            lines.push(Line::from(Span::styled(hint, style)));
+        } else if self.items.is_empty() {
+            // Unfocused + empty still needs a visible marker so the user
+            // can tell the field is editable without having to focus it
+            // first. Muted style matches the rest of the inert form chrome.
             lines.push(Line::from(Span::styled(
-                "  [a] Add  [d] Delete",
+                "  (empty)",
                 Style::default().fg(theme.text_muted),
             )));
         }
 
         f.render_widget(Paragraph::new(lines), area);
+    }
+
+    /// Test-only helper: returns the rendered lines (label + items +
+    /// trailing hint/empty marker) without going through the ratatui
+    /// `Frame`. Used by the empty-state regression tests for #900.
+    #[cfg(test)]
+    pub(crate) fn render_lines_for_test(&self, focused: bool) -> Vec<String> {
+        let mut out = vec![format!("{}:", self.label)];
+        for (i, item) in self.items.iter().enumerate() {
+            let prefix = if i == self.selected && focused {
+                format!("{} ", icons::get(IconId::Selector))
+            } else {
+                "  ".to_string()
+            };
+            out.push(format!("{prefix}{item}"));
+        }
+        if self.editing {
+            out.push(format!("+ {}_", self.input_buffer));
+        } else if focused {
+            out.push(
+                if self.items.is_empty() {
+                    "  (empty — [a] Add to start)"
+                } else {
+                    "  [a] Add  [d] Delete"
+                }
+                .to_string(),
+            );
+        } else if self.items.is_empty() {
+            out.push("  (empty)".to_string());
+        }
+        out
     }
 }
 
@@ -252,6 +306,66 @@ mod tests {
         l.selected = 1;
         l.handle_input(key(KeyCode::Char('j'))); // at last, can't go down
         assert_eq!(l.selected, 1);
+    }
+
+    #[test]
+    fn empty_focused_renders_discoverable_hint() {
+        // Regression for #900: an empty focused ListEditor must show
+        // an obvious "(empty — [a] Add to start)" prompt so a fresh
+        // settings entry doesn't look broken.
+        let l = ListEditor::new("bindings", vec![]);
+        let lines = l.render_lines_for_test(true);
+        assert_eq!(lines.len(), 2, "label + empty hint");
+        assert_eq!(lines[0], "bindings:");
+        assert!(
+            lines[1].contains("(empty"),
+            "focused empty hint must mark the field as empty: {lines:?}"
+        );
+        assert!(
+            lines[1].contains("[a] Add"),
+            "focused empty hint must advertise [a] Add: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn empty_unfocused_still_shows_empty_marker() {
+        // Regression for #900: even when not focused, an empty list
+        // needs a visible "(empty)" marker so the user knows the field
+        // is editable without having to land focus on it first.
+        let l = ListEditor::new("bindings", vec![]);
+        let lines = l.render_lines_for_test(false);
+        assert_eq!(lines.len(), 2, "label + (empty)");
+        assert_eq!(lines[0], "bindings:");
+        assert_eq!(lines[1].trim(), "(empty)");
+    }
+
+    #[test]
+    fn non_empty_focused_renders_add_delete_hint_unchanged() {
+        // Regression guard for #900: non-empty path keeps the original
+        // [a] Add [d] Delete hint; only the empty branch changed.
+        let l = ListEditor::new("bindings", vec!["coder=claude".into()]);
+        let lines = l.render_lines_for_test(true);
+        assert_eq!(lines.len(), 3, "label + 1 row + hint");
+        assert!(
+            lines.last().unwrap().contains("[a] Add"),
+            "non-empty focused hint must still advertise Add: {lines:?}"
+        );
+        assert!(
+            lines.last().unwrap().contains("[d] Delete"),
+            "non-empty focused hint must still advertise Delete: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn non_empty_unfocused_renders_no_trailing_hint() {
+        // Regression guard for #900: when the list has items, an
+        // unfocused widget should NOT add a trailing hint line —
+        // existing snapshot consumers rely on this shape.
+        let l = ListEditor::new("bindings", vec!["coder=claude".into()]);
+        let lines = l.render_lines_for_test(false);
+        assert_eq!(lines.len(), 2, "label + 1 row, no trailing hint");
+        assert_eq!(lines[0], "bindings:");
+        assert!(lines[1].contains("coder=claude"));
     }
 
     #[test]
