@@ -379,7 +379,12 @@ impl App {
                     hollow_session.retry_count,
                     max,
                 ));
-            self.tui_mode = TuiMode::HollowRetry;
+            // #895: route through navigate_to so the prior mode (Overview /
+            // Detail / Dashboard) is pushed onto the nav-stack. Without this
+            // the [s] Skip handler's `navigate_back_or_dashboard` finds an
+            // empty stack and falls through to Dashboard, dropping the
+            // user's context.
+            self.navigate_to(TuiMode::HollowRetry);
         }
 
         // Find terminal sessions in the active list (including Retrying which is now done)
@@ -603,6 +608,34 @@ mod tests {
         assert!(
             modal_should_open,
             "fresh hollow session must trigger the recovery modal"
+        );
+    }
+
+    /// #895: opening the Hollow modal must push the prior mode onto the
+    /// nav-stack so [s] Skip's `navigate_back_or_dashboard` returns there
+    /// instead of falling through to Dashboard with an empty stack.
+    #[test]
+    fn opening_hollow_modal_pushes_prior_mode_onto_nav_stack() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        let depth_before = app.nav_stack.depth();
+
+        // Simulate the modal-open code path.
+        app.navigate_to(TuiMode::HollowRetry);
+
+        assert_eq!(app.tui_mode, TuiMode::HollowRetry);
+        assert_eq!(
+            app.nav_stack.depth(),
+            depth_before + 1,
+            "navigate_to must push Overview onto the nav-stack"
+        );
+
+        // Simulate the [s] Skip → ScreenAction::Pop handler.
+        app.navigate_back_or_dashboard();
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Overview,
+            "Skip must return to Overview, not Dashboard"
         );
     }
 }
