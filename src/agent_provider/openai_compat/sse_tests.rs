@@ -8,22 +8,95 @@ fn parse_all(input: &str) -> Vec<StreamEvent> {
 }
 
 #[test]
-fn valid_stream_maps_content_tool_calls_stop_and_done() {
+fn valid_stream_maps_content_real_tool_name_stop_and_done() {
+    // #891: tool_calls entries without `function.name` no longer emit
+    // synthetic ToolUse events, and `finish_reason: tool_calls` no longer
+    // double-fires. Entries WITH a real name are emitted verbatim.
     let events = parse_all(
         "event: completion.chunk\n\
          data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n\
-         data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call_1\"}]},\"finish_reason\":null}]}\n\n\
+         data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call_1\",\"function\":{\"name\":\"read_file\"}}]},\"finish_reason\":null}]}\n\n\
          data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n\
          data: {\"choices\":[{\"delta\":{\"content\":\" world\"},\"finish_reason\":\"stop\"}]}\n\n\
          data: [DONE]\n\n",
     );
 
     assert!(matches!(&events[0], StreamEvent::AssistantMessage { text } if text == "hello"));
-    assert!(matches!(&events[1], StreamEvent::ToolUse { tool, .. } if tool == "tool_calls"));
-    assert!(matches!(&events[2], StreamEvent::ToolUse { tool, .. } if tool == "tool_calls"));
-    assert!(matches!(&events[3], StreamEvent::AssistantMessage { text } if text == " world"));
-    assert!(matches!(&events[4], StreamEvent::Completed { .. }));
-    assert_eq!(events.len(), 5);
+    assert!(matches!(&events[1], StreamEvent::ToolUse { tool, .. } if tool == "read_file"));
+    assert!(matches!(&events[2], StreamEvent::AssistantMessage { text } if text == " world"));
+    assert!(matches!(&events[3], StreamEvent::Completed { .. }));
+    assert_eq!(events.len(), 4);
+}
+
+#[test]
+fn tool_calls_without_function_name_is_silent() {
+    // #891 / MiniMax compatibility: a `tool_calls` array whose entries lack
+    // `function.name` (or whose name is empty) must NOT emit a phantom
+    // "Using tool_calls" event.
+    let events = parse_all(
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call_1\"}]},\"finish_reason\":null}]}\n\n\
+         data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
+         data: [DONE]\n\n",
+    );
+
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, StreamEvent::ToolUse { .. })),
+        "no ToolUse events expected for nameless tool_calls; got: {events:?}"
+    );
+}
+
+#[test]
+fn tool_calls_with_empty_function_name_is_silent() {
+    // #891: `function.name == ""` must be treated the same as absent.
+    let events = parse_all(
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"name\":\"\"}}]},\"finish_reason\":null}]}\n\n\
+         data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
+         data: [DONE]\n\n",
+    );
+
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, StreamEvent::ToolUse { .. }))
+    );
+}
+
+#[test]
+fn finish_reason_tool_calls_alone_emits_no_synthetic_event() {
+    // #891: a frame with only `finish_reason: tool_calls` must NOT push a
+    // phantom ToolUse — the tool calls themselves are streamed via deltas.
+    let events =
+        parse_all("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n");
+
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, StreamEvent::ToolUse { .. })),
+        "got: {events:?}"
+    );
+}
+
+#[test]
+fn multiple_tool_calls_in_one_delta_emit_one_event_per_named_call() {
+    let events = parse_all(
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[\
+            {\"function\":{\"name\":\"read_file\"}},\
+            {\"function\":{\"name\":\"write_file\"}}\
+         ]},\"finish_reason\":null}]}\n\n\
+         data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
+         data: [DONE]\n\n",
+    );
+
+    let tools: Vec<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::ToolUse { tool, .. } => Some(tool.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(tools, vec!["read_file", "write_file"]);
 }
 
 #[test]

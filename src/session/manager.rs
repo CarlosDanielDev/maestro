@@ -481,6 +481,7 @@ mod tests {
             origin: crate::session::types::SessionOrigin::default(),
             active_command: None,
             call_log: vec![],
+            hollow_dismissed: false,
         };
         ManagedSession::new(session)
     }
