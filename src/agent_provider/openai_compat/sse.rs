@@ -107,18 +107,26 @@ impl OpenAiCompatibleSseParser {
             });
         }
 
-        if choice
+        // Emit ToolUse only when delta.tool_calls[i].function.name is a
+        // non-empty string. Providers that lack tool calling (e.g. MiniMax)
+        // sometimes send empty or partial `tool_calls` arrays; emitting
+        // synthetic "Using tool_calls" events for those frames pollutes the
+        // activity log and confuses the hollow-completion detector (#891).
+        if let Some(calls) = choice
             .get("delta")
             .and_then(|delta| delta.get("tool_calls"))
             .and_then(Value::as_array)
-            .is_some_and(|calls| !calls.is_empty())
         {
-            events.push(StreamEvent::ToolUse {
-                tool: "tool_calls".to_string(),
-                file_path: None,
-                command_preview: None,
-                subagent_name: None,
-            });
+            for call in calls {
+                if let Some(name) = extract_tool_name(call) {
+                    events.push(StreamEvent::ToolUse {
+                        tool: name,
+                        file_path: None,
+                        command_preview: None,
+                        subagent_name: None,
+                    });
+                }
+            }
         }
 
         // Emit TokenUpdate before the finish_reason transitions so handlers
@@ -141,14 +149,12 @@ impl OpenAiCompatibleSseParser {
                 events.push(StreamEvent::Completed { cost_usd: 0.0 });
             }
             Some("stop") => {}
-            Some("tool_calls") => {
-                events.push(StreamEvent::ToolUse {
-                    tool: "tool_calls".to_string(),
-                    file_path: None,
-                    command_preview: None,
-                    subagent_name: None,
-                });
-            }
+            // The tool_calls finish_reason is informational — the actual
+            // ToolUse events were already streamed via deltas above. Emitting
+            // another synthetic event here doubles every real tool call and,
+            // worse, fires on every MiniMax completion that happens to ship
+            // an empty `finish_reason: tool_calls` (#891).
+            Some("tool_calls") => {}
             Some(other) => events.push(StreamEvent::Unknown {
                 raw: format!("unexpected finish_reason: {other}"),
             }),
@@ -156,6 +162,21 @@ impl OpenAiCompatibleSseParser {
         }
 
         events
+    }
+}
+
+/// Extract the function name from a single `tool_calls[i]` entry as defined
+/// by the OpenAI / OpenAI-compatible streaming schema. Returns `None` when
+/// the entry has no `function.name` or the name is empty.
+fn extract_tool_name(call: &Value) -> Option<String> {
+    let name = call
+        .get("function")
+        .and_then(|f| f.get("name"))
+        .and_then(Value::as_str)?;
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
     }
 }
 

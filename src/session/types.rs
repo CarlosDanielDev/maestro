@@ -327,6 +327,12 @@ pub struct Session {
     /// Whether this session completed without performing any observable work.
     #[serde(default)]
     pub is_hollow_completion: bool,
+    /// User dismissed the hollow-completion recovery modal (`[s]` Skip or
+    /// Esc) for this session. In-memory only — re-firing after a restart
+    /// is acceptable. Prevents the completion pipeline from re-opening the
+    /// modal on every tick after the user explicitly skipped (#890).
+    #[serde(skip)]
+    pub hollow_dismissed: bool,
     /// Flash counter for visual transition effects. Decrements each render tick.
     #[serde(skip)]
     pub transition_flash_remaining: u8,
@@ -467,6 +473,7 @@ impl Session {
             image_paths: Vec::new(),
             gate_results: Vec::new(),
             is_hollow_completion: false,
+            hollow_dismissed: false,
             transition_flash_remaining: 0,
             is_thinking: false,
             thinking_started_at: None,

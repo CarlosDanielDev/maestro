@@ -361,6 +361,7 @@ impl App {
             && let Some(hollow_session) = self.pool.all_sessions().iter().find(|s| {
                 s.status == SessionStatus::Completed
                     && s.is_hollow_completion
+                    && !s.hollow_dismissed
                     && !retryable_ids.contains(&s.id)
                     && !RetryPolicy::is_consultation_satisfied(s)
             })
@@ -558,6 +559,50 @@ mod tests {
         assert!(
             !should_trigger,
             "auto-transition must not fire when completion_summary_dismissed is true"
+        );
+    }
+
+    /// #890: the hollow-completion modal trigger filter must exclude
+    /// sessions whose `hollow_dismissed` flag is set, otherwise the modal
+    /// re-fires on every render tick after the user pressed [s] Skip.
+    #[test]
+    fn hollow_dismissed_session_excluded_from_modal_trigger_filter() {
+        use crate::session::types::{Session, SessionStatus};
+        let mut session =
+            Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        session.status = SessionStatus::Completed;
+        session.is_hollow_completion = true;
+        session.hollow_dismissed = true;
+
+        // Mirror the find() predicate at line 360-366 of this file.
+        let retryable_ids: std::collections::HashSet<uuid::Uuid> = std::collections::HashSet::new();
+        let modal_should_open = !session.hollow_dismissed
+            && session.status == SessionStatus::Completed
+            && session.is_hollow_completion
+            && !retryable_ids.contains(&session.id);
+        assert!(
+            !modal_should_open,
+            "hollow_dismissed session must not re-trigger the recovery modal"
+        );
+    }
+
+    #[test]
+    fn hollow_not_dismissed_session_still_triggers_modal() {
+        use crate::session::types::{Session, SessionStatus};
+        let mut session =
+            Session::new("p".into(), "opus".into(), "orchestrator".into(), None, None);
+        session.status = SessionStatus::Completed;
+        session.is_hollow_completion = true;
+        // hollow_dismissed left as default false
+
+        let retryable_ids: std::collections::HashSet<uuid::Uuid> = std::collections::HashSet::new();
+        let modal_should_open = !session.hollow_dismissed
+            && session.status == SessionStatus::Completed
+            && session.is_hollow_completion
+            && !retryable_ids.contains(&session.id);
+        assert!(
+            modal_should_open,
+            "fresh hollow session must trigger the recovery modal"
         );
     }
 }

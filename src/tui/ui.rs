@@ -12,7 +12,9 @@ use crate::tui::detail;
 use crate::tui::fullscreen;
 use crate::tui::help;
 use crate::tui::icons::{self, IconId};
-use crate::tui::navigation::keymap::{self, KeyBindingGroup, ModeKeyMap, fit_fkeys_to_width};
+use crate::tui::navigation::keymap::{
+    self, InlineHint, KeyBindingGroup, ModeKeyMap, fit_fkeys_to_width,
+};
 use crate::tui::screens::Screen;
 use chrono::Utc;
 use ratatui::{
@@ -49,13 +51,19 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         0
     };
 
+    // #893: bypass-mode banner overlays the top status-bar row, eating the
+    // width budget the hint fitter relies on. When bypass is active, grow
+    // the status bar by one extra inner row so dropped hints can render
+    // beneath the main status line. Non-bypass layouts stay at 3 rows so
+    // existing snapshots remain stable.
+    let status_bar_height: u16 = if app.bypass_active { 4 } else { 3 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),          // status bar (includes inline hints)
-            Constraint::Min(10),            // main content
-            Constraint::Length(log_height), // activity log
-            Constraint::Length(1),          // F-key bar
+            Constraint::Length(status_bar_height), // status bar (includes inline hints)
+            Constraint::Min(10),                   // main content
+            Constraint::Length(log_height),        // activity log
+            Constraint::Length(1),                 // F-key bar
         ])
         .split(f.area());
 
@@ -1185,6 +1193,10 @@ fn draw_status_bar_inner(
     let inner_width = area.width.saturating_sub(2);
     let status_used: usize = spans.iter().map(|s| s.width()).sum();
     let remaining = inner_width.saturating_sub(status_used as u16);
+    // #893: track whether any hints had to be dropped by `fit_hints_to_width`
+    // so we can render the full set on a dedicated overflow row when the
+    // status bar was grown to accommodate (bypass-mode layouts only).
+    let mut dropped_hints: &[InlineHint] = &[];
     if remaining > 10 && !mode_km.hints.is_empty() {
         let fitted = keymap::fit_hints_to_width(mode_km.hints, remaining.saturating_sub(4));
         if !fitted.is_empty() {
@@ -1194,6 +1206,12 @@ fn draw_status_bar_inner(
             spans.push(sep.clone());
             spans.extend(hint_spans);
         }
+        if fitted.len() < mode_km.hints.len() {
+            dropped_hints = &mode_km.hints[fitted.len()..];
+        }
+    } else if !mode_km.hints.is_empty() {
+        // No budget at all for inline hints — everything overflows.
+        dropped_hints = mode_km.hints;
     }
 
     let block = theme
@@ -1210,10 +1228,12 @@ fn draw_status_bar_inner(
         app.status_bar_marquee_fingerprint = total_width;
     }
 
-    let viewport_width = inner_area.width as usize;
+    // The main status line lives on the first inner row.
+    let main_line_area = Rect::new(inner_area.x, inner_area.y, inner_area.width, 1);
+    let viewport_width = main_line_area.width as usize;
     if total_width <= viewport_width {
         app.status_bar_marquee.reset();
-        f.render_widget(Paragraph::new(Line::from(spans)), inner_area);
+        f.render_widget(Paragraph::new(Line::from(spans)), main_line_area);
     } else {
         let overflow = total_width.saturating_sub(viewport_width);
         app.status_bar_marquee
@@ -1223,7 +1243,20 @@ fn draw_status_bar_inner(
             app.status_bar_marquee.offset,
             viewport_width,
         );
-        f.render_widget(Paragraph::new(Line::from(windowed)), inner_area);
+        f.render_widget(Paragraph::new(Line::from(windowed)), main_line_area);
+    }
+
+    // #893: render any dropped hints on the second inner row when the
+    // status bar was grown to make space (bypass-mode layouts).
+    if inner_area.height >= 2 && !dropped_hints.is_empty() {
+        let overflow_area = Rect::new(inner_area.x, inner_area.y + 1, inner_area.width, 1);
+        let fitted = keymap::fit_hints_to_width(dropped_hints, overflow_area.width);
+        if !fitted.is_empty() {
+            let copy_enabled = app.copy_focused_response_enabled();
+            let hint_spans =
+                crate::tui::keybinding_hints::keybinding_hints_spans(&fitted, copy_enabled, theme);
+            f.render_widget(Paragraph::new(Line::from(hint_spans)), overflow_area);
+        }
     }
 }
 

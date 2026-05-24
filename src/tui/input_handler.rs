@@ -731,6 +731,12 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
             });
             if let Some(id) = selected_id {
                 app.screen_state.session_switcher = None;
+                // Consume the SessionSwitcher from the nav-stack so [Esc]
+                // from Detail returns to whatever pushed SessionSwitcher
+                // (Overview) instead of an empty Switcher mode with no
+                // screen-state, which leaves the header showing Switcher
+                // chords while no modal is drawn (sibling of #893).
+                app.navigate_back();
                 app.navigate_to(app::TuiMode::Detail(id));
             }
         }

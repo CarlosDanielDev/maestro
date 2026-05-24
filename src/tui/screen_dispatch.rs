@@ -611,6 +611,16 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     app.screen_state.queue_confirmation_screen = None;
                 }
                 app::TuiMode::HollowRetry => {
+                    // #890: mark the session as user-dismissed so the
+                    // completion pipeline does not re-open the modal on the
+                    // next tick. Without this the [s] Skip chord vanished
+                    // the modal for one frame and immediately re-fired.
+                    if let Some(screen) = app.screen_state.hollow_retry_screen.as_ref() {
+                        let session_id = screen.session_id;
+                        if let Some(session) = app.pool.get_session_mut(session_id) {
+                            session.hollow_dismissed = true;
+                        }
+                    }
                     app.screen_state.hollow_retry_screen = None;
                 }
                 app::TuiMode::AdaptFollowUp => {
@@ -954,6 +964,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         crate::session::types::SessionStatus::Retrying,
                         TransitionReason::RetryTriggered,
                     );
+                    // Mark the original session as user-handled regardless of
+                    // whether the Retrying transition was accepted. Without
+                    // this the completion pipeline re-opens the same Hollow
+                    // modal on the next tick because the source session is
+                    // still `status == Completed && is_hollow_completion`.
+                    session.hollow_dismissed = true;
                     (retry, label)
                 })
             });
