@@ -407,6 +407,27 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &theme,
             );
         }
+        TuiMode::CallLog(id) => {
+            if let Some(session) = app.pool.get_session(id) {
+                crate::tui::call_log::draw::draw_call_log(
+                    f,
+                    session,
+                    &app.call_log_state,
+                    chunks[1],
+                    &theme,
+                );
+            } else {
+                let sessions = app.pool.all_sessions();
+                app.panel_view.draw_with_claims(
+                    f,
+                    &sessions,
+                    Some(&app.pool.file_claims),
+                    chunks[1],
+                    &theme,
+                    spinner_tick,
+                );
+            }
+        }
         TuiMode::GateOutputViewer(id) => {
             // Look up the session in the pool (covers both active and
             // finished — FailedGates is terminal so the session lives

@@ -246,6 +246,7 @@ impl ManagedSession {
 
     /// Update session state from a stream event.
     pub fn handle_event(&mut self, event: &StreamEvent) {
+        self.session.append_call_log(event);
         if !matches!(event, StreamEvent::Thinking { .. })
             && let Some(start) = self.thinking_start.take()
         {
@@ -479,6 +480,7 @@ mod tests {
             adapt_follow_up_considered: false,
             origin: crate::session::types::SessionOrigin::default(),
             active_command: None,
+            call_log: vec![],
         };
         ManagedSession::new(session)
     }

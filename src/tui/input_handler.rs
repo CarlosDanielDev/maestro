@@ -181,6 +181,7 @@ async fn handle_secondary_mode_keys(app: &mut App, key: &KeyEvent) -> Option<Key
             Some(KeyAction::Consumed)
         }
         app::TuiMode::LogViewer(id) => Some(handle_log_viewer(app, key, id).await),
+        app::TuiMode::CallLog(id) => Some(handle_call_log(app, key, id)),
         app::TuiMode::GateOutputViewer(_) => Some(handle_gate_output_viewer(app, key)),
         app::TuiMode::ConfirmKill(id) => Some(handle_confirm_kill(app, key, id).await),
         app::TuiMode::BudgetPreSpawn { session_id } => {
@@ -626,6 +627,46 @@ fn handle_gate_output_viewer(app: &mut App, key: &KeyEvent) -> KeyAction {
     KeyAction::Consumed
 }
 
+fn handle_call_log(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> KeyAction {
+    let total = app
+        .pool
+        .get_session(session_id)
+        .map(|s| s.call_log.len())
+        .unwrap_or(0);
+    let state = &mut app.call_log_state;
+    state.clamp_to_total(total);
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) => {
+            app.navigate_back_or_dashboard();
+        }
+        (KeyCode::Enter, _) if total > 0 => {
+            state.toggle_expand();
+        }
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+            if state.expanded {
+                state.scroll_payload_up();
+            } else {
+                state.move_up();
+            }
+        }
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+            if state.expanded {
+                state.scroll_payload_down();
+            } else {
+                state.move_down(total);
+            }
+        }
+        (KeyCode::Char('g'), _) => {
+            state.jump_first();
+        }
+        (KeyCode::Char('G'), _) => {
+            state.jump_last(total);
+        }
+        _ => {}
+    }
+    KeyAction::Consumed
+}
+
 async fn handle_log_viewer(app: &mut App, key: &KeyEvent, _id: uuid::Uuid) -> KeyAction {
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => {
@@ -1044,6 +1085,12 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
             }
             _ => {}
         },
+        (KeyCode::Char('L'), _) => {
+            if let app::TuiMode::Detail(id) = app.tui_mode {
+                app.call_log_state = crate::tui::call_log::state::CallLogState::default();
+                app.navigate_to(app::TuiMode::CallLog(id));
+            }
+        }
         (KeyCode::Up, KeyModifiers::SHIFT) => {
             app.activity_log.scroll_up();
         }

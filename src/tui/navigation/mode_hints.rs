@@ -367,6 +367,32 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::CallLog(_) => (
+            "Call Log",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "Esc",
+                    action: "Back",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "Enter",
+                    action: "Expand",
+                    priority: 1,
+                },
+                InlineHint {
+                    key: "j/k",
+                    action: "Move",
+                    priority: 2,
+                },
+                InlineHint {
+                    key: "g/G",
+                    action: "Top/Bot",
+                    priority: 3,
+                },
+            ],
+        ),
         TuiMode::LogViewer(_) => (
             "Log Viewer",
             FKeyVis::Minimal,
