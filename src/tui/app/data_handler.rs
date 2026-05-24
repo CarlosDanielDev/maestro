@@ -648,6 +648,11 @@ impl App {
             TuiDataEvent::CiErrorReviewFetched { pr_number, result } => {
                 self.handle_ci_error_review_fetched(pr_number, result);
             }
+            TuiDataEvent::TeamLaunchResult(summary) => {
+                if let Some(ref mut screen) = self.screen_state.team_wizard_screen {
+                    screen.apply_launch_result(summary);
+                }
+            }
         }
     }
 }

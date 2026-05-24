@@ -852,70 +852,47 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             input,
             max_parallel,
         } => {
-            // #877 — wire `launch_dispatch` to a real fan-out. v1: re-resolve
-            // the team from the wizard's cache, build the Scheduler to get
-            // the level DAG, then fan out one `LaunchSession` per planned
-            // issue. The team-runner consolidation (proper `SessionManager::
-            // run_team` with L2 routing) lands in a follow-up.
-            let agent_id = app.selected_agent_id();
-            let scheduler_outcome = {
-                let Some(screen) = app.screen_state.team_wizard_screen.as_mut() else {
-                    tracing::warn!("LaunchTeam dispatched without an active team wizard");
-                    return;
-                };
-                let Some(team) = screen.resolved_teams().get(&team_name).cloned() else {
-                    screen.apply_launch_result(Err(format!(
-                        "Team `{}` no longer in wizard cache",
-                        screens::sanitize_for_terminal(&team_name)
-                    )));
-                    return;
-                };
-                let issue_metas = screen.issue_metas().clone();
-                let result = crate::orchestration::scheduler::Scheduler::from_input(
-                    team.clone(),
-                    input,
-                    issue_metas,
-                    max_parallel.max(1),
-                );
-                match result {
-                    Ok(scheduler) => {
-                        let configs: Vec<screens::SessionConfig> = scheduler
-                            .run
-                            .plan
-                            .iter()
-                            .flat_map(|level| level.iter())
-                            .map(|n| screens::SessionConfig {
-                                issue_number: Some(*n),
-                                title: format!("#{n}"),
-                                custom_prompt: None,
-                                agent_id: Some(agent_id.clone()),
-                            })
-                            .collect();
-                        if configs.is_empty() {
-                            screen.apply_launch_result(Err(
-                                "Scheduler produced an empty plan".to_string()
-                            ));
-                            None
-                        } else {
-                            screen.apply_launch_result(Ok(()));
-                            tracing::warn!(
-                                target: "team_wizard.launch",
-                                team = ?team.name,
-                                "LaunchTeam fanned out via LaunchSession path \
-                                 (real SessionManager::run_team pending follow-up)"
-                            );
-                            Some(configs)
-                        }
-                    }
-                    Err(e) => {
-                        screen.apply_launch_result(Err(format!("Scheduler error: {e}")));
-                        None
-                    }
-                }
+            // #881 — replaces the per-level `LaunchSession` fan-out
+            // shipped in #877. The dispatcher now hands a built
+            // `Scheduler` to `TuiCommand::RunTeam`; the command pump
+            // spawns `session::team_runner::run_team` which walks the
+            // level DAG with a bounded semaphore. The wizard waits on
+            // `TuiDataEvent::TeamLaunchResult` and routes the result
+            // back through `apply_launch_result`.
+            let app_default_agent = app.selected_agent_id();
+            let Some(screen) = app.screen_state.team_wizard_screen.as_mut() else {
+                tracing::debug!("LaunchTeam dispatched without an active team wizard");
+                return;
             };
-            if let Some(configs) = scheduler_outcome {
-                app.pending_commands
-                    .push(app::TuiCommand::LaunchSessions(configs));
+            let Some(team) = screen.resolved_teams().get(&team_name).cloned() else {
+                screen.apply_launch_result(Err(format!(
+                    "Team `{}` no longer in wizard cache",
+                    screens::sanitize_for_terminal(&team_name)
+                )));
+                return;
+            };
+            let issue_metas = screen.issue_metas().clone();
+            match crate::orchestration::scheduler::Scheduler::from_input(
+                team,
+                input,
+                issue_metas,
+                max_parallel.max(1),
+            ) {
+                Ok(scheduler) => {
+                    if scheduler.levels().iter().all(|l| l.is_empty()) {
+                        screen.apply_launch_result(Err(
+                            "Scheduler produced an empty plan".to_string()
+                        ));
+                        return;
+                    }
+                    app.pending_commands.push(app::TuiCommand::RunTeam {
+                        scheduler: Box::new(scheduler),
+                        app_default_agent,
+                    });
+                }
+                Err(e) => {
+                    screen.apply_launch_result(Err(format!("Scheduler error: {e}")));
+                }
             }
         }
         ScreenAction::LaunchSessions(configs) => {

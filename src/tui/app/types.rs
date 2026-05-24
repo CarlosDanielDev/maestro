@@ -359,6 +359,15 @@ pub enum TuiCommand {
         pr_number: u64,
         branch: String,
     },
+    /// Run a resolved team launch via `session::team_runner::run_team`
+    /// (#881). The dispatcher hands the built `Scheduler` and the
+    /// app-default `agent_id` over; the background task walks the
+    /// level DAG and posts `TuiDataEvent::TeamLaunchResult` when done.
+    /// Replaces the placeholder `LaunchSessions` fan-out from #877.
+    RunTeam {
+        scheduler: Box<crate::orchestration::scheduler::Scheduler>,
+        app_default_agent: String,
+    },
 }
 
 /// Data events delivered from background fetch tasks.
@@ -427,6 +436,11 @@ pub enum TuiDataEvent {
         pr_number: u64,
         result: Result<String, String>,
     },
+    /// Result of `TuiCommand::RunTeam` (#881). `Ok(())` flips the Team
+    /// Wizard to `LaunchSuccess`; `Err(reason)` flips to `LaunchFailed`
+    /// with the reason rendered in the failure banner. The Err string
+    /// names the first failing issue when a per-level spawn fails.
+    TeamLaunchResult(Result<(), String>),
 }
 
 /// A merge conflict suggestion shown in the completion overlay.

@@ -11,6 +11,7 @@ pub mod pool;
 pub mod pr_capture;
 pub mod retry;
 pub mod role;
+pub mod team_runner;
 pub mod transition;
 pub mod types;
 pub mod worktree;
