@@ -1056,6 +1056,14 @@ fn handle_overview_keys(app: &mut App, key: &KeyEvent) {
         (KeyCode::Char('w'), _) => {
             app.screen_state.session_switcher =
                 Some(crate::tui::session_switcher::SessionSwitcher::default());
+            // #895 sibling: sessions live on Overview, not Dashboard. If the
+            // user opened [w] from Dashboard, anchor the Esc-return to
+            // Overview so dismissing the switcher lands on the session list
+            // instead of bouncing back to Dashboard. For any other origin,
+            // preserve the prior mode (Detail, etc.) via the nav-stack.
+            if app.tui_mode == app::TuiMode::Dashboard {
+                app.tui_mode = app::TuiMode::Overview;
+            }
             app.navigate_to(app::TuiMode::SessionSwitcher);
         }
         // Ctrl+C is short-circuited at the top of handle_key, so reaching
