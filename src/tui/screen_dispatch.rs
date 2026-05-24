@@ -964,6 +964,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         crate::session::types::SessionStatus::Retrying,
                         TransitionReason::RetryTriggered,
                     );
+                    // Mark the original session as user-handled regardless of
+                    // whether the Retrying transition was accepted. Without
+                    // this the completion pipeline re-opens the same Hollow
+                    // modal on the next tick because the source session is
+                    // still `status == Completed && is_hollow_completion`.
+                    session.hollow_dismissed = true;
                     (retry, label)
                 })
             });
