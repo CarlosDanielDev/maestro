@@ -42,4 +42,4 @@ Session summaries (added when I say "session end" / "wrapping up" / "let's stop 
 
 ## 2026-05-23 — v0.29.5 cross-milestone handoff bundle #806/#875/#876/#877
 
-v0.29.5 bundle (user authorized PR-isolation override for context budget): one PR, four Closes refs, architect+QA blueprint per scope; disabled-agent filter (#806), Ctrl+V paste (#875), autocomplete (#876), LaunchTeam dispatch fan-out (#877); R3 (real run_team) descoped to follow-up.
+v0.29.5 bundle (user authorized PR-isolation override for context budget): one PR, four Closes refs, architect+QA blueprint per scope; disabled-agent filter (#806), Ctrl+V paste (#875), autocomplete (#876), LaunchTeam dispatch fan-out (#877); R3 (real run_team) was descoped to follow-up and landed in #881.

@@ -6,7 +6,7 @@ use crate::orchestration::dag::{
     Edge, ExpandResult, IssueMeta, auto_expand, classify_edges, topo_levels,
 };
 use crate::orchestration::team::ResolvedTeam;
-use crate::orchestration::types::TeamInput;
+use crate::orchestration::types::{TeamInput, TeamRole};
 use crate::state::types::{IssueNumber, IssueRunState, TeamRun};
 use anyhow::{Result, anyhow};
 use chrono::Utc;
@@ -76,6 +76,33 @@ impl Scheduler {
             max_parallel,
             auto_added,
         })
+    }
+
+    /// Read-only view of the topologically-sorted level DAG.
+    /// Consumed by `session::team_runner::run_team` to walk levels in
+    /// order with bounded concurrency. Returning a slice keeps the
+    /// caller from observing the per-level `Vec` aliasing in `TeamRun`.
+    pub fn levels(&self) -> &[Vec<IssueNumber>] {
+        &self.run.plan
+    }
+
+    /// Resolve the `agent_id` to attach to every L2 session this team
+    /// spawns. v1 lookup chain (architect blueprint R1): the team's
+    /// Implementer binding → the binding's `fallback_agent` if the
+    /// primary slot is empty → the caller-supplied app default. True
+    /// per-role L1 sub-agent routing (Implementer/Reviewer/Docs
+    /// dispatch inside a single issue) is a separate follow-up; the L2
+    /// session itself carries one binary id.
+    pub fn agent_for_issue(&self, app_default: &str) -> String {
+        match self.team.bindings.get(&TeamRole::Implementer) {
+            Some(binding) if !binding.agent.is_empty() => binding.agent.clone(),
+            Some(binding) => binding
+                .fallback_agent
+                .clone()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| app_default.to_string()),
+            None => app_default.to_string(),
+        }
     }
 
     /// Issues eligible to spawn now: queued, deps succeeded, slots available.
@@ -216,6 +243,88 @@ mod tests {
         );
         let ready = sched.next_ready();
         assert_eq!(ready, vec![549]);
+    }
+
+    fn pipeline_team_with(
+        implementer_agent: Option<&str>,
+        implementer_fallback: Option<&str>,
+    ) -> ResolvedTeam {
+        let mut bindings = HashMap::new();
+        if let Some(agent) = implementer_agent {
+            bindings.insert(
+                TeamRole::Implementer,
+                RoleBinding {
+                    agent: agent.into(),
+                    mode: None,
+                    model_override: None,
+                    prompt_addendum: None,
+                    fallback_agent: implementer_fallback.map(String::from),
+                },
+            );
+        }
+        ResolvedTeam {
+            name: "agent-chain-test".into(),
+            primitive: Primitive::Pipeline,
+            min_agents: vec!["claude".into()],
+            bindings,
+            source_tier: SourceTier::Project,
+        }
+    }
+
+    fn scheduler_with_team(team: ResolvedTeam) -> Scheduler {
+        let mut metas = HashMap::new();
+        metas.insert(1, meta(1, IssueState::Open, Some(1), vec![]));
+        Scheduler::from_input(team, TeamInput::Issue { number: 1 }, metas, 1)
+            .expect("scheduler build")
+    }
+
+    #[test]
+    fn agent_for_issue_uses_implementer_binding() {
+        let team = pipeline_team_with(Some("claude"), None);
+        let sched = scheduler_with_team(team);
+        assert_eq!(sched.agent_for_issue("app-default"), "claude");
+    }
+
+    #[test]
+    fn agent_for_issue_falls_back_to_fallback_agent_when_primary_empty() {
+        let team = pipeline_team_with(Some(""), Some("qwen"));
+        let sched = scheduler_with_team(team);
+        assert_eq!(sched.agent_for_issue("app-default"), "qwen");
+    }
+
+    #[test]
+    fn agent_for_issue_falls_back_to_app_default_when_no_implementer_binding() {
+        let team = pipeline_team_with(None, None);
+        let sched = scheduler_with_team(team);
+        assert_eq!(sched.agent_for_issue("app-default"), "app-default");
+    }
+
+    #[test]
+    fn agent_for_issue_falls_back_to_app_default_when_binding_and_fallback_empty() {
+        let team = pipeline_team_with(Some(""), Some(""));
+        let sched = scheduler_with_team(team);
+        assert_eq!(sched.agent_for_issue("app-default"), "app-default");
+    }
+
+    #[test]
+    fn levels_returns_topo_sorted_plan_slice() {
+        let mut metas = HashMap::new();
+        metas.insert(1, meta(1, IssueState::Open, Some(1), vec![]));
+        metas.insert(2, meta(2, IssueState::Open, Some(1), vec![1]));
+        let sched = Scheduler::from_input(
+            solo_team(),
+            TeamInput::IssueSet {
+                primary_milestone: Some(1),
+                issues: vec![1, 2],
+            },
+            metas,
+            1,
+        )
+        .unwrap();
+        let levels = sched.levels();
+        assert_eq!(levels.len(), 2);
+        assert_eq!(levels[0], vec![1]);
+        assert_eq!(levels[1], vec![2]);
     }
 
     #[test]

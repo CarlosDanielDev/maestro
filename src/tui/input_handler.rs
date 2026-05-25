@@ -2333,15 +2333,18 @@ mod tests {
         );
     }
 
-    /// Regression: `ScreenAction::LaunchTeam` must transition the wizard's
-    /// `launch_step` from `Executing` to `LaunchSuccess` after the dispatcher
-    /// fans out per-issue `LaunchSession` configs. Reported during bundle
-    /// PR #880 manual QA — the wizard appeared stuck at Step 6/8 even though
-    /// sessions were actually running.
+    /// Regression: `ScreenAction::LaunchTeam` must queue
+    /// `TuiCommand::RunTeam` (not the legacy `LaunchSessions` fan-out
+    /// from #877) and leave the wizard at `Executing`; the wizard only
+    /// advances to `LaunchSuccess` once the runner posts
+    /// `TeamLaunchResult(Ok)` back through `data_handler`. Bundle PR
+    /// #880 QA flagged the original Step-6/8 stuck symptom; #881
+    /// replaces the fan-out with a real level-walk runner.
     #[test]
     fn launch_team_action_transitions_wizard_to_launch_success() {
         use crate::orchestration::team::{ResolvedTeam, SourceTier};
         use crate::orchestration::types::{Primitive, TeamInput};
+        use crate::tui::app::TuiDataEvent;
         use crate::tui::screen_dispatch::handle_screen_action;
         use crate::tui::screens::team_wizard::types::{
             LaunchInputKind, LaunchStep, TeamWizardMode,
@@ -2378,6 +2381,31 @@ mod tests {
             },
         );
 
+        // Dispatcher leaves the wizard at Executing and queues RunTeam.
+        let mid_step = app
+            .screen_state
+            .team_wizard_screen
+            .as_ref()
+            .expect("wizard preserved")
+            .launch_step();
+        assert_eq!(mid_step, LaunchStep::Executing);
+        assert!(
+            app.pending_commands
+                .iter()
+                .any(|cmd| matches!(cmd, app::TuiCommand::RunTeam { .. })),
+            "dispatcher must queue TuiCommand::RunTeam (not LaunchSessions)"
+        );
+        assert!(
+            !app.pending_commands
+                .iter()
+                .any(|cmd| matches!(cmd, app::TuiCommand::LaunchSessions(_))),
+            "legacy LaunchSessions fan-out must be gone"
+        );
+
+        // The runner running in the command pump would post this back.
+        // Drive it synchronously to lock the round-trip contract.
+        app.handle_data_event(TuiDataEvent::TeamLaunchResult(Ok(())));
+
         let final_step = app
             .screen_state
             .team_wizard_screen
@@ -2387,14 +2415,35 @@ mod tests {
         assert_eq!(
             final_step,
             LaunchStep::LaunchSuccess,
-            "wizard must advance to LaunchSuccess after LaunchTeam dispatcher runs"
+            "wizard must advance to LaunchSuccess after TeamLaunchResult(Ok)"
         );
-        assert!(
-            app.pending_commands
-                .iter()
-                .any(|cmd| matches!(cmd, app::TuiCommand::LaunchSessions(_))),
-            "dispatcher must queue LaunchSessions"
-        );
+    }
+
+    /// Sibling regression for #881: `TeamLaunchResult(Err)` must flip
+    /// the wizard to `LaunchFailed` with the runner's reason surfaced.
+    #[test]
+    fn team_launch_result_err_flips_wizard_to_launch_failed() {
+        use crate::tui::app::TuiDataEvent;
+        use crate::tui::screens::TeamWizardScreen;
+        use crate::tui::screens::team_wizard::types::{LaunchStep, TeamWizardMode};
+
+        let mut app = make_app();
+        app.tui_mode = TuiMode::TeamWizard;
+        let mut screen = TeamWizardScreen::new(Default::default());
+        screen.switch_mode(TeamWizardMode::Launch);
+        screen.set_launch_step_for_test(LaunchStep::Executing);
+        app.screen_state.team_wizard_screen = Some(screen);
+
+        app.handle_data_event(TuiDataEvent::TeamLaunchResult(Err(
+            "Issue #42 failed: simulated".to_string(),
+        )));
+
+        let screen = app
+            .screen_state
+            .team_wizard_screen
+            .as_ref()
+            .expect("wizard preserved");
+        assert_eq!(screen.launch_step(), LaunchStep::LaunchFailed);
     }
 
     /// Regression for 2026-05-23: `ScreenAction::LaunchSession` (and its

@@ -30,6 +30,7 @@ pub mod session_switcher;
 pub mod shell_launcher;
 pub mod spinner;
 mod summary;
+mod team_runner_glue;
 pub mod theme;
 pub mod token_dashboard;
 pub mod turboquant_dashboard;
@@ -686,6 +687,29 @@ async fn event_loop(
                         .map_err(|e| e.to_string());
                         let _ =
                             tx.send(app::TuiDataEvent::CiErrorReviewFetched { pr_number, result });
+                    });
+                }
+                app::TuiCommand::RunTeam {
+                    scheduler,
+                    app_default_agent,
+                } => {
+                    let tx = app.data_tx.clone();
+                    let provider_config = provider_config_from_app(app);
+                    let launcher: std::sync::Arc<dyn crate::session::team_runner::TeamLauncher> =
+                        std::sync::Arc::new(team_runner_glue::RealTeamLauncher {
+                            tx: tx.clone(),
+                            provider_config,
+                        });
+                    let scheduler = *scheduler;
+                    tokio::spawn(async move {
+                        let outcome = crate::session::team_runner::run_team(
+                            launcher,
+                            scheduler,
+                            app_default_agent,
+                        )
+                        .await;
+                        let summary = outcome.into_apply_result();
+                        let _ = tx.send(app::TuiDataEvent::TeamLaunchResult(summary));
                     });
                 }
             }
