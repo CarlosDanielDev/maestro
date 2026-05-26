@@ -9,6 +9,7 @@
 use crate::config::schema::{DefaultValue, FieldKind, FieldSchema};
 use crate::tui::screens::settings::SettingsField;
 use crate::tui::screens::settings::schema_tab::teams_bindings::collapse_team_bindings_into_array;
+use crate::tui::screens::settings::schema_tab::widgets::DynamicMapWidget;
 use crate::tui::widgets::{Dropdown, ListEditor, NumberStepper, TextInput, Toggle, WidgetKind};
 
 pub struct EntryState {
@@ -97,11 +98,33 @@ impl EntryState {
                     | FieldKind::FlattenedMap { .. }
                     | FieldKind::VecOfStruct { .. }
             ) {
-                // Read-only passthrough: re-emit the original sub-table so
-                // merge_flattened_map's wholesale rewrite of [teams.<id>]
-                // does not drop the untouched dynamic-kind value.
-                if let Some(v) = self.passthrough.get(fs.key) {
-                    table.insert(fs.key.to_string(), v.clone());
+                // Real widget wins (DynamicMap / DynamicRows): the widget
+                // owns its own writeback via `serialize_to_toml`. Skip the
+                // empty table case so an empty nested editor does not emit
+                // a bare `role_overrides = {}` header (#901 AC).
+                match &sf.widget {
+                    WidgetKind::DynamicMap(_) | WidgetKind::DynamicRows(_) => {
+                        let v = widget_value(&sf.widget);
+                        let omit_empty = matches!(
+                            &v,
+                            toml::Value::Table(t) if t.is_empty()
+                        ) || matches!(
+                            &v,
+                            toml::Value::Array(a) if a.is_empty()
+                        );
+                        if !omit_empty {
+                            table.insert(fs.key.to_string(), v);
+                        }
+                    }
+                    _ => {
+                        // Defense-in-depth passthrough fallback for kinds
+                        // whose widget layer has not yet been lifted
+                        // (FlattenedMap / VecOfStruct inside entries —
+                        // currently rendered as read-only TextInput).
+                        if let Some(v) = self.passthrough.get(fs.key) {
+                            table.insert(fs.key.to_string(), v.clone());
+                        }
+                    }
                 }
                 continue;
             }
@@ -165,14 +188,27 @@ fn build_widget(label: String, fs: &FieldSchema, value: Option<&toml::Value>) ->
                 .unwrap_or_default();
             WidgetKind::ListEditor(ListEditor::new(label, items))
         }
+        FieldKind::Map { entry_fields } => {
+            // Nested DynamicMap inside an entry (e.g. role_overrides
+            // inside a team). The widget owns the writeback path via
+            // `serialize_to_toml`; the EntryState.passthrough fallback
+            // remains as defense-in-depth for the FlattenedMap /
+            // VecOfStruct kinds below whose editors are not yet lifted.
+            // Section_path doubles as the label so `display_name_for`
+            // ("…role_overrides" → "role") drives the inner Add modal title.
+            WidgetKind::DynamicMap(DynamicMapWidget::new(
+                label.clone(),
+                label,
+                entry_fields,
+                value,
+            ))
+        }
         FieldKind::NestedTable(_)
-        | FieldKind::Map { .. }
         | FieldKind::FlattenedMap { .. }
         | FieldKind::VecOfStruct { .. } => {
-            // Nested dynamic shapes inside entries are out of scope for #791;
-            // editor lifts in #901. Render as read-only TextInput so the user
-            // cannot accidentally type into the slot and lose the typed value
-            // when the passthrough drops it on save.
+            // FlattenedMap / VecOfStruct inside an entry remain
+            // read-only placeholders for now — no schema field
+            // exercises them today. Passthrough preserves round-trip.
             let summary = dynamic_kind_summary(value);
             WidgetKind::TextInput(TextInput::new(label, summary).with_read_only())
         }
@@ -207,107 +243,7 @@ fn widget_value(widget: &WidgetKind) -> toml::Value {
         WidgetKind::ListEditor(w) => {
             toml::Value::Array(w.items.iter().cloned().map(toml::Value::String).collect())
         }
-        WidgetKind::DynamicMap(_) | WidgetKind::DynamicRows(_) => {
-            toml::Value::Table(Default::default())
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tui::screens::settings::schema_tab::widgets::test_fixture::TEST_AGENT_FIELDS;
-
-    #[test]
-    fn builds_namespaced_labels() {
-        let e = EntryState::build("agents", "qwen-fast", TEST_AGENT_FIELDS, None);
-        assert_eq!(e.id, "qwen-fast");
-        assert_eq!(e.fields.len(), TEST_AGENT_FIELDS.len());
-        assert_eq!(e.fields[0].widget.label(), "agents.qwen-fast.kind");
-        assert_eq!(e.fields[1].widget.label(), "agents.qwen-fast.enabled");
-        assert_eq!(e.fields[2].widget.label(), "agents.qwen-fast.model");
-    }
-
-    #[test]
-    fn label_for_assembles_dotted_path() {
-        let e = EntryState::build("agents", "claude", TEST_AGENT_FIELDS, None);
-        assert_eq!(e.label_for("agents", "kind"), "agents.claude.kind");
-    }
-
-    #[test]
-    fn applies_defaults_when_no_existing_value() {
-        let e = EntryState::build("agents", "claude", TEST_AGENT_FIELDS, None);
-        if let WidgetKind::Dropdown(d) = &e.fields[0].widget {
-            assert_eq!(d.selected_value(), "implementer");
-        } else {
-            panic!("expected dropdown for kind");
-        }
-    }
-
-    #[test]
-    fn dynamic_kind_fallback_is_read_only_textinput() {
-        use crate::config::schema::{DefaultValue, FieldKind, FieldSchema};
-        const ROLE_FIELDS: &[FieldSchema] = &[FieldSchema {
-            key: "agent",
-            label: "Agent",
-            help: "Agent override",
-            default: DefaultValue::Str(""),
-            kind: FieldKind::String,
-            validator: None,
-            presentation: None,
-        }];
-        const ENTRY_FIELDS: &[FieldSchema] = &[FieldSchema {
-            key: "role_overrides",
-            label: "Role Overrides",
-            help: "Per-role overrides",
-            default: DefaultValue::Empty,
-            kind: FieldKind::Map {
-                entry_fields: ROLE_FIELDS,
-            },
-            validator: None,
-            presentation: None,
-        }];
-
-        let e = EntryState::build("teams", "docs", ENTRY_FIELDS, None);
-        let WidgetKind::TextInput(ti) = &e.fields[0].widget else {
-            panic!("Map fallback must produce a TextInput");
-        };
-        assert!(
-            ti.read_only,
-            "Map-kind fallback TextInput must be read-only"
-        );
-        assert!(
-            ti.value.contains("read-only"),
-            "Map-kind fallback value must mention read-only, got {:?}",
-            ti.value
-        );
-    }
-
-    #[test]
-    fn applies_existing_values_from_toml() {
-        let mut t = toml::map::Map::new();
-        t.insert("kind".into(), toml::Value::String("reviewer".into()));
-        t.insert("enabled".into(), toml::Value::Boolean(false));
-        let value = toml::Value::Table(t);
-        let e = EntryState::build("agents", "claude", TEST_AGENT_FIELDS, Some(&value));
-        if let WidgetKind::Dropdown(d) = &e.fields[0].widget {
-            assert_eq!(d.selected_value(), "reviewer");
-        } else {
-            panic!();
-        }
-        if let WidgetKind::Toggle(tg) = &e.fields[1].widget {
-            assert!(!tg.value);
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn serializes_back_to_toml_table() {
-        let e = EntryState::build("agents", "claude", TEST_AGENT_FIELDS, None);
-        let v = e.to_toml(TEST_AGENT_FIELDS);
-        let t = v.as_table().expect("table");
-        assert_eq!(t.get("kind").and_then(|v| v.as_str()), Some("implementer"));
-        assert!(t.get("enabled").and_then(|v| v.as_bool()).is_some());
+        WidgetKind::DynamicMap(w) => w.serialize_to_toml(),
+        WidgetKind::DynamicRows(w) => w.serialize_to_toml(),
     }
 }

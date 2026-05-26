@@ -15,10 +15,13 @@ use crate::tui::widgets::{WidgetAction, WidgetKind};
 /// Display label used in modal titles and other user-facing strings.
 /// The section_path is the TOML key path (e.g. `"agents"`); for the
 /// sake of UX clarity the `[agents]` table is presented as "provider"
-/// in the TUI. Other section_paths fall back to themselves.
-fn display_name_for(section_path: &str) -> &str {
+/// in the TUI and `*.role_overrides` is presented as "role". Other
+/// section_paths fall back to themselves.
+pub(super) fn display_name_for(section_path: &str) -> &str {
     if section_path.ends_with("agents") {
         "provider"
+    } else if section_path.ends_with("role_overrides") {
+        "role"
     } else {
         section_path
     }
@@ -198,10 +201,21 @@ impl DynamicMapWidget {
                 WidgetAction::None
             }
             KeyCode::Down | KeyCode::Tab => {
+                // Cooperative: when focused on a nested widget that owns
+                // an inner focus stack (DynamicMap/DynamicRows), let it
+                // advance its own focus first. Only fall through to the
+                // outer focus walk when the inner has nothing left to
+                // advance to.
+                if self.try_advance_focused_inner(true) {
+                    return WidgetAction::None;
+                }
                 self.focus_next_field();
                 WidgetAction::None
             }
             KeyCode::Up | KeyCode::BackTab => {
+                if self.try_advance_focused_inner(false) {
+                    return WidgetAction::None;
+                }
                 self.focus_prev_field();
                 WidgetAction::None
             }
@@ -315,6 +329,31 @@ impl DynamicMapWidget {
         }
     }
 
+    /// Try to advance the focused inner widget's own focus stack one step.
+    /// Returns true when the inner moved its focus (outer should stop);
+    /// false when the inner has nothing to advance to (outer should
+    /// continue walking its own fields). `forward=true` is Down/Tab,
+    /// `forward=false` is Up/BackTab.
+    fn try_advance_focused_inner(&mut self, forward: bool) -> bool {
+        let MapFocus::EntryField(n) = self.focus else {
+            return false;
+        };
+        let Some(active) = self.active_idx else {
+            return false;
+        };
+        let Some(entry) = self.entries.get_mut(active) else {
+            return false;
+        };
+        let Some(field) = entry.fields.get_mut(n) else {
+            return false;
+        };
+        if forward {
+            field.widget.try_focus_next()
+        } else {
+            field.widget.try_focus_prev()
+        }
+    }
+
     fn focus_next_field(&mut self) {
         let visible = self.visible_field_indices();
         match self.focus {
@@ -364,10 +403,16 @@ impl DynamicMapWidget {
     fn open_add_modal(&mut self) {
         let existing: Vec<String> = self.entries.iter().map(|e| e.id.clone()).collect();
         let display_name = display_name_for(&self.section_path);
-        self.add_modal = Some(AddEntryModal::new(
-            format!("Add {} entry", display_name),
-            existing,
-        ));
+        // Curated short names (e.g. "provider", "role") read better as
+        // "Add role" than "Add role entry"; the raw section_path
+        // fallback still gets the trailing " entry" so opaque paths
+        // remain self-describing.
+        let title = if display_name == self.section_path.as_str() {
+            format!("Add {display_name} entry")
+        } else {
+            format!("Add {display_name}")
+        };
+        self.add_modal = Some(AddEntryModal::new(title, existing));
         self.focus = MapFocus::AddModal;
     }
 
@@ -544,10 +589,12 @@ impl DynamicMapWidget {
     }
 
     /// True when the focused entry-field widget claims `key` as one of its
-    /// own chords. Today only `ListEditor` does (it owns `a`, `d`, and
-    /// `Enter` in its non-editing mode). Other widget kinds either ignore
-    /// these keys or only react to them while in insert mode (handled by
-    /// the `needs_insert_mode()` gate above).
+    /// own chords. `ListEditor` owns `a`, `d`, and `Enter` in its
+    /// non-editing mode; a nested `DynamicMapWidget` (e.g. the
+    /// `role_overrides` editor inside a team entry) owns `a`, `d`, and
+    /// `u` so the outer "Add team entry" / "Remove team entry" /
+    /// "undo team entry" chords do not steal them while the user is
+    /// adding / removing / undoing a role.
     fn focused_field_owns_chord(&self, key: KeyEvent) -> bool {
         let MapFocus::EntryField(n) = self.focus else {
             return false;
@@ -565,6 +612,10 @@ impl DynamicMapWidget {
             WidgetKind::ListEditor(_) => matches!(
                 key.code,
                 KeyCode::Char('a') | KeyCode::Char('d') | KeyCode::Enter
+            ),
+            WidgetKind::DynamicMap(_) => matches!(
+                key.code,
+                KeyCode::Char('a') | KeyCode::Char('d') | KeyCode::Char('u')
             ),
             _ => false,
         }
@@ -647,6 +698,11 @@ fn entry_row_height(widget: &WidgetKind, focused: bool) -> u16 {
                 1 + items
             }
         }
+        // Nested DynamicMap (e.g. the role_overrides editor inside a
+        // team entry) owns its own desired_height — header + tabstrip +
+        // per-role-field rows. Defer to it so the outer layout gives
+        // the nested editor the rows it needs to render legibly.
+        WidgetKind::DynamicMap(inner) if focused => inner.desired_height(),
         _ => 1,
     }
 }

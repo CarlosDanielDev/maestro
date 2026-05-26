@@ -190,6 +190,11 @@ fn teams_tab_one_entry_with_role_overrides_exposes_role_overrides_field() {
         role_overrides_field.widget.label(),
         "teams.worker-pool.role_overrides",
     );
+    assert!(
+        matches!(role_overrides_field.widget, WidgetKind::DynamicMap(_)),
+        "role_overrides must now be a nested DynamicMap (#901), got label {:?}",
+        role_overrides_field.widget.label()
+    );
 }
 
 #[test]

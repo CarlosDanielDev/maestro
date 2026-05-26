@@ -329,6 +329,71 @@ fn edit_hint_on_bindings_field_shows_listeditor_chord_not_team_chord() {
 }
 
 #[test]
+fn pressing_a_on_role_overrides_field_opens_nested_add_modal_not_outer() {
+    // #901 — pressing `a` while focus is on the nested role_overrides
+    // DynamicMap field must open the INNER add-role modal, NOT the
+    // outer "Add team entry" modal. Mirrors the pattern of
+    // `pressing_a_on_bindings_field_adds_list_item_not_team` (#803).
+    use crate::tui::screens::settings::schema_tab::widgets::dynamic_map::{
+        DynamicMapWidget, MapFocus,
+    };
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    let mut existing = toml::map::Map::new();
+    let mut entry = toml::map::Map::new();
+    entry.insert("extends".into(), toml::Value::String("".into()));
+    entry.insert("primitive".into(), toml::Value::String("pipeline".into()));
+    existing.insert("worker-pool".into(), toml::Value::Table(entry));
+    let existing_val = toml::Value::Table(existing);
+
+    let mut widget = DynamicMapWidget::new(
+        "entries",
+        "teams",
+        crate::config::schema::dynamic::TEAMS_ENTRY_FIELDS,
+        Some(&existing_val),
+    );
+    // Walk SubtabStrip -> EntryField(0..=4) reaching role_overrides (idx 4).
+    for _ in 0..5 {
+        widget.handle_input(key(KeyCode::Tab));
+    }
+    assert_eq!(*widget.focus(), MapFocus::EntryField(4));
+
+    widget.handle_input(key(KeyCode::Char('a')));
+
+    // Outer modal stays closed.
+    assert_eq!(
+        *widget.focus(),
+        MapFocus::EntryField(4),
+        "outer focus must stay on role_overrides field, not jump to AddModal"
+    );
+
+    let entry = widget
+        .entries()
+        .iter()
+        .find(|e| e.id == "worker-pool")
+        .expect("worker-pool present");
+    let WidgetKind::DynamicMap(ref inner) = entry.fields[4].widget else {
+        panic!(
+            "role_overrides field must be DynamicMap, got label {:?}",
+            entry.fields[4].widget.label()
+        );
+    };
+    assert!(
+        matches!(inner.focus(), MapFocus::AddModal),
+        "inner DynamicMap must have opened its add-role modal in response to `a`"
+    );
+}
+
+#[test]
 fn teams_with_unknown_extends_blocks_save_with_banner() {
     let (mut screen, _f) = screen_with_config_path();
     screen.config.teams.insert(

@@ -22,6 +22,8 @@ pub(crate) mod test_fixture;
 mod dynamic_map_tests;
 #[cfg(test)]
 mod dynamic_rows_tests;
+#[cfg(test)]
+mod entry_state_tests;
 
 pub use dynamic_map::DynamicMapWidget;
 pub use dynamic_rows::DynamicRowsWidget;

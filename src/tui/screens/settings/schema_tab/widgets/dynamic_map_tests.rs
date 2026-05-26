@@ -9,6 +9,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifi
 use super::clock::{Clock, FakeClock};
 use super::dynamic_map::{DynamicMapWidget, MapFocus};
 use super::test_fixture::TEST_AGENT_FIELDS;
+use crate::tui::widgets::WidgetKind;
 
 fn ev(code: KeyCode) -> KeyEvent {
     KeyEvent {
@@ -526,6 +527,184 @@ fn draw_renders_label_as_header_with_text_secondary_style() {
             cell.symbol()
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Issue #901 — nested DynamicMap inside an EntryState (role_overrides editor).
+// ---------------------------------------------------------------------------
+
+fn teams_dm_with_one_role_override() -> DynamicMapWidget {
+    let mut reviewer = toml::map::Map::new();
+    reviewer.insert("agent".into(), toml::Value::String("opencode".into()));
+    reviewer.insert("mode".into(), toml::Value::String("review-strict".into()));
+    let mut roles = toml::map::Map::new();
+    roles.insert("reviewer".into(), toml::Value::Table(reviewer));
+
+    let mut team = toml::map::Map::new();
+    team.insert("extends".into(), toml::Value::String("".into()));
+    team.insert("primitive".into(), toml::Value::String("pipeline".into()));
+    team.insert("role_overrides".into(), toml::Value::Table(roles));
+
+    let mut outer = toml::map::Map::new();
+    outer.insert("worker-pool".into(), toml::Value::Table(team));
+    let val = toml::Value::Table(outer);
+
+    DynamicMapWidget::new(
+        "entries",
+        "teams",
+        crate::config::schema::dynamic::TEAMS_ENTRY_FIELDS,
+        Some(&val),
+    )
+}
+
+#[test]
+fn display_name_for_role_overrides_returns_role() {
+    use super::dynamic_map::display_name_for;
+    assert_eq!(
+        display_name_for("teams.worker-pool.role_overrides"),
+        "role",
+        "section paths ending in role_overrides must surface as 'role' in user-facing strings"
+    );
+}
+
+#[test]
+fn display_name_for_role_overrides_extra_suffix_does_not_match() {
+    // Edge case A — suffix match must be exact, not substring. A
+    // hypothetical future `role_overrides_v2` key must NOT inherit the
+    // "role" display name.
+    use super::dynamic_map::display_name_for;
+    let result = display_name_for("teams.worker-pool.role_overrides_extra");
+    assert_ne!(
+        result, "role",
+        "suffix match must require trailing component to be exactly role_overrides; got {result:?}"
+    );
+}
+
+#[test]
+fn nested_dynamic_map_field_is_built_as_dynamic_map_widget() {
+    // Sanity: the role_overrides field on a teams entry is a DynamicMap,
+    // not a TextInput placeholder.
+    let w = teams_dm_with_one_role_override();
+    let entry = w
+        .entries()
+        .iter()
+        .find(|e| e.id == "worker-pool")
+        .expect("worker-pool entry present");
+    let WidgetKind::DynamicMap(ref _inner) = entry.fields[4].widget else {
+        panic!(
+            "role_overrides field (index 4) must be DynamicMap, got label {:?}",
+            entry.fields[4].widget.label()
+        );
+    };
+}
+
+#[test]
+fn nested_dynamic_map_owns_a_chord_when_focused() {
+    // Pressing `a` while focused on the role_overrides field must NOT
+    // open the outer "Add team entry" modal. The inner DynamicMap takes
+    // the chord via focused_field_owns_chord and opens its own modal.
+    let mut w = teams_dm_with_one_role_override();
+    for _ in 0..5 {
+        w.handle_input(ev(KeyCode::Tab));
+    }
+    assert_eq!(*w.focus(), MapFocus::EntryField(4));
+
+    w.handle_input(ev(KeyCode::Char('a')));
+
+    assert!(
+        w.add_modal().is_none(),
+        "outer add_modal must remain None — inner DynamicMap owns `a`"
+    );
+    assert_eq!(
+        *w.focus(),
+        MapFocus::EntryField(4),
+        "outer focus must remain on role_overrides field, not jump to AddModal"
+    );
+
+    let entry = w
+        .entries()
+        .iter()
+        .find(|e| e.id == "worker-pool")
+        .expect("worker-pool");
+    let WidgetKind::DynamicMap(ref inner) = entry.fields[4].widget else {
+        panic!("role_overrides field must be DynamicMap");
+    };
+    assert!(
+        matches!(inner.focus(), MapFocus::AddModal),
+        "inner DynamicMap must have opened its AddModal in response to `a`"
+    );
+}
+
+#[test]
+fn nested_dynamic_map_d_does_not_open_outer_remove_modal() {
+    // Pressing `d` while focused on the role_overrides field must NOT
+    // open the outer remove-team-entry modal.
+    let mut w = teams_dm_with_one_role_override();
+    for _ in 0..5 {
+        w.handle_input(ev(KeyCode::Tab));
+    }
+    assert_eq!(*w.focus(), MapFocus::EntryField(4));
+
+    w.handle_input(ev(KeyCode::Char('d')));
+
+    assert!(
+        w.remove_modal().is_none(),
+        "outer remove_modal must remain None — inner DynamicMap owns `d`"
+    );
+    assert_eq!(
+        *w.focus(),
+        MapFocus::EntryField(4),
+        "outer focus must remain on role_overrides field, not jump to RemoveConfirm"
+    );
+}
+
+#[test]
+fn nested_dynamic_map_contributes_multi_line_desired_height() {
+    // Focusing the role_overrides field on an entry that has at least one
+    // role must grow desired_height to fit the nested editor (header +
+    // tabstrip + per-role-field rows).
+    let mut w = teams_dm_with_one_role_override();
+    let base = w.desired_height();
+    for _ in 0..5 {
+        w.handle_input(ev(KeyCode::Tab));
+    }
+    assert_eq!(*w.focus(), MapFocus::EntryField(4));
+    let focused = w.desired_height();
+    assert!(
+        focused > base + 3,
+        "focused nested DynamicMap must grow desired_height by more than 3 lines; base={base} focused={focused}"
+    );
+}
+
+#[test]
+fn add_modal_title_on_inner_role_overrides_dm_says_add_role() {
+    // Edge case D — the inner modal must read "Add role", not
+    // "Add teams.worker-pool.role_overrides entry".
+    let mut w = teams_dm_with_one_role_override();
+    for _ in 0..5 {
+        w.handle_input(ev(KeyCode::Tab));
+    }
+    w.handle_input(ev(KeyCode::Char('a')));
+
+    let entry = w
+        .entries()
+        .iter()
+        .find(|e| e.id == "worker-pool")
+        .expect("worker-pool");
+    let WidgetKind::DynamicMap(ref inner) = entry.fields[4].widget else {
+        panic!("role_overrides must be DynamicMap");
+    };
+    let modal = inner.add_modal().expect("inner add_modal must be open");
+    assert!(
+        modal.title.contains("Add role"),
+        "inner add modal title must contain 'Add role', got {:?}",
+        modal.title
+    );
+    assert!(
+        !modal.title.contains("role_overrides"),
+        "inner add modal must not expose raw key 'role_overrides' in title, got {:?}",
+        modal.title
+    );
 }
 
 #[test]
