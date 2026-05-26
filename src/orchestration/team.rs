@@ -27,7 +27,9 @@ pub struct TeamConfig {
     pub bindings: HashMap<String, toml::Value>,
 
     /// Rich-form bindings: per-role override sub-table.
-    #[serde(default)]
+    /// Empty maps are skipped so an unset team does not emit a bare
+    /// `[teams.<id>.role_overrides]` header on save (#872).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub role_overrides: HashMap<String, RoleOverride>,
 }
 

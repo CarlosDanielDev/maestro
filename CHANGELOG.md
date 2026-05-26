@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Token dashboard Quota column is live for MiniMax sessions: the dashboard command opens `~/.maestro/minimax-quota.json` best-effort and wires `Arc<MinimaxQuota>` through new `App.minimax_quota` + `App::with_minimax_quota` to `draw_token_dashboard_with_quota`, replacing the `NoQuotaSnapshots` placeholder from #850 (#769).
 - v0.29.5 observability umbrella closed: unified cost / token / quota tracking across all five agent providers (Claude, Codex, OpenCode, MiniMax, Ollama) — verifies the work landed across #770–#776 and the Level 1.5/2 hardening (#844, #845, #846, #848, #849, #850) (#769).
 - feat(tui/settings): wire Teams tab through schema renderer with bindings round-trip adapter (#803).
+- feat(tui/settings/teams): `role_overrides` schema slot — `ROLE_OVERRIDE_FIELDS` (5 fields: agent, mode, model_override, prompt_addendum, fallback_agent) added as 5th slot in `TEAMS_ENTRY_FIELDS`; empty maps no longer emit a bare `[teams.<id>.role_overrides]` header on save; existing on-disk `role_overrides` survive a save cycle via `EntryState.passthrough`; full editor deferred to a follow-up issue (#872).
 
 ### Added
 - Team Wizard Launch: `Ctrl+V` paste on IssuePicker step — new `tui::screens::team_wizard::clipboard` module + `parse_pasted_issue_token` parser; accepts bare numbers, `#NNN`, and GitHub issue URLs (#875).

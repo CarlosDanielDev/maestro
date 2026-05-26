@@ -600,7 +600,7 @@ Per-preset overrides keyed by team name. Built-in presets ship inside the binary
 | `primitive` | string enum | unset (inherited) | `pipeline`, `fan-out`, `single-pass`, `verdict-only`. Required at root. |
 | `min_agents` | array of string | unset (inherited) | Roles that must resolve to an enabled agent. |
 | (top-level keys) | string | — | Minimal-form role bindings (e.g. `implementer = "opencode"`). |
-| `role_overrides` | table | `{}` | Rich-form bindings: see `[teams.<id>.role_overrides.<role>]`. |
+| `role_overrides` | table | `{}` | Rich-form bindings: see `[teams.<id>.role_overrides.<role>]`. The schema slot is present in the TUI Settings → Teams tab as of v0.29.x (renders as a read-only placeholder); a full inline editor arrives in a forthcoming release. Existing `role_overrides` on disk survive a save cycle unchanged. |
 
 ### `[teams.<id>.role_overrides.<role>]`
 

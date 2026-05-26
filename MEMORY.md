@@ -40,6 +40,12 @@ Session summaries (added when I say "session end" / "wrapping up" / "let's stop 
 
 **Rejected:** (a) Wire `maestro sync-templates` into the render pipeline for provider entry files — too much Rust work for a docs concern, defer until rules change frequently enough to justify. (b) Duplicate content into each provider without a drift gate — silent rot is the failure mode that bit us before with snapshots.
 
+## 2026-05-25 — role_overrides TUI: schema-locked in v0.29.x, editor deferred
+
+**Decided:** Ship the `role_overrides` schema slot (PR-A, #872) as read-only in v0.29.x. The `ROLE_OVERRIDE_FIELDS` const and the 5th `TEAMS_ENTRY_FIELDS` entry are locked; `EntryState.passthrough` preserves existing on-disk data through a save cycle. A full inline editor is a separate follow-up issue (PR-B).
+**Why:** Schema slot + round-trip safety can ship independently. The editor widget is non-trivial and was deferred to keep PR-A small and reviewable.
+**Rejected:** Shipping both schema slot and editor in one PR — too large; risked blocking the round-trip fix on widget work.
+
 ## 2026-05-23 — v0.29.5 cross-milestone handoff bundle #806/#875/#876/#877
 
 v0.29.5 bundle (user authorized PR-isolation override for context budget): one PR, four Closes refs, architect+QA blueprint per scope; disabled-agent filter (#806), Ctrl+V paste (#875), autocomplete (#876), LaunchTeam dispatch fan-out (#877); R3 (real run_team) was descoped to follow-up and landed in #881.

@@ -14,6 +14,14 @@ use crate::tui::widgets::{Dropdown, ListEditor, NumberStepper, TextInput, Toggle
 pub struct EntryState {
     pub id: String,
     pub fields: Vec<SettingsField>,
+    /// Sub-table values for dynamic-kind entry fields (`Map` /
+    /// `FlattenedMap` / `VecOfStruct`). These render as `TextInput`
+    /// placeholders today (the nested editor is deferred to the #872
+    /// PR-B follow-up). We capture the raw value at build-time and
+    /// re-emit it in `to_toml_filtered` so `merge_flattened_map`'s
+    /// wholesale rewrite of `[teams.<id>]` does not drop the
+    /// untouched sub-table.
+    passthrough: std::collections::BTreeMap<&'static str, toml::Value>,
 }
 
 impl EntryState {
@@ -32,14 +40,28 @@ impl EntryState {
         let collapsed = collapse_team_bindings_into_array(section_path, existing);
         let existing = collapsed.as_ref().or(existing);
         let mut fields = Vec::with_capacity(entry_fields.len());
+        let mut passthrough = std::collections::BTreeMap::new();
         for fs in entry_fields {
             let label = label_for(section_path, &id, fs.key);
             let value = existing.and_then(|v| v.get(fs.key));
+            if matches!(
+                fs.kind,
+                FieldKind::Map { .. }
+                    | FieldKind::FlattenedMap { .. }
+                    | FieldKind::VecOfStruct { .. }
+            ) && let Some(v) = value
+            {
+                passthrough.insert(fs.key, v.clone());
+            }
             fields.push(SettingsField {
                 widget: build_widget(label, fs, value),
             });
         }
-        Self { id, fields }
+        Self {
+            id,
+            fields,
+            passthrough,
+        }
     }
 
     pub fn label_for(&self, section_path: &str, key: &str) -> String {
@@ -69,6 +91,20 @@ impl EntryState {
             let Some(sf) = self.fields.get(idx) else {
                 continue;
             };
+            if matches!(
+                fs.kind,
+                FieldKind::Map { .. }
+                    | FieldKind::FlattenedMap { .. }
+                    | FieldKind::VecOfStruct { .. }
+            ) {
+                // Read-only passthrough: re-emit the original sub-table so
+                // merge_flattened_map's wholesale rewrite of [teams.<id>]
+                // does not drop the untouched dynamic-kind value.
+                if let Some(v) = self.passthrough.get(fs.key) {
+                    table.insert(fs.key.to_string(), v.clone());
+                }
+                continue;
+            }
             table.insert(fs.key.to_string(), widget_value(&sf.widget));
         }
         toml::Value::Table(table)

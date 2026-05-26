@@ -16,5 +16,6 @@ mod roundtrip;
 mod roundtrip_overlay;
 mod roundtrip_overlay_dynamic;
 mod roundtrip_overlay_single_key;
+mod roundtrip_role_overrides;
 mod sessions_layout;
 mod turbo_adapt_paths;
