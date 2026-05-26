@@ -21,6 +21,33 @@ pub(super) fn draw(
     theme: &Theme,
     _focused: bool,
 ) {
+    // Collapsed-row path: when the outer layout allocates a single line
+    // (nested DynamicMap inside an unfocused entry field — e.g. the
+    // teams tab's role_overrides slot), render a one-line summary so
+    // the field's label is visible to the user. The expanded path
+    // requires at least 2 rows (header + body).
+    if area.height <= 1 {
+        let count = widget.entries().len();
+        let summary = if count == 0 {
+            "(empty — focus to edit)".to_string()
+        } else if count == 1 {
+            "(1 entry — focus to edit)".to_string()
+        } else {
+            format!("({count} entries — focus to edit)")
+        };
+        let collapsed = Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!("{}: ", widget.label),
+                Style::default()
+                    .fg(theme.text_secondary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(summary, Style::default().fg(theme.text_muted)),
+        ]));
+        f.render_widget(collapsed, area);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Min(1)])
