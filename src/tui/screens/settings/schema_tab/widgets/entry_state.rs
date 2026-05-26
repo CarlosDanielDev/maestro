@@ -169,9 +169,25 @@ fn build_widget(label: String, fs: &FieldSchema, value: Option<&toml::Value>) ->
         | FieldKind::Map { .. }
         | FieldKind::FlattenedMap { .. }
         | FieldKind::VecOfStruct { .. } => {
-            // Nested dynamic shapes inside entries are out of scope for #791.
-            WidgetKind::TextInput(TextInput::new(label, ""))
+            // Nested dynamic shapes inside entries are out of scope for #791;
+            // editor lifts in #901. Render as read-only TextInput so the user
+            // cannot accidentally type into the slot and lose the typed value
+            // when the passthrough drops it on save.
+            let summary = dynamic_kind_summary(value);
+            WidgetKind::TextInput(TextInput::new(label, summary).with_read_only())
         }
+    }
+}
+
+fn dynamic_kind_summary(value: Option<&toml::Value>) -> String {
+    let count = value
+        .and_then(|v| v.as_table())
+        .map(|t| t.len())
+        .unwrap_or(0);
+    if count == 0 {
+        "(empty — read-only, editor in #901)".to_string()
+    } else {
+        format!("({count} entries — read-only, editor in #901)")
     }
 }
 
@@ -226,6 +242,45 @@ mod tests {
         } else {
             panic!("expected dropdown for kind");
         }
+    }
+
+    #[test]
+    fn dynamic_kind_fallback_is_read_only_textinput() {
+        use crate::config::schema::{DefaultValue, FieldKind, FieldSchema};
+        const ROLE_FIELDS: &[FieldSchema] = &[FieldSchema {
+            key: "agent",
+            label: "Agent",
+            help: "Agent override",
+            default: DefaultValue::Str(""),
+            kind: FieldKind::String,
+            validator: None,
+            presentation: None,
+        }];
+        const ENTRY_FIELDS: &[FieldSchema] = &[FieldSchema {
+            key: "role_overrides",
+            label: "Role Overrides",
+            help: "Per-role overrides",
+            default: DefaultValue::Empty,
+            kind: FieldKind::Map {
+                entry_fields: ROLE_FIELDS,
+            },
+            validator: None,
+            presentation: None,
+        }];
+
+        let e = EntryState::build("teams", "docs", ENTRY_FIELDS, None);
+        let WidgetKind::TextInput(ti) = &e.fields[0].widget else {
+            panic!("Map fallback must produce a TextInput");
+        };
+        assert!(
+            ti.read_only,
+            "Map-kind fallback TextInput must be read-only"
+        );
+        assert!(
+            ti.value.contains("read-only"),
+            "Map-kind fallback value must mention read-only, got {:?}",
+            ti.value
+        );
     }
 
     #[test]

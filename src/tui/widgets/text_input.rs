@@ -17,6 +17,11 @@ pub struct TextInput {
     pub value: String,
     pub cursor_position: usize,
     pub editing: bool,
+    /// Read-only display mode. Refuses to enter insert mode and ignores
+    /// typed input. Used as a placeholder for dynamic-kind entry fields
+    /// (`Map`/`FlattenedMap`/`VecOfStruct`) whose nested editor has not
+    /// shipped yet (#872 PR-A / #901 PR-B split).
+    pub read_only: bool,
 }
 
 impl TextInput {
@@ -28,10 +33,19 @@ impl TextInput {
             value,
             cursor_position,
             editing: false,
+            read_only: false,
         }
     }
 
+    pub fn with_read_only(mut self) -> Self {
+        self.read_only = true;
+        self
+    }
+
     pub fn handle_input(&mut self, key: KeyEvent) -> WidgetAction {
+        if self.read_only {
+            return WidgetAction::None;
+        }
         if !self.editing {
             return match key.code {
                 KeyCode::Enter => {
@@ -293,5 +307,32 @@ mod tests {
         assert_eq!(w.handle_input(key(KeyCode::Backspace)), WidgetAction::None);
         assert_eq!(w.handle_input(key(KeyCode::Delete)), WidgetAction::None);
         assert_eq!(w.handle_input(key(KeyCode::Left)), WidgetAction::None);
+    }
+
+    #[test]
+    fn read_only_textinput_refuses_enter_into_insert_mode() {
+        let mut w = TextInput::new("teams.docs.role_overrides", "(read-only)").with_read_only();
+        assert!(w.read_only, "with_read_only must flip the flag");
+        let action = w.handle_input(key(KeyCode::Enter));
+        assert_eq!(
+            action,
+            WidgetAction::None,
+            "read-only TextInput must NOT request insert mode on Enter"
+        );
+        assert!(
+            !w.editing,
+            "read-only TextInput must stay out of editing mode"
+        );
+    }
+
+    #[test]
+    fn read_only_textinput_ignores_typed_chars() {
+        let mut w = TextInput::new("teams.docs.role_overrides", "(read-only)").with_read_only();
+        let _ = w.handle_input(key(KeyCode::Enter));
+        let _ = w.handle_input(key(KeyCode::Char('x')));
+        assert_eq!(
+            w.value, "(read-only)",
+            "read-only TextInput value must not mutate on typing"
+        );
     }
 }
