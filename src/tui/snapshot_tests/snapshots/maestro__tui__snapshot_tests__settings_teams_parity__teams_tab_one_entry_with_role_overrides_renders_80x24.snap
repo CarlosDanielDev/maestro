@@ -1,6 +1,6 @@
 ---
 source: src/tui/snapshot_tests/settings_teams_parity.rs
-assertion_line: 165
+assertion_line: 194
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {

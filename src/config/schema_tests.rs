@@ -752,11 +752,90 @@ fn teams_table_registered_with_flattened_map() {
     };
     assert_eq!(
         entry_fields.len(),
-        4,
-        "TEAMS_ENTRY_FIELDS must be 4: extends/primitive/min_agents/bindings"
+        5,
+        "TEAMS_ENTRY_FIELDS must be 5: extends/primitive/min_agents/bindings/role_overrides"
     );
     let keys: Vec<&str> = entry_fields.iter().map(|f| f.key).collect();
-    assert_eq!(keys, &["extends", "primitive", "min_agents", "bindings"]);
+    assert_eq!(
+        keys,
+        &[
+            "extends",
+            "primitive",
+            "min_agents",
+            "bindings",
+            "role_overrides",
+        ]
+    );
+}
+
+#[test]
+fn teams_entry_role_overrides_is_map_with_five_subfields() {
+    let teams_table = schema_for_config()
+        .iter()
+        .find(|t| t.name == "teams")
+        .expect("teams table must be registered");
+    let FieldKind::FlattenedMap { entry_fields } = teams_table
+        .fields
+        .iter()
+        .find(|f| matches!(f.kind, FieldKind::FlattenedMap { .. }))
+        .expect("teams must expose a FlattenedMap field")
+        .kind
+    else {
+        panic!("teams FlattenedMap variant required");
+    };
+    let role_overrides = entry_fields
+        .iter()
+        .find(|f| f.key == "role_overrides")
+        .expect("role_overrides field must be present in TEAMS_ENTRY_FIELDS");
+    let FieldKind::Map {
+        entry_fields: inner,
+    } = role_overrides.kind
+    else {
+        panic!(
+            "role_overrides must be FieldKind::Map, got {:?}",
+            role_overrides.kind
+        );
+    };
+    assert_eq!(
+        inner.len(),
+        5,
+        "role_overrides must expose 5 sub-fields per RoleOverride struct"
+    );
+    let inner_keys: Vec<&str> = inner.iter().map(|f| f.key).collect();
+    assert_eq!(
+        inner_keys,
+        &[
+            "agent",
+            "mode",
+            "model_override",
+            "prompt_addendum",
+            "fallback_agent",
+        ],
+        "role_overrides sub-fields must mirror RoleOverride field order"
+    );
+}
+
+#[test]
+fn role_override_fields_help_text_style() {
+    use crate::config::schema::dynamic::ROLE_OVERRIDE_FIELDS;
+    for field in ROLE_OVERRIDE_FIELDS {
+        let h = field.help;
+        let path = format!("teams.<id>.role_overrides.<role>.{}", field.key);
+        assert!(!h.is_empty(), "{path}: help must not be empty");
+        assert!(
+            h.len() <= 120,
+            "{path}: help length {} exceeds 120 chars",
+            h.len()
+        );
+        assert!(
+            !matches!(h.as_bytes().last(), Some(b'.' | b'!' | b'?')),
+            "{path}: help must not end with sentence punctuation"
+        );
+        assert!(
+            !has_internal_sentence_boundary(h),
+            "{path}: help contains internal sentence boundary"
+        );
+    }
 }
 
 #[test]

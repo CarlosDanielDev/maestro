@@ -4,16 +4,16 @@
 //!
 //! v0.29.0 scope ships scalar/list fields for `[agents.<id>]`, `[modes.<id>]`,
 //! and `[[sessions.completion_gates.commands]]`. Nested `Map` fields (`env`,
-//! `config_overrides`, `cli_flags`, `role_overrides`) are deferred to v0.30.0
-//! per §7. `[teams.<id>]` ships in #803 because the `bindings: #[serde(flatten)]`
-//! round-trip needs its own sync-time adapter.
+//! `config_overrides`, `cli_flags`) are deferred to v0.30.0 per §7.
+//! `[teams.<id>]` ships in #803 (minimal-form bindings) plus #872 (rich-form
+//! `role_overrides` schema slot — see `ROLE_OVERRIDE_FIELDS` below).
 //!
 //! `AgentKind` and the permission-mode enum live on the strongly-typed
 //! `AgentConfig` (see `src/config/agents.rs`); the constant slices below
 //! mirror those variants so the TUI dropdowns stay in sync. A drift test in
 //! `schema_tests.rs` locks these against the Rust enum.
 
-use super::{DefaultValue, FieldKind, FieldSchema};
+use super::{DefaultValue, FieldKind, FieldSchema, Presentation};
 
 /// Allowed `agents.<id>.kind` values. Mirrors `AgentKind` variants.
 pub(crate) const AGENT_KINDS: &[&str] =
@@ -218,13 +218,16 @@ pub(crate) const MODES_ENTRY_FIELDS: &[FieldSchema] = &[
 /// A drift test in `schema_tests.rs` locks these against the Rust enum.
 pub(crate) const TEAM_PRIMITIVES: &[&str] = &["pipeline", "fan-out", "single-pass", "verdict-only"];
 
-/// Entry fields for `[teams.<id>]`. 4 fields per spec §6.3 + #803.
-/// `role_overrides` is deferred — surfaced in a v0.30.0 follow-up so the
-/// rich-form bindings sub-table can be edited from the TUI.
+/// Entry fields for `[teams.<id>]`. 5 fields per spec §6.3 + #803 + #872.
 /// `bindings` is a `StringList` of `"role=agent"` pairs; the sync-time
 /// adapter in `schema_tab/teams_bindings.rs` explodes each pair into a
 /// top-level scalar key on `[teams.<id>]` so `TeamConfig.bindings`
-/// (`#[serde(flatten)]`) round-trips losslessly.
+/// (`#[serde(flatten)]`) round-trips losslessly. `role_overrides` is a
+/// `FieldKind::Map { entry_fields: ROLE_OVERRIDE_FIELDS }` slot — the
+/// schema locks it; PR-A renders it via the existing TextInput fallback
+/// in `entry_state::build_widget` while round-trip is carried by the
+/// parallel `Config → toml::Value` projection in `schema_tab/sync.rs`.
+/// PR-B (follow-up) will lift that fallback to a true nested editor.
 pub(crate) const TEAMS_ENTRY_FIELDS: &[FieldSchema] = &[
     FieldSchema {
         key: "extends",
@@ -259,6 +262,70 @@ pub(crate) const TEAMS_ENTRY_FIELDS: &[FieldSchema] = &[
         help: "Role → agent mappings as `role=agent` pairs (e.g. `coder=claude`)",
         default: DefaultValue::StrList(&[]),
         kind: FieldKind::StringList,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "role_overrides",
+        label: "Role Overrides",
+        help: "Per-role rich-form overrides — agent, mode, model, prompt, fallback",
+        default: DefaultValue::Empty,
+        kind: FieldKind::Map {
+            entry_fields: ROLE_OVERRIDE_FIELDS,
+        },
+        validator: None,
+        presentation: Some(Presentation::Subtabs),
+    },
+];
+
+/// Entry fields for `[teams.<id>.role_overrides.<role>]`. 5 optional
+/// fields mirroring `RoleOverride` in `src/orchestration/team.rs`. All
+/// five render as `String` widgets with the empty-string sentinel — an
+/// unset override survives the round-trip via the typed
+/// `Option<String>` re-serialization in `Config → toml::Value`.
+pub(crate) const ROLE_OVERRIDE_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        key: "agent",
+        label: "Agent",
+        help: "Agent override for this role — empty means inherit from bindings",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "mode",
+        label: "Mode",
+        help: "Session-mode override for this role — empty means inherit",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "model_override",
+        label: "Model Override",
+        help: "Per-role model identifier — empty means use the agent default",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "prompt_addendum",
+        label: "Prompt Addendum",
+        help: "Extra system-prompt text appended for this role",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "fallback_agent",
+        label: "Fallback Agent",
+        help: "Agent to retry with when the primary fails — empty disables fallback",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
         validator: None,
         presentation: None,
     },

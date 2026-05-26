@@ -74,10 +74,7 @@ mod tests {
     use super::*;
 
     fn make_entry(id: &str) -> EntryState {
-        EntryState {
-            id: id.to_string(),
-            fields: Vec::new(),
-        }
+        EntryState::build("agents", id, &[], None)
     }
 
     #[test]
