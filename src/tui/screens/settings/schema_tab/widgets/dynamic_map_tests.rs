@@ -677,6 +677,135 @@ fn nested_dynamic_map_contributes_multi_line_desired_height() {
 }
 
 #[test]
+fn up_from_inner_subtabstrip_exits_outward_to_bindings() {
+    // Regression: from the manual QA on PR #907 — user pressed Up while
+    // focus was on the inner role_overrides SubtabStrip and could not
+    // climb back to the bindings field above. Expected: a single Up
+    // press exits the inner widget and lands on outer EntryField(3).
+    let mut w = teams_dm_with_one_role_override();
+    for _ in 0..5 {
+        w.handle_input(ev(KeyCode::Tab));
+    }
+    assert_eq!(
+        *w.focus(),
+        MapFocus::EntryField(4),
+        "land on role_overrides"
+    );
+
+    // Walk Down once: cooperative delegation enters the inner editor's
+    // EntryField(0) (agent).
+    w.handle_input(ev(KeyCode::Down));
+    let entry = w
+        .entries()
+        .iter()
+        .find(|e| e.id == "worker-pool")
+        .expect("worker-pool");
+    let WidgetKind::DynamicMap(ref inner) = entry.fields[4].widget else {
+        panic!("role_overrides must be DynamicMap");
+    };
+    assert!(
+        matches!(inner.focus(), MapFocus::EntryField(0)),
+        "first Down enters inner EntryField(0); got {:?}",
+        inner.focus()
+    );
+
+    // Up once: walk back inner EntryField(0) -> inner SubtabStrip.
+    w.handle_input(ev(KeyCode::Up));
+    let entry = w
+        .entries()
+        .iter()
+        .find(|e| e.id == "worker-pool")
+        .expect("worker-pool");
+    let WidgetKind::DynamicMap(ref inner) = entry.fields[4].widget else {
+        panic!();
+    };
+    assert!(
+        matches!(inner.focus(), MapFocus::SubtabStrip),
+        "Up from inner EntryField(0) returns inner to SubtabStrip; got {:?}",
+        inner.focus()
+    );
+
+    // Up again: inner.try_focus_prev returns false at SubtabStrip; outer
+    // focus walks from EntryField(4) -> EntryField(3) (bindings).
+    w.handle_input(ev(KeyCode::Up));
+    assert_eq!(
+        *w.focus(),
+        MapFocus::EntryField(3),
+        "second Up at inner boundary must escape outward to bindings; got {:?}",
+        w.focus()
+    );
+}
+
+#[test]
+fn try_focus_prev_cooperatively_walks_inner_dm_first() {
+    // Regression: PR #907 manual QA — SettingsScreen.input.rs Up handler
+    // calls outer.try_focus_prev() directly (bypasses outer.handle_input),
+    // so the cooperative delegation added in handle_input never fires at
+    // the SettingsScreen level. Result: focus appears stuck on the inner
+    // role tab because outer focus jumps past the nested editor in one
+    // press. Fix: outer.try_focus_prev itself must delegate to inner first.
+    let mut w = teams_dm_with_one_role_override();
+    for _ in 0..5 {
+        w.handle_input(ev(KeyCode::Tab));
+    }
+    assert_eq!(*w.focus(), MapFocus::EntryField(4));
+
+    // Drive Down via the SettingsScreen entry point (try_focus_next).
+    let advanced = w.try_focus_next();
+    assert!(advanced, "first Down via try_focus_next must enter inner");
+    let entry = w
+        .entries()
+        .iter()
+        .find(|e| e.id == "worker-pool")
+        .expect("worker-pool");
+    let WidgetKind::DynamicMap(ref inner) = entry.fields[4].widget else {
+        panic!();
+    };
+    assert!(
+        matches!(inner.focus(), MapFocus::EntryField(0)),
+        "inner focus must move to EntryField(0); got {:?}",
+        inner.focus()
+    );
+
+    // Up via try_focus_prev: should walk inner back from EntryField(0)
+    // to SubtabStrip.
+    let consumed = w.try_focus_prev();
+    assert!(consumed, "Up at inner EntryField(0) consumed by inner");
+    let entry = w
+        .entries()
+        .iter()
+        .find(|e| e.id == "worker-pool")
+        .expect("worker-pool");
+    let WidgetKind::DynamicMap(ref inner) = entry.fields[4].widget else {
+        panic!();
+    };
+    assert!(
+        matches!(inner.focus(), MapFocus::SubtabStrip),
+        "inner focus returned to SubtabStrip; got {:?}",
+        inner.focus()
+    );
+    assert_eq!(
+        *w.focus(),
+        MapFocus::EntryField(4),
+        "outer stays on role_overrides while inner still walking"
+    );
+
+    // Another Up: inner at SubtabStrip returns false; outer falls through
+    // and walks EntryField(4) -> EntryField(3) (bindings).
+    let consumed = w.try_focus_prev();
+    assert!(
+        consumed,
+        "Up at inner boundary still consumed (outer moved)"
+    );
+    assert_eq!(
+        *w.focus(),
+        MapFocus::EntryField(3),
+        "second Up at inner boundary escapes outward to bindings; got {:?}",
+        w.focus()
+    );
+}
+
+#[test]
 fn add_modal_title_on_inner_role_overrides_dm_says_add_role() {
     // Edge case D — the inner modal must read "Add role", not
     // "Add teams.worker-pool.role_overrides entry".

@@ -302,7 +302,16 @@ impl DynamicMapWidget {
     /// outer can leave `field_index` alone — only a return of `false`
     /// signals the boundary (`SubtabStrip`) and lets the outer cursor
     /// climb up to the previous field.
+    ///
+    /// Cooperatively delegates to a focused inner DynamicMap/DynamicRows
+    /// first so Up walks INTO and OUT OF nested editors (the
+    /// `role_overrides` widget inside a team entry being the v0.29.x
+    /// motivator). Only when the inner widget reports it is at its own
+    /// top boundary do we advance this outer widget's focus.
     pub fn try_focus_prev(&mut self) -> bool {
+        if self.try_advance_focused_inner(false) {
+            return true;
+        }
         if !matches!(self.focus, MapFocus::EntryField(_)) {
             return false;
         }
@@ -313,7 +322,11 @@ impl DynamicMapWidget {
 
     /// Mirror of [`try_focus_prev`] for the Down arrow. Returns true when
     /// focus advanced into (or further inside) the entry-field group.
+    /// Cooperative delegation works the same way as in [`try_focus_prev`].
     pub fn try_focus_next(&mut self) -> bool {
+        if self.try_advance_focused_inner(true) {
+            return true;
+        }
         match self.focus {
             MapFocus::SubtabStrip if self.active_entry().is_some() => {
                 let before = self.focus.clone();
