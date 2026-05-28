@@ -126,15 +126,25 @@ pub(super) fn draw(
             widget.active_index().unwrap_or(0),
             chunks[0].width,
         );
-        // Active entry gets a filled selection background ONLY when the
-        // SubtabStrip is the current focus level (so `[` / `]` chord
-        // targets this level). When focus has descended into an
-        // EntryField, the chip dims to a muted underline so two nested
-        // tab strips do not both shout for attention (#908 contrast).
-        let subtabstrip_focused = matches!(widget.focus(), MapFocus::SubtabStrip);
+        // Active entry gets a filled selection background ONLY when:
+        // (a) the outer caller treats this widget as the chord target
+        //     (`focused=true`) — so an unfocused widget on a tab where
+        //     focus is on a sibling field does not shout for attention,
+        //     AND
+        // (b) the SubtabStrip itself is the current focus level — so
+        //     `[` / `]` will switch tabs.
+        // Otherwise the chip dims to a muted underline. Covers two
+        // confusion cases reported on #908:
+        //   1. Outer-tab strip stayed bright while focus had descended
+        //      into a deeper field.
+        //   2. DynamicMap chip stayed bright on a tab where focus was
+        //      on a sibling widget (Providers tab "Default provider"
+        //      dropdown made the `entries:` strip look like the chord
+        //      target).
+        let chord_target = focused && matches!(widget.focus(), MapFocus::SubtabStrip);
         let tabs = Tabs::new(titles)
             .select(highlight_idx)
-            .highlight_style(tab_highlight_style(theme, subtabstrip_focused));
+            .highlight_style(tab_highlight_style(theme, chord_target));
         f.render_widget(tabs, chunks[0]);
 
         if let Some(entry) = widget.active_entry() {
