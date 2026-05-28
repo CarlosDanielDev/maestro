@@ -46,6 +46,12 @@ Session summaries (added when I say "session end" / "wrapping up" / "let's stop 
 **Why:** Schema slot + round-trip safety can ship independently. The editor widget is non-trivial and was deferred to keep PR-A small and reviewable.
 **Rejected:** Shipping both schema slot and editor in one PR — too large; risked blocking the round-trip fix on widget work.
 
+## 2026-05-26 — role_overrides editor shipped in #901; EntryState.passthrough retained
+
+**Decided:** Keep `EntryState.passthrough` as a defense-in-depth fallback for `FlattenedMap` and `VecOfStruct` entry-field kinds. No live schema exercises these paths today, but the path exists for any future lift.
+**Why:** Dropping passthrough would couple lift-order to schema evolution; retaining it costs ~20 LOC and zero runtime overhead.
+**Rejected:** Removing passthrough to slim the widget — would require a follow-up re-add whenever a new nested-map field kind is added to any schema.
+
 ## 2026-05-23 — v0.29.5 cross-milestone handoff bundle #806/#875/#876/#877
 
 v0.29.5 bundle (user authorized PR-isolation override for context budget): one PR, four Closes refs, architect+QA blueprint per scope; disabled-agent filter (#806), Ctrl+V paste (#875), autocomplete (#876), LaunchTeam dispatch fan-out (#877); R3 (real run_team) was descoped to follow-up and landed in #881.

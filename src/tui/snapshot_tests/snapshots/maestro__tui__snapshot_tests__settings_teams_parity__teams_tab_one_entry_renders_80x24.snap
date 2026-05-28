@@ -1,12 +1,11 @@
 ---
 source: src/tui/snapshot_tests/settings_teams_parity.rs
-assertion_line: 165
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 24 },
     content: [
-        "teams.worker-pool.min_agents:                                                   ",
+        "entries: (1 entry — focus to edit)                                              ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -32,7 +31,8 @@ Buffer {
         "                                                                                ",
     ],
     styles: [
-        x: 0, y: 0, fg: White, bg: Reset, underline: Reset, modifier: NONE,
-        x: 29, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 0, fg: DarkGray, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 9, y: 0, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 34, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

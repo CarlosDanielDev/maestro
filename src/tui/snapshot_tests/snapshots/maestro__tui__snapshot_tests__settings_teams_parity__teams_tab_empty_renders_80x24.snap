@@ -5,7 +5,7 @@ expression: "format!(\"{buf:?}\")"
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 24 },
     content: [
-        "No entries yet.                                                                 ",
+        "entries: (empty — focus to edit)                                                ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -32,6 +32,7 @@ Buffer {
     ],
     styles: [
         x: 0, y: 0, fg: DarkGray, bg: Reset, underline: Reset, modifier: BOLD,
-        x: 15, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 9, y: 0, fg: DarkGray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 32, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

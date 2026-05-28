@@ -187,3 +187,12 @@ src/tui/snapshot_tests/team_wizard.rs # deadline: 2026-08-22, owner: @carlos, ti
 src/tui/screens/settings/schema_tab/widgets/dynamic_map.rs # deadline: 2026-08-22, owner: @carlos, ticket: #814, plan: split kind-aware visibility helpers into widgets/dynamic_map/visibility.rs; keep state machine + handle_input in dynamic_map.rs
 src/tui/screens/settings/schema_tab/widgets/dynamic_map_tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #814, plan: split into tests/{state.rs, focus.rs, visibility.rs, modals.rs} grouped by behavior axis
 src/tui/screens/settings/draw.rs # deadline: 2026-08-22, owner: @carlos, ticket: #814, plan: split sidebar render + horizontal layout (draw_sidebar, draw_screen) into draw/{sidebar.rs, layout.rs} once a fourth top-level draw helper lands
+
+# --- v0.29.5 nested role_overrides editor (#901) ---
+# teams_tab.rs (431 LOC) gained the #901 regression test for nested
+# DynamicMap chord routing on top of the existing #803 / #810 chord
+# coverage. The behavioral coverage is intentional — splitting would
+# scatter related chord-routing assertions across files. Plan: split by
+# behavior axis (CRUD, chord routing, validation banner) once a fifth
+# behavior axis lands.
+src/tui/screens/settings/tests/teams_tab.rs # deadline: 2026-08-22, owner: @carlos, ticket: #901, plan: split into tests/teams_tab/{crud.rs, chord_routing.rs, validation.rs} once a fifth behavior axis lands
