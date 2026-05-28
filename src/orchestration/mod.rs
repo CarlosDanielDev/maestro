@@ -16,6 +16,7 @@ pub mod primitives;
 pub mod run;
 pub mod scheduler;
 pub mod team;
+pub mod team_role_overrides;
 pub mod types;
 pub mod validation;
 

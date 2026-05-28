@@ -12,6 +12,7 @@ use ratatui::{
 use crate::tui::theme::Theme;
 
 use super::dynamic_map::{DynamicMapWidget, MapFocus};
+use super::dynamic_map_breadcrumb::nested_breadcrumb;
 use super::entry_state::EntryState;
 
 pub(super) fn draw(
@@ -19,7 +20,7 @@ pub(super) fn draw(
     f: &mut Frame,
     area: Rect,
     theme: &Theme,
-    _focused: bool,
+    focused: bool,
 ) {
     // Collapsed-row path: when the outer layout allocates a single line
     // (nested DynamicMap inside an unfocused entry field — e.g. the
@@ -55,13 +56,30 @@ pub(super) fn draw(
     let header_area = chunks[0];
     let inner = chunks[1];
 
-    let header = Paragraph::new(Line::from(Span::styled(
-        format!("{}:", widget.label),
-        Style::default()
-            .fg(theme.text_secondary)
-            .add_modifier(Modifier::BOLD),
-    )));
-    f.render_widget(header, header_area);
+    // #908 — when this widget is rendering as a nested editor (its
+    // section_path carries the parent's dotted path, e.g.
+    // `teams.<id>.role_overrides`) AND the outer field focus is on it,
+    // replace the header label with a breadcrumb so users keep their
+    // sense of place. Otherwise show the normal `<label>:` header.
+    let active_role = widget.active_entry().map(|e| e.id.as_str());
+    let header_line = if focused
+        && let Some(crumbs) = nested_breadcrumb(&widget.section_path, active_role, area.width)
+    {
+        Line::from(Span::styled(
+            crumbs,
+            Style::default()
+                .fg(theme.text_secondary)
+                .add_modifier(Modifier::BOLD),
+        ))
+    } else {
+        Line::from(Span::styled(
+            format!("{}:", widget.label),
+            Style::default()
+                .fg(theme.text_secondary)
+                .add_modifier(Modifier::BOLD),
+        ))
+    };
+    f.render_widget(Paragraph::new(header_line), header_area);
 
     if widget.entries().is_empty() {
         let hint = Paragraph::new(vec![

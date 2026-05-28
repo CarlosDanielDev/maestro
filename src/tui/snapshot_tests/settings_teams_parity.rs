@@ -206,3 +206,136 @@ fn teams_tab_one_entry_with_role_overrides_renders_80x24() {
     let buf = render_tab(&screen.fields_per_tab[TEAMS_TAB_INDEX], 80, 24);
     assert_snapshot!(format!("{buf:?}"));
 }
+
+#[test]
+fn nested_role_overrides_widget_renders_breadcrumb_when_focused() {
+    // #908 — when the inner role_overrides DynamicMap is focused (the
+    // outer DynamicMap has the role_overrides slot focused), its
+    // header row carries the breadcrumb `teams.<id> → role_overrides →
+    // <role>` instead of the plain label.
+    let screen = SettingsScreen::new(
+        test_config_team_with_role_overrides(),
+        FeatureFlags::default(),
+    );
+    let fields = &screen.fields_per_tab[TEAMS_TAB_INDEX];
+    let WidgetKind::DynamicMap(ref outer) = fields[0].widget else {
+        panic!("teams tab must render as DynamicMap");
+    };
+    let role_overrides_field = outer
+        .entries()
+        .first()
+        .and_then(|e| {
+            e.fields
+                .iter()
+                .find(|f| f.widget.label().ends_with(".role_overrides"))
+        })
+        .expect("entry must expose a role_overrides field");
+    let WidgetKind::DynamicMap(ref inner) = role_overrides_field.widget else {
+        panic!("role_overrides must be a nested DynamicMap");
+    };
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).expect("backend");
+    let theme = Theme::dark();
+    terminal
+        .draw(|f| {
+            inner.draw(f, f.area(), &theme, true);
+        })
+        .expect("draw");
+    let rendered = format!("{:?}", terminal.backend().buffer());
+    assert!(
+        rendered.contains("teams.worker-pool"),
+        "breadcrumb outer crumb missing in {rendered}"
+    );
+    assert!(
+        rendered.contains("role_overrides"),
+        "breadcrumb inner-field crumb missing in {rendered}"
+    );
+    assert!(
+        rendered.contains("→"),
+        "breadcrumb separator missing in {rendered}"
+    );
+}
+
+#[test]
+fn nested_role_overrides_widget_renders_plain_label_when_unfocused() {
+    // #908 — when the inner role_overrides DynamicMap is NOT focused,
+    // the header shows the plain `<label>:` so users on the outer
+    // SubtabStrip see no premature breadcrumb chrome.
+    let screen = SettingsScreen::new(
+        test_config_team_with_role_overrides(),
+        FeatureFlags::default(),
+    );
+    let fields = &screen.fields_per_tab[TEAMS_TAB_INDEX];
+    let WidgetKind::DynamicMap(ref outer) = fields[0].widget else {
+        panic!("teams tab must render as DynamicMap");
+    };
+    let role_overrides_field = outer
+        .entries()
+        .first()
+        .and_then(|e| {
+            e.fields
+                .iter()
+                .find(|f| f.widget.label().ends_with(".role_overrides"))
+        })
+        .expect("entry must expose a role_overrides field");
+    let WidgetKind::DynamicMap(ref inner) = role_overrides_field.widget else {
+        panic!("role_overrides must be a nested DynamicMap");
+    };
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).expect("backend");
+    let theme = Theme::dark();
+    terminal
+        .draw(|f| {
+            inner.draw(f, f.area(), &theme, false);
+        })
+        .expect("draw");
+    let rendered = format!("{:?}", terminal.backend().buffer());
+    assert!(
+        !rendered.contains("→"),
+        "unfocused inner widget must NOT render a breadcrumb, got {rendered}"
+    );
+    assert!(
+        rendered.contains("teams.worker-pool.role_overrides:"),
+        "unfocused inner widget must render the plain label, got {rendered}"
+    );
+}
+
+#[test]
+fn save_banner_lists_structured_path_for_unknown_role_override_agent() {
+    // #908 — saving with a role_overrides.<role>.agent that doesn't
+    // resolve in [agents.<id>] records a soft warning. The Save banner
+    // title lists the structured path on the next render.
+    let mut config = test_config_team_with_role_overrides();
+    config
+        .teams
+        .get_mut("worker-pool")
+        .unwrap()
+        .role_overrides
+        .get_mut("reviewer")
+        .unwrap()
+        .agent = Some("nonexistent-agent".to_string());
+    let mut screen = SettingsScreen::new(config, FeatureFlags::default());
+    // Inject known id sets so only the deliberately-broken `agent`
+    // override flags (the fixture's mode/fallback_agent values resolve).
+    let mut known_agents = std::collections::BTreeSet::new();
+    known_agents.insert("opencode".to_string());
+    known_agents.insert("claude".to_string());
+    let mut known_modes = std::collections::BTreeSet::new();
+    known_modes.insert("review-strict".to_string());
+    let warnings = crate::orchestration::team_role_overrides::validate_role_overrides(
+        &screen.config.teams,
+        &known_agents,
+        &known_modes,
+    );
+    assert_eq!(warnings.len(), 1, "must flag exactly the unknown agent");
+    assert_eq!(
+        warnings[0].structured_path(),
+        "teams.worker-pool.role_overrides.reviewer.agent",
+    );
+    // Confirm the banner-summary helper formats the path correctly.
+    screen.set_role_override_warnings_for_test(warnings);
+    let summary = screen
+        .role_override_warnings_summary()
+        .expect("warnings must produce a summary");
+    assert_eq!(summary, "teams.worker-pool.role_overrides.reviewer.agent");
+}

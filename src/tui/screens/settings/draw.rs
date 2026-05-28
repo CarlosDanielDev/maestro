@@ -347,6 +347,7 @@ impl SettingsScreen {
         let caveman_msg = active_flash_message(&self.caveman_status_flash);
         let error_title;
         let caveman_title;
+        let saved_with_warnings_title;
         let (title, title_color) = if let Some(msg) = error_msg {
             error_title = format!(" Settings [Save failed: {}] ", msg);
             (error_title.as_str(), theme.accent_error)
@@ -358,7 +359,20 @@ impl SettingsScreen {
         } else if self.is_dirty() {
             (" Settings [Modified] ", theme.accent_success)
         } else if self.save_flash.is_some_and(|t| t.elapsed().as_secs() < 2) {
-            (" Settings [Saved] ", theme.accent_success)
+            // #908 — when soft role-override warnings were collected on
+            // the most recent Save, surface them in the title so the
+            // user knows the file was written despite unresolved refs.
+            // Sanitize + clamp the user-controlled portion (team_id /
+            // role_id come from on-disk TOML) to match the
+            // `active_flash_message` contract on the same widget.
+            if let Some(summary) = self.role_override_warnings_summary() {
+                let safe = crate::tui::screens::sanitize_for_terminal(&summary);
+                let clamped = crate::tui::ui::truncate_str(&safe, 80);
+                saved_with_warnings_title = format!(" Settings [Saved · {clamped}] ");
+                (saved_with_warnings_title.as_str(), theme.accent_warning)
+            } else {
+                (" Settings [Saved] ", theme.accent_success)
+            }
         } else {
             (" Settings ", theme.accent_success)
         };

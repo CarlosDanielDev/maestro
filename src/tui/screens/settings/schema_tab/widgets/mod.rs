@@ -8,6 +8,7 @@
 
 pub mod clock;
 pub mod dynamic_map;
+mod dynamic_map_breadcrumb;
 mod dynamic_map_draw;
 pub mod dynamic_rows;
 mod dynamic_rows_draw;

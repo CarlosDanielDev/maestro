@@ -62,6 +62,7 @@ impl SettingsScreen {
             caveman_status_flash: None,
             sidebar_search: String::new(),
             sidebar_search_active: false,
+            role_override_warnings: Vec::new(),
         };
         screen.run_all_validations();
         screen
@@ -144,6 +145,19 @@ impl SettingsScreen {
             crate::orchestration::team::validate_extends(&self.config.teams)
                 .with_context(|| "settings cross-entry validation".to_string())?;
         }
+        // Soft cross-entry validation for `role_overrides.<role>.<field>`
+        // (#908). Records warnings for the Save banner; Save still
+        // proceeds — these are soft hints, not hard errors.
+        let known_agents: std::collections::BTreeSet<String> =
+            self.config.agents.entries.keys().cloned().collect();
+        let known_modes: std::collections::BTreeSet<String> =
+            self.config.modes.keys().cloned().collect();
+        self.role_override_warnings =
+            crate::orchestration::team_role_overrides::validate_role_overrides(
+                &self.config.teams,
+                &known_agents,
+                &known_modes,
+            );
         self.config
             .save(path)
             .with_context(|| format!("saving settings to {}", path.display()))?;
@@ -201,6 +215,30 @@ impl SettingsScreen {
 
     fn feedback_for(&self, tab: usize, field: usize) -> Option<&ValidationFeedback> {
         self.validation_results.get(&(tab, field))
+    }
+
+    /// One-line Save-banner summary for the role-override warnings
+    /// collected on the most recent Save. Returns `None` when no
+    /// warnings are pending. Lists the first structured path verbatim
+    /// + "(+N more)" when several warnings exist (#908).
+    pub(crate) fn role_override_warnings_summary(&self) -> Option<String> {
+        let first = self.role_override_warnings.first()?;
+        let mut summary = first.structured_path();
+        let extra = self.role_override_warnings.len().saturating_sub(1);
+        if extra > 0 {
+            summary.push_str(&format!(" (+{extra} more)"));
+        }
+        Some(summary)
+    }
+
+    /// Test-only injector — snapshot tests use this to bypass the full
+    /// Save lifecycle when verifying the banner-summary path.
+    #[cfg(test)]
+    pub(crate) fn set_role_override_warnings_for_test(
+        &mut self,
+        warnings: Vec<crate::orchestration::team_role_overrides::RoleOverrideWarning>,
+    ) {
+        self.role_override_warnings = warnings;
     }
 
     pub fn active_tab(&self) -> SettingsTab {
