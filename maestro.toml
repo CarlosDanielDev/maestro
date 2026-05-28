@@ -7,6 +7,7 @@ language = "rust"
 build_command = "cargo build"
 test_command = "cargo test"
 run_command = "cargo run"
+languages = []
 
 [sessions]
 max_concurrent = 3
@@ -18,6 +19,7 @@ allowed_tools = []
 max_retries = 2
 retry_cooldown_secs = 60
 max_prompt_history = 100
+guardrail_prompt = ""
 
 [sessions.hollow_retry]
 policy = "intent-aware"
@@ -138,12 +140,20 @@ permission_mode = "bypassPermissions"
 allowed_tools = []
 sandbox = ""
 
-[agents.claude-sonnet]
+[agents.deepseek-v4-pro]
+kind = "opencode"
+enabled = true
+command = "opencode"
+model = "opencode-go/deepseek-v4-pro"
+permission_mode = "default"
+sandbox = ""
+
+[agents.haiku]
 kind = "claude"
 enabled = true
 command = "claude"
-model = "sonnet"
-permission_mode = "auto"
+model = "haiku"
+permission_mode = "default"
 sandbox = ""
 
 [agents.minimax]
@@ -154,6 +164,19 @@ model = "MiniMax-M2.7"
 request_timeout_secs = 120
 api_key_env = "MINIMAX_API_KEY"
 
+[agents.sonnet]
+kind = "claude"
+enabled = true
+command = "claude"
+model = "sonnet"
+permission_mode = "default"
+sandbox = ""
+
+[teams.worker-pool]
+extends = ""
+primitive = "pipeline"
+min_agents = ["claude", "minimax", "opencode"]
+
 [agents.opencode]
 kind = "opencode"
 enabled = true
@@ -161,3 +184,10 @@ command = "opencode"
 model = "opencode-go/deepseek-v4-pro"
 permission_mode = "bypassPermissions"
 sandbox = ""
+
+[teams.worker-pool.role_overrides.architect]
+agent = "claude"
+mode = "orchestration"
+model_override = ""
+prompt_addendum = ""
+fallback_agent = "opencode"

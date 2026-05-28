@@ -12,27 +12,8 @@ use ratatui::{
 use crate::tui::theme::Theme;
 
 use super::dynamic_map::{DynamicMapWidget, MapFocus};
-use super::dynamic_map_breadcrumb::nested_breadcrumb;
+use super::dynamic_map_chrome::{nested_breadcrumb, tab_highlight_style};
 use super::entry_state::EntryState;
-
-/// Tab-chip highlight style. Full orange chip when the SubtabStrip is
-/// the current focus level (so `[` / `]` will switch tabs); muted
-/// underline-only chip when the focus has descended into an EntryField
-/// (so the user can see WHICH level the chord targets). Mirrors the
-/// pattern of dimming non-active tab strips elsewhere in the TUI
-/// (#908 visual-contrast fix).
-fn tab_highlight_style(theme: &Theme, subtabstrip_focused: bool) -> Style {
-    if subtabstrip_focused {
-        Style::default()
-            .fg(theme.selection_fg)
-            .bg(theme.selection_bg)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(theme.text_secondary)
-            .add_modifier(Modifier::UNDERLINED)
-    }
-}
 
 pub(super) fn draw(
     widget: &DynamicMapWidget,
@@ -298,51 +279,6 @@ mod tests {
             .iter()
             .map(|s| s.content.as_ref())
             .collect::<String>()
-    }
-
-    #[test]
-    fn tab_highlight_full_chip_when_subtabstrip_focused() {
-        // #908 contrast — focus on SubtabStrip keeps the full orange
-        // chip so the active tab reads as the chord target.
-        let theme = Theme::dark();
-        let style = tab_highlight_style(&theme, true);
-        assert_eq!(
-            style.bg,
-            Some(theme.selection_bg),
-            "must paint selection bg"
-        );
-        assert_eq!(
-            style.fg,
-            Some(theme.selection_fg),
-            "must paint selection fg"
-        );
-        assert!(
-            style.add_modifier.contains(Modifier::BOLD),
-            "must be BOLD when SubtabStrip is focused"
-        );
-    }
-
-    #[test]
-    fn tab_highlight_dim_underline_when_focus_descended_to_entry_field() {
-        // #908 contrast — once focus descends into an EntryField the
-        // chip drops the orange bg + bold so a second nested tab strip
-        // is the only "shouting" chip on screen.
-        let theme = Theme::dark();
-        let style = tab_highlight_style(&theme, false);
-        assert_eq!(style.bg, None, "must NOT paint bg when not focused");
-        assert_eq!(
-            style.fg,
-            Some(theme.text_secondary),
-            "must use text_secondary fg when not focused"
-        );
-        assert!(
-            !style.add_modifier.contains(Modifier::BOLD),
-            "must NOT be BOLD when focus descended"
-        );
-        assert!(
-            style.add_modifier.contains(Modifier::UNDERLINED),
-            "must be UNDERLINED to keep the active-tab signal"
-        );
     }
 
     #[test]
