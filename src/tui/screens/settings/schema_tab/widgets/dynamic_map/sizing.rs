@@ -1,9 +1,12 @@
 //! Vertical-layout sizing for [`super::DynamicMapWidget`].
 //!
 //! Split out of `dynamic_map.rs` (#908). Owns `desired_height`,
-//! `active_entry_row_heights`, and the per-widget row-height table used
-//! by `dynamic_map_draw` to build layout constraints.
+//! `active_entry_row_heights_for`, and the per-widget row-height table
+//! used by `dynamic_map_draw` to build layout constraints.
 
+use std::collections::HashMap;
+
+use crate::tui::screens::settings::validation::ValidationFeedback;
 use crate::tui::widgets::WidgetKind;
 
 use super::{DynamicMapWidget, MapFocus};
@@ -18,16 +21,28 @@ impl DynamicMapWidget {
     /// exist; the empty-state hint takes 4 lines (header + "No entries" +
     /// blank + `[a] add first entry`).
     pub fn desired_height(&self) -> u16 {
+        let empty: HashMap<String, ValidationFeedback> = HashMap::new();
+        self.desired_height_with_warnings(&empty)
+    }
+
+    /// Variant of [`Self::desired_height`] that grows the body line
+    /// count when sub-fields have pending warnings so the outer
+    /// [`SettingsScreen::field_height`] still allocates enough room
+    /// for the inline-warning lines (#909).
+    pub fn desired_height_with_warnings(
+        &self,
+        warnings: &HashMap<String, ValidationFeedback>,
+    ) -> u16 {
         let header = 1u16;
         if self.entries.is_empty() {
             return header + 3;
         }
         let tabstrip = 2u16;
-        let body = self.active_entry_body_height();
+        let body = self.active_entry_body_height_for(warnings);
         header + tabstrip + body
     }
 
-    fn active_entry_body_height(&self) -> u16 {
+    fn active_entry_body_height_for(&self, warnings: &HashMap<String, ValidationFeedback>) -> u16 {
         let Some(active) = self.active_idx else {
             return 0;
         };
@@ -42,17 +57,37 @@ impl DynamicMapWidget {
                 entry
                     .fields
                     .get(idx)
-                    .map(|f| entry_row_height(&f.widget, focused))
+                    .map(|f| match &f.widget {
+                        // Nested DynamicMap defers to its own warning-
+                        // aware desired_height so the outer body still
+                        // accounts for a child sub-field's inline
+                        // warning line.
+                        WidgetKind::DynamicMap(inner) if focused => {
+                            inner.desired_height_with_warnings(warnings)
+                        }
+                        other => {
+                            let has_warning = warnings
+                                .get(other.label())
+                                .is_some_and(|fb| !fb.message.is_empty());
+                            entry_row_height_with_warning(other, focused, has_warning)
+                        }
+                    })
                     .unwrap_or(1)
             })
             .sum()
     }
 
-    /// Per-field row heights for the currently active entry, paired with
-    /// the field-index in `entry_fields`. Used by `dynamic_map_draw` to
-    /// build the per-row layout constraints.
-    pub(in crate::tui::screens::settings::schema_tab::widgets) fn active_entry_row_heights(
+    /// Per-field row heights for the currently active entry, paired
+    /// with the field-index in `entry_fields`. Consults a
+    /// warnings-by-label lookup so a sub-field with a pending
+    /// `ValidationFeedback::warning` is allocated a second line for
+    /// the inline message (TextInput renders the warning at `y + 1`
+    /// and silently drops it when `area.height <= 1`). The map is
+    /// the same one threaded into `draw_with_warnings` (#909);
+    /// callers with no warnings pass `&HashMap::new()`.
+    pub(in crate::tui::screens::settings::schema_tab::widgets) fn active_entry_row_heights_for(
         &self,
+        warnings: &HashMap<String, ValidationFeedback>,
     ) -> Vec<(usize, u16)> {
         let Some(active) = self.active_idx else {
             return Vec::new();
@@ -67,7 +102,17 @@ impl DynamicMapWidget {
                 let h = entry
                     .fields
                     .get(idx)
-                    .map(|f| entry_row_height(&f.widget, focused))
+                    .map(|f| match &f.widget {
+                        WidgetKind::DynamicMap(inner) if focused => {
+                            inner.desired_height_with_warnings(warnings)
+                        }
+                        other => {
+                            let has_warning = warnings
+                                .get(other.label())
+                                .is_some_and(|fb| !fb.message.is_empty());
+                            entry_row_height_with_warning(other, focused, has_warning)
+                        }
+                    })
                     .unwrap_or(1);
                 (idx, h)
             })
@@ -75,15 +120,17 @@ impl DynamicMapWidget {
     }
 }
 
-/// Vertical lines a single per-entry field row needs. `ListEditor` is the
-/// only widget that ever exceeds 1 line — it draws an `[a]/[d]` hint when
-/// focused-empty, an input prompt when editing, and one line per item.
-/// All other widgets render in a single line.
+/// Vertical lines a single per-entry field row needs. `ListEditor` is
+/// the only widget that ever exceeds 1 line — it draws an `[a]/[d]` hint
+/// when focused-empty, an input prompt when editing, and one line per
+/// item. All other single-line widgets bump to 2 lines when
+/// `has_warning` is true so `TextInput::draw` can paint its inline
+/// `ValidationFeedback` message on the line below the field (#909).
 ///
 /// Caps item rendering at `MAX_LIST_ROWS` so an entry with hundreds of
 /// items doesn't push other fields off-screen; long lists scroll inside
 /// the widget (deferred to a follow-up).
-fn entry_row_height(widget: &WidgetKind, focused: bool) -> u16 {
+fn entry_row_height_with_warning(widget: &WidgetKind, focused: bool, has_warning: bool) -> u16 {
     const MAX_LIST_ROWS: u16 = 4;
     match widget {
         WidgetKind::ListEditor(le) => {
@@ -110,6 +157,12 @@ fn entry_row_height(widget: &WidgetKind, focused: bool) -> u16 {
         // per-role-field rows. Defer to it so the outer layout gives
         // the nested editor the rows it needs to render legibly.
         WidgetKind::DynamicMap(inner) if focused => inner.desired_height(),
-        _ => 1,
+        _ => {
+            if has_warning {
+                2
+            } else {
+                1
+            }
+        }
     }
 }

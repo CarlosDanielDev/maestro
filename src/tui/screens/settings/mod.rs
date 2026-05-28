@@ -241,6 +241,32 @@ impl SettingsScreen {
         self.role_override_warnings = warnings;
     }
 
+    /// Warnings-by-label lookup used by `draw_fields` to thread inline
+    /// `ValidationFeedback::warning` glyphs down through the nested
+    /// `role_overrides` editor (#909). Keys are
+    /// `RoleOverrideWarning::structured_path()` strings; they line up
+    /// byte-for-byte with the widget labels produced by
+    /// `entry_state::label_for(section_path, id, key)`, so the inner
+    /// `WidgetKind::draw` call can look up its own warning by label.
+    ///
+    /// The message is run through `sanitize_for_terminal` because the
+    /// warning value comes from on-disk TOML and ratatui's
+    /// `Paragraph` passes ANSI ESC and other C0/C1 controls straight
+    /// to the back-buffer. Mirrors the sibling Save-banner path which
+    /// sanitizes via the same helper.
+    pub(crate) fn build_role_override_lookup(&self) -> HashMap<String, ValidationFeedback> {
+        use crate::tui::screens::sanitize_for_terminal;
+        self.role_override_warnings
+            .iter()
+            .map(|w| {
+                (
+                    w.structured_path(),
+                    ValidationFeedback::warning(sanitize_for_terminal(&w.message())),
+                )
+            })
+            .collect()
+    }
+
     pub fn active_tab(&self) -> SettingsTab {
         SettingsTab::ALL[self.active_tab]
     }
@@ -330,7 +356,7 @@ impl SettingsScreen {
     /// fragile, so production code paths still use next_tab/prev_tab
     /// while tests use this direct setter.
     #[cfg(test)]
-    pub(super) fn jump_to_tab(&mut self, tab: SettingsTab) {
+    pub(crate) fn jump_to_tab(&mut self, tab: SettingsTab) {
         if let Some(idx) = SettingsTab::ALL.iter().position(|t| *t == tab) {
             self.active_tab = idx;
             self.field_index = 0;

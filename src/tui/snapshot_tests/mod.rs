@@ -32,6 +32,7 @@ mod settings_project_parity;
 mod settings_review_parity;
 mod settings_sessions_parity;
 mod settings_teams_parity;
+mod settings_teams_warnings_parity;
 mod settings_theme_parity;
 mod settings_turboquant_parity;
 mod team_wizard;

@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-27 00:00 (UTC)
+> Last updated: 2026-05-28 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -499,7 +499,7 @@ maestro/
 │   │   │   └── provider_rollup.rs         # `ProviderRollup` view-model — pure aggregation of per-provider token/cost totals for the token dashboard  [Issue #848]
 │   │   ├── turboquant_dashboard.rs        # TurboQuant savings dashboard: classify_savings(), aggregate_savings(), AggregateSavings; renders "Estimated Savings (projection)" header when no real handoff data exists, "Actual Savings" when at least one session has fork-handoff compression metrics; ACTUAL / proj. kind markers per row  [Issue #346]
 │   │   ├── snapshot_tests/                # TUI snapshot tests using insta (169+ tests, 19 views)  [Issue #16, #490, #526, #527, #528, #539, #543, #560, #568, #569, #664, #714, #715, #716, #785]
-│   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules; mod agent_graph, mod agent_graph_dispatcher, mod agent_graph_keybinding_hint, mod agent_personalities, mod activity_log_dispatch, mod completion_overlay, mod team_wizard, mod schema_tab, mod settings_project_parity, and 11 additional settings_*_parity modules wired (including settings_budget_parity added in #785, settings_teams_parity added in #803); `make_session_with_agent` helper added; `mod token_dashboard_provider_rollup` declared; `mod call_log` declared (5 snapshots: empty, single entry, multi-entry, scrolled, formatted payload)  [Issue #526, #527, #528, #539, #543, #560, #664, #714, #715, #716, #785, #803, #849, #868]
+│   │   │   ├── mod.rs                     # Module declarations for snapshot test submodules; mod agent_graph, mod agent_graph_dispatcher, mod agent_graph_keybinding_hint, mod agent_personalities, mod activity_log_dispatch, mod completion_overlay, mod team_wizard, mod schema_tab, mod settings_project_parity, and 12 additional settings_*_parity modules wired (including settings_budget_parity added in #785, settings_teams_parity added in #803, settings_teams_warnings_parity added in #909); `make_session_with_agent` helper added; `mod token_dashboard_provider_rollup` declared; `mod call_log` declared (5 snapshots: empty, single entry, multi-entry, scrolled, formatted payload)  [Issue #526, #527, #528, #539, #543, #560, #664, #714, #715, #716, #785, #803, #849, #868, #909]
 │   │   │   ├── overview.rs                # 6 snapshot tests for PanelView (empty, single, multiple, selected, context overflow, forked)
 │   │   │   ├── detail.rs                  # 6 snapshot tests for DetailView (basic, progress, activity log, no files, retries, markdown)
 │   │   │   ├── fullscreen.rs              # 4 snapshot tests for FullscreenView (markdown, plain text, empty placeholder, auto-scroll)
@@ -530,6 +530,7 @@ maestro/
 │   │   │   ├── settings_advanced_parity.rs  # Parity snapshot tests for Advanced tab: verifies schema renderer output at 80×24  [Issue #716]
 │   │   │   ├── settings_budget_parity.rs  # 8 parity tests for Budget tab: verifies float display (per_session_usd renders as 5.5, total_usd as 12.5) at 80×24 and 120×40; 2 snapshot baselines + 6 assertion-only tests confirm schema renderer matches legacy output after ×10 integer trick removal  [Issue #785]
 │   │   │   ├── settings_teams_parity.rs   # Parity snapshot tests for Teams tab: verifies schema renderer output (empty state, one-entry with bindings round-trip, one-entry with role_overrides passthrough) at 80×24; extended in #901 to assert WidgetKind::DynamicMap for role_overrides (now fully editable)  [Issue #803, #872, #901]
+│   │   │   ├── settings_teams_warnings_parity.rs  # 3 snapshot tests for inline ValidationFeedback warnings in the Teams / role_overrides nested editor: unknown-agent warning, unknown-mode warning, and sanitized terminal-escape regression  [Issue #909]
 │   │   │   ├── token_dashboard_provider_rollup.rs  # 7 insta snapshot tests for the per-provider rollup table in the token dashboard (cost / context / quota columns); covers single-provider, multi-provider, zero-cost, quota-exceeded, and empty-sessions cases  [Issue #849]
 │   │   │   ├── budget_prespawn.rs          # Snapshot tests for BudgetPreSpawnModal widget (pre-spawn gate confirmation overlay at 80×24)  [Issue #850]
 │   │   │   ├── budget_banner.rs            # Snapshot tests for BudgetBanner widget (80% global budget warning strip)  [Issue #850]
@@ -638,10 +639,11 @@ maestro/
 │   │           │   │   │   ├── visibility.rs      # Kind-aware field visibility helpers (71 LOC)
 │   │           │   │   │   ├── focus.rs           # Focus walks and cooperative inner delegation (157 LOC)
 │   │           │   │   │   ├── modals.rs          # Add/Remove modal lifecycle and tab navigation (126 LOC)
-│   │           │   │   │   └── sizing.rs          # desired_height computation and row-height table (113 LOC)
+│   │           │   │   │   └── sizing.rs          # desired_height computation and row-height table; `desired_height_with_warnings` + `active_entry_row_heights_for` added — bump row height by 1 when a sub-field has a warning  [Issue #909]
 │   │           │   │   ├── dynamic_map_chrome.rs  # Header-area chrome helpers: nested-editor breadcrumb (`teams.<id> → role_overrides → <role>`, per-crumb truncation) + `tab_highlight_style` (bright chip only when chord target; dims otherwise)  [Issue #908]
-│   │           │   │   ├── dynamic_map_draw.rs    # Rendering logic for DynamicMapWidget; wires chrome (breadcrumb header + tab-chip style) via dynamic_map_chrome  [Issue #908]
-│   │           │   │   ├── dynamic_map_tests.rs   # Unit tests for DynamicMapWidget; behavioral tests for role_overrides chord routing added  [Issue #901]
+│   │           │   │   ├── dynamic_map_draw.rs        # Rendering logic for DynamicMapWidget; `draw_with_warnings` sibling method added; existing `draw` forwards with empty warnings map; `draw_entry_fields` signature extended to accept per-field warning text  [Issue #908, #909]
+│   │           │   │   ├── dynamic_map_draw_tests.rs  # Unit tests for `draw_with_warnings` core rendering; split from dynamic_map_draw.rs to keep it under 400 LOC  [Issue #909]
+│   │           │   │   ├── dynamic_map_tests.rs       # Unit tests for DynamicMapWidget; behavioral tests for role_overrides chord routing added  [Issue #901]
 │   │           │   │   ├── dynamic_rows.rs        # DynamicRowsWidget: ordered list editor with add/remove/reorder (Alt+↑/↓)
 │   │           │   │   ├── dynamic_rows_draw.rs   # Rendering logic for DynamicRowsWidget
 │   │           │   │   ├── dynamic_rows_tests.rs  # Unit tests for DynamicRowsWidget
@@ -653,7 +655,7 @@ maestro/
 │   │           ├── tests/                 # Settings screen test modules  [Issue #714]
 │   │           │   ├── mod.rs             # Module declarations for all settings test submodules
 │   │           │   ├── agents_tab.rs      # Tests for Agents tab: validates FlattenedMap rendering, scalar sibling filtering (agents.default skipped), and save_config agents.validate() cross-entry check (missing default agent surfaces error banner)  [Issue #792]
-│   │           │   ├── teams_tab.rs       # Integration tests for Teams tab: covers empty state, one-entry round-trip (bindings encode/decode), validate_extends error surfacing on unknown parent, and chord routing on role_overrides field  [Issue #803, #901]
+│   │           │   ├── teams_tab.rs       # Integration tests for Teams tab: covers empty state, one-entry round-trip (bindings encode/decode), validate_extends error surfacing on unknown parent, chord routing on role_overrides field; 2 new tests: lookup contract + terminal-escape sanitization regression  [Issue #803, #901, #909]
 │   │           │   ├── basic.rs           # Basic SettingsScreen construction and navigation tests
 │   │           │   ├── dirty.rs           # Dirty-state and unsaved-change detection tests
 │   │           │   ├── flags_validation.rs  # Validation tests for the Flags tab

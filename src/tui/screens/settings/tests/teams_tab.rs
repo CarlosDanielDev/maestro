@@ -429,3 +429,80 @@ fn teams_with_unknown_extends_blocks_save_with_banner() {
         "save banner must name the unknown parent, got: {flash:?}"
     );
 }
+
+#[test]
+fn build_role_override_lookup_maps_warnings_to_structured_paths() {
+    // #909 — pins the contract that `SettingsScreen::build_role_override_lookup`
+    // produces a HashMap keyed by `RoleOverrideWarning::structured_path()`
+    // and that each value is a `Warning`-severity ValidationFeedback whose
+    // message names the offending value. The render-path plumbing in
+    // draw_with_warnings depends on this exact key shape.
+    use crate::orchestration::team_role_overrides::{RoleOverrideField, RoleOverrideWarning};
+    use crate::tui::screens::settings::validation::ValidationSeverity;
+
+    let mut screen = SettingsScreen::new(make_config(), make_flags());
+    screen.set_role_override_warnings_for_test(vec![
+        RoleOverrideWarning {
+            team_id: "worker-pool".to_string(),
+            role_id: "reviewer".to_string(),
+            field: RoleOverrideField::Agent,
+            value: "nonexistent-agent".to_string(),
+        },
+        RoleOverrideWarning {
+            team_id: "worker-pool".to_string(),
+            role_id: "reviewer".to_string(),
+            field: RoleOverrideField::Mode,
+            value: "ghost-mode".to_string(),
+        },
+    ]);
+
+    let lookup = screen.build_role_override_lookup();
+    assert_eq!(lookup.len(), 2, "one entry per warning");
+
+    let agent_fb = lookup
+        .get("teams.worker-pool.role_overrides.reviewer.agent")
+        .expect("agent key must exist in lookup");
+    assert_eq!(agent_fb.severity, ValidationSeverity::Warning);
+    assert!(
+        agent_fb.message.contains("nonexistent-agent"),
+        "agent message must reference the bad value, got: {}",
+        agent_fb.message
+    );
+
+    let mode_fb = lookup
+        .get("teams.worker-pool.role_overrides.reviewer.mode")
+        .expect("mode key must exist in lookup");
+    assert!(
+        mode_fb.message.contains("ghost-mode"),
+        "mode message must reference the bad value, got: {}",
+        mode_fb.message
+    );
+}
+
+#[test]
+fn build_role_override_lookup_strips_terminal_escape_sequences() {
+    // #909 security finding (low): role-override values come from
+    // on-disk TOML and pass through ratatui Paragraphs that emit raw
+    // bytes. ESC and other C0/C1 controls must be neutralised before
+    // they reach the back-buffer — same `sanitize_for_terminal` path
+    // the Save-banner uses on the structured path.
+    use crate::orchestration::team_role_overrides::{RoleOverrideField, RoleOverrideWarning};
+
+    let mut screen = SettingsScreen::new(make_config(), make_flags());
+    screen.set_role_override_warnings_for_test(vec![RoleOverrideWarning {
+        team_id: "worker-pool".to_string(),
+        role_id: "reviewer".to_string(),
+        field: RoleOverrideField::Agent,
+        value: "\u{001b}[31mEVIL\u{001b}[0m".to_string(),
+    }]);
+
+    let lookup = screen.build_role_override_lookup();
+    let fb = lookup
+        .get("teams.worker-pool.role_overrides.reviewer.agent")
+        .expect("agent key must exist");
+    assert!(
+        !fb.message.contains('\u{001b}'),
+        "ESC must be stripped, got bytes: {:?}",
+        fb.message.as_bytes()
+    );
+}
