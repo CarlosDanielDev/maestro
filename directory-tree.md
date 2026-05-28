@@ -639,8 +639,8 @@ maestro/
 │   │           │   │   │   ├── focus.rs           # Focus walks and cooperative inner delegation (157 LOC)
 │   │           │   │   │   ├── modals.rs          # Add/Remove modal lifecycle and tab navigation (126 LOC)
 │   │           │   │   │   └── sizing.rs          # desired_height computation and row-height table (113 LOC)
-│   │           │   │   ├── dynamic_map_breadcrumb.rs  # Renders `teams.<id> → role_overrides → <role>` breadcrumb in the nested editor header when focused; per-crumb truncation via truncate_with_ellipsis  [Issue #908]
-│   │           │   │   ├── dynamic_map_draw.rs    # Rendering logic for DynamicMapWidget; wires breadcrumb header via dynamic_map_breadcrumb  [Issue #908]
+│   │           │   │   ├── dynamic_map_chrome.rs  # Header-area chrome helpers: nested-editor breadcrumb (`teams.<id> → role_overrides → <role>`, per-crumb truncation) + `tab_highlight_style` (bright chip only when chord target; dims otherwise)  [Issue #908]
+│   │           │   │   ├── dynamic_map_draw.rs    # Rendering logic for DynamicMapWidget; wires chrome (breadcrumb header + tab-chip style) via dynamic_map_chrome  [Issue #908]
 │   │           │   │   ├── dynamic_map_tests.rs   # Unit tests for DynamicMapWidget; behavioral tests for role_overrides chord routing added  [Issue #901]
 │   │           │   │   ├── dynamic_rows.rs        # DynamicRowsWidget: ordered list editor with add/remove/reorder (Alt+↑/↓)
 │   │           │   │   ├── dynamic_rows_draw.rs   # Rendering logic for DynamicRowsWidget
