@@ -184,7 +184,6 @@ src/tui/snapshot_tests/team_wizard.rs # deadline: 2026-08-22, owner: @carlos, ti
 # All three files grew past 400 LOC bundling kind-aware visibility, sidebar
 # layout, search filter, focus clamp, and tab-level a/d/u routing into one
 # integration PR. Deadlines match the existing TUI category at 3 months out.
-src/tui/screens/settings/schema_tab/widgets/dynamic_map.rs # deadline: 2026-08-22, owner: @carlos, ticket: #814, plan: split kind-aware visibility helpers into widgets/dynamic_map/visibility.rs; keep state machine + handle_input in dynamic_map.rs
 src/tui/screens/settings/schema_tab/widgets/dynamic_map_tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #814, plan: split into tests/{state.rs, focus.rs, visibility.rs, modals.rs} grouped by behavior axis
 src/tui/screens/settings/draw.rs # deadline: 2026-08-22, owner: @carlos, ticket: #814, plan: split sidebar render + horizontal layout (draw_sidebar, draw_screen) into draw/{sidebar.rs, layout.rs} once a fourth top-level draw helper lands
 

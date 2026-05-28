@@ -9,20 +9,12 @@
 use crate::config::schema::{DefaultValue, FieldKind, FieldSchema};
 use crate::tui::screens::settings::SettingsField;
 use crate::tui::screens::settings::schema_tab::teams_bindings::collapse_team_bindings_into_array;
-use crate::tui::screens::settings::schema_tab::widgets::DynamicMapWidget;
+use crate::tui::screens::settings::schema_tab::widgets::{DynamicMapWidget, DynamicRowsWidget};
 use crate::tui::widgets::{Dropdown, ListEditor, NumberStepper, TextInput, Toggle, WidgetKind};
 
 pub struct EntryState {
     pub id: String,
     pub fields: Vec<SettingsField>,
-    /// Sub-table values for dynamic-kind entry fields (`Map` /
-    /// `FlattenedMap` / `VecOfStruct`). These render as `TextInput`
-    /// placeholders today (the nested editor is deferred to the #872
-    /// PR-B follow-up). We capture the raw value at build-time and
-    /// re-emit it in `to_toml_filtered` so `merge_flattened_map`'s
-    /// wholesale rewrite of `[teams.<id>]` does not drop the
-    /// untouched sub-table.
-    passthrough: std::collections::BTreeMap<&'static str, toml::Value>,
 }
 
 impl EntryState {
@@ -41,28 +33,14 @@ impl EntryState {
         let collapsed = collapse_team_bindings_into_array(section_path, existing);
         let existing = collapsed.as_ref().or(existing);
         let mut fields = Vec::with_capacity(entry_fields.len());
-        let mut passthrough = std::collections::BTreeMap::new();
         for fs in entry_fields {
             let label = label_for(section_path, &id, fs.key);
             let value = existing.and_then(|v| v.get(fs.key));
-            if matches!(
-                fs.kind,
-                FieldKind::Map { .. }
-                    | FieldKind::FlattenedMap { .. }
-                    | FieldKind::VecOfStruct { .. }
-            ) && let Some(v) = value
-            {
-                passthrough.insert(fs.key, v.clone());
-            }
             fields.push(SettingsField {
                 widget: build_widget(label, fs, value),
             });
         }
-        Self {
-            id,
-            fields,
-            passthrough,
-        }
+        Self { id, fields }
     }
 
     pub fn label_for(&self, section_path: &str, key: &str) -> String {
@@ -98,33 +76,21 @@ impl EntryState {
                     | FieldKind::FlattenedMap { .. }
                     | FieldKind::VecOfStruct { .. }
             ) {
-                // Real widget wins (DynamicMap / DynamicRows): the widget
-                // owns its own writeback via `serialize_to_toml`. Skip the
-                // empty table case so an empty nested editor does not emit
-                // a bare `role_overrides = {}` header (#901 AC).
-                match &sf.widget {
-                    WidgetKind::DynamicMap(_) | WidgetKind::DynamicRows(_) => {
-                        let v = widget_value(&sf.widget);
-                        let omit_empty = matches!(
-                            &v,
-                            toml::Value::Table(t) if t.is_empty()
-                        ) || matches!(
-                            &v,
-                            toml::Value::Array(a) if a.is_empty()
-                        );
-                        if !omit_empty {
-                            table.insert(fs.key.to_string(), v);
-                        }
-                    }
-                    _ => {
-                        // Defense-in-depth passthrough fallback for kinds
-                        // whose widget layer has not yet been lifted
-                        // (FlattenedMap / VecOfStruct inside entries —
-                        // currently rendered as read-only TextInput).
-                        if let Some(v) = self.passthrough.get(fs.key) {
-                            table.insert(fs.key.to_string(), v.clone());
-                        }
-                    }
+                // Every dynamic-kind entry-field now owns a live widget
+                // (DynamicMap or DynamicRows) — see `build_widget` below.
+                // Skip the empty table/array case so an empty nested
+                // editor does not emit a bare `role_overrides = {}`
+                // header (#901 / #908 AC).
+                let v = widget_value(&sf.widget);
+                let omit_empty = matches!(
+                    &v,
+                    toml::Value::Table(t) if t.is_empty()
+                ) || matches!(
+                    &v,
+                    toml::Value::Array(a) if a.is_empty()
+                );
+                if !omit_empty {
+                    table.insert(fs.key.to_string(), v);
                 }
                 continue;
             }
@@ -191,11 +157,9 @@ fn build_widget(label: String, fs: &FieldSchema, value: Option<&toml::Value>) ->
         FieldKind::Map { entry_fields } => {
             // Nested DynamicMap inside an entry (e.g. role_overrides
             // inside a team). The widget owns the writeback path via
-            // `serialize_to_toml`; the EntryState.passthrough fallback
-            // remains as defense-in-depth for the FlattenedMap /
-            // VecOfStruct kinds below whose editors are not yet lifted.
-            // Section_path doubles as the label so `display_name_for`
-            // ("…role_overrides" → "role") drives the inner Add modal title.
+            // `serialize_to_toml`. Section_path doubles as the label so
+            // `display_name_for` ("…role_overrides" → "role") drives
+            // the inner Add modal title.
             WidgetKind::DynamicMap(DynamicMapWidget::new(
                 label.clone(),
                 label,
@@ -203,27 +167,34 @@ fn build_widget(label: String, fs: &FieldSchema, value: Option<&toml::Value>) ->
                 value,
             ))
         }
-        FieldKind::NestedTable(_)
-        | FieldKind::FlattenedMap { .. }
-        | FieldKind::VecOfStruct { .. } => {
-            // FlattenedMap / VecOfStruct inside an entry remain
-            // read-only placeholders for now — no schema field
-            // exercises them today. Passthrough preserves round-trip.
-            let summary = dynamic_kind_summary(value);
-            WidgetKind::TextInput(TextInput::new(label, summary).with_read_only())
+        FieldKind::FlattenedMap { entry_fields } => {
+            // #908 — FlattenedMap inside an entry now produces a live
+            // DynamicMap widget. The widget owns writeback via
+            // `serialize_to_toml`; empty omission is handled by
+            // `to_toml_filtered` above.
+            WidgetKind::DynamicMap(DynamicMapWidget::new(
+                label.clone(),
+                label,
+                entry_fields,
+                value,
+            ))
         }
-    }
-}
-
-fn dynamic_kind_summary(value: Option<&toml::Value>) -> String {
-    let count = value
-        .and_then(|v| v.as_table())
-        .map(|t| t.len())
-        .unwrap_or(0);
-    if count == 0 {
-        "(empty — read-only, editor in #901)".to_string()
-    } else {
-        format!("({count} entries — read-only, editor in #901)")
+        FieldKind::VecOfStruct { entry_fields } => {
+            // #908 — VecOfStruct inside an entry now produces a live
+            // DynamicRows widget.
+            WidgetKind::DynamicRows(DynamicRowsWidget::new(
+                label.clone(),
+                label,
+                entry_fields,
+                value,
+            ))
+        }
+        FieldKind::NestedTable(_) => {
+            // NestedTable inside an entry stays a read-only placeholder
+            // — no schema field exercises it today and lifting it
+            // requires schema-walker design work tracked separately.
+            WidgetKind::TextInput(TextInput::new(label, String::new()).with_read_only())
+        }
     }
 }
 

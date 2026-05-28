@@ -124,4 +124,9 @@ pub struct SettingsScreen {
     /// and `Esc` / `Enter` (exit). When false, key events route to the
     /// normal settings handler.
     pub(super) sidebar_search_active: bool,
+    /// Soft warnings collected from `validate_role_overrides` on each
+    /// Save. Surfaced in the Save banner; Save proceeds regardless
+    /// (#908 — mirrors the `teams.<id>.extends` validator pattern).
+    pub(super) role_override_warnings:
+        Vec<crate::orchestration::team_role_overrides::RoleOverrideWarning>,
 }

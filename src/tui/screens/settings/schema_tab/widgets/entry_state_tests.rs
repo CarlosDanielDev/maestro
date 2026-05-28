@@ -198,3 +198,139 @@ fn serializes_back_to_toml_table() {
     assert_eq!(t.get("kind").and_then(|v| v.as_str()), Some("implementer"));
     assert!(t.get("enabled").and_then(|v| v.as_bool()).is_some());
 }
+
+#[test]
+fn flattened_map_entry_field_builds_dynamic_map_widget() {
+    // #908 C2 — FlattenedMap inside an entry must now produce a live
+    // DynamicMapWidget instead of the read-only TextInput placeholder.
+    use crate::config::schema::{DefaultValue, FieldKind, FieldSchema};
+    const INNER: &[FieldSchema] = &[FieldSchema {
+        key: "value",
+        label: "Value",
+        help: "",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    }];
+    const ENTRY_FIELDS: &[FieldSchema] = &[FieldSchema {
+        key: "tags",
+        label: "Tags",
+        help: "",
+        default: DefaultValue::Empty,
+        kind: FieldKind::FlattenedMap {
+            entry_fields: INNER,
+        },
+        validator: None,
+        presentation: None,
+    }];
+
+    let e = EntryState::build("section", "id", ENTRY_FIELDS, None);
+    assert!(
+        matches!(e.fields[0].widget, WidgetKind::DynamicMap(_)),
+        "FlattenedMap inside an entry must produce a DynamicMap widget, got label {:?}",
+        e.fields[0].widget.label()
+    );
+}
+
+#[test]
+fn vec_of_struct_entry_field_builds_dynamic_rows_widget() {
+    // #908 C2 — VecOfStruct inside an entry must now produce a live
+    // DynamicRowsWidget instead of the read-only TextInput placeholder.
+    use crate::config::schema::{DefaultValue, FieldKind, FieldSchema};
+    const INNER: &[FieldSchema] = &[FieldSchema {
+        key: "name",
+        label: "Name",
+        help: "",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    }];
+    const ENTRY_FIELDS: &[FieldSchema] = &[FieldSchema {
+        key: "rows",
+        label: "Rows",
+        help: "",
+        default: DefaultValue::Empty,
+        kind: FieldKind::VecOfStruct {
+            entry_fields: INNER,
+        },
+        validator: None,
+        presentation: None,
+    }];
+
+    let e = EntryState::build("section", "id", ENTRY_FIELDS, None);
+    assert!(
+        matches!(e.fields[0].widget, WidgetKind::DynamicRows(_)),
+        "VecOfStruct inside an entry must produce a DynamicRows widget, got label {:?}",
+        e.fields[0].widget.label()
+    );
+}
+
+#[test]
+fn empty_flattened_map_omitted_from_toml() {
+    // #908 C2 — empty FlattenedMap widget must not emit a bare table header.
+    use crate::config::schema::{DefaultValue, FieldKind, FieldSchema};
+    const INNER: &[FieldSchema] = &[FieldSchema {
+        key: "value",
+        label: "Value",
+        help: "",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    }];
+    const ENTRY_FIELDS: &[FieldSchema] = &[FieldSchema {
+        key: "tags",
+        label: "Tags",
+        help: "",
+        default: DefaultValue::Empty,
+        kind: FieldKind::FlattenedMap {
+            entry_fields: INNER,
+        },
+        validator: None,
+        presentation: None,
+    }];
+
+    let e = EntryState::build("section", "id", ENTRY_FIELDS, None);
+    let v = e.to_toml(ENTRY_FIELDS);
+    let t = v.as_table().expect("table");
+    assert!(
+        t.get("tags").is_none(),
+        "empty FlattenedMap must omit the key entirely; got {t:?}"
+    );
+}
+
+#[test]
+fn empty_vec_of_struct_omitted_from_toml() {
+    // #908 C2 — empty VecOfStruct widget must not emit a bare array.
+    use crate::config::schema::{DefaultValue, FieldKind, FieldSchema};
+    const INNER: &[FieldSchema] = &[FieldSchema {
+        key: "name",
+        label: "Name",
+        help: "",
+        default: DefaultValue::Str(""),
+        kind: FieldKind::String,
+        validator: None,
+        presentation: None,
+    }];
+    const ENTRY_FIELDS: &[FieldSchema] = &[FieldSchema {
+        key: "rows",
+        label: "Rows",
+        help: "",
+        default: DefaultValue::Empty,
+        kind: FieldKind::VecOfStruct {
+            entry_fields: INNER,
+        },
+        validator: None,
+        presentation: None,
+    }];
+
+    let e = EntryState::build("section", "id", ENTRY_FIELDS, None);
+    let v = e.to_toml(ENTRY_FIELDS);
+    let t = v.as_table().expect("table");
+    assert!(
+        t.get("rows").is_none(),
+        "empty VecOfStruct must omit the key entirely; got {t:?}"
+    );
+}

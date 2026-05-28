@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-26 00:00 (UTC)
+> Last updated: 2026-05-27 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -352,6 +352,7 @@ maestro/
 │   │   ├── types.rs                       # `Primitive`, `TeamInput`, `TeamOutput`, `TeamRole` enums
 │   │   ├── contracts.rs                   # `SubagentResult`, `SubagentError`, `Finding`, `ReviewVerdict`, `NewIssueDraft`
 │   │   ├── team.rs                        # `TeamConfig`, `RoleBinding`, `RoleOverride` TOML schema; `#[derive(Default)]` on `RoleBinding`  [Issue #663]
+│   │   ├── team_role_overrides.rs         # Soft cross-table validator: `RoleOverrideField` enum (Agent/Mode/FallbackAgent), `RoleOverrideWarning` struct, `validate_role_overrides(&HashMap<String, TeamConfig>, agents, modes) -> Vec<RoleOverrideWarning>`; empty/whitespace = inherit (no warning); wired into settings/mod.rs::save_config; Save proceeds on soft warnings  [Issue #908]
 │   │   ├── loader.rs                      # Three-tier loader (built-in → user → project), `extends` resolution, cycle detection; file-size cap on TOML reads; validate_preset_name() enforced in write_user_preset() and write_project_preset()  [Issue #665]
 │   │   ├── validation.rs                  # Load-time validation rules
 │   │   ├── scheduler.rs                   # L3 cross-issue scheduler; `Scheduler::levels()` accessor returns topo-sorted issue levels; `Scheduler::agent_for_issue(app_default: &str) -> String` resolves Implementer binding → fallback_agent → app default chain  [Issue #881]
@@ -630,10 +631,16 @@ maestro/
 │   │           │   │   ├── clock.rs           # Clock trait + SystemClock + FakeClock for testable time
 │   │           │   │   ├── identifier.rs      # validate_identifier(), IdentifierError, RESERVED_IDENTIFIERS
 │   │           │   │   ├── undo.rs            # UndoBuffer with 5-second undo window
-│   │           │   │   ├── entry_state.rs         # EntryState wrapper for widget row state; display_name_for(), modal title, chord routing, cooperative focus delegation, entry_row_height  [Issue #901]
+│   │           │   │   ├── entry_state.rs         # EntryState wrapper for widget row state; display_name_for(), modal title, chord routing, cooperative focus delegation, entry_row_height; FlattenedMap/VecOfStruct placeholders lifted to live DynamicMap/DynamicRows widgets  [Issue #901, #908]
 │   │           │   │   ├── entry_state_tests.rs   # Unit tests for EntryState extracted from entry_state.rs per file-size cap  [Issue #901]
-│   │           │   │   ├── dynamic_map.rs         # DynamicMapWidget: key-value map editor with add/remove/reorder (Alt+↑/↓); role_overrides chord routing and cooperative focus delegation added  [Issue #901]
-│   │           │   │   ├── dynamic_map_draw.rs    # Rendering logic for DynamicMapWidget
+│   │           │   │   ├── dynamic_map/           # DynamicMapWidget split from the former dynamic_map.rs (721 LOC) into focused submodules  [Issue #908]
+│   │           │   │   │   ├── mod.rs             # DynamicMapWidget struct, handle_input, accessors, draw delegate (300 LOC)
+│   │           │   │   │   ├── visibility.rs      # Kind-aware field visibility helpers (71 LOC)
+│   │           │   │   │   ├── focus.rs           # Focus walks and cooperative inner delegation (157 LOC)
+│   │           │   │   │   ├── modals.rs          # Add/Remove modal lifecycle and tab navigation (126 LOC)
+│   │           │   │   │   └── sizing.rs          # desired_height computation and row-height table (113 LOC)
+│   │           │   │   ├── dynamic_map_chrome.rs  # Header-area chrome helpers: nested-editor breadcrumb (`teams.<id> → role_overrides → <role>`, per-crumb truncation) + `tab_highlight_style` (bright chip only when chord target; dims otherwise)  [Issue #908]
+│   │           │   │   ├── dynamic_map_draw.rs    # Rendering logic for DynamicMapWidget; wires chrome (breadcrumb header + tab-chip style) via dynamic_map_chrome  [Issue #908]
 │   │           │   │   ├── dynamic_map_tests.rs   # Unit tests for DynamicMapWidget; behavioral tests for role_overrides chord routing added  [Issue #901]
 │   │           │   │   ├── dynamic_rows.rs        # DynamicRowsWidget: ordered list editor with add/remove/reorder (Alt+↑/↓)
 │   │           │   │   ├── dynamic_rows_draw.rs   # Rendering logic for DynamicRowsWidget
