@@ -9,7 +9,7 @@ Every message below is emitted verbatim by `src/orchestration/loader.rs`. Quotin
 | Error fragment | Meaning | Fix |
 |---|---|---|
 | `team "<name>": primitive not set anywhere in extends chain` | The walk from leaf to root never found a `primitive = "..."` line. | Set `primitive` on the root preset (the one with `extends = ""`). |
-| `extends cycle detected: a → b → a` | An `extends` chain loops back on itself. | Edit one of the offending presets to break the cycle. |
+| ``teams `a → b → a` form a cycle`` | An `extends` chain loops back on itself. Rejected at config load and at TUI settings save. | Edit one of the offending presets to break the cycle. |
 | `team "<name>": unknown role binding "<role>"` | A top-level key looks like a role binding but isn't one of the seven `TeamRole` variants. | Check spelling — valid roles are `implementer`, `reviewer`, `docs`, `devops`, `orchestrator`, `triager`, `researcher`. |
 | `team "<name>" extends missing parent "<parent>"` | `extends = "parent"` but no preset named `parent` resolves. | Confirm the parent exists at some tier (`maestro team list`). |
 | `preset name "<name>" must not be empty` | A `--name ""` slipped through. | Pick a non-empty name. |

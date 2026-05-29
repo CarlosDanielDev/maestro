@@ -8,7 +8,7 @@ In any preset TOML:
 
 - `extends = ""` — root preset. Defines its own `primitive`, `min_agents`, and role bindings.
 - `extends = "<parent>"` — inherits from the named parent. The merge walks root → leaf, **leaf wins per binding** (see `src/orchestration/loader.rs::Loader::resolve`).
-- Inheritance chains are walked with cycle detection — a circular `extends` is rejected at load time with a `cycle detected: a → b → a` error.
+- Inheritance chains are walked with cycle detection — a circular `extends` is rejected at config load and at settings save with a ``teams `a → b → a` form a cycle`` error. The check runs both when Maestro starts and when you save changes from the TUI Settings screen.
 
 Tier precedence is independent of `extends`: when the same preset name appears at multiple tiers, **project (`<repo>/.maestro/teams/`) > user (`~/.config/maestro/...`) > built-in**.
 
