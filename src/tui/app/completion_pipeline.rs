@@ -134,8 +134,13 @@ impl App {
                     }
 
                     completion.success = false;
+                    let session_id = self
+                        .pool
+                        .find_by_issue_mut(completion.issue_number)
+                        .map(|m| m.session.id.to_string())
+                        .unwrap_or_default();
                     let ctx = HookContext::new()
-                        .with_session("", Some(completion.issue_number))
+                        .with_session(&session_id, Some(completion.issue_number))
                         .with_var("MAESTRO_GATE_FAILURES", &failures.join("; "));
                     self.fire_plugin_hook(HookPoint::TestsFailed, ctx).await;
                 } else {
@@ -144,7 +149,13 @@ impl App {
                         "All required gates passed".into(),
                         LogLevel::Info,
                     );
-                    let ctx = HookContext::new().with_session("", Some(completion.issue_number));
+                    let session_id = self
+                        .pool
+                        .find_by_issue_mut(completion.issue_number)
+                        .map(|m| m.session.id.to_string())
+                        .unwrap_or_default();
+                    let ctx =
+                        HookContext::new().with_session(&session_id, Some(completion.issue_number));
                     self.fire_plugin_hook(HookPoint::TestsPassed, ctx).await;
                 }
             }
@@ -467,6 +478,10 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::PluginConfig;
+    use crate::plugins::hooks::{HookContext, HookPoint};
+    use crate::plugins::runner::PluginRunner;
+    use crate::session::types::CallLogKind;
     use crate::tui::app::*;
 
     fn make_app() -> crate::tui::app::App {
@@ -668,5 +683,63 @@ mod tests {
             TuiMode::Detail(uuid::Uuid::nil()),
             "Esc must return to Detail, not Dashboard"
         );
+    }
+
+    /// #914 — `tests_passed` hook must append a `HookResponse` entry to
+    /// the owning session's call log when the session is resolvable via
+    /// `issue_number`.
+    #[tokio::test]
+    async fn tests_passed_hook_appends_hook_response_to_call_log_with_resolvable_session() {
+        let mut app = make_app();
+
+        let session = crate::session::types::Session::new(
+            "test prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(42),
+            None,
+        );
+        app.pool.enqueue(session);
+        let promoted = app.pool.try_promote();
+        assert!(!promoted.is_empty(), "session must be promoted to active");
+
+        // Set up a minimal PluginRunner that responds to tests_passed.
+        let plugin = PluginConfig {
+            name: "test-plugin".into(),
+            on: "tests_passed".into(),
+            run: "echo success".into(),
+            timeout_secs: None,
+        };
+        app.plugin_runner = Some(PluginRunner::new(vec![plugin], 30));
+
+        // Resolve the session ID by issue_number — same pattern as the
+        // completion-pipeline fix.
+        let session_id_str = app
+            .pool
+            .find_by_issue_mut(42)
+            .map(|m| m.session.id.to_string())
+            .unwrap_or_default();
+        assert!(
+            !session_id_str.is_empty(),
+            "session must be findable by issue_number"
+        );
+
+        let ctx = HookContext::new().with_session(&session_id_str, Some(42));
+        app.fire_plugin_hook(HookPoint::TestsPassed, ctx).await;
+
+        // Verify the session's call log gained a HookResponse entry.
+        if let Some(managed) = app.pool.find_by_issue_mut(42) {
+            let has_hook_response = managed
+                .session
+                .call_log
+                .iter()
+                .any(|entry| matches!(entry.kind, CallLogKind::HookResponse));
+            assert!(
+                has_hook_response,
+                "session.call_log must contain a HookResponse after tests_passed hook fires"
+            );
+        } else {
+            panic!("session must still be findable after hook fires");
+        }
     }
 }
