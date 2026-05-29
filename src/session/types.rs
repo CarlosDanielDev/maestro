@@ -698,6 +698,17 @@ pub enum StreamEvent {
     /// `"token_count_clamped"`); `message` is human-readable for the TUI and
     /// log file.
     Warning { code: String, message: String },
+    /// Output of a hook subprocess (`.maestro/hooks/*.sh`, plugin hooks).
+    /// Surfaced in the per-agent call log so hook activity is visible
+    /// alongside tool calls and assistant messages (#887). `stdout`/`stderr`
+    /// are untrusted subprocess output — capped at [`PAYLOAD_TEXT_CAP`] before
+    /// persistence.
+    HookResponse {
+        hook_name: String,
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    },
 }
 
 /// Persisted classification of a [`StreamEvent`] kept in [`Session::call_log`]
@@ -716,6 +727,7 @@ pub enum CallLogKind {
     TokenUpdate,
     Thinking,
     Warning,
+    HookResponse,
 }
 
 impl CallLogKind {
@@ -733,6 +745,7 @@ impl CallLogKind {
             StreamEvent::TokenUpdate { .. } => Some(Self::TokenUpdate),
             StreamEvent::Thinking { .. } => Some(Self::Thinking),
             StreamEvent::Warning { .. } => Some(Self::Warning),
+            StreamEvent::HookResponse { .. } => Some(Self::HookResponse),
             StreamEvent::Unknown { .. } => None,
         }
     }
@@ -750,6 +763,7 @@ impl CallLogKind {
             Self::TokenUpdate => "TokenUpdate",
             Self::Thinking => "Thinking",
             Self::Warning => "Warning",
+            Self::HookResponse => "HookResponse",
         }
     }
 }
@@ -836,6 +850,18 @@ pub fn render_event_payload(event: &StreamEvent) -> String {
             "type": "Warning",
             "code": code,
             "message": cap_text(message),
+        }),
+        StreamEvent::HookResponse {
+            hook_name,
+            exit_code,
+            stdout,
+            stderr,
+        } => serde_json::json!({
+            "type": "HookResponse",
+            "hook_name": hook_name,
+            "exit_code": exit_code,
+            "stdout": cap_text(stdout),
+            "stderr": cap_text(stderr),
         }),
         StreamEvent::Unknown { raw } => serde_json::json!({
             "type": "Unknown",
@@ -2168,6 +2194,15 @@ mod tests {
                 },
                 CallLogKind::Warning,
             ),
+            (
+                StreamEvent::HookResponse {
+                    hook_name: "pre-commit".into(),
+                    exit_code: 0,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                },
+                CallLogKind::HookResponse,
+            ),
         ];
         for (event, expected) in cases {
             assert_eq!(
@@ -2218,9 +2253,104 @@ mod tests {
             CallLogKind::TokenUpdate,
             CallLogKind::Thinking,
             CallLogKind::Warning,
+            CallLogKind::HookResponse,
         ];
         for kind in &kinds {
             assert!(!kind.label().is_empty(), "empty label for {kind:?}");
         }
+    }
+
+    // =========================================================================
+    // Issue #887 — StreamEvent::HookResponse + CallLogKind::HookResponse
+    // =========================================================================
+
+    fn make_hook_response_event() -> StreamEvent {
+        StreamEvent::HookResponse {
+            hook_name: "pre-commit".into(),
+            exit_code: 1,
+            stdout: "stdout output".into(),
+            stderr: "stderr output".into(),
+        }
+    }
+
+    #[test]
+    fn hook_response_kind_from_event_returns_some() {
+        assert_eq!(
+            CallLogKind::from_event(&make_hook_response_event()),
+            Some(CallLogKind::HookResponse)
+        );
+    }
+
+    #[test]
+    fn hook_response_kind_label_is_hook_response() {
+        assert_eq!(CallLogKind::HookResponse.label(), "HookResponse");
+    }
+
+    #[test]
+    fn hook_response_kind_serializes_as_snake_case() {
+        let json = serde_json::to_string(&CallLogKind::HookResponse).unwrap();
+        assert_eq!(json, r#""hook_response""#);
+    }
+
+    #[test]
+    fn hook_response_kind_deserializes_from_snake_case() {
+        let kind: CallLogKind = serde_json::from_str(r#""hook_response""#).unwrap();
+        assert_eq!(kind, CallLogKind::HookResponse);
+    }
+
+    #[test]
+    fn render_event_payload_hook_response_includes_required_fields() {
+        let event = StreamEvent::HookResponse {
+            hook_name: "post-push".into(),
+            exit_code: 2,
+            stdout: "ok".into(),
+            stderr: "warn".into(),
+        };
+        let rendered = render_event_payload(&event);
+        assert!(rendered.contains("hook_name"), "missing hook_name key");
+        assert!(rendered.contains("post-push"), "missing hook_name value");
+        assert!(rendered.contains("exit_code"), "missing exit_code key");
+        assert!(rendered.contains('2'), "missing exit_code value");
+        assert!(rendered.contains("stdout"), "missing stdout key");
+        assert!(rendered.contains("stderr"), "missing stderr key");
+    }
+
+    #[test]
+    fn render_event_payload_hook_response_caps_stdout_at_10kb() {
+        let event = StreamEvent::HookResponse {
+            hook_name: "pre-commit".into(),
+            exit_code: 0,
+            stdout: "x".repeat(20_000),
+            stderr: String::new(),
+        };
+        let rendered = render_event_payload(&event);
+        assert!(rendered.len() < 20_000, "stdout should be capped");
+        assert!(
+            rendered.contains("…[truncated]"),
+            "expected truncation marker"
+        );
+    }
+
+    #[test]
+    fn render_event_payload_hook_response_caps_stderr_at_10kb() {
+        let event = StreamEvent::HookResponse {
+            hook_name: "pre-commit".into(),
+            exit_code: 1,
+            stdout: String::new(),
+            stderr: "e".repeat(20_000),
+        };
+        let rendered = render_event_payload(&event);
+        assert!(rendered.len() < 20_000, "stderr should be capped");
+        assert!(
+            rendered.contains("…[truncated]"),
+            "expected truncation marker"
+        );
+    }
+
+    #[test]
+    fn append_call_log_hook_response_entry_has_correct_kind() {
+        let mut s = fresh_session();
+        s.append_call_log(&make_hook_response_event());
+        assert_eq!(s.call_log[0].kind, CallLogKind::HookResponse);
     }
 }

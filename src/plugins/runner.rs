@@ -9,6 +9,14 @@ pub struct PluginResult {
     pub plugin_name: String,
     pub success: bool,
     pub output: String,
+    /// Subprocess exit code; `-1` when killed by signal, timed out, or failed
+    /// to spawn (#887).
+    pub exit_code: i32,
+    /// Raw stdout, kept separately from `output` so the call log can render it
+    /// untouched (#887).
+    pub stdout: String,
+    /// Raw stderr (#887).
+    pub stderr: String,
     pub duration_ms: u64,
 }
 
@@ -78,10 +86,10 @@ impl PluginRunner {
 
         match result {
             Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let combined = if stderr.is_empty() {
-                    stdout.to_string()
+                    stdout.clone()
                 } else {
                     format!("{}\n{}", stdout.trim(), stderr.trim())
                 };
@@ -89,21 +97,37 @@ impl PluginRunner {
                     plugin_name: plugin.name.clone(),
                     success: output.status.success(),
                     output: combined,
+                    // `code()` is `None` when killed by a signal — map to -1.
+                    exit_code: output.status.code().unwrap_or(-1),
+                    stdout,
+                    stderr,
                     duration_ms,
                 }
             }
-            Ok(Err(e)) => PluginResult {
-                plugin_name: plugin.name.clone(),
-                success: false,
-                output: format!("Failed to execute: {}", e),
-                duration_ms,
-            },
-            Err(_) => PluginResult {
-                plugin_name: plugin.name.clone(),
-                success: false,
-                output: format!("Plugin timed out after {}s", self.timeout.as_secs()),
-                duration_ms,
-            },
+            Ok(Err(e)) => {
+                let msg = format!("Failed to execute: {}", e);
+                PluginResult {
+                    plugin_name: plugin.name.clone(),
+                    success: false,
+                    output: msg.clone(),
+                    exit_code: -1,
+                    stdout: String::new(),
+                    stderr: msg,
+                    duration_ms,
+                }
+            }
+            Err(_) => {
+                let msg = format!("Plugin timed out after {}s", self.timeout.as_secs());
+                PluginResult {
+                    plugin_name: plugin.name.clone(),
+                    success: false,
+                    output: msg.clone(),
+                    exit_code: -1,
+                    stdout: String::new(),
+                    stderr: msg,
+                    duration_ms,
+                }
+            }
         }
     }
 }

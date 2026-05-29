@@ -85,6 +85,18 @@ impl SessionLogger {
             StreamEvent::Warning { code, message } => {
                 format!("[{}] WARNING [{}]: {}\n", timestamp, code, message)
             }
+            StreamEvent::HookResponse {
+                hook_name,
+                exit_code,
+                ..
+            } => {
+                // One-line summary in the flat log; full stdout/stderr lives
+                // in the call-log viewer payload (#887).
+                format!(
+                    "[{}] HOOK: {} -> exit {}\n",
+                    timestamp, hook_name, exit_code
+                )
+            }
         };
 
         file.write_all(entry.as_bytes())?;

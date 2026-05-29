@@ -403,6 +403,9 @@ impl ManagedSession {
                 self.session
                     .log_activity(format!("WARNING [{code}]: {message}"));
             }
+            // The call-log entry is appended by `append_call_log` before this
+            // match runs; a hook result is not a session-state change (#887).
+            StreamEvent::HookResponse { .. } => {}
         }
     }
 }

@@ -68,6 +68,32 @@ fn call_log_with_three_events() {
 }
 
 #[test]
+fn call_log_with_hook_response() {
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let session = session_with_log(vec![
+        entry(
+            CallLogKind::ToolUse,
+            0,
+            r#"{"type":"ToolUse","tool":"Bash","command_preview":"cargo test"}"#,
+        ),
+        entry(
+            CallLogKind::HookResponse,
+            1,
+            r#"{"type":"HookResponse","hook_name":"pre-commit","exit_code":1,"stdout":"","stderr":"hook failed: lint errors found"}"#,
+        ),
+    ]);
+    let state = CallLogState {
+        selected: 1,
+        ..Default::default()
+    };
+    terminal
+        .draw(|f| draw_call_log(f, &session, &state, f.area(), &theme))
+        .unwrap();
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
 fn call_log_with_many_events_selection_mid() {
     let mut terminal = test_terminal();
     let theme = Theme::dark();
