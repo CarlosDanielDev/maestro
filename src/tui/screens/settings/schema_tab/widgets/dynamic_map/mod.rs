@@ -286,6 +286,27 @@ impl DynamicMapWidget {
         super::dynamic_map_draw::draw(self, f, area, theme, focused);
     }
 
+    /// Variant of [`Self::draw`] that threads a warnings-by-label
+    /// lookup through the per-entry field rows so each inner
+    /// `WidgetKind::draw` receives its own `ValidationFeedback`
+    /// (#909). The outer SettingsScreen builds the map once per
+    /// render via [`SettingsScreen::build_role_override_lookup`] and
+    /// passes the same reference down at every nested level — sub-
+    /// field labels are already fully-qualified.
+    pub fn draw_with_warnings(
+        &self,
+        f: &mut Frame,
+        area: Rect,
+        theme: &Theme,
+        focused: bool,
+        warnings: &std::collections::HashMap<
+            String,
+            crate::tui::screens::settings::validation::ValidationFeedback,
+        >,
+    ) {
+        super::dynamic_map_draw::draw_with_warnings(self, f, area, theme, focused, warnings);
+    }
+
     pub(super) fn undo_label(&self) -> Option<&str> {
         self.undo.current_label()
     }

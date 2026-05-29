@@ -162,7 +162,15 @@ impl SettingsScreen {
         }
     }
 
-    fn field_height(&self, tab: usize, field_idx: usize) -> u16 {
+    fn field_height(
+        &self,
+        tab: usize,
+        field_idx: usize,
+        role_override_lookup: &std::collections::HashMap<
+            String,
+            crate::tui::screens::settings::validation::ValidationFeedback,
+        >,
+    ) -> u16 {
         if let Some(field) = self
             .fields_per_tab
             .get(tab)
@@ -174,13 +182,10 @@ impl SettingsScreen {
                 // One row is not enough — give them the height to display
                 // the empty state hint or a full entry group.
                 WidgetKind::DynamicMap(w) => {
-                    // Ask the widget how much space it needs — variable per
-                    // active entry, since `ListEditor` fields can ask for 2
-                    // (label + hint), 3+ (label + items + input prompt),
-                    // etc. Floor at 7 so the empty-state hint + sub-tab
-                    // strip have breathing room consistent with snapshot
-                    // tests.
-                    w.desired_height().max(7)
+                    // Pass the lookup so a nested role-override sub-
+                    // field with a pending warning is counted as 2
+                    // lines instead of 1 (#909).
+                    w.desired_height_with_warnings(role_override_lookup).max(7)
                 }
                 WidgetKind::DynamicRows(_) => 8,
                 _ => {
@@ -205,9 +210,14 @@ impl SettingsScreen {
         let field_index = self.field_index;
         let tab = self.active_tab;
 
+        // #909 — built once per render and threaded into both
+        // `field_height` and the per-field draw call so the nested
+        // role_overrides editor surfaces soft warnings inline.
+        let role_override_lookup = self.build_role_override_lookup();
+
         // Compute cumulative heights to determine scroll position
         let field_heights: Vec<u16> = (0..field_count)
-            .map(|i| self.field_height(tab, i))
+            .map(|i| self.field_height(tab, i, &role_override_lookup))
             .collect();
 
         // Adjust scroll so the focused field is visible
@@ -260,6 +270,8 @@ impl SettingsScreen {
             }
             if active_tab == SettingsTab::Advanced && field.widget.label() == CAVEMAN_LABEL {
                 caveman_row::render_caveman_row(f, field_area, caveman_state, focused, theme);
+            } else if let WidgetKind::DynamicMap(dm) = &field.widget {
+                dm.draw_with_warnings(f, field_area, theme, focused, &role_override_lookup);
             } else {
                 let validation = self.feedback_for(tab, field_idx).cloned();
                 field

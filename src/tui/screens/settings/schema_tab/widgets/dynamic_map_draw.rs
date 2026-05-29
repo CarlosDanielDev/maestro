@@ -1,6 +1,8 @@
 //! Rendering routines for [`super::DynamicMapWidget`]. Split from the
 //! widget's state machine to keep each file ≤ 400 LOC per RUST-GUARDRAILS §1.
 
+use std::collections::HashMap;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -9,7 +11,9 @@ use ratatui::{
     widgets::{Paragraph, Tabs},
 };
 
+use crate::tui::screens::settings::validation::ValidationFeedback;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::WidgetKind;
 
 use super::dynamic_map::{DynamicMapWidget, MapFocus};
 use super::dynamic_map_chrome::{nested_breadcrumb, tab_highlight_style};
@@ -21,6 +25,23 @@ pub(super) fn draw(
     area: Rect,
     theme: &Theme,
     focused: bool,
+) {
+    let empty: HashMap<String, ValidationFeedback> = HashMap::new();
+    draw_with_warnings(widget, f, area, theme, focused, &empty);
+}
+
+/// Internal core for [`draw`] that threads a warnings-by-label lookup
+/// through the nested per-entry field rows. The outer `draw` forwards
+/// here with an empty map; the `SettingsScreen` render path passes a
+/// populated lookup so inline `ValidationFeedback::warning` glyphs
+/// appear next to offending sub-fields (#909).
+pub(super) fn draw_with_warnings(
+    widget: &DynamicMapWidget,
+    f: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    focused: bool,
+    warnings: &HashMap<String, ValidationFeedback>,
 ) {
     // Collapsed-row path: when the outer layout allocates a single line
     // (nested DynamicMap inside an unfocused entry field — e.g. the
@@ -129,8 +150,16 @@ pub(super) fn draw(
         f.render_widget(tabs, chunks[0]);
 
         if let Some(entry) = widget.active_entry() {
-            let row_heights = widget.active_entry_row_heights();
-            draw_entry_fields(f, chunks[1], theme, entry, widget.focus(), &row_heights);
+            let row_heights = widget.active_entry_row_heights_for(warnings);
+            draw_entry_fields(
+                f,
+                chunks[1],
+                theme,
+                entry,
+                widget.focus(),
+                &row_heights,
+                warnings,
+            );
         }
     }
 
@@ -242,6 +271,7 @@ fn draw_entry_fields(
     entry: &EntryState,
     focus: &MapFocus,
     row_heights: &[(usize, u16)],
+    warnings: &HashMap<String, ValidationFeedback>,
 ) {
     if row_heights.is_empty() {
         return;
@@ -259,90 +289,17 @@ fn draw_entry_fields(
             continue;
         };
         let focused = matches!(focus, MapFocus::EntryField(n) if *n == field_idx);
-        sf.widget.draw(f, rows[row_idx], theme, focused, None);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::schema::FieldSchema;
-
-    const EMPTY_FIELDS: &[FieldSchema] = &[];
-
-    fn entry(id: &str) -> EntryState {
-        EntryState::build("agents", id.to_string(), EMPTY_FIELDS, None)
-    }
-
-    fn title_text(line: &Line<'_>) -> String {
-        line.spans
-            .iter()
-            .map(|s| s.content.as_ref())
-            .collect::<String>()
-    }
-
-    #[test]
-    fn truncated_titles_returns_empty_for_no_entries() {
-        let (titles, idx) = truncated_titles(&[], 0, 80);
-        assert!(titles.is_empty());
-        assert_eq!(idx, 0);
-    }
-
-    #[test]
-    fn truncated_titles_fits_all_when_under_budget() {
-        let entries: Vec<EntryState> = (0..5).map(|i| entry(&format!("a{i}"))).collect();
-        let (titles, idx) = truncated_titles(&entries, 2, 80);
-        assert_eq!(titles.len(), 5, "all entries fit, no truncation");
-        assert_eq!(idx, 2, "highlight index unchanged when all fit");
-    }
-
-    #[test]
-    fn truncated_titles_active_first_truncates_right_only() {
-        let entries: Vec<EntryState> = (0..12).map(|i| entry(&format!("agent-{i:02}"))).collect();
-        let (titles, idx) = truncated_titles(&entries, 0, 40);
-        assert_eq!(
-            title_text(&titles[0]),
-            "agent-00",
-            "active-first must place the active entry at slot 0"
-        );
-        assert_eq!(
-            title_text(titles.last().unwrap()),
-            "…",
-            "active-first must end with the trailing ellipsis"
-        );
-        assert_eq!(idx, 0);
-    }
-
-    #[test]
-    fn truncated_titles_active_last_truncates_left_only() {
-        let entries: Vec<EntryState> = (0..12).map(|i| entry(&format!("agent-{i:02}"))).collect();
-        let (titles, idx) = truncated_titles(&entries, 11, 40);
-        assert_eq!(
-            title_text(&titles[0]),
-            "…",
-            "active-last must start with the leading ellipsis"
-        );
-        assert_eq!(
-            title_text(titles.last().unwrap()),
-            "agent-11",
-            "active-last must place the active entry at the end"
-        );
-        assert_eq!(idx, titles.len() - 1);
-    }
-
-    #[test]
-    fn truncated_titles_active_middle_truncates_both_sides() {
-        let entries: Vec<EntryState> = (0..12).map(|i| entry(&format!("agent-{i:02}"))).collect();
-        let (titles, _idx) = truncated_titles(&entries, 6, 40);
-        assert_eq!(
-            title_text(&titles[0]),
-            "…",
-            "middle-active must have leading ellipsis"
-        );
-        assert_eq!(
-            title_text(titles.last().unwrap()),
-            "…",
-            "middle-active must have trailing ellipsis"
-        );
+        match &sf.widget {
+            // Nested DynamicMap (the role_overrides editor inside a
+            // teams entry): pass the same map down so its sub-fields
+            // can look up their own warnings by fully-qualified label.
+            WidgetKind::DynamicMap(inner) => {
+                inner.draw_with_warnings(f, rows[row_idx], theme, focused, warnings);
+            }
+            _ => {
+                let validation = warnings.get(sf.widget.label());
+                sf.widget.draw(f, rows[row_idx], theme, focused, validation);
+            }
+        }
     }
 }

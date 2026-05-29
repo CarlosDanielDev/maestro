@@ -20,6 +20,8 @@ pub mod undo;
 pub(crate) mod test_fixture;
 
 #[cfg(test)]
+mod dynamic_map_draw_tests;
+#[cfg(test)]
 mod dynamic_map_tests;
 #[cfg(test)]
 mod dynamic_rows_tests;
