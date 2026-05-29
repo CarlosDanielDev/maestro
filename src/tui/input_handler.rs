@@ -646,7 +646,12 @@ fn handle_call_log(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> Key
         (KeyCode::Enter, _) if total > 0 => {
             state.toggle_expand();
         }
+        (KeyCode::Char('f'), _) => {
+            state.toggle_follow_tail();
+        }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+            // Manual movement cancels follow-tail so the user can scroll back.
+            state.disable_follow_tail();
             if state.expanded {
                 state.scroll_payload_up();
             } else {
@@ -654,6 +659,7 @@ fn handle_call_log(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> Key
             }
         }
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+            state.disable_follow_tail();
             if state.expanded {
                 state.scroll_payload_down();
             } else {
@@ -661,9 +667,11 @@ fn handle_call_log(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> Key
             }
         }
         (KeyCode::Char('g'), _) => {
+            state.disable_follow_tail();
             state.jump_first();
         }
         (KeyCode::Char('G'), _) => {
+            state.disable_follow_tail();
             state.jump_last(total);
         }
         _ => {}
@@ -2622,5 +2630,44 @@ mod tests {
         );
         assert!(non_empty_url("").is_none());
         assert!(non_empty_url("not a url").is_none());
+    }
+
+    // --- Issue #886: call-log follow-tail toggle ---
+
+    #[test]
+    fn call_log_f_key_toggles_follow_tail() {
+        let mut app = make_app();
+        let session = completed_session("x");
+        let id = session.id;
+        app.pool.enqueue(session);
+        app.tui_mode = TuiMode::CallLog(id);
+
+        handle_call_log(&mut app, &key('f'), id);
+        assert!(
+            app.call_log_state.follow_tail,
+            "[f] must enable follow-tail"
+        );
+
+        handle_call_log(&mut app, &key('f'), id);
+        assert!(
+            !app.call_log_state.follow_tail,
+            "[f] again must disable follow-tail"
+        );
+    }
+
+    #[test]
+    fn call_log_manual_move_disables_follow_tail() {
+        let mut app = make_app();
+        let session = completed_session("x");
+        let id = session.id;
+        app.pool.enqueue(session);
+        app.tui_mode = TuiMode::CallLog(id);
+        app.call_log_state.follow_tail = true;
+
+        handle_call_log(&mut app, &key('j'), id);
+        assert!(
+            !app.call_log_state.follow_tail,
+            "manual [j] move must cancel follow-tail"
+        );
     }
 }

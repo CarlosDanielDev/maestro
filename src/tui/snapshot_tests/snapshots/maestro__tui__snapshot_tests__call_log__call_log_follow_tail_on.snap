@@ -1,21 +1,21 @@
 ---
 source: src/tui/snapshot_tests/call_log.rs
-assertion_line: 201
+assertion_line: 115
 expression: terminal.backend()
 ---
-"┌Call Log — 3 events • #868────────────────────────────────────────────────────────────────────────────────────────────┐"
+"┌Call Log — 10 events • #868───────────────────────────────────────────────────────────────────────────────────────────┐"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-"┌ 1 / 3 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
-"│10:42:00  AssistantMsg  {"text":"working..."}                                                                         │"
-"│10:42:01  ToolUse       {"tool":"Bash","command_preview":"cargo test"}                                                │"
-"│10:42:02  Error         {"message":"context window exceeded"}                                                         │"
-"│                                                                                                                      │"
-"│                                                                                                                      │"
-"│                                                                                                                      │"
-"│                                                                                                                      │"
-"│                                                                                                                      │"
-"│                                                                                                                      │"
-"│                                                                                                                      │"
+"┌ 10 / 10 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
+"│10:42:00  AssistantMsg  {"text":"chunk"}                                                                              │"
+"│10:42:01  AssistantMsg  {"text":"chunk"}                                                                              │"
+"│10:42:02  AssistantMsg  {"text":"chunk"}                                                                              │"
+"│10:42:03  AssistantMsg  {"text":"chunk"}                                                                              │"
+"│10:42:04  AssistantMsg  {"text":"chunk"}                                                                              │"
+"│10:42:05  AssistantMsg  {"text":"chunk"}                                                                              │"
+"│10:42:06  AssistantMsg  {"text":"chunk"}                                                                              │"
+"│10:42:07  AssistantMsg  {"text":"chunk"}                                                                              │"
+"│10:42:08  AssistantMsg  {"text":"chunk"}                                                                              │"
+"│10:42:09  AssistantMsg  {"text":"chunk"}                                                                              │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "│                                                                                                                      │"
@@ -42,4 +42,4 @@ expression: terminal.backend()
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" [Esc] Back  [Enter] Expand  [j/k] [↑/↓] Move  [g/G] Top/Bottom   [f] Follow: off                                       "
+" [Esc] Back  [Enter] Expand  [j/k] [↑/↓] Move  [g/G] Top/Bottom   [f] Follow: ON                                        "
