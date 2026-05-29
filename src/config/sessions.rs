@@ -97,6 +97,12 @@ pub struct SessionsConfig {
     pub guardrail_prompt: Option<String>,
     /// Completion gates that run after session finishes, before PR creation.
     pub completion_gates: CompletionGatesConfig,
+    /// Persist each session's `call_log` to `maestro-state.json`. Default
+    /// `false` (memory-only). The call log captures assistant text, Thinking
+    /// blocks, error messages, bash commands, and hook stdout/stderr — all
+    /// sensitive. Enable only if you need post-crash call-log inspection;
+    /// enforced at the state-store save boundary (#888).
+    pub call_log_persist: bool,
 }
 
 /// Shadow struct used only for deserialization. Mirrors `SessionsConfig`
@@ -137,6 +143,8 @@ struct SessionsConfigRaw {
     guardrail_prompt: Option<String>,
     #[serde(default)]
     completion_gates: CompletionGatesConfig,
+    #[serde(default)]
+    call_log_persist: bool,
 }
 
 impl From<SessionsConfigRaw> for SessionsConfig {
@@ -157,6 +165,7 @@ impl From<SessionsConfigRaw> for SessionsConfig {
             conflict: raw.conflict,
             guardrail_prompt: raw.guardrail_prompt,
             completion_gates: raw.completion_gates,
+            call_log_persist: raw.call_log_persist,
         }
     }
 }
