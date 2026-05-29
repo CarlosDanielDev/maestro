@@ -477,6 +477,85 @@ fn build_role_override_lookup_maps_warnings_to_structured_paths() {
         "mode message must reference the bad value, got: {}",
         mode_fb.message
     );
+    // #912 — empty `[agents.*]` / `[modes.*]` in MINIMAL_SETTINGS_TOML
+    // means the valid-list tail collapses to `no … configured`.
+    assert!(
+        agent_fb.message.ends_with("no agents configured"),
+        "empty agents set must produce `no agents configured` tail, got: {}",
+        agent_fb.message
+    );
+    assert!(
+        mode_fb.message.ends_with("no modes configured"),
+        "empty modes set must produce `no modes configured` tail, got: {}",
+        mode_fb.message
+    );
+}
+
+#[test]
+fn build_role_override_lookup_lists_configured_ids_in_warning_tail() {
+    // #912 — when `[agents.*]` and `[modes.*]` are configured, the
+    // inline warning message lists those ids so the user can pick a
+    // valid value without leaving Settings.
+    use crate::orchestration::team_role_overrides::{RoleOverrideField, RoleOverrideWarning};
+
+    let toml_str = "\
+[project]
+repo = \"owner/repo\"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+
+[agents.claude]
+kind = \"claude\"
+command = \"claude\"
+
+[agents.opencode]
+kind = \"opencode\"
+command = \"opencode\"
+
+[modes.review-strict]
+prompt_addendum = \"Be terse\"
+";
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    use std::io::Write;
+    write!(f, "{toml_str}").unwrap();
+    let config = Config::load(f.path()).unwrap();
+    let mut screen = SettingsScreen::new(config, make_flags());
+
+    screen.set_role_override_warnings_for_test(vec![
+        RoleOverrideWarning {
+            team_id: "t".to_string(),
+            role_id: "r".to_string(),
+            field: RoleOverrideField::Agent,
+            value: "ghost".to_string(),
+        },
+        RoleOverrideWarning {
+            team_id: "t".to_string(),
+            role_id: "r".to_string(),
+            field: RoleOverrideField::Mode,
+            value: "ghost-mode".to_string(),
+        },
+    ]);
+
+    let lookup = screen.build_role_override_lookup();
+    let agent_fb = lookup
+        .get("teams.t.role_overrides.r.agent")
+        .expect("agent key");
+    assert_eq!(
+        agent_fb.message, "unknown agent `ghost` — valid: claude, opencode",
+        "agent warning must enumerate configured agent ids",
+    );
+    let mode_fb = lookup
+        .get("teams.t.role_overrides.r.mode")
+        .expect("mode key");
+    assert_eq!(
+        mode_fb.message, "unknown mode `ghost-mode` — valid: review-strict",
+        "mode warning must enumerate configured mode ids",
+    );
 }
 
 #[test]

@@ -254,14 +254,28 @@ impl SettingsScreen {
     /// `Paragraph` passes ANSI ESC and other C0/C1 controls straight
     /// to the back-buffer. Mirrors the sibling Save-banner path which
     /// sanitizes via the same helper.
+    ///
+    /// The known-id sets are rebuilt per render because the user can
+    /// add/remove agents and modes in the same Settings session. The
+    /// set sizes are bounded by `[agents.*]` / `[modes.*]` keys (≤ ~30
+    /// typical) so the per-render allocation is negligible (#912).
     pub(crate) fn build_role_override_lookup(&self) -> HashMap<String, ValidationFeedback> {
+        use crate::orchestration::team_role_overrides::RoleOverrideField;
         use crate::tui::screens::sanitize_for_terminal;
+        let known_agents: std::collections::BTreeSet<String> =
+            self.config.agents.entries.keys().cloned().collect();
+        let known_modes: std::collections::BTreeSet<String> =
+            self.config.modes.keys().cloned().collect();
         self.role_override_warnings
             .iter()
             .map(|w| {
+                let known = match w.field {
+                    RoleOverrideField::Agent | RoleOverrideField::FallbackAgent => &known_agents,
+                    RoleOverrideField::Mode => &known_modes,
+                };
                 (
                     w.structured_path(),
-                    ValidationFeedback::warning(sanitize_for_terminal(&w.message())),
+                    ValidationFeedback::warning(sanitize_for_terminal(&w.message(known))),
                 )
             })
             .collect()
