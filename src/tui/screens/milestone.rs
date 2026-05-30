@@ -356,6 +356,7 @@ impl MilestoneScreen {
                     title: i.title.clone(),
                     custom_prompt: None,
                     agent_id: None,
+                    ..SessionConfig::default()
                 })
                 .collect();
             if configs.is_empty() {

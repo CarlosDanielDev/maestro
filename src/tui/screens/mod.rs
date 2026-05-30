@@ -234,6 +234,26 @@ pub struct SessionConfig {
     pub custom_prompt: Option<String>,
     /// Configured agent id to use for the new session. `None` means app default.
     pub agent_id: Option<String>,
+    /// Launch-dialog "Produce PR" checkbox: session ends when a PR linked to
+    /// the issue is created. Defaults to `true`. Behaviour is wired by later
+    /// v0.30.0 milestone issues; this field only carries the choice.
+    pub produce_pr: bool,
+    /// Launch-dialog "Interaction" checkbox: chat with the agent; session
+    /// stays alive. Defaults to `false`. Behaviour wired by later issues.
+    pub interaction: bool,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            issue_number: None,
+            title: String::new(),
+            custom_prompt: None,
+            agent_id: None,
+            produce_pr: true,
+            interaction: false,
+        }
+    }
 }
 
 impl SessionConfig {

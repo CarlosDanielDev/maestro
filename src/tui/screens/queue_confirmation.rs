@@ -260,6 +260,7 @@ impl Screen for QueueConfirmationScreen {
                             title: e.title.clone(),
                             custom_prompt: None,
                             agent_id: None,
+                            ..SessionConfig::default()
                         })
                         .collect();
                     return ScreenAction::LaunchQueue(configs);

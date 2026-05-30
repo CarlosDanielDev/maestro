@@ -494,14 +494,23 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         .as_ref()
                         .map(|c| c.tui.layout.clone())
                         .unwrap_or_default();
+                    let launch_defaults = app
+                        .config
+                        .as_ref()
+                        .map(|c| c.launch_defaults())
+                        .unwrap_or((true, false));
                     if let Some(issues) = milestone_issues_if_applicable(app) {
-                        app.screen_state.issue_browser_screen =
-                            Some(screens::IssueBrowserScreen::new(issues).with_layout(layout));
+                        app.screen_state.issue_browser_screen = Some(
+                            screens::IssueBrowserScreen::new(issues)
+                                .with_layout(layout)
+                                .with_launch_defaults(launch_defaults),
+                        );
                     } else {
                         // Fresh screen for "All Issues" — never reuse a
                         // milestone-scoped screen (fixes #117).
-                        let mut screen =
-                            screens::IssueBrowserScreen::new(vec![]).with_layout(layout);
+                        let mut screen = screens::IssueBrowserScreen::new(vec![])
+                            .with_layout(layout)
+                            .with_launch_defaults(launch_defaults);
                         screen.loading = true;
                         app.screen_state.issue_browser_screen = Some(screen);
                         app.pending_commands.push(app::TuiCommand::FetchIssues);

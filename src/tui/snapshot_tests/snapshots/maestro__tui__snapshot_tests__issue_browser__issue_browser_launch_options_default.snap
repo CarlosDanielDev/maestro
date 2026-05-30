@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/issue_browser.rs
+assertion_line: 176
 expression: terminal.backend()
 ---
 "╔═════════════════════════════════════════════════════[ 󰝦 Issues ]═════════════════════════════════════════════════════╗"
@@ -14,7 +15,7 @@ expression: terminal.backend()
 "║                   ╔══════════════════════════[ #1 — Add login flow ]═══════════════════════════╗                     ║"
 "║                   ║Additional instructions (optional):                                         ║                     ║"
 "║                   ║╔══════════════════════════════════════════════════════════════════════════╗║                     ║"
-"║                   ║║focus on error handling                                                   ║║                     ║"
+"║                   ║║Type your prompt here...                                                  ║║                     ║"
 "║                   ║║                                                                          ║║                     ║"
 "║                   ║║                                                                          ║║                     ║"
 "║                   ║║                                                                          ║║                     ║"

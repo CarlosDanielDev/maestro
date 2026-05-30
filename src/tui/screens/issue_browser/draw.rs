@@ -1,4 +1,7 @@
-use super::{FilterMode, FocusPane, IssueBrowserScreen, IssuePromptOverlay, sanitize_for_terminal};
+use super::{
+    FilterMode, FocusPane, IssueBrowserScreen, IssuePromptOverlay, LaunchFocus,
+    sanitize_for_terminal,
+};
 use crate::tui::help::centered_rect;
 use crate::tui::icons::{self, IconId};
 use crate::tui::markdown::render_markdown;
@@ -108,6 +111,8 @@ impl IssueBrowserScreen {
             return ScreenAction::None;
         }
 
+        let (produce_pr, interaction) = self.launch_defaults;
+
         // If multi-select is active, open overlay with all selected issues
         if !self.selected_set.is_empty() {
             let selected_issues: Vec<(u64, String)> = self
@@ -120,6 +125,9 @@ impl IssueBrowserScreen {
                 text: String::new(),
                 selected_issues,
                 unified_pr: false,
+                focus: LaunchFocus::Prompt,
+                produce_pr,
+                interaction,
             });
             return ScreenAction::None;
         }
@@ -131,6 +139,9 @@ impl IssueBrowserScreen {
                 text: String::new(),
                 selected_issues: vec![(issue.number, issue.title.clone())],
                 unified_pr: false,
+                focus: LaunchFocus::Prompt,
+                produce_pr,
+                interaction,
             });
         }
 
@@ -463,6 +474,9 @@ impl IssueBrowserScreen {
                 .constraints([
                     Constraint::Length(1), // hint
                     Constraint::Min(3),    // text area
+                    Constraint::Length(1), // "Options:" label
+                    Constraint::Length(1), // Produce PR checkbox
+                    Constraint::Length(1), // Interaction checkbox
                     Constraint::Length(1), // keybinds
                 ])
                 .split(inner);
@@ -475,12 +489,37 @@ impl IssueBrowserScreen {
 
             Self::draw_overlay_text_area(f, chunks[1], overlay, theme);
 
+            let options_label = Paragraph::new(Line::from(Span::styled(
+                "Options:",
+                Style::default().fg(theme.text_secondary),
+            )));
+            f.render_widget(options_label, chunks[2]);
+
+            use crate::tui::widgets::unified_pr_toggle::draw_checkbox;
+            draw_checkbox(
+                f,
+                chunks[3],
+                overlay.produce_pr,
+                overlay.focus == LaunchFocus::ProducePr,
+                "Produce PR — session ends when a linked PR is created",
+                theme,
+            );
+            draw_checkbox(
+                f,
+                chunks[4],
+                overlay.interaction,
+                overlay.focus == LaunchFocus::Interaction,
+                "Interaction — chat with the agent; session stays alive",
+                theme,
+            );
+
             draw_keybinds_bar(
                 f,
-                chunks[2],
+                chunks[5],
                 &[
+                    ("Tab", "Cycle"),
+                    ("Space", "Toggle"),
                     ("Enter", "Launch"),
-                    ("Shift+Enter", "New line"),
                     ("Esc", "Cancel"),
                 ],
                 theme,

@@ -2509,6 +2509,7 @@ mod tests {
             title: "test".to_string(),
             custom_prompt: None,
             agent_id: None,
+            ..ScreenSessionConfig::default()
         };
         handle_screen_action(&mut app, ScreenAction::LaunchSession(cfg));
 

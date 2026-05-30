@@ -1,6 +1,8 @@
 use super::*;
 use crate::tui::screens::Screen;
-use crate::tui::screens::issue_browser::{FilterMode, IssueBrowserScreen, IssuePromptOverlay};
+use crate::tui::screens::issue_browser::{
+    FilterMode, IssueBrowserScreen, IssuePromptOverlay, LaunchFocus,
+};
 use crate::tui::theme::Theme;
 use insta::assert_snapshot;
 
@@ -108,6 +110,9 @@ fn issue_browser_prompt_overlay_empty() {
         text: String::new(),
         selected_issues: vec![(1, "Add login flow".to_string())],
         unified_pr: false,
+        focus: LaunchFocus::Prompt,
+        produce_pr: true,
+        interaction: false,
     });
 
     terminal
@@ -131,6 +136,61 @@ fn issue_browser_prompt_overlay_with_text() {
         text: "focus on error handling".to_string(),
         selected_issues: vec![(1, "Add login flow".to_string())],
         unified_pr: false,
+        focus: LaunchFocus::Prompt,
+        produce_pr: true,
+        interaction: false,
+    });
+
+    terminal
+        .draw(|f| {
+            screen.draw(f, f.area(), &theme);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn issue_browser_launch_options_default() {
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut screen = IssueBrowserScreen::new(vec![
+        make_gh_issue(1, "Add login flow"),
+        make_gh_issue(2, "Fix database crash"),
+    ]);
+    screen.prompt_overlay = Some(IssuePromptOverlay {
+        text: String::new(),
+        selected_issues: vec![(1, "Add login flow".to_string())],
+        unified_pr: false,
+        focus: LaunchFocus::Prompt,
+        produce_pr: true,
+        interaction: false,
+    });
+
+    terminal
+        .draw(|f| {
+            screen.draw(f, f.area(), &theme);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn issue_browser_launch_options_toggled() {
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut screen = IssueBrowserScreen::new(vec![
+        make_gh_issue(1, "Add login flow"),
+        make_gh_issue(2, "Fix database crash"),
+    ]);
+    screen.prompt_overlay = Some(IssuePromptOverlay {
+        text: String::new(),
+        selected_issues: vec![(1, "Add login flow".to_string())],
+        unified_pr: false,
+        focus: LaunchFocus::Interaction,
+        produce_pr: false,
+        interaction: true,
     });
 
     terminal

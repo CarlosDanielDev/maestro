@@ -7,6 +7,7 @@ use std::path::Path;
 mod adapt;
 mod agents;
 mod agents_upgrade;
+mod behavior;
 mod budget;
 mod experimental;
 mod flags;
@@ -34,6 +35,8 @@ pub use adapt::{AdaptSettings, MilestoneNaming};
 pub use agents::{AgentConfig, AgentKind, AgentsConfig};
 #[allow(unused_imports)]
 pub use agents_upgrade::{AgentConfigUpgradePlan, AgentConfigVersion, plan_agent_config_upgrade};
+#[allow(unused_imports)]
+pub use behavior::{BehaviorConfig, LaunchBehaviorConfig};
 pub use budget::BudgetConfig;
 pub use experimental::ExperimentalConfig;
 pub use flags::FlagsConfig;
@@ -103,6 +106,8 @@ pub struct Config {
     pub experimental: ExperimentalConfig,
     #[serde(default)]
     pub teams: HashMap<String, crate::orchestration::team::TeamConfig>,
+    #[serde(default, skip_serializing_if = "BehaviorConfig::is_default")]
+    pub behavior: BehaviorConfig,
 }
 
 impl Config {

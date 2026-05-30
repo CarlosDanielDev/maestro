@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/issue_browser.rs
+assertion_line: 202
 expression: terminal.backend()
 ---
 "╔═════════════════════════════════════════════════════[ 󰝦 Issues ]═════════════════════════════════════════════════════╗"
@@ -14,7 +15,7 @@ expression: terminal.backend()
 "║                   ╔══════════════════════════[ #1 — Add login flow ]═══════════════════════════╗                     ║"
 "║                   ║Additional instructions (optional):                                         ║                     ║"
 "║                   ║╔══════════════════════════════════════════════════════════════════════════╗║                     ║"
-"║                   ║║focus on error handling                                                   ║║                     ║"
+"║                   ║║Type your prompt here...                                                  ║║                     ║"
 "║                   ║║                                                                          ║║                     ║"
 "║                   ║║                                                                          ║║                     ║"
 "║                   ║║                                                                          ║║                     ║"
@@ -29,8 +30,8 @@ expression: terminal.backend()
 "║                   ║║                                                                          ║║                     ║"
 "║                   ║╚══════════════════════════════════════════════════════════════════════════╝║                     ║"
 "║                   ║Options:                                                                    ║                     ║"
-"║                   ║    Produce PR — session ends when a linked PR is created                  ║                     ║"
-"║                   ║    Interaction — chat with the agent; session stays alive                 ║                     ║"
+"║                   ║    Produce PR — session ends when a linked PR is created                  ║                     ║"
+"║                   ║ >  Interaction — chat with the agent; session stays alive                 ║                     ║"
 "║                   ║[Tab] Cycle  [Space] Toggle  [Enter] Launch  [Esc] Cancel                   ║                     ║"
 "║                   ╚════════════════════════════════════════════════════════════════════════════╝                     ║"
 "║                                                                                                                      ║"

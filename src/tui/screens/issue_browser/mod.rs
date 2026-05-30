@@ -20,6 +20,38 @@ pub(crate) enum OverlayAction {
     Confirm(Option<String>),
 }
 
+/// Focus stop inside the single-issue launch dialog. Tab cycles forward,
+/// BackTab cycles back. The two checkbox stops drive the `produce_pr` /
+/// `interaction` toggles; `Launch` is a focus target for visual parity (Enter
+/// confirms from any stop).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LaunchFocus {
+    Prompt,
+    ProducePr,
+    Interaction,
+    Launch,
+}
+
+impl LaunchFocus {
+    pub(crate) fn next(self) -> Self {
+        match self {
+            LaunchFocus::Prompt => LaunchFocus::ProducePr,
+            LaunchFocus::ProducePr => LaunchFocus::Interaction,
+            LaunchFocus::Interaction => LaunchFocus::Launch,
+            LaunchFocus::Launch => LaunchFocus::Prompt,
+        }
+    }
+
+    pub(crate) fn prev(self) -> Self {
+        match self {
+            LaunchFocus::Prompt => LaunchFocus::Launch,
+            LaunchFocus::ProducePr => LaunchFocus::Prompt,
+            LaunchFocus::Interaction => LaunchFocus::ProducePr,
+            LaunchFocus::Launch => LaunchFocus::Interaction,
+        }
+    }
+}
+
 /// Inline prompt overlay shown before launching issue session(s).
 #[derive(Debug, Clone)]
 pub(crate) struct IssuePromptOverlay {
@@ -29,6 +61,12 @@ pub(crate) struct IssuePromptOverlay {
     pub selected_issues: Vec<(u64, String)>,
     /// Whether to launch as a unified PR (single session, single branch).
     pub unified_pr: bool,
+    /// Current focus stop (single-issue launch dialog only).
+    pub focus: LaunchFocus,
+    /// "Produce PR" checkbox state. Carried into `SessionConfig` on submit.
+    pub produce_pr: bool,
+    /// "Interaction" checkbox state. Carried into `SessionConfig` on submit.
+    pub interaction: bool,
 }
 
 impl IssuePromptOverlay {
@@ -51,7 +89,7 @@ impl IssuePromptOverlay {
                         self.text.push('\n');
                         return OverlayAction::None;
                     }
-                    // Enter or Ctrl+Enter confirms
+                    // Enter or Ctrl+Enter confirms — from any focus stop.
                     let trimmed = self.text.trim().to_string();
                     return if trimmed.is_empty() {
                         OverlayAction::Confirm(None)
@@ -59,7 +97,25 @@ impl IssuePromptOverlay {
                         OverlayAction::Confirm(Some(trimmed))
                     };
                 }
-                KeyCode::Backspace => {
+                // Focus cycling — single-issue dialog only. Multi-issue keeps
+                // its existing Ctrl+U flow and never leaves the prompt stop.
+                KeyCode::Tab if !self.is_multi() => {
+                    self.focus = self.focus.next();
+                    return OverlayAction::None;
+                }
+                KeyCode::BackTab if !self.is_multi() => {
+                    self.focus = self.focus.prev();
+                    return OverlayAction::None;
+                }
+                KeyCode::Char(' ') if self.focus == LaunchFocus::ProducePr => {
+                    self.produce_pr = !self.produce_pr;
+                    return OverlayAction::None;
+                }
+                KeyCode::Char(' ') if self.focus == LaunchFocus::Interaction => {
+                    self.interaction = !self.interaction;
+                    return OverlayAction::None;
+                }
+                KeyCode::Backspace if self.focus == LaunchFocus::Prompt => {
                     self.text.pop();
                 }
                 KeyCode::Char('u')
@@ -69,7 +125,7 @@ impl IssuePromptOverlay {
                     self.unified_pr = !self.unified_pr;
                     return OverlayAction::None;
                 }
-                KeyCode::Char(c) if self.text.len() < 2048 => {
+                KeyCode::Char(c) if self.focus == LaunchFocus::Prompt && self.text.len() < 2048 => {
                     self.text.push(*c);
                 }
                 _ => {}
@@ -114,6 +170,9 @@ pub struct IssueBrowserScreen {
     pub(crate) focus: FocusPane,
     /// Vertical scroll offset for the preview panel markdown content.
     pub(crate) preview_scroll: u16,
+    /// Launch-dialog checkbox defaults `(produce_pr, interaction)`, resolved
+    /// from `[behavior.launch]` (or hard-coded `(true, false)`).
+    pub(crate) launch_defaults: (bool, bool),
 }
 
 impl IssueBrowserScreen {
@@ -135,11 +194,18 @@ impl IssueBrowserScreen {
             marquee: MarqueeState::new(),
             focus: FocusPane::List,
             preview_scroll: 0,
+            launch_defaults: (true, false),
         }
     }
 
     pub fn with_layout(mut self, layout: crate::config::LayoutConfig) -> Self {
         self.layout = layout;
+        self
+    }
+
+    /// Seed the launch-dialog checkbox defaults `(produce_pr, interaction)`.
+    pub fn with_launch_defaults(mut self, defaults: (bool, bool)) -> Self {
+        self.launch_defaults = defaults;
         self
     }
 
@@ -215,6 +281,8 @@ impl Screen for IssueBrowserScreen {
                 }
                 OverlayAction::Confirm(custom_prompt) => {
                     let overlay = self.prompt_overlay.take().unwrap();
+                    let produce_pr = overlay.produce_pr;
+                    let interaction = overlay.interaction;
                     let selected_issues = overlay.selected_issues;
                     let unified = overlay.unified_pr;
 
@@ -225,6 +293,8 @@ impl Screen for IssueBrowserScreen {
                             title,
                             custom_prompt,
                             agent_id: None,
+                            produce_pr,
+                            interaction,
                         });
                     }
 
@@ -243,6 +313,8 @@ impl Screen for IssueBrowserScreen {
                             title,
                             custom_prompt: custom_prompt.clone(),
                             agent_id: None,
+                            produce_pr,
+                            interaction,
                         })
                         .collect();
                     return ScreenAction::LaunchSessions(configs);
@@ -851,6 +923,9 @@ mod tests {
             text: String::new(),
             selected_issues: vec![(number, title.to_string())],
             unified_pr: false,
+            focus: LaunchFocus::Prompt,
+            produce_pr: true,
+            interaction: false,
         }
     }
 
@@ -859,6 +934,9 @@ mod tests {
             text: text.to_string(),
             selected_issues: vec![(number, title.to_string())],
             unified_pr: false,
+            focus: LaunchFocus::Prompt,
+            produce_pr: true,
+            interaction: false,
         }
     }
 
@@ -1306,5 +1384,250 @@ mod tests {
             }
             other => panic!("Expected LaunchSessions, got {:?}", other),
         }
+    }
+
+    // ---- Issue #733: LaunchOptions checkboxes (Produce-PR / Interaction) ----
+
+    fn make_overlay_with_focus(number: u64, title: &str, focus: LaunchFocus) -> IssuePromptOverlay {
+        IssuePromptOverlay {
+            text: String::new(),
+            selected_issues: vec![(number, title.to_string())],
+            unified_pr: false,
+            focus,
+            produce_pr: true,
+            interaction: false,
+        }
+    }
+
+    // -- Group 2: LaunchFocus cycling --
+
+    #[test]
+    fn launch_focus_next_prompt_goes_to_produce_pr() {
+        assert_eq!(LaunchFocus::Prompt.next(), LaunchFocus::ProducePr);
+    }
+
+    #[test]
+    fn launch_focus_next_produce_pr_goes_to_interaction() {
+        assert_eq!(LaunchFocus::ProducePr.next(), LaunchFocus::Interaction);
+    }
+
+    #[test]
+    fn launch_focus_next_interaction_goes_to_launch() {
+        assert_eq!(LaunchFocus::Interaction.next(), LaunchFocus::Launch);
+    }
+
+    #[test]
+    fn launch_focus_next_launch_wraps_to_prompt() {
+        assert_eq!(LaunchFocus::Launch.next(), LaunchFocus::Prompt);
+    }
+
+    #[test]
+    fn launch_focus_prev_prompt_wraps_to_launch() {
+        assert_eq!(LaunchFocus::Prompt.prev(), LaunchFocus::Launch);
+    }
+
+    #[test]
+    fn launch_focus_prev_launch_goes_to_interaction() {
+        assert_eq!(LaunchFocus::Launch.prev(), LaunchFocus::Interaction);
+    }
+
+    #[test]
+    fn launch_focus_prev_interaction_goes_to_produce_pr() {
+        assert_eq!(LaunchFocus::Interaction.prev(), LaunchFocus::ProducePr);
+    }
+
+    #[test]
+    fn launch_focus_prev_produce_pr_goes_to_prompt() {
+        assert_eq!(LaunchFocus::ProducePr.prev(), LaunchFocus::Prompt);
+    }
+
+    // -- Group 3: Space toggle per focus stop --
+
+    #[test]
+    fn overlay_space_on_produce_pr_focus_flips_produce_pr() {
+        let mut overlay = make_overlay_with_focus(1, "T", LaunchFocus::ProducePr);
+        let action = overlay.handle_input(&key_event(KeyCode::Char(' ')));
+        assert!(!overlay.produce_pr, "produce_pr must flip to false");
+        assert!(!overlay.interaction, "interaction must stay unchanged");
+        assert_eq!(action, OverlayAction::None);
+    }
+
+    #[test]
+    fn overlay_space_on_produce_pr_focus_is_symmetric() {
+        let mut overlay = make_overlay_with_focus(1, "T", LaunchFocus::ProducePr);
+        overlay.handle_input(&key_event(KeyCode::Char(' ')));
+        assert!(!overlay.produce_pr);
+        overlay.handle_input(&key_event(KeyCode::Char(' ')));
+        assert!(overlay.produce_pr, "second Space must toggle back to true");
+    }
+
+    #[test]
+    fn overlay_space_on_interaction_focus_flips_interaction() {
+        let mut overlay = make_overlay_with_focus(1, "T", LaunchFocus::Interaction);
+        let action = overlay.handle_input(&key_event(KeyCode::Char(' ')));
+        assert!(overlay.interaction, "interaction must flip to true");
+        assert!(overlay.produce_pr, "produce_pr must stay unchanged");
+        assert_eq!(action, OverlayAction::None);
+    }
+
+    #[test]
+    fn overlay_space_on_prompt_focus_appends_literal_space_no_bool_change() {
+        let mut overlay = make_overlay_with_focus(1, "T", LaunchFocus::Prompt);
+        let action = overlay.handle_input(&key_event(KeyCode::Char(' ')));
+        assert_eq!(overlay.text, " ", "Space in prompt focus appends a space");
+        assert!(overlay.produce_pr, "produce_pr unchanged in prompt focus");
+        assert!(
+            !overlay.interaction,
+            "interaction unchanged in prompt focus"
+        );
+        assert_eq!(action, OverlayAction::None);
+    }
+
+    #[test]
+    fn overlay_space_on_launch_focus_is_noop() {
+        let mut overlay = make_overlay_with_focus(1, "T", LaunchFocus::Launch);
+        let action = overlay.handle_input(&key_event(KeyCode::Char(' ')));
+        assert!(overlay.produce_pr);
+        assert!(!overlay.interaction);
+        assert!(overlay.text.is_empty(), "Space on Launch must not type");
+        assert_eq!(action, OverlayAction::None);
+    }
+
+    // -- Group 4: SessionConfig field values on submit (4 legal combos) --
+
+    #[test]
+    fn overlay_submit_defaults_carry_produce_pr_true_interaction_false() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSession(config) => {
+                assert_eq!(config.issue_number, Some(1));
+                assert!(config.produce_pr);
+                assert!(!config.interaction);
+                assert_eq!(config.custom_prompt, None);
+            }
+            other => panic!("Expected LaunchSession, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn overlay_submit_produce_pr_off_interaction_off() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> ProducePr
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // off
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSession(config) => {
+                assert!(!config.produce_pr);
+                assert!(!config.interaction);
+            }
+            other => panic!("Expected LaunchSession, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn overlay_submit_produce_pr_on_interaction_on() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> ProducePr
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> Interaction
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // on
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSession(config) => {
+                assert!(config.produce_pr);
+                assert!(config.interaction);
+            }
+            other => panic!("Expected LaunchSession, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn overlay_submit_produce_pr_off_interaction_on() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> ProducePr
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // produce_pr off
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> Interaction
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // interaction on
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSession(config) => {
+                assert!(!config.produce_pr);
+                assert!(config.interaction);
+            }
+            other => panic!("Expected LaunchSession, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn overlay_submit_carries_custom_prompt_with_options() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        for c in "focus on auth".chars() {
+            screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
+        }
+        screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> ProducePr
+        screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // off
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchSession(config) => {
+                assert_eq!(config.custom_prompt, Some("focus on auth".to_string()));
+                assert!(!config.produce_pr);
+                assert!(!config.interaction);
+            }
+            other => panic!("Expected LaunchSession, got {:?}", other),
+        }
+    }
+
+    // -- Group 5: Enter from any focus stop confirms --
+
+    #[test]
+    fn overlay_enter_from_prompt_focus_returns_confirm() {
+        let mut overlay = make_overlay_with_focus(7, "T", LaunchFocus::Prompt);
+        overlay.text = "hint".to_string();
+        let action = overlay.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(action, OverlayAction::Confirm(Some("hint".to_string())));
+    }
+
+    #[test]
+    fn overlay_enter_from_produce_pr_focus_returns_confirm() {
+        let mut overlay = make_overlay_with_focus(7, "T", LaunchFocus::ProducePr);
+        let action = overlay.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(action, OverlayAction::Confirm(None));
+    }
+
+    #[test]
+    fn overlay_enter_from_interaction_focus_returns_confirm() {
+        let mut overlay = make_overlay_with_focus(7, "T", LaunchFocus::Interaction);
+        let action = overlay.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(action, OverlayAction::Confirm(None));
+    }
+
+    #[test]
+    fn overlay_enter_from_launch_focus_returns_confirm() {
+        let mut overlay = make_overlay_with_focus(7, "T", LaunchFocus::Launch);
+        let action = overlay.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(action, OverlayAction::Confirm(None));
+    }
+
+    #[test]
+    fn overlay_enter_from_launch_with_text_returns_confirm_some() {
+        let mut overlay = make_overlay_with_focus(7, "T", LaunchFocus::Launch);
+        overlay.text = "context".to_string();
+        let action = overlay.handle_input(&key_event(KeyCode::Enter));
+        assert_eq!(action, OverlayAction::Confirm(Some("context".to_string())));
+    }
+
+    #[test]
+    fn overlay_starts_focus_on_prompt_for_single_issue() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        let overlay = screen.prompt_overlay.as_ref().unwrap();
+        assert_eq!(overlay.focus, LaunchFocus::Prompt);
+        assert!(overlay.produce_pr, "default produce_pr is on");
+        assert!(!overlay.interaction, "default interaction is off");
     }
 }
