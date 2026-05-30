@@ -384,10 +384,9 @@ impl IssueBrowserScreen {
         }
     }
 
-    pub(super) fn draw_prompt_overlay(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let overlay = match &self.prompt_overlay {
-            Some(o) => o,
-            None => return,
+    pub(super) fn draw_prompt_overlay(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let Some(overlay) = self.prompt_overlay.as_ref() else {
+            return;
         };
 
         let is_multi = overlay.is_multi();
@@ -395,11 +394,32 @@ impl IssueBrowserScreen {
         let overlay_area = centered_rect(65, height_pct, area);
         f.render_widget(Clear, overlay_area);
 
-        let title = if is_multi {
+        let raw_title = if is_multi {
             format!(" {} issues selected ", overlay.selected_issues.len())
         } else {
             let (number, ref title) = overlay.selected_issues[0];
-            format!(" #{} — {} ", number, title)
+            format!(" #{} — {} ", number, sanitize_for_terminal(title))
+        };
+
+        // Marquee the title when it overflows the dialog's top border. The
+        // `-8` budget leaves room for the corners + styled_block's `[ … ]`.
+        let avail = (overlay_area.width as usize).saturating_sub(8);
+        let title_len = raw_title.chars().count();
+        let title = if avail > 0 && crate::tui::marquee::needs_scroll(title_len, avail) {
+            self.prompt_title_marquee.advance(
+                title_len - avail,
+                &crate::tui::marquee::MarqueeConfig::default(),
+            );
+            crate::tui::marquee::visible_slice(&raw_title, self.prompt_title_marquee.offset, avail)
+        } else {
+            self.prompt_title_marquee.reset();
+            raw_title
+        };
+        // Re-borrow the overlay (the marquee advance above used a disjoint
+        // field, so this stays sound).
+        let overlay = match self.prompt_overlay.as_ref() {
+            Some(o) => o,
+            None => return,
         };
 
         let block = theme

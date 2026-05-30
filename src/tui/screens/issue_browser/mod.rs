@@ -198,6 +198,8 @@ pub struct IssueBrowserScreen {
     pub(crate) layout: crate::config::LayoutConfig,
     /// Marquee animation state for the currently selected issue title.
     marquee: MarqueeState,
+    /// Marquee animation state for the launch-dialog title when it overflows.
+    prompt_title_marquee: MarqueeState,
     /// Which panel currently has focus.
     pub(crate) focus: FocusPane,
     /// Vertical scroll offset for the preview panel markdown content.
@@ -224,6 +226,7 @@ impl IssueBrowserScreen {
             prompt_overlay: None,
             layout: crate::config::LayoutConfig::default(),
             marquee: MarqueeState::new(),
+            prompt_title_marquee: MarqueeState::new(),
             focus: FocusPane::List,
             preview_scroll: 0,
             launch_defaults: (true, false),
