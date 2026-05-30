@@ -288,6 +288,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::Interaction => {
+            if let Some(ref mut screen) = app.screen_state.interaction_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
         TuiMode::QueueConfirmation => {
             if let Some(ref mut screen) = app.screen_state.queue_confirmation_screen {
                 screen.draw(f, chunks[1], &app.theme);

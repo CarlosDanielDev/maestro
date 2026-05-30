@@ -13,6 +13,7 @@ mod cost_dashboard;
 mod dashboard;
 mod detail;
 mod fullscreen;
+mod interaction;
 mod issue_browser;
 mod issue_wizard;
 mod landing;

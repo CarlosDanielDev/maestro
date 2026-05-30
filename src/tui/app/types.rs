@@ -28,6 +28,10 @@ pub enum TuiMode {
     IssueBrowser,
     MilestoneView,
     PromptInput,
+    /// Dedicated chat-style interaction screen for a long-lived agent
+    /// session attached to an issue (#736). UI scaffolding only; per-turn
+    /// spawn lands in #737, full keymap + re-entry in #738.
+    Interaction,
     CompletionSummary,
     ContinuousPause,
     #[allow(dead_code)] // Reason: TUI mode — to be wired into queue screen
@@ -111,6 +115,7 @@ impl TuiMode {
             Self::IssueBrowser => "Issues",
             Self::MilestoneView => "Milestones",
             Self::PromptInput => "Prompt",
+            Self::Interaction => "Interaction",
             Self::CompletionSummary => "Summary",
             Self::ContinuousPause => "Paused",
             Self::QueueConfirmation => "Queue",
@@ -228,6 +233,7 @@ pub struct ScreenState {
     pub issue_browser_screen: Option<crate::tui::screens::IssueBrowserScreen>,
     pub milestone_screen: Option<crate::tui::screens::MilestoneScreen>,
     pub prompt_input_screen: Option<crate::tui::screens::PromptInputScreen>,
+    pub interaction_screen: Option<crate::tui::screens::InteractionScreen>,
     pub queue_confirmation_screen: Option<crate::tui::screens::QueueConfirmationScreen>,
     pub hollow_retry_screen: Option<crate::tui::screens::HollowRetryScreen>,
     pub adapt_follow_up_screen: Option<crate::tui::screens::AdaptFollowUpScreen>,
@@ -657,6 +663,7 @@ mod tests {
             TuiMode::TurboquantDashboard,
             TuiMode::Settings,
             TuiMode::PromptInput,
+            TuiMode::Interaction,
             TuiMode::SessionSwitcher,
             TuiMode::AdaptWizard,
             TuiMode::PrReview,

@@ -172,6 +172,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::IssueBrowser => app.screen_state.issue_browser_screen.as_mut()?,
         app::TuiMode::MilestoneView => app.screen_state.milestone_screen.as_mut()?,
         app::TuiMode::PromptInput => app.screen_state.prompt_input_screen.as_mut()?,
+        app::TuiMode::Interaction => app.screen_state.interaction_screen.as_mut()?,
         app::TuiMode::QueueConfirmation => app.screen_state.queue_confirmation_screen.as_mut()?,
         app::TuiMode::HollowRetry => app.screen_state.hollow_retry_screen.as_mut()?,
         app::TuiMode::AdaptFollowUp => app.screen_state.adapt_follow_up_screen.as_mut()?,
@@ -563,6 +564,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         app::helpers::create_prompt_input_screen(&app.prompt_history),
                     );
                 }
+                app::TuiMode::Interaction => {
+                    app.screen_state
+                        .interaction_screen
+                        .get_or_insert_with(screens::InteractionScreen::new);
+                }
                 app::TuiMode::MilestoneHealth => {
                     app.screen_state.milestone_health_screen =
                         Some(crate::tui::screens::milestone_health::MilestoneHealthScreen::new());
@@ -615,6 +621,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::PromptInput => {
                     app.screen_state.prompt_input_screen = None;
+                }
+                app::TuiMode::Interaction => {
+                    app.screen_state.interaction_screen = None;
                 }
                 app::TuiMode::QueueConfirmation => {
                     app.screen_state.queue_confirmation_screen = None;
