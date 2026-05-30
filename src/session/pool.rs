@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::image::copy_images_to_worktree;
+use super::interaction::InteractionSession;
 use super::manager::{ManagedSession, SessionEvent};
 use super::types::{Session, SessionOrigin, SessionStatus};
 use super::worktree::WorktreeManager;
@@ -40,6 +41,10 @@ pub struct SessionPool {
     /// disables injection — used in unit tests that don't care about
     /// templates and as a no-op fallback when XDG cache resolution fails.
     rendered_template_store: Option<Arc<dyn RenderedTemplateStore>>,
+    /// Active interactive (chat-style) sessions (#734). Populated by the
+    /// per-turn spawn loop in #737; scaffold-only here.
+    #[allow(dead_code)] // Reason: scaffold for #736/#737 — populated by the spawn loop
+    interactions: Vec<InteractionSession>,
 }
 
 impl SessionPool {
@@ -65,6 +70,7 @@ impl SessionPool {
             system_prompt_budget: 0,
             knowledge_appendix: None,
             rendered_template_store: None,
+            interactions: Vec::new(),
         }
     }
 
@@ -414,6 +420,20 @@ impl SessionPool {
             .find(|m| m.session.issue_number == Some(issue_number))
     }
 
+    /// Find the active (non-terminated) interaction session for an issue.
+    /// Returns `None` if none exists or the only match was already closed.
+    /// `interactions` is populated by the per-turn spawn loop (#737); for
+    /// now this scans an empty vec.
+    #[allow(dead_code)] // Reason: scaffold for #736/#737 — consumed by the interaction UI/spawn loop
+    pub fn find_active_interaction_by_issue(
+        &self,
+        issue_number: u64,
+    ) -> Option<&InteractionSession> {
+        self.interactions
+            .iter()
+            .find(|i| i.issue_number == issue_number && i.is_active())
+    }
+
     /// Mutable access to a session by ID across all buckets.
     #[allow(dead_code)] // Reason: session mutation by ID — to be used in orchestration
     pub fn get_session_mut(&mut self, session_id: Uuid) -> Option<&mut Session> {
@@ -591,6 +611,70 @@ mod tests {
             Some(appendix) => appendix,
             None => panic!("expected system prompt appendix"),
         }
+    }
+
+    // --- Issue #734: interaction session registry ---
+
+    fn make_interaction(issue: u64) -> crate::session::interaction::InteractionSession {
+        crate::session::interaction::InteractionSession::new(
+            issue,
+            std::path::PathBuf::from("/tmp"),
+            format!("feat/issue-{issue}"),
+            false,
+        )
+    }
+
+    #[test]
+    fn pool_interactions_starts_empty() {
+        let pool = make_pool(2);
+        assert!(pool.interactions.is_empty());
+    }
+
+    #[test]
+    fn find_active_interaction_by_issue_returns_none_when_empty() {
+        let pool = make_pool(2);
+        assert!(pool.find_active_interaction_by_issue(1).is_none());
+    }
+
+    #[test]
+    fn find_active_interaction_by_issue_returns_none_when_issue_not_found() {
+        let mut pool = make_pool(2);
+        pool.interactions.push(make_interaction(42));
+        assert!(pool.find_active_interaction_by_issue(99).is_none());
+    }
+
+    #[test]
+    fn find_active_interaction_by_issue_finds_active_interaction() {
+        let mut pool = make_pool(2);
+        pool.interactions.push(make_interaction(42));
+        let found = pool.find_active_interaction_by_issue(42);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().issue_number, 42);
+    }
+
+    #[test]
+    fn find_active_interaction_by_issue_skips_terminated_interaction() {
+        use crate::session::interaction::InteractionState;
+        let mut pool = make_pool(2);
+        let mut interaction = make_interaction(42);
+        interaction.state = InteractionState::Terminated;
+        pool.interactions.push(interaction);
+        assert!(pool.find_active_interaction_by_issue(42).is_none());
+    }
+
+    #[test]
+    fn find_active_interaction_by_issue_returns_first_active_when_multiple() {
+        use crate::session::interaction::InteractionState;
+        let mut pool = make_pool(2);
+        let mut terminated = make_interaction(42);
+        terminated.state = InteractionState::Terminated;
+        terminated.branch = "terminated".into();
+        pool.interactions.push(terminated);
+        let active = make_interaction(42);
+        pool.interactions.push(active);
+        let found = pool.find_active_interaction_by_issue(42);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().branch, "feat/issue-42");
     }
 
     #[test]

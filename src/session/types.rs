@@ -45,6 +45,30 @@ pub enum SessionStatus {
     ConflictFix,
 }
 
+/// How a session is driven: a single one-shot run, or a long-lived
+/// interactive conversation (#734). Derived from the launch-dialog
+/// `interaction` flag (#733) via `From<bool>`. Distinct from
+/// `crate::provider::types::SessionMode`, which is the label-derived
+/// agent mode (orchestrator / vibe) — different concept, different module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionMode {
+    #[default]
+    OneShot,
+    Interactive,
+}
+
+impl From<bool> for SessionMode {
+    /// `interaction == true` → `Interactive`, otherwise `OneShot`.
+    fn from(interaction: bool) -> Self {
+        if interaction {
+            SessionMode::Interactive
+        } else {
+            SessionMode::OneShot
+        }
+    }
+}
+
 impl SessionStatus {
     pub const fn nerd_symbol(&self) -> &'static str {
         crate::icons::get_for_mode(self.icon_id(), true)
@@ -917,6 +941,44 @@ mod tests {
     fn session_status_needs_review_serializes_as_snake_case() {
         let json = serde_json::to_string(&SessionStatus::NeedsReview).unwrap();
         assert_eq!(json, r#""needs_review""#);
+    }
+
+    // --- Issue #734: SessionMode (one-shot vs interactive spawn) ---
+
+    #[test]
+    fn session_mode_default_is_one_shot() {
+        assert_eq!(SessionMode::default(), SessionMode::OneShot);
+    }
+
+    #[test]
+    fn session_mode_one_shot_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionMode::OneShot).unwrap();
+        assert_eq!(json, r#""one_shot""#);
+    }
+
+    #[test]
+    fn session_mode_interactive_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionMode::Interactive).unwrap();
+        assert_eq!(json, r#""interactive""#);
+    }
+
+    #[test]
+    fn session_mode_round_trips_via_serde() {
+        for mode in [SessionMode::OneShot, SessionMode::Interactive] {
+            let json = serde_json::to_string(&mode).unwrap();
+            let rt: SessionMode = serde_json::from_str(&json).unwrap();
+            assert_eq!(rt, mode);
+        }
+    }
+
+    #[test]
+    fn session_mode_from_false_is_one_shot() {
+        assert_eq!(SessionMode::from(false), SessionMode::OneShot);
+    }
+
+    #[test]
+    fn session_mode_from_true_is_interactive() {
+        assert_eq!(SessionMode::from(true), SessionMode::Interactive);
     }
 
     #[test]
