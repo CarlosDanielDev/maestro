@@ -8,9 +8,12 @@
 //!
 //! Marker shape:
 //! ```json
-//! {"pr_number": 123, "owner": "owner", "repo": "repo", "ts": "..."}
+//! {"pr_number": 123, "owner": "owner", "repo": "repo", "issue_number": 703, "ts": "..."}
 //! ```
-//! `ts` is informational and is not parsed.
+//! Parsed via [`crate::work::pr_marker::PrMarker`]. `issue_number` (#735)
+//! is optional: legacy markers without it are tolerated (a `tracing::warn`
+//! fires) and still take the `PrCreated` path. `ts` is parsed but unused
+//! here.
 //!
 //! Failure modes:
 //! - Marker absent → silent no-op.
@@ -26,13 +29,6 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 const MARKER_REL_PATH: &str = ".maestro/last-pr-created";
-
-#[derive(serde::Deserialize)]
-struct PushupMarker {
-    pr_number: u64,
-    owner: String,
-    repo: String,
-}
 
 impl App {
     fn home_dir(&self) -> Option<PathBuf> {
@@ -84,15 +80,13 @@ impl App {
         if Some(mtime) == self.last_pr_marker_mtime {
             return;
         }
-        let raw = match std::fs::read_to_string(&path) {
-            Ok(s) => s,
-            Err(_) => {
+        let marker = match crate::work::pr_marker::PrMarker::read(&path) {
+            Ok(m) => m,
+            Err(crate::work::pr_marker::MarkerError::Read { .. }) => {
+                // Transient read failure: record mtime, retry next tick.
                 self.last_pr_marker_mtime = Some(mtime);
                 return;
             }
-        };
-        let marker = match serde_json::from_str::<PushupMarker>(&raw) {
-            Ok(m) => m,
             Err(e) => {
                 self.activity_log.push_simple(
                     "PUSHUP".into(),
@@ -141,7 +135,7 @@ impl App {
 /// auto-review to a `gh pr view --repo "../other-org/repo"`. Reject
 /// anything that would not survive `validate_gh_arg` or fails the
 /// no-slashes check on either field.
-fn validate_marker_owner_repo(marker: &PushupMarker) -> anyhow::Result<()> {
+fn validate_marker_owner_repo(marker: &crate::work::pr_marker::PrMarker) -> anyhow::Result<()> {
     crate::util::validate_gh_arg(&marker.owner, "marker owner")?;
     crate::util::validate_gh_arg(&marker.repo, "marker repo")?;
     if marker.owner.contains('/') || marker.repo.contains('/') {

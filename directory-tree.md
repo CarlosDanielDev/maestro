@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-30 12:00 (UTC)
+> Last updated: 2026-05-30 18:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -454,7 +454,7 @@ maestro/
 │   │   │   ├── issue_completion_tests.rs  # Unit tests for issue_completion.rs (original 3 tests preserved; new auto-PR behavior tests moved to auto_pr_tests.rs)  [Issue #514]
 │   │   │   ├── plugins.rs                 # Hook point invocation via PluginRunner
 │   │   │   ├── pr_retry.rs                # process_pending_pr_retries() exponential back-off; trigger_manual_pr_retry(); transition_to_permanently_failed() extracted helper  [Issue #159, #545]
-│   │   │   ├── pushup_marker.rs           # PushupMarker: writes ~/.maestro/last-pr-created single-line JSON after gh pr create so a running TUI can enqueue /review; consumed-once — maestro deletes after dispatch; malformed JSON logs Warn + deletes  [Issue #545]
+│   │   │   ├── pushup_marker.rs           # PushupMarker: polls ~/.maestro/last-pr-created; parses via PrMarker::read (src/work/pr_marker.rs) — tolerates legacy markers that lack issue_number; consumed-once — maestro deletes after dispatch  [Issue #545, #735]
 │   │   │   ├── review.rs                  # ReviewCouncil integration and gate-fix session spawning
 │   │   │   ├── session_lifecycle.rs       # Session promotion, state transitions, activity log forwarding
 │   │   │   ├── session_spawners.rs        # spawn_gate_fix_session(); build_gate_fix_prompt(); launch_session_from_config(); spawn_resume_implement_session(line) spawns a /implement #N --continue session against the retained worktree  [Issue #560, #695]
@@ -720,12 +720,13 @@ maestro/
 │   │   ├── adapter.rs                     # TurboQuantAdapter: bridges quantization pipeline to session layer; TextRanker trait + impl; compress_handoff() (CompressedHandoff, Issue #343); compact_system_prompt() (Issue #344); compact_session_history() + StateCompactionReport (Issue #345); shared Arc<TurboQuantAdapter> on App; project_savings(), session_savings(), implied_rate_per_token() and public types SavingsProjection, SavingsKind, SessionSavings  [Issue #346]
 │   │   └── budget.rs                      # TokenBudget helper: ranked-segment selection staying under a token limit; BudgetSelection struct (indices, tokens_used, truncated_first); used by fork-handoff, system-prompt, and knowledge compression  [Issue #343-345, #347]
 │   └── work/                              # Work queue and scheduling  [Phase 2]
-│       ├── mod.rs                         # Module exports; pub mod queue
+│       ├── mod.rs                         # Module exports; pub mod queue; pub mod pr_marker  [Issue #735]
 │       ├── types.rs                       # WorkItem, WorkStatus; from_issue, is_ready
 │       ├── assigner.rs                    # WorkAssigner: topo sort tiebreaker, cycle detection; mark_pending() transitions an item back to Pending; mark_pending_undo_cascade() cascades undo to dependents  [Phase 3, Issue #85]
 │       ├── conflicts.rs                   # Conflict detection for concurrent work items
 │       ├── dependencies.rs               # DependencyGraph: topological sort, cycle detection
 │       ├── executor.rs                    # QueueExecutor state machine for sequential queue execution; ExecutorPhase enum (Idle, Running, AwaitingDecision, Finished); ExecutorItem struct; QueueItemState enum; FailureAction enum (Retry, Skip, Abort); advance(), mark_success(), mark_failure(), apply_decision(), set_session_id()
+│       ├── pr_marker.rs                   # PrMarker struct (pr_number, owner, repo, issue_number: Option<u64>, ts) + MarkerError enum; write_atomic (.tmp + rename) + read (tolerant of missing issue_number, emits tracing::warn); used by /pushup and pushup_marker.rs  [Issue #735]
 │       └── queue.rs                       # WorkQueue, QueuedItem, QueueValidationError; validate_selection()  [Issue #65]
 ├── docs/
 │   ├── adr/                               # Architecture Decision Records; one file per decision; ADRs that survive a spike are the only artifact merged to main from that spike
@@ -864,6 +865,7 @@ maestro/
 │       └── tests/
 │           └── round_trip.rs              # 14 tests: decor-preservation canaries and round-trip byte-identity
 ├── tests/                                 # Cargo integration tests (run as a separate binary, full crate access)
+│   ├── pr_marker_roundtrip.rs             # 6 integration tests for PrMarker: write_atomic + read round-trip (with and without issue_number), legacy-marker tolerance (missing issue_number emits tracing::warn), concurrent-write safety via .tmp+rename, MarkerError variants  [Issue #735]
 │   ├── settings_caveman.rs                # Integration tests for FsSettingsStore against real tempfiles: read/write/toggle round-trips for caveman mode, missing-key defaults, malformed JSON handling  [Issue #490]
 │   ├── subagent_manifest_drift.rs         # Drift guard: set-difference between `.claude/agents/subagent-*.md` on disk and `[[subagents]]` slugs in `manifest.toml`; fails with a diff line on "missing from manifest" or "stale in manifest"; 5 unit tests + 1 live-repo integration test  [Issue #728]
 │   ├── template_mirror_drift.rs           # Drift guard: asserts byte-equality between every file in `.maestro/templates/` and its mirror under `template/.maestro/templates/`; fails CI when the mirror is stale; fix with: cp -a .maestro/templates/. template/.maestro/templates/  [Issue #708]
