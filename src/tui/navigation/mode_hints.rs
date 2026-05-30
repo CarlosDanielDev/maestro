@@ -282,6 +282,22 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::Interaction => (
+            "Interaction",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "Esc",
+                    action: "Back",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "Up/Down",
+                    action: "Scroll",
+                    priority: 1,
+                },
+            ],
+        ),
         TuiMode::CostDashboard => (
             "Cost Dashboard",
             FKeyVis::DashboardLike,

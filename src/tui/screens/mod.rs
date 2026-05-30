@@ -6,6 +6,7 @@ pub mod ci_error_review;
 pub mod gate_output_viewer;
 pub mod hollow_retry;
 pub mod home;
+pub mod interaction;
 #[allow(dead_code)]
 pub mod issue_browser;
 pub mod issue_wizard;
@@ -31,6 +32,7 @@ pub use adapt_follow_up::AdaptFollowUpScreen;
 pub use ci_error_review::{CiErrorReviewScreen, CiErrorReviewState, FetchPhase};
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
+pub use interaction::InteractionScreen;
 pub use issue_browser::IssueBrowserScreen;
 pub use issue_wizard::IssueWizardScreen;
 pub use landing::LandingScreen;
