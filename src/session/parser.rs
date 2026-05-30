@@ -140,6 +140,30 @@ pub fn parse_stream_line(line: &str) -> Vec<StreamEvent> {
     events
 }
 
+/// Extract the Claude session id from a stream-json line, if present.
+///
+/// Claude CLI emits the id on the `system`/init line
+/// (`{"type":"system","subtype":"init","session_id":"…"}`) and repeats it on
+/// the terminal `result` line. Both carry `session_id` as a top-level field, so
+/// this reads that key regardless of event type. Returns `None` for non-JSON
+/// lines or lines without the field. Used by the interaction spawn loop (#737)
+/// to bind `--resume <id>` on subsequent turns.
+pub fn extract_session_id(line: &str) -> Option<String> {
+    let v = serde_json::from_str::<Value>(line.trim()).ok()?;
+    let id = v.get("session_id")?.as_str()?;
+    // Defense-in-depth: the id is reused verbatim as a `--resume <id>` argv
+    // operand, so reject anything outside the UUID charset. A rejected id just
+    // falls through to degraded re-init mode rather than into an argv.
+    if id.is_empty()
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return None;
+    }
+    Some(id.to_string())
+}
+
 fn parse_assistant_event(v: &Value) -> StreamEvent {
     let msg = v.get("message").or_else(|| v.get("content_block"));
 
@@ -684,6 +708,49 @@ mod tests {
     fn parse_garbage() {
         let events = parse_stream_line("not json at all");
         assert!(matches!(events[0], StreamEvent::Unknown { .. }));
+    }
+
+    // --- Issue #737: session_id extraction for the resume spawn loop ---
+
+    #[test]
+    fn extract_session_id_from_system_init_line() {
+        let line = r#"{"type":"system","subtype":"init","session_id":"abc123","tools":[]}"#;
+        assert_eq!(extract_session_id(line), Some("abc123".to_string()));
+    }
+
+    #[test]
+    fn extract_session_id_from_result_line() {
+        let line = r#"{"type":"result","subtype":"success","session_id":"xyz789","cost_usd":0.01}"#;
+        assert_eq!(extract_session_id(line), Some("xyz789".to_string()));
+    }
+
+    #[test]
+    fn extract_session_id_absent_returns_none() {
+        let line = r#"{"type":"system","tools":[]}"#;
+        assert_eq!(extract_session_id(line), None);
+    }
+
+    #[test]
+    fn extract_session_id_empty_string_returns_none() {
+        let line = r#"{"type":"system","session_id":""}"#;
+        assert_eq!(extract_session_id(line), None);
+    }
+
+    #[test]
+    fn extract_session_id_non_json_returns_none() {
+        assert_eq!(extract_session_id("not json"), None);
+    }
+
+    #[test]
+    fn extract_session_id_rejects_non_uuid_charset() {
+        // A flag-like or path-like value must not survive into the argv.
+        let line = r#"{"type":"system","session_id":"--foo /etc/passwd"}"#;
+        assert_eq!(extract_session_id(line), None);
+        let uuid = r#"{"type":"system","session_id":"a1b2c3d4-5678-90ab-cdef-1234567890ab"}"#;
+        assert_eq!(
+            extract_session_id(uuid),
+            Some("a1b2c3d4-5678-90ab-cdef-1234567890ab".to_string())
+        );
     }
 
     #[test]

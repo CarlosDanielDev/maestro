@@ -143,7 +143,7 @@ diff is the default and, for v1, the only base. Keep it simple (CLAUDE.md: simpl
 
 **Last-turn diff** ("what changed since my last message") is genuinely useful in an iteration
 loop but needs per-turn HEAD snapshots wired into #737's turn loop (capture `git rev-parse
-HEAD` on each `Idle` settle). Defer to a fast-follow toggle; do not block v1 on it.
+HEAD` on each `Idle` settle; #737 implemented in `src/session/interaction_turn.rs`). Defer to a fast-follow toggle; do not block v1 on it.
 
 ---
 
