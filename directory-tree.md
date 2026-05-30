@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-30 19:00 (UTC)
+> Last updated: 2026-05-30 20:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -397,7 +397,7 @@ maestro/
 │   ├── session/
 │   │   ├── mod.rs                         # Module exports (includes pool, worktree, health, retry, context_monitor, fork)
 │   │   ├── manager.rs                     # Claude CLI process management; handles ContextUpdate events; thinking_start field tracks Thinking block duration; handle_event() emits rich activity messages with file paths, elapsed times for tool calls, and thinking duration on block end; current_activity reflects "Thinking..." while a thinking block is active; emits "STATUS: OLD → NEW" activity log entries when session state changes; 1-line wire in ManagedSession::handle_event() appends CallLogEntry via Session::append_call_log  [Phase 3, Issue #102, #202, #868]
-│   │   ├── parser.rs                      # stream-json output parser; parses system events for context usage; parses "thinking" message type into StreamEvent::Thinking; extracts command field from Bash tool input as command_preview (truncated to 60 chars)  [Phase 3, Issue #102]
+│   │   ├── parser.rs                      # stream-json output parser; parses system events for context usage; parses "thinking" message type into StreamEvent::Thinking; extracts command field from Bash tool input as command_preview (truncated to 60 chars); `pub fn extract_session_id(line) -> Option<String>` added (#737)  [Phase 3, Issue #102, #737]
 │   │   ├── pool.rs                        # Session pool: max_concurrent, queue, auto-promote; branch tracking; guardrail_prompt field; set_guardrail_prompt(); merged into system prompt in try_promote(); find_by_issue_mut(); decrements flash_counter on each session per render tick and emits STATUS activity log entries on state transitions; `interactions: Vec<InteractionSession>` field; `find_active_interaction_by_issue()`  [Phase 3, Issue #40, #43, #202, #734]
 │   │   ├── pr_capture.rs                  # PrCapture: intercepts stream-json output to detect when a session posts a /review PR comment and stores the raw comment body for the review pipeline  [Issue #327]
 │   │   ├── types.rs                       # Session state machine; fork fields (parent_session_id, child_session_ids, fork_depth); ContextUpdate StreamEvent; GatesRunning and NeedsReview status variants; CiFix variant; CiFixContext struct (pr_number, issue_number, branch, attempt); ci_fix_context field on Session; StreamEvent::Thinking { text } variant; command_preview: Option<String> field on StreamEvent::ToolUse; GateResultEntry struct (gate, passed, message); gate_results: Vec<GateResultEntry> field on Session; NeedsPr variant — non-terminal status indicating PR creation failed and is queued for retry; flash_counter: u8 field on Session — decremented each render tick to drive border-flash effect on state transition; worktree_path: Option<PathBuf> field on Session with #[serde(default)] — set at FailedGates transition so the recovery modal can surface the path; CallLogEntry struct (timestamp, kind, payload); CallLogKind enum; Session.call_log: Vec<CallLogEntry> (capped at 500 via append_call_log); render_event_payload() with 10 KB per-text-field cap; `SessionMode` enum (OneShot | Interactive) + `From<bool>`  [Phase 3, Issue #40, #41, #102, #104, #159, #202, #560, #868, #734]
@@ -412,7 +412,8 @@ maestro/
 │   │   ├── role.rs                        # Role enum (5 variants: Orchestrator, Implementer, Reviewer, QA, Unknown) + derive_role() keyword classifier; Session::role field (O(1) lookup at render time)  [Issue #538]
 │   │   ├── team_runner.rs                 # `TeamLauncher` trait + `run_team()` fn; walks `Scheduler` levels with a `tokio::sync::Semaphore` capped at `max_parallel`; `TeamOutcome`, `IssueFailure` result types  [Issue #881]
 │   │   ├── team_runner_tests.rs           # 5 inline unit tests for `run_team`: happy path, partial failure, semaphore cap, empty levels, single-issue level  [Issue #881]
-│   │   └── interaction.rs                 # `InteractionSession`, `InteractionState`, `TurnRole`, `CloseReason`, `TurnRecord` types; `new()` / `is_active()` constructors; scaffold for interactive iteration sessions  [Issue #734]
+│   │   ├── interaction.rs                 # `InteractionSession`, `InteractionState`, `TurnRole`, `CloseReason`, `TurnRecord` types; `new()` / `is_active()` constructors; scaffold for interactive iteration sessions  [Issue #734]
+│   │   └── interaction_turn.rs            # Per-turn `claude --resume` spawn loop: `SpawnAgent` trait + `ClaudeCliSpawner` (production), `InteractionSession::send_turn`, `TurnEvent` / `TurnError` / `TurnArgv` / `TurnOutcome` / `TurnHandle`, `build_turn_argv`; session_id capture from first result line, streaming chunks, cancellation via `TurnHandle::cancel()`, degraded mode  [Issue #737]
 │   ├── state/
 │   │   ├── mod.rs                         # Module exports (includes file_claims, progress)
 │   │   ├── file_claims.rs                 # File claim system: FileClaimManager, conflict prevention  [Phase 1]
@@ -678,7 +679,7 @@ maestro/
 │   │       ├── text_input.rs              # Single-line text input widget with cursor support
 │   │       └── toggle.rs                 # Boolean toggle widget for settings and forms; draw() routes through icons::get(IconId::CheckboxOn/Off) instead of hardcoded literals, eliminating the DRY drift that caused blank indicators on iTerm2 + some Nerd Font installs  [Issue #433]
 │   ├── integration_tests/                 # End-to-end integration test suite (no external deps, all mocked)  [Issue #15]
-│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, doctor_run_health_check, orchestration_smoke, templates_render, templates_runtime, canonical_command_specs, and docs_gen registered  [Issue #500, #562, #663, #665, #701, #702, #707, #717]
+│   │   ├── mod.rs                         # Module declarations; shared helpers: make_pool(), make_pool_with_worktree(), make_session(), make_session_with_issue(), make_gh_issue(); mod milestone_health_wizard, wip_backup, orchestration_*, adapt_pipeline, doctor_run_health_check, orchestration_smoke, templates_render, templates_runtime, canonical_command_specs, docs_gen, and interaction_send_turn registered  [Issue #500, #562, #663, #665, #701, #702, #707, #717, #737]
 │   │   ├── adapt_pipeline.rs              # Integration tests for the adapt pipeline
 │   │   ├── completion_pipeline.rs         # 9 tests: label transitions and PR creation
 │   │   ├── concurrent_sessions.rs         # 6 tests: max_concurrent enforcement
@@ -700,6 +701,7 @@ maestro/
 │   │   ├── templates_runtime.rs           # Integration tests for HTTP-provider runtime template injection; exercises `SessionPool::try_promote` with `RenderedTemplateStore` installed; covers `DirectUser`+`active_command` injection path and no-op paths (origin mismatch, missing store, target_dir set)  [Issue #707]
 │   │   ├── canonical_command_specs.rs     # 15-invariant test suite for canonical command specs; verifies structural integrity of all four commands/ files (front-matter, placeholder coverage, include directives, section headings); 4 insta snapshots via tokenize()  [Issue #702]
 │   │   ├── budget_prespawn_gate.rs        # Integration tests for the pre-spawn budget gate: exercises `try_enter_prespawn_gate` and `resolve_budget_prespawn` helpers; covers allow/deny/skip decision paths  [Issue #850]
+│   │   ├── interaction_send_turn.rs       # 9 integration tests for `InteractionSession::send_turn`; `FakeSpawner` test double; covers happy-path streaming, session_id capture, cancellation, empty-chunk skip, degraded-mode fallback, and error propagation  [Issue #737]
 │   │   └── snapshots/                     # Insta snapshot files for canonical_command_specs tests  [Issue #702]
 │   │       ├── maestro__integration_tests__canonical_command_specs__snapshot_tokenize_implement.snap
 │   │       ├── maestro__integration_tests__canonical_command_specs__snapshot_tokenize_plan_feature.snap
@@ -1088,6 +1090,7 @@ maestro/
 | `src/session/team_runner.rs` | `TeamLauncher` trait + `run_team()` fn; walks `Scheduler::levels()` with a `tokio::sync::Semaphore` capped at `max_parallel`; `TeamOutcome`, `IssueFailure` result types (Issue #881) |
 | `src/session/team_runner_tests.rs` | 5 inline unit tests for `run_team`: happy path, partial failure, semaphore cap, empty levels, single-issue level (Issue #881) |
 | `src/session/interaction.rs` | `InteractionSession`, `InteractionState`, `TurnRole`, `CloseReason`, `TurnRecord` types; scaffold for interactive iteration sessions (Issue #734) |
+| `src/session/interaction_turn.rs` | Per-turn `claude --resume` spawn loop; `SpawnAgent` trait + `ClaudeCliSpawner`, `InteractionSession::send_turn`, `TurnEvent`/`TurnError`/`TurnArgv`/`TurnOutcome`/`TurnHandle`, `build_turn_argv`; session_id capture, streaming, cancellation, degraded mode (Issue #737) |
 | `src/state/` | State persistence and file conflict management |
 | `src/state/file_claims.rs` | Per-session file claim registry |
 | `src/state/progress.rs` | Session phase tracking (Phase 3) |
@@ -1222,7 +1225,8 @@ maestro/
 | `src/tui/snapshot_tests/turboquant_dashboard.rs` | 3 snapshot tests for `TurboQuantDashboard`: projections-only, mixed actual+projections, empty sessions (Issue #346) |
 | `src/tui/snapshot_tests/snapshots/` | Committed `.snap` files — insta ground-truth for TUI rendering regressions; includes 4 agent_graph baselines (`80x24`, `100x30`, `120x40`, original `single_agent_card`) added in Issue #526; the `single_agent_card` snap was retired in Issue #543 in favor of `single_agent_with_files_as_graph` + `falls_back_when_single_agent_has_no_files` (the fallback was narrowed to no-edges only); 2 agent_graph_dispatcher baselines (`toggle_on_renders_graph`, `toggle_off_renders_panels`) added in Issue #527; 11 agent_personalities snapshots added in Issue #539; several existing agent_graph snaps re-baselined in #539 (nodes now render as sprites/abbrevs); 12 activity_log_dispatch snapshots added in Issue #543 (chip renders per role × mode, guard cases, multi-dispatch composition); 2 completion_overlay snapshots added in Issue #560 (`completion_overlay_success_modal_80x24` and `completion_overlay_failed_gates_modal_80x24`); 2 Budget tab parity baselines added in Issue #785 (`budget_tab_renders_80x24`, `budget_tab_renders_120x40`) |
 | `src/integration_tests/` | End-to-end integration test suite; MockGitHubClient and MockWorktreeManager; no external process dependencies (Issue #15) |
-| `src/integration_tests/mod.rs` | Module declarations and shared helpers: `make_pool()`, `make_pool_with_worktree()`, `make_session()`, `make_session_with_issue()`, `make_gh_issue()`; `mod canonical_command_specs` registered in Issue #702; `mod templates_runtime` registered in Issue #707 |
+| `src/integration_tests/mod.rs` | Module declarations and shared helpers: `make_pool()`, `make_pool_with_worktree()`, `make_session()`, `make_session_with_issue()`, `make_gh_issue()`; `mod canonical_command_specs` registered in Issue #702; `mod templates_runtime` registered in Issue #707; `mod interaction_send_turn` registered in Issue #737 |
+| `src/integration_tests/interaction_send_turn.rs` | 9 integration tests for `InteractionSession::send_turn`; `FakeSpawner` test double; covers happy-path streaming, session_id capture, cancellation, empty-chunk skip, degraded-mode fallback, and error propagation (Issue #737) |
 | `src/integration_tests/doctor_run_health_check.rs` | Smoke tests for `run_health_check` library function (Issue #663) |
 | `src/integration_tests/orchestration_dispatch.rs` | End-to-end L1 dispatch tests with `FakeProvider`; exercises `dispatch_subagent()` path (Issue #663) |
 | `src/integration_tests/session_lifecycle.rs` | 11 tests covering enqueue, promote, and complete session lifecycle via `handle_event()` |
