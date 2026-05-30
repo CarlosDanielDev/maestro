@@ -10,9 +10,11 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::tui::icons;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::focused_selection_style;
 
 /// Render a unified PR checkbox at the given area.
 pub fn draw_unified_pr_toggle(f: &mut Frame, area: Rect, checked: bool, theme: &Theme) {
@@ -56,8 +58,9 @@ pub fn draw_unified_pr_toggle(f: &mut Frame, area: Rect, checked: bool, theme: &
 /// Render a focus-aware labelled checkbox at the given area.
 ///
 /// Sibling of [`draw_unified_pr_toggle`] for screens that own several
-/// checkboxes (the issue-launch dialog, #733). `focused` draws a `>` marker
-/// and bolds the label so the keyboard focus is visible.
+/// checkboxes (the issue-launch dialog, #733). When `focused`, the whole row
+/// is painted with the standard selection bar (`focused_selection_style`),
+/// matching the issue-list selected row.
 pub fn draw_checkbox(
     f: &mut Frame,
     area: Rect,
@@ -78,37 +81,48 @@ pub fn draw_checkbox(
         "[ ]"
     };
 
+    if focused {
+        f.render_widget(
+            focus_bar(&format!("  {} {}", indicator, label), area, theme),
+            area,
+        );
+        return;
+    }
+
     let check_color = if checked {
         theme.accent_success
     } else {
         theme.text_muted
     };
 
-    let cursor = if focused { "▶" } else { " " };
-    let cursor_color = if focused {
-        theme.accent_info
-    } else {
-        theme.text_muted
-    };
-
-    let mut label_style = Style::default().fg(if checked {
-        theme.text_primary
-    } else {
-        theme.text_secondary
-    });
-    if focused {
-        label_style = label_style.add_modifier(Modifier::BOLD);
-    }
-
     let line = Line::from(vec![
-        Span::styled(format!(" {} ", cursor), Style::default().fg(cursor_color)),
         Span::styled(
-            format!("{} ", indicator),
+            format!("  {} ", indicator),
             Style::default()
                 .fg(check_color)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(label.to_string(), label_style),
+        Span::styled(
+            label.to_string(),
+            Style::default().fg(if checked {
+                theme.text_primary
+            } else {
+                theme.text_secondary
+            }),
+        ),
     ]);
     f.render_widget(Paragraph::new(line), area);
+}
+
+/// Build a full-width selection bar: `content` padded with spaces to `area`
+/// width, styled with the shared `focused_selection_style`. Used to give a
+/// focused row the same highlight as the selected issue-list row.
+pub fn focus_bar<'a>(content: &str, area: Rect, theme: &Theme) -> Paragraph<'a> {
+    let width = area.width as usize;
+    let used = UnicodeWidthStr::width(content);
+    let padded = format!("{}{}", content, " ".repeat(width.saturating_sub(used)));
+    Paragraph::new(Line::from(Span::styled(
+        padded,
+        focused_selection_style(theme),
+    )))
 }

@@ -203,6 +203,38 @@ fn issue_browser_launch_options_toggled() {
 }
 
 #[test]
+fn issue_browser_focused_checkbox_row_has_selection_background() {
+    // Snapshots capture text only, not style. This asserts the focused row is
+    // painted with the shared selection bar (`selection_bg`), the same full-row
+    // highlight as the selected issue-list row — not just a marker glyph.
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut screen = IssueBrowserScreen::new(vec![make_gh_issue(1, "Add login flow")]);
+    screen.prompt_overlay = Some(IssuePromptOverlay {
+        text: String::new(),
+        selected_issues: vec![(1, "Add login flow".to_string())],
+        unified_pr: false,
+        focus: LaunchFocus::Interaction,
+        produce_pr: true,
+        interaction: false,
+    });
+
+    terminal
+        .draw(|f| {
+            screen.draw(f, f.area(), &theme);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer().clone();
+    let found = (0..buf.area.height)
+        .any(|y| (0..buf.area.width).any(|x| buf[(x, y)].style().bg == Some(theme.selection_bg)));
+    assert!(
+        found,
+        "focused checkbox row must paint a full selection-background bar"
+    );
+}
+
+#[test]
 fn issue_browser_launch_options_launch_focused() {
     let mut terminal = test_terminal();
     let theme = Theme::dark();

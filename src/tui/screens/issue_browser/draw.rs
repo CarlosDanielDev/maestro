@@ -13,7 +13,7 @@ use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Clear, Paragraph, Wrap},
 };
@@ -484,11 +484,7 @@ impl IssueBrowserScreen {
 
             let prompt_focused = overlay.focus == LaunchFocus::Prompt;
             let hint = Paragraph::new(Line::from(Span::styled(
-                if prompt_focused {
-                    "▶ Additional instructions (optional):"
-                } else {
-                    "  Additional instructions (optional):"
-                },
+                "Additional instructions (optional):",
                 Style::default().fg(if prompt_focused {
                     theme.accent_info
                 } else {
@@ -524,21 +520,22 @@ impl IssueBrowserScreen {
             );
 
             let launch_focused = overlay.focus == LaunchFocus::Launch;
-            let launch_button = Paragraph::new(Line::from(Span::styled(
-                if launch_focused {
-                    " ▶ [ Launch ] "
-                } else {
-                    "   [ Launch ] "
-                },
-                if launch_focused {
-                    Style::default()
-                        .fg(theme.accent_success)
-                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
-                } else {
-                    Style::default().fg(theme.text_secondary)
-                },
-            )));
-            f.render_widget(launch_button, chunks[5]);
+            if launch_focused {
+                f.render_widget(
+                    crate::tui::widgets::unified_pr_toggle::focus_bar(
+                        "  [ Launch ]",
+                        chunks[5],
+                        theme,
+                    ),
+                    chunks[5],
+                );
+            } else {
+                let launch_button = Paragraph::new(Line::from(Span::styled(
+                    "  [ Launch ]",
+                    Style::default().fg(theme.text_secondary),
+                )));
+                f.render_widget(launch_button, chunks[5]);
+            }
 
             draw_keybinds_bar(
                 f,
