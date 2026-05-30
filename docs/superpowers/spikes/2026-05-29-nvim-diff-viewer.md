@@ -1,4 +1,4 @@
-# Spike: nvim diff viewer feasibility for interaction sessions
+# Spike: in-session diff reviewer for interaction sessions
 
 - **Issue:** #732 — `spike(tui): nvim diff viewer feasibility for interaction sessions`
 - **Milestone:** v0.30.0 — Interactive Iteration Sessions (#57)
@@ -10,229 +10,238 @@
 
 ## Executive Summary
 
-**Verdict: 🟡 YELLOW — proceed to an implementation issue, with the caveats below.**
+**Verdict: 🟡 YELLOW — proceed. Build a native in-TUI diff reviewer (gitui-derived). nvim handoff is demoted to an optional power-user escape hatch.**
 
-The hard technical risk (can the ratatui loop be suspended for an external full-screen
-program and resumed cleanly?) is **already retired in-tree**: `OsShellLauncher`
-(`src/tui/shell_launcher.rs`, issue #560) ships the exact suspend → run external program →
-resume cycle today for `[s] Shell into worktree`. An nvim launcher is the same shape with
-`Command::new("nvim")` swapped for `$SHELL`. nvim cold spawn measured at **83 ms**, far
-under the 300 ms budget.
+The spike opened by asking "can we suspend the TUI and shell into nvim?" The answer is yes —
+maestro already ships that cycle (`OsShellLauncher`, #560). But once the **real scenario** is
+fixed — a *live* interaction session that stays alive in-context, where the user reviews a
+"finished" session diff (GitHub-PR style) and then keeps iterating — suspending out to nvim
+is the **wrong default**. It yanks the user out of the live loop.
 
-It is YELLOW, not GREEN, because the *UX shape* has real constraints that must be locked
-before building, not because the mechanism is in doubt:
+The right default is a **native, read-only diff reviewer rendered inside the TUI**, living as
+an overlay on the Interaction screen (#736). Review the diff, press a key, you are back in the
+chat exactly where you left it. The session never suspended.
 
-1. `nvim -d a b` is **two-file only**. maestro's real diffs are median **~16 files**
-   (measured, see Q4) — so the default path must be a whole-worktree handoff, not `-d`.
-2. The richest experience (file-tree sidebar + cycling) needs **diffview.nvim**, a plugin
-   we **cannot assume** the user has installed. The universal path is a single read-only
-   `ft=diff` buffer.
-3. **First-paint latency on the user's machine is unknown** — our 42 ms measurement is
-   `nvim -es` script mode, which exits before drawing. A heavy user `init.lua` (plugins,
-   LSP autostart) can push interactive first paint to 100–500 ms+. The 300 ms budget
-   applies to *our* suspend/resume edges (met with margin); it does **not** bound the
-   user's own nvim startup.
+This became affordable because of a single finding: **gitui is MIT-licensed and runs the same
+stack as maestro (ratatui 0.29 + syntect 5.3).** Its diff component is a ready blueprint —
+dual-scroll, line/hunk selection, diff-line theming. We adapt the pattern (with attribution),
+we don't invent a lazygit clone.
 
-Recommendation: build the **embedded single-buffer `ft=diff` handoff** as the baseline
-(universal, zero-plugin), with an **opportunistic diffview.nvim upgrade** when detected,
-and a **native fallback message** when nvim is absent. Follow-up issue spec is in the last
-section — to be filed **after v0.30.0 closes** per the milestone's working principle #5.
+YELLOW, not GREEN, because three real caveats shape the build (not the go decision):
+
+1. **Vim-*like*, not vim.** A native read-only reviewer ships a curated motion set
+   (`j/k`, `]`/`[` hunk, `g/G`, `Ctrl-d/u`, `/`, `n/N`). No text objects, macros, or `:`
+   commands. For read-only review that covers ~95% of how anyone moves through a PR diff —
+   but it is not nvim. The power user who wants real vim gets the `[o] open in $EDITOR` escape.
+2. **syntect is a real dependency cost** (~MB binary + build time). Gate behind `fancy-regex`
+   to avoid the C `onig` dep; consider shipping v1 with add/del line color only (already
+   readable) and adding full syntax highlight as a fast-follow.
+3. **Worktree teardown ends diff availability.** The reviewer reads the live worktree
+   (#740 reclaims it after the PR terminator). Review must happen *before* teardown — which
+   is exactly the natural flow (review → `Ctrl+P` open PR → terminator → teardown).
+
+Read-only is confirmed scope: the agent makes changes, the user *reads* them. No
+stage/unstage/revert from the viewer in v1 (that is gitui territory, not "review a session").
 
 ---
 
-## Q1 — Embedded vs. external (suspend/resume the ratatui loop)
+## How it flows with the v0.30.0 interactive sessions
 
-**Answer: Embedded. Proven by existing code.**
+This is the part the original spike missed. The reviewer must be a **companion to the live
+session**, not a separate workflow. Read against #734 / #736 / #737 / #738:
 
-maestro already suspends and resumes the TUI for an external full-screen program. The
-helpers and the working precedent:
+**Integration model — a pushed overlay, not a new session state.**
 
-- `src/tui/mod.rs:88-104` — `enter_tui_mode` / `leave_tui_mode` toggle
-  `EnterAlternateScreen` / `LeaveAlternateScreen`, mouse capture, and bracketed paste.
-- `src/tui/mod.rs:109,127` — `enable_raw_mode` / `disable_raw_mode` bracket the run loop.
-- `src/tui/shell_launcher.rs:29-51` — `OsShellLauncher::open_shell_at`:
+- The Interaction screen (#736) binds to one `InteractionSession` with state
+  `Idle / Streaming / Terminated` (#734, #738).
+- The diff reviewer is a **modal overlay pushed on top of that screen**. It adds **no** new
+  `InteractionState`. The session underneath stays `Idle` (or keeps `Streaming` in the
+  background). Closing the overlay returns to the chat with history intact.
+- This mirrors how #738 already treats the `Ctrl+Q` confirm modal — a transient overlay over
+  a living session. The diff reviewer is the same shape, just read-only and scrollable.
 
-  ```rust
-  let _ = crossterm::terminal::disable_raw_mode();
-  let _ = crate::tui::leave_tui_mode(&mut stdout);
-  let status_result = Command::new(&shell).current_dir(worktree_path).status(); // BLOCKS
-  let _ = crate::tui::enter_tui_mode(&mut stdout);
-  let _ = crossterm::terminal::enable_raw_mode();
-  ```
+**Entry keymap — no collision with #738's claimed chords.**
 
-  `Command::status()` blocks the calling thread until the child exits — exactly what an
-  interactive `nvim` session needs. The restore runs **unconditionally** (no `?` before it)
-  so a child crash cannot leave the terminal stuck in raw mode.
+#738 already owns `Enter`, `Shift+Enter`, `Ctrl+P` (open PR), `Ctrl+L` (clear), `Esc` (back),
+`Ctrl+Q` (quit). Free and mnemonic: **`Ctrl+D` = open diff reviewer.** Available from `Idle`
+and `Streaming` (read-only — reviewing while the agent works is fine; snapshot the diff at
+open time for v1, don't live-update). The #736 hint bar gains `[Ctrl+D] review diff`.
 
-- Second precedent: the upgrade-restart path (`src/tui/mod.rs:181-191`) does the same
-  leave/enter dance around `restart_with_same_args()`.
+Inside the overlay the keyboard is **local** (the modal captures all input), so the vim
+motion set has zero collision with the outer screen — same way nvim would own the keyboard,
+except we never left the TUI.
 
-An nvim launcher mirrors `OsShellLauncher` exactly:
+**Diff base — the GitHub-PR diff falls out for free.**
 
-```rust
-Command::new("nvim").args(["-d", file_a, file_b]).status()      // two-file
-// or, whole-worktree (see Q2/Q3):
-// pipe `git diff <base>` to `nvim -R -c 'set ft=diff' -`
+The "finished session" diff the user wants is exactly the branch's diff against its fork
+point:
+
+```
+base   = git merge-base main <InteractionSession.branch>
+diff   = git diff <base>          # working tree of InteractionSession.worktree_path
 ```
 
-**External (separate terminal / tmux pane) is NOT needed** and is rejected: it fragments
-the single-window TUI promise, can't guarantee a tmux server exists, and complicates focus
-return. The trait abstraction (`trait ShellLauncher`) is the model — define a
-`DiffViewer` trait so tests assert the path was reached without forking real nvim
-(`CapturingShellLauncher` is the template for the fake).
+`merge-base(main, branch)..worktree` **is** what GitHub shows as the PR diff. This needs
+**zero new tracking** — #734's `InteractionSession` already carries `worktree_path` and
+`branch`. No `session_start_commit` field, no per-turn snapshots required for v1.
 
-**Prototype-backed:** harness step 4 spawned real nvim headless: cold `--headless +qa` =
-**83 ms**. The crossterm mode toggles are sub-millisecond. The suspend and resume edges are
-comfortably inside 300 ms.
+**Lifecycle fit with the terminator (#739 / #740).**
 
----
+```
+Idle ──Ctrl+D──▶ [Diff Reviewer overlay] ──Esc/q──▶ Idle   (session untouched)
+   review the branch diff (PR-equivalent), vim motions, read-only
+   satisfied ──Ctrl+P──▶ Streaming ("/pushup") ──PR detected──▶ Terminated ──teardown (#740)
+```
 
-## Q2 — Diff granularity (full worktree vs. last-turn vs. both)
-
-**Answer: Ship BOTH. Default = full worktree diff (`git diff <base>`). Toggle = last-turn diff.**
-
-- **Full worktree diff** is the obvious default — "show me everything the agent did this
-  session." Base ref is the session-start commit (see Q7), not always `main`.
-- **Last-turn diff** is high-value in an *iteration* session (the whole point of v0.30.0):
-  "what changed since my last message?" Capture `git rev-parse HEAD` before and after each
-  turn settles to `Idle`; the per-turn diff is `git diff <head_before_turn> <head_after_turn>`
-  (or `<head_before>` vs working tree if the turn didn't commit).
-
-The interaction session already has a natural turn boundary (the spec's per-turn
-`claude --resume` loop), so capturing pre/post HEAD is cheap and fits the existing state
-machine. Default to full; toggle to last-turn with a key (Q5).
-
-**Caveat:** if a turn makes no commit (uncommitted working-tree edits only), "last-turn"
-must fall back to `git diff` of the working tree against the pre-turn HEAD. Document this in
-the implementation issue.
+The reviewer is the natural "do I trust this before I open the PR?" gate, sitting right
+before `Ctrl+P`. After teardown the worktree is gone, so the reviewer is a live-session tool
+by definition — document that it is unavailable post-teardown rather than trying to preserve
+a snapshot.
 
 ---
 
-## Q3 — Alternatives: native ratatui diff widget vs. nvim handoff
+## Q1 — Embedded vs. external (and the bigger native-vs-nvim call)
 
-**Answer: nvim handoff for v1. Native ratatui widget is a larger, lower-fidelity build — defer.**
+**Answer: Native in-TUI widget for the default. Embedded nvim handoff kept as an escape hatch.**
 
-| Dimension | nvim handoff | Native ratatui widget (lazygit-style) |
+The suspend/resume mechanism is proven (`src/tui/shell_launcher.rs:29-51`, #560):
+
+```rust
+let _ = crossterm::terminal::disable_raw_mode();
+let _ = crate::tui::leave_tui_mode(&mut stdout);
+let status_result = Command::new(&shell).current_dir(worktree_path).status(); // BLOCKS
+let _ = crate::tui::enter_tui_mode(&mut stdout);
+let _ = crossterm::terminal::enable_raw_mode();
+```
+
+So nvim *can* be embedded. But for a live, stay-resident interaction session it is the wrong
+default — it suspends the very session the user is iterating in. We reuse this exact code for
+the **`[o] open in $EDITOR`** escape hatch only: swap `$SHELL` for `nvim`/`$EDITOR`, same
+trait shape (`trait DiffLauncher` modelled on `trait ShellLauncher`, fake modelled on
+`CapturingShellLauncher`).
+
+**Why native is the right default here** (it was not, before the "session stays alive"
+constraint was known):
+
+| | Native widget (gitui-derived) | nvim handoff |
 |---|---|---|
-| Build cost | Low — mirror `OsShellLauncher`, ~1 trait + 1 launcher | High — diff parser, syntax highlight, scroll, fold, side-by-side layout |
-| Fidelity | High — real editor: search, fold, syntax, word-diff | Medium — we reimplement a fraction of nvim |
-| Dependency | Requires `nvim` on PATH (fallback needed) | None |
-| In-TUI feel | Breaks single-window (suspends to nvim) | Stays in the TUI |
-| Maintenance | Low — nvim is the diff engine | Ongoing — our code owns rendering bugs |
+| Stays in the live session | ✅ overlay, no suspend | ❌ suspends the TUI |
+| GitHub-PR layout (file list + diff) | ✅ gitui already is this | ❌ `ft=diff` is a flat dump; needs diffview.nvim (can't assume) |
+| Works for non-technical users | ✅ no nvim install/config needed | ❌ depends on user's nvim + config |
+| Vim motions | ✅-ish curated read-only set | ✅ real vim |
+| Build cost | Medium — adapt gitui (MIT, same stack) | Low — shell out |
+| In-house UX control (theme, hint bar) | ✅ | ❌ foreign island |
 
-The native widget's only real win is "never leave the TUI." That's a genuine UX value but
-not worth the build cost for a spike-driven v1. Recommend nvim handoff now; revisit a
-native widget only if telemetry shows users dislike the suspend, **or** as the no-nvim
-fallback (a *minimal* read-only scroll of `git diff` output is far cheaper than a full
-lazygit clone).
+---
 
-**Three concrete handoff paths** (prototype harness steps 2–3b):
+## Q2 — Diff granularity
 
-- **Path A — `nvim -d a b`:** two files, true side-by-side. Use only for a single-file
-  focus view. **Wrong as the default** (median diff is ~16 files).
-- **Path B — `git diff <base> | nvim -R -c 'set ft=diff' -`:** whole diff in one read-only,
-  syntax-highlighted buffer. **Universal, zero-plugin. This is the baseline default.**
-- **Path B+ — `nvim -c 'DiffviewOpen <base>'`:** diffview.nvim — file-tree sidebar, `<tab>`
-  cycling, real side-by-side. **Best UX but requires the plugin.** Detect and prefer when
-  present; otherwise Path B.
+**Answer: v1 = full branch diff (PR-equivalent), base = `merge-base(main, branch)`. Last-turn diff = future toggle.**
+
+The scenario is "understand a finished session like the GitHub PR view" → the full branch
+diff is the default and, for v1, the only base. Keep it simple (CLAUDE.md: simplest first).
+
+**Last-turn diff** ("what changed since my last message") is genuinely useful in an iteration
+loop but needs per-turn HEAD snapshots wired into #737's turn loop (capture `git rev-parse
+HEAD` on each `Idle` settle). Defer to a fast-follow toggle; do not block v1 on it.
+
+---
+
+## Q3 — Alternatives: native widget vs. nvim handoff
+
+**Answer: Native gitui-derived widget. This is the flip from the original spike.**
+
+What changed the math: **gitui is MIT** (gitui-org), **ratatui 0.29** (identical to maestro),
+**syntect 5.3** for highlighting. Reusable, with attribution:
+
+- **Dual-scroll architecture** — vertical = line-based *selection* (`selection: Selection`,
+  `VerticalScroll` viewport; renders only `min = top .. top+height`); horizontal = viewport
+  offset (`HorizontalScroll`). This is the scroll engine we would otherwise hand-roll.
+- **`Selection` enum** — `Single(usize)` / `Multiple(start,end)` with `get_start/get_end/contains`.
+- **`selected_hunk: Option<usize>`** + `find_selected_hunk(diff, line)` — hunk tracking from
+  the selected line (powers `]`/`[`).
+- **`DiffLineType`** (`Add` / `Delete` / `Header` / `None`) + `theme.diff_line(type, selected)`
+  — maps directly onto maestro's `src/tui/theme.rs`.
+- **syntect** for syntax color — MIT/Apache (passes the dep license allow-list). Cost flagged
+  above; `fancy-regex` feature avoids the C dep.
+
+The native widget's win over nvim — never leave the live session — is exactly what this
+scenario needs. gitui being MIT + same stack is what makes it affordable rather than a
+from-scratch lazygit clone.
 
 ---
 
 ## Q4 — Sidebar: file-tree vs. single-buffer scroll
 
-**Answer: File navigation matters — maestro diffs are too big for a single flat scroll.**
+**Answer: File-list pane — required, maestro diffs are too big for a flat scroll.**
 
-Measured real diff sizes (recent merged PRs, `git diff` file counts):
-
-| Merge | Files |
-|---|---|
-| #916 | 11 |
-| #913 | 30 |
-| (4 more) | 21, 18, 18, 16, 15 |
-
-Median ~16–18 files; tail up to 30. A single flat `ft=diff` buffer at 17k+ lines (harness
-measured 163 files / 17,674 lines for a 20-commit range) is navigable in nvim via search
-(`/`) and folding, but a **file list is clearly better** at this size.
-
-- If diffview.nvim is present → its file-tree sidebar is the answer for free (Path B+).
-- If not → Path B single buffer, but set `foldmethod=syntax` / `ft=diff` so each file folds;
-  document `]]` / `[[` (next/prev file hunk) and `/` search in the in-app hint line.
-
-So: **prefer the file-tree (via diffview) when available, degrade to a folded single buffer.**
-Do not build our own sidebar in v1.
+Measured real diff sizes (recent merged PRs, file counts): 11, 30, 21, 18, 18, 16, 15 →
+median ~16–18, tail to 30. A flat scroll at 17k+ lines (harness: 163 files / 17,674 lines for
+a 20-commit range) is painful. gitui's file-list component is the blueprint; `Tab` /
+file-list jump moves between files (the thing that felt "arrows-only" in raw gitui is just an
+arrow-default keymap + missing hint bar — we fix both by shipping vim keys + a hint line by
+default).
 
 ---
 
-## Q5 — Keymap: entry from the Interaction screen
+## Q5 — Keymap
 
-**Answer: `Ctrl+D` for full diff, `Shift+D` (`D`) for last-turn toggle. Document conflicts.**
+**Answer: `Ctrl+D` to open (collision-free vs #738). Vim motions inside the overlay.**
 
-Constraints from the `/auto` keymap hard-rules (outer screens own `Tab`, `BackTab`, arrows,
-`Enter`, `Esc`, `Ctrl+s`):
+Entry (outer Interaction screen — must avoid #738's `Enter`/`Shift+Enter`/`Ctrl+P`/`Ctrl+L`/
+`Esc`/`Ctrl+Q`):
 
-| Candidate | Verdict |
+| Key | Action |
 |---|---|
-| `Ctrl+D` | **Recommended for "open full diff".** Mnemonic. Note: in many line editors `Ctrl+D` = EOF/delete-forward — confirm the multi-line input widget doesn't already consume it; if it does, fall to `F3`. |
-| `D` (when input empty) | **Recommended for "last-turn toggle"** once a diff context is relevant. Single-letter chord, safe only when the input buffer is empty (matches the "single-letter chord" child-widget rule). |
-| `F3` | Solid no-conflict fallback for the full diff if `Ctrl+D` collides with the input widget. |
+| `Ctrl+D` | Open the diff reviewer overlay (from `Idle` or `Streaming`). |
 
-**Conflict to resolve in implementation:** verify `Ctrl+D` against the multi-line input
-handler in the Interaction screen (#736). If the input widget binds `Ctrl+D`, use `F3` for
-full-diff and keep `D`-when-empty for last-turn. Do **not** use arrow/`Tab`/`Enter`/`Esc`/
-`Ctrl+s` — owned by outer screens.
+Inside the overlay (local keyboard — no outer collision), shipped **by default** + shown in a
+persistent hint bar:
+
+| Action | Key |
+|---|---|
+| line up/down | `j` / `k` (+ arrows) |
+| half-page | `Ctrl+d` / `Ctrl+u` |
+| next/prev hunk | `]` / `[` |
+| top/bottom | `g` / `G` |
+| search / next / prev | `/` · `n` · `N` |
+| jump file | `Tab` / file-list focus |
+| open in real editor | `o` (escape hatch → nvim/`$EDITOR`) |
+| close → back to chat | `Esc` or `q` |
+
+This is the discoverability fix for the gitui pain: hunk-jump and file-jump are first-class
+default keys, not config-gated, with the hint bar always visible.
 
 ---
 
-## Q6 — Cross-platform availability + fallback
+## Q6 — Cross-platform + fallback
 
-**Answer: nvim is installable on all three targets; detect-and-degrade when missing.**
+**Answer: Native widget removes the hard nvim dependency from the primary path.**
 
-- **macOS:** confirmed locally — `nvim v0.12.2` via Homebrew (`/opt/homebrew/bin/nvim`).
-- **Linux:** apt / dnf / pacman / AppImage. Standard.
-- **Windows:** `winget install Neovim.Neovim`, `choco install neovim`, scoop, or MSI/zip
-  from the releases page. **Caveat:** native Windows console (not WSL) has historically
-  rougher full-screen-program handoff than a Unix PTY; crossterm 0.28 supports Windows but
-  the suspend/resume edge should be **smoke-tested on native Windows + WSL separately**
-  before claiming parity. WSL behaves like Linux.
-
-**Fallback when nvim is absent** (harness step 1):
-1. Detect with `which`/`where nvim` (or `Command::new("nvim").arg("--version")` probe) once,
-   cache the result.
-2. If missing → show an in-TUI message: *"Install nvim to view diffs:
-   https://neovim.io/doc/install/"* and/or fall back to a minimal read-only scroll of
-   `git diff` output rendered in a ratatui paragraph (cheap; not the full native widget).
-3. Never hard-fail the session because nvim is missing.
+- Native reviewer = pure Rust (ratatui + syntect) → identical on macOS / Linux / Windows /
+  WSL. No nvim install required for the default experience. This is a strict cross-platform
+  improvement over the nvim-default the spike opened with.
+- The `[o] open in $EDITOR` escape hatch is the only nvim-dependent path, and it degrades
+  cleanly: if `$EDITOR` / nvim is absent, grey the `o` key and keep the native reviewer.
+- nvim availability for the escape hatch: Homebrew (macOS, confirmed `v0.12.2` locally),
+  apt/dnf/pacman (Linux), winget/choco/scoop/MSI (Windows). WSL behaves like Linux.
 
 ---
 
 ## Q7 — Worktree-state contract (diff base)
 
-**Answer: Base = the session-start commit, captured when the interaction session is created.**
-
-Of the three candidate bases (`main`, session-start commit, per-turn snapshot):
-
-- **`main` is wrong as the base** — the worktree may branch from a non-main point, and the
-  user wants "what changed *this session*", not "everything since main".
-- **Session-start commit is the right default base.** Capture `git rev-parse HEAD` in the
-  worktree at the moment the InteractionSession is constructed (#734 scaffold is the natural
-  home). Store it on the session struct, e.g. `session_start_commit: String`.
-- **Per-turn snapshot** is the base for the *last-turn* toggle (Q2): capture HEAD before and
-  after each turn settles to `Idle`.
-
-**Contract to document in the implementation issue:**
+**Answer: base = `git merge-base main <branch>`; target = the worktree. No new state needed.**
 
 | Diff view | Base | Target |
 |---|---|---|
-| Full session diff (default) | `session_start_commit` | working tree |
-| Last-turn diff (toggle) | `head_before_turn` | `head_after_turn` (or working tree if no commit) |
+| Full session diff (v1 default) | `merge-base(main, InteractionSession.branch)` | worktree (`InteractionSession.worktree_path`) |
+| Last-turn diff (future toggle) | `head_before_turn` | `head_after_turn` (or worktree if no commit) |
 
-**Snapshot capture points:** session-start commit at `InteractionSession::new`; per-turn HEAD
-in the turn loop (#737), recorded on `Idle` settle — consistent with the spec's working
-principle #6 (terminator/snapshot events fire only after the turn settles, never mid-stream).
-
-maestro already shells `git rev-parse` / `git diff` in worktrees (`src/git.rs`,
-`src/git_mock.rs` — `has_commits_ahead`, `commit_and_push`), so the trait + mock pattern for
-capturing these refs already exists and should be reused, not reinvented.
+This equals the GitHub PR diff and reuses #734's existing `branch` + `worktree_path` fields —
+**no `session_start_commit`, no per-turn snapshots for v1.** maestro already shells
+`git` in worktrees through the `Git` trait (`src/git.rs`, `src/git_mock.rs`); reuse it for
+`merge-base` + `diff`, do not reinvent. Availability ends at worktree teardown (#740) — a
+live-session tool by design.
 
 ---
 
@@ -247,72 +256,86 @@ nvim --headless +qa startup/teardown: 83 ms
 git diff | nvim -R ft=diff open+quit:   42 ms
 ```
 
-**What is proven:** nvim spawn/exit cost (83 ms) << 300 ms budget; whole-worktree pipe into
-a single `ft=diff` buffer works; suspend/resume mechanism ships today (`OsShellLauncher`).
+These numbers validated the *nvim escape-hatch* path (spawn cost well under 300 ms). The
+**native widget** has no spawn cost at all — it renders in the existing ratatui frame. The
+prototype's value now is confirming the escape hatch is cheap, and that `git diff` against a
+worktree is trivially pipeable.
 
-**What is NOT proven headless (needs a human at a real terminal):**
-1. Interactive first-paint latency with the *user's own* `init.lua` (our 42 ms is `-es`
-   script mode, which exits before drawing). Heavy configs can be 100–500 ms+.
-2. Keyboard raw-mode / alt-screen integrity on resume across terminals (kitty, iTerm2,
-   Windows Terminal, tmux). The shell-launcher already exercises this path in production,
-   which is strong but not nvim-specific evidence.
-3. Native Windows console (non-WSL) handoff parity.
-
-These three are the manual-QA matrix the follow-up implementation issue must carry.
+**Not provable headless (manual-QA matrix for the implementation issue):**
+1. Native widget readability + scroll feel on a real 16-file diff across terminals.
+2. `[o]` escape-hatch suspend/resume integrity (kitty, iTerm2, Windows Terminal, tmux) — the
+   shell launcher already exercises this in production, strong but not nvim-specific evidence.
+3. syntect highlight performance on a large (17k-line) diff.
 
 ---
 
-## Recommended follow-up issue (file AFTER v0.30.0 closes — milestone principle #5)
+## Recommended follow-up issue (DOR format)
 
-> **Title:** `feat(tui): embedded nvim diff viewer for interaction sessions (follow-up to #732)`
+> Milestone principle #5 says the spike's follow-up is filed **after v0.30.0 closes**. Because
+> this reviewer now plugs into the Interaction screen, it is `Blocked By` the screen issues —
+> slot it as a v0.30.0 fast-follow (or a Level-7 addition if the milestone absorbs it; that
+> scope call is the user's, see the open question at the end of the report's PR).
+
+> **Title:** `feat(tui): native in-session diff reviewer (gitui-derived) for interaction sessions (follow-up to #732)`
 >
-> **Overview:** Add an in-TUI diff handoff to the Interaction screen. Suspend the ratatui
-> loop, open the session diff in nvim, resume on exit — mirroring `OsShellLauncher` (#560).
+> **Overview:** Add a read-only, in-TUI diff reviewer as an overlay on the Interaction screen
+> so users review a finished session's changes (GitHub-PR style) with vim motions, without
+> leaving the live session. Adapts gitui's diff component (MIT, ratatui 0.29 + syntect).
 >
 > **Expected Behavior:**
-> - `DiffViewer` trait + `NvimDiffViewer` production impl + capturing fake (model:
->   `src/tui/shell_launcher.rs`).
-> - Default: full session diff, base = `session_start_commit`, via
->   `git diff <base> | nvim -R -c 'set ft=diff' -`.
-> - Opportunistic: if diffview.nvim detected, `nvim -c 'DiffviewOpen <base>'`.
-> - Toggle: last-turn diff (`head_before_turn`..`head_after_turn`).
-> - Fallback: nvim absent → in-TUI "install nvim" message + read-only `git diff` scroll.
-> - Keymap: `Ctrl+D` full diff (fall back to `F3` if input widget binds `Ctrl+D`),
->   `D`-when-empty last-turn toggle.
+> - `Ctrl+D` on the Interaction screen opens a modal diff-reviewer overlay; the underlying
+>   `InteractionSession` state is unchanged (no new `InteractionState`).
+> - Diff = `git diff $(git merge-base main <branch>)` over `worktree_path` (PR-equivalent).
+> - Layout: file-list pane + unified diff pane + persistent hint bar. Add/Delete/Header
+>   colored via `theme.rs`; syntect syntax highlight behind `fancy-regex` (may ship v1
+>   without full syntax color).
+> - Read-only vim motions: `j/k`, `Ctrl+d/u`, `]`/`[` (hunk), `g/G`, `/` `n` `N`, `Tab`
+>   (file jump), `o` (open in `$EDITOR` escape hatch), `Esc`/`q` (close → back to chat).
+> - No staging/reverting/editing. Strictly review.
+> - Unavailable after worktree teardown (#740); grey the entry key when no worktree.
 >
 > **Acceptance Criteria:**
-> - [ ] Suspend → nvim → resume leaves terminal raw-mode/alt-screen intact (manual matrix).
-> - [ ] Full + last-turn diffs both reachable; correct base refs.
-> - [ ] nvim-missing fallback never hard-fails the session.
-> - [ ] Trait + fake unit-tested (path reached, base ref correct) without forking real nvim.
+> - [ ] `Ctrl+D` opens the overlay from `Idle` and `Streaming`; session state untouched.
+> - [ ] Diff base is `merge-base(main, branch)`; matches the eventual PR diff file set.
+> - [ ] File-list jump + hunk-jump + search work via the default keymap; hint bar visible.
+> - [ ] `Esc`/`q` returns to chat with history intact.
+> - [ ] `o` opens `$EDITOR`/nvim via the `DiffLauncher` trait; greyed when absent.
+> - [ ] Trait + capturing fake unit-tested (path reached, base ref correct) without forking real nvim.
+> - [ ] Snapshot tests: empty diff, single-file, 16-file diff with file-list, scrolled state.
+> - [ ] `cargo test --quiet` green; `cargo clippy -- -D warnings -A dead_code` clean.
 >
-> **Files to Modify:** `src/tui/diff_viewer.rs` (new), Interaction screen handler (#736),
-> InteractionSession struct (#734 — add `session_start_commit`), input_handler keymap.
+> **Files to Modify:** `src/tui/screens/interaction/diff_review.rs` (NEW overlay + widget),
+> `src/tui/screens/interaction/mod.rs` (dispatch `Ctrl+D`, extends #738), `src/tui/theme.rs`
+> (diff line styles if missing), `src/git.rs` (add `merge_base` + `diff_text` to the `Git`
+> trait), `Cargo.toml` (syntect, `fancy-regex` feature). Carry the gitui MIT copyright notice
+> for any adapted code.
 >
-> **Test Hints:** Reuse the `ShellLauncher`/`CapturingShellLauncher` trait+fake pattern.
-> Mock git refs via the existing `Git` trait (`src/git.rs`).
+> **Test Hints:** Reuse the `Git` trait + mock (`src/git_mock.rs`) for `merge_base`/`diff`.
+> Reuse the `ShellLauncher`/`CapturingShellLauncher` pattern for the `DiffLauncher` escape
+> hatch. ratatui `insta` snapshots for the overlay states.
 >
 > **## Manual Test (Human):**
-> 1. Start an interaction session in a worktree with ≥5 changed files.
-> 2. Press `Ctrl+D` → nvim opens the full diff. Scroll, search `/`, `:qa`.
-> 3. On exit, confirm the TUI redraws correctly and keys still work (no stuck raw mode).
-> 4. Time suspend→nvim-visible and nvim-exit→TUI-visible (<300 ms each, excluding the
->    user's own nvim startup).
-> 5. Repeat with `D` (last-turn). Repeat with nvim uninstalled → fallback message shows.
-> 6. Run on macOS, Linux/WSL, and native Windows Terminal.
+> 1. Start an interaction session in a worktree with ≥10 changed files.
+> 2. `Ctrl+D` → reviewer opens, file list shows all changed files, diff pane shows the first.
+> 3. `j/k` scroll, `]`/`[` jump hunks, `Tab` jump files, `/` search, `g/G` top/bottom.
+> 4. `Esc` → back in chat, input + history exactly as left.
+> 5. `o` → opens `$EDITOR` on the diff; quit returns to the TUI with keys intact.
+> 6. Confirm the file set matches `gh pr diff` after the PR is opened.
+> 7. Run on macOS, Linux/WSL, native Windows Terminal.
 >
-> **## Blocked By:** #736 (Interaction screen), #734 (InteractionSession scaffold). File
-> after v0.30.0 milestone closes.
+> **## Blocked By:** #736 (Interaction screen hosts the overlay), #738 (keymap dispatch).
+> File after v0.30.0 closes, or fold into the milestone if scope is approved.
 >
-> **Definition of Done:** trait+impl+fake landed, manual matrix executed on 3 platforms,
-> fallback verified, keymap conflict resolved.
+> **Definition of Done:** overlay + widget + `DiffLauncher` escape hatch landed; manual matrix
+> executed on 3 platforms; read-only verified; keymap collision-free with #738; milestone
+> dependency graph updated.
 
 ---
 
 ## Verdict recap
 
-🟡 **YELLOW — proceed.** Mechanism is proven in-tree; spawn cost is well within budget.
-Build the universal single-buffer `ft=diff` handoff with an opportunistic diffview upgrade
-and a clean no-nvim fallback. The three unverified items (user-config first-paint, resume
-integrity across terminals, native-Windows parity) become the implementation issue's
-manual-QA matrix — they shape the build, they don't block the go decision.
+🟡 **YELLOW — proceed. Build native, in-TUI, read-only, gitui-derived.** It keeps the user
+inside the live interaction session, matches the GitHub-PR mental model, needs no diff-base
+tracking beyond what #734 already holds, and collides with nothing in #738. nvim becomes a
+one-key `[o]` escape hatch for power users via the existing `OsShellLauncher` pattern. The
+caveats — vim-subset, syntect weight, teardown timing — are scoping notes, not blockers.
