@@ -579,5 +579,71 @@ impl IssueBrowserScreen {
         };
         let text_block = theme.styled_block_plain(focused);
         f.render_widget(text_content.block(text_block), area);
+
+        // Show the native (blinking) terminal cursor at the caret when the
+        // prompt box has focus, so it reads as a typing target.
+        let inner_w = area.width.saturating_sub(2);
+        let inner_h = area.height.saturating_sub(2);
+        if focused && inner_w > 0 && inner_h > 0 {
+            let (cx, cy) = caret_offset(&overlay.text, inner_w);
+            let x = area.x + 1 + cx.min(inner_w - 1);
+            let y = area.y + 1 + cy.min(inner_h - 1);
+            f.set_cursor_position((x, y));
+        }
+    }
+}
+
+/// Caret column/row offset within a text area of the given inner `width`,
+/// after the last character of `text`. Treats `\n` as a hard newline and
+/// wraps when a row fills. Char-based (wide glyphs approximate to one cell).
+pub(super) fn caret_offset(text: &str, width: u16) -> (u16, u16) {
+    if width == 0 {
+        return (0, 0);
+    }
+    let mut col: u16 = 0;
+    let mut row: u16 = 0;
+    for ch in text.chars() {
+        if ch == '\n' {
+            row = row.saturating_add(1);
+            col = 0;
+        } else {
+            col = col.saturating_add(1);
+            if col >= width {
+                col = 0;
+                row = row.saturating_add(1);
+            }
+        }
+    }
+    (col, row)
+}
+
+#[cfg(test)]
+mod caret_tests {
+    use super::caret_offset;
+
+    #[test]
+    fn caret_empty_text_is_origin() {
+        assert_eq!(caret_offset("", 20), (0, 0));
+    }
+
+    #[test]
+    fn caret_advances_one_per_char() {
+        assert_eq!(caret_offset("abc", 20), (3, 0));
+    }
+
+    #[test]
+    fn caret_wraps_when_row_fills() {
+        // width 5: "abcde" fills row 0, caret moves to row 1 col 0.
+        assert_eq!(caret_offset("abcde", 5), (0, 1));
+    }
+
+    #[test]
+    fn caret_newline_moves_to_next_row() {
+        assert_eq!(caret_offset("ab\nc", 20), (1, 1));
+    }
+
+    #[test]
+    fn caret_zero_width_is_origin() {
+        assert_eq!(caret_offset("abc", 0), (0, 0));
     }
 }
