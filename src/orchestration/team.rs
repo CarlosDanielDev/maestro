@@ -5,7 +5,7 @@
 use crate::orchestration::types::{Primitive, TeamRole};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TeamConfig {
@@ -76,10 +76,11 @@ pub enum SourceTier {
 /// accept any extends value that resolves to a key in `all`, leaving
 /// built-in resolution to `Loader` at session-start time.
 ///
-/// Intentionally shallow — no cycle detection. A cycle like
-/// `a.extends = "b"; b.extends = "a"` surfaces at `Loader` time as a
-/// resolution error rather than a save-time block. Cycle detection is
-/// tracked as a v0.30.0 follow-up.
+/// Two-phase: first every non-empty `extends` must reference a configured
+/// team in `all` (dangling check); then the `extends` graph must be free of
+/// cycles (`a → b → a`, self-loops, multi-hop). A cycle is reported with the
+/// full path rotated to its lexicographically smallest member so the message
+/// is deterministic regardless of `HashMap` iteration order.
 pub fn validate_extends(all: &HashMap<String, TeamConfig>) -> Result<()> {
     for (child, cfg) in all {
         let parent = cfg.extends.trim();
@@ -91,7 +92,59 @@ pub fn validate_extends(all: &HashMap<String, TeamConfig>) -> Result<()> {
         }
         anyhow::bail!("teams.{child}.extends references unknown team `{parent}`");
     }
+    detect_extends_cycle(all)
+}
+
+/// Detect cycles in the `extends` graph. The graph is functional (out-degree
+/// ≤ 1), so each node is chased linearly. After `validate_extends`'s dangling
+/// check, every non-empty parent is guaranteed present in `all`, so the walk
+/// only terminates at an empty `extends` (a root) or when it revisits a node.
+fn detect_extends_cycle(all: &HashMap<String, TeamConfig>) -> Result<()> {
+    // Sorted starts → deterministic choice when multiple cycles exist.
+    let mut starts: Vec<&str> = all.keys().map(String::as_str).collect();
+    starts.sort_unstable();
+
+    for start in starts {
+        let mut visited: HashSet<&str> = HashSet::new();
+        let mut path: Vec<&str> = Vec::new();
+        let mut node = start;
+        loop {
+            let parent = all[node].extends.trim();
+            if parent.is_empty() {
+                break; // reached a root — no cycle on this chain
+            }
+            if !visited.insert(node) {
+                // `node` repeats: the cycle is path[first(node)..].
+                let from = path.iter().position(|n| *n == node).unwrap_or(0);
+                anyhow::bail!("teams `{}` form a cycle", render_cycle(&path[from..]));
+            }
+            path.push(node);
+            node = parent;
+        }
+    }
     Ok(())
+}
+
+/// Render a cycle path rotated to begin at its smallest member, closed by
+/// repeating that member: `["b", "c", "a"]` → `a → b → c → a`.
+fn render_cycle(cycle: &[&str]) -> String {
+    let min_pos = cycle
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, n)| **n)
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+    let rotated: Vec<&str> = cycle[min_pos..]
+        .iter()
+        .chain(cycle[..min_pos].iter())
+        .copied()
+        .collect();
+    let mut display = rotated.join(" \u{2192} ");
+    if let Some(first) = rotated.first() {
+        display.push_str(" \u{2192} ");
+        display.push_str(first);
+    }
+    display
 }
 
 #[cfg(test)]
@@ -179,5 +232,64 @@ unknown_field = "boom"
         let mut all = HashMap::new();
         all.insert("ws".to_string(), empty_team("   "));
         validate_extends(&all).expect("whitespace-only extends must be treated as root");
+    }
+
+    #[test]
+    fn validate_extends_rejects_self_loop() {
+        let mut all = HashMap::new();
+        all.insert("a".to_string(), empty_team("a"));
+        let err = validate_extends(&all).unwrap_err().to_string();
+        assert!(err.contains("cycle"), "expected cycle error, got: {err}");
+        assert!(
+            err.contains("a \u{2192} a"),
+            "self-loop must render `a → a`, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_extends_rejects_two_team_cycle() {
+        let mut all = HashMap::new();
+        all.insert("a".to_string(), empty_team("b"));
+        all.insert("b".to_string(), empty_team("a"));
+        let err = validate_extends(&all).unwrap_err().to_string();
+        assert!(err.contains("cycle"), "expected cycle error, got: {err}");
+        // Deterministic: cycle rotated to lexicographically smallest member.
+        assert!(
+            err.contains("a \u{2192} b \u{2192} a"),
+            "two-team cycle must render `a → b → a`, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_extends_rejects_three_team_cycle() {
+        let mut all = HashMap::new();
+        // Insert scrambled to prove the reported path is order-independent.
+        all.insert("c".to_string(), empty_team("a"));
+        all.insert("a".to_string(), empty_team("b"));
+        all.insert("b".to_string(), empty_team("c"));
+        let err = validate_extends(&all).unwrap_err().to_string();
+        assert!(err.contains("cycle"), "expected cycle error, got: {err}");
+        assert!(
+            err.contains("a \u{2192} b \u{2192} c \u{2192} a"),
+            "three-team cycle must render `a → b → c → a`, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_extends_accepts_linear_chain() {
+        let mut all = HashMap::new();
+        all.insert("a".to_string(), empty_team("b"));
+        all.insert("b".to_string(), empty_team("c"));
+        all.insert("c".to_string(), empty_team(""));
+        validate_extends(&all).expect("valid linear chain a→b→c must pass");
+    }
+
+    #[test]
+    fn validate_extends_diamond_is_not_a_cycle() {
+        let mut all = HashMap::new();
+        all.insert("a".to_string(), empty_team("c"));
+        all.insert("b".to_string(), empty_team("c"));
+        all.insert("c".to_string(), empty_team(""));
+        validate_extends(&all).expect("shared parent (diamond) must not be a cycle");
     }
 }

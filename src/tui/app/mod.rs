@@ -588,6 +588,10 @@ impl App {
         if self.bypass_active {
             self.session_config.permission_mode = "bypassPermissions".to_string();
         }
+        // Gate on-disk call-log persistence at the state-store save boundary
+        // (default off / memory-only) — #888.
+        self.store
+            .set_call_log_persist(config.sessions.call_log_persist);
         self.selected_agent_id = default_enabled_agent_id(&config);
         self.pool
             .set_agent_providers(build_agent_provider_map(&config));

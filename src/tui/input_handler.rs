@@ -462,9 +462,13 @@ fn handle_completion_summary_failed_gates(app: &mut App, key: &KeyEvent) -> KeyA
         }
         (KeyCode::Char('q'), _) => {
             // Recovery `[q]` closes the modal, NOT ConfirmExit — the
-            // success-modal disambiguation is asserted by tests.
+            // success-modal disambiguation is asserted by tests. Pop back
+            // to the mode the user came from (Detail/Overview) via the
+            // nav stack instead of forcing Overview, so the Detail chord
+            // set (`[l]`/`[L]`/`[k]`) is preserved (#894). Falls back to
+            // Dashboard, never ConfirmExit, when the stack is empty.
             app.dismiss_completion_summary();
-            app.tui_mode = app::TuiMode::Overview;
+            app.navigate_back_or_dashboard();
         }
         (KeyCode::Char('v'), _) => {
             if let Some(sl) = first_failed.as_ref() {
@@ -642,7 +646,12 @@ fn handle_call_log(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> Key
         (KeyCode::Enter, _) if total > 0 => {
             state.toggle_expand();
         }
+        (KeyCode::Char('f'), _) => {
+            state.toggle_follow_tail();
+        }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+            // Manual movement cancels follow-tail so the user can scroll back.
+            state.disable_follow_tail();
             if state.expanded {
                 state.scroll_payload_up();
             } else {
@@ -650,6 +659,7 @@ fn handle_call_log(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> Key
             }
         }
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+            state.disable_follow_tail();
             if state.expanded {
                 state.scroll_payload_down();
             } else {
@@ -657,9 +667,11 @@ fn handle_call_log(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> Key
             }
         }
         (KeyCode::Char('g'), _) => {
+            state.disable_follow_tail();
             state.jump_first();
         }
         (KeyCode::Char('G'), _) => {
+            state.disable_follow_tail();
             state.jump_last(total);
         }
         _ => {}
@@ -2131,6 +2143,9 @@ mod tests {
     #[test]
     fn failed_gates_q_returns_to_overview_without_confirm_exit() {
         let mut app = make_app();
+        // Production opens the modal via `open_completion_summary`, which
+        // pushes the prior mode (here Overview) onto `nav_stack`.
+        app.nav_stack.push(TuiMode::Overview);
         app.tui_mode = TuiMode::CompletionSummary;
         app.completion_summary = Some(failed_gates_summary(Some(".maestro/worktrees/issue-560")));
 
@@ -2142,6 +2157,27 @@ mod tests {
             "failed-gates [q] must NOT trigger app-exit confirmation"
         );
         assert_eq!(app.tui_mode, TuiMode::Overview);
+        assert!(app.completion_summary.is_none());
+    }
+
+    #[test]
+    fn failed_gates_q_returns_to_prior_detail_mode() {
+        let mut app = make_app();
+        let id = uuid::Uuid::new_v4();
+        // Mirror production: the prior Detail mode is on the nav stack when
+        // the recovery modal opens. Dismissing with [q] must restore it
+        // (and its [l]/[L]/[k] chord set), not force Overview (#894).
+        app.nav_stack.push(TuiMode::Detail(id));
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(failed_gates_summary(Some(".maestro/worktrees/issue-560")));
+
+        handle_completion_summary(&mut app, &key('q'));
+
+        assert_eq!(
+            app.tui_mode,
+            TuiMode::Detail(id),
+            "dismissing the recovery modal must return to the prior Detail screen"
+        );
         assert!(app.completion_summary.is_none());
     }
 
@@ -2594,5 +2630,44 @@ mod tests {
         );
         assert!(non_empty_url("").is_none());
         assert!(non_empty_url("not a url").is_none());
+    }
+
+    // --- Issue #886: call-log follow-tail toggle ---
+
+    #[test]
+    fn call_log_f_key_toggles_follow_tail() {
+        let mut app = make_app();
+        let session = completed_session("x");
+        let id = session.id;
+        app.pool.enqueue(session);
+        app.tui_mode = TuiMode::CallLog(id);
+
+        handle_call_log(&mut app, &key('f'), id);
+        assert!(
+            app.call_log_state.follow_tail,
+            "[f] must enable follow-tail"
+        );
+
+        handle_call_log(&mut app, &key('f'), id);
+        assert!(
+            !app.call_log_state.follow_tail,
+            "[f] again must disable follow-tail"
+        );
+    }
+
+    #[test]
+    fn call_log_manual_move_disables_follow_tail() {
+        let mut app = make_app();
+        let session = completed_session("x");
+        let id = session.id;
+        app.pool.enqueue(session);
+        app.tui_mode = TuiMode::CallLog(id);
+        app.call_log_state.follow_tail = true;
+
+        handle_call_log(&mut app, &key('j'), id);
+        assert!(
+            !app.call_log_state.follow_tail,
+            "manual [j] move must cancel follow-tail"
+        );
     }
 }

@@ -303,3 +303,98 @@ fn store_load_v0_fixture_round_trips_with_version_bump() {
         "saved state must include the version key"
     );
 }
+
+// --- Issue #888: call_log_persist flag on StateStore ---
+
+fn session_with_one_call_log_entry(
+    kind: crate::session::types::CallLogKind,
+) -> crate::session::types::Session {
+    let mut s = crate::session::types::Session::new(
+        "p".into(),
+        "opus".into(),
+        "orchestrator".into(),
+        None,
+        None,
+    );
+    s.call_log.push(crate::session::types::CallLogEntry {
+        timestamp: chrono::Utc::now(),
+        kind,
+        payload_json: r#"{"type":"ToolUse"}"#.to_string(),
+    });
+    s
+}
+
+#[test]
+fn save_with_call_log_persist_off_strips_call_log() {
+    let (_dir, store) = make_store(); // defaults to call_log_persist = false
+    let mut state = MaestroState::default();
+    state.sessions.push(session_with_one_call_log_entry(
+        crate::session::types::CallLogKind::ToolUse,
+    ));
+
+    must(store.save(&state), "state should save");
+    let loaded = must(store.load(), "state should load");
+
+    assert!(
+        loaded.sessions[0].call_log.is_empty(),
+        "call_log must be stripped when call_log_persist is false"
+    );
+}
+
+#[test]
+fn save_with_call_log_persist_on_preserves_call_log() {
+    let dir = must(tempfile::tempdir(), "tempdir should be created");
+    let path = dir.path().join("persist-on-state.json");
+    let store = StateStore::new(path).with_call_log_persist(true);
+
+    let mut state = MaestroState::default();
+    state.sessions.push(session_with_one_call_log_entry(
+        crate::session::types::CallLogKind::ToolUse,
+    ));
+
+    must(store.save(&state), "state should save");
+    let loaded = must(store.load(), "state should load");
+
+    assert_eq!(
+        loaded.sessions[0].call_log.len(),
+        1,
+        "call_log must survive round-trip when call_log_persist is true"
+    );
+    assert_eq!(
+        loaded.sessions[0].call_log[0].kind,
+        crate::session::types::CallLogKind::ToolUse,
+    );
+}
+
+#[test]
+fn save_with_call_log_persist_off_does_not_mutate_in_memory_state() {
+    let (_dir, store) = make_store();
+    let mut state = MaestroState::default();
+    state.sessions.push(session_with_one_call_log_entry(
+        crate::session::types::CallLogKind::Completed,
+    ));
+
+    must(store.save(&state), "state should save");
+
+    // The in-memory state keeps its call_log (only the on-disk copy is stripped).
+    assert_eq!(
+        state.sessions[0].call_log.len(),
+        1,
+        "save must not clear the caller's in-memory call_log"
+    );
+}
+
+#[test]
+fn load_tolerance_session_without_call_log_field_defaults_to_empty() {
+    let (_dir, store) = make_store();
+    let legacy_json = include_str!("../../tests/fixtures/state/v0.json");
+    must(
+        std::fs::write(&store.path, legacy_json),
+        "legacy state should be written",
+    );
+    let loaded = must(store.load(), "legacy state should load");
+    assert!(
+        loaded.sessions[0].call_log.is_empty(),
+        "call_log must default to empty when absent from state file"
+    );
+}

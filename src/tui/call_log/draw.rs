@@ -35,7 +35,7 @@ pub fn draw_call_log(
 
     draw_header(f, session, chunks[0], theme);
     draw_body(f, session, state, chunks[1], theme);
-    draw_footer(f, state.expanded, chunks[2], theme);
+    draw_footer(f, state.expanded, state.follow_tail, chunks[2], theme);
 }
 
 fn draw_header(f: &mut Frame<'_>, session: &Session, area: Rect, theme: &Theme) {
@@ -187,12 +187,18 @@ fn draw_empty_state(f: &mut Frame<'_>, area: Rect, theme: &Theme) {
     f.render_widget(para, area);
 }
 
-fn draw_footer(f: &mut Frame<'_>, expanded: bool, area: Rect, theme: &Theme) {
-    let hint = if expanded {
+fn draw_footer(f: &mut Frame<'_>, expanded: bool, follow_tail: bool, area: Rect, theme: &Theme) {
+    let base = if expanded {
         " [Esc] Back  [Enter] Collapse  [j/k] Scroll payload  [↑/↓] Move  [g/G] Top/Bottom "
     } else {
         " [Esc] Back  [Enter] Expand  [j/k] [↑/↓] Move  [g/G] Top/Bottom "
     };
+    let follow = if follow_tail {
+        " [f] Follow: ON "
+    } else {
+        " [f] Follow: off "
+    };
+    let hint = format!("{base} {follow}");
     let para = Paragraph::new(Line::from(Span::styled(
         hint,
         Style::default().fg(theme.text_secondary),

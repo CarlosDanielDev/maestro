@@ -263,8 +263,13 @@ impl App {
                     awaiting_fix_ci: false,
                 });
                 self.dispatch_review(pr_num, branch, issue_number);
+                let session_id = self
+                    .pool
+                    .find_by_issue_mut(issue_number)
+                    .map(|m| m.session.id.to_string())
+                    .unwrap_or_default();
                 let ctx = HookContext::new()
-                    .with_session("", Some(issue_number))
+                    .with_session(&session_id, Some(issue_number))
                     .with_pr(pr_num)
                     .with_branch(branch)
                     .with_cost(cost_usd);

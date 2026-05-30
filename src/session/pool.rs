@@ -279,6 +279,17 @@ impl SessionPool {
         let Some(idx) = self.active.iter().position(|m| m.session.id == session_id) else {
             return false;
         };
+        // A session finalized while still `Retrying` has had its retry spawned
+        // as a separate session. Advance it to a terminal status, or it lingers
+        // in `finished` as a non-terminal "RETRYING" row that renders like an
+        // active session and that the active-only kill path can't remove.
+        // `Killed` is the only terminal status reachable from `Retrying`.
+        if self.active[idx].session.status == SessionStatus::Retrying {
+            let _ = self.active[idx].session.transition_to(
+                SessionStatus::Killed,
+                crate::session::transition::TransitionReason::RetryTriggered,
+            );
+        }
         let retain = self.active[idx].session.status == SessionStatus::FailedGates;
         self.finalize_at(idx, retain);
         true
@@ -703,6 +714,44 @@ mod tests {
         pool.try_promote();
         pool.finalize_and_teardown(Uuid::new_v4());
         assert_eq!(pool.active_count(), 1);
+    }
+
+    #[test]
+    fn finalize_advances_retrying_session_to_terminal_status() {
+        // A session whose retry has been spawned as a separate session is
+        // finalized while still `Retrying`. It must land in `finished` with a
+        // terminal status, not linger as a non-terminal "RETRYING" zombie row
+        // that the active-only kill path cannot remove.
+        use crate::session::transition::TransitionReason;
+        let mut pool = make_pool(2);
+        let s = make_session("retry-me");
+        let id = s.id;
+        pool.enqueue(s);
+        pool.try_promote();
+        {
+            let m = must_get_active_mut(&mut pool, id);
+            for (st, reason) in [
+                (SessionStatus::Spawning, TransitionReason::Spawned),
+                (SessionStatus::Running, TransitionReason::Promoted),
+                (SessionStatus::Stalled, TransitionReason::HealthStall),
+                (SessionStatus::Retrying, TransitionReason::RetryTriggered),
+            ] {
+                let _ = m.session.transition_to(st, reason);
+            }
+            assert_eq!(m.session.status, SessionStatus::Retrying);
+        }
+
+        assert!(pool.finalize(id));
+        let finished = pool
+            .all_sessions()
+            .into_iter()
+            .find(|s| s.id == id)
+            .expect("finalized session must remain in the pool");
+        assert!(
+            finished.status.is_terminal(),
+            "a finalized Retrying session must end terminal, got {:?}",
+            finished.status
+        );
     }
 
     #[test]

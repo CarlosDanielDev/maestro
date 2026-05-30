@@ -157,6 +157,17 @@ async fn event_loop(
             app.handle_session_event(evt);
         }
 
+        // Live-tail: when the call-log pane is open with follow mode on,
+        // snap the cursor to the newest entry that just landed (#886).
+        if let app::TuiMode::CallLog(id) = app.tui_mode {
+            let total = app
+                .pool
+                .get_session(id)
+                .map(|s| s.call_log.len())
+                .unwrap_or(0);
+            app.call_log_state.reconcile_follow_tail(total);
+        }
+
         terminal.draw(|f| ui::draw(f, app))?;
 
         app.check_completions().await?;

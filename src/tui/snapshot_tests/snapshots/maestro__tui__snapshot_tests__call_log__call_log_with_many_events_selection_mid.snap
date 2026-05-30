@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/call_log.rs
+assertion_line: 141
 expression: terminal.backend()
 ---
 "┌Call Log — 50 events • #868───────────────────────────────────────────────────────────────────────────────────────────┐"
@@ -41,4 +42,4 @@ expression: terminal.backend()
 "│                                                                                                                      │"
 "│                                                                                                                      │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" [Esc] Back  [Enter] Expand  [j/k] [↑/↓] Move  [g/G] Top/Bottom                                                         "
+" [Esc] Back  [Enter] Expand  [j/k] [↑/↓] Move  [g/G] Top/Bottom   [f] Follow: off                                       "

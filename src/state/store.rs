@@ -5,11 +5,30 @@ use std::path::PathBuf;
 
 pub struct StateStore {
     path: PathBuf,
+    /// When `false` (default), each session's `call_log` is dropped before the
+    /// state is written to disk — memory-only. Set from
+    /// `[sessions] call_log_persist` (#888). Enforced in `save`.
+    call_log_persist: bool,
 }
 
 impl StateStore {
     pub fn new(path: PathBuf) -> Self {
-        Self { path }
+        Self {
+            path,
+            call_log_persist: false,
+        }
+    }
+
+    /// Builder: enable on-disk `call_log` persistence (default off).
+    pub fn with_call_log_persist(mut self, persist: bool) -> Self {
+        self.call_log_persist = persist;
+        self
+    }
+
+    /// Toggle on-disk `call_log` persistence after construction (the prod
+    /// store is built before config is loaded; `App::configure` calls this).
+    pub fn set_call_log_persist(&mut self, persist: bool) {
+        self.call_log_persist = persist;
     }
 
     pub fn default_path() -> PathBuf {
@@ -63,7 +82,19 @@ impl StateStore {
 
     pub fn save(&self, state: &MaestroState) -> Result<()> {
         let _lock = self.lock_file(true)?;
-        let content = serde_json::to_string_pretty(state).context("serializing state")?;
+        // Drop sensitive per-session call logs from the on-disk copy unless
+        // explicitly opted in. Clone only when stripping so the common
+        // (memory-only) path costs one clone of a history-capped session set,
+        // and the caller's in-memory `state` is never mutated (#888).
+        let content = if self.call_log_persist {
+            serde_json::to_string_pretty(state).context("serializing state")?
+        } else {
+            let mut stripped = state.clone();
+            for session in &mut stripped.sessions {
+                session.call_log.clear();
+            }
+            serde_json::to_string_pretty(&stripped).context("serializing state")?
+        };
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, &content)
             .with_context(|| format!("writing state to {}", tmp.display()))?;

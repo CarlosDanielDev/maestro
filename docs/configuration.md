@@ -498,6 +498,26 @@ command = "scripts/doc-review.sh {pr_number}"
 | `guardrail_prompt` | string | unset | Custom guardrail injected into the system prompt — empty falls back to language-based default |
 <!-- END AUTOGEN:sessions -->
 
+Additional field not yet in the schema registry:
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `call_log_persist` | bool | `false` | When `true`, each session's call log is serialized to `maestro-state.json`. Defaults to `false` (memory-only). **Sensitive** — the call log captures assistant text, Thinking blocks, error messages, bash commands, and hook stdout/stderr. Enable only when you need durable log history and your state file is appropriately protected. |
+
+### Call-log viewer
+
+The TUI call-log viewer (open from a session's Detail view with `[L]`) shows the per-agent call history for the selected session. Key bindings:
+
+| Key | Action |
+| --- | --- |
+| `↑` / `↓` (or `j` / `k`) | Move between log entries |
+| `[Enter]` | Expand / collapse the selected entry's payload |
+| `[g]` / `[G]` | Jump to first / last entry |
+| `[f]` | Toggle follow-tail mode — auto-advances to the newest entry as it arrives; footer shows `[f] Follow: ON/off`. Any manual move cancels follow mode. |
+| `[Esc]` | Close the viewer |
+
+**Hook output in the call log.** The `StreamEvent::HookResponse` variant surfaces hook subprocess stdout and stderr as call-log entries (each field capped at 10 KB). When `call_log_persist = true`, hook output is included in the persisted log alongside assistant turns.
+
 > `default_model` and `permission_mode` were moved to `[agents.<id>]` in v0.27.0 (per-provider config). The TOML keys still parse for back-compat; new configs set them on the agent entry instead.
 
 ### `[sessions.hollow_retry]`
@@ -596,7 +616,7 @@ Per-preset overrides keyed by team name. Built-in presets ship inside the binary
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `extends` | string | `""` | Parent preset name. Empty means root (built-in). |
+| `extends` | string | `""` | Parent preset name. Empty means root (built-in). Cycles are detected at config load and settings save — a circular chain is rejected with a ``teams `a → b → a` form a cycle`` error. |
 | `primitive` | string enum | unset (inherited) | `pipeline`, `fan-out`, `single-pass`, `verdict-only`. Required at root. |
 | `min_agents` | array of string | unset (inherited) | Roles that must resolve to an enabled agent. |
 | (top-level keys) | string | — | Minimal-form role bindings (e.g. `implementer = "opencode"`). |

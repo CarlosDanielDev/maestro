@@ -243,3 +243,23 @@ fn layout_config_round_trips() {
     let reloaded: LayoutConfig = toml::from_str(&toml_str).unwrap();
     assert_eq!(cfg, reloaded);
 }
+
+// --- Issue #888: call_log_persist flag ---
+
+#[test]
+fn call_log_persist_defaults_to_false_when_absent() {
+    let cfg: SessionsConfig = toml::from_str("").expect("parse failed");
+    assert!(!cfg.call_log_persist);
+}
+
+#[test]
+fn call_log_persist_parses_true_from_toml() {
+    let cfg: SessionsConfig = toml::from_str("call_log_persist = true").expect("parse failed");
+    assert!(cfg.call_log_persist);
+}
+
+#[test]
+fn call_log_persist_parses_false_explicitly() {
+    let cfg: SessionsConfig = toml::from_str("call_log_persist = false").expect("parse failed");
+    assert!(!cfg.call_log_persist);
+}

@@ -10,6 +10,12 @@ pub struct CallLogState {
     pub expanded: bool,
     pub list_scroll: u16,
     pub payload_scroll: u16,
+    /// Live-tail mode: when on, the cursor auto-advances to the newest entry
+    /// as the log grows. Toggled with `[f]`; disabled by any manual move (#886).
+    pub follow_tail: bool,
+    /// Entry count observed on the previous render tick, used to detect growth
+    /// so follow-tail only snaps when new entries actually landed (#886).
+    pub last_seen_total: usize,
 }
 
 impl CallLogState {
@@ -49,6 +55,27 @@ impl CallLogState {
 
     pub fn scroll_payload_down(&mut self) {
         self.payload_scroll = self.payload_scroll.saturating_add(1);
+    }
+
+    /// Toggle live-tail follow mode.
+    pub fn toggle_follow_tail(&mut self) {
+        self.follow_tail = !self.follow_tail;
+    }
+
+    /// Turn off follow mode. Called when the user moves the cursor manually so
+    /// they can scroll back without the auto-advance fighting them (#886).
+    pub fn disable_follow_tail(&mut self) {
+        self.follow_tail = false;
+    }
+
+    /// When follow mode is on and the entry count grew since the previous
+    /// tick, snap the cursor to the newest entry. Called once per render tick
+    /// (the event loop) before drawing. No-op when follow mode is off.
+    pub fn reconcile_follow_tail(&mut self, total: usize) {
+        if self.follow_tail && total > self.last_seen_total {
+            self.selected = total.saturating_sub(1);
+        }
+        self.last_seen_total = total;
     }
 
     /// Clamp `selected` so it never points past the end of the log. Called
@@ -187,5 +214,60 @@ mod tests {
         s.scroll_payload_down();
         s.scroll_payload_down();
         assert_eq!(s.payload_scroll, 2);
+    }
+
+    // --- Issue #886: live-tail follow mode ---
+
+    #[test]
+    fn follow_tail_defaults_to_off() {
+        assert!(!CallLogState::default().follow_tail);
+    }
+
+    #[test]
+    fn toggle_follow_tail_flips_state() {
+        let mut s = CallLogState::default();
+        s.toggle_follow_tail();
+        assert!(s.follow_tail);
+        s.toggle_follow_tail();
+        assert!(!s.follow_tail);
+    }
+
+    #[test]
+    fn reconcile_follow_tail_on_advances_to_last_when_count_grows() {
+        let mut s = CallLogState {
+            follow_tail: true,
+            ..Default::default()
+        };
+        s.reconcile_follow_tail(10);
+        assert_eq!(s.selected, 9, "follow-tail must snap to the newest entry");
+    }
+
+    #[test]
+    fn reconcile_follow_tail_off_leaves_selection() {
+        let mut s = state_at(2); // follow_tail false by default
+        s.reconcile_follow_tail(10);
+        assert_eq!(s.selected, 2, "follow-tail off must not move the cursor");
+    }
+
+    #[test]
+    fn reconcile_follow_tail_on_without_growth_leaves_selection() {
+        let mut s = CallLogState {
+            follow_tail: true,
+            selected: 3,
+            last_seen_total: 10,
+            ..Default::default()
+        };
+        s.reconcile_follow_tail(10); // no growth since previous tick
+        assert_eq!(s.selected, 3);
+    }
+
+    #[test]
+    fn disable_follow_tail_clears_flag() {
+        let mut s = CallLogState {
+            follow_tail: true,
+            ..Default::default()
+        };
+        s.disable_follow_tail();
+        assert!(!s.follow_tail);
     }
 }
