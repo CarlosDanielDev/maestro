@@ -84,6 +84,29 @@ milestone_template = "M{n}: {title}"
 
 *Source: `src/config/adapt.rs`.*
 
+## `[behavior]`
+
+Non-security UX and launch-flow defaults. Keys here are style and dialog toggles only. Anything that gates a security control lives in code or a runtime hook, never here.
+
+### `[behavior.launch]`
+
+Default checkbox states for the Issue Launch dialog (the single-issue prompt overlay in the TUI issue browser).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `default_produce_pr` | bool | `true` | Pre-checks the "Produce PR" checkbox when the launch dialog opens. Set to `false` to default to no-PR runs. |
+| `default_interaction` | bool | `false` | Pre-checks the "Interaction" checkbox when the launch dialog opens. Set to `true` to default to interactive sessions. |
+
+The dialog always shows both checkboxes regardless of config — these keys only control which state they start in. The user can toggle either checkbox with `Space` before launching.
+
+```toml
+[behavior.launch]
+default_produce_pr = true
+default_interaction = false
+```
+
+*Source: `src/config/behavior.rs`.*
+
 ## `[agents]`
 
 | Field | Type | Default | Description |

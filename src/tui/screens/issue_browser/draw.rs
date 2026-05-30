@@ -1,4 +1,7 @@
-use super::{FilterMode, FocusPane, IssueBrowserScreen, IssuePromptOverlay, sanitize_for_terminal};
+use super::{
+    FilterMode, FocusPane, IssueBrowserScreen, IssuePromptOverlay, LaunchFocus,
+    sanitize_for_terminal,
+};
 use crate::tui::help::centered_rect;
 use crate::tui::icons::{self, IconId};
 use crate::tui::markdown::render_markdown;
@@ -108,6 +111,8 @@ impl IssueBrowserScreen {
             return ScreenAction::None;
         }
 
+        let (produce_pr, interaction) = self.launch_defaults;
+
         // If multi-select is active, open overlay with all selected issues
         if !self.selected_set.is_empty() {
             let selected_issues: Vec<(u64, String)> = self
@@ -117,9 +122,12 @@ impl IssueBrowserScreen {
                 .map(|i| (i.number, i.title.clone()))
                 .collect();
             self.prompt_overlay = Some(IssuePromptOverlay {
-                text: String::new(),
+                editor: IssuePromptOverlay::make_editor(""),
                 selected_issues,
                 unified_pr: false,
+                focus: LaunchFocus::Prompt,
+                produce_pr,
+                interaction,
             });
             return ScreenAction::None;
         }
@@ -128,9 +136,12 @@ impl IssueBrowserScreen {
         if let Some(&idx) = self.filtered_indices.get(self.selected) {
             let issue = &self.issues[idx];
             self.prompt_overlay = Some(IssuePromptOverlay {
-                text: String::new(),
+                editor: IssuePromptOverlay::make_editor(""),
                 selected_issues: vec![(issue.number, issue.title.clone())],
                 unified_pr: false,
+                focus: LaunchFocus::Prompt,
+                produce_pr,
+                interaction,
             });
         }
 
@@ -373,22 +384,42 @@ impl IssueBrowserScreen {
         }
     }
 
-    pub(super) fn draw_prompt_overlay(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let overlay = match &self.prompt_overlay {
-            Some(o) => o,
-            None => return,
+    pub(super) fn draw_prompt_overlay(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let Some(overlay) = self.prompt_overlay.as_ref() else {
+            return;
         };
 
         let is_multi = overlay.is_multi();
-        let height_pct = if is_multi { 65 } else { 55 };
+        let height_pct = if is_multi { 65 } else { 62 };
         let overlay_area = centered_rect(65, height_pct, area);
         f.render_widget(Clear, overlay_area);
 
-        let title = if is_multi {
+        let raw_title = if is_multi {
             format!(" {} issues selected ", overlay.selected_issues.len())
         } else {
             let (number, ref title) = overlay.selected_issues[0];
-            format!(" #{} — {} ", number, title)
+            format!(" #{} — {} ", number, sanitize_for_terminal(title))
+        };
+
+        // Marquee the title when it overflows the dialog's top border. The
+        // `-8` budget leaves room for the corners + styled_block's `[ … ]`.
+        let avail = (overlay_area.width as usize).saturating_sub(8);
+        let title_len = raw_title.chars().count();
+        let title = if avail > 0 && crate::tui::marquee::needs_scroll(title_len, avail) {
+            self.prompt_title_marquee.advance(
+                title_len - avail,
+                &crate::tui::marquee::MarqueeConfig::default(),
+            );
+            crate::tui::marquee::visible_slice(&raw_title, self.prompt_title_marquee.offset, avail)
+        } else {
+            self.prompt_title_marquee.reset();
+            raw_title
+        };
+        // Re-borrow the overlay (the marquee advance above used a disjoint
+        // field, so this stays sound).
+        let overlay = match self.prompt_overlay.as_ref() {
+            Some(o) => o,
+            None => return,
         };
 
         let block = theme
@@ -444,7 +475,7 @@ impl IssueBrowserScreen {
                 theme,
             );
 
-            Self::draw_overlay_text_area(f, chunks[3], overlay, theme);
+            Self::draw_overlay_text_area(f, chunks[3], overlay, theme, false);
 
             draw_keybinds_bar(
                 f,
@@ -463,24 +494,76 @@ impl IssueBrowserScreen {
                 .constraints([
                     Constraint::Length(1), // hint
                     Constraint::Min(3),    // text area
+                    Constraint::Length(1), // "Options:" label
+                    Constraint::Length(1), // Produce PR checkbox
+                    Constraint::Length(1), // Interaction checkbox
+                    Constraint::Length(1), // Launch button
                     Constraint::Length(1), // keybinds
                 ])
                 .split(inner);
 
+            let prompt_focused = overlay.focus == LaunchFocus::Prompt;
             let hint = Paragraph::new(Line::from(Span::styled(
                 "Additional instructions (optional):",
-                Style::default().fg(theme.text_secondary),
+                Style::default().fg(if prompt_focused {
+                    theme.accent_info
+                } else {
+                    theme.text_secondary
+                }),
             )));
             f.render_widget(hint, chunks[0]);
 
-            Self::draw_overlay_text_area(f, chunks[1], overlay, theme);
+            Self::draw_overlay_text_area(f, chunks[1], overlay, theme, prompt_focused);
+
+            let options_label = Paragraph::new(Line::from(Span::styled(
+                "Options:",
+                Style::default().fg(theme.text_secondary),
+            )));
+            f.render_widget(options_label, chunks[2]);
+
+            use crate::tui::widgets::unified_pr_toggle::draw_checkbox;
+            draw_checkbox(
+                f,
+                chunks[3],
+                overlay.produce_pr,
+                overlay.focus == LaunchFocus::ProducePr,
+                "Produce PR — session ends when a linked PR is created",
+                theme,
+            );
+            draw_checkbox(
+                f,
+                chunks[4],
+                overlay.interaction,
+                overlay.focus == LaunchFocus::Interaction,
+                "Interaction — chat with the agent; session stays alive",
+                theme,
+            );
+
+            let launch_focused = overlay.focus == LaunchFocus::Launch;
+            if launch_focused {
+                f.render_widget(
+                    crate::tui::widgets::unified_pr_toggle::focus_bar(
+                        "  [ Launch ]",
+                        chunks[5],
+                        theme,
+                    ),
+                    chunks[5],
+                );
+            } else {
+                let launch_button = Paragraph::new(Line::from(Span::styled(
+                    "  [ Launch ]",
+                    Style::default().fg(theme.text_secondary),
+                )));
+                f.render_widget(launch_button, chunks[5]);
+            }
 
             draw_keybinds_bar(
                 f,
-                chunks[2],
+                chunks[6],
                 &[
+                    ("Tab", "Cycle"),
+                    ("Space", "Toggle"),
                     ("Enter", "Launch"),
-                    ("Shift+Enter", "New line"),
                     ("Esc", "Cancel"),
                 ],
                 theme,
@@ -493,27 +576,53 @@ impl IssueBrowserScreen {
         area: Rect,
         overlay: &IssuePromptOverlay,
         theme: &Theme,
+        focused: bool,
     ) {
-        let text_content = if overlay.text.is_empty() {
+        let text_block = theme.styled_block_plain(focused);
+        let inner_w = area.width.saturating_sub(2);
+        let inner_h = area.height.saturating_sub(2);
+
+        // Wrap via the shared editor wrapper so the rendered line breaks and
+        // the visual cursor agree (same backend the prompt screen uses), and
+        // the box scrolls to keep the caret visible.
+        let logical_lines: Vec<String> = overlay.editor.lines().to_vec();
+        let (cursor_row, cursor_col) = overlay.editor.cursor();
+        let wrapped =
+            super::super::wrap::wrap_lines(&logical_lines, (cursor_row, cursor_col), inner_w);
+        let scroll = super::super::wrap::scroll_offset_for_cursor(
+            wrapped.cursor.0 as usize,
+            inner_h as usize,
+        );
+
+        let is_empty = logical_lines.len() == 1 && logical_lines[0].is_empty();
+        let paragraph = if is_empty {
             Paragraph::new(Line::from(Span::styled(
                 "Type your prompt here...",
                 Style::default().fg(theme.text_muted),
             )))
         } else {
-            let sanitized = sanitize_for_terminal(&overlay.text);
-            let spans = crate::tui::issue_refs::highlight_issue_refs(
-                &sanitized,
-                theme.accent_identifier,
-                theme.text_primary,
-            );
-            // Convert borrowed spans to owned for lifetime safety
-            let owned_spans: Vec<Span<'static>> = spans
-                .into_iter()
-                .map(|s| Span::styled(s.content.to_string(), s.style))
+            let lines: Vec<Line> = wrapped
+                .lines
+                .iter()
+                .map(|s| {
+                    Line::from(crate::tui::issue_refs::highlight_issue_refs(
+                        s.as_str(),
+                        theme.accent_identifier,
+                        theme.text_primary,
+                    ))
+                })
                 .collect();
-            Paragraph::new(Line::from(owned_spans)).wrap(Wrap { trim: false })
+            Paragraph::new(lines)
         };
-        let text_block = theme.styled_block_plain(false);
-        f.render_widget(text_content.block(text_block), area);
+
+        f.render_widget(paragraph.block(text_block).scroll((scroll as u16, 0)), area);
+
+        if focused && inner_w > 0 && inner_h > 0 {
+            let vrow = wrapped.cursor.0 as usize;
+            let vcol = wrapped.cursor.1;
+            if vrow >= scroll && (vrow - scroll) < inner_h as usize {
+                f.set_cursor_position((area.x + 1 + vcol, area.y + 1 + (vrow - scroll) as u16));
+            }
+        }
     }
 }

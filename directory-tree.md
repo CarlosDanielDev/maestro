@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-28 00:00 (UTC)
+> Last updated: 2026-05-30 00:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -138,6 +138,7 @@ maestro/
 │   │   ├── migrate_tests.rs               # Sibling test module loaded via #[path] from migrate.rs; fixtures and unit tests for run_startup_migration: symlink rejection, oversized-file rejection, already-migrated no-op, missing-section insertion, idempotency round-trip  [Issue #710]
 │   │   ├── migrate_byte_identity_tests.rs # Byte-identity test group for plan_v0_25_1_migration: verifies that already-migrated TOML round-trips byte-for-byte (no reformatting); loaded via #[path] include from migrate.rs  [Issue #718]
 │   │   ├── adapt.rs                       # AdaptConfig and related adaptation config types
+│   │   ├── behavior.rs                    # BehaviorConfig + LaunchBehaviorConfig; `[behavior.launch]` keys (`default_produce_pr`, `default_interaction`); Config::launch_defaults() helper consumed by the Issue Launch dialog overlay  [Issue #733]
 │   │   ├── agents.rs                      # Multi-agent config: AgentEntry, AgentKind; per-provider field sets (command/base_url/model/env/extra_args/permission_mode/allowed_tools/sandbox/json/ephemeral/profile/config_overrides/cli_flags/request_timeout_secs/api_key_env)  [Issue #549]
 │   │   ├── agents_upgrade.rs              # Agent config upgrade helpers: plan_agent_config_upgrade() rewritten on ensure_field (toml_edit_helpers); formatting-preserving — comments, blank lines, and key order are retained; AgentConfigUpgradePlan shape unchanged; misleading "Normalized by Maestro" banner removed from the partial-upgrade branch; tests extracted to agents_upgrade_tests.rs sibling  [Issue #718]
 │   │   ├── agents_upgrade_tests.rs        # Sibling test module loaded via #[path] from agents_upgrade.rs; unit tests for plan_agent_config_upgrade extracted from agents_upgrade.rs  [Issue #718]
