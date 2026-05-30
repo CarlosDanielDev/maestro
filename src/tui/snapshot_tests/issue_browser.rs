@@ -201,3 +201,29 @@ fn issue_browser_launch_options_toggled() {
 
     assert_snapshot!(terminal.backend());
 }
+
+#[test]
+fn issue_browser_launch_options_launch_focused() {
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut screen = IssueBrowserScreen::new(vec![
+        make_gh_issue(1, "Add login flow"),
+        make_gh_issue(2, "Fix database crash"),
+    ]);
+    screen.prompt_overlay = Some(IssuePromptOverlay {
+        text: String::new(),
+        selected_issues: vec![(1, "Add login flow".to_string())],
+        unified_pr: false,
+        focus: LaunchFocus::Launch,
+        produce_pr: true,
+        interaction: false,
+    });
+
+    terminal
+        .draw(|f| {
+            screen.draw(f, f.area(), &theme);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}

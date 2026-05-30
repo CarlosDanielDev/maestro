@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/issue_browser.rs
-assertion_line: 176
 expression: terminal.backend()
 ---
 "╔═════════════════════════════════════════════════════[ 󰝦 Issues ]═════════════════════════════════════════════════════╗"
@@ -11,11 +10,11 @@ expression: terminal.backend()
 "║                                                                                                                      ║"
 "║                                                                                                                      ║"
 "║                                                                                                                      ║"
-"║                                                                                                                      ║"
 "║                   ╔══════════════════════════[ #1 — Add login flow ]═══════════════════════════╗                     ║"
-"║                   ║Additional instructions (optional):                                         ║                     ║"
+"║                   ║▶ Additional instructions (optional):                                       ║                     ║"
 "║                   ║╔══════════════════════════════════════════════════════════════════════════╗║                     ║"
 "║                   ║║Type your prompt here...                                                  ║║                     ║"
+"║                   ║║                                                                          ║║                     ║"
 "║                   ║║                                                                          ║║                     ║"
 "║                   ║║                                                                          ║║                     ║"
 "║                   ║║                                                                          ║║                     ║"
@@ -32,9 +31,9 @@ expression: terminal.backend()
 "║                   ║Options:                                                                    ║                     ║"
 "║                   ║    Produce PR — session ends when a linked PR is created                  ║                     ║"
 "║                   ║    Interaction — chat with the agent; session stays alive                 ║                     ║"
+"║                   ║   [ Launch ]                                                               ║                     ║"
 "║                   ║[Tab] Cycle  [Space] Toggle  [Enter] Launch  [Esc] Cancel                   ║                     ║"
 "║                   ╚════════════════════════════════════════════════════════════════════════════╝                     ║"
-"║                                                                                                                      ║"
 "║                                                                                                                      ║"
 "║                                                                                                                      ║"
 "║                                                                                                                      ║"

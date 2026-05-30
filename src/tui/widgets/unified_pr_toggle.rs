@@ -84,7 +84,7 @@ pub fn draw_checkbox(
         theme.text_muted
     };
 
-    let cursor = if focused { ">" } else { " " };
+    let cursor = if focused { "▶" } else { " " };
     let cursor_color = if focused {
         theme.accent_info
     } else {

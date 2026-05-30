@@ -13,7 +13,7 @@ use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Clear, Paragraph, Wrap},
 };
@@ -391,7 +391,7 @@ impl IssueBrowserScreen {
         };
 
         let is_multi = overlay.is_multi();
-        let height_pct = if is_multi { 65 } else { 55 };
+        let height_pct = if is_multi { 65 } else { 62 };
         let overlay_area = centered_rect(65, height_pct, area);
         f.render_widget(Clear, overlay_area);
 
@@ -455,7 +455,7 @@ impl IssueBrowserScreen {
                 theme,
             );
 
-            Self::draw_overlay_text_area(f, chunks[3], overlay, theme);
+            Self::draw_overlay_text_area(f, chunks[3], overlay, theme, false);
 
             draw_keybinds_bar(
                 f,
@@ -477,17 +477,27 @@ impl IssueBrowserScreen {
                     Constraint::Length(1), // "Options:" label
                     Constraint::Length(1), // Produce PR checkbox
                     Constraint::Length(1), // Interaction checkbox
+                    Constraint::Length(1), // Launch button
                     Constraint::Length(1), // keybinds
                 ])
                 .split(inner);
 
+            let prompt_focused = overlay.focus == LaunchFocus::Prompt;
             let hint = Paragraph::new(Line::from(Span::styled(
-                "Additional instructions (optional):",
-                Style::default().fg(theme.text_secondary),
+                if prompt_focused {
+                    "▶ Additional instructions (optional):"
+                } else {
+                    "  Additional instructions (optional):"
+                },
+                Style::default().fg(if prompt_focused {
+                    theme.accent_info
+                } else {
+                    theme.text_secondary
+                }),
             )));
             f.render_widget(hint, chunks[0]);
 
-            Self::draw_overlay_text_area(f, chunks[1], overlay, theme);
+            Self::draw_overlay_text_area(f, chunks[1], overlay, theme, prompt_focused);
 
             let options_label = Paragraph::new(Line::from(Span::styled(
                 "Options:",
@@ -513,9 +523,26 @@ impl IssueBrowserScreen {
                 theme,
             );
 
+            let launch_focused = overlay.focus == LaunchFocus::Launch;
+            let launch_button = Paragraph::new(Line::from(Span::styled(
+                if launch_focused {
+                    " ▶ [ Launch ] "
+                } else {
+                    "   [ Launch ] "
+                },
+                if launch_focused {
+                    Style::default()
+                        .fg(theme.accent_success)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                } else {
+                    Style::default().fg(theme.text_secondary)
+                },
+            )));
+            f.render_widget(launch_button, chunks[5]);
+
             draw_keybinds_bar(
                 f,
-                chunks[5],
+                chunks[6],
                 &[
                     ("Tab", "Cycle"),
                     ("Space", "Toggle"),
@@ -532,6 +559,7 @@ impl IssueBrowserScreen {
         area: Rect,
         overlay: &IssuePromptOverlay,
         theme: &Theme,
+        focused: bool,
     ) {
         let text_content = if overlay.text.is_empty() {
             Paragraph::new(Line::from(Span::styled(
@@ -552,7 +580,7 @@ impl IssueBrowserScreen {
                 .collect();
             Paragraph::new(Line::from(owned_spans)).wrap(Wrap { trim: false })
         };
-        let text_block = theme.styled_block_plain(false);
+        let text_block = theme.styled_block_plain(focused);
         f.render_widget(text_content.block(text_block), area);
     }
 }
