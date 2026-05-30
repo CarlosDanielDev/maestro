@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-05-30 18:00 (UTC)
+> Last updated: 2026-05-30 19:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -1010,7 +1010,8 @@ maestro/
 | `tests/templates_render.rs` | 14 byte-identical regression tests (5 Claude + 4 Codex + 5 HTTP-generic) asserting rendered output matches `.claude/commands/*.md`; 1 `#[ignore]` regeneration helper; enforces drift detection in CI (Issues #703, #704, #705, #728) |
 | `src/agent_provider/types.rs` | `AgentProvider` trait + `AgentProviderId`, `AgentProviderKind`, `AgentOutputFormat`, `ParserBinding`; `AgentRequest.force` flag; `AgentProviderDefinition.num_ctx`; `template_rules()` default method returns `null_rules()`; providers with dedicated rules (e.g. Claude, Codex, HTTP-generic) override this method (Issues #701, #703, #704, #705, #774, #775) |
 | `src/agent_provider/types_tests.rs` | Provider trait unit tests; Qwen/Ollama/MiniMax moved out of inherit-NullRules list; 3 override tests assert `http_generic_rules()` returned by each provider (Issues #703, #704, #705) |
-| `src/agent_provider/claude.rs` | `ClaudeProvider` impl; `template_rules()` override returns `&'static ClaudeRules` (Issue #703) |
+| `src/agent_provider/claude/mod.rs` | `ClaudeProvider` impl; `ClaudeTransport` enum; `InteractiveDriver` enum; transport dispatcher; `template_rules()` override returns `&'static ClaudeRules` (Issues #703, #748) |
+| `src/agent_provider/claude/headless.rs` | Headless subprocess logic relocated from the old `claude.rs` flat file (Issue #748) |
 | `src/agent_provider/claude_pricing.rs` | Per-model Anthropic pricing — `ClaudeModelPrice` struct; USD/MTok rates for Opus/Sonnet/Haiku 4.x; cache-read at 10% input rate, cache-write at 125% input rate; `compute_cost(model, usage)` free fn (Issue #771) |
 | `src/agent_provider/codex.rs` | `CodexProvider` impl; `template_rules()` override returns `codex_rules()` (Issue #704) |
 | `src/agent_provider/codex/parser.rs` | Codex stream-json parser; `parse_turn_completed` now computes `cost_usd` via `codex/pricing.rs` (Issue #772) |
