@@ -374,6 +374,15 @@ pub enum TuiCommand {
         scheduler: Box<crate::orchestration::scheduler::Scheduler>,
         app_default_agent: String,
     },
+    /// Run one interaction turn in the background: `send_turn` on a clone of
+    /// the issue's `InteractionSession`, streaming `TurnEvent`s back via
+    /// `TuiDataEvent::InteractionTurnEvent` and writing the updated session
+    /// back via `TuiDataEvent::InteractionTurnComplete` (#738).
+    SendInteractionTurn {
+        issue_number: u64,
+        prompt: String,
+        model: String,
+    },
 }
 
 /// Data events delivered from background fetch tasks.
@@ -447,6 +456,17 @@ pub enum TuiDataEvent {
     /// with the reason rendered in the failure banner. The Err string
     /// names the first failing issue when a per-level spawn fails.
     TeamLaunchResult(Result<(), String>),
+    /// One streaming event from an in-flight interaction turn (#738).
+    /// Applied to the live Interaction screen.
+    InteractionTurnEvent {
+        issue_number: u64,
+        event: crate::session::interaction_turn::TurnEvent,
+    },
+    /// An interaction turn finished; carries the mutated session clone so the
+    /// pool can persist its `session_id`/history (#738).
+    InteractionTurnComplete {
+        session: Box<crate::session::interaction::InteractionSession>,
+    },
 }
 
 /// A merge conflict suggestion shown in the completion overlay.

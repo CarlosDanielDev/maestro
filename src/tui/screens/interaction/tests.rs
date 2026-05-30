@@ -4,7 +4,7 @@ use super::*;
 use crate::session::interaction::TurnRole;
 use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
 use chrono::{DateTime, TimeZone, Utc};
-use crossterm::event::KeyModifiers;
+use crossterm::event::{KeyCode, KeyModifiers};
 
 fn fixed_t0() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 1, 1, 9, 0, 0).unwrap()

@@ -2,9 +2,7 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
-"sys   ▸ Session started for #736                                                                                        "
-"you   ▸ Add a login button                                                                                              "
-"agent ▸ Done. Added LoginButton. …                                                                                      "
+"you   ▸ stop                                                                                                            "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
@@ -36,9 +34,11 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+L] Clear  [Ctrl+Q] Quit  [Esc] Back                        "
-"╔═════════════════════════════════════════════════════[ Message ]══════════════════════════════════════════════════════╗"
-"║Type a prompt to begin…                                                                                               ║"
+"                                                                                                                        "
+"                                                                                                                        "
+"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup (off)  [Ctrl+L] Clear  [Ctrl+Q] Quit  [Esc] Back                  "
+"╔════════════════════════════════════════════════════[ Terminated ]════════════════════════════════════════════════════╗"
+"║                          Session terminated (user quit). Press any key to return to Issues.                          ║"
 "║                                                                                                                      ║"
 "║                                                                                                                      ║"
 "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝"

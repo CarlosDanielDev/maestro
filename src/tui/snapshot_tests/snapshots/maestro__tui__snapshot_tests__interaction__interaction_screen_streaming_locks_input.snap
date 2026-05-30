@@ -2,9 +2,8 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
-"sys   ▸ Session started for #736                                                                                        "
-"you   ▸ Add a login button                                                                                              "
-"agent ▸ Done. Added LoginButton. …                                                                                      "
+"you   ▸ implement login                                                                                                 "
+"agent ▸ Working on it …                                                                                                 "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
@@ -36,9 +35,10 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+L] Clear  [Ctrl+Q] Quit  [Esc] Back                        "
-"╔═════════════════════════════════════════════════════[ Message ]══════════════════════════════════════════════════════╗"
-"║Type a prompt to begin…                                                                                               ║"
+"                                                                                                                        "
+"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup (off)  [Ctrl+L] Clear  [Ctrl+Q] Quit  [Esc] Back                  "
+"╔═══════════════════════════════════════════════[ Message (streaming…) ]═══════════════════════════════════════════════╗"
+"║Input locked while the agent responds…                                                                                ║"
 "║                                                                                                                      ║"
 "║                                                                                                                      ║"
 "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝"
