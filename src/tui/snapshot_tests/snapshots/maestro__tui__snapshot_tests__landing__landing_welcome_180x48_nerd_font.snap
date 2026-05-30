@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/landing.rs
+assertion_line: 88
 expression: terminal.backend()
 ---
 "                                                            ███╗   ███╗ █████╗ ███████╗███████╗████████╗██████╗  ██████╗                                                            "
@@ -36,7 +37,7 @@ expression: terminal.backend()
 "║│███ ▄▄▄                                                                       ││ ▄    █              ██                                                                         │║"
 "║│███ ███                                                                       ││ █  ▇ █      ▇▃ ▇  ▇▃██                                                                         │║"
 "║│24█ 10█ █4█                                                                   ││ █ ▇█▅█▃     ██ █  ████                                                                         │║"
-"║│Add Fix Chg Per Doc                                                           ││▇█▃█████▇ ▅ ▇██▁█▃▃████                                                                         │║"
+"║│Add Fix Chg Per Doc                                                           ││▇█▃█████▇ ▅ ▇██▁█▃▃████▁                                                                        │║"
 "║└──────────────────────────────────────────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────────────────────────┘║"
 "║┌Highlights──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐║"
 "║│  [Added] Per-provider cost / token / quota emission (milestone v0.29.5 Level 1): the Claude stream-json parser computes `cost_usd` per assistant frame from new `claude_pricing│║"

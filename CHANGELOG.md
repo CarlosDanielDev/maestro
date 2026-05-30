@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `src/work/pr_marker.rs` — `PrMarker` struct (`pr_number`, `owner`, `repo`, `issue_number: Option<u64>`, `ts`) + `MarkerError` enum; `write_atomic` (.tmp + rename, no partial-write corruption) + `read` (tolerant of legacy markers that lack `issue_number`, emits `tracing::warn`); `pushup_marker.rs` now delegates to `PrMarker::read` instead of an inline private struct, so the `/pushup` marker schema is the single source of truth. The `/pushup` shell step now writes `"issue_number":%d` into the marker. 6 integration tests in `tests/pr_marker_roundtrip.rs` cover the round-trip, legacy tolerance, and concurrent-write safety (#735).
+
 ## [0.29.5] - 2026-05-29
 
 Orchestration & provider polish. Unified cost / token / quota observability across all five agent providers (Claude, Codex, OpenCode, MiniMax, Ollama) with a budget pre-spawn gate and provider rollup dashboard. The Teams settings tab is now schema-driven with editable `role_overrides` and `extends` cycle detection. The per-agent call-log viewer gains hook-output events, a live-tail follow toggle, and opt-in disk persistence. Plus team-wizard Launch fixes and a batch of TUI completion / hollow-retry / breadcrumb fixes.

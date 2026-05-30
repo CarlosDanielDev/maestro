@@ -103,8 +103,8 @@ The write must be atomic (write to `.tmp`, then `mv`) so the consumer never read
 mkdir -p "$HOME/.maestro"
 ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 marker="$HOME/.maestro/last-pr-created"
-printf '{"pr_number":%d,"owner":"%s","repo":"%s","ts":"%s"}\n' \
-  "<pr-number>" "<owner>" "<repo>" "$ts" \
+printf '{"pr_number":%d,"owner":"%s","repo":"%s","issue_number":%d,"ts":"%s"}\n' \
+  "<pr-number>" "<owner>" "<repo>" "<issue-number>" "$ts" \
   > "${marker}.tmp"
 mv "${marker}.tmp" "$marker"
 ```
