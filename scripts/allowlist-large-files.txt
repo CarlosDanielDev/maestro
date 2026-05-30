@@ -195,3 +195,11 @@ src/tui/screens/settings/draw.rs # deadline: 2026-08-22, owner: @carlos, ticket:
 # behavior axis (CRUD, chord routing, validation banner) once a fifth
 # behavior axis lands.
 src/tui/screens/settings/tests/teams_tab.rs # deadline: 2026-08-22, owner: @carlos, ticket: #901, plan: split into tests/teams_tab/{crud.rs, chord_routing.rs, validation.rs} once a fifth behavior axis lands
+
+# --- v0.30.0 interactive-session scaffold (#734) ---
+# store_tests.rs reached 419 LOC after #734 added the end-to-end
+# `store_load_legacy_state_without_interactions_field_succeeds` backward-compat
+# test (issue Test Hints required an fs round-trip; QA marked it a RED gate).
+# The coverage is intentional — it proves StateStore::load tolerates legacy
+# state files missing the new `interactions` key.
+src/state/store_tests.rs # deadline: 2026-08-22, owner: @carlos, ticket: #734, plan: split into state/store_tests/{round_trip.rs, migration.rs, backward_compat.rs} once a fifth schema-guard test family lands

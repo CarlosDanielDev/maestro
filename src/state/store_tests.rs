@@ -398,3 +398,22 @@ fn load_tolerance_session_without_call_log_field_defaults_to_empty() {
         "call_log must default to empty when absent from state file"
     );
 }
+
+// --- Issue #734: interaction sessions survive save/load round-trip and
+// legacy state files without the field still load. ---
+
+#[test]
+fn store_load_legacy_state_without_interactions_field_succeeds() {
+    let (_dir, store) = make_store();
+    let legacy_json =
+        r#"{"sessions":[],"total_cost_usd":0.0,"file_claims":{},"last_updated":null}"#;
+    must(
+        std::fs::write(&store.path, legacy_json),
+        "legacy state should be written",
+    );
+    let loaded = must(store.load(), "legacy state should load");
+    assert!(
+        loaded.interactions.is_empty(),
+        "interactions must default to empty when absent from state file"
+    );
+}
