@@ -6,8 +6,9 @@ use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::{Frame, layout::Rect};
+use ratatui::{Frame, layout::Rect, style::Style};
 use std::collections::HashSet;
+use tui_textarea::{CursorMove, TextArea};
 
 /// Action returned by the prompt overlay's input handler.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,7 +56,9 @@ impl LaunchFocus {
 /// Inline prompt overlay shown before launching issue session(s).
 #[derive(Debug, Clone)]
 pub(crate) struct IssuePromptOverlay {
-    pub text: String,
+    /// Multi-line prompt editor — owns cursor + arrow/Home/End navigation via
+    /// `tui-textarea` (same backend as the free-form prompt screen).
+    pub editor: TextArea<'static>,
     /// One entry per selected issue: `(issue_number, issue_title)`.
     /// Always has at least one entry.
     pub selected_issues: Vec<(u64, String)>,
@@ -70,65 +73,94 @@ pub(crate) struct IssuePromptOverlay {
 }
 
 impl IssuePromptOverlay {
+    /// Build the prompt editor seeded with `text`, cursor parked at the end.
+    pub fn make_editor(text: &str) -> TextArea<'static> {
+        let mut editor = if text.is_empty() {
+            TextArea::default()
+        } else {
+            TextArea::new(text.split('\n').map(str::to_string).collect())
+        };
+        editor.set_cursor_line_style(Style::default());
+        editor.set_placeholder_text("Type your prompt here...");
+        let last_row = editor.lines().len().saturating_sub(1);
+        let last_col = editor
+            .lines()
+            .last()
+            .map(|l| l.chars().count())
+            .unwrap_or(0);
+        editor.move_cursor(CursorMove::Jump(last_row as u16, last_col as u16));
+        editor
+    }
+
+    /// Current prompt text — logical editor lines joined with `\n`.
+    pub fn editor_text(&self) -> String {
+        self.editor.lines().join("\n")
+    }
+
     pub fn is_multi(&self) -> bool {
         self.selected_issues.len() > 1
     }
 
     pub fn handle_input(&mut self, event: &Event) -> OverlayAction {
-        if let Event::Key(KeyEvent {
+        let Event::Key(KeyEvent {
             code,
             modifiers,
             kind: KeyEventKind::Press,
             ..
         }) = event
-        {
-            match code {
-                KeyCode::Esc => return OverlayAction::Cancel,
-                KeyCode::Enter => {
-                    if modifiers.contains(KeyModifiers::SHIFT) {
-                        self.text.push('\n');
-                        return OverlayAction::None;
-                    }
-                    // Enter or Ctrl+Enter confirms — from any focus stop.
-                    let trimmed = self.text.trim().to_string();
-                    return if trimmed.is_empty() {
-                        OverlayAction::Confirm(None)
-                    } else {
-                        OverlayAction::Confirm(Some(trimmed))
-                    };
+        else {
+            return OverlayAction::None;
+        };
+
+        match code {
+            KeyCode::Esc => return OverlayAction::Cancel,
+            // Shift+Enter inserts a newline while editing.
+            KeyCode::Enter if modifiers.contains(KeyModifiers::SHIFT) => {
+                if self.focus == LaunchFocus::Prompt {
+                    self.editor.insert_newline();
                 }
-                // Focus cycling — single-issue dialog only. Multi-issue keeps
-                // its existing Ctrl+U flow and never leaves the prompt stop.
-                KeyCode::Tab if !self.is_multi() => {
-                    self.focus = self.focus.next();
-                    return OverlayAction::None;
+                return OverlayAction::None;
+            }
+            // Enter confirms from any focus stop.
+            KeyCode::Enter => {
+                let trimmed = self.editor_text().trim().to_string();
+                return if trimmed.is_empty() {
+                    OverlayAction::Confirm(None)
+                } else {
+                    OverlayAction::Confirm(Some(trimmed))
+                };
+            }
+            // Focus cycling — single-issue dialog only. Multi-issue keeps its
+            // existing Ctrl+U flow and never leaves the prompt stop.
+            KeyCode::Tab if !self.is_multi() => {
+                self.focus = self.focus.next();
+                return OverlayAction::None;
+            }
+            KeyCode::BackTab if !self.is_multi() => {
+                self.focus = self.focus.prev();
+                return OverlayAction::None;
+            }
+            KeyCode::Char(' ') if self.focus == LaunchFocus::ProducePr => {
+                self.produce_pr = !self.produce_pr;
+                return OverlayAction::None;
+            }
+            KeyCode::Char(' ') if self.focus == LaunchFocus::Interaction => {
+                self.interaction = !self.interaction;
+                return OverlayAction::None;
+            }
+            KeyCode::Char('u')
+                if modifiers.contains(KeyModifiers::CONTROL) && self.selected_issues.len() >= 2 =>
+            {
+                self.unified_pr = !self.unified_pr;
+                return OverlayAction::None;
+            }
+            // Everything else (chars, Backspace, arrows, Home/End, word
+            // motions) delegates to the editor — only when the prompt has
+            // focus, so checkbox/Launch stops don't capture typing.
+            _ => {
+                if self.focus == LaunchFocus::Prompt {
+                    self.editor.input(event.clone());
                 }
-                KeyCode::BackTab if !self.is_multi() => {
-                    self.focus = self.focus.prev();
-                    return OverlayAction::None;
-                }
-                KeyCode::Char(' ') if self.focus == LaunchFocus::ProducePr => {
-                    self.produce_pr = !self.produce_pr;
-                    return OverlayAction::None;
-                }
-                KeyCode::Char(' ') if self.focus == LaunchFocus::Interaction => {
-                    self.interaction = !self.interaction;
-                    return OverlayAction::None;
-                }
-                KeyCode::Backspace if self.focus == LaunchFocus::Prompt => {
-                    self.text.pop();
-                }
-                KeyCode::Char('u')
-                    if modifiers.contains(KeyModifiers::CONTROL)
-                        && self.selected_issues.len() >= 2 =>
-                {
-                    self.unified_pr = !self.unified_pr;
-                    return OverlayAction::None;
-                }
-                KeyCode::Char(c) if self.focus == LaunchFocus::Prompt && self.text.len() < 2048 => {
-                    self.text.push(*c);
-                }
-                _ => {}
             }
         }
         OverlayAction::None
@@ -920,7 +952,7 @@ mod tests {
 
     fn make_overlay(number: u64, title: &str) -> IssuePromptOverlay {
         IssuePromptOverlay {
-            text: String::new(),
+            editor: IssuePromptOverlay::make_editor(""),
             selected_issues: vec![(number, title.to_string())],
             unified_pr: false,
             focus: LaunchFocus::Prompt,
@@ -931,7 +963,7 @@ mod tests {
 
     fn overlay_with_text(number: u64, title: &str, text: &str) -> IssuePromptOverlay {
         IssuePromptOverlay {
-            text: text.to_string(),
+            editor: IssuePromptOverlay::make_editor(text),
             selected_issues: vec![(number, title.to_string())],
             unified_pr: false,
             focus: LaunchFocus::Prompt,
@@ -943,7 +975,7 @@ mod tests {
     #[test]
     fn overlay_initial_state_text_is_empty() {
         let overlay = make_overlay(42, "Fix crash");
-        assert!(overlay.text.is_empty());
+        assert!(overlay.editor_text().is_empty());
     }
 
     #[test]
@@ -951,14 +983,14 @@ mod tests {
         let mut overlay = make_overlay(42, "Fix crash");
         overlay.handle_input(&key_event(KeyCode::Char('a')));
         overlay.handle_input(&key_event(KeyCode::Char('b')));
-        assert_eq!(overlay.text, "ab");
+        assert_eq!(overlay.editor_text(), "ab");
     }
 
     #[test]
     fn overlay_backspace_removes_last_character() {
         let mut overlay = overlay_with_text(42, "T", "hello");
         overlay.handle_input(&key_event(KeyCode::Backspace));
-        assert_eq!(overlay.text, "hell");
+        assert_eq!(overlay.editor_text(), "hell");
     }
 
     #[test]
@@ -966,7 +998,7 @@ mod tests {
         let mut overlay = make_overlay(42, "T");
         let action = overlay.handle_input(&key_event(KeyCode::Backspace));
         assert_eq!(action, OverlayAction::None);
-        assert_eq!(overlay.text, "");
+        assert_eq!(overlay.editor_text(), "");
     }
 
     #[test]
@@ -1007,7 +1039,7 @@ mod tests {
             KeyCode::Enter,
             KeyModifiers::SHIFT,
         ));
-        assert_eq!(overlay.text, "line one\n");
+        assert_eq!(overlay.editor_text(), "line one\n");
         assert_eq!(action, OverlayAction::None);
     }
 
@@ -1190,7 +1222,7 @@ mod tests {
             "cursor must not move while overlay is open"
         );
         assert_eq!(
-            screen.prompt_overlay.as_ref().unwrap().text,
+            screen.prompt_overlay.as_ref().unwrap().editor_text(),
             "j",
             "char must be typed into overlay text"
         );
@@ -1390,7 +1422,7 @@ mod tests {
 
     fn make_overlay_with_focus(number: u64, title: &str, focus: LaunchFocus) -> IssuePromptOverlay {
         IssuePromptOverlay {
-            text: String::new(),
+            editor: IssuePromptOverlay::make_editor(""),
             selected_issues: vec![(number, title.to_string())],
             unified_pr: false,
             focus,
@@ -1474,7 +1506,11 @@ mod tests {
     fn overlay_space_on_prompt_focus_appends_literal_space_no_bool_change() {
         let mut overlay = make_overlay_with_focus(1, "T", LaunchFocus::Prompt);
         let action = overlay.handle_input(&key_event(KeyCode::Char(' ')));
-        assert_eq!(overlay.text, " ", "Space in prompt focus appends a space");
+        assert_eq!(
+            overlay.editor_text(),
+            " ",
+            "Space in prompt focus appends a space"
+        );
         assert!(overlay.produce_pr, "produce_pr unchanged in prompt focus");
         assert!(
             !overlay.interaction,
@@ -1489,7 +1525,10 @@ mod tests {
         let action = overlay.handle_input(&key_event(KeyCode::Char(' ')));
         assert!(overlay.produce_pr);
         assert!(!overlay.interaction);
-        assert!(overlay.text.is_empty(), "Space on Launch must not type");
+        assert!(
+            overlay.editor_text().is_empty(),
+            "Space on Launch must not type"
+        );
         assert_eq!(action, OverlayAction::None);
     }
 
@@ -1587,7 +1626,7 @@ mod tests {
     #[test]
     fn overlay_enter_from_prompt_focus_returns_confirm() {
         let mut overlay = make_overlay_with_focus(7, "T", LaunchFocus::Prompt);
-        overlay.text = "hint".to_string();
+        overlay.editor = IssuePromptOverlay::make_editor("hint");
         let action = overlay.handle_input(&key_event(KeyCode::Enter));
         assert_eq!(action, OverlayAction::Confirm(Some("hint".to_string())));
     }
@@ -1616,7 +1655,7 @@ mod tests {
     #[test]
     fn overlay_enter_from_launch_with_text_returns_confirm_some() {
         let mut overlay = make_overlay_with_focus(7, "T", LaunchFocus::Launch);
-        overlay.text = "context".to_string();
+        overlay.editor = IssuePromptOverlay::make_editor("context");
         let action = overlay.handle_input(&key_event(KeyCode::Enter));
         assert_eq!(action, OverlayAction::Confirm(Some("context".to_string())));
     }

@@ -122,7 +122,7 @@ impl IssueBrowserScreen {
                 .map(|i| (i.number, i.title.clone()))
                 .collect();
             self.prompt_overlay = Some(IssuePromptOverlay {
-                text: String::new(),
+                editor: IssuePromptOverlay::make_editor(""),
                 selected_issues,
                 unified_pr: false,
                 focus: LaunchFocus::Prompt,
@@ -136,7 +136,7 @@ impl IssueBrowserScreen {
         if let Some(&idx) = self.filtered_indices.get(self.selected) {
             let issue = &self.issues[idx];
             self.prompt_overlay = Some(IssuePromptOverlay {
-                text: String::new(),
+                editor: IssuePromptOverlay::make_editor(""),
                 selected_issues: vec![(issue.number, issue.title.clone())],
                 unified_pr: false,
                 focus: LaunchFocus::Prompt,
@@ -562,159 +562,47 @@ impl IssueBrowserScreen {
         let inner_w = area.width.saturating_sub(2);
         let inner_h = area.height.saturating_sub(2);
 
-        if overlay.text.is_empty() {
-            let placeholder = Paragraph::new(Line::from(Span::styled(
+        // Wrap via the shared editor wrapper so the rendered line breaks and
+        // the visual cursor agree (same backend the prompt screen uses), and
+        // the box scrolls to keep the caret visible.
+        let logical_lines: Vec<String> = overlay.editor.lines().to_vec();
+        let (cursor_row, cursor_col) = overlay.editor.cursor();
+        let wrapped =
+            super::super::wrap::wrap_lines(&logical_lines, (cursor_row, cursor_col), inner_w);
+        let scroll = super::super::wrap::scroll_offset_for_cursor(
+            wrapped.cursor.0 as usize,
+            inner_h as usize,
+        );
+
+        let is_empty = logical_lines.len() == 1 && logical_lines[0].is_empty();
+        let paragraph = if is_empty {
+            Paragraph::new(Line::from(Span::styled(
                 "Type your prompt here...",
                 Style::default().fg(theme.text_muted),
             )))
-            .block(text_block);
-            f.render_widget(placeholder, area);
-            if focused && inner_w > 0 && inner_h > 0 {
-                f.set_cursor_position((area.x + 1, area.y + 1));
-            }
-            return;
-        }
+        } else {
+            let lines: Vec<Line> = wrapped
+                .lines
+                .iter()
+                .map(|s| {
+                    Line::from(crate::tui::issue_refs::highlight_issue_refs(
+                        s.as_str(),
+                        theme.accent_identifier,
+                        theme.text_primary,
+                    ))
+                })
+                .collect();
+            Paragraph::new(lines)
+        };
 
-        // Own the wrapping so the rendered line breaks and the cursor caret
-        // use the SAME algorithm (ratatui's word-wrap diverged from a
-        // char-based caret, drifting the cursor on multi-line input).
-        let sanitized = sanitize_for_terminal(&overlay.text);
-        let display_lines = wrap_lines(&sanitized, inner_w);
-        let lines: Vec<Line<'static>> = display_lines
-            .iter()
-            .map(|dl| {
-                let spans = crate::tui::issue_refs::highlight_issue_refs(
-                    dl,
-                    theme.accent_identifier,
-                    theme.text_primary,
-                );
-                Line::from(
-                    spans
-                        .into_iter()
-                        .map(|s| Span::styled(s.content.to_string(), s.style))
-                        .collect::<Vec<Span<'static>>>(),
-                )
-            })
-            .collect();
-
-        // Caret = end of the last display line. Scroll so it stays visible.
-        let caret_row = display_lines.len().saturating_sub(1) as u16;
-        let caret_col = display_lines
-            .last()
-            .map(|l| l.chars().count() as u16)
-            .unwrap_or(0);
-        let scroll = caret_row.saturating_sub(inner_h.saturating_sub(1));
-
-        f.render_widget(
-            Paragraph::new(lines).scroll((scroll, 0)).block(text_block),
-            area,
-        );
+        f.render_widget(paragraph.block(text_block).scroll((scroll as u16, 0)), area);
 
         if focused && inner_w > 0 && inner_h > 0 {
-            let x = area.x + 1 + caret_col.min(inner_w - 1);
-            let y = area.y + 1 + caret_row.saturating_sub(scroll).min(inner_h - 1);
-            f.set_cursor_position((x, y));
-        }
-    }
-}
-
-/// Wrap `text` into display lines of at most `width` cells, breaking hard at
-/// `\n` and at the width boundary. The last element is the in-progress caret
-/// line (possibly empty), so the caret position is `(last.len, lines.len-1)`.
-/// Char-based (wide glyphs approximate to one cell) — render and caret share
-/// this single source of truth.
-pub(super) fn wrap_lines(text: &str, width: u16) -> Vec<String> {
-    if width == 0 {
-        return vec![String::new()];
-    }
-    let w = width as usize;
-    let mut lines: Vec<String> = Vec::new();
-    let mut cur = String::new();
-    let mut cur_w = 0usize;
-    for ch in text.chars() {
-        if ch == '\n' {
-            lines.push(std::mem::take(&mut cur));
-            cur_w = 0;
-        } else {
-            cur.push(ch);
-            cur_w += 1;
-            if cur_w >= w {
-                lines.push(std::mem::take(&mut cur));
-                cur_w = 0;
+            let vrow = wrapped.cursor.0 as usize;
+            let vcol = wrapped.cursor.1;
+            if vrow >= scroll && (vrow - scroll) < inner_h as usize {
+                f.set_cursor_position((area.x + 1 + vcol, area.y + 1 + (vrow - scroll) as u16));
             }
         }
-    }
-    lines.push(cur);
-    lines
-}
-
-/// Caret column/row offset after the last character of `text`, derived from
-/// the same wrapping used to render the text area.
-pub(super) fn caret_offset(text: &str, width: u16) -> (u16, u16) {
-    if width == 0 {
-        return (0, 0);
-    }
-    let lines = wrap_lines(text, width);
-    let row = lines.len().saturating_sub(1) as u16;
-    let col = lines.last().map(|l| l.chars().count() as u16).unwrap_or(0);
-    (col, row)
-}
-
-#[cfg(test)]
-mod caret_tests {
-    use super::{caret_offset, wrap_lines};
-
-    #[test]
-    fn caret_empty_text_is_origin() {
-        assert_eq!(caret_offset("", 20), (0, 0));
-    }
-
-    #[test]
-    fn caret_advances_one_per_char() {
-        assert_eq!(caret_offset("abc", 20), (3, 0));
-    }
-
-    #[test]
-    fn caret_wraps_when_row_fills() {
-        // width 5: "abcde" fills row 0, caret moves to row 1 col 0.
-        assert_eq!(caret_offset("abcde", 5), (0, 1));
-    }
-
-    #[test]
-    fn caret_newline_moves_to_next_row() {
-        assert_eq!(caret_offset("ab\nc", 20), (1, 1));
-    }
-
-    #[test]
-    fn caret_zero_width_is_origin() {
-        assert_eq!(caret_offset("abc", 0), (0, 0));
-    }
-
-    #[test]
-    fn wrap_lines_splits_at_width() {
-        assert_eq!(wrap_lines("abcdef", 3), vec!["abc", "def", ""]);
-    }
-
-    #[test]
-    fn wrap_lines_respects_hard_newlines() {
-        assert_eq!(wrap_lines("ab\ncd", 10), vec!["ab", "cd"]);
-    }
-
-    #[test]
-    fn wrap_lines_last_element_is_caret_line() {
-        // Exactly one full row leaves an empty trailing caret line.
-        assert_eq!(wrap_lines("abc", 3), vec!["abc", ""]);
-    }
-
-    #[test]
-    fn caret_matches_wrap_lines_on_multiline() {
-        // Regression: caret must equal (last line len, row count - 1) for the
-        // SAME wrapping the renderer uses — no drift on multi-line input.
-        let text = "the quick brown fox jumps";
-        let width = 10u16;
-        let lines = wrap_lines(text, width);
-        let (col, row) = caret_offset(text, width);
-        assert_eq!(row as usize, lines.len() - 1);
-        assert_eq!(col as usize, lines.last().unwrap().chars().count());
     }
 }

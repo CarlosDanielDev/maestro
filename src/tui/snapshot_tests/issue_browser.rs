@@ -107,7 +107,7 @@ fn issue_browser_prompt_overlay_empty() {
         make_gh_issue(2, "Fix database crash"),
     ]);
     screen.prompt_overlay = Some(IssuePromptOverlay {
-        text: String::new(),
+        editor: IssuePromptOverlay::make_editor(""),
         selected_issues: vec![(1, "Add login flow".to_string())],
         unified_pr: false,
         focus: LaunchFocus::Prompt,
@@ -133,7 +133,7 @@ fn issue_browser_prompt_overlay_with_text() {
         make_gh_issue(2, "Fix database crash"),
     ]);
     screen.prompt_overlay = Some(IssuePromptOverlay {
-        text: "focus on error handling".to_string(),
+        editor: IssuePromptOverlay::make_editor("focus on error handling"),
         selected_issues: vec![(1, "Add login flow".to_string())],
         unified_pr: false,
         focus: LaunchFocus::Prompt,
@@ -159,7 +159,7 @@ fn issue_browser_launch_options_default() {
         make_gh_issue(2, "Fix database crash"),
     ]);
     screen.prompt_overlay = Some(IssuePromptOverlay {
-        text: String::new(),
+        editor: IssuePromptOverlay::make_editor(""),
         selected_issues: vec![(1, "Add login flow".to_string())],
         unified_pr: false,
         focus: LaunchFocus::Prompt,
@@ -185,7 +185,7 @@ fn issue_browser_launch_options_toggled() {
         make_gh_issue(2, "Fix database crash"),
     ]);
     screen.prompt_overlay = Some(IssuePromptOverlay {
-        text: String::new(),
+        editor: IssuePromptOverlay::make_editor(""),
         selected_issues: vec![(1, "Add login flow".to_string())],
         unified_pr: false,
         focus: LaunchFocus::Interaction,
@@ -211,7 +211,7 @@ fn issue_browser_focused_checkbox_row_has_selection_background() {
     let theme = Theme::dark();
     let mut screen = IssueBrowserScreen::new(vec![make_gh_issue(1, "Add login flow")]);
     screen.prompt_overlay = Some(IssuePromptOverlay {
-        text: String::new(),
+        editor: IssuePromptOverlay::make_editor(""),
         selected_issues: vec![(1, "Add login flow".to_string())],
         unified_pr: false,
         focus: LaunchFocus::Interaction,
@@ -243,7 +243,7 @@ fn issue_browser_launch_options_launch_focused() {
         make_gh_issue(2, "Fix database crash"),
     ]);
     screen.prompt_overlay = Some(IssuePromptOverlay {
-        text: String::new(),
+        editor: IssuePromptOverlay::make_editor(""),
         selected_issues: vec![(1, "Add login flow".to_string())],
         unified_pr: false,
         focus: LaunchFocus::Launch,
