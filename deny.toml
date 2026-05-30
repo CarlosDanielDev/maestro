@@ -133,6 +133,11 @@ skip = [
     { name = "windows_x86_64_gnullvm", reason = "transitive via windows-targets; per-target variant" },
     { name = "windows_x86_64_msvc", reason = "transitive via windows-targets; per-target variant" },
     { name = "wit-bindgen", reason = "transitive via wasm-adjacent deps; multiple versions" },
+    # shlex: maestro depends on shlex 1.x directly; a fresh Linux/musl CI
+    # resolution surfaces a second 1.x via build-deps (cc) that the committed
+    # macOS lockfile dedupes. Both are post-RUSTSEC-2024-0006 (cargo-audit
+    # passes). Name-only skip is robust to lockfile drift.
+    { name = "shlex", reason = "maestro direct dep + transitive build-dep (cc); duplicate 1.x surfaces only on Linux/musl CI resolution; both versions are advisory-clean" },
 ]
 skip-tree = []
 
