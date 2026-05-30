@@ -269,12 +269,11 @@ worktree is trivially pipeable.
 
 ---
 
-## Recommended follow-up issue (DOR format)
+## Follow-up issue — filed as #918 (Level 7, folded into v0.30.0)
 
-> Milestone principle #5 says the spike's follow-up is filed **after v0.30.0 closes**. Because
-> this reviewer now plugs into the Interaction screen, it is `Blocked By` the screen issues —
-> slot it as a v0.30.0 fast-follow (or a Level-7 addition if the milestone absorbs it; that
-> scope call is the user's, see the open question at the end of the report's PR).
+> **Resolved:** filed as **#918** and folded into milestone v0.30.0 as **Level 7**
+> (`Blocked By` #736 + #738) — not a post-milestone fast-follow. Milestone working
+> principle #5 was amended to record the override. The DOR spec below is what #918 carries.
 
 > **Title:** `feat(tui): native in-session diff reviewer (gitui-derived) for interaction sessions (follow-up to #732)`
 >
@@ -324,7 +323,7 @@ worktree is trivially pipeable.
 > 7. Run on macOS, Linux/WSL, native Windows Terminal.
 >
 > **## Blocked By:** #736 (Interaction screen hosts the overlay), #738 (keymap dispatch).
-> File after v0.30.0 closes, or fold into the milestone if scope is approved.
+> Folded into v0.30.0 as Level 7 (#918).
 >
 > **Definition of Done:** overlay + widget + `DiffLauncher` escape hatch landed; manual matrix
 > executed on 3 platforms; read-only verified; keymap collision-free with #738; milestone
