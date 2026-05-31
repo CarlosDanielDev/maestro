@@ -17,6 +17,35 @@ use ratatui::{
 use std::path::Path;
 use tui_textarea::TextArea;
 
+/// Render a one-line header naming the agent/CLI, model, and issue the chat
+/// is bound to, so the user always knows who they are talking to (#738 QA).
+pub(super) fn draw_header(
+    f: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    agent_label: &str,
+    model: &str,
+    issue_number: u64,
+) {
+    let agent = if agent_label.is_empty() {
+        "agent"
+    } else {
+        agent_label
+    };
+    let model = if model.is_empty() { "default" } else { model };
+    let spans = vec![
+        Span::styled(" agent ", Style::default().fg(theme.text_secondary)),
+        Span::styled(agent.to_string(), Style::default().fg(theme.accent_info)),
+        Span::styled("  ·  model ", Style::default().fg(theme.text_secondary)),
+        Span::styled(model.to_string(), Style::default().fg(theme.accent_info)),
+        Span::styled(
+            format!("  ·  issue #{issue_number}"),
+            Style::default().fg(theme.text_secondary),
+        ),
+    ];
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
 /// Render the input editor into `area`. While `locked` (a turn is streaming)
 /// the title flags the lock and the placeholder reflects it.
 pub(super) fn draw_input(

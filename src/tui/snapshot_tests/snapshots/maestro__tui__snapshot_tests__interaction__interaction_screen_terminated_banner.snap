@@ -2,8 +2,8 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
+" agent agent  ·  model default  ·  issue #42                                                                            "
 "you   ▸ stop                                                                                                            "
-"                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "

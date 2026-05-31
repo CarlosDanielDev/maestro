@@ -78,6 +78,10 @@ pub struct InteractionScreen {
     turn_count: usize,
     /// Animation tick for the braille "agent responding" spinner (#738 QA).
     spinner_tick: usize,
+    /// Provider/CLI the turns spawn against (e.g. "claude"). Header display.
+    agent_label: String,
+    /// Model passed to each turn (e.g. "opus"). Header display.
+    model: String,
     history: Vec<TurnRecord>,
     editor: TextArea<'static>,
     /// First visible history line. Meaningful only when `auto_scroll` is off.
@@ -114,6 +118,8 @@ impl InteractionScreen {
             stream_chunks: 0,
             turn_count: 0,
             spinner_tick: 0,
+            agent_label: String::new(),
+            model: String::new(),
             history,
             editor,
             scroll_offset: 0,
@@ -140,6 +146,17 @@ impl InteractionScreen {
     /// advances each frame while streaming (#738 QA).
     pub fn set_spinner_context(&mut self, spinner_tick: usize) {
         self.spinner_tick = spinner_tick;
+    }
+
+    /// Record which provider/CLI and model the turns run against, shown in
+    /// the screen header so the user knows who they are talking to (#738 QA).
+    pub fn set_provider_context(
+        &mut self,
+        agent_label: impl Into<String>,
+        model: impl Into<String>,
+    ) {
+        self.agent_label = agent_label.into();
+        self.model = model.into();
     }
 
     /// True while a turn streams — the input pane is locked.
@@ -184,14 +201,25 @@ impl InteractionScreen {
 
     fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::vertical([
+            Constraint::Length(1),
             Constraint::Min(0),
             Constraint::Length(1),
             Constraint::Length(INPUT_HEIGHT),
         ])
         .split(area);
-        let history_area = chunks[0];
-        let keybar_area = chunks[1];
-        let input_area = chunks[2];
+        let header_area = chunks[0];
+        let history_area = chunks[1];
+        let keybar_area = chunks[2];
+        let input_area = chunks[3];
+
+        input::draw_header(
+            f,
+            header_area,
+            theme,
+            &self.agent_label,
+            &self.model,
+            self.issue_number,
+        );
 
         let total = history::build_lines(&self.history, theme).len();
         let viewport = history_area.height as usize;

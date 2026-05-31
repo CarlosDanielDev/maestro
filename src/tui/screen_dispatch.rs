@@ -457,7 +457,7 @@ fn open_interaction_session(app: &mut app::App, issue_number: u64, produce_pr: b
         .pool
         .find_active_interaction_by_issue(issue_number)
         .is_some();
-    let screen = if resumed {
+    let mut screen = if resumed {
         let session = app
             .pool
             .find_active_interaction_by_issue(issue_number)
@@ -469,6 +469,9 @@ fn open_interaction_session(app: &mut app::App, issue_number: u64, produce_pr: b
             .create_interaction_session(issue_number, produce_pr);
         screens::InteractionScreen::for_session(session)
     };
+    // Turns spawn the `claude` CLI (ClaudeCliSpawner) with the default model;
+    // surface that so the user knows who they are talking to (#738 QA).
+    screen.set_provider_context("claude", app.session_config.default_model.clone());
     app.screen_state.interaction_screen = Some(screen);
     let verb = if resumed { "resumed" } else { "started" };
     app.activity_log.push_simple(

@@ -173,3 +173,21 @@ fn interaction_screen_ctrl_p_greyed_without_produce_pr() {
     );
     assert_snapshot!(terminal.backend());
 }
+
+#[test]
+fn interaction_screen_header_shows_agent_and_model() {
+    let mut screen =
+        InteractionScreen::for_session(&session(7, true, InteractionState::Idle, vec![]));
+    screen.set_provider_context("claude", "opus");
+    let terminal = render(&mut screen);
+    let rendered = format!("{:?}", terminal.backend());
+    assert!(
+        rendered.contains("claude"),
+        "header must name the agent:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("opus"),
+        "header must name the model:\n{rendered}"
+    );
+    assert_snapshot!(terminal.backend());
+}
