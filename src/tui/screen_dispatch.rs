@@ -452,7 +452,12 @@ fn handle_normalize_agent_config(app: &mut app::App) {
 /// active session and skips creation + the launch dialog; otherwise a fresh
 /// session (with worktree) is created. Logs a `resumed`/`started` line and
 /// navigates to the screen (#738).
-fn open_interaction_session(app: &mut app::App, issue_number: u64, produce_pr: bool) {
+fn open_interaction_session(
+    app: &mut app::App,
+    issue_number: u64,
+    produce_pr: bool,
+    seed_prompt: Option<String>,
+) {
     let resumed = app
         .pool
         .find_active_interaction_by_issue(issue_number)
@@ -488,6 +493,19 @@ fn open_interaction_session(app: &mut app::App, issue_number: u64, produce_pr: b
         })
         .unwrap_or_default();
     screen.set_issue_title(title);
+
+    // A NEW session launched with a dialog prompt sends it as the first turn
+    // so the agent starts on the user's instruction (#738). Re-entry ignores
+    // it (the dialog is skipped, and we don't inject into an ongoing chat).
+    let first_turn = if resumed {
+        None
+    } else {
+        seed_prompt.filter(|p| !p.trim().is_empty())
+    };
+    if let Some(prompt) = first_turn.clone() {
+        screen.seed_turn(prompt);
+    }
+
     app.screen_state.interaction_screen = Some(screen);
     let verb = if resumed { "resumed" } else { "started" };
     app.activity_log.push_simple(
@@ -495,6 +513,16 @@ fn open_interaction_session(app: &mut app::App, issue_number: u64, produce_pr: b
         format!("{verb} #{issue_number}"),
         crate::tui::activity_log::LogLevel::Info,
     );
+
+    if let Some(prompt) = first_turn {
+        app.pending_commands
+            .push(app::TuiCommand::SendInteractionTurn {
+                issue_number,
+                prompt,
+                model: app.session_config.default_model.clone(),
+            });
+    }
+
     app.navigate_to(app::TuiMode::Interaction);
 }
 
@@ -915,7 +943,12 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // for the issue and skips the launch dialog (#738).
             if config.interaction {
                 if let Some(issue_number) = config.issue_number {
-                    open_interaction_session(app, issue_number, config.produce_pr);
+                    open_interaction_session(
+                        app,
+                        issue_number,
+                        config.produce_pr,
+                        config.custom_prompt.clone(),
+                    );
                     return;
                 }
                 tracing::warn!("interaction launch without an issue number — ignoring");
@@ -947,7 +980,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 .find_active_interaction_by_issue(issue_number)
                 .is_some()
             {
-                open_interaction_session(app, issue_number, false);
+                open_interaction_session(app, issue_number, false, None);
             } else if let Some(browser) = app.screen_state.issue_browser_screen.as_mut() {
                 browser.open_launch_overlay_for_selected();
             }

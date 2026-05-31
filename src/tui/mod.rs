@@ -1184,6 +1184,44 @@ mod handle_screen_action_tests {
     }
 
     #[test]
+    fn launch_interaction_with_dialog_prompt_sends_it_as_first_turn() {
+        let mut app = make_app();
+        let mut cfg = interaction_config(10, false);
+        cfg.custom_prompt = Some("plan the work".into());
+        handle_screen_action(&mut app, ScreenAction::LaunchSession(cfg));
+
+        let screen = app.screen_state.interaction_screen.as_ref().unwrap();
+        assert!(screen.is_streaming(), "dialog prompt should start a turn");
+        assert_eq!(screen.history_len(), 1, "the prompt is the first User turn");
+        assert!(
+            app.pending_commands.iter().any(|c| matches!(
+                c,
+                app::TuiCommand::SendInteractionTurn { issue_number, prompt, .. }
+                    if *issue_number == 10 && prompt == "plan the work"
+            )),
+            "the first turn command must be queued"
+        );
+    }
+
+    #[test]
+    fn launch_interaction_without_prompt_opens_idle_chat() {
+        let mut app = make_app();
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSession(interaction_config(10, false)),
+        );
+        let screen = app.screen_state.interaction_screen.as_ref().unwrap();
+        assert!(!screen.is_streaming());
+        assert_eq!(screen.history_len(), 0);
+        assert!(
+            !app.pending_commands
+                .iter()
+                .any(|c| matches!(c, app::TuiCommand::SendInteractionTurn { .. })),
+            "no prompt → no auto-sent turn"
+        );
+    }
+
+    #[test]
     fn resume_or_launch_issue_with_active_session_reenters_skipping_dialog() {
         let mut app = make_app();
         // Seed an active interaction session for issue 10.

@@ -163,6 +163,13 @@ impl InteractionScreen {
         self.model = model.into();
     }
 
+    /// Seed the first turn from the launch-dialog prompt: push it as a `User`
+    /// turn and flip to `Streaming` so the chat starts on the user's
+    /// instruction. The dispatch enqueues the matching turn command (#738).
+    pub fn seed_turn(&mut self, prompt: String) {
+        let _ = self.begin_turn(prompt);
+    }
+
     /// Record the issue title shown in the header (#738 QA). Sanitized at this
     /// boundary so every downstream renderer (header + starter hint) is safe
     /// from terminal-escape injection in external GitHub titles.
