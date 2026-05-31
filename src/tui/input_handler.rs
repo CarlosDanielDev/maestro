@@ -875,12 +875,10 @@ fn handle_global_shortcuts(app: &mut App, key: &KeyEvent) -> bool {
         return true;
     }
 
-    // Help overlay toggle
-    let is_text_input_mode = matches!(
-        app.tui_mode,
-        app::TuiMode::PromptInput | app::TuiMode::SessionSwitcher
-    );
-    if key.code == KeyCode::F(1) || (key.code == KeyCode::Char('?') && !is_text_input_mode) {
+    // Help overlay toggle. `?` must NOT open help while the user is typing in
+    // a text-input screen (chat Message bar, prompt, filters) — reuse the
+    // single source of truth, not a stale inline mode list (#738 QA).
+    if key.code == KeyCode::F(1) || (key.code == KeyCode::Char('?') && !is_text_input_mode(app)) {
         app.help_state = Some(crate::tui::help::HelpOverlayState::new());
         return true;
     }
@@ -1229,6 +1227,44 @@ mod tests {
         let mut app = make_app();
         app.tui_mode = TuiMode::DependencyGraph;
         assert!(!is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn is_text_input_mode_true_for_interaction() {
+        // Regression (#738 QA): the Interaction chat must be a text-input mode
+        // so global single-letter chords (`q` quit, `?` help, `d` log) don't
+        // swallow keys the user is typing into the Message bar.
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Interaction;
+        app.screen_state.interaction_screen = Some(crate::tui::screens::InteractionScreen::new());
+        assert!(is_text_input_mode(&app));
+    }
+
+    #[test]
+    fn question_mark_does_not_open_help_in_interaction_chat() {
+        // Regression (#738 QA): `?` is a normal character in the chat Message
+        // bar, not the global help toggle.
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Interaction;
+        app.screen_state.interaction_screen = Some(crate::tui::screens::InteractionScreen::new());
+        let consumed = handle_global_shortcuts(&mut app, &key('?'));
+        assert!(
+            !consumed,
+            "? must fall through to the chat, not the help toggle"
+        );
+        assert!(
+            app.help_state.is_none(),
+            "? must not open the help overlay in chat"
+        );
+    }
+
+    #[test]
+    fn question_mark_opens_help_on_non_text_screen() {
+        // Counterpart: `?` still opens help where it is not a text input.
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Overview;
+        assert!(handle_global_shortcuts(&mut app, &key('?')));
+        assert!(app.help_state.is_some());
     }
 
     #[test]

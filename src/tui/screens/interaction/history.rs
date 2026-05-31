@@ -77,18 +77,39 @@ pub(super) fn draw_history(
     theme: &Theme,
     history: &[TurnRecord],
     offset: usize,
+    issue_number: u64,
+    issue_title: &str,
 ) {
     if history.is_empty() {
-        let empty = Paragraph::new(Line::from(Span::styled(
-            "No messages yet — type below to talk to the agent.",
-            Style::default().fg(theme.text_secondary),
-        )));
-        f.render_widget(empty, area);
+        f.render_widget(starter_hint(theme, issue_number, issue_title), area);
         return;
     }
     let lines = build_lines(history, theme);
     let paragraph = Paragraph::new(lines).scroll((offset as u16, 0));
     f.render_widget(paragraph, area);
+}
+
+/// Action-oriented empty state: names the work and suggests a first prompt so
+/// the user isn't staring at a blank pane (#738 QA — "starter hint").
+fn starter_hint<'a>(theme: &Theme, issue_number: u64, issue_title: &'a str) -> Paragraph<'a> {
+    let work = if issue_title.is_empty() {
+        format!("Working on issue #{issue_number}")
+    } else {
+        format!("Working on #{issue_number} — {issue_title}")
+    };
+    let lines = vec![
+        Line::from(Span::styled(work, Style::default().fg(theme.text_primary))),
+        Line::from(""),
+        Line::from(Span::styled(
+            "No messages yet — type a prompt below to start.",
+            Style::default().fg(theme.text_secondary),
+        )),
+        Line::from(Span::styled(
+            "Try: \"Summarize this issue and propose a step-by-step plan.\"",
+            Style::default().fg(theme.accent_info),
+        )),
+    ];
+    Paragraph::new(lines)
 }
 
 #[cfg(test)]

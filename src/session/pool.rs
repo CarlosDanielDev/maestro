@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -41,9 +42,8 @@ pub struct SessionPool {
     /// disables injection — used in unit tests that don't care about
     /// templates and as a no-op fallback when XDG cache resolution fails.
     rendered_template_store: Option<Arc<dyn RenderedTemplateStore>>,
-    /// Active interactive (chat-style) sessions (#734). Populated by the
-    /// per-turn spawn loop in #737; scaffold-only here.
-    #[allow(dead_code)] // Reason: scaffold for #736/#737 — populated by the spawn loop
+    /// Active interactive (chat-style) sessions (#734). Created on launch and
+    /// driven by the per-turn spawn loop (#738).
     interactions: Vec<InteractionSession>,
 }
 
@@ -422,9 +422,6 @@ impl SessionPool {
 
     /// Find the active (non-terminated) interaction session for an issue.
     /// Returns `None` if none exists or the only match was already closed.
-    /// `interactions` is populated by the per-turn spawn loop (#737); for
-    /// now this scans an empty vec.
-    #[allow(dead_code)] // Reason: scaffold for #736/#737 — consumed by the interaction UI/spawn loop
     pub fn find_active_interaction_by_issue(
         &self,
         issue_number: u64,
@@ -432,6 +429,83 @@ impl SessionPool {
         self.interactions
             .iter()
             .find(|i| i.issue_number == issue_number && i.is_active())
+    }
+
+    /// Create a fresh interaction session for `issue_number`, building a
+    /// worktree (non-fatal — falls back to cwd) and registering it. Returns a
+    /// reference to the newly created session. Mirrors the worktree handling
+    /// in [`Self::try_promote`] so interaction sessions get the same isolation.
+    pub fn create_interaction_session(
+        &mut self,
+        issue_number: u64,
+        produce_pr: bool,
+    ) -> &InteractionSession {
+        let slug = format!("issue-{issue_number}");
+        let (worktree_path, branch) = match self.worktree_mgr.create(&slug) {
+            Ok(path) => (path, format!("maestro/{slug}")),
+            Err(e) => {
+                tracing::warn!("interaction worktree skipped (running in cwd): {e}");
+                (PathBuf::from("."), format!("maestro/{slug}"))
+            }
+        };
+        let session = InteractionSession::new(issue_number, worktree_path, branch, produce_pr);
+        self.interactions.push(session);
+        self.interactions
+            .last()
+            .expect("just pushed an interaction session")
+    }
+
+    /// Clone the active interaction session for an issue. The clone is driven
+    /// by `send_turn` in a background task; the result is written back via
+    /// [`Self::upsert_interaction`]. Returns `None` when no active session
+    /// exists for the issue.
+    pub fn clone_active_interaction(&self, issue_number: u64) -> Option<InteractionSession> {
+        self.find_active_interaction_by_issue(issue_number).cloned()
+    }
+
+    /// Number of registered interaction sessions (active + terminated).
+    #[cfg(test)]
+    pub fn interaction_count(&self) -> usize {
+        self.interactions.len()
+    }
+
+    /// Append a turn to the active interaction session for `issue_number`.
+    /// Test seam for re-entry assertions (#738).
+    #[cfg(test)]
+    pub fn test_push_interaction_turn(
+        &mut self,
+        issue_number: u64,
+        turn: super::interaction::TurnRecord,
+    ) {
+        if let Some(s) = self
+            .interactions
+            .iter_mut()
+            .find(|i| i.issue_number == issue_number && i.is_active())
+        {
+            s.history.push(turn);
+        }
+    }
+
+    /// Replace the stored interaction session for `session.issue_number`, or
+    /// push it when none is registered. Used to persist `session_id`/history
+    /// after a turn and to record termination.
+    ///
+    /// A session the user already terminated is NOT resurrected: if a turn was
+    /// in-flight when the user quit (`Ctrl+Q`), its completing clone arrives
+    /// here `Idle` and must not overwrite the `Terminated` record — otherwise
+    /// re-entry would reopen a quit session.
+    pub fn upsert_interaction(&mut self, session: InteractionSession) {
+        if let Some(slot) = self
+            .interactions
+            .iter_mut()
+            .find(|i| i.issue_number == session.issue_number)
+        {
+            if slot.is_active() {
+                *slot = session;
+            }
+        } else {
+            self.interactions.push(session);
+        }
     }
 
     /// Mutable access to a session by ID across all buckets.
@@ -660,6 +734,75 @@ mod tests {
         interaction.state = InteractionState::Terminated;
         pool.interactions.push(interaction);
         assert!(pool.find_active_interaction_by_issue(42).is_none());
+    }
+
+    #[test]
+    fn create_interaction_session_registers_and_sets_fields() {
+        let mut pool = make_pool(2);
+        let session = pool.create_interaction_session(55, true);
+        assert_eq!(session.issue_number, 55);
+        assert!(session.produce_pr);
+        assert_eq!(
+            session.state,
+            crate::session::interaction::InteractionState::Idle
+        );
+        assert_eq!(pool.interaction_count(), 1);
+    }
+
+    #[test]
+    fn clone_active_interaction_returns_owned_copy() {
+        let mut pool = make_pool(2);
+        pool.create_interaction_session(55, false);
+        let cloned = pool.clone_active_interaction(55);
+        assert!(cloned.is_some());
+        assert_eq!(cloned.unwrap().issue_number, 55);
+        assert!(pool.clone_active_interaction(99).is_none());
+    }
+
+    #[test]
+    fn upsert_interaction_replaces_active_session_in_place() {
+        let mut pool = make_pool(2);
+        pool.create_interaction_session(55, false);
+        let mut updated = pool.clone_active_interaction(55).unwrap();
+        updated.session_id = Some("abc123".into());
+        pool.upsert_interaction(updated);
+        assert_eq!(pool.interaction_count(), 1);
+        assert_eq!(
+            pool.find_active_interaction_by_issue(55)
+                .unwrap()
+                .session_id
+                .as_deref(),
+            Some("abc123")
+        );
+    }
+
+    #[test]
+    fn upsert_interaction_pushes_when_no_active_match() {
+        let mut pool = make_pool(2);
+        let session = make_interaction(77);
+        pool.upsert_interaction(session);
+        assert_eq!(pool.interaction_count(), 1);
+    }
+
+    #[test]
+    fn upsert_interaction_does_not_resurrect_terminated_session() {
+        use crate::session::interaction::{CloseReason, InteractionState};
+        let mut pool = make_pool(2);
+        let mut terminated = make_interaction(55);
+        terminated.state = InteractionState::Terminated;
+        terminated.close_reason = Some(CloseReason::UserQuit);
+        pool.interactions.push(terminated);
+
+        // A turn that was in-flight at quit completes Idle and writes back.
+        let mut completing = make_interaction(55);
+        completing.state = InteractionState::Idle;
+        pool.upsert_interaction(completing);
+
+        assert_eq!(pool.interaction_count(), 1, "must not push a duplicate");
+        assert!(
+            pool.find_active_interaction_by_issue(55).is_none(),
+            "a terminated session must stay terminated"
+        );
     }
 
     #[test]

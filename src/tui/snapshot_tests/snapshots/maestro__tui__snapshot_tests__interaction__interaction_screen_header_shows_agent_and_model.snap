@@ -2,11 +2,11 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
-" agent agent  ·  model default  ·  #0                                                                                   "
-"sys   ▸ Session started for #736                                                                                        "
-"you   ▸ Add a login button                                                                                              "
-"agent ▸ Done. Added LoginButton. …                                                                                      "
+" agent claude  ·  model opus  ·  #7                                                                                     "
+"Working on issue #7                                                                                                     "
 "                                                                                                                        "
+"No messages yet — type a prompt below to start.                                                                         "
+"Try: "Summarize this issue and propose a step-by-step plan."                                                            "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "

@@ -723,6 +723,50 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::TeamLaunchResult(summary));
                     });
                 }
+                app::TuiCommand::SendInteractionTurn {
+                    issue_number,
+                    prompt,
+                    model,
+                } => {
+                    // Drive the turn on a clone of the pool's session; stream
+                    // events back to the live screen, then hand the mutated
+                    // clone back so the pool can persist session_id/history.
+                    let Some(mut session) = app.pool.clone_active_interaction(issue_number) else {
+                        tracing::warn!(
+                            "SendInteractionTurn for #{issue_number} with no active session"
+                        );
+                        continue;
+                    };
+                    let tx = app.data_tx.clone();
+                    tokio::spawn(async move {
+                        use crate::session::interaction_turn::ClaudeCliSpawner;
+                        use tokio_util::sync::CancellationToken;
+
+                        let (events_tx, mut events_rx) = tokio::sync::mpsc::channel(64);
+                        let forward_tx = tx.clone();
+                        let forwarder = tokio::spawn(async move {
+                            while let Some(event) = events_rx.recv().await {
+                                let _ = forward_tx.send(app::TuiDataEvent::InteractionTurnEvent {
+                                    issue_number,
+                                    event,
+                                });
+                            }
+                        });
+
+                        let spawner = ClaudeCliSpawner::default();
+                        let cancel = CancellationToken::new();
+                        if let Err(e) = session
+                            .send_turn(prompt, &model, &spawner, events_tx, cancel)
+                            .await
+                        {
+                            tracing::warn!("interaction turn for #{issue_number} failed: {e}");
+                        }
+                        let _ = forwarder.await;
+                        let _ = tx.send(app::TuiDataEvent::InteractionTurnComplete {
+                            session: Box::new(session),
+                        });
+                    });
+                }
             }
         }
 
@@ -1039,6 +1083,222 @@ mod handle_screen_action_tests {
         let screen = app.screen_state.issue_browser_screen.as_ref().unwrap();
         assert_eq!(screen.issues.len(), 2);
         assert!(screen.issues.iter().all(|i| i.state == "open"));
+    }
+
+    // --- #738: interaction launch / re-entry / send / quit ---
+
+    fn interaction_config(issue: u64, produce_pr: bool) -> screens::SessionConfig {
+        screens::SessionConfig {
+            issue_number: Some(issue),
+            interaction: true,
+            produce_pr,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn launch_interaction_creates_session_and_navigates() {
+        let mut app = make_app();
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSession(interaction_config(10, false)),
+        );
+        assert_eq!(app.pool.interaction_count(), 1);
+        assert_eq!(app.tui_mode, app::TuiMode::Interaction);
+        assert!(app.screen_state.interaction_screen.is_some());
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("started #10")),
+            "expected a 'started #10' activity-log line"
+        );
+    }
+
+    #[test]
+    fn launch_interaction_reentry_skips_creation_and_resumes() {
+        use crate::session::interaction::{TurnRecord, TurnRole};
+        let mut app = make_app();
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSession(interaction_config(10, false)),
+        );
+        // Simulate a turn landing on the pool session, then Esc nulling the screen.
+        app.pool.test_push_interaction_turn(
+            10,
+            TurnRecord {
+                role: TurnRole::User,
+                content: "hi".into(),
+                started_at: chrono::Utc::now(),
+                finished_at: Some(chrono::Utc::now()),
+            },
+        );
+        app.screen_state.interaction_screen = None;
+
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSession(interaction_config(10, false)),
+        );
+        assert_eq!(
+            app.pool.interaction_count(),
+            1,
+            "must not create a second session"
+        );
+        assert_eq!(
+            app.screen_state
+                .interaction_screen
+                .as_ref()
+                .map(|s| s.history_len()),
+            Some(1),
+            "re-entry must restore the existing history"
+        );
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("resumed #10")),
+            "expected a 'resumed #10' activity-log line"
+        );
+    }
+
+    #[test]
+    fn launch_interaction_after_quit_creates_new_session() {
+        let mut app = make_app();
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSession(interaction_config(10, false)),
+        );
+        handle_screen_action(&mut app, ScreenAction::QuitInteraction { issue_number: 10 });
+        assert_eq!(app.tui_mode, app::TuiMode::IssueBrowser);
+        assert!(app.screen_state.interaction_screen.is_none());
+
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSession(interaction_config(10, false)),
+        );
+        assert_eq!(
+            app.pool.interaction_count(),
+            2,
+            "a terminated session must not be resumed"
+        );
+    }
+
+    #[test]
+    fn launch_interaction_with_dialog_prompt_sends_it_as_first_turn() {
+        let mut app = make_app();
+        let mut cfg = interaction_config(10, false);
+        cfg.custom_prompt = Some("plan the work".into());
+        handle_screen_action(&mut app, ScreenAction::LaunchSession(cfg));
+
+        let screen = app.screen_state.interaction_screen.as_ref().unwrap();
+        assert!(screen.is_streaming(), "dialog prompt should start a turn");
+        assert_eq!(screen.history_len(), 1, "the prompt is the first User turn");
+        assert!(
+            app.pending_commands.iter().any(|c| matches!(
+                c,
+                app::TuiCommand::SendInteractionTurn { issue_number, prompt, .. }
+                    if *issue_number == 10 && prompt == "plan the work"
+            )),
+            "the first turn command must be queued"
+        );
+    }
+
+    #[test]
+    fn launch_interaction_without_prompt_opens_idle_chat() {
+        let mut app = make_app();
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSession(interaction_config(10, false)),
+        );
+        let screen = app.screen_state.interaction_screen.as_ref().unwrap();
+        assert!(!screen.is_streaming());
+        assert_eq!(screen.history_len(), 0);
+        assert!(
+            !app.pending_commands
+                .iter()
+                .any(|c| matches!(c, app::TuiCommand::SendInteractionTurn { .. })),
+            "no prompt → no auto-sent turn"
+        );
+    }
+
+    #[test]
+    fn resume_or_launch_issue_with_active_session_reenters_skipping_dialog() {
+        let mut app = make_app();
+        // Seed an active interaction session for issue 10.
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSession(interaction_config(10, false)),
+        );
+        app.screen_state.interaction_screen = None; // simulate having left
+        app.tui_mode = app::TuiMode::IssueBrowser;
+
+        handle_screen_action(
+            &mut app,
+            ScreenAction::ResumeOrLaunchIssue { issue_number: 10 },
+        );
+        assert_eq!(app.tui_mode, app::TuiMode::Interaction);
+        assert!(app.screen_state.interaction_screen.is_some());
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("resumed #10")),
+            "re-entry must log resumed #10"
+        );
+    }
+
+    #[test]
+    fn resume_or_launch_issue_without_session_opens_launch_dialog() {
+        use crate::provider::types::Issue;
+        let mut app = make_app();
+        let issue = Issue {
+            number: 10,
+            title: "Some issue".into(),
+            body: String::new(),
+            labels: vec!["maestro:ready".to_string()],
+            state: "open".to_string(),
+            html_url: "https://example.test/10".to_string(),
+            milestone: None,
+            assignees: vec![],
+        };
+        app.screen_state.issue_browser_screen =
+            Some(crate::tui::screens::IssueBrowserScreen::new(vec![issue]));
+        app.tui_mode = app::TuiMode::IssueBrowser;
+
+        handle_screen_action(
+            &mut app,
+            ScreenAction::ResumeOrLaunchIssue { issue_number: 10 },
+        );
+        assert!(
+            app.screen_state
+                .issue_browser_screen
+                .as_ref()
+                .map(|b| b.prompt_overlay.is_some())
+                .unwrap_or(false),
+            "no active session → the launch dialog must open"
+        );
+        assert_eq!(app.pool.interaction_count(), 0);
+    }
+
+    #[test]
+    fn send_interaction_turn_queues_command_with_model() {
+        let mut app = make_app();
+        app.pending_commands.clear();
+        handle_screen_action(
+            &mut app,
+            ScreenAction::SendInteractionTurn {
+                issue_number: 10,
+                prompt: "do the thing".into(),
+            },
+        );
+        assert!(
+            app.pending_commands.iter().any(|c| matches!(
+                c,
+                app::TuiCommand::SendInteractionTurn { issue_number, prompt, .. }
+                    if *issue_number == 10 && prompt == "do the thing"
+            )),
+            "SendInteractionTurn action must queue the matching command"
+        );
     }
 }
 

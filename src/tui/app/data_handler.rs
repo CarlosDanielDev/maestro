@@ -653,6 +653,29 @@ impl App {
                     screen.apply_launch_result(summary);
                 }
             }
+            TuiDataEvent::InteractionTurnEvent {
+                issue_number: _,
+                event,
+            } => {
+                // Apply the streaming event to the live screen, then surface
+                // any activity-log line it produced (TurnFinished) (#738).
+                let action = self
+                    .screen_state
+                    .interaction_screen
+                    .as_mut()
+                    .map(|screen| screen.apply_turn_event(&event));
+                if let Some(crate::tui::screens::ScreenAction::LogActivity {
+                    tag,
+                    message,
+                    level,
+                }) = action
+                {
+                    self.activity_log.push_simple(tag, message, level);
+                }
+            }
+            TuiDataEvent::InteractionTurnComplete { session } => {
+                self.pool.upsert_interaction(*session);
+            }
         }
     }
 }

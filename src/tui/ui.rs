@@ -274,6 +274,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::IssueBrowser => {
             if let Some(ref mut screen) = app.screen_state.issue_browser_screen {
+                screen.set_spinner_context(spinner_tick);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -290,6 +291,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::Interaction => {
             if let Some(ref mut screen) = app.screen_state.interaction_screen {
+                screen.set_spinner_context(spinner_tick);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
@@ -884,6 +886,11 @@ pub(super) fn active_screen(app: &App) -> Option<&dyn Screen> {
         TuiMode::CiErrorReview => app
             .screen_state
             .ci_error_review_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
+        TuiMode::Interaction => app
+            .screen_state
+            .interaction_screen
             .as_ref()
             .map(|s| s as &dyn Screen),
         _ => None,

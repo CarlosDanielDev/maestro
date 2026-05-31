@@ -2,7 +2,11 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
-"No messages yet — type below to talk to the agent.                                                                      "
+" agent agent  ·  model default  ·  #0                                                                                   "
+"Working on issue #0                                                                                                     "
+"                                                                                                                        "
+"No messages yet — type a prompt below to start.                                                                         "
+"Try: "Summarize this issue and propose a step-by-step plan."                                                            "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
@@ -32,11 +36,7 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"                                                                                                                        "
-"                                                                                                                        "
-"                                                                                                                        "
-"                                                                                                                        "
-"                                                                                                                        "
+"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+L] Clear  [Ctrl+Q] Quit  [Esc] Back                        "
 "╔═════════════════════════════════════════════════════[ Message ]══════════════════════════════════════════════════════╗"
 "║Type a prompt to begin…                                                                                               ║"
 "║                                                                                                                      ║"

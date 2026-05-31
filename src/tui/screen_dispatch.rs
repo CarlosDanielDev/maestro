@@ -448,6 +448,84 @@ fn handle_normalize_agent_config(app: &mut app::App) {
     );
 }
 
+/// Open (or re-open) the Interaction screen for an issue. Re-entry reuses an
+/// active session and skips creation + the launch dialog; otherwise a fresh
+/// session (with worktree) is created. Logs a `resumed`/`started` line and
+/// navigates to the screen (#738).
+fn open_interaction_session(
+    app: &mut app::App,
+    issue_number: u64,
+    produce_pr: bool,
+    seed_prompt: Option<String>,
+) {
+    let resumed = app
+        .pool
+        .find_active_interaction_by_issue(issue_number)
+        .is_some();
+    let mut screen = if resumed {
+        let session = app
+            .pool
+            .find_active_interaction_by_issue(issue_number)
+            .expect("active interaction checked just above");
+        screens::InteractionScreen::for_session(session)
+    } else {
+        let session = app
+            .pool
+            .create_interaction_session(issue_number, produce_pr);
+        screens::InteractionScreen::for_session(session)
+    };
+    // Turns spawn the `claude` CLI (ClaudeCliSpawner) with the default model;
+    // surface that so the user knows who they are talking to (#738 QA).
+    screen.set_provider_context("claude", app.session_config.default_model.clone());
+    // Name the work in the header, like the sessions view: look the title up
+    // from the issue cache, falling back to the browser's loaded list (#738 QA).
+    let title = app
+        .state
+        .issue_cache
+        .get(&issue_number)
+        .map(|i| i.title.clone())
+        .or_else(|| {
+            app.screen_state
+                .issue_browser_screen
+                .as_ref()
+                .and_then(|b| b.issues.iter().find(|i| i.number == issue_number))
+                .map(|i| i.title.clone())
+        })
+        .unwrap_or_default();
+    screen.set_issue_title(title);
+
+    // A NEW session launched with a dialog prompt sends it as the first turn
+    // so the agent starts on the user's instruction (#738). Re-entry ignores
+    // it (the dialog is skipped, and we don't inject into an ongoing chat).
+    let first_turn = if resumed {
+        None
+    } else {
+        seed_prompt.filter(|p| !p.trim().is_empty())
+    };
+    if let Some(prompt) = first_turn.clone() {
+        screen.seed_turn(prompt);
+    }
+
+    app.screen_state.interaction_screen = Some(screen);
+    let verb = if resumed { "resumed" } else { "started" };
+    app.activity_log.push_simple(
+        "INTERACTION".into(),
+        format!("{verb} #{issue_number}"),
+        crate::tui::activity_log::LogLevel::Info,
+    );
+
+    if let Some(prompt) = first_turn {
+        app.pending_commands
+            .push(app::TuiCommand::SendInteractionTurn {
+                issue_number,
+                prompt,
+                model: app.session_config.default_model.clone(),
+            });
+    }
+
+    app.navigate_to(app::TuiMode::Interaction);
+}
+
 /// Process a ScreenAction returned by a screen's input handler.
 pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
     match action {
@@ -860,10 +938,68 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             app.tui_mode = app::TuiMode::Overview;
         }
         ScreenAction::LaunchSession(config) => {
+            // Interaction launches open a long-lived chat screen instead of
+            // queuing a one-shot session. Re-entry reuses any active session
+            // for the issue and skips the launch dialog (#738).
+            if config.interaction {
+                if let Some(issue_number) = config.issue_number {
+                    open_interaction_session(
+                        app,
+                        issue_number,
+                        config.produce_pr,
+                        config.custom_prompt,
+                    );
+                    return;
+                }
+                tracing::warn!("interaction launch without an issue number — ignoring");
+                return;
+            }
             let config = config.with_agent_id(app.selected_agent_id());
             app.pending_commands
                 .push(app::TuiCommand::LaunchSession(config));
             app.tui_mode = app::TuiMode::Overview;
+        }
+        ScreenAction::SendInteractionTurn {
+            issue_number,
+            prompt,
+        } => {
+            let model = app.session_config.default_model.clone();
+            app.pending_commands
+                .push(app::TuiCommand::SendInteractionTurn {
+                    issue_number,
+                    prompt,
+                    model,
+                });
+        }
+        ScreenAction::ResumeOrLaunchIssue { issue_number } => {
+            // Re-entry (#738 AC): if an active interaction session exists for
+            // this issue, reopen it with full history and skip the launch
+            // dialog. Otherwise fall back to the normal launch dialog.
+            if app
+                .pool
+                .find_active_interaction_by_issue(issue_number)
+                .is_some()
+            {
+                open_interaction_session(app, issue_number, false, None);
+            } else if let Some(browser) = app.screen_state.issue_browser_screen.as_mut() {
+                browser.open_launch_overlay_for_selected();
+            }
+        }
+        ScreenAction::QuitInteraction { issue_number } => {
+            if let Some(mut session) = app.pool.clone_active_interaction(issue_number) {
+                session.state = crate::session::interaction::InteractionState::Terminated;
+                session.close_reason = Some(crate::session::interaction::CloseReason::UserQuit);
+                session.closed_at = Some(chrono::Utc::now());
+                let worktree = session.worktree_path.display().to_string();
+                app.pool.upsert_interaction(session);
+                app.activity_log.push_simple(
+                    "INTERACTION".into(),
+                    format!("quit #{issue_number}; worktree kept at {worktree}"),
+                    crate::tui::activity_log::LogLevel::Info,
+                );
+            }
+            app.screen_state.interaction_screen = None;
+            app.navigate_to(app::TuiMode::IssueBrowser);
         }
         ScreenAction::LaunchTeam {
             team_name,

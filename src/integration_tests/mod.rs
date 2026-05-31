@@ -24,6 +24,8 @@ mod init;
 #[cfg(test)]
 mod interaction_send_turn;
 #[cfg(test)]
+mod interaction_turn_live;
+#[cfg(test)]
 mod milestone_health_wizard;
 #[cfg(test)]
 mod orchestration_dispatch;

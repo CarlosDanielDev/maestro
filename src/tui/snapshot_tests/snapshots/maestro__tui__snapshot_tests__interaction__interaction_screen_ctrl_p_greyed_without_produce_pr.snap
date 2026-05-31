@@ -2,10 +2,11 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
-" agent agent  ·  model default  ·  #0                                                                                   "
-"sys   ▸ Session started for #736                                                                                        "
-"you   ▸ Add a login button                                                                                              "
-"agent ▸ Done. Added LoginButton. …                                                                                      "
+" agent agent  ·  model default  ·  #42                                                                                  "
+"Working on issue #42                                                                                                    "
+"                                                                                                                        "
+"No messages yet — type a prompt below to start.                                                                         "
+"Try: "Summarize this issue and propose a step-by-step plan."                                                            "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
@@ -35,8 +36,7 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"                                                                                                                        "
-"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+L] Clear  [Ctrl+Q] Quit  [Esc] Back                        "
+"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup (off)  [Ctrl+L] Clear  [Ctrl+Q] Quit  [Esc] Back                  "
 "╔═════════════════════════════════════════════════════[ Message ]══════════════════════════════════════════════════════╗"
 "║Type a prompt to begin…                                                                                               ║"
 "║                                                                                                                      ║"

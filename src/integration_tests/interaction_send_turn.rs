@@ -190,8 +190,8 @@ async fn subsequent_turn_argv_includes_resume_with_session_id() {
         .expect("second turn must include --resume");
     assert_eq!(argv2[pos + 1], "abc123");
     assert!(
-        !argv2.contains(&"--verbose".to_string()),
-        "resume turn drops --verbose"
+        argv2.contains(&"--verbose".to_string()),
+        "resume turn must keep --verbose: claude CLI rejects --output-format=stream-json without it"
     );
 }
 
