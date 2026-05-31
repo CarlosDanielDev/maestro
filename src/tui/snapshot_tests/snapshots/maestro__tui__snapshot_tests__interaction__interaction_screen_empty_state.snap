@@ -3,10 +3,10 @@ source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
 " agent agent  ·  model default  ·  #0                                                                                   "
-"No messages yet — type below to talk to the agent.                                                                      "
+"Working on issue #0                                                                                                     "
 "                                                                                                                        "
-"                                                                                                                        "
-"                                                                                                                        "
+"No messages yet — type a prompt below to start.                                                                         "
+"Try: "Summarize this issue and propose a step-by-step plan."                                                            "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "

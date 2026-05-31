@@ -239,7 +239,15 @@ impl InteractionScreen {
             self.scroll_offset = offset;
         }
 
-        history::draw_history(f, history_area, theme, &self.history, offset);
+        history::draw_history(
+            f,
+            history_area,
+            theme,
+            &self.history,
+            offset,
+            self.issue_number,
+            &self.issue_title,
+        );
         input::draw_keybar(f, keybar_area, theme, self.pushup_enabled());
         if self.state == InteractionState::Terminated {
             input::draw_terminated_banner(f, input_area, theme, self.close_reason.as_ref());
