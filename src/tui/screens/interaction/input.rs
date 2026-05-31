@@ -25,13 +25,14 @@ pub(super) fn draw_input(
     theme: &Theme,
     editor: &TextArea<'static>,
     locked: bool,
+    spinner: char,
 ) {
     let title = if locked {
-        "Message (streaming…)"
+        format!("Message ({spinner} agent responding…)")
     } else {
-        "Message"
+        "Message".to_string()
     };
-    let block = theme.styled_block(title, true);
+    let block = theme.styled_block(&title, true);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -39,8 +40,8 @@ pub(super) fn draw_input(
     let is_empty = lines.len() == 1 && lines[0].is_empty();
     let paragraph = if locked {
         Paragraph::new(Line::from(Span::styled(
-            "Input locked while the agent responds…",
-            Style::default().fg(theme.text_secondary),
+            format!("{spinner} Agent is responding — input locked…"),
+            Style::default().fg(theme.accent_warning),
         )))
     } else if is_empty {
         Paragraph::new(Line::from(Span::styled(

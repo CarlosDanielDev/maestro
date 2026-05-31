@@ -76,6 +76,8 @@ pub struct InteractionScreen {
     stream_chunks: usize,
     /// Number of turns sent this session — the `K` in "turn K".
     turn_count: usize,
+    /// Animation tick for the braille "agent responding" spinner (#738 QA).
+    spinner_tick: usize,
     history: Vec<TurnRecord>,
     editor: TextArea<'static>,
     /// First visible history line. Meaningful only when `auto_scroll` is off.
@@ -111,6 +113,7 @@ impl InteractionScreen {
             stream_started_at: None,
             stream_chunks: 0,
             turn_count: 0,
+            spinner_tick: 0,
             history,
             editor,
             scroll_offset: 0,
@@ -131,6 +134,12 @@ impl InteractionScreen {
         screen.state = session.state;
         screen.close_reason = session.close_reason.clone();
         screen
+    }
+
+    /// Inject the global animation tick so the "agent responding" spinner
+    /// advances each frame while streaming (#738 QA).
+    pub fn set_spinner_context(&mut self, spinner_tick: usize) {
+        self.spinner_tick = spinner_tick;
     }
 
     /// True while a turn streams — the input pane is locked.
@@ -197,7 +206,18 @@ impl InteractionScreen {
         if self.state == InteractionState::Terminated {
             input::draw_terminated_banner(f, input_area, theme, self.close_reason.as_ref());
         } else {
-            input::draw_input(f, input_area, theme, &self.editor, self.is_streaming());
+            let spinner = crate::tui::spinner::graph_node_frame(
+                self.spinner_tick,
+                crate::icon_mode::use_nerd_font(),
+            );
+            input::draw_input(
+                f,
+                input_area,
+                theme,
+                &self.editor,
+                self.is_streaming(),
+                spinner,
+            );
         }
 
         if self.quit_modal_open {
