@@ -274,6 +274,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         TuiMode::IssueBrowser => {
             if let Some(ref mut screen) = app.screen_state.issue_browser_screen {
+                screen.set_spinner_context(spinner_tick);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }

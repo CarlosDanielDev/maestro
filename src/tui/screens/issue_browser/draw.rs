@@ -212,7 +212,11 @@ impl IssueBrowserScreen {
         let block = theme.styled_block(&title, is_list_focused);
 
         if self.loading {
-            let para = Paragraph::new("  Loading...")
+            let frame = crate::tui::spinner::graph_node_frame(
+                self.spinner_tick,
+                crate::icon_mode::use_nerd_font(),
+            );
+            let para = Paragraph::new(format!("  {frame} Loading…"))
                 .style(Style::default().fg(theme.accent_warning))
                 .block(block);
             f.render_widget(para, area);

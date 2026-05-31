@@ -207,6 +207,8 @@ pub struct IssueBrowserScreen {
     /// Launch-dialog checkbox defaults `(produce_pr, interaction)`, resolved
     /// from `[behavior.launch]` (or hard-coded `(true, false)`).
     pub(crate) launch_defaults: (bool, bool),
+    /// Animation tick for the braille loading spinner (#738 QA polish).
+    pub(crate) spinner_tick: usize,
 }
 
 impl IssueBrowserScreen {
@@ -230,7 +232,14 @@ impl IssueBrowserScreen {
             focus: FocusPane::List,
             preview_scroll: 0,
             launch_defaults: (true, false),
+            spinner_tick: 0,
         }
+    }
+
+    /// Inject the global animation tick so the loading spinner advances each
+    /// frame. Mirrors `set_spinner_context` on the milestone/wizard screens.
+    pub fn set_spinner_context(&mut self, spinner_tick: usize) {
+        self.spinner_tick = spinner_tick;
     }
 
     pub fn with_layout(mut self, layout: crate::config::LayoutConfig) -> Self {
@@ -524,6 +533,16 @@ mod tests {
     fn issue_browser_initial_selected_is_zero() {
         let screen = IssueBrowserScreen::new(make_three_issues());
         assert_eq!(screen.selected, 0);
+    }
+
+    #[test]
+    fn set_spinner_context_stores_tick_for_braille_loading() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.set_spinner_context(7);
+        assert_eq!(screen.spinner_tick, 7);
+        // The render path feeds this tick to spinner::graph_node_frame, which
+        // yields a braille glyph (non-ASCII) under Nerd Font.
+        assert!(!crate::tui::spinner::graph_node_frame(7, true).is_ascii());
     }
 
     #[test]
