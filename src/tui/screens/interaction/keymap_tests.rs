@@ -371,3 +371,24 @@ fn apply_error_appends_system_turn_and_returns_idle() {
     assert_eq!(last.role, TurnRole::System);
     assert!(last.content.contains("agent exit 1"));
 }
+
+#[test]
+fn set_issue_title_sanitizes_terminal_escapes() {
+    // Security (#738): external GitHub titles must not inject terminal escapes
+    // via the header/starter-hint renderers.
+    let mut s = screen_for(7, true, InteractionState::Idle);
+    s.set_issue_title("evil\x1b[2Jtitle\u{7}");
+    // No ESC or BEL control chars survive (newlines are allowed by the helper).
+    assert!(
+        !s.issue_title.contains('\x1b'),
+        "ESC must be stripped: {:?}",
+        s.issue_title
+    );
+    assert!(
+        !s.issue_title.contains('\u{7}'),
+        "BEL must be stripped: {:?}",
+        s.issue_title
+    );
+    assert!(s.issue_title.contains("evil"));
+    assert!(s.issue_title.contains("title"));
+}

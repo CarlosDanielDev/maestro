@@ -163,9 +163,11 @@ impl InteractionScreen {
         self.model = model.into();
     }
 
-    /// Record the issue title shown in the header (#738 QA).
+    /// Record the issue title shown in the header (#738 QA). Sanitized at this
+    /// boundary so every downstream renderer (header + starter hint) is safe
+    /// from terminal-escape injection in external GitHub titles.
     pub fn set_issue_title(&mut self, title: impl Into<String>) {
-        self.issue_title = title.into();
+        self.issue_title = crate::tui::screens::sanitize_for_terminal(&title.into());
     }
 
     /// True while a turn streams — the input pane is locked.
