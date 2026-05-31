@@ -919,6 +919,20 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                     model,
                 });
         }
+        ScreenAction::ResumeOrLaunchIssue { issue_number } => {
+            // Re-entry (#738 AC): if an active interaction session exists for
+            // this issue, reopen it with full history and skip the launch
+            // dialog. Otherwise fall back to the normal launch dialog.
+            if app
+                .pool
+                .find_active_interaction_by_issue(issue_number)
+                .is_some()
+            {
+                open_interaction_session(app, issue_number, false);
+            } else if let Some(browser) = app.screen_state.issue_browser_screen.as_mut() {
+                browser.open_launch_overlay_for_selected();
+            }
+        }
         ScreenAction::QuitInteraction { issue_number } => {
             if let Some(mut session) = app.pool.clone_active_interaction(issue_number) {
                 session.state = crate::session::interaction::InteractionState::Terminated;

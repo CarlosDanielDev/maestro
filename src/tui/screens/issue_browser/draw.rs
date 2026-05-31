@@ -132,7 +132,23 @@ impl IssueBrowserScreen {
             return ScreenAction::None;
         }
 
-        // For single issue, open the prompt overlay
+        // Single issue: ask the dispatch to resume an active interaction
+        // session (skip the dialog) or open the launch dialog. The browser
+        // can't see the session pool, so the dispatch decides (#738).
+        if let Some(&idx) = self.filtered_indices.get(self.selected) {
+            return ScreenAction::ResumeOrLaunchIssue {
+                issue_number: self.issues[idx].number,
+            };
+        }
+
+        ScreenAction::None
+    }
+
+    /// Open the single-issue launch dialog for the current selection. Called
+    /// by the dispatch when no active interaction session exists for the
+    /// issue (the resume-or-launch fallback, #738).
+    pub(crate) fn open_launch_overlay_for_selected(&mut self) {
+        let (produce_pr, interaction) = self.launch_defaults;
         if let Some(&idx) = self.filtered_indices.get(self.selected) {
             let issue = &self.issues[idx];
             self.prompt_overlay = Some(IssuePromptOverlay {
@@ -144,8 +160,6 @@ impl IssueBrowserScreen {
                 interaction,
             });
         }
-
-        ScreenAction::None
     }
 
     pub(super) fn reapply_filters(&mut self) {

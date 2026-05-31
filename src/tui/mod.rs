@@ -1184,6 +1184,65 @@ mod handle_screen_action_tests {
     }
 
     #[test]
+    fn resume_or_launch_issue_with_active_session_reenters_skipping_dialog() {
+        let mut app = make_app();
+        // Seed an active interaction session for issue 10.
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSession(interaction_config(10, false)),
+        );
+        app.screen_state.interaction_screen = None; // simulate having left
+        app.tui_mode = app::TuiMode::IssueBrowser;
+
+        handle_screen_action(
+            &mut app,
+            ScreenAction::ResumeOrLaunchIssue { issue_number: 10 },
+        );
+        assert_eq!(app.tui_mode, app::TuiMode::Interaction);
+        assert!(app.screen_state.interaction_screen.is_some());
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("resumed #10")),
+            "re-entry must log resumed #10"
+        );
+    }
+
+    #[test]
+    fn resume_or_launch_issue_without_session_opens_launch_dialog() {
+        use crate::provider::types::Issue;
+        let mut app = make_app();
+        let issue = Issue {
+            number: 10,
+            title: "Some issue".into(),
+            body: String::new(),
+            labels: vec!["maestro:ready".to_string()],
+            state: "open".to_string(),
+            html_url: "https://example.test/10".to_string(),
+            milestone: None,
+            assignees: vec![],
+        };
+        app.screen_state.issue_browser_screen =
+            Some(crate::tui::screens::IssueBrowserScreen::new(vec![issue]));
+        app.tui_mode = app::TuiMode::IssueBrowser;
+
+        handle_screen_action(
+            &mut app,
+            ScreenAction::ResumeOrLaunchIssue { issue_number: 10 },
+        );
+        assert!(
+            app.screen_state
+                .issue_browser_screen
+                .as_ref()
+                .map(|b| b.prompt_overlay.is_some())
+                .unwrap_or(false),
+            "no active session → the launch dialog must open"
+        );
+        assert_eq!(app.pool.interaction_count(), 0);
+    }
+
+    #[test]
     fn send_interaction_turn_queues_command_with_model() {
         let mut app = make_app();
         app.pending_commands.clear();

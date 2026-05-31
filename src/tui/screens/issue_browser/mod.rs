@@ -611,11 +611,29 @@ mod tests {
     }
 
     #[test]
-    fn issue_browser_enter_on_single_issue_opens_overlay() {
+    fn issue_browser_enter_on_single_issue_requests_resume_or_launch() {
+        // #738: single-issue Enter defers to the dispatch (which sees the
+        // session pool) so an active interaction session can be resumed
+        // without the launch dialog. The overlay is opened by the dispatch
+        // fallback, not by the browser directly.
         let mut screen = IssueBrowserScreen::new(make_three_issues());
         screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal); // move to issue 2 (number=2)
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-        assert_eq!(action, ScreenAction::None, "should not launch directly");
+        assert_eq!(
+            action,
+            ScreenAction::ResumeOrLaunchIssue { issue_number: 2 }
+        );
+        assert!(
+            screen.prompt_overlay.is_none(),
+            "browser must not open the overlay itself"
+        );
+    }
+
+    #[test]
+    fn open_launch_overlay_for_selected_opens_dialog_for_current_issue() {
+        let mut screen = IssueBrowserScreen::new(make_three_issues());
+        screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal);
+        screen.open_launch_overlay_for_selected();
         let overlay = screen
             .prompt_overlay
             .as_ref()
@@ -1094,7 +1112,7 @@ mod tests {
     #[test]
     fn issue_browser_overlay_cancel_dismisses_overlay() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        screen.open_launch_overlay_for_selected();
         assert!(screen.prompt_overlay.is_some());
         let action = screen.handle_input(&key_event(KeyCode::Esc), InputMode::Normal);
         assert_eq!(action, ScreenAction::None);
@@ -1104,7 +1122,7 @@ mod tests {
     #[test]
     fn issue_browser_overlay_confirm_with_text_returns_launch_with_custom_prompt() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        screen.open_launch_overlay_for_selected();
         for c in "focus on errors".chars() {
             screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
         }
@@ -1121,7 +1139,7 @@ mod tests {
     #[test]
     fn issue_browser_overlay_confirm_empty_returns_launch_custom_prompt_none() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        screen.open_launch_overlay_for_selected();
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // confirm empty
         match action {
             ScreenAction::LaunchSession(config) => {
@@ -1212,7 +1230,7 @@ mod tests {
     #[test]
     fn single_issue_overlay_still_returns_launch_session() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.open_launch_overlay_for_selected();
         for c in "hint".chars() {
             screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
         }
@@ -1237,7 +1255,7 @@ mod tests {
     fn issue_browser_overlay_captures_input_before_list_navigation() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
         let initial_selected = screen.selected;
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        screen.open_launch_overlay_for_selected();
         screen.handle_input(&key_event(KeyCode::Char('j')), InputMode::Normal); // should type into overlay
         assert_eq!(
             screen.selected, initial_selected,
@@ -1253,7 +1271,7 @@ mod tests {
     #[test]
     fn issue_browser_overlay_active_desired_mode_is_insert() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        screen.open_launch_overlay_for_selected();
         assert_eq!(screen.desired_input_mode(), Some(InputMode::Insert));
     }
 
@@ -1395,7 +1413,7 @@ mod tests {
     fn overlay_ctrl_u_no_toggle_with_single_issue() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
         // Open overlay for single issue (no multi-select)
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.open_launch_overlay_for_selected();
         let overlay = screen.prompt_overlay.as_ref().unwrap();
         assert_eq!(overlay.selected_issues.len(), 1);
         // Press Ctrl+U — should not toggle (only 1 issue)
@@ -1559,7 +1577,7 @@ mod tests {
     #[test]
     fn overlay_submit_defaults_carry_produce_pr_true_interaction_false() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal); // open overlay
+        screen.open_launch_overlay_for_selected();
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         match action {
             ScreenAction::LaunchSession(config) => {
@@ -1575,7 +1593,7 @@ mod tests {
     #[test]
     fn overlay_submit_produce_pr_off_interaction_off() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.open_launch_overlay_for_selected();
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> ProducePr
         screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // off
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
@@ -1591,7 +1609,7 @@ mod tests {
     #[test]
     fn overlay_submit_produce_pr_on_interaction_on() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.open_launch_overlay_for_selected();
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> ProducePr
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> Interaction
         screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // on
@@ -1608,7 +1626,7 @@ mod tests {
     #[test]
     fn overlay_submit_produce_pr_off_interaction_on() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.open_launch_overlay_for_selected();
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> ProducePr
         screen.handle_input(&key_event(KeyCode::Char(' ')), InputMode::Normal); // produce_pr off
         screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal); // -> Interaction
@@ -1626,7 +1644,7 @@ mod tests {
     #[test]
     fn overlay_submit_carries_custom_prompt_with_options() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.open_launch_overlay_for_selected();
         for c in "focus on auth".chars() {
             screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
         }
@@ -1685,7 +1703,7 @@ mod tests {
     #[test]
     fn overlay_starts_focus_on_prompt_for_single_issue() {
         let mut screen = IssueBrowserScreen::new(make_three_issues());
-        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        screen.open_launch_overlay_for_selected();
         let overlay = screen.prompt_overlay.as_ref().unwrap();
         assert_eq!(overlay.focus, LaunchFocus::Prompt);
         assert!(overlay.produce_pr, "default produce_pr is on");

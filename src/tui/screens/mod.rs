@@ -207,6 +207,10 @@ pub enum ScreenAction {
     /// User confirmed `Ctrl+Q`: terminate the interaction session
     /// (UserQuit), keep the worktree, and navigate back to Issues (#738).
     QuitInteraction { issue_number: u64 },
+    /// `Enter` on a single issue in the browser: the dispatch resumes an
+    /// active interaction session for the issue (skipping the launch dialog)
+    /// or, when none exists, opens the launch dialog (#738 re-entry AC).
+    ResumeOrLaunchIssue { issue_number: u64 },
 }
 
 /// Configuration for launching a conflict-fix session.
