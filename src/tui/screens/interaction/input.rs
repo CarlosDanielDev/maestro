@@ -9,7 +9,7 @@ use crate::session::interaction::CloseReason;
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
-    layout::{Alignment, Rect},
+    layout::{Alignment, Position, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Clear, Paragraph},
@@ -60,6 +60,16 @@ pub(super) fn draw_input(
         Paragraph::new(rendered)
     };
     f.render_widget(paragraph, inner);
+
+    // Place the real terminal cursor at the editor caret so the user can see
+    // where they are typing. Skipped while locked (input is ignored anyway).
+    // `cursor()` is a (row, col) char index; clamp into the inner viewport.
+    if !locked && inner.width > 0 && inner.height > 0 {
+        let (row, col) = editor.cursor();
+        let x = inner.x + (col as u16).min(inner.width - 1);
+        let y = inner.y + (row as u16).min(inner.height - 1);
+        f.set_cursor_position(Position::new(x, y));
+    }
 }
 
 /// One-line keybind footer. The `Ctrl+P` chord is greyed when the pushup

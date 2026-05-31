@@ -224,6 +224,7 @@ impl InteractionSession {
                 "--resume".to_string(),
                 id.to_string(),
                 "--print".to_string(),
+                "--verbose".to_string(),
                 "--output-format".to_string(),
                 "stream-json".to_string(),
                 "-p".to_string(),

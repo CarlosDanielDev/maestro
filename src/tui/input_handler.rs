@@ -1232,6 +1232,17 @@ mod tests {
     }
 
     #[test]
+    fn is_text_input_mode_true_for_interaction() {
+        // Regression (#738 QA): the Interaction chat must be a text-input mode
+        // so global single-letter chords (`q` quit, `?` help, `d` log) don't
+        // swallow keys the user is typing into the Message bar.
+        let mut app = make_app();
+        app.tui_mode = TuiMode::Interaction;
+        app.screen_state.interaction_screen = Some(crate::tui::screens::InteractionScreen::new());
+        assert!(is_text_input_mode(&app));
+    }
+
+    #[test]
     fn is_text_input_mode_true_for_issue_wizard_on_basic_info() {
         // Regression: pressing `q` on a wizard text field must not route
         // through the global ConfirmExit handler. The wizard returns

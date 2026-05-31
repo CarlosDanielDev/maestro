@@ -886,6 +886,11 @@ pub(super) fn active_screen(app: &App) -> Option<&dyn Screen> {
             .ci_error_review_screen
             .as_ref()
             .map(|s| s as &dyn Screen),
+        TuiMode::Interaction => app
+            .screen_state
+            .interaction_screen
+            .as_ref()
+            .map(|s| s as &dyn Screen),
         _ => None,
     }
 }
