@@ -2,7 +2,7 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
-" agent agent  ·  model default  ·  issue #0                                                                             "
+" agent agent  ·  model default  ·  #0                                                                                   "
 "sys   ▸ Session started for #736                                                                                        "
 "you   ▸ Add a login button                                                                                              "
 "agent ▸ Done. Added LoginButton. …                                                                                      "

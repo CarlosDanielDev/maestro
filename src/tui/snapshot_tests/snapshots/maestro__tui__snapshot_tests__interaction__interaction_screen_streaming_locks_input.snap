@@ -2,7 +2,7 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
-" agent agent  ·  model default  ·  issue #42                                                                            "
+" agent agent  ·  model default  ·  #42                                                                                  "
 "you   ▸ implement login                                                                                                 "
 "agent ▸ Working on it …                                                                                                 "
 "                                                                                                                        "

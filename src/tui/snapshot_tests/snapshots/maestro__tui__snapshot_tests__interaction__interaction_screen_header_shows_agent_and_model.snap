@@ -2,7 +2,7 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
-" agent claude  ·  model opus  ·  issue #7                                                                               "
+" agent claude  ·  model opus  ·  #7                                                                                     "
 "No messages yet — type below to talk to the agent.                                                                      "
 "                                                                                                                        "
 "                                                                                                                        "

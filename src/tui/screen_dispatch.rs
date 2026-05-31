@@ -472,6 +472,22 @@ fn open_interaction_session(app: &mut app::App, issue_number: u64, produce_pr: b
     // Turns spawn the `claude` CLI (ClaudeCliSpawner) with the default model;
     // surface that so the user knows who they are talking to (#738 QA).
     screen.set_provider_context("claude", app.session_config.default_model.clone());
+    // Name the work in the header, like the sessions view: look the title up
+    // from the issue cache, falling back to the browser's loaded list (#738 QA).
+    let title = app
+        .state
+        .issue_cache
+        .get(&issue_number)
+        .map(|i| i.title.clone())
+        .or_else(|| {
+            app.screen_state
+                .issue_browser_screen
+                .as_ref()
+                .and_then(|b| b.issues.iter().find(|i| i.number == issue_number))
+                .map(|i| i.title.clone())
+        })
+        .unwrap_or_default();
+    screen.set_issue_title(title);
     app.screen_state.interaction_screen = Some(screen);
     let verb = if resumed { "resumed" } else { "started" };
     app.activity_log.push_simple(

@@ -26,6 +26,7 @@ pub(super) fn draw_header(
     agent_label: &str,
     model: &str,
     issue_number: u64,
+    issue_title: &str,
 ) {
     let agent = if agent_label.is_empty() {
         "agent"
@@ -33,16 +34,22 @@ pub(super) fn draw_header(
         agent_label
     };
     let model = if model.is_empty() { "default" } else { model };
-    let spans = vec![
+    let mut spans = vec![
         Span::styled(" agent ", Style::default().fg(theme.text_secondary)),
         Span::styled(agent.to_string(), Style::default().fg(theme.accent_info)),
         Span::styled("  ·  model ", Style::default().fg(theme.text_secondary)),
         Span::styled(model.to_string(), Style::default().fg(theme.accent_info)),
         Span::styled(
-            format!("  ·  issue #{issue_number}"),
+            format!("  ·  #{issue_number} "),
             Style::default().fg(theme.text_secondary),
         ),
     ];
+    if !issue_title.is_empty() {
+        spans.push(Span::styled(
+            issue_title.to_string(),
+            Style::default().fg(theme.text_primary),
+        ));
+    }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 

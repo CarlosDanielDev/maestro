@@ -82,6 +82,9 @@ pub struct InteractionScreen {
     agent_label: String,
     /// Model passed to each turn (e.g. "opus"). Header display.
     model: String,
+    /// Issue title shown in the header so the frame names the work, like the
+    /// sessions view does (#738 QA).
+    issue_title: String,
     history: Vec<TurnRecord>,
     editor: TextArea<'static>,
     /// First visible history line. Meaningful only when `auto_scroll` is off.
@@ -120,6 +123,7 @@ impl InteractionScreen {
             spinner_tick: 0,
             agent_label: String::new(),
             model: String::new(),
+            issue_title: String::new(),
             history,
             editor,
             scroll_offset: 0,
@@ -157,6 +161,11 @@ impl InteractionScreen {
     ) {
         self.agent_label = agent_label.into();
         self.model = model.into();
+    }
+
+    /// Record the issue title shown in the header (#738 QA).
+    pub fn set_issue_title(&mut self, title: impl Into<String>) {
+        self.issue_title = title.into();
     }
 
     /// True while a turn streams — the input pane is locked.
@@ -219,6 +228,7 @@ impl InteractionScreen {
             &self.agent_label,
             &self.model,
             self.issue_number,
+            &self.issue_title,
         );
 
         let total = history::build_lines(&self.history, theme).len();
