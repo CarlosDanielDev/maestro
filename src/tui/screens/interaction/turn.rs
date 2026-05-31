@@ -16,6 +16,37 @@ use ratatui::style::Style;
 use tui_textarea::TextArea;
 
 impl InteractionScreen {
+    /// Inject the global animation tick so the "agent responding" spinner
+    /// advances each frame while streaming (#738 QA).
+    pub fn set_spinner_context(&mut self, spinner_tick: usize) {
+        self.spinner_tick = spinner_tick;
+    }
+
+    /// Record which provider/CLI and model the turns run against, shown in
+    /// the screen header so the user knows who they are talking to (#738 QA).
+    pub fn set_provider_context(
+        &mut self,
+        agent_label: impl Into<String>,
+        model: impl Into<String>,
+    ) {
+        self.agent_label = agent_label.into();
+        self.model = model.into();
+    }
+
+    /// Record the issue title shown in the header (#738 QA). Sanitized at this
+    /// boundary so every downstream renderer (header + starter hint) is safe
+    /// from terminal-escape injection in external GitHub titles.
+    pub fn set_issue_title(&mut self, title: impl Into<String>) {
+        self.issue_title = crate::tui::screens::sanitize_for_terminal(&title.into());
+    }
+
+    /// Seed the first turn from the launch-dialog prompt: push it as a `User`
+    /// turn and flip to `Streaming` so the chat starts on the user's
+    /// instruction. The dispatch enqueues the matching turn command (#738).
+    pub fn seed_turn(&mut self, prompt: String) {
+        let _ = self.begin_turn(prompt);
+    }
+
     /// Reset the editor to an empty buffer (history untouched).
     pub(super) fn clear_editor(&mut self) {
         let mut editor = TextArea::default();

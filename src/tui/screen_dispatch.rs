@@ -947,7 +947,7 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         app,
                         issue_number,
                         config.produce_pr,
-                        config.custom_prompt.clone(),
+                        config.custom_prompt,
                     );
                     return;
                 }
