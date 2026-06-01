@@ -112,6 +112,23 @@ impl App {
             self.consume_marker(&path);
             return;
         }
+        // #739: a marker carrying issue_number that matches an active
+        // interaction session terminates that session. Runs BEFORE the
+        // PrCreated enqueue so the single marker read drives both events.
+        // owner/repo are cloned here because they are moved into PrCreated
+        // below.
+        if let Some(issue_number) = marker.issue_number
+            && let Some(session) = self.pool.find_active_interaction_by_issue_mut(issue_number)
+        {
+            session.signal_terminator(
+                crate::session::interaction_lifecycle::InteractionLifecycleEvent::PrLinkedToIssue {
+                    pr_number: marker.pr_number,
+                    issue_number,
+                    owner: marker.owner.clone(),
+                    repo: marker.repo.clone(),
+                },
+            );
+        }
         self.activity_log.push_simple(
             "PUSHUP".into(),
             format!(

@@ -6,6 +6,7 @@
 //! deliberately separate from `super::types::SessionStatus`, which models
 //! one-shot work.
 
+use super::interaction_lifecycle::InteractionLifecycleEvent;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -70,6 +71,11 @@ pub struct InteractionSession {
     pub closed_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub close_reason: Option<CloseReason>,
+    /// A terminator queued while a turn was streaming; fired once the turn
+    /// returns to `Idle` (#739). `None` in the common Idle path (fired
+    /// immediately). Purely in-memory turn-boundary state — never persisted.
+    #[serde(skip)]
+    pub queued_terminator: Option<InteractionLifecycleEvent>,
 }
 
 impl InteractionSession {
@@ -93,6 +99,7 @@ impl InteractionSession {
             created_at: Utc::now(),
             closed_at: None,
             close_reason: None,
+            queued_terminator: None,
         }
     }
 
@@ -101,239 +108,42 @@ impl InteractionSession {
     pub fn is_active(&self) -> bool {
         self.state != InteractionState::Terminated
     }
+
+    /// Signal that this session should terminate because a PR was linked
+    /// (#739).
+    ///
+    /// - `Idle`: fire now — state → `Terminated`, stamp `close_reason`/
+    ///   `closed_at`.
+    /// - `Streaming`: queue it; the in-flight turn finishes untouched and the
+    ///   turn-completion path fires it later (mid-turn deferral).
+    /// - `Terminated`: idempotent no-op (debug-logged).
+    pub fn signal_terminator(&mut self, event: InteractionLifecycleEvent) {
+        match self.state {
+            InteractionState::Terminated => {
+                tracing::debug!(
+                    issue_number = self.issue_number,
+                    "terminator already fired; ignoring"
+                );
+            }
+            InteractionState::Streaming => {
+                self.queued_terminator = Some(event);
+            }
+            InteractionState::Idle => self.fire_terminator(event),
+        }
+    }
+
+    /// Apply a terminator immediately: `Terminated` + `close_reason` +
+    /// `closed_at`. Only `PrLinkedToIssue` maps to a `CloseReason` today;
+    /// other variants set the terminal state without a reason.
+    fn fire_terminator(&mut self, event: InteractionLifecycleEvent) {
+        if let InteractionLifecycleEvent::PrLinkedToIssue { pr_number, .. } = event {
+            self.close_reason = Some(CloseReason::PrCreated { pr_number });
+        }
+        self.state = InteractionState::Terminated;
+        self.closed_at = Some(Utc::now());
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::Utc;
-    use std::path::PathBuf;
-
-    fn make_interaction(issue: u64) -> InteractionSession {
-        InteractionSession::new(
-            issue,
-            PathBuf::from("/tmp/test-wt"),
-            format!("feat/issue-{issue}"),
-            false,
-        )
-    }
-
-    // --- InteractionState ---
-
-    #[test]
-    fn interaction_state_default_is_idle() {
-        assert_eq!(InteractionState::default(), InteractionState::Idle);
-    }
-
-    #[test]
-    fn interaction_state_idle_serializes_as_snake_case() {
-        let json = serde_json::to_string(&InteractionState::Idle).unwrap();
-        assert_eq!(json, r#""idle""#);
-    }
-
-    #[test]
-    fn interaction_state_streaming_serializes_as_snake_case() {
-        let json = serde_json::to_string(&InteractionState::Streaming).unwrap();
-        assert_eq!(json, r#""streaming""#);
-    }
-
-    #[test]
-    fn interaction_state_terminated_serializes_as_snake_case() {
-        let json = serde_json::to_string(&InteractionState::Terminated).unwrap();
-        assert_eq!(json, r#""terminated""#);
-    }
-
-    #[test]
-    fn interaction_state_round_trips_via_serde() {
-        for state in [
-            InteractionState::Idle,
-            InteractionState::Streaming,
-            InteractionState::Terminated,
-        ] {
-            let json = serde_json::to_string(&state).unwrap();
-            let rt: InteractionState = serde_json::from_str(&json).unwrap();
-            assert_eq!(rt, state);
-        }
-    }
-
-    // --- TurnRole ---
-
-    #[test]
-    fn turn_role_user_serializes_as_snake_case() {
-        let json = serde_json::to_string(&TurnRole::User).unwrap();
-        assert_eq!(json, r#""user""#);
-    }
-
-    #[test]
-    fn turn_role_agent_serializes_as_snake_case() {
-        let json = serde_json::to_string(&TurnRole::Agent).unwrap();
-        assert_eq!(json, r#""agent""#);
-    }
-
-    #[test]
-    fn turn_role_system_serializes_as_snake_case() {
-        let json = serde_json::to_string(&TurnRole::System).unwrap();
-        assert_eq!(json, r#""system""#);
-    }
-
-    #[test]
-    fn turn_role_round_trips_via_serde() {
-        for role in [TurnRole::User, TurnRole::Agent, TurnRole::System] {
-            let json = serde_json::to_string(&role).unwrap();
-            let rt: TurnRole = serde_json::from_str(&json).unwrap();
-            assert_eq!(rt, role);
-        }
-    }
-
-    // --- CloseReason ---
-
-    #[test]
-    fn close_reason_pr_created_serializes_pr_number() {
-        let json = serde_json::to_string(&CloseReason::PrCreated { pr_number: 42 }).unwrap();
-        assert!(json.contains(r#""pr_number":42"#), "got: {json}");
-    }
-
-    #[test]
-    fn close_reason_user_quit_serializes_as_snake_case() {
-        let json = serde_json::to_string(&CloseReason::UserQuit).unwrap();
-        assert!(json.contains("user_quit"), "got: {json}");
-    }
-
-    #[test]
-    fn close_reason_agent_failure_serializes_tail() {
-        let json = serde_json::to_string(&CloseReason::AgentFailure {
-            tail: "oom".to_string(),
-        })
-        .unwrap();
-        assert!(json.contains(r#""tail":"oom""#), "got: {json}");
-    }
-
-    #[test]
-    fn close_reason_round_trips_via_serde() {
-        let reasons = [
-            CloseReason::PrCreated { pr_number: 7 },
-            CloseReason::UserQuit,
-            CloseReason::AgentFailure { tail: "err".into() },
-        ];
-        for reason in reasons {
-            let json = serde_json::to_string(&reason).unwrap();
-            let rt: CloseReason = serde_json::from_str(&json).unwrap();
-            assert_eq!(rt, reason);
-        }
-    }
-
-    // --- TurnRecord ---
-
-    #[test]
-    fn turn_record_finished_at_defaults_to_none_via_serde() {
-        let json = r#"{"role":"user","content":"hi","started_at":"2026-05-30T00:00:00Z"}"#;
-        let rt: TurnRecord = serde_json::from_str(json).unwrap();
-        assert!(rt.finished_at.is_none());
-    }
-
-    #[test]
-    fn turn_record_round_trips_via_serde() {
-        let record = TurnRecord {
-            role: TurnRole::User,
-            content: "hello".into(),
-            started_at: Utc::now(),
-            finished_at: Some(Utc::now()),
-        };
-        let json = serde_json::to_string(&record).unwrap();
-        let rt: TurnRecord = serde_json::from_str(&json).unwrap();
-        assert_eq!(rt.role, TurnRole::User);
-        assert_eq!(rt.content, "hello");
-        assert!(rt.finished_at.is_some());
-    }
-
-    // --- InteractionSession ---
-
-    #[test]
-    fn interaction_session_new_stamps_created_at_and_state_is_idle() {
-        let before = Utc::now();
-        let s = InteractionSession::new(42, PathBuf::from("/tmp/wt"), "feat/x".into(), true);
-        let after = Utc::now();
-        assert_eq!(s.issue_number, 42);
-        assert_eq!(s.worktree_path, PathBuf::from("/tmp/wt"));
-        assert_eq!(s.branch, "feat/x");
-        assert!(s.produce_pr);
-        assert_eq!(s.state, InteractionState::Idle);
-        assert!(s.history.is_empty());
-        assert!(s.session_id.is_none());
-        assert!(s.closed_at.is_none());
-        assert!(s.close_reason.is_none());
-        assert!(s.created_at >= before && s.created_at <= after);
-    }
-
-    #[test]
-    fn interaction_session_is_active_when_idle() {
-        let s = make_interaction(1);
-        assert!(s.is_active());
-    }
-
-    #[test]
-    fn interaction_session_is_active_when_streaming() {
-        let mut s = make_interaction(1);
-        s.state = InteractionState::Streaming;
-        assert!(s.is_active());
-    }
-
-    #[test]
-    fn interaction_session_is_not_active_when_terminated() {
-        let mut s = make_interaction(1);
-        s.state = InteractionState::Terminated;
-        assert!(!s.is_active());
-    }
-
-    #[test]
-    fn interaction_session_round_trips_via_serde() {
-        let mut s = InteractionSession::new(7, PathBuf::from("/tmp/w"), "main".into(), false);
-        s.history.push(TurnRecord {
-            role: TurnRole::Agent,
-            content: "done".into(),
-            started_at: Utc::now(),
-            finished_at: None,
-        });
-        let json = serde_json::to_string(&s).unwrap();
-        let rt: InteractionSession = serde_json::from_str(&json).unwrap();
-        assert_eq!(rt.issue_number, 7);
-        assert!(!rt.produce_pr);
-        assert_eq!(rt.history.len(), 1);
-    }
-
-    #[test]
-    fn interaction_session_closed_at_deserializes_with_default_when_absent() {
-        let s = make_interaction(3);
-        let json = serde_json::to_string(&s).unwrap();
-        let stripped = json.replace(r#","closed_at":null"#, "");
-        let rt: InteractionSession = serde_json::from_str(&stripped).unwrap();
-        assert!(rt.closed_at.is_none());
-    }
-
-    #[test]
-    fn interaction_session_close_reason_deserializes_with_default_when_absent() {
-        let s = make_interaction(3);
-        let json = serde_json::to_string(&s).unwrap();
-        let stripped = json.replace(r#","close_reason":null"#, "");
-        let rt: InteractionSession = serde_json::from_str(&stripped).unwrap();
-        assert!(rt.close_reason.is_none());
-    }
-
-    #[test]
-    fn interaction_session_session_id_deserializes_with_default_when_absent() {
-        let s = make_interaction(3);
-        let json = serde_json::to_string(&s).unwrap();
-        let stripped = json.replace(r#","session_id":null"#, "");
-        let rt: InteractionSession = serde_json::from_str(&stripped).unwrap();
-        assert!(rt.session_id.is_none());
-    }
-
-    #[test]
-    fn interaction_session_history_deserializes_with_default_when_absent() {
-        let s = make_interaction(3);
-        let json = serde_json::to_string(&s).unwrap();
-        let stripped = json.replace(r#","history":[]"#, "");
-        let rt: InteractionSession = serde_json::from_str(&stripped).unwrap();
-        assert!(rt.history.is_empty());
-    }
-}
+#[path = "interaction_tests.rs"]
+mod tests;
