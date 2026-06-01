@@ -431,6 +431,31 @@ impl SessionPool {
             .find(|i| i.issue_number == issue_number && i.is_active())
     }
 
+    /// Mutable twin of [`Self::find_active_interaction_by_issue`] (#739).
+    /// Used by the `/pushup` marker consumer to call `signal_terminator` on
+    /// the live session.
+    pub fn find_active_interaction_by_issue_mut(
+        &mut self,
+        issue_number: u64,
+    ) -> Option<&mut InteractionSession> {
+        self.interactions
+            .iter_mut()
+            .find(|i| i.issue_number == issue_number && i.is_active())
+    }
+
+    /// Return the `close_reason` of the first interaction registered for
+    /// `issue_number` (active or terminated). Test-only introspection.
+    #[cfg(test)]
+    pub fn interaction_close_reason(
+        &self,
+        issue_number: u64,
+    ) -> Option<&super::interaction::CloseReason> {
+        self.interactions
+            .iter()
+            .find(|i| i.issue_number == issue_number)
+            .and_then(|i| i.close_reason.as_ref())
+    }
+
     /// Create a fresh interaction session for `issue_number`, building a
     /// worktree (non-fatal — falls back to cwd) and registering it. Returns a
     /// reference to the newly created session. Mirrors the worktree handling
@@ -1541,6 +1566,47 @@ mod tests {
         assert!(
             appendix.contains("Implement Command"),
             "template body must survive TurboQuant compaction: {appendix}"
+        );
+    }
+
+    // --- Issue #739: find_active_interaction_by_issue_mut ---
+
+    #[test]
+    fn find_active_interaction_by_issue_mut_returns_mutable_ref_for_active() {
+        let mut pool = make_pool(2);
+        pool.interactions.push(make_interaction(42));
+
+        let found = pool.find_active_interaction_by_issue_mut(42);
+        assert!(found.is_some());
+        found.unwrap().session_id = Some("mutated".into());
+
+        assert_eq!(
+            pool.find_active_interaction_by_issue(42)
+                .unwrap()
+                .session_id
+                .as_deref(),
+            Some("mutated"),
+            "mutation through the mutable ref must persist"
+        );
+    }
+
+    #[test]
+    fn find_active_interaction_by_issue_mut_returns_none_when_absent() {
+        let mut pool = make_pool(2);
+        assert!(pool.find_active_interaction_by_issue_mut(99).is_none());
+    }
+
+    #[test]
+    fn find_active_interaction_by_issue_mut_skips_terminated() {
+        use crate::session::interaction::InteractionState;
+        let mut pool = make_pool(2);
+        let mut s = make_interaction(42);
+        s.state = InteractionState::Terminated;
+        pool.interactions.push(s);
+
+        assert!(
+            pool.find_active_interaction_by_issue_mut(42).is_none(),
+            "terminated session must not be returned by _mut lookup"
         );
     }
 }
