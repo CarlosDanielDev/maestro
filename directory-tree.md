@@ -1,6 +1,6 @@
 # Project Directory Tree
 
-> Last updated: 2026-06-01 00:00 (UTC)
+> Last updated: 2026-06-01 12:00 (UTC)
 >
 > This is the SINGLE SOURCE OF TRUTH for project structure.
 > All documentation files should reference this file instead of duplicating the tree.
@@ -734,14 +734,15 @@ maestro/
 │   │   ├── adapter.rs                     # TurboQuantAdapter: bridges quantization pipeline to session layer; TextRanker trait + impl; compress_handoff() (CompressedHandoff, Issue #343); compact_system_prompt() (Issue #344); compact_session_history() + StateCompactionReport (Issue #345); shared Arc<TurboQuantAdapter> on App; project_savings(), session_savings(), implied_rate_per_token() and public types SavingsProjection, SavingsKind, SessionSavings  [Issue #346]
 │   │   └── budget.rs                      # TokenBudget helper: ranked-segment selection staying under a token limit; BudgetSelection struct (indices, tokens_used, truncated_first); used by fork-handoff, system-prompt, and knowledge compression  [Issue #343-345, #347]
 │   └── work/                              # Work queue and scheduling  [Phase 2]
-│       ├── mod.rs                         # Module exports; pub mod queue; pub mod pr_marker  [Issue #735]
+│       ├── mod.rs                         # Module exports; pub mod queue; pub mod pr_marker; pub mod worktree_teardown  [Issue #735, #740]
 │       ├── types.rs                       # WorkItem, WorkStatus; from_issue, is_ready
 │       ├── assigner.rs                    # WorkAssigner: topo sort tiebreaker, cycle detection; mark_pending() transitions an item back to Pending; mark_pending_undo_cascade() cascades undo to dependents  [Phase 3, Issue #85]
 │       ├── conflicts.rs                   # Conflict detection for concurrent work items
 │       ├── dependencies.rs               # DependencyGraph: topological sort, cycle detection
 │       ├── executor.rs                    # QueueExecutor state machine for sequential queue execution; ExecutorPhase enum (Idle, Running, AwaitingDecision, Finished); ExecutorItem struct; QueueItemState enum; FailureAction enum (Retry, Skip, Abort); advance(), mark_success(), mark_failure(), apply_decision(), set_session_id()
 │       ├── pr_marker.rs                   # PrMarker struct (pr_number, owner, repo, issue_number: Option<u64>, ts) + MarkerError enum; write_atomic (.tmp + rename) + read (tolerant of missing issue_number, emits tracing::warn); used by /pushup and pushup_marker.rs  [Issue #735]
-│       └── queue.rs                       # WorkQueue, QueuedItem, QueueValidationError; validate_selection()  [Issue #65]
+│       ├── queue.rs                       # WorkQueue, QueuedItem, QueueValidationError; validate_selection()  [Issue #65]
+│       └── worktree_teardown.rs           # Destructive git-worktree teardown primitive; pub fn wipe_worktree(issue_number, path, branch, worktree_root) -> Result<(), TeardownError>; TeardownError enum (OutOfRoot, Io, GitCommandFailed, PathStillExists, UnsafeRoot); sanity-gated (refuses / and $HOME; canonicalized containment check blocks symlink escape); idempotent (missing path/branch → Ok); uses -- end-of-options terminator on all git invocations; not auto-invoked — #741 wires it into the UI lifecycle  [Issue #740]
 ├── docs/
 │   ├── adr/                               # Architecture Decision Records; one file per decision; ADRs that survive a spike are the only artifact merged to main from that spike
 │   │   ├── 001-agent-graph-viz.md         # ADR 001: agent graph visualization — Go/No-Go verdict (concentric/radial bipartite layout, Braille canvas); tracking issue #513
@@ -1273,6 +1274,8 @@ maestro/
 | `src/work/conflicts.rs` | Conflict detection for concurrent work items |
 | `src/work/dependencies.rs` | Dependency graph, topological sort |
 | `src/work/executor.rs` | `QueueExecutor` state machine: `ExecutorPhase` (Idle, Running, AwaitingDecision, Finished); `ExecutorItem`; `QueueItemState`; `FailureAction` (Retry, Skip, Abort); `advance()`, `mark_success()`, `mark_failure()`, `apply_decision()`, `set_session_id()` |
+| `src/work/worktree_teardown.rs` | `wipe_worktree(issue_number, path, branch, worktree_root)` — sanity-gated destructive teardown; `TeardownError` enum (`OutOfRoot`, `Io`, `GitCommandFailed`, `PathStillExists`, `UnsafeRoot`); idempotent; `--` argument terminator on all git calls (Issue #740) |
+| `tests/worktree_teardown.rs` | 9 real-git + tempdir integration tests for `wipe_worktree`: happy path, idempotency (already removed), `UnsafeRoot` for `/` and `$HOME`, `OutOfRoot` for path outside root, symlink-escape rejection, leading-dash argument injection block (Issue #740) |
 | `tests/legacy_skills_removed.rs` | 4 regression-guard tests asserting `.claude/skills/simplify/` is absent; prevents re-introduction of the deprecated simplify skill (Issue #760) |
 | `tests/settings_caveman.rs` | Integration tests for `FsSettingsStore`: real-tempfile read/write/toggle round-trips, missing-key defaults, malformed JSON handling (Issue #490) |
 | `template/` | Reproducible project template |
