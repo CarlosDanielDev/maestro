@@ -9,25 +9,30 @@ mod input;
 mod keymap;
 #[cfg(test)]
 mod keymap_tests;
+pub(crate) mod lifecycle;
+#[cfg(test)]
+mod terminator_tests;
 #[cfg(test)]
 mod tests;
 mod turn;
 
 use super::{Screen, ScreenAction};
 use crate::session::interaction::{CloseReason, InteractionSession, InteractionState, TurnRecord};
+use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::navigation::InputMode;
-use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
 use chrono::Utc;
 use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use keymap::{InteractionIntent, classify, pushup_prompt};
+use lifecycle::{Clock, RealClock, RealTeardown, WorktreeTeardownPort};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
 };
 use std::path::PathBuf;
+use std::time::Instant;
 use tui_textarea::TextArea;
 
 /// Tag used for every Interaction activity-log line.
@@ -96,6 +101,22 @@ pub struct InteractionScreen {
     /// Max scroll offset (`total - viewport`) at the last draw. Lets
     /// `scroll_down` clamp/re-pin without recomputing the viewport math.
     last_max_offset: usize,
+    /// Branch backing this session's worktree. Passed to teardown (#741).
+    branch: String,
+    /// Root the worktree lives under (`worktree_path`'s parent). Gates the
+    /// destructive teardown to a safe location (#740 sanity check).
+    worktree_root: PathBuf,
+    /// A terminator that arrived mid-stream; fired once the turn settles to
+    /// `Idle` (#741 deferral). `None` in the common immediate path.
+    queued_terminator: Option<InteractionLifecycleEvent>,
+    /// When the screen entered `Terminated`. Drives the 500ms auto-nav timer.
+    terminated_at: Option<Instant>,
+    /// Destructive worktree teardown seam (#740). `RealTeardown` in
+    /// production; a fake in tests.
+    teardown: Box<dyn WorktreeTeardownPort>,
+    /// Time source for the auto-nav timer. `RealClock` in production; a fake
+    /// in tests.
+    clock: Box<dyn Clock>,
 }
 
 impl InteractionScreen {
@@ -129,6 +150,12 @@ impl InteractionScreen {
             scroll_offset: 0,
             auto_scroll: true,
             last_max_offset: 0,
+            branch: String::new(),
+            worktree_root: PathBuf::new(),
+            queued_terminator: None,
+            terminated_at: None,
+            teardown: Box::new(RealTeardown),
+            clock: Box::new(RealClock),
         }
     }
 
@@ -143,12 +170,30 @@ impl InteractionScreen {
         screen.worktree_path = session.worktree_path.clone();
         screen.state = session.state;
         screen.close_reason = session.close_reason.clone();
+        screen.branch = session.branch.clone();
+        // The worktree lives at `<root>/issue-N`, so its parent is the root the
+        // teardown sanity-check gates against (#741 D1). Only an ABSOLUTE parent
+        // is trusted: the pool's cwd-fallback sets `worktree_path = "."`, whose
+        // parent is `""` — leaving the root empty makes `fire_terminator` skip
+        // the destructive teardown instead of operating on the main repo.
+        screen.worktree_root = session
+            .worktree_path
+            .parent()
+            .filter(|p| p.is_absolute())
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
         screen
     }
 
     /// True while a turn streams — the input pane is locked.
     pub fn is_streaming(&self) -> bool {
         self.state == InteractionState::Streaming
+    }
+
+    /// True when this screen is bound to `issue_number`. Gates the terminator
+    /// bridge so a marker only drives the screen actually showing that issue.
+    pub(crate) fn is_for_issue(&self, issue_number: u64) -> bool {
+        self.issue_number == issue_number
     }
 
     /// True when the `Ctrl+P` pushup chord is active (launched with
@@ -276,52 +321,6 @@ impl InteractionScreen {
 impl Default for InteractionScreen {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl KeymapProvider for InteractionScreen {
-    fn keybindings(&self) -> Vec<KeyBindingGroup> {
-        let pushup = if self.pushup_enabled() {
-            KeyBinding {
-                key: "Ctrl+P",
-                description: "Send /pushup",
-            }
-        } else {
-            KeyBinding {
-                key: "Ctrl+P",
-                description: "Send /pushup (greyed: no Produce PR)",
-            }
-        };
-        vec![KeyBindingGroup {
-            title: "Interaction",
-            bindings: vec![
-                KeyBinding {
-                    key: "Enter",
-                    description: "Send",
-                },
-                KeyBinding {
-                    key: "Shift+Enter",
-                    description: "Newline",
-                },
-                pushup,
-                KeyBinding {
-                    key: "Ctrl+L",
-                    description: "Clear input",
-                },
-                KeyBinding {
-                    key: "Ctrl+Q",
-                    description: "Quit",
-                },
-                KeyBinding {
-                    key: "Esc",
-                    description: "Back",
-                },
-                KeyBinding {
-                    key: "Up/Down",
-                    description: "Scroll history",
-                },
-            ],
-        }]
     }
 }
 

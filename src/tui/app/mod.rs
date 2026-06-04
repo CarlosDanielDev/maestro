@@ -801,6 +801,18 @@ impl App {
         }
     }
 
+    /// True when the open Interaction screen has been `Terminated` for the full
+    /// auto-nav delay (#741). The event loop pops back to the Issues list when
+    /// this fires; any keypress beats it via the keymap's Terminated→Back path.
+    pub fn poll_interaction_auto_nav(&self) -> bool {
+        self.tui_mode == TuiMode::Interaction
+            && self
+                .screen_state
+                .interaction_screen
+                .as_ref()
+                .is_some_and(|screen| screen.poll_auto_nav())
+    }
+
     pub fn navigate_to_root(&mut self) {
         self.nav_stack.clear();
         self.tui_mode = TuiMode::Dashboard;

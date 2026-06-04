@@ -172,6 +172,15 @@ async fn event_loop(
 
         app.check_completions().await?;
 
+        // #741: once the Interaction terminator banner has shown for its delay,
+        // auto-navigate back to the Issues list (same Pop the keymap fires).
+        if app.poll_interaction_auto_nav() {
+            crate::tui::screen_dispatch::handle_screen_action(
+                app,
+                crate::tui::screens::ScreenAction::Pop,
+            );
+        }
+
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(key) => {
