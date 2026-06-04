@@ -209,7 +209,7 @@ impl InteractionScreen {
             &self.issue_title,
         );
 
-        let total = history::build_lines(&self.history, theme).len();
+        let total = history::visual_total(&self.history, theme, history_area.width);
         let viewport = history_area.height as usize;
         self.last_max_offset = total.saturating_sub(viewport);
         let offset = effective_offset(self.auto_scroll, self.scroll_offset, total, viewport);
