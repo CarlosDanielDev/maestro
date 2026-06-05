@@ -12,7 +12,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, Wrap},
 };
 
 /// Map a turn author to a theme color. Reuses existing tokens so the three
@@ -85,8 +85,25 @@ pub(super) fn draw_history(
         return;
     }
     let lines = build_lines(history, theme);
-    let paragraph = Paragraph::new(lines).scroll((offset as u16, 0));
+    // Soft-wrap long turns so agent responses break into chat-style lines
+    // instead of running off the right edge. `trim: false` keeps the leading
+    // indent on continuation segments.
+    let paragraph = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .scroll((offset as u16, 0));
     f.render_widget(paragraph, area);
+}
+
+/// Total visual rows the transcript occupies at `width`, accounting for the
+/// soft-wrap in [`draw_history`]. Drives the scroll math (`scroll_offset` and
+/// auto-scroll) so the pane pins the true wrapped bottom, not the logical-line
+/// bottom — without this, long wrapped turns scroll the newest text out of view.
+pub(super) fn visual_total(history: &[TurnRecord], theme: &Theme, width: u16) -> usize {
+    let w = (width as usize).max(1);
+    build_lines(history, theme)
+        .iter()
+        .map(|line| line.width().max(1).div_ceil(w))
+        .sum()
 }
 
 /// Action-oriented empty state: names the work and suggests a first prompt so
@@ -174,6 +191,20 @@ mod tests {
         let history = vec![turn(TurnRole::Agent, "line1\nline2\nline3", false)];
         let lines = build_lines(&history, &theme);
         assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn visual_total_counts_wrapped_rows() {
+        let theme = Theme::dark();
+        // One turn whose single line is far wider than a narrow viewport.
+        let history = vec![turn(TurnRole::Agent, &"x".repeat(100), false)];
+        let narrow = visual_total(&history, &theme, 20);
+        let wide = visual_total(&history, &theme, 200);
+        assert_eq!(wide, 1, "a 108-col line fits one row at width 200");
+        assert!(
+            narrow > wide,
+            "the same line must wrap into more rows when narrow: {narrow} vs {wide}"
+        );
     }
 
     #[test]

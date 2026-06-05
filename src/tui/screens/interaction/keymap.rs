@@ -5,7 +5,9 @@
 //! makes the keymap exhaustively unit-testable (RUST-GUARDRAILS §7) and keeps
 //! `handle_input` at one level of indentation.
 
+use super::InteractionScreen;
 use crate::session::interaction::InteractionState;
+use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crossterm::event::{KeyCode, KeyModifiers};
 
 /// What a key press means on the Interaction screen, resolved from the
@@ -94,6 +96,52 @@ pub(crate) fn classify(
 /// and tests share one source (RUST-GUARDRAILS §12).
 pub(crate) fn pushup_prompt(issue_number: u64) -> String {
     format!("Use the /pushup skill to commit, push, and open a PR for issue #{issue_number}.")
+}
+
+impl KeymapProvider for InteractionScreen {
+    fn keybindings(&self) -> Vec<KeyBindingGroup> {
+        let pushup = if self.pushup_enabled() {
+            KeyBinding {
+                key: "Ctrl+P",
+                description: "Send /pushup",
+            }
+        } else {
+            KeyBinding {
+                key: "Ctrl+P",
+                description: "Send /pushup (greyed: no Produce PR)",
+            }
+        };
+        vec![KeyBindingGroup {
+            title: "Interaction",
+            bindings: vec![
+                KeyBinding {
+                    key: "Enter",
+                    description: "Send",
+                },
+                KeyBinding {
+                    key: "Shift+Enter",
+                    description: "Newline",
+                },
+                pushup,
+                KeyBinding {
+                    key: "Ctrl+L",
+                    description: "Clear input",
+                },
+                KeyBinding {
+                    key: "Ctrl+Q",
+                    description: "Quit",
+                },
+                KeyBinding {
+                    key: "Esc",
+                    description: "Back",
+                },
+                KeyBinding {
+                    key: "Up/Down",
+                    description: "Scroll history",
+                },
+            ],
+        }]
+    }
 }
 
 #[cfg(test)]
