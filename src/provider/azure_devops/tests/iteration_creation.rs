@@ -9,7 +9,7 @@ async fn create_milestone_duplicate_title_returns_existed_without_create() {
         r#"[{
             "name": "Sprint 2",
             "path": "Project\\Sprint 2",
-            "attributes": { "finishDate": "2026-06-04T00:00:00Z" }
+            "attributes": { "finishDate": "2999-12-31T00:00:00Z" }
         }]"#,
     )]));
     let client = test_client(runner.clone());
@@ -38,14 +38,14 @@ async fn create_milestone_creates_iteration_updates_description_and_returns_stab
             r#"{
                 "name": "Sprint 2",
                 "path": "Project\\Sprint 2",
-                "attributes": { "finishDate": "2026-06-04T00:00:00Z" }
+                "attributes": { "finishDate": "2999-12-31T00:00:00Z" }
             }"#,
         ),
         MockAzRunner::success(
             r#"{
                 "name": "Sprint 2",
                 "path": "Project\\Sprint 2",
-                "attributes": { "finishDate": "2026-06-04T00:00:00Z" }
+                "attributes": { "finishDate": "2999-12-31T00:00:00Z" }
             }"#,
         ),
     ]));
@@ -83,7 +83,7 @@ async fn create_milestone_duplicate_create_error_recovers_existing_iteration() {
             r#"[{
                 "name": "Sprint 2",
                 "path": "Project\\Sprint 2",
-                "attributes": { "finishDate": "2026-06-04T00:00:00Z" }
+                "attributes": { "finishDate": "2999-12-31T00:00:00Z" }
             }]"#,
         ),
     ]));
