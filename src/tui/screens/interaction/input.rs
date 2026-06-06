@@ -140,7 +140,7 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
     spans.extend([
         Span::styled("[Ctrl+L]", active),
         Span::raw(" Clear input  "),
-        Span::styled("[Ctrl+Q]", active),
+        Span::styled("[Ctrl+W]", active),
         Span::raw(" Quit  "),
         Span::styled("[Esc]", active),
         Span::raw(" Back"),
@@ -148,7 +148,7 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-/// Render the `Ctrl+Q` quit-confirm modal centered over `area`.
+/// Render the `Ctrl+W` quit-confirm modal centered over `area`.
 pub(super) fn draw_quit_modal(f: &mut Frame, area: Rect, theme: &Theme, worktree: &Path) {
     let text = format!(
         "Quit interaction? Worktree at {} kept for manual inspection. [y/N]",

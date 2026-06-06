@@ -84,9 +84,9 @@ pub struct InteractionScreen {
     /// Lifecycle state mirrored from the domain `InteractionSession`. Drives
     /// the input lock (`Streaming`) and the terminal banner (`Terminated`).
     state: InteractionState,
-    /// Why the session ended, set when the user confirms `Ctrl+Q`.
+    /// Why the session ended, set when the user confirms `Ctrl+W`.
     close_reason: Option<CloseReason>,
-    /// True while the `Ctrl+Q` confirm modal is visible.
+    /// True while the `Ctrl+W` confirm modal is visible.
     quit_modal_open: bool,
     /// Wall-clock start of the in-flight turn (from `TurnStarted`). Used to
     /// compute the elapsed-ms figure in the per-turn activity-log line.

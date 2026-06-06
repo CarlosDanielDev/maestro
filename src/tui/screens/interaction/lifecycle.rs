@@ -92,7 +92,7 @@ impl InteractionScreen {
     /// - `Streaming`: queue it; [`Self::drain_queued_terminator`] fires it once
     ///   the in-flight turn settles back to `Idle`.
     /// - `Terminated`: the session was already closed. If the user pre-closed
-    ///   via `Ctrl+Q`, log that teardown is skipped (#741 race contract);
+    ///   via `Ctrl+W`, log that teardown is skipped (#741 race contract);
     ///   otherwise it is an idempotent no-op.
     ///
     /// Returns the `TEARDOWN` (or skip) activity-log action for the caller to

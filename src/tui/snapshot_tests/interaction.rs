@@ -149,7 +149,7 @@ fn interaction_screen_quit_modal_open() {
     let mut screen =
         InteractionScreen::for_session(&session(42, true, InteractionState::Idle, vec![]));
     screen.handle_input(
-        &key_event_with_modifiers(KeyCode::Char('q'), KeyModifiers::CONTROL),
+        &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),
         InputMode::Insert,
     );
     let terminal = render(&mut screen);

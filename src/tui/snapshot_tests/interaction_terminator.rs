@@ -116,9 +116,9 @@ fn terminator_teardown_failure() {
 #[test]
 fn terminator_userquit_before_terminator() {
     let mut screen = base_screen(MockTeardown::ok());
-    // Public path to Terminated(UserQuit): Ctrl+Q then confirm 'y'.
+    // Public path to Terminated(UserQuit): Ctrl+W then confirm 'y'.
     screen.handle_input(
-        &key_event_with_modifiers(KeyCode::Char('q'), KeyModifiers::CONTROL),
+        &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),
         InputMode::Insert,
     );
     screen.handle_input(
