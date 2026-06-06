@@ -41,6 +41,20 @@ const LOG_TAG: &str = "INTERACTION";
 /// Fixed height (rows, incl. borders) reserved for the input pane.
 const INPUT_HEIGHT: u16 = 5;
 
+/// Header rows (top + bottom border of the square header box, #987 QA).
+const HEADER_HEIGHT: u16 = 2;
+
+/// Shrink a rect by `margin` columns on each side, keeping it non-degenerate.
+fn inset_x(area: Rect, margin: u16) -> Rect {
+    let trim = margin.saturating_mul(2);
+    Rect {
+        x: area.x.saturating_add(margin),
+        y: area.y,
+        width: area.width.saturating_sub(trim),
+        height: area.height,
+    }
+}
+
 /// Compute the vertical scroll offset to render at. When `auto_scroll` is
 /// on, the pane follows the tail (returns the max offset). When off, it
 /// honors the user's `scroll_offset`, clamped so it never scrolls past the
@@ -233,14 +247,17 @@ impl InteractionScreen {
 
     fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::vertical([
-            Constraint::Length(1),
+            Constraint::Length(HEADER_HEIGHT),
             Constraint::Min(0),
             Constraint::Length(1),
             Constraint::Length(INPUT_HEIGHT),
         ])
         .split(area);
         let header_area = chunks[0];
-        let history_area = chunks[1];
+        // Inset the transcript by one column each side so the rounded card
+        // borders get a gutter and the right border never clips against the
+        // terminal edge (#987 QA).
+        let history_area = inset_x(chunks[1], 1);
         let keybar_area = chunks[2];
         let input_area = chunks[3];
 

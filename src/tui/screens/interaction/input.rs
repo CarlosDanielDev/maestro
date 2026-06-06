@@ -12,13 +12,16 @@ use ratatui::{
     layout::{Alignment, Position, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 use std::path::Path;
 use tui_textarea::TextArea;
 
-/// Render a one-line header naming the agent/CLI, model, and issue the chat
-/// is bound to, so the user always knows who they are talking to (#738 QA).
+/// Render the header naming the agent/CLI, model, and issue the chat is bound
+/// to, so the user always knows who they are talking to (#738 QA). The text
+/// rides the top border of a square box (#987 QA) so the header reads as one
+/// framed unit, distinct from the rounded transcript cards below it. Needs a
+/// 2-row `area` (top border + bottom border).
 pub(super) fn draw_header(
     f: &mut Frame,
     area: Rect,
@@ -35,7 +38,7 @@ pub(super) fn draw_header(
     };
     let model = if model.is_empty() { "default" } else { model };
     let mut spans = vec![
-        Span::styled(" agent ", Style::default().fg(theme.text_secondary)),
+        Span::styled("─ agent ", Style::default().fg(theme.border_inactive)),
         Span::styled(agent.to_string(), Style::default().fg(theme.accent_info)),
         Span::styled("  ·  model ", Style::default().fg(theme.text_secondary)),
         Span::styled(model.to_string(), Style::default().fg(theme.accent_info)),
@@ -50,7 +53,13 @@ pub(super) fn draw_header(
             Style::default().fg(theme.text_primary),
         ));
     }
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(theme.border_inactive))
+        .title(Line::from(spans))
+        .title_alignment(Alignment::Left);
+    f.render_widget(block, area);
 }
 
 /// Render the input editor into `area`. While `locked` (a turn is streaming)
