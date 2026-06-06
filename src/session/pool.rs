@@ -110,6 +110,35 @@ impl SessionPool {
         self.guardrail_prompt = Some(prompt);
     }
 
+    /// Assemble the system-prompt appendix for an interaction launch (#946):
+    /// mode prompt + guardrail + knowledge, joined with "\n\n". This is the
+    /// subset of `try_promote`'s appendix reachable before a live `Session`
+    /// exists — file-claims and rendered HTTP templates are keyed on a
+    /// promoted session and are intentionally excluded here. Returns `None`
+    /// when every component is empty.
+    pub(crate) fn interaction_appendix(
+        &self,
+        mode_config: Option<&crate::session::types::SessionModeConfig>,
+    ) -> Option<String> {
+        let mut components: Vec<String> = Vec::new();
+        if let Some(mode) = mode_config
+            && !mode.system_prompt.trim().is_empty()
+        {
+            components.push(mode.system_prompt.clone());
+        }
+        if let Some(ref guardrail) = self.guardrail_prompt {
+            components.push(guardrail.clone());
+        }
+        if let Some(ref knowledge) = self.knowledge_appendix {
+            components.push(knowledge.clone());
+        }
+        if components.is_empty() {
+            None
+        } else {
+            Some(components.join("\n\n"))
+        }
+    }
+
     /// Set the allowed tools whitelist for new sessions.
     pub fn set_allowed_tools(&mut self, tools: Vec<String>) {
         self.allowed_tools = tools;
@@ -1608,5 +1637,75 @@ mod tests {
             pool.find_active_interaction_by_issue_mut(42).is_none(),
             "terminated session must not be returned by _mut lookup"
         );
+    }
+
+    // --- interaction_appendix (#946) ---
+    // Subset of try_promote's appendix: mode.system_prompt + guardrail +
+    // knowledge, joined with "\n\n". No file-claims (no live session at
+    // interaction launch). None when every part is empty.
+
+    fn mode_with_prompt(prompt: &str) -> crate::session::types::SessionModeConfig {
+        crate::session::types::SessionModeConfig {
+            system_prompt: prompt.to_string(),
+            allowed_tools: Vec::new(),
+            permission_mode: None,
+        }
+    }
+
+    #[test]
+    fn interaction_appendix_none_when_all_empty() {
+        let pool = make_pool(1);
+        assert!(pool.interaction_appendix(None).is_none());
+    }
+
+    #[test]
+    fn interaction_appendix_includes_mode_system_prompt() {
+        let pool = make_pool(1);
+        let mode = mode_with_prompt("Custom mode prompt");
+        let r = pool
+            .interaction_appendix(Some(&mode))
+            .expect("mode prompt yields Some");
+        assert!(r.contains("Custom mode prompt"));
+    }
+
+    #[test]
+    fn interaction_appendix_includes_guardrail_prompt() {
+        let mut pool = make_pool(1);
+        pool.set_guardrail_prompt("GUARDRAIL: no unsafe".into());
+        let r = pool
+            .interaction_appendix(None)
+            .expect("guardrail yields Some");
+        assert!(r.contains("GUARDRAIL: no unsafe"));
+    }
+
+    #[test]
+    fn interaction_appendix_includes_knowledge_appendix() {
+        let mut pool = make_pool(1);
+        pool.set_knowledge_appendix(Some("KNOWLEDGE: extra".into()));
+        let r = pool
+            .interaction_appendix(None)
+            .expect("knowledge yields Some");
+        assert!(r.contains("KNOWLEDGE: extra"));
+    }
+
+    #[test]
+    fn interaction_appendix_joins_parts_with_double_newline() {
+        let mut pool = make_pool(1);
+        pool.set_guardrail_prompt("PART_B".into());
+        pool.set_knowledge_appendix(Some("PART_C".into()));
+        let mode = mode_with_prompt("PART_A");
+        let r = pool.interaction_appendix(Some(&mode)).unwrap();
+        assert!(r.contains("PART_A\n\nPART_B"));
+        assert!(r.contains("PART_B\n\nPART_C"));
+    }
+
+    #[test]
+    fn interaction_appendix_skips_blank_mode_prompt() {
+        let mut pool = make_pool(1);
+        pool.set_guardrail_prompt("GUARDRAIL_ONLY".into());
+        let mode = mode_with_prompt("   ");
+        let r = pool.interaction_appendix(Some(&mode)).unwrap();
+        assert!(r.contains("GUARDRAIL_ONLY"));
+        assert!(!r.starts_with("   "), "blank mode prompt not injected");
     }
 }

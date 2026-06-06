@@ -130,7 +130,7 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
     }
     spans.extend([
         Span::styled("[Ctrl+L]", active),
-        Span::raw(" Clear  "),
+        Span::raw(" Clear input  "),
         Span::styled("[Ctrl+Q]", active),
         Span::raw(" Quit  "),
         Span::styled("[Esc]", active),
