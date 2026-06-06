@@ -480,27 +480,22 @@ fn open_interaction_session(
     // Name the work in the header, like the sessions view: look the title up
     // from the issue cache, falling back to the browser's loaded list (#738 QA).
     let title = app
-        .state
-        .issue_cache
-        .get(&issue_number)
+        .lookup_issue(issue_number)
         .map(|i| i.title.clone())
-        .or_else(|| {
-            app.screen_state
-                .issue_browser_screen
-                .as_ref()
-                .and_then(|b| b.issues.iter().find(|i| i.number == issue_number))
-                .map(|i| i.title.clone())
-        })
         .unwrap_or_default();
     screen.set_issue_title(title);
 
-    // A NEW session launched with a dialog prompt sends it as the first turn
-    // so the agent starts on the user's instruction (#738). Re-entry ignores
-    // it (the dialog is skipped, and we don't inject into an ongoing chat).
+    // A NEW session's first turn IS the issue work: build the real issue
+    // prompt + system-prompt appendix, identical to a one-shot (#946). The
+    // dialog text rides along as a custom instruction. On a cache/browser
+    // miss we fall back to the bare dialog text (pre-#946 behavior) so the
+    // launch still proceeds; fetch-on-miss is tracked as a follow-up.
+    // Re-entry injects nothing — we don't seed an ongoing chat.
     let first_turn = if resumed {
         None
     } else {
-        seed_prompt.filter(|p| !p.trim().is_empty())
+        app.build_interaction_launch_prompt(issue_number, &seed_prompt)
+            .or_else(|| seed_prompt.filter(|p| !p.trim().is_empty()))
     };
     if let Some(prompt) = first_turn.clone() {
         screen.seed_turn(prompt);
@@ -1428,5 +1423,74 @@ mod build_known_agents_tests {
         let team_agents = BTreeSet::from(["claude".to_string()]);
         let result = build_known_agents_from_config(team_agents, None);
         assert_eq!(result, vec!["claude".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod interaction_launch_tests {
+    use super::open_interaction_session;
+    use crate::provider::types::Issue;
+    use crate::tui::app::{self, TuiCommand};
+
+    fn issue(number: u64, title: &str, body: &str) -> Issue {
+        Issue {
+            number,
+            title: title.to_string(),
+            body: body.to_string(),
+            labels: Vec::new(),
+            state: "open".to_string(),
+            html_url: format!("https://github.com/owner/repo/issues/{number}"),
+            milestone: None,
+            assignees: Vec::new(),
+        }
+    }
+
+    fn first_turn_prompt(app: &app::App) -> Option<&str> {
+        app.pending_commands.iter().find_map(|c| match c {
+            TuiCommand::SendInteractionTurn { prompt, .. } => Some(prompt.as_str()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn first_turn_argv_carries_built_issue_prompt_and_appendix() {
+        let mut app = crate::tui::make_test_app("issue-946-first-turn");
+        app.state.issue_cache.insert(
+            946,
+            issue(946, "Build interaction launch", "Acceptance Criteria here"),
+        );
+        app.pool
+            .set_guardrail_prompt("GUARDRAIL: test sentinel".into());
+
+        open_interaction_session(&mut app, 946, false, None);
+
+        let prompt = first_turn_prompt(&app).expect("first turn must be queued for a new session");
+        assert!(prompt.contains("946"), "carries issue number");
+        assert!(prompt.contains("Build interaction launch"), "carries title");
+        assert!(
+            prompt.contains("Acceptance Criteria"),
+            "carries issue body / AC"
+        );
+        assert!(
+            prompt.contains("GUARDRAIL: test sentinel"),
+            "carries the system-prompt appendix"
+        );
+    }
+
+    #[test]
+    fn resumed_session_does_not_inject_first_turn_prompt() {
+        let mut app = crate::tui::make_test_app("issue-946-resumed");
+        app.state
+            .issue_cache
+            .insert(946, issue(946, "Title", "body"));
+        // Create an active session first so re-entry is detected as resumed.
+        app.pool.create_interaction_session(946, false);
+
+        open_interaction_session(&mut app, 946, false, Some("ignored seed".into()));
+
+        assert!(
+            first_turn_prompt(&app).is_none(),
+            "resumed session must not queue a first turn"
+        );
     }
 }

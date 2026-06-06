@@ -87,6 +87,37 @@ impl App {
         }
     }
 
+    /// Look up an issue by number: the fetch cache first, then the loaded
+    /// issue-browser list. Returns `None` when neither holds it.
+    pub(crate) fn lookup_issue(&self, issue_number: u64) -> Option<&crate::provider::types::Issue> {
+        self.state.issue_cache.get(&issue_number).or_else(|| {
+            self.screen_state
+                .issue_browser_screen
+                .as_ref()
+                .and_then(|b| b.issues.iter().find(|i| i.number == issue_number))
+        })
+    }
+
+    /// Build the first-turn prompt for an interactive launch (#946) using the
+    /// same assembly as a one-shot: `build_issue_prompt_with_custom` (issue
+    /// title + body + acceptance criteria) followed by the system-prompt
+    /// appendix (mode + guardrails + knowledge). Returns `None` when the issue
+    /// is not yet cached/loaded — the caller decides how to fall back.
+    pub(crate) fn build_interaction_launch_prompt(
+        &self,
+        issue_number: u64,
+        custom_prompt: &Option<String>,
+    ) -> Option<String> {
+        let issue = self.lookup_issue(issue_number)?;
+        let (_model, _mode, mode_config) =
+            self.resolve_model_and_mode(&issue.labels, Some(&self.selected_agent_id()));
+        let body = self.build_issue_prompt_with_custom(issue, custom_prompt);
+        Some(match self.pool.interaction_appendix(mode_config.as_ref()) {
+            Some(appendix) => format!("{body}\n\n{appendix}"),
+            None => body,
+        })
+    }
+
     /// Process a data event from a background fetch task.
     pub fn handle_data_event(&mut self, evt: TuiDataEvent) {
         match evt {
@@ -743,6 +774,130 @@ mod tests {
             app.pending_session_launches[0].agent_id.as_deref(),
             Some("codex")
         );
+    }
+
+    // --- lookup_issue + build_interaction_launch_prompt (#946) ---
+
+    fn issue_numbered(number: u64, title: &str, body: &str) -> Issue {
+        Issue {
+            number,
+            title: title.to_string(),
+            body: body.to_string(),
+            labels: Vec::new(),
+            state: "open".to_string(),
+            html_url: format!("https://github.com/owner/repo/issues/{number}"),
+            milestone: None,
+            assignees: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn lookup_issue_returns_issue_from_cache() {
+        let mut app = crate::tui::make_test_app("lookup-issue-cache");
+        app.state
+            .issue_cache
+            .insert(42, issue_numbered(42, "Cached", "body"));
+        let found = app.lookup_issue(42).expect("cache hit");
+        assert_eq!(found.number, 42);
+        assert_eq!(found.title, "Cached");
+    }
+
+    #[test]
+    fn lookup_issue_returns_issue_from_browser_list() {
+        let mut app = crate::tui::make_test_app("lookup-issue-browser");
+        app.screen_state.issue_browser_screen =
+            Some(crate::tui::screens::IssueBrowserScreen::new(vec![
+                issue_numbered(55, "Browsed", "b"),
+            ]));
+        let found = app.lookup_issue(55).expect("browser hit");
+        assert_eq!(found.number, 55);
+    }
+
+    #[test]
+    fn lookup_issue_cache_takes_priority_over_browser() {
+        let mut app = crate::tui::make_test_app("lookup-issue-priority");
+        app.state
+            .issue_cache
+            .insert(10, issue_numbered(10, "Cache version", "b"));
+        app.screen_state.issue_browser_screen =
+            Some(crate::tui::screens::IssueBrowserScreen::new(vec![
+                issue_numbered(10, "Browser version", "b"),
+            ]));
+        assert_eq!(app.lookup_issue(10).unwrap().title, "Cache version");
+    }
+
+    #[test]
+    fn lookup_issue_returns_none_on_miss() {
+        let app = crate::tui::make_test_app("lookup-issue-miss");
+        assert!(app.lookup_issue(99).is_none());
+    }
+
+    #[test]
+    fn build_interaction_launch_prompt_includes_issue_title_and_number() {
+        let mut app = crate::tui::make_test_app("launch-prompt-basic");
+        app.state.issue_cache.insert(
+            946,
+            issue_numbered(
+                946,
+                "Build interaction launch",
+                "Acceptance Criteria: carries prompt",
+            ),
+        );
+        let p = app
+            .build_interaction_launch_prompt(946, &None)
+            .expect("Some when issue found");
+        assert!(p.contains("946"), "must contain issue number");
+        assert!(p.contains("Build interaction launch"), "must contain title");
+        assert!(
+            p.contains("Acceptance Criteria"),
+            "must carry issue body (AC) into the prompt"
+        );
+    }
+
+    #[test]
+    fn build_interaction_launch_prompt_appends_custom_prompt() {
+        let mut app = crate::tui::make_test_app("launch-prompt-custom");
+        app.state
+            .issue_cache
+            .insert(946, issue_numbered(946, "Title", "body"));
+        let p = app
+            .build_interaction_launch_prompt(946, &Some("My extra instruction".into()))
+            .unwrap();
+        assert!(p.contains("My extra instruction"));
+        assert!(p.contains("946"));
+    }
+
+    #[test]
+    fn build_interaction_launch_prompt_appends_interaction_appendix() {
+        let mut app = crate::tui::make_test_app("launch-prompt-appendix");
+        app.state
+            .issue_cache
+            .insert(10, issue_numbered(10, "Title", "body"));
+        app.pool.set_guardrail_prompt("GUARDRAIL: sentinel".into());
+        let p = app.build_interaction_launch_prompt(10, &None).unwrap();
+        assert!(p.contains("GUARDRAIL: sentinel"), "appendix injected");
+        let idx_body = p.find("Title").unwrap();
+        let idx_guardrail = p.find("GUARDRAIL: sentinel").unwrap();
+        assert!(
+            idx_guardrail > idx_body,
+            "appendix must come after the issue prompt body"
+        );
+    }
+
+    #[test]
+    fn build_interaction_launch_prompt_returns_none_when_issue_not_found() {
+        let app = crate::tui::make_test_app("launch-prompt-miss");
+        assert!(app.build_interaction_launch_prompt(999, &None).is_none());
+    }
+
+    #[test]
+    fn build_interaction_launch_prompt_no_appendix_when_pool_empty() {
+        let mut app = crate::tui::make_test_app("launch-prompt-no-appendix");
+        app.state
+            .issue_cache
+            .insert(7, issue_numbered(7, "Title", "body"));
+        let p = app.build_interaction_launch_prompt(7, &None).unwrap();
+        assert!(!p.ends_with("\n\n"), "no trailing blank appendix section");
     }
 
     #[test]

@@ -78,7 +78,7 @@ An `Interactive`-mode `Session` reuses the entire one-shot pipeline (prompt, app
 
 Each phase is its own issue, its own TDD cycle, its own PR. Phases are sequential.
 
-1. **Context.** Interactive launch builds the real issue prompt + `system_prompt_appendix`; the first turn is the issue work. Issue body fetched/looked up at launch. *(Subsumes #934.)*
+1. **Context.** ✅ **Implemented — #946 (PR pending).** Interactive launch builds the real issue prompt + `system_prompt_appendix`; the first turn carries issue title + body + acceptance criteria + appendix (mode + guardrails + knowledge), identical to a one-shot. Falls back to dialog text on cache miss (fetch-on-miss deferred to a follow-up issue). Resumed sessions inject nothing. New surface: `SessionPool::interaction_appendix()` in `pool.rs`; `App::lookup_issue()` + `App::build_interaction_launch_prompt()` in `data_handler.rs`; `open_interaction_session` in `screen_dispatch.rs` rewired to seed the first turn with the built prompt. *(Subsumes #934.)*
 2. **Pipeline reuse.** Follow-up turns go through the normal resumed-turn path (shared prompt builder + provider routing + telemetry); retire the `interaction_turn.rs` bare-spawn loop.
 3. **State unify.** Add `SessionStatus::Interactive` + `Session.settled_from` + `Session.turn_state`; transition one-shot → Interactive on settle; retire `InteractionState` and `InteractionSession`.
 4. **Teardown rework.** Move `wipe_worktree` to the quit path; strip auto-wipe + auto-nav from #741; repoint #739 to a notifier.
@@ -86,8 +86,9 @@ Each phase is its own issue, its own TDD cycle, its own PR. Phases are sequentia
 
 ## 7. Backlog impact
 
-- **#934** → close, folded into Phase 1.
-- **#935** → this spec (the umbrella). Re-scoped to the phase sequence above.
+- **#934** → closed, folded into Phase 1 (implemented in #946).
+- **#946** → Phase 1 implementation issue. Implemented; PR pending. Branch: `feat/issue-946-feat-session-phase-1-interactive-launch-`.
+- **#935** → this spec (the umbrella). Re-scoped to the phase sequence above. Phase 1 complete; Phase 2 is next.
 - **#739 / #740 / #741** → reworked in Phase 4. PR #940 still ships its chat-shell render + the #943 wrap fix; Phase 4 repurposes the terminator (PR-keeps-alive, teardown-on-quit). #740's `wipe_worktree` primitive is reused unchanged, just re-pointed.
 - **#929 / #930** → gated behind Phase 2 / Phase 5.
 - **#936** (deferred terminator firing) and **#938** (route removals through the wipe guard) → revisit under Phase 4; #936 may be obviated by the kept-alive model.
