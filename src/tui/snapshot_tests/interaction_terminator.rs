@@ -4,6 +4,11 @@
 //! UserQuit-before-terminator. All use `FakeClock` so `terminated_at` is frozen
 //! and never trips auto-nav mid-render. Drives the screen only through public
 //! seams (this module lives outside the `interaction` privacy boundary).
+//!
+//! Turn cards render a `role · HH:MM` header (#987) where the time is the
+//! turn's wall-clock `started_at`. Those turns are stamped by production code
+//! with `Utc::now()`, so the rendered time is non-deterministic — every
+//! snapshot assertion here masks it via [`with_time_mask`].
 
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
@@ -49,6 +54,16 @@ fn render(screen: &mut InteractionScreen) -> Terminal<TestBackend> {
     terminal
 }
 
+/// Run `body` with the `· HH:MM ` card-header time masked to a fixed token, so
+/// the wall-clock `started_at` on production-stamped turns can't flake the
+/// snapshot. The replacement is the same width (5 cols) as `HH:MM`, so border
+/// alignment is preserved.
+fn with_time_mask(body: impl FnOnce()) {
+    let mut settings = insta::Settings::clone_current();
+    settings.add_filter(r"· \d{2}:\d{2} ", "· HH:MM ");
+    settings.bind(body);
+}
+
 #[test]
 fn terminator_idle_success() {
     let mut screen = base_screen(MockTeardown::ok());
@@ -64,7 +79,7 @@ fn terminator_idle_success() {
         rendered.contains("terminated"),
         "must show the terminated banner:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -80,7 +95,7 @@ fn terminator_streaming_deferred() {
         rendered.contains("locked"),
         "deferred state stays streaming with a locked input:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -95,7 +110,7 @@ fn terminator_teardown_failure() {
         rendered.contains("teardown failed"),
         "must surface the failure turn:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -119,5 +134,7 @@ fn terminator_userquit_before_terminator() {
         rendered.contains("terminated"),
         "must show the terminated banner:\n{rendered}"
     );
+    // No card header is rendered in the UserQuit-before-terminator state (the
+    // marker is ignored, no turn appended), so there is no `· HH:MM` to mask.
     assert_snapshot!(terminal.backend());
 }

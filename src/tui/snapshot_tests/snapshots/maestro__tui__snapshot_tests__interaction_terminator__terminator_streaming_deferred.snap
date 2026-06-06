@@ -3,9 +3,9 @@ source: src/tui/snapshot_tests/interaction_terminator.rs
 expression: terminal.backend()
 ---
 " agent agent  ·  model default  ·  #42                                                                                  "
-"you   ▸ implement login                                                                                                 "
-"                                                                                                                        "
-"                                                                                                                        "
+"╭─ you · HH:MM ────────────────────────────────────────────────────────────────────────────────────────────────────────╮"
+"│ implement login                                                                                                      │"
+"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "

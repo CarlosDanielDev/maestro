@@ -1,6 +1,6 @@
 # Interaction Transcript Redesign — opencode-style chat
 
-**Status:** Approved (brainstorm 2026-06-06)
+**Status:** Implemented — Issue A (card framing) shipped in #987 (2026-06-06). Issue B (scroll rework) pending.
 **Milestone:** v0.30.x (standalone; lands on the current `InteractionScreen`)
 **Spec owner:** Carlos
 
