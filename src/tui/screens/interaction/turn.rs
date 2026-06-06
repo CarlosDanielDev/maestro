@@ -125,6 +125,12 @@ impl InteractionScreen {
                     turn.finished_at = Some(*at);
                 }
                 self.state = InteractionState::Idle;
+                // A terminator deferred mid-stream fires now that the turn has
+                // settled to Idle (#741). Its TEARDOWN log line supersedes the
+                // per-turn stats line for this final turn.
+                if let Some(action) = self.drain_queued_terminator() {
+                    return action;
+                }
                 let ms = self
                     .stream_started_at
                     .map(|start| (*at - start).num_milliseconds().max(0))

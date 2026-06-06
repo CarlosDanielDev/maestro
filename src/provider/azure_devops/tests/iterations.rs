@@ -22,7 +22,7 @@ pub(super) fn iterations_fixture() -> &'static str {
             "name": "Sprint Past",
             "path": "Project\\Sprint Past",
             "structureType": "iteration",
-            "attributes": { "finishDate": "2026-05-03T00:00:00Z" },
+            "attributes": { "finishDate": "2000-01-01T00:00:00Z" },
             "url": "https://dev.azure.com/example/Project/_apis/wit/classificationNodes/Iterations/Sprint%20Past"
         },
         {
@@ -30,7 +30,7 @@ pub(super) fn iterations_fixture() -> &'static str {
             "name": "Sprint Future",
             "path": "Project\\Sprint Future",
             "structureType": "iteration",
-            "attributes": { "finishDate": "2026-06-04T00:00:00Z" },
+            "attributes": { "finishDate": "2999-12-31T00:00:00Z" },
             "url": "https://dev.azure.com/example/Project/_apis/wit/classificationNodes/Iterations/Sprint%20Future"
         }
     ]"#
@@ -56,7 +56,7 @@ fn parse_iterations_json_maps_nodes_to_milestones() {
     assert_eq!(iterations[2].path, "Project\\Sprint Future");
     assert_eq!(
         iterations[2].finish_date,
-        Some(NaiveDate::from_ymd_opt(2026, 6, 4).unwrap())
+        Some(NaiveDate::from_ymd_opt(2999, 12, 31).unwrap())
     );
 
     let milestones =

@@ -111,6 +111,15 @@ fn sanity_check_under_root(
     path: &Path,
     worktree_root: &Path,
 ) -> Result<Option<PathBuf>, TeardownError> {
+    // An empty or relative worktree root cannot be trusted: its meaning depends
+    // on the process cwd, so a teardown could escape its intended location
+    // (#741 sec — the interaction cwd-fallback sets `worktree_path = "."`,
+    // whose parent is `""`). Refuse before canonicalize, which would otherwise
+    // resolve a relative root against cwd and pass the `/`/`$HOME` guard.
+    if worktree_root.as_os_str().is_empty() || worktree_root.is_relative() {
+        return Err(TeardownError::UnsafeRoot(worktree_root.to_path_buf()));
+    }
+
     // Validate the root first: an unsafe root (`/` or `$HOME`) is refused even
     // when the worktree path is already gone, so this must precede the
     // missing-path idempotency skip below.
@@ -288,6 +297,29 @@ mod tests {
         assert!(
             matches!(result, Err(TeardownError::OutOfRoot { .. })),
             "expected OutOfRoot, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn sanity_check_refuses_empty_root() {
+        // The interaction cwd-fallback derives an empty root; it must be
+        // refused, never canonicalized against cwd (#741 sec).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("wt");
+        std::fs::create_dir_all(&path).expect("mkdir wt");
+        let result = sanity_check_under_root(&path, Path::new(""));
+        assert!(
+            matches!(result, Err(TeardownError::UnsafeRoot(_))),
+            "expected UnsafeRoot for empty root, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn sanity_check_refuses_relative_root() {
+        let result = sanity_check_under_root(Path::new("."), Path::new(".maestro/worktrees"));
+        assert!(
+            matches!(result, Err(TeardownError::UnsafeRoot(_))),
+            "expected UnsafeRoot for relative root, got {result:?}"
         );
     }
 
