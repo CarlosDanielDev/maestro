@@ -143,7 +143,9 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
         Span::styled("[Ctrl+W]", active),
         Span::raw(" Quit  "),
         Span::styled("[Esc]", active),
-        Span::raw(" Back"),
+        Span::raw(" Back  "),
+        Span::styled("[Up/Down]", active),
+        Span::raw(" Scroll"),
     ]);
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
