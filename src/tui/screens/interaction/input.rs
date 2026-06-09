@@ -118,14 +118,19 @@ pub(super) fn draw_input(
     }
 }
 
-/// One-line keybind footer. The `Ctrl+P` chord is greyed when the pushup
-/// action is unavailable (launched without Produce PR or mid-stream).
+/// One-line keybind footer rendered as a titled border line (#987 QA): the
+/// chords ride a `─` rule like the header box, instead of floating on a blank
+/// row. The `Ctrl+P` chord is greyed when the pushup action is unavailable
+/// (launched without Produce PR or mid-stream).
 pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabled: bool) {
     let active = Style::default().fg(theme.accent_success);
     let muted = Style::default().fg(theme.text_secondary);
+    let border = Style::default().fg(theme.border_inactive);
     let pushup_style = if pushup_enabled { active } else { muted };
 
+    // Lead the chords with a short rule so they sit on a border line.
     let mut spans = vec![
+        Span::styled("─ ", border),
         Span::styled("[Enter]", active),
         Span::raw(" Send  "),
         Span::styled("[Shift+Enter]", active),
@@ -145,8 +150,15 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
         Span::styled("[Esc]", active),
         Span::raw(" Back  "),
         Span::styled("[Up/Down]", active),
-        Span::raw(" Scroll"),
+        Span::raw(" Scroll "),
     ]);
+
+    // Fill the rest of the row with the rule so the chords read as a border.
+    let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+    let fill = (area.width as usize).saturating_sub(used);
+    if fill > 0 {
+        spans.push(Span::styled("─".repeat(fill), border));
+    }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 

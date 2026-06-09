@@ -36,7 +36,7 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup (off)  [Ctrl+L] Clear input  [Ctrl+W] Quit  [Esc] Back  [Up/Down] "
+"─ [Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup (off)  [Ctrl+L] Clear input  [Ctrl+W] Quit  [Esc] Back  [Up/Down"
 "╔════════════════════════════════════════════════════[ Terminated ]════════════════════════════════════════════════════╗"
 "║                          Session terminated (PR created). Press any key to return to Issues.                         ║"
 "║                                                                                                                      ║"

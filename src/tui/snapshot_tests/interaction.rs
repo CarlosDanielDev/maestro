@@ -20,6 +20,16 @@ use std::path::PathBuf;
 const W: u16 = 120;
 const H: u16 = 40;
 
+/// Run `body` with the `· HH:MM ` card-header time masked to a fixed token.
+/// The header renders in the machine's local zone (#987 QA), so the exact
+/// value is non-deterministic across machines/CI — mask it for portability.
+/// Same width (5 cols) as `HH:MM`, so border alignment is preserved.
+fn with_time_mask(body: impl FnOnce()) {
+    let mut settings = insta::Settings::clone_current();
+    settings.add_filter(r"· \d{2}:\d{2} ", "· HH:MM ");
+    settings.bind(body);
+}
+
 fn t0() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 1, 1, 9, 0, 0).unwrap()
 }
@@ -53,7 +63,7 @@ fn interaction_screen_empty_state() {
         rendered.contains("No messages"),
         "empty state must show an action-oriented message:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -61,7 +71,7 @@ fn interaction_screen_one_turn_user() {
     let mut screen =
         InteractionScreen::with_history(vec![turn(TurnRole::User, "Add a login button", false)]);
     let terminal = render(&mut screen);
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -77,7 +87,7 @@ fn interaction_screen_three_turns_mixed_with_streaming() {
         rendered.contains('…'),
         "streaming turn must show a trailing indicator:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -88,7 +98,7 @@ fn interaction_screen_scrolled_up() {
     let mut screen = InteractionScreen::with_history(history);
     screen.scroll_up_for_test(5);
     let terminal = render(&mut screen);
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 // --- #738: keymap-state render fixtures ---
@@ -124,7 +134,7 @@ fn interaction_screen_streaming_locks_input() {
         rendered.contains("locked"),
         "streaming must show a locked input pane:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -141,7 +151,7 @@ fn interaction_screen_terminated_banner() {
         rendered.contains("terminated"),
         "terminated state must show a banner:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -158,7 +168,7 @@ fn interaction_screen_quit_modal_open() {
         rendered.contains("Quit interaction?"),
         "quit modal must show the confirm prompt:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -171,7 +181,7 @@ fn interaction_screen_ctrl_p_greyed_without_produce_pr() {
         rendered.contains("off"),
         "Ctrl+P must render greyed/off when produce_pr is false:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }
 
 #[test]
@@ -189,5 +199,5 @@ fn interaction_screen_header_shows_agent_and_model() {
         rendered.contains("opus"),
         "header must name the model:\n{rendered}"
     );
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }

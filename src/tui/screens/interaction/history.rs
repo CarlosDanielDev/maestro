@@ -127,7 +127,13 @@ pub(super) fn build_lines(history: &[TurnRecord], theme: &Theme, width: u16) -> 
     for turn in history {
         let border = Style::default().fg(role_color(turn.role, theme));
         let streaming = turn.finished_at.is_none();
-        let hhmm = turn.started_at.format("%H:%M").to_string();
+        // Show the time in the computer's local zone, not UTC — `started_at`
+        // is stored as UTC but the header is for the human at the terminal.
+        let hhmm = turn
+            .started_at
+            .with_timezone(&chrono::Local)
+            .format("%H:%M")
+            .to_string();
         lines.push(header_line(
             role_word(turn.role),
             &hhmm,

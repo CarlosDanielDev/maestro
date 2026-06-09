@@ -20,6 +20,22 @@ fn line_text(line: &Line<'_>) -> String {
     line.spans.iter().map(|s| s.content.as_ref()).collect()
 }
 
+/// True if `header` carries `{role} · HH:MM` (any HH:MM). The header time is
+/// rendered in the machine's local zone, so the exact value is not pinned —
+/// only the `role · ` separator and a well-formed `HH:MM` are asserted.
+fn header_has_role_and_time(header: &str, role: &str) -> bool {
+    let Some(rest) = header.split(&format!("{role} · ")).nth(1) else {
+        return false;
+    };
+    let t: Vec<char> = rest.chars().take(5).collect();
+    matches!(
+        t.as_slice(),
+        [a, b, ':', c, d]
+            if a.is_ascii_digit() && b.is_ascii_digit()
+            && c.is_ascii_digit() && d.is_ascii_digit()
+    )
+}
+
 fn count_prefix(lines: &[Line<'_>], prefix: &str) -> usize {
     lines
         .iter()
@@ -70,7 +86,8 @@ fn build_lines_settled_card_has_header_body_footer_and_blank() {
     let history = vec![turn(TurnRole::User, "hi", false)];
     let lines = build_lines(&history, &theme, 80);
     assert_eq!(lines.len(), 4, "header + body + footer + blank");
-    assert!(line_text(&lines[0]).starts_with("╭─ you · 09:00"));
+    assert!(line_text(&lines[0]).starts_with("╭─ you · "));
+    assert!(header_has_role_and_time(&line_text(&lines[0]), "you"));
     assert!(line_text(&lines[0]).ends_with('╮'));
     assert!(line_text(&lines[1]).starts_with("│ "));
     assert!(line_text(&lines[1]).ends_with(" │"));
@@ -101,7 +118,7 @@ fn build_lines_header_contains_role_and_time() {
     let history = vec![turn(TurnRole::User, "hello", false)];
     let lines = build_lines(&history, &theme, 80);
     let header = line_text(&lines[0]);
-    assert!(header.contains("you · 09:00"), "header: {header}");
+    assert!(header_has_role_and_time(&header, "you"), "header: {header}");
     assert!(header.starts_with("╭─"));
     assert!(header.ends_with('╮'));
 }
@@ -118,7 +135,7 @@ fn build_lines_header_role_words() {
         let lines = build_lines(&history, &theme, 80);
         let header = line_text(&lines[0]);
         assert!(
-            header.contains(&format!("{word} · 09:00")),
+            header_has_role_and_time(&header, word),
             "{role:?} header: {header}"
         );
         assert!(!header.contains('▸'), "no legacy arrow glyph");
