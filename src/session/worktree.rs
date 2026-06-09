@@ -1,7 +1,8 @@
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::util::validate_slug;
+use crate::work::worktree_teardown::{TeardownError, wipe_worktree};
 
 /// Trait for managing git worktrees. Mockable in tests.
 pub trait WorktreeManager: Send {
@@ -37,6 +38,20 @@ impl GitWorktreeManager {
 
     fn branch_name(&self, slug: &str) -> String {
         format!("maestro/{}", slug)
+    }
+
+    /// Guarded teardown step used by [`WorktreeManager::remove`] (#938). Routes
+    /// the worktree + branch removal through the sanity-checked
+    /// [`wipe_worktree`] primitive. `issue_number` is unattributed here (the
+    /// slug, not an issue id, owns these worktrees), so `0` is passed for the
+    /// tracing field only. Returns the typed error so the caller can choose to
+    /// warn-and-continue (best-effort cleanup).
+    fn guarded_remove(
+        path: &Path,
+        branch: &str,
+        worktree_root: &Path,
+    ) -> Result<(), TeardownError> {
+        wipe_worktree(0, path, branch, worktree_root)
     }
 }
 
@@ -86,17 +101,14 @@ impl WorktreeManager for GitWorktreeManager {
     fn remove(&self, slug: &str) -> Result<()> {
         validate_slug(slug)?;
         let path = self.worktree_path(slug);
-        let output = std::process::Command::new("git")
-            .arg("worktree")
-            .arg("remove")
-            .arg(&path)
-            .arg("--force")
-            .current_dir(&self.repo_root)
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::warn!("git worktree remove failed for {}: {}", slug, stderr);
+        let branch = self.branch_name(slug);
+        // #938: route the destructive step through the hardened `wipe_worktree`
+        // primitive so it inherits the root sanity-check (refuses `/` / `$HOME`,
+        // canonicalized containment) and the leading-dash injection guard. Keep
+        // the existing best-effort contract: a refusal or git failure is logged,
+        // never propagated — `remove` has always returned `Ok` on failure.
+        if let Err(e) = Self::guarded_remove(&path, &branch, &self.worktree_dir()) {
+            tracing::warn!("worktree teardown refused/failed for {}: {}", slug, e);
         }
         Ok(())
     }
@@ -255,5 +267,29 @@ mod tests {
     fn exists_returns_false_for_invalid_slug() {
         let mock = MockWorktreeManager::new();
         assert!(!mock.exists("../escape"));
+    }
+
+    // #938: the destructive step of `GitWorktreeManager::remove` now routes
+    // through the guarded `wipe_worktree` primitive. `guarded_remove` is that
+    // exact teardown function, so exercising it with an unsafe root proves the
+    // site refuses `/` (and, by the primitive, `$HOME`).
+    #[test]
+    fn guarded_remove_refuses_root_slash() {
+        let result =
+            GitWorktreeManager::guarded_remove(Path::new("/etc"), "maestro/x", Path::new("/"));
+        assert!(
+            matches!(result, Err(TeardownError::UnsafeRoot(_))),
+            "expected UnsafeRoot for `/` root, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn guarded_remove_refuses_empty_root() {
+        let result =
+            GitWorktreeManager::guarded_remove(Path::new("wt"), "maestro/x", Path::new(""));
+        assert!(
+            matches!(result, Err(TeardownError::UnsafeRoot(_))),
+            "expected UnsafeRoot for empty root, got {result:?}"
+        );
     }
 }

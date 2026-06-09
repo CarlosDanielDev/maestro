@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::work::worktree_teardown::wipe_worktree;
+
 /// Manages cleanup of orphaned worktrees left by crashed processes.
 pub struct CleanupManager {
     worktree_dir: PathBuf,
@@ -61,25 +63,29 @@ impl CleanupManager {
     }
 
     /// Remove orphaned worktrees. Returns the count removed.
+    ///
+    /// #938: each removal routes through the hardened [`wipe_worktree`]
+    /// primitive (rooted at `self.worktree_dir`), so it inherits the root
+    /// sanity-check (refuses `/` / `$HOME`, canonicalized containment) and the
+    /// leading-dash injection guard. The previous raw `git worktree remove`
+    /// call and the `std::fs::remove_dir_all` fallback — neither root-gated —
+    /// are gone. A refused or failed orphan is logged and skipped (best-effort,
+    /// no longer aborts the whole batch on the first failure).
     pub fn remove_orphans(&self, orphans: &[OrphanWorktree]) -> Result<usize> {
         let mut removed = 0;
         for orphan in orphans {
-            // Try git worktree remove first
-            let result = Command::new("git")
-                .args(["worktree", "remove", "--force"])
-                .arg(&orphan.path)
-                .output();
-
-            match result {
-                Ok(output) if output.status.success() => {
-                    removed += 1;
-                }
-                _ => {
-                    // Fallback: just remove the directory
-                    if orphan.path.exists() {
-                        std::fs::remove_dir_all(&orphan.path)?;
-                        removed += 1;
-                    }
+            // The orphan dir name is the worktree slug; its branch (if any) is
+            // `maestro/<name>`. `wipe_worktree` is idempotent, so a missing
+            // branch is treated as success.
+            let branch = format!("maestro/{}", orphan.name);
+            match wipe_worktree(0, &orphan.path, &branch, &self.worktree_dir) {
+                Ok(()) => removed += 1,
+                Err(e) => {
+                    tracing::warn!(
+                        "orphan worktree teardown refused/failed for {}: {}",
+                        orphan.name,
+                        e
+                    );
                 }
             }
         }
@@ -105,5 +111,30 @@ mod tests {
         let mgr = CleanupManager::new(Path::new("/tmp/nonexistent-repo-12345"));
         let orphans = mgr.scan_orphans().unwrap();
         assert!(orphans.is_empty());
+    }
+
+    // #938: a misconfigured worktree root of `/` must be refused before any
+    // destructive call. We construct the manager with `worktree_dir = "/"`
+    // directly (same module → private field is reachable) and assert the orphan
+    // is NOT counted as removed — `wipe_worktree`'s `UnsafeRoot` guard fires
+    // before it ever shells out to git or touches the filesystem.
+    #[test]
+    fn remove_orphans_refuses_unsafe_root() {
+        let mgr = CleanupManager {
+            worktree_dir: PathBuf::from("/"),
+        };
+        let orphan = OrphanWorktree {
+            path: PathBuf::from("/etc"),
+            name: "etc".to_string(),
+        };
+        let removed = mgr.remove_orphans(&[orphan]).expect("must not error");
+        assert_eq!(
+            removed, 0,
+            "an unsafe `/` root must refuse, removing nothing"
+        );
+        assert!(
+            Path::new("/etc").exists(),
+            "the guard must run before any destructive call — /etc stays put"
+        );
     }
 }
