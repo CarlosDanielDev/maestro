@@ -262,6 +262,17 @@ async fn event_loop(
                         let _ = tx.send(app::TuiDataEvent::Issues(result));
                     });
                 }
+                app::TuiCommand::FetchInteractionIssue {
+                    issue_number,
+                    seed_prompt,
+                } => {
+                    background_tasks::spawn_interaction_issue_fetch(
+                        app.data_tx.clone(),
+                        issue_number,
+                        seed_prompt,
+                        provider_config_from_app(app),
+                    );
+                }
                 app::TuiCommand::FetchSuggestionData => {
                     let tx = app.data_tx.clone();
                     let provider_config = provider_config_from_app(app);
@@ -1267,6 +1278,23 @@ mod handle_screen_action_tests {
     #[test]
     fn launch_interaction_with_dialog_prompt_sends_it_as_first_turn() {
         let mut app = make_app();
+        // With the issue cached, the first turn is built immediately and the
+        // dialog prompt rides along as a custom instruction (#946). The cache
+        // *miss* path now defers + fetches (#953) — covered by
+        // `screen_dispatch::interaction_launch_tests::cache_miss_defers_*`.
+        app.state.issue_cache.insert(
+            10,
+            crate::provider::types::Issue {
+                number: 10,
+                title: "Cached issue".into(),
+                body: "Acceptance Criteria\n- done".into(),
+                labels: Vec::new(),
+                state: "open".into(),
+                html_url: "https://github.com/owner/repo/issues/10".into(),
+                milestone: None,
+                assignees: Vec::new(),
+            },
+        );
         let mut cfg = interaction_config(10, false);
         cfg.custom_prompt = Some("plan the work".into());
         handle_screen_action(&mut app, ScreenAction::LaunchSession(cfg));
@@ -1278,9 +1306,9 @@ mod handle_screen_action_tests {
             app.pending_commands.iter().any(|c| matches!(
                 c,
                 app::TuiCommand::SendInteractionTurn { issue_number, prompt, .. }
-                    if *issue_number == 10 && prompt == "plan the work"
+                    if *issue_number == 10 && prompt.contains("plan the work")
             )),
-            "the first turn command must be queued"
+            "the first turn command must carry the dialog prompt"
         );
     }
 

@@ -296,6 +296,15 @@ pub struct SuggestionDataPayload {
 /// Commands queued by synchronous screen action handlers for async processing.
 pub enum TuiCommand {
     FetchIssues,
+    /// Fetch a single issue to build the first turn of an interactive launch
+    /// that hit a cache/browser miss (#953). The result lands as
+    /// [`TuiDataEvent::InteractionIssueFetched`], NOT the one-shot
+    /// `TuiDataEvent::Issue` path, so the deferred first turn is built rather
+    /// than a new one-shot session.
+    FetchInteractionIssue {
+        issue_number: u64,
+        seed_prompt: Option<String>,
+    },
     FetchMilestones,
     FetchSuggestionData,
     /// Create a new GitHub issue from a wizard payload (#291+#298).
@@ -466,6 +475,14 @@ pub enum TuiDataEvent {
     /// pool can persist its `session_id`/history (#738).
     InteractionTurnComplete {
         session: Box<crate::session::interaction::InteractionSession>,
+    },
+    /// Result of [`TuiCommand::FetchInteractionIssue`] (#953). On `Ok` the
+    /// deferred first turn is built from the real issue prompt + appendix; on
+    /// `Err` the launch falls back to bare dialog text plus a warning.
+    InteractionIssueFetched {
+        issue_number: u64,
+        seed_prompt: Option<String>,
+        result: anyhow::Result<Issue>,
     },
 }
 
