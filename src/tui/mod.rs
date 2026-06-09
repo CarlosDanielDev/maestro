@@ -103,6 +103,32 @@ pub(crate) fn leave_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     )
 }
 
+/// Route a mouse wheel-up to the right scroll target (#988). On the
+/// Interaction screen the wheel scrolls the chat transcript; everywhere else it
+/// keeps the legacy `panel_view` behavior so no other screen regresses.
+fn route_mouse_scroll_up(app: &mut App) {
+    const WHEEL_LINES: usize = 3;
+    if app.tui_mode == app::TuiMode::Interaction
+        && let Some(screen) = app.screen_state.interaction_screen.as_mut()
+    {
+        screen.scroll_up(WHEEL_LINES);
+    } else {
+        app.panel_view.scroll_up();
+    }
+}
+
+/// Wheel-down counterpart of [`route_mouse_scroll_up`] (#988).
+fn route_mouse_scroll_down(app: &mut App) {
+    const WHEEL_LINES: usize = 3;
+    if app.tui_mode == app::TuiMode::Interaction
+        && let Some(screen) = app.screen_state.interaction_screen.as_mut()
+    {
+        screen.scroll_down(WHEEL_LINES);
+    } else {
+        app.panel_view.scroll_down();
+    }
+}
+
 /// Run the TUI event loop.
 pub async fn run(mut app: App) -> anyhow::Result<()> {
     let no_splash = app.no_splash;
@@ -207,12 +233,8 @@ async fn event_loop(
                     }
                 }
                 Event::Mouse(mouse) => match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        app.panel_view.scroll_up();
-                    }
-                    MouseEventKind::ScrollDown => {
-                        app.panel_view.scroll_down();
-                    }
+                    MouseEventKind::ScrollUp => route_mouse_scroll_up(app),
+                    MouseEventKind::ScrollDown => route_mouse_scroll_down(app),
                     _ => {}
                 },
                 Event::Paste(data) => {
@@ -1103,6 +1125,56 @@ mod handle_screen_action_tests {
             produce_pr,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn mouse_scroll_in_interaction_mode_moves_the_interaction_screen() {
+        // #988: a wheel event in Interaction mode must scroll the chat
+        // transcript (scroll_up takes manual control → auto_scroll off), not
+        // the legacy panel_view.
+        let mut app = make_app();
+        app.tui_mode = app::TuiMode::Interaction;
+        app.screen_state.interaction_screen = Some(screens::InteractionScreen::new());
+        assert!(
+            app.screen_state
+                .interaction_screen
+                .as_ref()
+                .unwrap()
+                .auto_scroll_for_test(),
+            "precondition: a fresh screen tail-follows"
+        );
+
+        route_mouse_scroll_up(&mut app);
+
+        assert!(
+            !app.screen_state
+                .interaction_screen
+                .as_ref()
+                .unwrap()
+                .auto_scroll_for_test(),
+            "wheel-up in Interaction mode must drive the interaction scroll"
+        );
+    }
+
+    #[test]
+    fn mouse_scroll_outside_interaction_mode_leaves_interaction_untouched() {
+        // A wheel event in any other mode keeps the legacy panel_view routing,
+        // so a present-but-inactive interaction screen must not move (no
+        // regression for other screens).
+        let mut app = make_app();
+        app.tui_mode = app::TuiMode::Dashboard;
+        app.screen_state.interaction_screen = Some(screens::InteractionScreen::new());
+
+        route_mouse_scroll_up(&mut app);
+
+        assert!(
+            app.screen_state
+                .interaction_screen
+                .as_ref()
+                .unwrap()
+                .auto_scroll_for_test(),
+            "wheel events outside Interaction mode must not touch the chat scroll"
+        );
     }
 
     #[test]

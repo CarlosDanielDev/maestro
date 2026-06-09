@@ -149,8 +149,10 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
         Span::raw(" Quit  "),
         Span::styled("[Esc]", active),
         Span::raw(" Back  "),
-        Span::styled("[Up/Down]", active),
-        Span::raw(" Scroll "),
+        Span::styled("[Up/Dn/PgUp/PgDn]", active),
+        Span::raw(" Scroll  "),
+        Span::styled("[End]", active),
+        Span::raw(" Latest "),
     ]);
 
     // Fill the rest of the row with the rule so the chords read as a border.

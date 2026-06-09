@@ -281,7 +281,8 @@ fn keybindings_list_expected_keys() {
         "Ctrl+L",
         "Ctrl+W",
         "Esc",
-        "Up/Down",
+        "Up/Down/PgUp/PgDn",
+        "End",
     ] {
         assert!(keys.contains(&expected), "missing {expected} in {keys:?}");
     }

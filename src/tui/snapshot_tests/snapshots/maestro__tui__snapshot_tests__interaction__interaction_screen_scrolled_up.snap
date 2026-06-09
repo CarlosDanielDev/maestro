@@ -36,7 +36,7 @@ expression: terminal.backend()
 " │ Message 7                                                                                                          │ "
 " ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ "
 "                                                                                                                        "
-"─ [Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+L] Clear input  [Ctrl+W] Quit  [Esc] Back  [Up/Down] Scro"
+"─ [Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup  [Ctrl+L] Clear input  [Ctrl+W] Quit  [Esc] Back  [Up/Dn/PgUp/Pg"
 "╔═════════════════════════════════════════════════════[ Message ]══════════════════════════════════════════════════════╗"
 "║Type a prompt to begin…                                                                                               ║"
 "║                                                                                                                      ║"
