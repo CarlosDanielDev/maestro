@@ -9,6 +9,7 @@ mod input;
 mod keymap;
 #[cfg(test)]
 mod keymap_tests;
+mod layout;
 pub(crate) mod lifecycle;
 #[cfg(test)]
 mod terminator_tests;
@@ -25,6 +26,7 @@ use crate::tui::theme::Theme;
 use chrono::Utc;
 use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use keymap::{InteractionIntent, classify, pushup_prompt};
+use layout::{HEADER_HEIGHT, INPUT_HEIGHT, effective_offset, inset_x};
 use lifecycle::{Clock, RealClock, RealTeardown, WorktreeTeardownPort};
 use ratatui::{
     Frame,
@@ -37,41 +39,6 @@ use tui_textarea::TextArea;
 
 /// Tag used for every Interaction activity-log line.
 const LOG_TAG: &str = "INTERACTION";
-
-/// Fixed height (rows, incl. borders) reserved for the input pane.
-const INPUT_HEIGHT: u16 = 5;
-
-/// Header rows (top + bottom border of the square header box, #987 QA).
-const HEADER_HEIGHT: u16 = 2;
-
-/// Shrink a rect by `margin` columns on each side, keeping it non-degenerate.
-fn inset_x(area: Rect, margin: u16) -> Rect {
-    let trim = margin.saturating_mul(2);
-    Rect {
-        x: area.x.saturating_add(margin),
-        y: area.y,
-        width: area.width.saturating_sub(trim),
-        height: area.height,
-    }
-}
-
-/// Compute the vertical scroll offset to render at. When `auto_scroll` is
-/// on, the pane follows the tail (returns the max offset). When off, it
-/// honors the user's `scroll_offset`, clamped so it never scrolls past the
-/// last line.
-fn effective_offset(
-    auto_scroll: bool,
-    scroll_offset: usize,
-    total: usize,
-    viewport: usize,
-) -> usize {
-    let max = total.saturating_sub(viewport);
-    if auto_scroll {
-        max
-    } else {
-        scroll_offset.min(max)
-    }
-}
 
 /// Dedicated chat-style screen for a long-lived interaction session.
 pub struct InteractionScreen {

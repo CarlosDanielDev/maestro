@@ -1,5 +1,6 @@
 //! Unit tests for the Interaction screen state machine (#736).
 
+use super::layout::{effective_offset, inset_x};
 use super::*;
 use crate::session::interaction::TurnRole;
 use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
