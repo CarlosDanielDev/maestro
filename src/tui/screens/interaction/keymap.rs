@@ -26,7 +26,7 @@ pub(crate) enum InteractionIntent {
     ClearInput,
     /// `Esc` — return to the Issues list (honoured in every state).
     Back,
-    /// `Ctrl+Q` — open the quit-confirm modal.
+    /// `Ctrl+W` — open the quit-confirm modal (Ctrl+Q is the global TurboQuant toggle).
     RequestQuit,
     /// `Up` — scroll history up (any state).
     ScrollUp,
@@ -39,7 +39,7 @@ pub(crate) enum InteractionIntent {
 }
 
 /// Classify one key press. Order matters: terminal/global keys resolve before
-/// the streaming lock so `Esc`, `Ctrl+Q`, and scroll still work mid-stream.
+/// the streaming lock so `Esc`, `Ctrl+W`, and scroll still work mid-stream.
 pub(crate) fn classify(
     state: InteractionState,
     produce_pr: bool,
@@ -62,7 +62,9 @@ pub(crate) fn classify(
         _ => {}
     }
     let ctrl = mods.contains(KeyModifiers::CONTROL);
-    if ctrl && code == KeyCode::Char('q') {
+    // Ctrl+W (not Ctrl+Q — that is the global TurboQuant toggle, consumed
+    // before screen dispatch in input_handler).
+    if ctrl && code == KeyCode::Char('w') {
         return RequestQuit;
     }
 
@@ -128,7 +130,7 @@ impl KeymapProvider for InteractionScreen {
                     description: "Clear input",
                 },
                 KeyBinding {
-                    key: "Ctrl+Q",
+                    key: "Ctrl+W",
                     description: "Quit",
                 },
                 KeyBinding {
@@ -234,15 +236,23 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_q_idle_opens_quit_modal() {
-        let (c, m) = ctrl('q');
+    fn ctrl_w_idle_opens_quit_modal() {
+        let (c, m) = ctrl('w');
         assert_eq!(classify(Idle, true, c, m), RequestQuit);
     }
 
     #[test]
-    fn ctrl_q_streaming_opens_quit_modal() {
-        let (c, m) = ctrl('q');
+    fn ctrl_w_streaming_opens_quit_modal() {
+        let (c, m) = ctrl('w');
         assert_eq!(classify(Streaming, true, c, m), RequestQuit);
+    }
+
+    #[test]
+    fn ctrl_q_no_longer_quits_reserved_for_global_turboquant() {
+        // Ctrl+Q is the global TurboQuant toggle (input_handler), consumed
+        // before screen dispatch — interaction must not also bind it.
+        let (c, m) = ctrl('q');
+        assert_ne!(classify(Idle, true, c, m), RequestQuit);
     }
 
     #[test]

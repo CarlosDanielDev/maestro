@@ -9,6 +9,7 @@ mod input;
 mod keymap;
 #[cfg(test)]
 mod keymap_tests;
+mod layout;
 pub(crate) mod lifecycle;
 #[cfg(test)]
 mod terminator_tests;
@@ -25,6 +26,7 @@ use crate::tui::theme::Theme;
 use chrono::Utc;
 use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use keymap::{InteractionIntent, classify, pushup_prompt};
+use layout::{HEADER_HEIGHT, INPUT_HEIGHT, effective_offset, inset_x};
 use lifecycle::{Clock, RealClock, RealTeardown, WorktreeTeardownPort};
 use ratatui::{
     Frame,
@@ -38,27 +40,6 @@ use tui_textarea::TextArea;
 /// Tag used for every Interaction activity-log line.
 const LOG_TAG: &str = "INTERACTION";
 
-/// Fixed height (rows, incl. borders) reserved for the input pane.
-const INPUT_HEIGHT: u16 = 5;
-
-/// Compute the vertical scroll offset to render at. When `auto_scroll` is
-/// on, the pane follows the tail (returns the max offset). When off, it
-/// honors the user's `scroll_offset`, clamped so it never scrolls past the
-/// last line.
-fn effective_offset(
-    auto_scroll: bool,
-    scroll_offset: usize,
-    total: usize,
-    viewport: usize,
-) -> usize {
-    let max = total.saturating_sub(viewport);
-    if auto_scroll {
-        max
-    } else {
-        scroll_offset.min(max)
-    }
-}
-
 /// Dedicated chat-style screen for a long-lived interaction session.
 pub struct InteractionScreen {
     /// Issue this session is attached to. Keys re-entry + activity-log lines.
@@ -70,9 +51,9 @@ pub struct InteractionScreen {
     /// Lifecycle state mirrored from the domain `InteractionSession`. Drives
     /// the input lock (`Streaming`) and the terminal banner (`Terminated`).
     state: InteractionState,
-    /// Why the session ended, set when the user confirms `Ctrl+Q`.
+    /// Why the session ended, set when the user confirms `Ctrl+W`.
     close_reason: Option<CloseReason>,
-    /// True while the `Ctrl+Q` confirm modal is visible.
+    /// True while the `Ctrl+W` confirm modal is visible.
     quit_modal_open: bool,
     /// Wall-clock start of the in-flight turn (from `TurnStarted`). Used to
     /// compute the elapsed-ms figure in the per-turn activity-log line.
@@ -233,14 +214,17 @@ impl InteractionScreen {
 
     fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::vertical([
-            Constraint::Length(1),
+            Constraint::Length(HEADER_HEIGHT),
             Constraint::Min(0),
             Constraint::Length(1),
             Constraint::Length(INPUT_HEIGHT),
         ])
         .split(area);
         let header_area = chunks[0];
-        let history_area = chunks[1];
+        // Inset the transcript by one column each side so the rounded card
+        // borders get a gutter and the right border never clips against the
+        // terminal edge (#987 QA).
+        let history_area = inset_x(chunks[1], 1);
         let keybar_area = chunks[2];
         let input_area = chunks[3];
 

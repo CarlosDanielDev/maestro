@@ -2,8 +2,11 @@
 source: src/tui/snapshot_tests/interaction.rs
 expression: terminal.backend()
 ---
-" agent agent  ·  model default  ·  #42                                                                                  "
-"you   ▸ stop                                                                                                            "
+"┌─ agent agent  ·  model default  ·  #42 ──────────────────────────────────────────────────────────────────────────────┐"
+"└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
+" ╭─ you · HH:MM ──────────────────────────────────────────────────────────────────────────────────────────────────────╮ "
+" │ stop                                                                                                               │ "
+" ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
@@ -33,10 +36,7 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"                                                                                                                        "
-"                                                                                                                        "
-"                                                                                                                        "
-"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup (off)  [Ctrl+L] Clear input  [Ctrl+Q] Quit  [Esc] Back            "
+"─ [Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup (off)  [Ctrl+L] Clear input  [Ctrl+W] Quit  [Esc] Back  [Up/Down"
 "╔════════════════════════════════════════════════════[ Terminated ]════════════════════════════════════════════════════╗"
 "║                          Session terminated (user quit). Press any key to return to Issues.                          ║"
 "║                                                                                                                      ║"

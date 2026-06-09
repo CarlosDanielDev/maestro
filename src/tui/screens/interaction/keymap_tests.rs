@@ -210,17 +210,17 @@ fn terminated_any_key_returns_pop() {
 // --- quit modal ---
 
 #[test]
-fn ctrl_q_opens_quit_modal() {
+fn ctrl_w_opens_quit_modal() {
     let mut s = screen_for(7, true, InteractionState::Idle);
-    let action = s.handle_input(&ctrl('q'), InputMode::Insert);
+    let action = s.handle_input(&ctrl('w'), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
     assert!(s.quit_modal_open);
 }
 
 #[test]
-fn ctrl_q_streaming_opens_quit_modal() {
+fn ctrl_w_streaming_opens_quit_modal() {
     let mut s = screen_for(7, true, InteractionState::Streaming);
-    s.handle_input(&ctrl('q'), InputMode::Insert);
+    s.handle_input(&ctrl('w'), InputMode::Insert);
     assert!(s.quit_modal_open);
     assert_eq!(s.state, InteractionState::Streaming);
 }
@@ -228,7 +228,7 @@ fn ctrl_q_streaming_opens_quit_modal() {
 #[test]
 fn quit_modal_y_terminates_and_returns_quit_action() {
     let mut s = screen_for(9, true, InteractionState::Idle);
-    s.handle_input(&ctrl('q'), InputMode::Insert);
+    s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('y')), InputMode::Insert);
     assert_eq!(action, ScreenAction::QuitInteraction { issue_number: 9 });
     assert_eq!(s.state, InteractionState::Terminated);
@@ -239,7 +239,7 @@ fn quit_modal_y_terminates_and_returns_quit_action() {
 #[test]
 fn quit_modal_uppercase_y_terminates() {
     let mut s = screen_for(9, true, InteractionState::Idle);
-    s.handle_input(&ctrl('q'), InputMode::Insert);
+    s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('Y')), InputMode::Insert);
     assert_eq!(action, ScreenAction::QuitInteraction { issue_number: 9 });
     assert_eq!(s.state, InteractionState::Terminated);
@@ -248,7 +248,7 @@ fn quit_modal_uppercase_y_terminates() {
 #[test]
 fn quit_modal_n_cancels() {
     let mut s = screen_for(9, true, InteractionState::Idle);
-    s.handle_input(&ctrl('q'), InputMode::Insert);
+    s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('n')), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
     assert!(!s.quit_modal_open);
@@ -258,7 +258,7 @@ fn quit_modal_n_cancels() {
 #[test]
 fn quit_modal_esc_cancels_modal_not_screen() {
     let mut s = screen_for(9, true, InteractionState::Idle);
-    s.handle_input(&ctrl('q'), InputMode::Insert);
+    s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
     assert!(!s.quit_modal_open);
@@ -279,7 +279,7 @@ fn keybindings_list_expected_keys() {
         "Shift+Enter",
         "Ctrl+P",
         "Ctrl+L",
-        "Ctrl+Q",
+        "Ctrl+W",
         "Esc",
         "Up/Down",
     ] {

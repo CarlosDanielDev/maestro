@@ -1,5 +1,6 @@
 //! Unit tests for the Interaction screen state machine (#736).
 
+use super::layout::{effective_offset, inset_x};
 use super::*;
 use crate::session::interaction::TurnRole;
 use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
@@ -8,6 +9,34 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 fn fixed_t0() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 1, 1, 9, 0, 0).unwrap()
+}
+
+#[test]
+fn inset_x_trims_both_sides_and_keeps_vertical() {
+    let area = Rect {
+        x: 0,
+        y: 3,
+        width: 120,
+        height: 40,
+    };
+    let r = inset_x(area, 1);
+    assert_eq!(r.x, 1, "shifts right by margin");
+    assert_eq!(r.width, 118, "trims margin off each side");
+    assert_eq!(r.y, 3, "vertical unchanged");
+    assert_eq!(r.height, 40, "vertical unchanged");
+}
+
+#[test]
+fn inset_x_saturates_on_narrow_area() {
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 5,
+    };
+    // 2*margin > width must not underflow.
+    let r = inset_x(area, 1);
+    assert_eq!(r.width, 0);
 }
 
 fn user_turn(content: &str) -> TurnRecord {

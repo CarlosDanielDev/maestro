@@ -2,8 +2,11 @@
 source: src/tui/snapshot_tests/interaction_terminator.rs
 expression: terminal.backend()
 ---
-" agent agent  ·  model default  ·  #42                                                                                  "
-"you   ▸ implement login                                                                                                 "
+"┌─ agent agent  ·  model default  ·  #42 ──────────────────────────────────────────────────────────────────────────────┐"
+"└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
+" ╭─ you · HH:MM ──────────────────────────────────────────────────────────────────────────────────────────────────────╮ "
+" │ implement login                                                                                                    │ "
+" ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
@@ -33,10 +36,7 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"                                                                                                                        "
-"                                                                                                                        "
-"                                                                                                                        "
-"[Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup (off)  [Ctrl+L] Clear input  [Ctrl+Q] Quit  [Esc] Back            "
+"─ [Enter] Send  [Shift+Enter] Newline  [Ctrl+P] /pushup (off)  [Ctrl+L] Clear input  [Ctrl+W] Quit  [Esc] Back  [Up/Down"
 "╔══════════════════════════════════════════[ Message (⠋ agent responding…) ]═══════════════════════════════════════════╗"
 "║⠋ Agent is responding — input locked…                                                                                 ║"
 "║                                                                                                                      ║"

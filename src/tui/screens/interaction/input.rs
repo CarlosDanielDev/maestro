@@ -12,13 +12,16 @@ use ratatui::{
     layout::{Alignment, Position, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 use std::path::Path;
 use tui_textarea::TextArea;
 
-/// Render a one-line header naming the agent/CLI, model, and issue the chat
-/// is bound to, so the user always knows who they are talking to (#738 QA).
+/// Render the header naming the agent/CLI, model, and issue the chat is bound
+/// to, so the user always knows who they are talking to (#738 QA). The text
+/// rides the top border of a square box (#987 QA) so the header reads as one
+/// framed unit, distinct from the rounded transcript cards below it. Needs a
+/// 2-row `area` (top border + bottom border).
 pub(super) fn draw_header(
     f: &mut Frame,
     area: Rect,
@@ -35,7 +38,7 @@ pub(super) fn draw_header(
     };
     let model = if model.is_empty() { "default" } else { model };
     let mut spans = vec![
-        Span::styled(" agent ", Style::default().fg(theme.text_secondary)),
+        Span::styled("─ agent ", Style::default().fg(theme.border_inactive)),
         Span::styled(agent.to_string(), Style::default().fg(theme.accent_info)),
         Span::styled("  ·  model ", Style::default().fg(theme.text_secondary)),
         Span::styled(model.to_string(), Style::default().fg(theme.accent_info)),
@@ -50,7 +53,13 @@ pub(super) fn draw_header(
             Style::default().fg(theme.text_primary),
         ));
     }
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(theme.border_inactive))
+        .title(Line::from(spans))
+        .title_alignment(Alignment::Left);
+    f.render_widget(block, area);
 }
 
 /// Render the input editor into `area`. While `locked` (a turn is streaming)
@@ -109,14 +118,19 @@ pub(super) fn draw_input(
     }
 }
 
-/// One-line keybind footer. The `Ctrl+P` chord is greyed when the pushup
-/// action is unavailable (launched without Produce PR or mid-stream).
+/// One-line keybind footer rendered as a titled border line (#987 QA): the
+/// chords ride a `─` rule like the header box, instead of floating on a blank
+/// row. The `Ctrl+P` chord is greyed when the pushup action is unavailable
+/// (launched without Produce PR or mid-stream).
 pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabled: bool) {
     let active = Style::default().fg(theme.accent_success);
     let muted = Style::default().fg(theme.text_secondary);
+    let border = Style::default().fg(theme.border_inactive);
     let pushup_style = if pushup_enabled { active } else { muted };
 
+    // Lead the chords with a short rule so they sit on a border line.
     let mut spans = vec![
+        Span::styled("─ ", border),
         Span::styled("[Enter]", active),
         Span::raw(" Send  "),
         Span::styled("[Shift+Enter]", active),
@@ -131,15 +145,24 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
     spans.extend([
         Span::styled("[Ctrl+L]", active),
         Span::raw(" Clear input  "),
-        Span::styled("[Ctrl+Q]", active),
+        Span::styled("[Ctrl+W]", active),
         Span::raw(" Quit  "),
         Span::styled("[Esc]", active),
-        Span::raw(" Back"),
+        Span::raw(" Back  "),
+        Span::styled("[Up/Down]", active),
+        Span::raw(" Scroll "),
     ]);
+
+    // Fill the rest of the row with the rule so the chords read as a border.
+    let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+    let fill = (area.width as usize).saturating_sub(used);
+    if fill > 0 {
+        spans.push(Span::styled("─".repeat(fill), border));
+    }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-/// Render the `Ctrl+Q` quit-confirm modal centered over `area`.
+/// Render the `Ctrl+W` quit-confirm modal centered over `area`.
 pub(super) fn draw_quit_modal(f: &mut Frame, area: Rect, theme: &Theme, worktree: &Path) {
     let text = format!(
         "Quit interaction? Worktree at {} kept for manual inspection. [y/N]",

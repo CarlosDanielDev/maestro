@@ -68,7 +68,7 @@ clap_mangen = "0.2"
 anyhow = "1"
 
 [dev-dependencies]
-insta = "1"
+insta = { version = "1", features = ["filters"] }
 proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
 
