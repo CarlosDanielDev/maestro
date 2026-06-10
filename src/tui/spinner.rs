@@ -1,5 +1,8 @@
 use crate::session::types::SessionStatus;
 
+mod wave;
+pub use wave::responding_wave;
+
 const ASCII_SPINNER_FRAMES: &[char] = &['|', '/', '-', '\\'];
 
 /// Tool-use animation: progress bar style.

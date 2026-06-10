@@ -248,10 +248,12 @@ impl InteractionScreen {
         if self.state == InteractionState::Terminated {
             input::draw_terminated_banner(f, input_area, theme, self.close_reason.as_ref());
         } else {
-            let spinner = crate::tui::spinner::graph_node_frame(
-                self.spinner_tick,
-                crate::icon_mode::use_nerd_font(),
-            );
+            let nerd = crate::icon_mode::use_nerd_font();
+            // Slow the throbber to ~7fps (the loop redraws at ~20fps): a calmer
+            // rotation reads as a clear spinner instead of a vibrating blob.
+            let calm = self.spinner_tick / 3;
+            let spinner = crate::tui::spinner::graph_node_frame(calm, nerd);
+            let wave = crate::tui::spinner::responding_wave(calm, nerd);
             input::draw_input(
                 f,
                 input_area,
@@ -259,6 +261,7 @@ impl InteractionScreen {
                 &self.editor,
                 self.is_streaming(),
                 spinner,
+                &wave,
             );
         }
 
