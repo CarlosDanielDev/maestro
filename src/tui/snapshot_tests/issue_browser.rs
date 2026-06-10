@@ -259,3 +259,63 @@ fn issue_browser_launch_options_launch_focused() {
 
     assert_snapshot!(terminal.backend());
 }
+
+#[test]
+fn issue_browser_multi_overlay_launch_options_default() {
+    // #919: the multi-issue overlay renders the same checkbox rows as the
+    // single-issue dialog, below the prompt textarea.
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut screen = IssueBrowserScreen::new(vec![
+        make_gh_issue(1, "Add login flow"),
+        make_gh_issue(2, "Fix database crash"),
+    ]);
+    screen.prompt_overlay = Some(IssuePromptOverlay {
+        editor: IssuePromptOverlay::make_editor(""),
+        selected_issues: vec![
+            (1, "Add login flow".to_string()),
+            (2, "Fix database crash".to_string()),
+        ],
+        unified_pr: false,
+        focus: LaunchFocus::Prompt,
+        produce_pr: true,
+        interaction: false,
+    });
+
+    terminal
+        .draw(|f| {
+            screen.draw(f, f.area(), &theme);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn issue_browser_multi_overlay_launch_options_toggled() {
+    let mut terminal = test_terminal();
+    let theme = Theme::dark();
+    let mut screen = IssueBrowserScreen::new(vec![
+        make_gh_issue(1, "Add login flow"),
+        make_gh_issue(2, "Fix database crash"),
+    ]);
+    screen.prompt_overlay = Some(IssuePromptOverlay {
+        editor: IssuePromptOverlay::make_editor(""),
+        selected_issues: vec![
+            (1, "Add login flow".to_string()),
+            (2, "Fix database crash".to_string()),
+        ],
+        unified_pr: true,
+        focus: LaunchFocus::Interaction,
+        produce_pr: false,
+        interaction: true,
+    });
+
+    terminal
+        .draw(|f| {
+            screen.draw(f, f.area(), &theme);
+        })
+        .unwrap();
+
+    assert_snapshot!(terminal.backend());
+}

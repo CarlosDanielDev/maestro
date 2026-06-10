@@ -1424,7 +1424,14 @@ mod handle_paste_tests {
     #[test]
     fn dispatch_paste_routes_to_prompt_input_screen_when_active() {
         let mut app = make_app();
-        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(
+            crate::tui::screens::PromptInputScreen::new().with_launch_defaults(
+                app.config
+                    .as_ref()
+                    .map(|c| c.launch_defaults())
+                    .unwrap_or((true, false)),
+            ),
+        );
         app.tui_mode = app::TuiMode::PromptInput;
 
         dispatch_paste_to_active_screen(&mut app, "hello from paste");
@@ -1441,7 +1448,14 @@ mod handle_paste_tests {
     #[test]
     fn dispatch_paste_preserves_embedded_newlines() {
         let mut app = make_app();
-        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(
+            crate::tui::screens::PromptInputScreen::new().with_launch_defaults(
+                app.config
+                    .as_ref()
+                    .map(|c| c.launch_defaults())
+                    .unwrap_or((true, false)),
+            ),
+        );
         app.tui_mode = app::TuiMode::PromptInput;
 
         dispatch_paste_to_active_screen(&mut app, "line1\nline2\nline3");
@@ -1458,7 +1472,14 @@ mod handle_paste_tests {
     #[test]
     fn dispatch_paste_does_not_launch_session() {
         let mut app = make_app();
-        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(
+            crate::tui::screens::PromptInputScreen::new().with_launch_defaults(
+                app.config
+                    .as_ref()
+                    .map(|c| c.launch_defaults())
+                    .unwrap_or((true, false)),
+            ),
+        );
         app.tui_mode = app::TuiMode::PromptInput;
         app.pending_commands.clear();
 
@@ -1479,7 +1500,14 @@ mod handle_paste_tests {
     #[test]
     fn app_handle_paste_with_prompt_input_active_inserts_text() {
         let mut app = make_app();
-        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(
+            crate::tui::screens::PromptInputScreen::new().with_launch_defaults(
+                app.config
+                    .as_ref()
+                    .map(|c| c.launch_defaults())
+                    .unwrap_or((true, false)),
+            ),
+        );
         app.tui_mode = app::TuiMode::PromptInput;
 
         app.handle_paste("multi\nline\npaste");

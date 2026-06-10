@@ -659,9 +659,14 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         Some(crate::tui::screens::ReleaseNotesScreen::new());
                 }
                 app::TuiMode::PromptInput => {
-                    app.screen_state.prompt_input_screen = Some(
-                        app::helpers::create_prompt_input_screen(&app.prompt_history),
-                    );
+                    app.screen_state.prompt_input_screen =
+                        Some(app::helpers::create_prompt_input_screen(
+                            &app.prompt_history,
+                            app.config
+                                .as_ref()
+                                .map(|c| c.launch_defaults())
+                                .unwrap_or((true, false)),
+                        ));
                 }
                 app::TuiMode::Interaction => {
                     app.screen_state

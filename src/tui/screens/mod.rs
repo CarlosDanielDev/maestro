@@ -285,6 +285,11 @@ pub struct UnifiedSessionConfig {
     pub custom_prompt: Option<String>,
     /// Configured agent id to use for the new session. `None` means app default.
     pub agent_id: Option<String>,
+    /// "Produce PR" launch option (#919) — plumbed; semantics wired by later
+    /// milestone issues (mirrors `SessionConfig.produce_pr` from #733).
+    pub produce_pr: bool,
+    /// "Interaction" launch option (#919) — plumbed like `produce_pr`.
+    pub interaction: bool,
 }
 
 impl UnifiedSessionConfig {
@@ -301,6 +306,10 @@ pub struct PromptSessionConfig {
     pub image_paths: Vec<String>,
     /// Configured agent id to use for the new session. `None` means app default.
     pub agent_id: Option<String>,
+    /// "Produce PR" launch option (#919) — plumbed like `SessionConfig`'s.
+    pub produce_pr: bool,
+    /// "Interaction" launch option (#919) — plumbed like `produce_pr`.
+    pub interaction: bool,
 }
 
 impl PromptSessionConfig {

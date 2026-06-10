@@ -22,6 +22,7 @@ mod landing;
 mod milestone;
 mod milestone_wizard;
 mod overview;
+mod prompt_input;
 mod roadmap;
 mod schema_tab;
 mod schema_tab_modals;

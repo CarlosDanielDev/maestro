@@ -21,6 +21,9 @@ impl PromptInputScreen {
                 Constraint::Min(6),                // prompt editor
                 Constraint::Length(toggle_height), // unified PR toggle (conditional)
                 Constraint::Length(8),             // image list
+                Constraint::Length(1),             // "Options:" label (#919)
+                Constraint::Length(1),             // Produce PR checkbox
+                Constraint::Length(1),             // Interaction checkbox
                 Constraint::Length(1),             // keybinds bar
             ])
             .split(area);
@@ -140,6 +143,29 @@ impl PromptInputScreen {
         let image_list = Paragraph::new(lines).block(image_block);
         f.render_widget(image_list, chunks[2]);
 
+        // Launch options (#919) — same rows + keymap as the issue dialog.
+        let options_label = Paragraph::new(Line::from(Span::styled(
+            "Options:",
+            Style::default().fg(theme.text_secondary),
+        )));
+        f.render_widget(options_label, chunks[3]);
+        crate::tui::widgets::unified_pr_toggle::draw_checkbox(
+            f,
+            chunks[4],
+            self.produce_pr,
+            self.is_produce_pr_focused(),
+            "Produce PR — session ends when a linked PR is created",
+            theme,
+        );
+        crate::tui::widgets::unified_pr_toggle::draw_checkbox(
+            f,
+            chunks[5],
+            self.interaction,
+            self.is_interaction_focused(),
+            "Interaction — chat with the agent; session stays alive",
+            theme,
+        );
+
         // Status message or keybinds bar
         let history_keys = format!(
             "{}/{}",
@@ -151,11 +177,11 @@ impl PromptInputScreen {
                 format!(" {} ", msg),
                 Style::default().fg(theme.accent_warning),
             )));
-            f.render_widget(status, chunks[3]);
+            f.render_widget(status, chunks[6]);
         } else if show_toggle {
             draw_keybinds_bar(
                 f,
-                chunks[3],
+                chunks[6],
                 &[
                     ("Enter", "Submit"),
                     ("Ctrl+U", "Unified PR"),
@@ -170,7 +196,7 @@ impl PromptInputScreen {
         } else {
             draw_keybinds_bar(
                 f,
-                chunks[3],
+                chunks[6],
                 &[
                     ("Enter", "Submit"),
                     ("Ctrl+J", "New line"),

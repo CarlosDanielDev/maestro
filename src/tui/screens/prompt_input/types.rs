@@ -89,6 +89,10 @@ pub struct PromptInputScreen {
     pub(crate) unified_pr: bool,
     /// Detected issue numbers from the current editor text (cached).
     pub(crate) detected_issue_numbers: Vec<u64>,
+    /// "Produce PR" launch option (#919). Defaults from `[behavior.launch]`.
+    pub(crate) produce_pr: bool,
+    /// "Interaction" launch option (#919). Defaults from `[behavior.launch]`.
+    pub(crate) interaction: bool,
 }
 
 impl PromptInputScreen {
@@ -137,6 +141,8 @@ impl PromptInputScreen {
 
     pub const PROMPT_EDITOR_PANE: FocusId = FocusId("prompt:editor");
     pub const IMAGE_LIST_PANE: FocusId = FocusId("prompt:images");
+    pub const PRODUCE_PR_PANE: FocusId = FocusId("prompt:produce-pr");
+    pub const INTERACTION_PANE: FocusId = FocusId("prompt:interaction");
 
     pub fn with_clipboard(clipboard: Box<dyn ClipboardProvider>) -> Self {
         let mut editor = TextArea::default();
@@ -145,7 +151,12 @@ impl PromptInputScreen {
         Self {
             editor,
             image_paths: Vec::new(),
-            focus_ring: FocusRing::new(vec![Self::PROMPT_EDITOR_PANE, Self::IMAGE_LIST_PANE]),
+            focus_ring: FocusRing::new(vec![
+                Self::PROMPT_EDITOR_PANE,
+                Self::IMAGE_LIST_PANE,
+                Self::PRODUCE_PR_PANE,
+                Self::INTERACTION_PANE,
+            ]),
             image_path_input: String::new(),
             editing_image_path: false,
             selected_image: 0,
@@ -156,7 +167,18 @@ impl PromptInputScreen {
             draft_prompt: String::new(),
             unified_pr: false,
             detected_issue_numbers: Vec::new(),
+            produce_pr: true,
+            interaction: false,
         }
+    }
+
+    /// Seed the launch checkboxes from `[behavior.launch]`
+    /// (`default_produce_pr`, `default_interaction`) — same source as the
+    /// issue launch dialog (#733/#919).
+    pub fn with_launch_defaults(mut self, defaults: (bool, bool)) -> Self {
+        self.produce_pr = defaults.0;
+        self.interaction = defaults.1;
+        self
     }
 
     /// Inject prompt history from the App.
@@ -182,6 +204,14 @@ impl PromptInputScreen {
 
     pub(crate) fn is_image_list_focused(&self) -> bool {
         self.focus_ring.is_focused(Self::IMAGE_LIST_PANE)
+    }
+
+    pub(crate) fn is_produce_pr_focused(&self) -> bool {
+        self.focus_ring.is_focused(Self::PRODUCE_PR_PANE)
+    }
+
+    pub(crate) fn is_interaction_focused(&self) -> bool {
+        self.focus_ring.is_focused(Self::INTERACTION_PANE)
     }
 
     pub(crate) fn paste_from_clipboard(&mut self) {

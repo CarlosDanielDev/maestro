@@ -289,6 +289,10 @@ fn handle_completion_summary(app: &mut App, key: &KeyEvent) -> KeyAction {
         (KeyCode::Char('r'), _) => {
             app.screen_state.prompt_input_screen = Some(app::helpers::create_prompt_input_screen(
                 &app.prompt_history,
+                app.config
+                    .as_ref()
+                    .map(|c| c.launch_defaults())
+                    .unwrap_or((true, false)),
             ));
             app.navigate_to(app::TuiMode::PromptInput);
         }

@@ -48,6 +48,39 @@ fn key_group(title: &'static str, bindings: &[(&'static str, &'static str)]) -> 
     }
 }
 
+impl PromptInputScreen {
+    /// Build the launch action from the current editor + options (#919).
+    /// Returns `ScreenAction::None` when the prompt is empty.
+    fn submit(&self) -> ScreenAction {
+        let text = self.editor_text();
+        if text.trim().is_empty() {
+            return ScreenAction::None;
+        }
+        // Unified PR: launch as unified session if toggled
+        if self.unified_pr && self.detected_issue_numbers.len() >= 2 {
+            let issues: Vec<(u64, String)> = self
+                .detected_issue_numbers
+                .iter()
+                .map(|n| (*n, format!("Issue #{}", n)))
+                .collect();
+            return ScreenAction::LaunchUnifiedSession(super::UnifiedSessionConfig {
+                issues,
+                custom_prompt: Some(text),
+                agent_id: None,
+                produce_pr: self.produce_pr,
+                interaction: self.interaction,
+            });
+        }
+        ScreenAction::LaunchPromptSession(PromptSessionConfig {
+            prompt: text,
+            image_paths: self.image_paths.clone(),
+            agent_id: None,
+            produce_pr: self.produce_pr,
+            interaction: self.interaction,
+        })
+    }
+}
+
 impl Screen for PromptInputScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
         if let Event::Paste(text) = event {
@@ -92,6 +125,23 @@ impl Screen for PromptInputScreen {
                 return ScreenAction::None;
             }
 
+            // Launch-option stops (#919): Space toggles, Enter launches —
+            // identical to the issue launch dialog keymap (#733).
+            if self.is_produce_pr_focused() || self.is_interaction_focused() {
+                match code {
+                    KeyCode::Char(' ') => {
+                        if self.is_produce_pr_focused() {
+                            self.produce_pr = !self.produce_pr;
+                        } else {
+                            self.interaction = !self.interaction;
+                        }
+                        return ScreenAction::None;
+                    }
+                    KeyCode::Enter => return self.submit(),
+                    _ => return ScreenAction::None,
+                }
+            }
+
             // Route input based on focus and editing state
             if self.editing_image_path {
                 match code {
@@ -117,28 +167,9 @@ impl Screen for PromptInputScreen {
                 match (code, modifiers) {
                     // Enter alone → submit prompt
                     (KeyCode::Enter, m) if *m == KeyModifiers::NONE => {
-                        let text = self.editor_text();
-                        if !text.trim().is_empty() {
-                            // Unified PR: launch as unified session if toggled
-                            if self.unified_pr && self.detected_issue_numbers.len() >= 2 {
-                                let issues: Vec<(u64, String)> = self
-                                    .detected_issue_numbers
-                                    .iter()
-                                    .map(|n| (*n, format!("Issue #{}", n)))
-                                    .collect();
-                                return ScreenAction::LaunchUnifiedSession(
-                                    super::UnifiedSessionConfig {
-                                        issues,
-                                        custom_prompt: Some(text),
-                                        agent_id: None,
-                                    },
-                                );
-                            }
-                            return ScreenAction::LaunchPromptSession(PromptSessionConfig {
-                                prompt: text,
-                                image_paths: self.image_paths.clone(),
-                                agent_id: None,
-                            });
+                        let action = self.submit();
+                        if !matches!(action, ScreenAction::None) {
+                            return action;
                         }
                     }
                     // Ctrl+J or Shift+Enter or Alt+Enter → insert newline
