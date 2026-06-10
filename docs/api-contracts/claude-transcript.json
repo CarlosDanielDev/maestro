@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CarlosDanielDev/maestro/docs/api-contracts/claude-transcript.json",
+  "title": "Claude Code Session Transcript Entry",
+  "description": "One JSONL line of the session transcript written by Claude Code (observed v2.1.170) at ~/.claude/projects/<munged-cwd>/<session-id>.jsonl. The interactive PTY transport (issue #749) tails this file and maps entries to StreamEvents in src/agent_provider/claude/transcript_parser.rs. Only the entry types listed under $defs are consumed; all other types (mode, permission-mode, ai-title, file-history-snapshot, last-prompt, attachment, pr-link, and any future additions) are intentionally skipped, so this schema validates the consumed subset and tolerates everything else. Field coverage is intentionally loose (additionalProperties: true) — the parser reads defensively and missing fields degrade to defaults, never to a decode failure.",
+  "oneOf": [
+    { "$ref": "#/$defs/assistantEntry" },
+    { "$ref": "#/$defs/userEntry" },
+    { "$ref": "#/$defs/turnDurationEntry" },
+    {
+      "type": "object",
+      "description": "Any other transcript entry type — skipped by the parser.",
+      "required": ["type"],
+      "properties": { "type": { "type": "string" } },
+      "additionalProperties": true
+    }
+  ],
+  "$defs": {
+    "assistantEntry": {
+      "type": "object",
+      "required": ["type", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "assistant" },
+        "sessionId": { "type": "string" },
+        "uuid": { "type": "string" },
+        "parentUuid": { "type": ["string", "null"] },
+        "message": {
+          "type": "object",
+          "description": "Full Anthropic API assistant message.",
+          "additionalProperties": true,
+          "properties": {
+            "id": { "type": "string" },
+            "model": { "type": "string" },
+            "role": { "const": "assistant" },
+            "stop_reason": { "type": ["string", "null"] },
+            "content": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/contentBlock" }
+            },
+            "usage": { "$ref": "#/$defs/usage" }
+          }
+        }
+      }
+    },
+    "userEntry": {
+      "type": "object",
+      "required": ["type", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "user" },
+        "message": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "role": { "const": "user" },
+            "content": {
+              "description": "Plain string for prompt echoes (skipped); array form may carry tool_result blocks (mapped to StreamEvent::ToolResult).",
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "type": { "type": "string" },
+                      "tool_use_id": { "type": "string" },
+                      "is_error": { "type": "boolean" }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "turnDurationEntry": {
+      "type": "object",
+      "description": "End-of-turn marker — maps to StreamEvent::Completed.",
+      "required": ["type", "subtype"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "system" },
+        "subtype": { "const": "turn_duration" },
+        "durationMs": { "type": "number" },
+        "messageCount": { "type": "number" }
+      }
+    },
+    "contentBlock": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "enum": ["thinking", "text", "tool_use", "tool_result"] },
+        "thinking": { "type": "string" },
+        "text": { "type": "string" },
+        "name": { "type": "string" },
+        "input": { "type": "object" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "input_tokens": { "type": "number" },
+        "output_tokens": { "type": "number" },
+        "cache_read_input_tokens": { "type": "number" },
+        "cache_creation_input_tokens": { "type": "number" }
+      }
+    }
+  }
+}

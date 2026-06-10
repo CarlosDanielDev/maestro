@@ -1,0 +1,28 @@
+---
+source: src/agent_provider/claude/transcript_parser.rs
+expression: events
+---
+Thinking { text: "simple arithmetic" }
+TokenUpdate { usage: TokenUsage { input_tokens: 10, output_tokens: 12, cache_read_tokens: 0, cache_creation_tokens: 2000 } }
+CostUpdate { cost_usd: 0.002056 }
+ContextUpdate { context_pct: 0.01005 }
+AssistantMessage { text: "4" }
+TokenUpdate { usage: TokenUsage { input_tokens: 10, output_tokens: 12, cache_read_tokens: 0, cache_creation_tokens: 2000 } }
+CostUpdate { cost_usd: 0.002056 }
+ContextUpdate { context_pct: 0.01005 }
+Completed { cost_usd: 0.0 }
+ToolUse { tool: "Read", file_path: Some("/tmp/proj/notes.txt"), command_preview: None, subagent_name: None }
+TokenUpdate { usage: TokenUsage { input_tokens: 40, output_tokens: 30, cache_read_tokens: 2000, cache_creation_tokens: 0 } }
+CostUpdate { cost_usd: 0.000312 }
+ContextUpdate { context_pct: 0.0102 }
+ToolResult { tool: "unknown", is_error: false }
+AssistantMessage { text: "The note says: buy milk." }
+TokenUpdate { usage: TokenUsage { input_tokens: 55, output_tokens: 18, cache_read_tokens: 2000, cache_creation_tokens: 0 } }
+CostUpdate { cost_usd: 0.000276 }
+ContextUpdate { context_pct: 0.010275 }
+Completed { cost_usd: 0.0 }
+AssistantMessage { text: "You're welcome!" }
+TokenUpdate { usage: TokenUsage { input_tokens: 5, output_tokens: 6, cache_read_tokens: 2055, cache_creation_tokens: 0 } }
+CostUpdate { cost_usd: 0.00019240000000000001 }
+ContextUpdate { context_pct: 0.0103 }
+Completed { cost_usd: 0.0 }

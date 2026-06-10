@@ -94,50 +94,129 @@ pub fn parse_stream_line(line: &str) -> Vec<StreamEvent> {
     };
 
     // Extract context percentage + token usage + computed cost from
-    // `message.usage` (present in assistant events). The Claude CLI reports
-    // input_tokens (new) + cache_read_input_tokens (prior context) but no
-    // max_input_tokens. We compute total and use model context limits.
-    if let Some(msg) = v.get("message")
-        && let Some(usage) = msg.get("usage")
-    {
-        let model = msg.get("model").and_then(|m| m.as_str()).unwrap_or("");
+    // `message.usage` (present in assistant events).
+    if let Some(msg) = v.get("message") {
+        events.extend(usage_events(msg));
+    }
 
-        if let Some(token_usage) = extract_token_usage(usage, &mut events) {
-            let cost_usd = claude_pricing::compute_cost(model, &token_usage);
-            events.push(StreamEvent::TokenUpdate { usage: token_usage });
-            if cost_usd.is_finite() && cost_usd > 0.0 {
-                events.push(StreamEvent::CostUpdate { cost_usd });
-            }
+    events
+}
+
+/// Map the `usage` object of an assistant API message to derived stream
+/// events (`TokenUpdate`, `CostUpdate`, `ContextUpdate`, clamp `Warning`s).
+///
+/// The Claude CLI reports input_tokens (new) + cache_read_input_tokens (prior
+/// context) but no max_input_tokens. We compute total and use model context
+/// limits. Shared between the headless stream-json path
+/// ([`parse_stream_line`]) and the interactive transcript path
+/// (`agent_provider::claude::transcript_parser`, issue #749) — both carry the
+/// same API-message shape under `message`.
+pub(crate) fn usage_events(msg: &Value) -> Vec<StreamEvent> {
+    let mut events = Vec::new();
+    let Some(usage) = msg.get("usage") else {
+        return events;
+    };
+    let model = msg.get("model").and_then(|m| m.as_str()).unwrap_or("");
+
+    if let Some(token_usage) = extract_token_usage(usage, &mut events) {
+        let cost_usd = claude_pricing::compute_cost(model, &token_usage);
+        events.push(StreamEvent::TokenUpdate { usage: token_usage });
+        if cost_usd.is_finite() && cost_usd > 0.0 {
+            events.push(StreamEvent::CostUpdate { cost_usd });
         }
+    }
 
-        let input = usage
-            .get("input_tokens")
-            .and_then(|t| t.as_f64())
-            .unwrap_or(0.0);
-        let cache_read = usage
-            .get("cache_read_input_tokens")
-            .and_then(|t| t.as_f64())
-            .unwrap_or(0.0);
-        let cache_create = usage
-            .get("cache_creation_input_tokens")
-            .and_then(|t| t.as_f64())
-            .unwrap_or(0.0);
-        let total_input = input + cache_read + cache_create;
+    let input = usage
+        .get("input_tokens")
+        .and_then(|t| t.as_f64())
+        .unwrap_or(0.0);
+    let cache_read = usage
+        .get("cache_read_input_tokens")
+        .and_then(|t| t.as_f64())
+        .unwrap_or(0.0);
+    let cache_create = usage
+        .get("cache_creation_input_tokens")
+        .and_then(|t| t.as_f64())
+        .unwrap_or(0.0);
+    let total_input = input + cache_read + cache_create;
 
-        if total_input > 0.0 {
-            let max = usage
-                .get("max_input_tokens")
-                .and_then(|t| t.as_f64())
-                .unwrap_or_else(|| model_max_input_tokens(model));
-            if max > 0.0 {
-                events.push(StreamEvent::ContextUpdate {
-                    context_pct: total_input / max,
-                });
-            }
+    if total_input > 0.0 {
+        let max = usage
+            .get("max_input_tokens")
+            .and_then(|t| t.as_f64())
+            .unwrap_or_else(|| model_max_input_tokens(model));
+        if max > 0.0 {
+            events.push(StreamEvent::ContextUpdate {
+                context_pct: total_input / max,
+            });
         }
     }
 
     events
+}
+
+/// Map one API-message content block (`thinking` / `text` / `tool_use`) to a
+/// stream event. Returns `None` for empty text blocks and unrecognized block
+/// types (`tool_result` blocks are handled by the transcript parser itself).
+///
+/// Used by the interactive transcript path (issue #749), where one transcript
+/// `assistant` entry carries a content *array* whose blocks must each be
+/// surfaced — unlike headless stream-json, which emits one block per line.
+pub(crate) fn content_block_event(block: &Value) -> Option<StreamEvent> {
+    match block.get("type").and_then(|t| t.as_str()) {
+        Some("thinking") => {
+            let text = block
+                .get("thinking")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+            Some(StreamEvent::Thinking { text })
+        }
+        Some("text") => {
+            let text = block
+                .get("text")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+            if text.is_empty() {
+                None
+            } else {
+                Some(StreamEvent::AssistantMessage { text })
+            }
+        }
+        Some("tool_use") => {
+            let tool = block
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let input = block.get("input");
+            let file_path = input.and_then(|inp| {
+                inp.get("file_path")
+                    .or_else(|| inp.get("path"))
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.to_string())
+            });
+            let command_preview = input.and_then(|inp| {
+                inp.get("command").and_then(|c| c.as_str()).map(|s| {
+                    if s.len() > 60 {
+                        let boundary = char_boundary(s, 60);
+                        format!("{}…", &s[..boundary])
+                    } else {
+                        s.to_string()
+                    }
+                })
+            });
+            let subagent_name = extract_subagent_name(&tool, input);
+            Some(StreamEvent::ToolUse {
+                tool,
+                file_path,
+                command_preview,
+                subagent_name,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// Extract the Claude session id from a stream-json line, if present.

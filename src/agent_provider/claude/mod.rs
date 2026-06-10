@@ -10,6 +10,11 @@
 //! `binary` + `id()` to those free functions.
 
 mod headless;
+mod interactive;
+mod pty_backend;
+mod transcript_parser;
+
+use std::sync::Arc;
 
 use std::path::Path;
 
@@ -17,32 +22,31 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use super::types::{
-    AgentError, AgentHealthCheck, AgentProvider, AgentProviderEvent, AgentProviderKind,
-    AgentRequest, AgentRunResult, AgentTextOutput, ParserBinding,
+    AgentError, AgentHealthCheck, AgentOutputFormat, AgentProvider, AgentProviderEvent,
+    AgentProviderKind, AgentRequest, AgentRunResult, AgentTextOutput, ParserBinding,
 };
 
 /// Selects how a [`ClaudeProvider`] talks to the `claude` CLI.
 ///
 /// `Headless` is the one-shot `claude --print` subprocess path used today.
-/// `Interactive` is the seam for the upcoming PTY-based transport (issue #749);
-/// it is not implemented yet and `run` returns a config error for it.
+/// `Interactive` drives the REPL on a PTY and tails the session transcript
+/// (issue #749) so Pro/Max subscription billing survives the 2026-06-15
+/// headless cutoff. One-shot text turns stay headless under both variants.
 #[derive(Debug, Clone)]
 pub enum ClaudeTransport {
     Headless,
     Interactive(InteractiveDriver),
 }
 
-/// Driver for the interactive (PTY) transport.
+/// Driver for the interactive (PTY) transport (issue #749).
 ///
-/// The PTY backend lands in issue #749. Until then this carries a single
-/// `Unimplemented` marker so the dispatch arm in [`ClaudeProvider::run`] is
-/// reachable and testable. (The issue spec wrote this as an empty enum, but an
-/// uninhabited type makes both the dispatch arm and its required test
-/// impossible — the marker is the minimal inhabited form.)
-// TODO(#749): replace `Unimplemented` with the real PTY driver state.
+/// `PortablePty` spawns the Claude REPL on a pseudo-terminal via the
+/// `portable-pty` crate and tails the session transcript for events (spike
+/// #747). A tmux-based driver may join later behind the `claude-tmux` cargo
+/// feature; today that feature is an empty stub.
 #[derive(Debug, Clone)]
 pub enum InteractiveDriver {
-    Unimplemented,
+    PortablePty,
 }
 
 #[derive(Debug, Clone)]
@@ -119,9 +123,33 @@ impl AgentProvider for ClaudeProvider {
             ClaudeTransport::Headless => {
                 headless::run(&self.binary, self.id(), request, events, cancel).await
             }
-            ClaudeTransport::Interactive(_) => Err(AgentError::Config(
-                "interactive transport not implemented (see PTY backend issue)".to_string(),
-            )),
+            ClaudeTransport::Interactive(InteractiveDriver::PortablePty) => {
+                // Hybrid strategy (spike #747): one-shot text turns stay on
+                // the headless path; only stream-json turns (the long-lived
+                // interaction surface) ride the PTY.
+                if matches!(request.output_format, AgentOutputFormat::Text) {
+                    return headless::run(&self.binary, self.id(), request, events, cancel).await;
+                }
+                let home = std::env::var("HOME").map_err(|_| {
+                    AgentError::Config(
+                        "interactive transport requires HOME to locate the transcript".to_string(),
+                    )
+                })?;
+                let spec = interactive::RunSpec::new(
+                    self.binary.clone(),
+                    self.id(),
+                    std::path::PathBuf::from(home),
+                    uuid::Uuid::new_v4().to_string(),
+                );
+                interactive::run_interactive(
+                    Arc::new(pty_backend::PortablePtyBackend),
+                    spec,
+                    request,
+                    events,
+                    cancel,
+                )
+                .await
+            }
         }
     }
 }
@@ -131,10 +159,10 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn interactive_transport_returns_not_implemented_error() {
+    async fn interactive_transport_with_missing_binary_fails_spawn() {
         let provider = ClaudeProvider {
             binary: "/nonexistent-sentinel-binary-maestro-test".to_string(),
-            transport: ClaudeTransport::Interactive(InteractiveDriver::Unimplemented),
+            transport: ClaudeTransport::Interactive(InteractiveDriver::PortablePty),
         };
 
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -143,22 +171,34 @@ mod tests {
 
         let result = provider.run(request, tx, cancel).await;
 
-        match result {
-            Err(AgentError::Config(msg)) => {
-                assert!(
-                    msg.contains("interactive transport not implemented"),
-                    "unexpected Config message: {msg}"
-                );
-            }
-            Err(AgentError::Spawn { .. }) => {
-                panic!("sentinel binary was reached — dispatch did not short-circuit");
-            }
-            other => panic!("expected Config error, got: {other:?}"),
-        }
-
+        assert!(
+            matches!(result, Err(AgentError::Spawn { .. })),
+            "expected Spawn error for a missing binary, got: {result:?}"
+        );
         assert!(
             rx.try_recv().is_err(),
-            "Interactive arm must not emit any provider events before returning"
+            "no provider events may be emitted before a successful spawn"
+        );
+    }
+
+    #[tokio::test]
+    async fn interactive_transport_routes_text_format_through_headless() {
+        // Hybrid strategy: one-shot text turns must NOT ride the PTY. The
+        // sentinel binary makes the headless path fail with Spawn — reaching
+        // it (instead of openpty + transcript polling) is the assertion.
+        let provider = ClaudeProvider {
+            binary: "/nonexistent-sentinel-binary-maestro-test".to_string(),
+            transport: ClaudeTransport::Interactive(InteractiveDriver::PortablePty),
+        };
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let request = AgentRequest::text("one shot", "claude-sonnet", None);
+
+        let result = provider.run(request, tx, CancellationToken::new()).await;
+
+        assert!(
+            matches!(result, Err(AgentError::Spawn { .. })),
+            "text format must hit the headless spawn path: {result:?}"
         );
     }
 }
