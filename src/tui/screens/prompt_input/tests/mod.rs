@@ -78,4 +78,5 @@ fn screen_with_images(paths: &[&str]) -> PromptInputScreen {
 mod clipboard;
 mod core;
 mod history_unified;
+mod launch_options;
 mod paste;

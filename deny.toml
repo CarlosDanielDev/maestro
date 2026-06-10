@@ -92,6 +92,9 @@ skip = [
     # ratatui pins lru 0.12 which uses hashbrown 0.15; syntect/toml use 0.16.
     # Upstream ratatui tracking: https://github.com/ratatui-org/ratatui/issues
     { name = "hashbrown", version = "0.15", reason = "ratatui/lru pin v0.15; syntect/toml use v0.16 — upstream tracking: ratatui" },
+    # portable-pty (interactive claude transport, #749) pins bitflags 1.x;
+    # the rest of the workspace ecosystem is on 2.x.
+    { name = "bitflags", version = "1", reason = "portable-pty pins v1; workspace uses v2 — upstream tracking: portable-pty/wezterm" },
     # crossterm (via ratatui/tui-textarea) pins rustix 0.38; newer deps use 1.x.
     # Upstream crossterm tracking: https://github.com/crossterm-rs/crossterm/issues
     { name = "rustix", version = "0.38", reason = "crossterm pins v0.38; newer deps (tempfile/x11rb) use v1.x — upstream tracking: crossterm" },

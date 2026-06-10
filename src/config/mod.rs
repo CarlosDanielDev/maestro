@@ -396,6 +396,5 @@ pub struct LoadedConfig {
     pub config: Config,
     pub path: std::path::PathBuf,
 }
-
 #[cfg(test)]
 mod tests;

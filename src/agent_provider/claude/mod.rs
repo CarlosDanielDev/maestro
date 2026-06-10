@@ -11,6 +11,7 @@
 
 mod headless;
 mod interactive;
+mod interactive_types;
 mod pty_backend;
 mod transcript_parser;
 

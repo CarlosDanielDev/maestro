@@ -1,5 +1,5 @@
 ---
-source: src/agent_provider/claude/interactive_tests.rs
+source: src/agent_provider/claude/interactive_session_tests.rs
 expression: stream
 ---
 AssistantMessage { text: "hello from stub" }

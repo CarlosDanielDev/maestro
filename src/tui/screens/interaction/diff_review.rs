@@ -11,16 +11,6 @@
 //! hatch opens a shell at the worktree (run `git diff` in your own tools);
 //! the overlay never mutates anything.
 
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::{Clear, Paragraph},
-};
-
-use crate::tui::theme::Theme;
-
 /// One rendered diff line, classified for styling and hunk navigation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DiffLineKind {
@@ -69,11 +59,11 @@ pub(crate) struct DiffReview {
     /// First visible line of the selected file's diff.
     pub(crate) scroll: usize,
     /// Diff-pane height at the last draw (drives paging).
-    viewport: usize,
+    pub(super) viewport: usize,
     /// Active search query (`/`), if any.
     query: Option<String>,
     /// In-progress query text while typing after `/`.
-    query_input: Option<String>,
+    pub(super) query_input: Option<String>,
 }
 
 impl DiffReview {
@@ -88,7 +78,7 @@ impl DiffReview {
         }
     }
 
-    fn current_lines(&self) -> &[DiffLine] {
+    pub(super) fn current_lines(&self) -> &[DiffLine] {
         self.files
             .get(self.selected)
             .map(|f| f.lines.as_slice())
@@ -99,7 +89,7 @@ impl DiffReview {
         self.current_lines().len().saturating_sub(self.viewport)
     }
 
-    fn clamp(&mut self) {
+    pub(super) fn clamp(&mut self) {
         self.scroll = self.scroll.min(self.max_scroll());
     }
 
@@ -229,144 +219,6 @@ impl DiffReview {
             self.clamp();
         }
     }
-
-    /// Render the overlay over `area` (the full Interaction screen).
-    pub(crate) fn draw(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let overlay = centered(area, 96, 92);
-        f.render_widget(Clear, overlay);
-        let block = theme
-            .styled_block(" Diff review (read-only) ", true)
-            .border_style(Style::default().fg(theme.accent_info));
-        let inner = block.inner(overlay);
-        f.render_widget(block, overlay);
-
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(1)])
-            .split(inner);
-        let panes = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(28), Constraint::Percentage(72)])
-            .split(rows[0]);
-
-        self.draw_file_list(f, panes[0], theme);
-        self.draw_diff_pane(f, panes[1], theme);
-        self.draw_hint_bar(f, rows[1], theme);
-    }
-
-    fn draw_file_list(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block_plain(false);
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        if self.files.is_empty() {
-            f.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    " no changes vs base",
-                    Style::default().fg(theme.text_secondary),
-                ))),
-                inner,
-            );
-            return;
-        }
-
-        // Keep the selected file visible in tall lists.
-        let height = inner.height as usize;
-        let first = self
-            .selected
-            .saturating_sub(height.saturating_sub(1) / 2)
-            .min(self.files.len().saturating_sub(height));
-        let lines: Vec<Line> = self
-            .files
-            .iter()
-            .enumerate()
-            .skip(first)
-            .take(height)
-            .map(|(i, file)| {
-                let marker = if i == self.selected { ">" } else { " " };
-                let style = if i == self.selected {
-                    Style::default()
-                        .fg(theme.accent_info)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(theme.text_primary)
-                };
-                Line::from(vec![
-                    Span::styled(format!("{marker} {}", file.path), style),
-                    Span::styled(
-                        format!(" +{}", file.adds),
-                        Style::default().fg(theme.accent_success),
-                    ),
-                    Span::styled(
-                        format!(" -{}", file.dels),
-                        Style::default().fg(theme.accent_error),
-                    ),
-                ])
-            })
-            .collect();
-        f.render_widget(Paragraph::new(lines), inner);
-    }
-
-    fn draw_diff_pane(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let block = theme.styled_block_plain(false);
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-        self.viewport = inner.height as usize;
-        self.clamp();
-
-        let lines: Vec<Line> = self
-            .current_lines()
-            .iter()
-            .skip(self.scroll)
-            .take(inner.height as usize)
-            .map(|l| {
-                let style = match l.kind {
-                    DiffLineKind::Add => Style::default().fg(theme.accent_success),
-                    DiffLineKind::Del => Style::default().fg(theme.accent_error),
-                    DiffLineKind::Hunk => Style::default()
-                        .fg(theme.accent_info)
-                        .add_modifier(Modifier::BOLD),
-                    DiffLineKind::Header => Style::default()
-                        .fg(theme.text_secondary)
-                        .add_modifier(Modifier::BOLD),
-                    DiffLineKind::Context => Style::default().fg(theme.text_primary),
-                };
-                Line::from(Span::styled(
-                    crate::tui::screens::sanitize_for_terminal(&l.text),
-                    style,
-                ))
-            })
-            .collect();
-        f.render_widget(Paragraph::new(lines), inner);
-    }
-
-    fn draw_hint_bar(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let text = match &self.query_input {
-            Some(input) => format!(" /{input}_   (Enter search · Esc cancel)"),
-            None => {
-                " j/k scroll  Ctrl+d/u page  ]/[ hunk  g/G top/bot  Tab file  / search  n/N next  o shell  q close"
-                    .to_string()
-            }
-        };
-        f.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                text,
-                Style::default().fg(theme.text_secondary),
-            ))),
-            area,
-        );
-    }
-}
-
-fn centered(area: Rect, pct_w: u16, pct_h: u16) -> Rect {
-    let w = area.width * pct_w / 100;
-    let h = area.height * pct_h / 100;
-    Rect {
-        x: area.x + (area.width.saturating_sub(w)) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 2,
-        width: w,
-        height: h,
-    }
 }
 
 /// Parse `git diff` unified output into per-file line lists. Tolerant: any
@@ -419,130 +271,5 @@ pub(crate) fn parse_unified_diff(text: &str) -> Vec<DiffFile> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    const SAMPLE: &str = "\
-diff --git a/src/a.rs b/src/a.rs
-index 111..222 100644
---- a/src/a.rs
-+++ b/src/a.rs
-@@ -1,3 +1,4 @@
- fn main() {
-+    println!(\"hi\");
- }
-@@ -10,2 +11,1 @@
--    old();
- fn tail() {}
-diff --git a/src/b.rs b/src/b.rs
-index 333..444 100644
---- a/src/b.rs
-+++ b/src/b.rs
-@@ -1,1 +1,1 @@
--fn b_old() {}
-+fn b_new() {}
-";
-
-    #[test]
-    fn parse_splits_files_and_counts_lines() {
-        let files = parse_unified_diff(SAMPLE);
-        assert_eq!(files.len(), 2);
-        assert_eq!(files[0].path, "src/a.rs");
-        assert_eq!(files[0].adds, 1);
-        assert_eq!(files[0].dels, 1);
-        assert_eq!(files[1].path, "src/b.rs");
-        assert_eq!(files[1].adds, 1);
-        assert_eq!(files[1].dels, 1);
-    }
-
-    #[test]
-    fn parse_empty_diff_yields_no_files() {
-        assert!(parse_unified_diff("").is_empty());
-    }
-
-    #[test]
-    fn hunk_jump_moves_between_markers() {
-        let mut review = DiffReview::new(SAMPLE);
-        review.viewport = 5;
-        assert_eq!(review.scroll, 0);
-        review.handle_key(KeyCode::Char(']'), KeyModifiers::NONE);
-        let first_hunk = review.scroll;
-        assert!(
-            review.current_lines()[first_hunk].kind == DiffLineKind::Hunk,
-            "lands on a hunk marker"
-        );
-        review.handle_key(KeyCode::Char(']'), KeyModifiers::NONE);
-        assert!(review.scroll > first_hunk, "advances to the second hunk");
-        review.handle_key(KeyCode::Char('['), KeyModifiers::NONE);
-        assert_eq!(review.scroll, first_hunk, "jumps back");
-    }
-
-    #[test]
-    fn tab_cycles_files_and_resets_scroll() {
-        let mut review = DiffReview::new(SAMPLE);
-        review.scroll = 3;
-        review.handle_key(KeyCode::Tab, KeyModifiers::NONE);
-        assert_eq!(review.selected, 1);
-        assert_eq!(review.scroll, 0);
-        review.handle_key(KeyCode::Tab, KeyModifiers::NONE);
-        assert_eq!(review.selected, 0, "wraps");
-        review.handle_key(KeyCode::BackTab, KeyModifiers::NONE);
-        assert_eq!(review.selected, 1, "BackTab cycles back");
-    }
-
-    #[test]
-    fn search_jumps_to_match_and_n_advances() {
-        let mut review = DiffReview::new(SAMPLE);
-        review.viewport = 3;
-        review.handle_key(KeyCode::Char('/'), KeyModifiers::NONE);
-        for c in "fn".chars() {
-            review.handle_key(KeyCode::Char(c), KeyModifiers::NONE);
-        }
-        review.handle_key(KeyCode::Enter, KeyModifiers::NONE);
-        let first = review.scroll;
-        assert!(review.current_lines()[first].text.contains("fn"));
-        review.handle_key(KeyCode::Char('n'), KeyModifiers::NONE);
-        assert!(review.scroll > first, "n advances to the next match");
-        review.handle_key(KeyCode::Char('N'), KeyModifiers::NONE);
-        assert_eq!(review.scroll, first, "N goes back");
-    }
-
-    #[test]
-    fn close_and_shell_outcomes() {
-        let mut review = DiffReview::new(SAMPLE);
-        assert_eq!(
-            review.handle_key(KeyCode::Char('q'), KeyModifiers::NONE),
-            DiffReviewOutcome::Close
-        );
-        assert_eq!(
-            review.handle_key(KeyCode::Esc, KeyModifiers::NONE),
-            DiffReviewOutcome::Close
-        );
-        assert_eq!(
-            review.handle_key(KeyCode::Char('o'), KeyModifiers::NONE),
-            DiffReviewOutcome::OpenShell
-        );
-    }
-
-    #[test]
-    fn motions_are_read_only_surface() {
-        // No key mutates the parsed diff — the only state that moves is
-        // scroll/selection/search.
-        let mut review = DiffReview::new(SAMPLE);
-        let before: Vec<usize> = review.files.iter().map(|f| f.lines.len()).collect();
-        for code in [
-            KeyCode::Char('j'),
-            KeyCode::Char('k'),
-            KeyCode::Char('g'),
-            KeyCode::Char('G'),
-            KeyCode::Char(']'),
-            KeyCode::Char('['),
-            KeyCode::Tab,
-        ] {
-            review.handle_key(code, KeyModifiers::NONE);
-        }
-        let after: Vec<usize> = review.files.iter().map(|f| f.lines.len()).collect();
-        assert_eq!(before, after);
-    }
-}
+#[path = "diff_review_tests.rs"]
+mod tests;
