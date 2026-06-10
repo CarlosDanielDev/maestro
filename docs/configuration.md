@@ -130,6 +130,7 @@ Each `[agents.<id>]` table has these fields:
 | `extra_args` | subprocess | array of string | `[]` | Extra CLI arguments appended before the prompt. |
 | `permission_mode` | Claude, Codex, Qwen | string | inherits `[sessions].permission_mode` when absent | Permission/approval mode mapping. |
 | `allowed_tools` | Claude | array of string | inherits `[sessions].allowed_tools` when absent | Passed to Claude as `--allowedTools` when non-empty. |
+| `transport` | Claude | string | `"headless"` | `"headless"` = one-shot `claude --print`; `"interactive"` = PTY REPL that preserves Pro/Max subscription billing after the 2026-06-15 cutoff (#750). See [the transport guide](guides/claude-transport.md). |
 | `sandbox` | Codex | string | `"workspace-write"` | Passed to Codex as `--sandbox`. |
 | `json` | Codex | bool | `true` | Adds `--json` for streamed runs. |
 | `ephemeral` | Codex | bool | `false` | Adds `--ephemeral`. |

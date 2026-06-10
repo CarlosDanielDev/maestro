@@ -14,6 +14,8 @@ Maestro spawns and monitors multiple Claude Code sessions working on the same pr
 
 Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/maestro/wiki). This README is the on-ramp.
 
+> **Important:** if you run maestro against a Claude Pro/Max subscription, set `transport = "interactive"` on your claude agent in `maestro.toml` before **2026-06-15** — Anthropic withdraws subscription billing from headless `claude --print` on that date. See the [transport guide](docs/guides/claude-transport.md).
+
 ## Features
 
 ### Session orchestration
