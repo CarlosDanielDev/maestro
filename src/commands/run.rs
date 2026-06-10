@@ -37,6 +37,20 @@ pub async fn cmd_run(
     }
     let loaded = Config::find_and_load_with_path()?;
     let config = loaded.config.clone();
+
+    // Pre-cutoff nudge (#750): headless claude transport loses subscription
+    // billing on 2026-06-15. Suppressible via MAESTRO_SILENCE_TRANSPORT_WARN=1.
+    let silence_transport_warn = std::env::var("MAESTRO_SILENCE_TRANSPORT_WARN")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    if let Some(msg) = crate::config::transport_warning::headless_cutoff_warning(
+        &config.agents,
+        &crate::config::transport_warning::SystemClock,
+        silence_transport_warn,
+    ) {
+        tracing::warn!("{msg}");
+    }
+
     let resolved_agent = config.resolve_agent(agent.as_deref())?;
     let selected_provider = provider_for_agent(&resolved_agent)?;
 
@@ -245,8 +259,13 @@ pub(crate) fn provider_for_agent(
     match resolved.config.kind {
         crate::config::AgentKind::Claude => {
             let command = resolved.config.command.as_deref().unwrap_or("claude");
+            // Transport selector (#750): validated in AgentConfig::validate,
+            // re-checked here defensively at the construction boundary.
+            let transport = crate::agent_provider::ClaudeTransport::from_config_value(
+                resolved.config.transport.as_deref(),
+            )?;
             Ok(std::sync::Arc::new(
-                crate::agent_provider::ClaudeProvider::new(command),
+                crate::agent_provider::ClaudeProvider::with_transport(command, transport),
             ))
         }
         crate::config::AgentKind::Qwen => {

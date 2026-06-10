@@ -124,17 +124,28 @@ pub struct AgentHealthCheck {
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AgentProviderDefinition {
     pub id: String,
     pub provider: String,
+    #[serde(default)]
     pub binary: Option<String>,
+    #[serde(default)]
     pub base_url: Option<String>,
+    #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
     pub request_timeout_secs: Option<u64>,
+    #[serde(default)]
     pub api_key_env: Option<String>,
     /// Ollama-only context window in tokens. Drives the context-fill gauge.
+    #[serde(default)]
     pub num_ctx: Option<u32>,
+    /// Claude-only transport selector (#750): `"headless"` (default) or
+    /// `"interactive"` (PTY, preserves subscription billing post 2026-06-15).
+    #[serde(default)]
+    pub transport: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,10 +236,15 @@ impl AgentProviderFactory {
         match definition {
             Some(provider) if provider.provider == "claude" || provider.id == "claude" => {
                 let binary = provider.binary.as_deref().unwrap_or("claude");
+                let transport = crate::agent_provider::claude::ClaudeTransport::from_config_value(
+                    provider.transport.as_deref(),
+                )?;
                 Ok(Self {
-                    default_provider: Arc::new(crate::agent_provider::claude::ClaudeProvider::new(
-                        binary,
-                    )),
+                    default_provider: Arc::new(
+                        crate::agent_provider::claude::ClaudeProvider::with_transport(
+                            binary, transport,
+                        ),
+                    ),
                 })
             }
             Some(provider) if provider.provider == "qwen" || provider.id == "qwen" => {

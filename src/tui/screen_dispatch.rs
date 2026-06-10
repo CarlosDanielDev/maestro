@@ -1380,6 +1380,7 @@ mod build_known_agents_tests {
             extra_args: Vec::new(),
             permission_mode: None,
             allowed_tools: Vec::new(),
+            transport: None,
             sandbox: None,
             json: None,
             ephemeral: None,

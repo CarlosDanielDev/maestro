@@ -45,9 +45,13 @@ pub(crate) fn agent_field_visible_for_kind(field_key: &str, kind_value: &str) ->
         "command" | "permission_mode" | "sandbox" | "allowed_tools" | "extra_args" => is_subprocess,
         "base_url" | "api_key_env" | "request_timeout_secs" => is_http,
         "num_ctx" => kind_value == "ollama",
+        "transport" => kind_value == "claude",
         _ => true,
     }
 }
+
+/// Allowed `agents.<id>.transport` values (#750, claude-only).
+pub(crate) const CLAUDE_TRANSPORTS: &[&str] = &["headless", "interactive"];
 
 /// Allowed `agents.<id>.permission_mode` values. Mirrors
 /// `core::PERMISSION_MODES` so the two tabs surface identical choices.
@@ -60,8 +64,8 @@ pub(crate) const PERMISSION_MODES: &[&str] = &[
     "auto",
 ];
 
-/// Entry fields for `[agents.<id>]`. 12 scalar/list fields per spec §6.3
-/// (11 from v0.29.0 + `num_ctx` for Ollama context-window control, #844).
+/// Entry fields for `[agents.<id>]`. 13 scalar/list fields per spec §6.3
+/// (11 from v0.29.0 + `num_ctx` for Ollama, #844 + `transport` for Claude, #750).
 /// `env`, `config_overrides`, `cli_flags` deferred to v0.30.0 (§7).
 pub(crate) const AGENTS_ENTRY_FIELDS: &[FieldSchema] = &[
     FieldSchema {
@@ -146,6 +150,15 @@ pub(crate) const AGENTS_ENTRY_FIELDS: &[FieldSchema] = &[
         help: "Allowed-tools whitelist — empty means all tools",
         default: DefaultValue::StrList(&[]),
         kind: FieldKind::StringList,
+        validator: None,
+        presentation: None,
+    },
+    FieldSchema {
+        key: "transport",
+        label: "Transport",
+        help: "Claude-only (#750): headless = one-shot --print; interactive = PTY REPL (keeps Pro/Max subscription billing after 2026-06-15)",
+        default: DefaultValue::Str("headless"),
+        kind: FieldKind::Enum(CLAUDE_TRANSPORTS),
         validator: None,
         presentation: None,
     },

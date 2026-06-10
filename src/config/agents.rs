@@ -58,6 +58,11 @@ pub struct AgentConfig {
     pub permission_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_tools: Vec<String>,
+    /// Claude-only: how to drive the `claude` CLI. `"headless"` (default) is
+    /// the one-shot `--print` path; `"interactive"` runs the REPL on a PTY so
+    /// Pro/Max subscription billing survives the 2026-06-15 cutoff (#750).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -97,6 +102,7 @@ impl AgentConfig {
             extra_args: Vec::new(),
             permission_mode: Some(permission_mode.into()),
             allowed_tools,
+            transport: None,
             sandbox: None,
             json: None,
             ephemeral: None,
@@ -159,6 +165,27 @@ impl AgentConfig {
             }
         }
 
+        // Claude-only transport selector (#750). Same empty-string-as-unset
+        // handling as the other optional fields.
+        if let Some(transport) = self
+            .transport
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            if self.kind != AgentKind::Claude {
+                anyhow::bail!(
+                    "agents.{id}.transport is only valid for claude agents; remove it from {} agent `{id}`",
+                    self.kind.as_str()
+                );
+            }
+            if !matches!(transport, "headless" | "interactive") {
+                anyhow::bail!(
+                    "agents.{id}.transport `{transport}`: unknown transport, expected one of: headless, interactive"
+                );
+            }
+        }
+
         // Same empty-string-as-unset handling as base_url / command above.
         // An empty TextInput round-trips as `Some("")`; treat that as "no
         // api_key_env was specified" so users can clear the field in the
@@ -196,6 +223,8 @@ struct AgentConfigRaw {
     permission_mode: Option<String>,
     #[serde(default)]
     allowed_tools: Vec<String>,
+    #[serde(default)]
+    transport: Option<String>,
     #[serde(default)]
     sandbox: Option<String>,
     #[serde(default)]
@@ -252,6 +281,7 @@ impl From<AgentConfigRaw> for AgentConfig {
             extra_args: raw.extra_args,
             permission_mode: raw.permission_mode,
             allowed_tools: raw.allowed_tools,
+            transport: raw.transport,
             sandbox: raw.sandbox,
             json: raw.json,
             ephemeral: raw.ephemeral,
@@ -342,4 +372,73 @@ fn default_agent_id() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod transport_field_tests {
+    use super::*;
+
+    fn claude_with_transport(transport: Option<&str>) -> AgentConfig {
+        let mut agent = AgentConfig::builtin_claude("opus", "default", Vec::new());
+        agent.transport = transport.map(str::to_string);
+        agent
+    }
+
+    #[test]
+    fn toml_round_trip_parses_transport() {
+        let agent: AgentConfig = toml::from_str(
+            r#"
+            kind = "claude"
+            command = "claude"
+            transport = "interactive"
+            "#,
+        )
+        .expect("parse");
+        assert_eq!(agent.transport.as_deref(), Some("interactive"));
+    }
+
+    #[test]
+    fn toml_without_transport_defaults_to_none() {
+        let agent: AgentConfig = toml::from_str(
+            r#"
+            kind = "claude"
+            command = "claude"
+            "#,
+        )
+        .expect("parse");
+        assert_eq!(agent.transport, None);
+    }
+
+    #[test]
+    fn validate_accepts_headless_and_interactive() {
+        for value in ["headless", "interactive"] {
+            claude_with_transport(Some(value))
+                .validate("claude")
+                .expect(value);
+        }
+        // Empty string round-trips from TUI text inputs as "unset".
+        claude_with_transport(Some(""))
+            .validate("claude")
+            .expect("empty");
+        claude_with_transport(None)
+            .validate("claude")
+            .expect("none");
+    }
+
+    #[test]
+    fn validate_rejects_unknown_transport_listing_valid_values() {
+        let err = claude_with_transport(Some("bogus"))
+            .validate("claude")
+            .expect_err("bogus must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("headless, interactive"), "{msg}");
+    }
+
+    #[test]
+    fn validate_rejects_transport_on_non_claude_agents() {
+        let mut agent = claude_with_transport(Some("interactive"));
+        agent.kind = AgentKind::Qwen;
+        let err = agent.validate("qwen").expect_err("must fail");
+        assert!(err.to_string().contains("only valid for claude"), "{err}");
+    }
 }

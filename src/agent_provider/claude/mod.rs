@@ -38,6 +38,23 @@ pub enum ClaudeTransport {
     Interactive(InteractiveDriver),
 }
 
+impl ClaudeTransport {
+    /// Parse the `transport` value from maestro.toml (#750).
+    ///
+    /// `None`, empty/whitespace (TUI text inputs round-trip cleared fields as
+    /// `Some("")`), and `"headless"` all preserve today's behaviour. Anything
+    /// other than `"interactive"` is a config error listing the valid values.
+    pub fn from_config_value(value: Option<&str>) -> Result<Self, AgentError> {
+        match value.map(str::trim) {
+            None | Some("") | Some("headless") => Ok(Self::Headless),
+            Some("interactive") => Ok(Self::Interactive(InteractiveDriver::PortablePty)),
+            Some(other) => Err(AgentError::Config(format!(
+                "unknown transport `{other}`, expected one of: headless, interactive"
+            ))),
+        }
+    }
+}
+
 /// Driver for the interactive (PTY) transport (issue #749).
 ///
 /// `PortablePty` spawns the Claude REPL on a pseudo-terminal via the
@@ -60,6 +77,15 @@ impl ClaudeProvider {
         Self {
             binary: binary.into(),
             transport: ClaudeTransport::Headless,
+        }
+    }
+
+    /// Construct with an explicit transport (#750). `new` keeps the headless
+    /// default so existing call sites stay unchanged.
+    pub fn with_transport(binary: impl Into<String>, transport: ClaudeTransport) -> Self {
+        Self {
+            binary: binary.into(),
+            transport,
         }
     }
 
@@ -157,6 +183,33 @@ impl AgentProvider for ClaudeProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transport_from_config_value_maps_all_cases() {
+        assert!(matches!(
+            ClaudeTransport::from_config_value(None),
+            Ok(ClaudeTransport::Headless)
+        ));
+        assert!(matches!(
+            ClaudeTransport::from_config_value(Some("")),
+            Ok(ClaudeTransport::Headless)
+        ));
+        assert!(matches!(
+            ClaudeTransport::from_config_value(Some("headless")),
+            Ok(ClaudeTransport::Headless)
+        ));
+        assert!(matches!(
+            ClaudeTransport::from_config_value(Some("interactive")),
+            Ok(ClaudeTransport::Interactive(InteractiveDriver::PortablePty))
+        ));
+        match ClaudeTransport::from_config_value(Some("bogus")) {
+            Err(AgentError::Config(msg)) => {
+                assert!(msg.contains("headless, interactive"), "{msg}");
+                assert!(msg.contains("bogus"), "{msg}");
+            }
+            other => panic!("expected Config error, got: {other:?}"),
+        }
+    }
 
     #[tokio::test]
     async fn interactive_transport_with_missing_binary_fails_spawn() {

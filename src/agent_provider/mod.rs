@@ -17,7 +17,7 @@ pub mod types;
 mod types_tests;
 
 #[allow(unused_imports)]
-pub use claude::ClaudeProvider;
+pub use claude::{ClaudeProvider, ClaudeTransport, InteractiveDriver};
 #[allow(unused_imports)]
 pub use codex::CodexProvider;
 #[allow(unused_imports)]
