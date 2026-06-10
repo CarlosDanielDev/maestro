@@ -103,6 +103,32 @@ pub(crate) fn leave_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     )
 }
 
+/// Route a mouse wheel-up to the right scroll target (#988). On the
+/// Interaction screen the wheel scrolls the chat transcript; everywhere else it
+/// keeps the legacy `panel_view` behavior so no other screen regresses.
+fn route_mouse_scroll_up(app: &mut App) {
+    const WHEEL_LINES: usize = 3;
+    if app.tui_mode == app::TuiMode::Interaction
+        && let Some(screen) = app.screen_state.interaction_screen.as_mut()
+    {
+        screen.scroll_up(WHEEL_LINES);
+    } else {
+        app.panel_view.scroll_up();
+    }
+}
+
+/// Wheel-down counterpart of [`route_mouse_scroll_up`] (#988).
+fn route_mouse_scroll_down(app: &mut App) {
+    const WHEEL_LINES: usize = 3;
+    if app.tui_mode == app::TuiMode::Interaction
+        && let Some(screen) = app.screen_state.interaction_screen.as_mut()
+    {
+        screen.scroll_down(WHEEL_LINES);
+    } else {
+        app.panel_view.scroll_down();
+    }
+}
+
 /// Run the TUI event loop.
 pub async fn run(mut app: App) -> anyhow::Result<()> {
     let no_splash = app.no_splash;
@@ -207,12 +233,8 @@ async fn event_loop(
                     }
                 }
                 Event::Mouse(mouse) => match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        app.panel_view.scroll_up();
-                    }
-                    MouseEventKind::ScrollDown => {
-                        app.panel_view.scroll_down();
-                    }
+                    MouseEventKind::ScrollUp => route_mouse_scroll_up(app),
+                    MouseEventKind::ScrollDown => route_mouse_scroll_down(app),
                     _ => {}
                 },
                 Event::Paste(data) => {
@@ -239,6 +261,17 @@ async fn event_loop(
                         .await;
                         let _ = tx.send(app::TuiDataEvent::Issues(result));
                     });
+                }
+                app::TuiCommand::FetchInteractionIssue {
+                    issue_number,
+                    seed_prompt,
+                } => {
+                    background_tasks::spawn_interaction_issue_fetch(
+                        app.data_tx.clone(),
+                        issue_number,
+                        seed_prompt,
+                        provider_config_from_app(app),
+                    );
                 }
                 app::TuiCommand::FetchSuggestionData => {
                     let tx = app.data_tx.clone();
@@ -1106,6 +1139,56 @@ mod handle_screen_action_tests {
     }
 
     #[test]
+    fn mouse_scroll_in_interaction_mode_moves_the_interaction_screen() {
+        // #988: a wheel event in Interaction mode must scroll the chat
+        // transcript (scroll_up takes manual control → auto_scroll off), not
+        // the legacy panel_view.
+        let mut app = make_app();
+        app.tui_mode = app::TuiMode::Interaction;
+        app.screen_state.interaction_screen = Some(screens::InteractionScreen::new());
+        assert!(
+            app.screen_state
+                .interaction_screen
+                .as_ref()
+                .unwrap()
+                .auto_scroll_for_test(),
+            "precondition: a fresh screen tail-follows"
+        );
+
+        route_mouse_scroll_up(&mut app);
+
+        assert!(
+            !app.screen_state
+                .interaction_screen
+                .as_ref()
+                .unwrap()
+                .auto_scroll_for_test(),
+            "wheel-up in Interaction mode must drive the interaction scroll"
+        );
+    }
+
+    #[test]
+    fn mouse_scroll_outside_interaction_mode_leaves_interaction_untouched() {
+        // A wheel event in any other mode keeps the legacy panel_view routing,
+        // so a present-but-inactive interaction screen must not move (no
+        // regression for other screens).
+        let mut app = make_app();
+        app.tui_mode = app::TuiMode::Dashboard;
+        app.screen_state.interaction_screen = Some(screens::InteractionScreen::new());
+
+        route_mouse_scroll_up(&mut app);
+
+        assert!(
+            app.screen_state
+                .interaction_screen
+                .as_ref()
+                .unwrap()
+                .auto_scroll_for_test(),
+            "wheel events outside Interaction mode must not touch the chat scroll"
+        );
+    }
+
+    #[test]
     fn launch_interaction_creates_session_and_navigates() {
         let mut app = make_app();
         handle_screen_action(
@@ -1195,6 +1278,23 @@ mod handle_screen_action_tests {
     #[test]
     fn launch_interaction_with_dialog_prompt_sends_it_as_first_turn() {
         let mut app = make_app();
+        // With the issue cached, the first turn is built immediately and the
+        // dialog prompt rides along as a custom instruction (#946). The cache
+        // *miss* path now defers + fetches (#953) — covered by
+        // `screen_dispatch::interaction_launch_tests::cache_miss_defers_*`.
+        app.state.issue_cache.insert(
+            10,
+            crate::provider::types::Issue {
+                number: 10,
+                title: "Cached issue".into(),
+                body: "Acceptance Criteria\n- done".into(),
+                labels: Vec::new(),
+                state: "open".into(),
+                html_url: "https://github.com/owner/repo/issues/10".into(),
+                milestone: None,
+                assignees: Vec::new(),
+            },
+        );
         let mut cfg = interaction_config(10, false);
         cfg.custom_prompt = Some("plan the work".into());
         handle_screen_action(&mut app, ScreenAction::LaunchSession(cfg));
@@ -1206,9 +1306,9 @@ mod handle_screen_action_tests {
             app.pending_commands.iter().any(|c| matches!(
                 c,
                 app::TuiCommand::SendInteractionTurn { issue_number, prompt, .. }
-                    if *issue_number == 10 && prompt == "plan the work"
+                    if *issue_number == 10 && prompt.contains("plan the work")
             )),
-            "the first turn command must be queued"
+            "the first turn command must carry the dialog prompt"
         );
     }
 

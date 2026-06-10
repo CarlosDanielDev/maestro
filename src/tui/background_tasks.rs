@@ -32,6 +32,29 @@ pub(super) fn spawn_issue_fetch(
     }
 }
 
+/// Fetch a single issue for a deferred interactive launch (#953) and deliver it
+/// as [`app::TuiDataEvent::InteractionIssueFetched`]. Distinct from
+/// [`spawn_issue_fetch`] so the result builds the interaction's first turn
+/// instead of a one-shot session.
+pub(super) fn spawn_interaction_issue_fetch(
+    tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>,
+    issue_number: u64,
+    seed_prompt: Option<String>,
+    provider_config: ProviderConfig,
+) {
+    tokio::spawn(async move {
+        let result = match create_provider(&provider_config) {
+            Ok(client) => client.get_issue(issue_number).await,
+            Err(e) => Err(e),
+        };
+        let _ = tx.send(app::TuiDataEvent::InteractionIssueFetched {
+            issue_number,
+            seed_prompt,
+            result,
+        });
+    });
+}
+
 /// Spawn a non-blocking version check that sends the result via the data channel.
 pub(crate) fn spawn_version_check(tx: tokio::sync::mpsc::UnboundedSender<app::TuiDataEvent>) {
     tokio::spawn(async move {

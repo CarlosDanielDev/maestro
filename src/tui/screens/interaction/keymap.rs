@@ -32,6 +32,12 @@ pub(crate) enum InteractionIntent {
     ScrollUp,
     /// `Down` — scroll history down (any state).
     ScrollDown,
+    /// `PageUp` — scroll history up by one viewport (any state).
+    PageUp,
+    /// `PageDown` — scroll history down by one viewport (any state).
+    PageDown,
+    /// `End` — jump to the newest message and re-pin tail-following (any state).
+    JumpToLatest,
     /// Any other key in `Idle` — feed it to the text editor.
     FeedEditor,
     /// A send/edit key while `Streaming` — input locked, ignore.
@@ -59,6 +65,9 @@ pub(crate) fn classify(
         KeyCode::Esc => return Back,
         KeyCode::Up => return ScrollUp,
         KeyCode::Down => return ScrollDown,
+        KeyCode::PageUp => return PageUp,
+        KeyCode::PageDown => return PageDown,
+        KeyCode::End => return JumpToLatest,
         _ => {}
     }
     let ctrl = mods.contains(KeyModifiers::CONTROL);
@@ -138,8 +147,12 @@ impl KeymapProvider for InteractionScreen {
                     description: "Back",
                 },
                 KeyBinding {
-                    key: "Up/Down",
+                    key: "Up/Down/PgUp/PgDn",
                     description: "Scroll history",
+                },
+                KeyBinding {
+                    key: "End",
+                    description: "Jump to latest",
                 },
             ],
         }]
@@ -265,6 +278,26 @@ mod tests {
             assert_eq!(
                 classify(state, true, KeyCode::Down, KeyModifiers::NONE),
                 ScrollDown
+            );
+        }
+    }
+
+    #[test]
+    fn page_and_jump_keys_work_in_every_state() {
+        // #988: PageUp/PageDown/End resolve before the streaming lock, so they
+        // page/jump the transcript in both Idle and Streaming.
+        for state in [Idle, Streaming] {
+            assert_eq!(
+                classify(state, true, KeyCode::PageUp, KeyModifiers::NONE),
+                PageUp
+            );
+            assert_eq!(
+                classify(state, true, KeyCode::PageDown, KeyModifiers::NONE),
+                PageDown
+            );
+            assert_eq!(
+                classify(state, true, KeyCode::End, KeyModifiers::NONE),
+                JumpToLatest
             );
         }
     }

@@ -132,6 +132,30 @@ impl InteractionSession {
         }
     }
 
+    /// Fire a terminator that was deferred while the session was `Streaming`
+    /// (#936), now that the in-flight turn has settled back to `Idle` and its
+    /// output has been merged. Called after the completing turn is written
+    /// back into the pool.
+    ///
+    /// - `Idle` with a queued terminator → fire it (state → `Terminated`,
+    ///   `close_reason` stamped, `closed_at` set, queue cleared).
+    /// - `Terminated` → drop the queue. The session was already closed by other
+    ///   means (e.g. the user quit mid-turn); never resurrect it (idempotent).
+    /// - `Streaming`, or no queued terminator → no-op.
+    pub fn settle_queued_terminator(&mut self) {
+        match self.state {
+            InteractionState::Idle => {
+                if let Some(event) = self.queued_terminator.take() {
+                    self.fire_terminator(event);
+                }
+            }
+            InteractionState::Terminated => {
+                self.queued_terminator = None;
+            }
+            InteractionState::Streaming => {}
+        }
+    }
+
     /// Apply a terminator immediately: `Terminated` + `close_reason` +
     /// `closed_at`. Only `PrLinkedToIssue` maps to a `CloseReason` today;
     /// other variants set the terminal state without a reason.

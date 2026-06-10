@@ -168,6 +168,89 @@ fn scroll_down_already_at_bottom_re_pins_auto_scroll() {
     assert!(s.auto_scroll);
 }
 
+// --- #988: page / jump-to-latest math ---
+
+#[test]
+fn page_up_pages_by_one_viewport_and_disables_auto_scroll() {
+    let mut s = InteractionScreen::new();
+    s.last_viewport = 10;
+    s.last_max_offset = 50;
+    s.scroll_offset = 30;
+    s.page_up();
+    assert_eq!(s.scroll_offset, 20, "paged up by one viewport height");
+    assert!(!s.auto_scroll, "paging up takes manual control");
+}
+
+#[test]
+fn page_up_clamps_at_top() {
+    let mut s = InteractionScreen::new();
+    s.last_viewport = 10;
+    s.last_max_offset = 50;
+    s.scroll_offset = 5;
+    s.page_up();
+    assert_eq!(s.scroll_offset, 0, "must not underflow past the top");
+}
+
+#[test]
+fn page_down_clamps_at_bottom_and_re_pins() {
+    let mut s = InteractionScreen::new();
+    s.last_viewport = 10;
+    s.last_max_offset = 50;
+    s.auto_scroll = false;
+    s.scroll_offset = 45;
+    s.page_down();
+    assert_eq!(s.scroll_offset, 50, "clamped at last_max_offset");
+    assert!(s.auto_scroll, "reaching the bottom re-pins tail-following");
+}
+
+#[test]
+fn page_with_zero_viewport_still_moves_one_line() {
+    // Before the first draw `last_viewport` is 0; `.max(1)` keeps paging alive.
+    let mut s = InteractionScreen::new();
+    s.last_max_offset = 50;
+    s.scroll_offset = 5;
+    s.page_up();
+    assert_eq!(s.scroll_offset, 4);
+}
+
+#[test]
+fn jump_to_latest_pins_to_bottom() {
+    let mut s = InteractionScreen::new();
+    s.last_max_offset = 42;
+    s.auto_scroll = false;
+    s.scroll_offset = 3;
+    s.jump_to_latest();
+    assert!(s.auto_scroll, "End resumes tail-following");
+    assert_eq!(s.scroll_offset, 42, "End jumps to the newest line");
+}
+
+#[test]
+fn streaming_chunk_while_scrolled_up_does_not_yank_the_view() {
+    // #988: the user scrolled up to read history; a streaming chunk arriving
+    // must not reset auto_scroll or move scroll_offset (no yank to the tail).
+    use crate::session::interaction_turn::TurnEvent;
+    let mut s = InteractionScreen::with_history(three_turn_fixture());
+    // Begin an agent turn, then scroll up away from the tail.
+    let at = fixed_t0();
+    let _ = s.apply_turn_event(&TurnEvent::TurnStarted {
+        role: TurnRole::Agent,
+        at,
+    });
+    s.auto_scroll = false;
+    s.scroll_offset = 2;
+
+    let _ = s.apply_turn_event(&TurnEvent::Chunk("streamed text".to_string()));
+
+    assert!(
+        !s.auto_scroll,
+        "a streaming chunk must not re-enable tail-following"
+    );
+    assert_eq!(
+        s.scroll_offset, 2,
+        "a streaming chunk must not move the user's scroll position"
+    );
+}
+
 #[test]
 fn push_turn_appends_to_history() {
     let mut s = InteractionScreen::new();

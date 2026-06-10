@@ -487,16 +487,19 @@ fn open_interaction_session(
 
     // A NEW session's first turn IS the issue work: build the real issue
     // prompt + system-prompt appendix, identical to a one-shot (#946). The
-    // dialog text rides along as a custom instruction. On a cache/browser
-    // miss we fall back to the bare dialog text (pre-#946 behavior) so the
-    // launch still proceeds; fetch-on-miss is tracked as a follow-up.
-    // Re-entry injects nothing — we don't seed an ongoing chat.
+    // dialog text rides along as a custom instruction. Re-entry injects
+    // nothing — we don't seed an ongoing chat.
     let first_turn = if resumed {
         None
     } else {
         app.build_interaction_launch_prompt(issue_number, &seed_prompt)
-            .or_else(|| seed_prompt.filter(|p| !p.trim().is_empty()))
     };
+    // A non-resumed launch with no built prompt means the issue is not yet in
+    // the cache/browser. Instead of seeding bare dialog text (pre-#953), defer
+    // the first turn and fetch the issue so the agent always gets the real
+    // issue context. The fetch result lands on `InteractionIssueFetched`.
+    let needs_fetch = !resumed && first_turn.is_none();
+
     if let Some(prompt) = first_turn.clone() {
         screen.seed_turn(prompt);
     }
@@ -515,6 +518,17 @@ fn open_interaction_session(
                 issue_number,
                 prompt,
                 model: app.session_config.default_model.clone(),
+            });
+    } else if needs_fetch {
+        app.activity_log.push_simple(
+            "INTERACTION".into(),
+            format!("fetching #{issue_number} to build the first turn…"),
+            crate::tui::activity_log::LogLevel::Info,
+        );
+        app.pending_commands
+            .push(app::TuiCommand::FetchInteractionIssue {
+                issue_number,
+                seed_prompt,
             });
     }
 
@@ -1474,6 +1488,41 @@ mod interaction_launch_tests {
         assert!(
             prompt.contains("GUARDRAIL: test sentinel"),
             "carries the system-prompt appendix"
+        );
+    }
+
+    #[test]
+    fn cache_miss_defers_first_turn_and_enqueues_fetch() {
+        // #953: the issue is not in the cache or browser list, so the first
+        // turn is deferred and an issue fetch is queued instead of seeding bare
+        // dialog text.
+        let mut app = crate::tui::make_test_app("issue-953-miss");
+
+        open_interaction_session(&mut app, 953, false, Some("please help".into()));
+
+        assert!(
+            first_turn_prompt(&app).is_none(),
+            "first turn must be deferred on a cache/browser miss"
+        );
+        assert!(
+            app.pending_commands.iter().any(|c| matches!(
+                c,
+                TuiCommand::FetchInteractionIssue {
+                    issue_number: 953,
+                    seed_prompt: Some(p),
+                } if p == "please help"
+            )),
+            "expected a FetchInteractionIssue for #953 carrying the seed prompt"
+        );
+        let screen = app
+            .screen_state
+            .interaction_screen
+            .as_ref()
+            .expect("interaction screen must be open");
+        assert_eq!(
+            screen.history_len(),
+            0,
+            "no bare first turn may be seeded on a miss"
         );
     }
 

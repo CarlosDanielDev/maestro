@@ -707,7 +707,65 @@ impl App {
             TuiDataEvent::InteractionTurnComplete { session } => {
                 self.pool.upsert_interaction(*session);
             }
+            TuiDataEvent::InteractionIssueFetched {
+                issue_number,
+                seed_prompt,
+                result,
+            } => {
+                self.apply_interaction_issue_fetched(issue_number, seed_prompt, result);
+            }
         }
+    }
+
+    /// Land a deferred interactive launch's issue fetch (#953). On success the
+    /// real issue prompt + appendix is built and sent as the first turn; on
+    /// failure the launch falls back to bare dialog text with a warning, never
+    /// leaving the agent without context silently.
+    fn apply_interaction_issue_fetched(
+        &mut self,
+        issue_number: u64,
+        seed_prompt: Option<String>,
+        result: anyhow::Result<crate::provider::types::Issue>,
+    ) {
+        let prompt = match result {
+            Ok(gh_issue) => {
+                let title = gh_issue.title.clone();
+                self.state.issue_cache.insert(issue_number, gh_issue);
+                if let Some(screen) = self.screen_state.interaction_screen.as_mut()
+                    && screen.is_for_issue(issue_number)
+                {
+                    screen.set_issue_title(title);
+                }
+                // Now that the issue is cached, build the real prompt; fall back
+                // to dialog text only if the build still cannot assemble one.
+                self.build_interaction_launch_prompt(issue_number, &seed_prompt)
+                    .or_else(|| seed_prompt.filter(|p| !p.trim().is_empty()))
+            }
+            Err(e) => {
+                tracing::warn!("interaction issue fetch for #{issue_number} failed: {e}");
+                self.activity_log.push_simple(
+                    "INTERACTION".into(),
+                    format!("#{issue_number} fetch failed; launching with dialog text only"),
+                    LogLevel::Warn,
+                );
+                seed_prompt.filter(|p| !p.trim().is_empty())
+            }
+        };
+
+        let Some(prompt) = prompt else {
+            return;
+        };
+        if let Some(screen) = self.screen_state.interaction_screen.as_mut()
+            && screen.is_for_issue(issue_number)
+        {
+            screen.seed_turn(prompt.clone());
+        }
+        self.pending_commands
+            .push(crate::tui::app::TuiCommand::SendInteractionTurn {
+                issue_number,
+                prompt,
+                model: self.session_config.default_model.clone(),
+            });
     }
 }
 
@@ -727,6 +785,116 @@ mod tests {
             milestone: None,
             assignees: Vec::new(),
         }
+    }
+
+    fn issue_with_body(number: u64, title: &str, body: &str) -> Issue {
+        Issue {
+            number,
+            title: title.to_string(),
+            body: body.to_string(),
+            labels: Vec::new(),
+            state: "open".to_string(),
+            html_url: format!("https://github.com/owner/repo/issues/{number}"),
+            milestone: None,
+            assignees: Vec::new(),
+        }
+    }
+
+    /// Open an interaction screen bound to `issue_number` with a cold cache,
+    /// mirroring `open_interaction_session`'s deferred-launch state (#953).
+    fn app_with_deferred_interaction(name: &str, issue_number: u64) -> App {
+        let mut app = crate::tui::make_test_app(name);
+        app.pool.create_interaction_session(issue_number, false);
+        let session = app
+            .pool
+            .find_active_interaction_by_issue(issue_number)
+            .expect("session just created");
+        app.screen_state.interaction_screen =
+            Some(crate::tui::screens::InteractionScreen::for_session(session));
+        app.tui_mode = crate::tui::app::TuiMode::Interaction;
+        app
+    }
+
+    fn first_interaction_turn(app: &App) -> Option<&str> {
+        app.pending_commands.iter().find_map(|c| match c {
+            crate::tui::app::TuiCommand::SendInteractionTurn { prompt, .. } => {
+                Some(prompt.as_str())
+            }
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn interaction_issue_fetched_ok_builds_real_first_turn() {
+        // #953: once the deferred fetch lands, the first turn carries the real
+        // issue prompt (title + acceptance criteria), not the bare dialog text.
+        let mut app = app_with_deferred_interaction("issue-953-fetch-ok", 953);
+
+        app.handle_data_event(TuiDataEvent::InteractionIssueFetched {
+            issue_number: 953,
+            seed_prompt: Some("focus on the parser".into()),
+            result: Ok(issue_with_body(
+                953,
+                "Fix the scroll bug",
+                "Acceptance Criteria\n- scroll works",
+            )),
+        });
+
+        let prompt = first_interaction_turn(&app).expect("a first interaction turn must be queued");
+        assert!(prompt.contains("Fix the scroll bug"), "carries the title");
+        assert!(
+            prompt.contains("Acceptance Criteria"),
+            "carries the issue body / AC"
+        );
+        assert!(
+            app.state.issue_cache.contains_key(&953),
+            "the fetched issue is cached for later lookups"
+        );
+        let screen = app.screen_state.interaction_screen.as_ref().unwrap();
+        assert_eq!(screen.history_len(), 1, "the real first turn is seeded");
+    }
+
+    #[test]
+    fn interaction_issue_fetched_err_falls_back_to_dialog_text() {
+        // #953: a failed fetch falls back to the bare dialog text and warns,
+        // rather than leaving the agent with no prompt.
+        let mut app = app_with_deferred_interaction("issue-953-fetch-err", 953);
+
+        app.handle_data_event(TuiDataEvent::InteractionIssueFetched {
+            issue_number: 953,
+            seed_prompt: Some("just chat with me".into()),
+            result: Err(anyhow::anyhow!("network down")),
+        });
+
+        assert_eq!(
+            first_interaction_turn(&app),
+            Some("just chat with me"),
+            "fetch failure falls back to the bare dialog text"
+        );
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("fetch failed")),
+            "a warning must be logged on fetch failure"
+        );
+    }
+
+    #[test]
+    fn interaction_issue_fetched_err_without_seed_sends_nothing() {
+        // No dialog text + failed fetch → nothing to send; must not panic.
+        let mut app = app_with_deferred_interaction("issue-953-fetch-err-empty", 953);
+
+        app.handle_data_event(TuiDataEvent::InteractionIssueFetched {
+            issue_number: 953,
+            seed_prompt: None,
+            result: Err(anyhow::anyhow!("network down")),
+        });
+
+        assert!(
+            first_interaction_turn(&app).is_none(),
+            "no prompt to fall back to → no first turn queued"
+        );
     }
 
     #[test]

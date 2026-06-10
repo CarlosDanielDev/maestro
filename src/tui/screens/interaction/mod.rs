@@ -11,6 +11,7 @@ mod keymap;
 mod keymap_tests;
 mod layout;
 pub(crate) mod lifecycle;
+mod scroll;
 #[cfg(test)]
 mod terminator_tests;
 #[cfg(test)]
@@ -82,6 +83,9 @@ pub struct InteractionScreen {
     /// Max scroll offset (`total - viewport`) at the last draw. Lets
     /// `scroll_down` clamp/re-pin without recomputing the viewport math.
     last_max_offset: usize,
+    /// History viewport height (rows) at the last draw. Drives PageUp/PageDown
+    /// paging math (#988).
+    last_viewport: usize,
     /// Branch backing this session's worktree. Passed to teardown (#741).
     branch: String,
     /// Root the worktree lives under (`worktree_path`'s parent). Gates the
@@ -131,6 +135,7 @@ impl InteractionScreen {
             scroll_offset: 0,
             auto_scroll: true,
             last_max_offset: 0,
+            last_viewport: 0,
             branch: String::new(),
             worktree_root: PathBuf::new(),
             queued_terminator: None,
@@ -195,23 +200,6 @@ impl InteractionScreen {
         self.editor.lines().join("\n")
     }
 
-    /// Scroll the history up by `n` lines. Takes manual control of the
-    /// viewport (disables tail-following).
-    fn scroll_up(&mut self, n: usize) {
-        self.auto_scroll = false;
-        self.scroll_offset = self.scroll_offset.saturating_sub(n);
-    }
-
-    /// Scroll the history down by `n` lines, clamped to the last-known
-    /// bottom. Re-pins tail-following once the bottom is reached.
-    fn scroll_down(&mut self, n: usize) {
-        let max = self.last_max_offset;
-        self.scroll_offset = self.scroll_offset.saturating_add(n).min(max);
-        if self.scroll_offset >= max {
-            self.auto_scroll = true;
-        }
-    }
-
     fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
         let chunks = Layout::vertical([
             Constraint::Length(HEADER_HEIGHT),
@@ -241,6 +229,7 @@ impl InteractionScreen {
         let total = history::visual_total(&self.history, theme, history_area.width);
         let viewport = history_area.height as usize;
         self.last_max_offset = total.saturating_sub(viewport);
+        self.last_viewport = viewport;
         let offset = effective_offset(self.auto_scroll, self.scroll_offset, total, viewport);
         if self.auto_scroll {
             self.scroll_offset = offset;
@@ -259,10 +248,12 @@ impl InteractionScreen {
         if self.state == InteractionState::Terminated {
             input::draw_terminated_banner(f, input_area, theme, self.close_reason.as_ref());
         } else {
-            let spinner = crate::tui::spinner::graph_node_frame(
-                self.spinner_tick,
-                crate::icon_mode::use_nerd_font(),
-            );
+            let nerd = crate::icon_mode::use_nerd_font();
+            // Slow the throbber to ~7fps (the loop redraws at ~20fps): a calmer
+            // rotation reads as a clear spinner instead of a vibrating blob.
+            let calm = self.spinner_tick / 3;
+            let spinner = crate::tui::spinner::graph_node_frame(calm, nerd);
+            let wave = crate::tui::spinner::responding_wave(calm, nerd);
             input::draw_input(
                 f,
                 input_area,
@@ -270,6 +261,7 @@ impl InteractionScreen {
                 &self.editor,
                 self.is_streaming(),
                 spinner,
+                &wave,
             );
         }
 
@@ -299,6 +291,13 @@ impl InteractionScreen {
     #[cfg(test)]
     fn scroll_down_for_test(&mut self, n: usize) {
         self.scroll_down(n);
+    }
+
+    /// Tail-follow flag — cross-module test seam for the mouse-routing
+    /// assertion in `tui::mod` (#988).
+    #[cfg(test)]
+    pub(crate) fn auto_scroll_for_test(&self) -> bool {
+        self.auto_scroll
     }
 }
 
@@ -332,6 +331,18 @@ impl Screen for InteractionScreen {
             }
             InteractionIntent::ScrollDown => {
                 self.scroll_down(1);
+                ScreenAction::None
+            }
+            InteractionIntent::PageUp => {
+                self.page_up();
+                ScreenAction::None
+            }
+            InteractionIntent::PageDown => {
+                self.page_down();
+                ScreenAction::None
+            }
+            InteractionIntent::JumpToLatest => {
+                self.jump_to_latest();
                 ScreenAction::None
             }
             InteractionIntent::InsertNewline => {

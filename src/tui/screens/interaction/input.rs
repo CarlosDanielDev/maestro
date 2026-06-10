@@ -71,6 +71,7 @@ pub(super) fn draw_input(
     editor: &TextArea<'static>,
     locked: bool,
     spinner: char,
+    wave: &str,
 ) {
     let title = if locked {
         format!("Message ({spinner} agent responding…)")
@@ -85,7 +86,7 @@ pub(super) fn draw_input(
     let is_empty = lines.len() == 1 && lines[0].is_empty();
     let paragraph = if locked {
         Paragraph::new(Line::from(Span::styled(
-            format!("{spinner} Agent is responding — input locked…"),
+            format!("{wave}  Agent is responding — input locked…"),
             Style::default().fg(theme.accent_warning),
         )))
     } else if is_empty {
@@ -149,8 +150,10 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
         Span::raw(" Quit  "),
         Span::styled("[Esc]", active),
         Span::raw(" Back  "),
-        Span::styled("[Up/Down]", active),
-        Span::raw(" Scroll "),
+        Span::styled("[Up/Dn/PgUp/PgDn]", active),
+        Span::raw(" Scroll  "),
+        Span::styled("[End]", active),
+        Span::raw(" Latest "),
     ]);
 
     // Fill the rest of the row with the rule so the chords read as a border.

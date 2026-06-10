@@ -485,6 +485,17 @@ impl SessionPool {
             .and_then(|i| i.close_reason.as_ref())
     }
 
+    /// First interaction registered for `issue_number`, in any state. Test-only
+    /// introspection — `find_active_interaction_by_issue` returns `None` once a
+    /// session is `Terminated`, so this lets tests inspect a closed session's
+    /// preserved history / cleared queue (#936).
+    #[cfg(test)]
+    pub fn interaction_by_issue(&self, issue_number: u64) -> Option<&InteractionSession> {
+        self.interactions
+            .iter()
+            .find(|i| i.issue_number == issue_number)
+    }
+
     /// Create a fresh interaction session for `issue_number`, building a
     /// worktree (non-fatal — falls back to cwd) and registering it. Returns a
     /// reference to the newly created session. Mirrors the worktree handling
@@ -548,14 +559,25 @@ impl SessionPool {
     /// in-flight when the user quit (`Ctrl+Q`), its completing clone arrives
     /// here `Idle` and must not overwrite the `Terminated` record — otherwise
     /// re-entry would reopen a quit session.
-    pub fn upsert_interaction(&mut self, session: InteractionSession) {
+    pub fn upsert_interaction(&mut self, mut session: InteractionSession) {
         if let Some(slot) = self
             .interactions
             .iter_mut()
             .find(|i| i.issue_number == session.issue_number)
         {
             if slot.is_active() {
+                // #936: a PR terminator may have been queued on the live slot
+                // while this turn was streaming. The completing clone was taken
+                // before the marker arrived, so it does not carry the queue —
+                // carry it forward, then fire it now that the turn has settled
+                // (the streamed output is preserved because we fire *after* the
+                // overwrite, not before). A slot the user already quit is
+                // `!is_active()` and is left untouched above (never resurrected).
+                if session.queued_terminator.is_none() {
+                    session.queued_terminator = slot.queued_terminator.take();
+                }
                 *slot = session;
+                slot.settle_queued_terminator();
             }
         } else {
             self.interactions.push(session);
