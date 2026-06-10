@@ -1,96 +1,26 @@
 //! Integration tests for the live interaction turn → screen path (#738).
 //!
-//! Drives `InteractionSession::send_turn` with a canned `SpawnAgent`, then
-//! threads the emitted `TurnEvent`s through `InteractionScreen::apply_turn_event`
-//! exactly as the TUI command pump does — verifying the event shapes from #737
-//! produce the right live transcript + activity-log line.
+//! Drives `InteractionSession::send_turn` with a `ScriptedProvider` (#751),
+//! then threads the emitted `TurnEvent`s through
+//! `InteractionScreen::apply_turn_event` exactly as the TUI command pump does
+//! — verifying the event shapes from #737 produce the right live transcript +
+//! activity-log line.
 
-use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::Arc;
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
 use crate::session::interaction::{InteractionSession, InteractionState, TurnRole};
-use crate::session::interaction_turn::{
-    SpawnAgent, SpawnError, TurnArgv, TurnEvent, TurnHandle, TurnOutcome,
-};
+use crate::session::interaction_turn::TurnEvent;
+use crate::session::types::StreamEvent;
 use crate::tui::screens::{InteractionScreen, ScreenAction};
 
-const SYS: &str = r#"{"type":"system","subtype":"init","session_id":"abc123","tools":[]}"#;
-const CHUNK_1: &str = r#"{"type":"assistant","message":{"type":"text","text":"Hello, "}}"#;
-const CHUNK_2: &str = r#"{"type":"assistant","message":{"type":"text","text":"world."}}"#;
-const RESULT: &str =
-    r#"{"type":"result","subtype":"success","cost_usd":0.01,"session_id":"abc123"}"#;
-
-struct Batch {
-    lines: Vec<&'static str>,
-    outcome: TurnOutcome,
-}
-
-impl Batch {
-    fn ok(lines: Vec<&'static str>) -> Self {
-        Self {
-            lines,
-            outcome: TurnOutcome {
-                exit_code: Some(0),
-                stderr_tail: String::new(),
-            },
-        }
-    }
-
-    fn exit(lines: Vec<&'static str>, code: i32, stderr: &str) -> Self {
-        Self {
-            lines,
-            outcome: TurnOutcome {
-                exit_code: Some(code),
-                stderr_tail: stderr.to_string(),
-            },
-        }
-    }
-}
-
-struct FakeSpawner {
-    batches: Mutex<VecDeque<Batch>>,
-}
-
-impl FakeSpawner {
-    fn new(batches: Vec<Batch>) -> Self {
-        Self {
-            batches: Mutex::new(batches.into()),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl SpawnAgent for FakeSpawner {
-    async fn spawn(
-        &self,
-        _argv: TurnArgv,
-        _cancel: CancellationToken,
-    ) -> Result<TurnHandle, SpawnError> {
-        let batch = self
-            .batches
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| Batch::ok(vec![]));
-        let (lines_tx, lines_rx) = mpsc::channel::<String>(64);
-        let (outcome_tx, outcome_rx) = oneshot::channel::<TurnOutcome>();
-        tokio::spawn(async move {
-            for line in batch.lines {
-                if lines_tx.send(line.to_string()).await.is_err() {
-                    break;
-                }
-            }
-            drop(lines_tx);
-            let _ = outcome_tx.send(batch.outcome);
-        });
-        Ok(TurnHandle {
-            lines: lines_rx,
-            outcome: outcome_rx,
-        })
+fn chunk(text: &str) -> StreamEvent {
+    StreamEvent::AssistantMessage {
+        text: text.to_string(),
     }
 }
 
@@ -99,7 +29,10 @@ fn session() -> InteractionSession {
 }
 
 /// Collect every event `send_turn` emits for one turn.
-async fn run_turn(session: &mut InteractionSession, spawner: &dyn SpawnAgent) -> Vec<TurnEvent> {
+async fn run_turn(
+    session: &mut InteractionSession,
+    provider: Arc<ScriptedProvider>,
+) -> Vec<TurnEvent> {
     let (tx, mut rx) = mpsc::channel(64);
     let collector = tokio::spawn(async move {
         let mut events = Vec::new();
@@ -109,7 +42,7 @@ async fn run_turn(session: &mut InteractionSession, spawner: &dyn SpawnAgent) ->
         events
     });
     let _ = session
-        .send_turn("hi".into(), "opus", spawner, tx, CancellationToken::new())
+        .send_turn("hi".into(), "opus", provider, tx, CancellationToken::new())
         .await;
     collector.await.unwrap()
 }
@@ -126,8 +59,14 @@ async fn live_turn_streams_into_screen_and_logs_chunk_count() {
         finished_at: Some(chrono::Utc::now()),
     });
 
-    let spawner = FakeSpawner::new(vec![Batch::ok(vec![SYS, CHUNK_1, CHUNK_2, RESULT])]);
-    let events = run_turn(&mut sess, &spawner).await;
+    let provider = Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+        events: vec![chunk("Hello, "), chunk("world.")],
+        end: ScriptedEnd::Ok {
+            exit_code: Some(0),
+            session_id: Some("abc123"),
+        },
+    }]));
+    let events = run_turn(&mut sess, provider).await;
 
     let mut last_log: Option<String> = None;
     for ev in &events {
@@ -154,8 +93,14 @@ async fn live_turn_error_appends_system_turn_to_screen() {
     let mut sess = session();
     let mut screen = InteractionScreen::for_session(&sess);
 
-    let spawner = FakeSpawner::new(vec![Batch::exit(vec![SYS], 1, "boom")]);
-    let events = run_turn(&mut sess, &spawner).await;
+    let provider = Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+        events: vec![],
+        end: ScriptedEnd::FailedStatus {
+            status: "1",
+            stderr: "boom",
+        },
+    }]));
+    let events = run_turn(&mut sess, provider).await;
 
     for ev in &events {
         screen.apply_turn_event(ev);

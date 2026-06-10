@@ -474,8 +474,9 @@ fn open_interaction_session(
             .create_interaction_session(issue_number, produce_pr);
         screens::InteractionScreen::for_session(session)
     };
-    // Turns spawn the `claude` CLI (ClaudeCliSpawner) with the default model;
-    // surface that so the user knows who they are talking to (#738 QA).
+    // Turns run through the pool's configured provider (#751) with the
+    // default model; surface that so the user knows who they are talking to
+    // (#738 QA).
     screen.set_provider_context("claude", app.session_config.default_model.clone());
     // Name the work in the header, like the sessions view: look the title up
     // from the issue cache, falling back to the browser's loaded list (#738 QA).

@@ -304,6 +304,7 @@ impl AgentProvider for QwenProvider {
 
         Ok(AgentRunResult {
             exit_code: status.code(),
+            session_id: None,
         })
     }
 }

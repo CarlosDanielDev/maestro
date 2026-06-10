@@ -149,6 +149,14 @@ impl SessionPool {
         self.provider = provider;
     }
 
+    /// Handle to the configured default provider. Interaction turns run
+    /// through this so the transport selector (#750/#751) applies to chat —
+    /// and so the interactive transport's parked PTY children survive across
+    /// turns (the provider instance owns them).
+    pub fn provider(&self) -> Arc<dyn AgentProvider> {
+        Arc::clone(&self.provider)
+    }
+
     /// Set provider registry for per-session agent selection.
     pub fn set_agent_providers(&mut self, providers: HashMap<String, Arc<dyn AgentProvider>>) {
         self.agent_providers = providers;

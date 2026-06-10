@@ -780,8 +780,11 @@ async fn event_loop(
                         continue;
                     };
                     let tx = app.data_tx.clone();
+                    // The pool's configured provider carries the transport
+                    // selector (#750) and owns any parked interactive PTY
+                    // children across turns (#751).
+                    let provider = app.pool.provider();
                     tokio::spawn(async move {
-                        use crate::session::interaction_turn::ClaudeCliSpawner;
                         use tokio_util::sync::CancellationToken;
 
                         let (events_tx, mut events_rx) = tokio::sync::mpsc::channel(64);
@@ -795,10 +798,9 @@ async fn event_loop(
                             }
                         });
 
-                        let spawner = ClaudeCliSpawner::default();
                         let cancel = CancellationToken::new();
                         if let Err(e) = session
-                            .send_turn(prompt, &model, &spawner, events_tx, cancel)
+                            .send_turn(prompt, &model, provider, events_tx, cancel)
                             .await
                         {
                             tracing::warn!("interaction turn for #{issue_number} failed: {e}");

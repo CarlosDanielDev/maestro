@@ -164,7 +164,10 @@ impl AgentProvider for OllamaProvider {
             }
         }
 
-        Ok(AgentRunResult { exit_code: None })
+        Ok(AgentRunResult {
+            exit_code: None,
+            session_id: None,
+        })
     }
 }
 

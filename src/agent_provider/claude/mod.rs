@@ -66,10 +66,23 @@ pub enum InteractiveDriver {
     PortablePty,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ClaudeProvider {
     binary: String,
     transport: ClaudeTransport,
+    /// Interactive PTY children parked between turns, keyed by session id
+    /// (#751). Shared across clones of this provider so a TUI turn task and
+    /// the pool see the same children. Empty under the headless transport.
+    interactive_slots: interactive::SessionSlots,
+}
+
+impl std::fmt::Debug for ClaudeProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClaudeProvider")
+            .field("binary", &self.binary)
+            .field("transport", &self.transport)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ClaudeProvider {
@@ -77,6 +90,7 @@ impl ClaudeProvider {
         Self {
             binary: binary.into(),
             transport: ClaudeTransport::Headless,
+            interactive_slots: interactive::SessionSlots::default(),
         }
     }
 
@@ -86,6 +100,7 @@ impl ClaudeProvider {
         Self {
             binary: binary.into(),
             transport,
+            interactive_slots: interactive::SessionSlots::default(),
         }
     }
 
@@ -167,8 +182,9 @@ impl AgentProvider for ClaudeProvider {
                     std::path::PathBuf::from(home),
                     uuid::Uuid::new_v4().to_string(),
                 );
-                interactive::run_interactive(
+                interactive::run_session_turn(
                     Arc::new(pty_backend::PortablePtyBackend),
+                    Arc::clone(&self.interactive_slots),
                     spec,
                     request,
                     events,
@@ -213,10 +229,10 @@ mod tests {
 
     #[tokio::test]
     async fn interactive_transport_with_missing_binary_fails_spawn() {
-        let provider = ClaudeProvider {
-            binary: "/nonexistent-sentinel-binary-maestro-test".to_string(),
-            transport: ClaudeTransport::Interactive(InteractiveDriver::PortablePty),
-        };
+        let provider = ClaudeProvider::with_transport(
+            "/nonexistent-sentinel-binary-maestro-test",
+            ClaudeTransport::Interactive(InteractiveDriver::PortablePty),
+        );
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
@@ -239,10 +255,10 @@ mod tests {
         // Hybrid strategy: one-shot text turns must NOT ride the PTY. The
         // sentinel binary makes the headless path fail with Spawn — reaching
         // it (instead of openpty + transcript polling) is the assertion.
-        let provider = ClaudeProvider {
-            binary: "/nonexistent-sentinel-binary-maestro-test".to_string(),
-            transport: ClaudeTransport::Interactive(InteractiveDriver::PortablePty),
-        };
+        let provider = ClaudeProvider::with_transport(
+            "/nonexistent-sentinel-binary-maestro-test",
+            ClaudeTransport::Interactive(InteractiveDriver::PortablePty),
+        );
 
         let (tx, _rx) = mpsc::unbounded_channel();
         let request = AgentRequest::text("one shot", "claude-sonnet", None);

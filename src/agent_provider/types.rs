@@ -63,6 +63,10 @@ pub struct AgentRequest {
     pub permission_mode: Option<String>,
     pub allowed_tools: Vec<String>,
     pub system_prompt_appendix: Option<String>,
+    /// Resume an existing provider conversation (#751). Headless claude maps
+    /// this to `--resume <id>`; the interactive transport reuses (or
+    /// re-attaches to) the PTY child bound to this id.
+    pub resume_session_id: Option<String>,
     /// Bypass per-provider pre-spawn gates (e.g. MiniMax quota refusal at
     /// 95%). Defaults to false; CLI flag `--force-quota` flips it on. The
     /// gate still records the spawn and logs a warning at higher levels.
@@ -80,6 +84,7 @@ impl AgentRequest {
             permission_mode: None,
             allowed_tools: Vec::new(),
             system_prompt_appendix: None,
+            resume_session_id: None,
             force: false,
         }
     }
@@ -94,6 +99,7 @@ impl AgentRequest {
             permission_mode: None,
             allowed_tools: Vec::new(),
             system_prompt_appendix: None,
+            resume_session_id: None,
             force: false,
         }
     }
@@ -104,9 +110,14 @@ pub struct AgentRunStarted {
     pub process_id: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct AgentRunResult {
     pub exit_code: Option<i32>,
+    /// Provider session id for resumable conversations (#751). Headless
+    /// claude captures it from the stream (`system`/init or `result` line);
+    /// the interactive transport returns the id its PTY child is bound to.
+    /// `None` for providers without resume semantics.
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

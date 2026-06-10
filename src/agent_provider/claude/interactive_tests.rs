@@ -1,11 +1,11 @@
-//! Unit tests for the interactive PTY transport (issue #749), using a
+//! Unit tests for the interactive PTY transport (issues #749/#751), using a
 //! trait-based mock backend per RUST-GUARDRAILS.md §7 — no real `claude`
-//! binary, no real PTY.
+//! binary, no real PTY (except the stub-script e2e at the bottom).
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -22,10 +22,14 @@ const ASSISTANT_LINE: &str = r#"{"type":"assistant","message":{"id":"m1","type":
 const TURN_DURATION_LINE: &str =
     r#"{"type":"system","subtype":"turn_duration","durationMs":42,"messageCount":2}"#;
 
+const FRESH_ID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
 #[derive(Clone, Default)]
 struct MockState {
     writes: Arc<Mutex<Vec<String>>>,
     killed: Arc<AtomicBool>,
+    spawns: Arc<AtomicUsize>,
+    spawn_args: Arc<Mutex<Vec<Vec<String>>>>,
 }
 
 struct MockChild {
@@ -45,9 +49,6 @@ impl InteractiveChild for MockChild {
             body.push_str(TURN_DURATION_LINE);
             body.push('\n');
             std::fs::write(&self.transcript, body).unwrap();
-        }
-        if text.starts_with("/exit") {
-            self.exited = Some(0);
         }
         Ok(())
     }
@@ -90,7 +91,13 @@ impl MockBackend {
 }
 
 impl InteractiveBackend for MockBackend {
-    fn spawn(&self, _spec: &SpawnSpec) -> Result<Box<dyn InteractiveChild>, AgentError> {
+    fn spawn(&self, spec: &SpawnSpec) -> Result<Box<dyn InteractiveChild>, AgentError> {
+        self.state.spawns.fetch_add(1, Ordering::Relaxed);
+        self.state
+            .spawn_args
+            .lock()
+            .unwrap()
+            .push(spec.args.clone());
         if let Some(delay) = self.spawn_delay {
             std::thread::sleep(delay);
         }
@@ -98,7 +105,9 @@ impl InteractiveBackend for MockBackend {
             if let Some(parent) = self.transcript.parent() {
                 std::fs::create_dir_all(parent).unwrap();
             }
-            std::fs::write(&self.transcript, format!("{MODE_LINE}\n")).unwrap();
+            if !self.transcript.exists() {
+                std::fs::write(&self.transcript, format!("{MODE_LINE}\n")).unwrap();
+            }
         }
         Ok(Box::new(MockChild {
             state: self.state.clone(),
@@ -110,12 +119,7 @@ impl InteractiveBackend for MockBackend {
 }
 
 fn run_spec(home: &Path) -> RunSpec {
-    RunSpec::new(
-        "claude",
-        "claude",
-        home.to_path_buf(),
-        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-    )
+    RunSpec::new("claude", "claude", home.to_path_buf(), FRESH_ID)
 }
 
 fn request(cwd: &Path) -> AgentRequest {
@@ -130,6 +134,10 @@ fn drain_events(rx: &mut mpsc::UnboundedReceiver<AgentProviderEvent>) -> Vec<Age
         events.push(event);
     }
     events
+}
+
+fn empty_slots() -> SessionSlots {
+    SessionSlots::default()
 }
 
 #[test]
@@ -160,20 +168,29 @@ fn transcript_path_uses_claude_code_munge_rule() {
 }
 
 #[tokio::test]
-async fn happy_path_streams_events_and_exits_cleanly() {
+async fn fresh_turn_streams_events_and_parks_child() {
     let tmp = tempfile::tempdir().unwrap();
     let spec = run_spec(tmp.path());
     let request = request(tmp.path());
-    let transcript = transcript_path(tmp.path(), tmp.path(), &spec.session_id);
+    let transcript = transcript_path(tmp.path(), tmp.path(), FRESH_ID);
     let backend = Arc::new(MockBackend::new(transcript));
     let state = backend.state.clone();
+    let slots = empty_slots();
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let result = run_interactive(backend, spec, request, tx, CancellationToken::new())
-        .await
-        .unwrap();
+    let result = run_session_turn(
+        backend,
+        Arc::clone(&slots),
+        spec,
+        request,
+        tx,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
 
-    assert_eq!(result.exit_code, Some(0));
+    assert_eq!(result.session_id.as_deref(), Some(FRESH_ID));
+    assert_eq!(result.exit_code, None, "parked child has no exit code");
 
     let events = drain_events(&mut rx);
     assert!(
@@ -195,31 +212,160 @@ async fn happy_path_streams_events_and_exits_cleanly() {
         "last event must be Completed: {events:?}"
     );
 
-    let writes = state.writes.lock().unwrap();
+    let writes: Vec<String> = state.writes.lock().unwrap().clone();
     assert!(
         writes[0].starts_with("\u{1b}[200~") && writes[0].ends_with("\u{1b}[201~\r"),
         "prompt must be bracketed-paste wrapped: {writes:?}"
     );
     assert!(
-        writes.iter().any(|w| w.starts_with("/exit")),
-        "clean shutdown must send /exit: {writes:?}"
+        !writes.iter().any(|w| w.starts_with("/exit")),
+        "the child is parked between turns — no /exit: {writes:?}"
     );
+    assert!(!state.killed.load(Ordering::Relaxed), "park must not kill");
     assert!(
-        !state.killed.load(Ordering::Relaxed),
-        "clean exit must not kill"
+        slots.lock().await.contains_key(FRESH_ID),
+        "child must be parked under the bound session id"
+    );
+    let spawn_args: Vec<Vec<String>> = state.spawn_args.lock().unwrap().clone();
+    assert!(
+        spawn_args[0]
+            .windows(2)
+            .any(|w| w == ["--session-id", FRESH_ID]),
+        "fresh spawn pins --session-id: {spawn_args:?}"
     );
 }
 
 #[tokio::test]
-async fn cancel_sends_double_ctrl_c_then_kills() {
+async fn second_turn_reuses_parked_child_without_new_spawn() {
+    let tmp = tempfile::tempdir().unwrap();
+    let transcript = transcript_path(tmp.path(), tmp.path(), FRESH_ID);
+    let backend = Arc::new(MockBackend::new(transcript));
+    let state = backend.state.clone();
+    let slots = empty_slots();
+
+    // Turn 1: fresh.
+    let (tx1, _rx1) = mpsc::unbounded_channel();
+    let result = run_session_turn(
+        Arc::clone(&backend) as Arc<dyn InteractiveBackend>,
+        Arc::clone(&slots),
+        run_spec(tmp.path()),
+        request(tmp.path()),
+        tx1,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    // Turn 2: resume the bound id.
+    let mut second = request(tmp.path());
+    second.resume_session_id = result.session_id.clone();
+    let (tx2, mut rx2) = mpsc::unbounded_channel();
+    let result2 = run_session_turn(
+        backend,
+        Arc::clone(&slots),
+        run_spec(tmp.path()),
+        second,
+        tx2,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result2.session_id.as_deref(), Some(FRESH_ID));
+    assert_eq!(
+        state.spawns.load(Ordering::Relaxed),
+        1,
+        "second turn must NOT spawn a new process"
+    );
+    let events = drain_events(&mut rx2);
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentProviderEvent::Stream(StreamEvent::AssistantMessage { .. })
+        )),
+        "second turn must stream the new assistant reply (offset tracking): {events:?}"
+    );
+    let prompt_writes = {
+        let writes = state.writes.lock().unwrap();
+        writes.iter().filter(|w| w.contains("\u{1b}[200~")).count()
+    };
+    assert_eq!(prompt_writes, 2, "one prompt write per turn");
+}
+
+#[tokio::test]
+async fn resume_without_parked_child_spawns_with_resume_flag() {
+    let tmp = tempfile::tempdir().unwrap();
+    let transcript = transcript_path(
+        tmp.path(),
+        tmp.path(),
+        "11111111-2222-3333-4444-555555555555",
+    );
+    // Simulate prior history: transcript already exists with old content the
+    // turn must NOT replay.
+    std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+    std::fs::write(
+        &transcript,
+        format!("{MODE_LINE}\n{ASSISTANT_LINE}\n{TURN_DURATION_LINE}\n"),
+    )
+    .unwrap();
+
+    let backend = Arc::new(MockBackend::new(transcript));
+    let state = backend.state.clone();
+    let slots = empty_slots();
+
+    let mut req = request(tmp.path());
+    req.resume_session_id = Some("11111111-2222-3333-4444-555555555555".to_string());
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let result = run_session_turn(
+        backend,
+        Arc::clone(&slots),
+        run_spec(tmp.path()),
+        req,
+        tx,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.session_id.as_deref(),
+        Some("11111111-2222-3333-4444-555555555555")
+    );
+    let spawn_args: Vec<Vec<String>> = state.spawn_args.lock().unwrap().clone();
+    assert!(
+        spawn_args[0]
+            .windows(2)
+            .any(|w| w == ["--resume", "11111111-2222-3333-4444-555555555555"]),
+        "re-attach spawn must use --resume: {spawn_args:?}"
+    );
+    // History skip: exactly ONE assistant message (the new one), not two.
+    let assistant_count = drain_events(&mut rx)
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                AgentProviderEvent::Stream(StreamEvent::AssistantMessage { .. })
+            )
+        })
+        .count();
+    assert_eq!(
+        assistant_count, 1,
+        "resume must tail from the end of the existing transcript"
+    );
+}
+
+#[tokio::test]
+async fn cancel_sends_double_ctrl_c_and_keeps_live_child_parked() {
     let tmp = tempfile::tempdir().unwrap();
     let spec = run_spec(tmp.path());
     let request = request(tmp.path());
-    let transcript = transcript_path(tmp.path(), tmp.path(), &spec.session_id);
+    let transcript = transcript_path(tmp.path(), tmp.path(), FRESH_ID);
     let mut backend = MockBackend::new(transcript);
     backend.respond = false; // turn never completes
     let backend = Arc::new(backend);
     let state = backend.state.clone();
+    let slots = empty_slots();
 
     let cancel = CancellationToken::new();
     let trigger = cancel.clone();
@@ -230,7 +376,7 @@ async fn cancel_sends_double_ctrl_c_then_kills() {
 
     let (tx, _rx) = mpsc::unbounded_channel();
     let started = std::time::Instant::now();
-    let result = run_interactive(backend, spec, request, tx, cancel).await;
+    let result = run_session_turn(backend, Arc::clone(&slots), spec, request, tx, cancel).await;
 
     assert!(
         matches!(result, Err(AgentError::Cancelled { .. })),
@@ -241,12 +387,18 @@ async fn cancel_sends_double_ctrl_c_then_kills() {
         "cancel must resolve quickly (got {:?})",
         started.elapsed()
     );
-    let writes = state.writes.lock().unwrap();
-    let ctrl_c = writes.iter().filter(|w| w.as_str() == "\u{3}").count();
-    assert_eq!(ctrl_c, 2, "cancel must send Ctrl-C twice: {writes:?}");
+    let ctrl_c = {
+        let writes = state.writes.lock().unwrap();
+        writes.iter().filter(|w| w.as_str() == "\u{3}").count()
+    };
+    assert_eq!(ctrl_c, 2, "cancel must send Ctrl-C twice");
     assert!(
-        state.killed.load(Ordering::Relaxed),
-        "child must be killed when Ctrl-C does not stop it"
+        !state.killed.load(Ordering::Relaxed),
+        "a live child survives cancellation (conversation stays warm)"
+    );
+    assert!(
+        slots.lock().await.contains_key(FRESH_ID),
+        "the surviving child must stay parked"
     );
 }
 
@@ -256,17 +408,63 @@ async fn spawn_timeout_maps_to_spawn_error() {
     let mut spec = run_spec(tmp.path());
     spec.spawn_timeout = Duration::from_millis(100);
     let request = request(tmp.path());
-    let transcript = transcript_path(tmp.path(), tmp.path(), &spec.session_id);
+    let transcript = transcript_path(tmp.path(), tmp.path(), FRESH_ID);
     let mut backend = MockBackend::new(transcript);
     backend.spawn_delay = Some(Duration::from_secs(2));
     let backend = Arc::new(backend);
 
     let (tx, _rx) = mpsc::unbounded_channel();
-    let result = run_interactive(backend, spec, request, tx, CancellationToken::new()).await;
+    let result = run_session_turn(
+        backend,
+        empty_slots(),
+        spec,
+        request,
+        tx,
+        CancellationToken::new(),
+    )
+    .await;
 
     assert!(
         matches!(result, Err(AgentError::Spawn { .. })),
         "expected Spawn timeout error, got: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn readiness_timeout_kills_child_and_reports_transcript_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut spec = run_spec(tmp.path());
+    spec.readiness_timeout = Duration::from_millis(300);
+    let request = request(tmp.path());
+    let transcript = transcript_path(tmp.path(), tmp.path(), FRESH_ID);
+    let mut backend = MockBackend::new(transcript);
+    backend.create_transcript = false; // boot never happens
+    let backend = Arc::new(backend);
+    let state = backend.state.clone();
+
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let result = run_session_turn(
+        backend,
+        empty_slots(),
+        spec,
+        request,
+        tx,
+        CancellationToken::new(),
+    )
+    .await;
+
+    match result {
+        Err(AgentError::Stream(msg)) => {
+            assert!(
+                msg.contains("transcript never appeared"),
+                "unexpected message: {msg}"
+            );
+        }
+        other => panic!("expected Stream error, got: {other:?}"),
+    }
+    assert!(
+        state.killed.load(Ordering::Relaxed),
+        "child must not be left running after readiness timeout"
     );
 }
 
@@ -297,9 +495,11 @@ async fn portable_pty_backend_runs_stub_claude_end_to_end() {
     let mut request = AgentRequest::stream_json("ping".into(), "claude-haiku".into());
     request.cwd = Some(home.clone());
 
+    let slots = empty_slots();
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let result = run_interactive(
+    let result = run_session_turn(
         Arc::new(PortablePtyBackend),
+        Arc::clone(&slots),
         spec,
         request,
         tx,
@@ -309,10 +509,11 @@ async fn portable_pty_backend_runs_stub_claude_end_to_end() {
     .unwrap();
 
     assert_eq!(
-        result.exit_code,
-        Some(0),
-        "stub must exit cleanly via /exit"
+        result.session_id.as_deref(),
+        Some("12345678-1234-1234-1234-123456789abc")
     );
+    assert_eq!(result.exit_code, None, "child is parked, not exited");
+    assert_eq!(slots.lock().await.len(), 1, "stub child must be parked");
 
     let stream = drain_events(&mut rx)
         .into_iter()
@@ -323,34 +524,7 @@ async fn portable_pty_backend_runs_stub_claude_end_to_end() {
         .collect::<Vec<_>>()
         .join("\n");
     insta::assert_snapshot!("interactive_stub_claude_stream", stream);
-}
 
-#[tokio::test]
-async fn readiness_timeout_kills_child_and_reports_transcript_path() {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut spec = run_spec(tmp.path());
-    spec.readiness_timeout = Duration::from_millis(300);
-    let request = request(tmp.path());
-    let transcript = transcript_path(tmp.path(), tmp.path(), &spec.session_id);
-    let mut backend = MockBackend::new(transcript);
-    backend.create_transcript = false; // boot never happens
-    let backend = Arc::new(backend);
-    let state = backend.state.clone();
-
-    let (tx, _rx) = mpsc::unbounded_channel();
-    let result = run_interactive(backend, spec, request, tx, CancellationToken::new()).await;
-
-    match result {
-        Err(AgentError::Stream(msg)) => {
-            assert!(
-                msg.contains("transcript never appeared"),
-                "unexpected message: {msg}"
-            );
-        }
-        other => panic!("expected Stream error, got: {other:?}"),
-    }
-    assert!(
-        state.killed.load(Ordering::Relaxed),
-        "child must not be left running after readiness timeout"
-    );
+    // Dropping the slots kills the parked stub child (PtyChild::Drop).
+    slots.lock().await.clear();
 }

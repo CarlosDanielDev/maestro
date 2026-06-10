@@ -22,7 +22,7 @@ use crate::agent_provider::types::{
     AgentError, AgentHealthCheck, AgentOutputFormat, AgentProviderEvent, AgentProviderId,
     AgentRequest, AgentRunResult, AgentRunStarted, AgentTextOutput,
 };
-use crate::session::parser::parse_stream_line;
+use crate::session::parser::{extract_session_id, parse_stream_line};
 use crate::session::types::StreamEvent;
 
 pub(super) fn build_stream_args(request: &AgentRequest) -> Vec<String> {
@@ -34,6 +34,15 @@ pub(super) fn build_stream_args(request: &AgentRequest) -> Vec<String> {
         "--model".to_string(),
         request.model.clone(),
     ];
+
+    // Resume an existing conversation (#751). The id is validated by
+    // `extract_session_id` (UUID charset) before it ever lands here.
+    if let Some(id) = request.resume_session_id.as_deref()
+        && !id.is_empty()
+    {
+        args.push("--resume".to_string());
+        args.push(id.to_string());
+    }
 
     if let Some(mode) = request.permission_mode.as_deref()
         && !mode.is_empty()
@@ -199,8 +208,14 @@ pub(super) async fn run(
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
         let mut got_result = false;
+        // First session id on the stream wins (#751) — claude emits it on the
+        // system/init line and repeats it on the terminal result line.
+        let mut session_id: Option<String> = None;
 
         while let Ok(Some(line)) = lines.next_line().await {
+            if session_id.is_none() {
+                session_id = extract_session_id(&line);
+            }
             let parsed = parse_stream_line(&line);
             for event in parsed {
                 if matches!(event, StreamEvent::Completed { .. }) {
@@ -215,6 +230,7 @@ pub(super) async fn run(
                 cost_usd: 0.0,
             }));
         }
+        session_id
     });
 
     let stderr_task = stderr.map(|stderr| {
@@ -245,7 +261,7 @@ pub(super) async fn run(
         status = child.wait() => status.map_err(|err| AgentError::Stream(err.to_string()))?,
     };
 
-    let _ = stdout_task.await;
+    let session_id = stdout_task.await.ok().flatten();
     let stderr_buf = match stderr_task {
         Some(task) => task.await.unwrap_or_default(),
         None => String::new(),
@@ -267,6 +283,7 @@ pub(super) async fn run(
 
     Ok(AgentRunResult {
         exit_code: status.code(),
+        session_id,
     })
 }
 
@@ -305,6 +322,21 @@ mod tests {
                 .any(|w| w == ["--append-system-prompt", "appendix"])
         );
         assert_eq!(args.last().map(String::as_str), Some("test prompt"));
+    }
+
+    #[test]
+    fn resume_session_id_adds_resume_flag() {
+        let mut request = request();
+        request.resume_session_id = Some("abc-123".to_string());
+        let args = build_stream_args(&request);
+        assert!(
+            args.windows(2).any(|w| w == ["--resume", "abc-123"]),
+            "got: {args:?}"
+        );
+
+        request.resume_session_id = None;
+        let args = build_stream_args(&request);
+        assert!(!args.iter().any(|a| a == "--resume"), "got: {args:?}");
     }
 
     #[test]

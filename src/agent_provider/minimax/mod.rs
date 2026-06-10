@@ -290,7 +290,10 @@ impl AgentProvider for MinimaxProvider {
             }
         }
 
-        Ok(AgentRunResult { exit_code: None })
+        Ok(AgentRunResult {
+            exit_code: None,
+            session_id: None,
+        })
     }
 }
 

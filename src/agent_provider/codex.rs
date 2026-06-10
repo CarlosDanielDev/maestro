@@ -372,6 +372,7 @@ impl AgentProvider for CodexProvider {
 
         Ok(AgentRunResult {
             exit_code: status.code(),
+            session_id: None,
         })
     }
 }

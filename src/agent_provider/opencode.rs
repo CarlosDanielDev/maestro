@@ -355,6 +355,7 @@ impl AgentProvider for OpenCodeProvider {
 
         Ok(AgentRunResult {
             exit_code: status.code(),
+            session_id: None,
         })
     }
 }

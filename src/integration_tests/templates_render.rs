@@ -69,7 +69,10 @@ impl AgentProvider for FakeProvider {
         _events: mpsc::UnboundedSender<AgentProviderEvent>,
         _cancel: CancellationToken,
     ) -> Result<AgentRunResult, AgentError> {
-        Ok(AgentRunResult { exit_code: None })
+        Ok(AgentRunResult {
+            exit_code: None,
+            session_id: None,
+        })
     }
     fn template_rules(&self) -> &'static dyn TemplateProviderRules {
         &FAKE_RULES

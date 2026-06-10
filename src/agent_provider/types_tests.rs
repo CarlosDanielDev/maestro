@@ -49,7 +49,10 @@ impl AgentProvider for HttpStubProvider {
         let _ = events.send(AgentProviderEvent::Stream(StreamEvent::Completed {
             cost_usd: 0.0,
         }));
-        Ok(AgentRunResult { exit_code: None })
+        Ok(AgentRunResult {
+            exit_code: None,
+            session_id: None,
+        })
     }
 }
 
