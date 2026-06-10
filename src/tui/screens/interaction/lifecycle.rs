@@ -1,14 +1,23 @@
-//! Terminator UI flow for the Interaction screen (#741).
+//! Terminator UI flow for the Interaction screen (#741, async teardown #941).
 //!
 //! Bridges #739's `InteractionLifecycleEvent::PrLinkedToIssue` to #740's
-//! `wipe_worktree`: appends `System` turns announcing the close, runs the
-//! worktree teardown, sets the terminal `close_reason`, and arms a 500ms
-//! auto-navigation timer.
+//! `wipe_worktree`: appends `System` turns announcing the close, dispatches
+//! the worktree teardown OFF the UI thread, applies the result when it comes
+//! back, sets the terminal `close_reason`, and arms a 500ms auto-navigation
+//! timer.
+//!
+//! The flow is split in two (#941) so blocking `git` never runs on the UI
+//! thread:
+//! 1. the terminator path appends the opening `System` turn, flips the
+//!    in-flight flag, and parks a [`TeardownDispatch`] for the app layer;
+//! 2. the app runs the wipe under `tokio::task::spawn_blocking` and delivers
+//!    the outcome back as `TuiDataEvent::InteractionTeardownResult`, which
+//!    lands in [`InteractionScreen::apply_teardown_result`].
 //!
 //! Two seams keep the flow testable without git or wall-clock sleeps:
 //! [`WorktreeTeardownPort`] (over `wipe_worktree`) and [`Clock`] (over
-//! `Instant::now`). Production wires `RealTeardown` + `RealClock`; tests inject
-//! `MockTeardown` + `FakeClock`.
+//! `Instant::now`). Production wires `RealTeardown` + `RealClock`; tests
+//! resolve the dispatch through `MockTeardown` + `FakeClock`.
 
 use super::{InteractionScreen, LOG_TAG};
 use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
@@ -27,8 +36,20 @@ const TEARDOWN_TAG: &str = "TEARDOWN";
 /// Issues list. Any keypress short-circuits this (handled by the keymap).
 pub(crate) const AUTO_NAV_DELAY: Duration = Duration::from_millis(500);
 
-/// Seam over [`wipe_worktree`] (#740) so the screen can be unit/snapshot tested
-/// without touching git or the disk. Synchronous: teardown is blocking git I/O.
+/// Everything the app layer needs to run one teardown off the UI thread
+/// (#941). Produced by the terminator path, consumed by the app's
+/// `spawn_blocking` dispatcher.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TeardownDispatch {
+    pub(crate) issue_number: u64,
+    pub(crate) path: std::path::PathBuf,
+    pub(crate) branch: String,
+    pub(crate) root: std::path::PathBuf,
+}
+
+/// Seam over [`wipe_worktree`] (#740) so the dispatcher can be tested without
+/// touching git or the disk. Synchronous: teardown is blocking git I/O — it
+/// runs under `spawn_blocking`, never on the UI thread (#941).
 pub(crate) trait WorktreeTeardownPort {
     fn wipe(
         &self,
@@ -51,22 +72,6 @@ impl WorktreeTeardownPort for RealTeardown {
         worktree_root: &Path,
     ) -> Result<(), TeardownError> {
         wipe_worktree(issue_number, path, branch, worktree_root)
-    }
-}
-
-/// Lets a test keep an `Rc<MockTeardown>` handle for call-count assertions
-/// after a clone is boxed into the screen. `Rc` (not `Arc`): the screen and its
-/// teardown port are single-threaded UI state.
-#[cfg(test)]
-impl<T: WorktreeTeardownPort> WorktreeTeardownPort for std::rc::Rc<T> {
-    fn wipe(
-        &self,
-        issue_number: u64,
-        path: &Path,
-        branch: &str,
-        worktree_root: &Path,
-    ) -> Result<(), TeardownError> {
-        (**self).wipe(issue_number, path, branch, worktree_root)
     }
 }
 
@@ -132,8 +137,10 @@ impl InteractionScreen {
         Some(self.fire_terminator(event))
     }
 
-    /// Run the teardown flow: announce, wipe, record outcome, terminate, and
-    /// arm the auto-nav timer. Only `PrLinkedToIssue` maps to teardown today.
+    /// Start the teardown flow: announce and either finish synchronously (the
+    /// no-worktree skip path — no git involved) or park a
+    /// [`TeardownDispatch`] for the app layer and enter the in-flight state
+    /// (#941). The blocking wipe itself never runs here.
     fn fire_terminator(&mut self, event: InteractionLifecycleEvent) -> ScreenAction {
         let InteractionLifecycleEvent::PrLinkedToIssue { pr_number, .. } = event else {
             return ScreenAction::None;
@@ -142,7 +149,7 @@ impl InteractionScreen {
         // No trusted worktree root (cwd fallback in pool.rs) → there is no
         // isolated worktree to remove, and running the destructive teardown
         // with an untrusted root could target the main repo (#741 sec). Close
-        // the session without wiping.
+        // the session without wiping — nothing blocking, so finish inline.
         if self.worktree_root.as_os_str().is_empty() {
             self.push_system_now(format!(
                 "PR #{pr_number} created → finishing session (no isolated worktree to remove)"
@@ -160,13 +167,43 @@ impl InteractionScreen {
         self.push_system_now(format!(
             "PR #{pr_number} created → finishing session and wiping worktree…"
         ));
+        self.teardown_pr_in_flight = Some(pr_number);
+        self.pending_teardown_dispatch = Some(TeardownDispatch {
+            issue_number: self.issue_number,
+            path: self.worktree_path.clone(),
+            branch: self.branch.clone(),
+            root: self.worktree_root.clone(),
+        });
+        // The TEARDOWN log line comes with the async result; the dispatch site
+        // already logs the opening "INTERACTION closing" line.
+        ScreenAction::None
+    }
 
-        match self.teardown.wipe(
-            self.issue_number,
-            &self.worktree_path,
-            &self.branch,
-            &self.worktree_root,
-        ) {
+    /// Take the parked dispatch, if any. The app layer calls this right after
+    /// driving the terminator (or applying a `TurnFinished` that drained one)
+    /// and runs the wipe under `spawn_blocking` (#941).
+    pub(crate) fn take_pending_teardown_dispatch(&mut self) -> Option<TeardownDispatch> {
+        self.pending_teardown_dispatch.take()
+    }
+
+    /// True while a dispatched teardown has not resolved yet. Drives the
+    /// "wiping worktree…" banner so the wait is visible, not a frozen frame.
+    pub(crate) fn is_teardown_in_flight(&self) -> bool {
+        self.teardown_pr_in_flight.is_some()
+    }
+
+    /// Apply the async teardown outcome delivered by
+    /// `TuiDataEvent::InteractionTeardownResult` (#941): append the
+    /// success/failure `System` turn, set `close_reason`, terminate, and arm
+    /// the auto-nav timer — the same end state the old synchronous path
+    /// produced. Returns `ScreenAction::None` when no teardown was in flight
+    /// (stale event).
+    pub(crate) fn apply_teardown_result(&mut self, result: Result<(), String>) -> ScreenAction {
+        let Some(pr_number) = self.teardown_pr_in_flight.take() else {
+            return ScreenAction::None;
+        };
+
+        match result {
             Ok(()) => {
                 self.push_system_now(format!(
                     "worktree removed at {}; branch {} deleted",
@@ -187,7 +224,7 @@ impl InteractionScreen {
                 // git stderr can ride inside `err`; sanitize at ingestion (not
                 // just at the renderer) so the error text is safe wherever it
                 // flows — the System turn, `close_reason.tail`, and the log.
-                let safe = crate::tui::screens::sanitize_for_terminal(&err.to_string());
+                let safe = crate::tui::screens::sanitize_for_terminal(&err);
                 self.push_system_now(format!(
                     "worktree teardown failed: {safe}; manual cleanup: git worktree remove {}",
                     self.worktree_path.display()
@@ -337,14 +374,15 @@ impl Clock for FakeClock {
 /// terminator state for assertions.
 #[cfg(test)]
 impl InteractionScreen {
-    /// Construct a screen with injected teardown + clock seams. Drives the
-    /// terminator flow without git or wall-clock sleeps (#741).
+    /// Construct a screen with an injected clock seam. Drives the terminator
+    /// flow without git or wall-clock sleeps (#741). Teardown is async (#941):
+    /// tests resolve the parked [`TeardownDispatch`] through a `MockTeardown`
+    /// and feed the outcome to [`Self::apply_teardown_result`].
     pub(crate) fn with_ports(
         issue_number: u64,
         worktree_path: PathBuf,
         branch: String,
         worktree_root: PathBuf,
-        teardown: Box<dyn WorktreeTeardownPort>,
         clock: Box<dyn Clock>,
     ) -> Self {
         let mut screen = Self::with_history(Vec::new());
@@ -352,7 +390,6 @@ impl InteractionScreen {
         screen.worktree_path = worktree_path;
         screen.branch = branch;
         screen.worktree_root = worktree_root;
-        screen.teardown = teardown;
         screen.clock = clock;
         screen
     }

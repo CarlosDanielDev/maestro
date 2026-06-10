@@ -28,7 +28,7 @@ use chrono::Utc;
 use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use keymap::{InteractionIntent, classify, pushup_prompt};
 use layout::{HEADER_HEIGHT, INPUT_HEIGHT, effective_offset, inset_x};
-use lifecycle::{Clock, RealClock, RealTeardown, WorktreeTeardownPort};
+use lifecycle::{Clock, RealClock};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -96,9 +96,14 @@ pub struct InteractionScreen {
     queued_terminator: Option<InteractionLifecycleEvent>,
     /// When the screen entered `Terminated`. Drives the 500ms auto-nav timer.
     terminated_at: Option<Instant>,
-    /// Destructive worktree teardown seam (#740). `RealTeardown` in
-    /// production; a fake in tests.
-    teardown: Box<dyn WorktreeTeardownPort>,
+    /// PR number of the teardown currently running off-thread (#941). `Some`
+    /// from dispatch until `apply_teardown_result`; drives the "wiping
+    /// worktree…" banner.
+    teardown_pr_in_flight: Option<u64>,
+    /// Teardown work parked for the app layer to run under `spawn_blocking`
+    /// (#941). Set by the terminator path; taken via
+    /// [`Self::take_pending_teardown_dispatch`].
+    pending_teardown_dispatch: Option<lifecycle::TeardownDispatch>,
     /// Time source for the auto-nav timer. `RealClock` in production; a fake
     /// in tests.
     clock: Box<dyn Clock>,
@@ -140,7 +145,8 @@ impl InteractionScreen {
             worktree_root: PathBuf::new(),
             queued_terminator: None,
             terminated_at: None,
-            teardown: Box::new(RealTeardown),
+            teardown_pr_in_flight: None,
+            pending_teardown_dispatch: None,
             clock: Box::new(RealClock),
         }
     }
@@ -247,6 +253,11 @@ impl InteractionScreen {
         input::draw_keybar(f, keybar_area, theme, self.pushup_enabled());
         if self.state == InteractionState::Terminated {
             input::draw_terminated_banner(f, input_area, theme, self.close_reason.as_ref());
+        } else if let Some(pr_number) = self.teardown_pr_in_flight {
+            // Async teardown in flight (#941): the UI stays responsive while
+            // git runs off-thread — show what's happening instead of an
+            // editable input pane.
+            input::draw_teardown_banner(f, input_area, theme, pr_number, self.spinner_tick);
         } else {
             let nerd = crate::icon_mode::use_nerd_font();
             // Slow the throbber to ~7fps (the loop redraws at ~20fps): a calmer

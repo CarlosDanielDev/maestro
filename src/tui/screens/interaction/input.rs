@@ -212,6 +212,31 @@ pub(super) fn draw_terminated_banner(
     );
 }
 
+/// Render the async-teardown in-flight banner in place of the input pane
+/// (#941). The wipe runs off-thread; this keeps the wait visible (and the UI
+/// responsive) instead of freezing the frame.
+pub(super) fn draw_teardown_banner(
+    f: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    pr_number: u64,
+    spinner_tick: usize,
+) {
+    let nerd = crate::icon_mode::use_nerd_font();
+    let spinner = crate::tui::spinner::graph_node_frame(spinner_tick / 3, nerd);
+    let block = theme.styled_block("Closing", true);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            format!("{spinner} PR #{pr_number} created — wiping worktree…"),
+            Style::default().fg(theme.text_secondary),
+        )))
+        .alignment(Alignment::Center),
+        inner,
+    );
+}
+
 /// A centered rectangle of `w` x `h` clamped inside `area`.
 fn centered_rect(area: Rect, w: u16, h: u16) -> Rect {
     let w = w.min(area.width);

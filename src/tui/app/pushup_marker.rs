@@ -196,6 +196,39 @@ impl App {
         {
             self.activity_log.push_simple(tag, message, level);
         }
+        // #941: the blocking wipe never runs on the UI thread — take the
+        // parked dispatch (if the terminator fired) and run it off-thread.
+        self.spawn_pending_interaction_teardown();
+    }
+
+    /// Run a parked teardown dispatch under `spawn_blocking`, delivering the
+    /// outcome back through `TuiDataEvent::InteractionTeardownResult` (#941).
+    /// No-op when the open Interaction screen has nothing parked.
+    pub(crate) fn spawn_pending_interaction_teardown(&mut self) {
+        let Some(dispatch) = self
+            .screen_state
+            .interaction_screen
+            .as_mut()
+            .and_then(|screen| screen.take_pending_teardown_dispatch())
+        else {
+            return;
+        };
+        let tx = self.data_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            use crate::tui::screens::interaction::lifecycle::{RealTeardown, WorktreeTeardownPort};
+            let result = RealTeardown
+                .wipe(
+                    dispatch.issue_number,
+                    &dispatch.path,
+                    &dispatch.branch,
+                    &dispatch.root,
+                )
+                .map_err(|err| err.to_string());
+            let _ = tx.send(super::types::TuiDataEvent::InteractionTeardownResult {
+                issue_number: dispatch.issue_number,
+                result,
+            });
+        });
     }
 }
 

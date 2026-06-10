@@ -703,6 +703,48 @@ impl App {
                 {
                     self.activity_log.push_simple(tag, message, level);
                 }
+                // A TurnFinished may have drained a deferred terminator,
+                // parking a teardown dispatch — run it off-thread (#941).
+                self.spawn_pending_interaction_teardown();
+            }
+            TuiDataEvent::InteractionTeardownResult {
+                issue_number,
+                result,
+            } => {
+                let action = self
+                    .screen_state
+                    .interaction_screen
+                    .as_mut()
+                    .filter(|screen| screen.is_for_issue(issue_number))
+                    .map(|screen| screen.apply_teardown_result(result.clone()));
+                match action {
+                    Some(crate::tui::screens::ScreenAction::LogActivity {
+                        tag,
+                        message,
+                        level,
+                    }) => {
+                        self.activity_log.push_simple(tag, message, level);
+                    }
+                    _ => {
+                        // Screen navigated away (or stale event): still leave
+                        // a trace so the outcome is not silently dropped.
+                        let (message, level) = match result {
+                            Ok(()) => (
+                                format!("#{issue_number} worktree removed (screen closed)"),
+                                LogLevel::Info,
+                            ),
+                            Err(err) => (
+                                format!(
+                                    "#{issue_number} worktree teardown FAILED: {}",
+                                    crate::tui::screens::sanitize_for_terminal(&err)
+                                ),
+                                LogLevel::Warn,
+                            ),
+                        };
+                        self.activity_log
+                            .push_simple("TEARDOWN".into(), message, level);
+                    }
+                }
             }
             TuiDataEvent::InteractionTurnComplete { session } => {
                 self.pool.upsert_interaction(*session);

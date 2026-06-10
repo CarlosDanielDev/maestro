@@ -484,6 +484,15 @@ pub enum TuiDataEvent {
         seed_prompt: Option<String>,
         result: anyhow::Result<Issue>,
     },
+    /// Outcome of the async worktree teardown (#941). The wipe runs under
+    /// `spawn_blocking`; this event lands the result back on the UI thread,
+    /// where the Interaction screen appends its success/failure `System`
+    /// turn and terminates. `Err` carries the (unsanitized) error text; the
+    /// screen sanitizes at ingestion.
+    InteractionTeardownResult {
+        issue_number: u64,
+        result: Result<(), String>,
+    },
 }
 
 /// A merge conflict suggestion shown in the completion overlay.
