@@ -14,6 +14,7 @@ mod dashboard;
 mod detail;
 mod fullscreen;
 mod interaction;
+mod interaction_log;
 mod interaction_terminator;
 mod issue_browser;
 mod issue_wizard;

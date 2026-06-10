@@ -61,6 +61,16 @@ pub fn wipe_worktree(
     branch: &str,
     worktree_root: &Path,
 ) -> Result<(), TeardownError> {
+    // Lifecycle span (#742): every git call below runs inside it, and the
+    // outcome is recorded before return.
+    let span = tracing::info_span!(
+        "interaction.teardown",
+        issue = issue_number,
+        path = %path.display(),
+        branch,
+        outcome = tracing::field::Empty,
+    );
+    let _guard = span.enter();
     tracing::info!(
         issue_number,
         branch,
@@ -71,7 +81,7 @@ pub fn wipe_worktree(
     // `sanity_check_under_root` canonicalizes and gates the worktree root; the
     // git commands only need a cwd inside the owning repo, so the raw
     // `worktree_root` (always under the repo) serves as that cwd directly.
-    match sanity_check_under_root(path, worktree_root)? {
+    let result = (|| match sanity_check_under_root(path, worktree_root)? {
         None => {
             // Path already gone (idempotent re-entry). Still attempt the branch
             // delete — it may have survived a partial earlier teardown.
@@ -87,7 +97,15 @@ pub fn wipe_worktree(
             }
             Ok(())
         }
-    }
+    })();
+    span.record(
+        "outcome",
+        match &result {
+            Ok(()) => "ok",
+            Err(_) => "failed",
+        },
+    );
+    result
 }
 
 /// Canonicalize `p`, mapping any io error into [`TeardownError::Io`].

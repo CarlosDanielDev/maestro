@@ -367,7 +367,14 @@ fn apply_error_appends_system_turn_and_returns_idle() {
         at: fixed_t0(),
     });
     let action = s.apply_turn_event(&TurnEvent::Error("agent exit 1".into()));
-    assert_eq!(action, ScreenAction::None);
+    // #742: every transition leaves exactly one log line — failures included.
+    match action {
+        ScreenAction::LogActivity { tag, message, .. } => {
+            assert_eq!(tag, "INTERACTION");
+            assert_eq!(message, "#7 turn failed: agent exit 1");
+        }
+        other => panic!("expected a TurnFailed LogActivity, got {other:?}"),
+    }
     assert_eq!(s.state, InteractionState::Idle);
     let last = s.history.last().unwrap();
     assert_eq!(last.role, TurnRole::System);

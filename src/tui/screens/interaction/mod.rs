@@ -41,6 +41,19 @@ use tui_textarea::TextArea;
 /// Tag used for every Interaction activity-log line.
 const LOG_TAG: &str = "INTERACTION";
 
+/// Map a lifecycle transition to the screen-action log line (#742): pinned
+/// format + severity from `InteractionActivity`, mirrored into tracing.
+pub(crate) fn activity_action(
+    activity: &crate::work::activity::InteractionActivity,
+) -> ScreenAction {
+    activity.emit_tracing();
+    ScreenAction::LogActivity {
+        tag: activity.tag().to_string(),
+        message: activity.message(),
+        level: activity.severity().into(),
+    }
+}
+
 /// Dedicated chat-style screen for a long-lived interaction session.
 pub struct InteractionScreen {
     /// Issue this session is attached to. Keys re-entry + activity-log lines.

@@ -506,12 +506,23 @@ fn open_interaction_session(
     }
 
     app.screen_state.interaction_screen = Some(screen);
-    let verb = if resumed { "resumed" } else { "started" };
-    app.activity_log.push_simple(
-        "INTERACTION".into(),
-        format!("{verb} #{issue_number}"),
-        crate::tui::activity_log::LogLevel::Info,
-    );
+    {
+        // Lifecycle span + pinned activity line (#742).
+        let span = tracing::info_span!("interaction.launch", issue = issue_number, resumed);
+        let _guard = span.enter();
+        let activity = if resumed {
+            crate::work::activity::InteractionActivity::Resumed {
+                issue: issue_number,
+            }
+        } else {
+            crate::work::activity::InteractionActivity::Launched {
+                issue: issue_number,
+                produce_pr,
+                transport: app.interaction_transport_label(),
+            }
+        };
+        app.activity_log.emit_interaction(&activity);
+    }
 
     if let Some(prompt) = first_turn {
         app.pending_commands

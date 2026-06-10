@@ -177,17 +177,25 @@ impl App {
         if !screen.is_for_issue(issue_number) {
             return;
         }
+        // Lifecycle span (#742): the signal, the closing line, and the
+        // dispatch decision all happen inside it.
+        let span = tracing::info_span!(
+            "interaction.terminator",
+            issue = issue_number,
+            reason = "PrCreated"
+        );
+        let _guard = span.enter();
         let action = screen.on_terminator_signaled(InteractionLifecycleEvent::PrLinkedToIssue {
             pr_number,
             issue_number,
             owner,
             repo,
         });
-        self.activity_log.push_simple(
-            "INTERACTION".into(),
-            format!("#{issue_number} closing (reason: PrCreated #{pr_number}); wiping worktree"),
-            LogLevel::Info,
-        );
+        self.activity_log
+            .emit_interaction(&crate::work::activity::InteractionActivity::Closing {
+                issue: issue_number,
+                reason: crate::work::activity::CloseReasonSummary::PrCreated { pr_number },
+            });
         if let Some(ScreenAction::LogActivity {
             tag,
             message,

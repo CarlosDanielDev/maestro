@@ -653,6 +653,20 @@ impl App {
         self.config = Some(config);
     }
 
+    /// Claude-transport label for the interaction lifecycle log (#742,
+    /// v0.30.5 coupling): the selected agent's `transport` field, defaulting
+    /// to "headless".
+    pub(crate) fn interaction_transport_label(&self) -> String {
+        self.config
+            .as_ref()
+            .and_then(|c| c.agents.entries.get(&self.selected_agent_id()))
+            .and_then(|a| a.transport.as_deref())
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .unwrap_or("headless")
+            .to_string()
+    }
+
     pub fn selected_agent_id(&self) -> String {
         if self.selected_agent_id.trim().is_empty() {
             self.config

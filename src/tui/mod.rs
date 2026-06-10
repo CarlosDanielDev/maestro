@@ -1201,11 +1201,10 @@ mod handle_screen_action_tests {
         assert_eq!(app.tui_mode, app::TuiMode::Interaction);
         assert!(app.screen_state.interaction_screen.is_some());
         assert!(
-            app.activity_log
-                .entries()
-                .iter()
-                .any(|e| e.message.contains("started #10")),
-            "expected a 'started #10' activity-log line"
+            app.activity_log.entries().iter().any(|e| e
+                .message
+                .contains("#10 launched (mode: produce_pr=false, interaction=true")),
+            "expected a launched activity-log line (#742 pinned format)"
         );
     }
 
@@ -1250,8 +1249,8 @@ mod handle_screen_action_tests {
             app.activity_log
                 .entries()
                 .iter()
-                .any(|e| e.message.contains("resumed #10")),
-            "expected a 'resumed #10' activity-log line"
+                .any(|e| e.message.contains("#10 resumed")),
+            "expected a '#10 resumed' activity-log line"
         );
     }
 
@@ -1353,8 +1352,8 @@ mod handle_screen_action_tests {
             app.activity_log
                 .entries()
                 .iter()
-                .any(|e| e.message.contains("resumed #10")),
-            "re-entry must log resumed #10"
+                .any(|e| e.message.contains("#10 resumed")),
+            "re-entry must log #10 resumed"
         );
     }
 

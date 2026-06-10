@@ -728,21 +728,18 @@ impl App {
                     _ => {
                         // Screen navigated away (or stale event): still leave
                         // a trace so the outcome is not silently dropped.
-                        let (message, level) = match result {
-                            Ok(()) => (
-                                format!("#{issue_number} worktree removed (screen closed)"),
-                                LogLevel::Info,
-                            ),
-                            Err(err) => (
-                                format!(
-                                    "#{issue_number} worktree teardown FAILED: {}",
-                                    crate::tui::screens::sanitize_for_terminal(&err)
-                                ),
-                                LogLevel::Warn,
-                            ),
+                        let activity = match result {
+                            Ok(()) => crate::work::activity::InteractionActivity::TeardownOk {
+                                issue: issue_number,
+                                path: std::path::PathBuf::new(),
+                            },
+                            Err(err) => crate::work::activity::InteractionActivity::TeardownFail {
+                                issue: issue_number,
+                                path: std::path::PathBuf::new(),
+                                error: crate::tui::screens::sanitize_for_terminal(&err),
+                            },
                         };
-                        self.activity_log
-                            .push_simple("TEARDOWN".into(), message, level);
+                        self.activity_log.emit_interaction(&activity);
                     }
                 }
             }

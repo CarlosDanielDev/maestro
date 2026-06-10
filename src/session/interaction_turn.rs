@@ -84,6 +84,24 @@ impl InteractionSession {
         events_tx: mpsc::Sender<TurnEvent>,
         cancel: CancellationToken,
     ) -> Result<(), TurnError> {
+        // Lifecycle span (#742). `duration_ms`/`chunk_count` are recorded once
+        // the turn settles. Held only across the sync prologue; the async body
+        // re-enters it per await via `tracing::Instrument` semantics being
+        // unnecessary here because every record happens at the end, in scope.
+        let turn_index = self
+            .history
+            .iter()
+            .filter(|t| t.role == TurnRole::User)
+            .count()
+            + 1;
+        let span = tracing::info_span!(
+            "interaction.turn",
+            issue = self.issue_number,
+            turn_index,
+            duration_ms = tracing::field::Empty,
+            chunk_count = tracing::field::Empty,
+        );
+
         // The request is keyed on the *current* session_id, before this turn
         // binds a new one — build it first.
         let request = self.build_turn_request(&prompt, model);
@@ -122,6 +140,7 @@ impl InteractionSession {
         // shared token — the provider kills/interrupts its child and the
         // drain loop ends naturally.
         let mut cancelled = false;
+        let mut chunk_count: usize = 0;
         loop {
             tokio::select! {
                 _ = cancel.cancelled(), if !cancelled => {
@@ -130,6 +149,9 @@ impl InteractionSession {
                 }
                 event = provider_rx.recv() => match event {
                     Some(AgentProviderEvent::Stream(stream_event)) => {
+                        if matches!(stream_event, StreamEvent::AssistantMessage { .. }) {
+                            chunk_count += 1;
+                        }
                         self.apply_stream_event(stream_event, agent_idx, &events_tx).await;
                     }
                     Some(AgentProviderEvent::Started(_)) => {}
@@ -142,6 +164,12 @@ impl InteractionSession {
         let finished_at = Utc::now();
         self.history[agent_idx].finished_at = Some(finished_at);
         self.state = InteractionState::Idle;
+        span.record(
+            "duration_ms",
+            (finished_at - started_at).num_milliseconds().max(0),
+        );
+        span.record("chunk_count", chunk_count as u64);
+        let _guard = span.enter();
 
         let outcome = match run_result {
             Ok(outcome) => outcome,

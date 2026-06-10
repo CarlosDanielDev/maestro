@@ -19,18 +19,14 @@
 //! `Instant::now`). Production wires `RealTeardown` + `RealClock`; tests
 //! resolve the dispatch through `MockTeardown` + `FakeClock`.
 
-use super::{InteractionScreen, LOG_TAG};
+use super::InteractionScreen;
 use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
 use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
-use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::ScreenAction;
 use crate::work::worktree_teardown::{TeardownError, wipe_worktree};
 use chrono::Utc;
 use std::path::Path;
 use std::time::{Duration, Instant};
-
-/// Activity-log tag for the teardown result line (distinct from `LOG_TAG`).
-const TEARDOWN_TAG: &str = "TEARDOWN";
 
 /// How long the `Terminated` banner stays before auto-navigating back to the
 /// Issues list. Any keypress short-circuits this (handled by the keymap).
@@ -110,14 +106,12 @@ impl InteractionScreen {
         match self.state {
             InteractionState::Terminated => {
                 if matches!(self.close_reason, Some(CloseReason::UserQuit)) {
-                    return Some(ScreenAction::LogActivity {
-                        tag: LOG_TAG.to_string(),
-                        message: format!(
-                            "#{} session pre-closed by user; teardown skipped",
-                            self.issue_number
-                        ),
-                        level: LogLevel::Info,
-                    });
+                    return Some(super::activity_action(
+                        &crate::work::activity::InteractionActivity::TeardownSkipped {
+                            issue: self.issue_number,
+                            why: "session pre-closed by user".to_string(),
+                        },
+                    ));
                 }
                 None
             }
@@ -154,12 +148,11 @@ impl InteractionScreen {
             self.push_system_now(format!(
                 "PR #{pr_number} created → finishing session (no isolated worktree to remove)"
             ));
-            let log = self.teardown_log(
-                format!(
-                    "#{} no isolated worktree; teardown skipped",
-                    self.issue_number
-                ),
-                LogLevel::Info,
+            let log = super::activity_action(
+                &crate::work::activity::InteractionActivity::TeardownSkipped {
+                    issue: self.issue_number,
+                    why: "no isolated worktree".to_string(),
+                },
             );
             return self.finalize_terminated(CloseReason::PrCreated { pr_number }, log);
         }
@@ -210,13 +203,11 @@ impl InteractionScreen {
                     self.worktree_path.display(),
                     self.branch
                 ));
-                let log = self.teardown_log(
-                    format!(
-                        "#{} worktree removed at {}; branch deleted",
-                        self.issue_number,
-                        self.worktree_path.display()
-                    ),
-                    LogLevel::Info,
+                let log = super::activity_action(
+                    &crate::work::activity::InteractionActivity::TeardownOk {
+                        issue: self.issue_number,
+                        path: self.worktree_path.clone(),
+                    },
                 );
                 self.finalize_terminated(CloseReason::PrCreated { pr_number }, log)
             }
@@ -229,27 +220,15 @@ impl InteractionScreen {
                     "worktree teardown failed: {safe}; manual cleanup: git worktree remove {}",
                     self.worktree_path.display()
                 ));
-                let log = self.teardown_log(
-                    format!(
-                        "#{} worktree teardown FAILED: {}; worktree kept at {}",
-                        self.issue_number,
-                        safe,
-                        self.worktree_path.display()
-                    ),
-                    LogLevel::Warn,
+                let log = super::activity_action(
+                    &crate::work::activity::InteractionActivity::TeardownFail {
+                        issue: self.issue_number,
+                        path: self.worktree_path.clone(),
+                        error: safe.clone(),
+                    },
                 );
                 self.finalize_terminated(CloseReason::AgentFailure { tail: safe }, log)
             }
-        }
-    }
-
-    /// Build a `TEARDOWN`-tagged activity-log action. One constructor for all
-    /// three `fire_terminator` exits (skip / removed / failed).
-    fn teardown_log(&self, message: String, level: LogLevel) -> ScreenAction {
-        ScreenAction::LogActivity {
-            tag: TEARDOWN_TAG.to_string(),
-            message,
-            level,
         }
     }
 
