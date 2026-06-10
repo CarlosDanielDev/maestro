@@ -93,6 +93,8 @@ headless is intentional (e.g. API-credit billing).
 
 ## Related
 
+- [Interaction sessions guide](interaction-sessions.md) — the chat surface
+  that benefits most from the interactive transport
 - `docs/configuration.md` — the `transport` row in the agents table
 - `docs/spikes/2026-05-claude-interactive-transport.md` — the feasibility
   spike behind this design (#747)

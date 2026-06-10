@@ -15,10 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Interaction sessions user guide at `docs/guides/interaction-sessions.md` (launch combos, keymap, lifecycle, troubleshooting) + README feature bullet (#743).
+- Launch-option checkboxes (`Produce PR`, `Interaction`) extended to the multi-issue launch overlay and the free-form prompt screen, with the same Tab/Space/Enter keymap and `[behavior.launch]` defaults as the single-issue dialog; `UnifiedSessionConfig`/`PromptSessionConfig` carry the values (#919).
+- Structured `[INTERACTION]`/`[TEARDOWN]` activity-log lines pinned in `src/work/activity.rs` + tracing spans (`interaction.launch/turn/terminator/teardown`) around every lifecycle stage (#742).
 - Claude interactive (PTY) transport for the 2026-06-15 subscription cutoff (milestone v0.30.5): new `transport = "headless" | "interactive"` field on `[agents.<id>]` (claude-only, TUI Settings row included); the interactive arm drives the real Claude Code REPL on a `portable-pty` pseudo-terminal pinned to a pre-generated `--session-id`, reads structured events by tailing the session transcript JSONL (`transcript_parser.rs`), scrubs every `ANTHROPIC_*` var from the child env so it cannot fall back to API billing, and parks one live child per conversation between turns; spike report at `docs/spikes/2026-05-claude-interactive-transport.md`, migration guide at `docs/guides/claude-transport.md` (#747 #749 #750 #751 #752).
 - Startup warning from 2026-05-15 when an enabled claude agent still uses the headless transport — names the agent ids; silence with `MAESTRO_SILENCE_TRANSPORT_WARN=1` (#750).
 - `AgentRequest.resume_session_id` + `AgentRunResult.session_id`: conversation resume is now part of the provider contract; headless claude maps it to `--resume <id>` and captures the bound id from the stream, so `InteractionSession::send_turn` is transport-agnostic (#751).
 - `src/work/pr_marker.rs` — `PrMarker` struct (`pr_number`, `owner`, `repo`, `issue_number: Option<u64>`, `ts`) + `MarkerError` enum; `write_atomic` (.tmp + rename, no partial-write corruption) + `read` (tolerant of legacy markers that lack `issue_number`, emits `tracing::warn`); `pushup_marker.rs` now delegates to `PrMarker::read` instead of an inline private struct, so the `/pushup` marker schema is the single source of truth. The `/pushup` shell step now writes `"issue_number":%d` into the marker. 6 integration tests in `tests/pr_marker_roundtrip.rs` cover the round-trip, legacy tolerance, and concurrent-write safety (#735).
+
+
+### Changed
+- Interaction worktree teardown now runs off the UI thread (`spawn_blocking`); the screen shows a "wiping worktree…" banner while git runs and applies the result asynchronously — a wedged git no longer freezes the TUI (#941).
 
 ## [0.29.5] - 2026-05-29
 

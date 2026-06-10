@@ -20,6 +20,7 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 
 ### Session orchestration
 - Multi-session pool — run up to N concurrent Claude sessions with automatic queue promotion
+- Interaction sessions — chat with the agent working your issue in a live transcript, with PR auto-detection ([guide](docs/guides/interaction-sessions.md))
 - Git worktree isolation per session prevents file conflicts
 - File claim registry blocks two sessions from editing the same file simultaneously
 - Full session state machine (QUEUED → SPAWNING → RUNNING → GATES_RUNNING → COMPLETED / NEEDS_REVIEW / ERRORED / PAUSED / KILLED)
