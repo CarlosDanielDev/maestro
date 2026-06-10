@@ -950,6 +950,42 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app.preview_theme = None;
             }
         }
+        ScreenAction::OpenInteractionDiff { worktree_path } => {
+            // Diff base = merge-base(project base branch, HEAD) — the
+            // PR-equivalent view (#918). Computed through the GitOps seam so
+            // tests inject MockGitOps.
+            let base = app
+                .config
+                .as_ref()
+                .map(|c| c.project.base_branch.clone())
+                .unwrap_or_else(|| "main".to_string());
+            match app.git_ops.diff_against_merge_base(&worktree_path, &base) {
+                Ok(diff) => {
+                    if let Some(screen) = app.screen_state.interaction_screen.as_mut() {
+                        screen.open_diff_review(&diff);
+                    }
+                }
+                Err(err) => {
+                    app.activity_log.push_simple(
+                        "INTERACTION".into(),
+                        format!("diff review unavailable: {err}"),
+                        crate::tui::activity_log::LogLevel::Warn,
+                    );
+                }
+            }
+        }
+        ScreenAction::OpenWorktreeShell { worktree_path } => {
+            // The reviewer's `o` escape hatch: open a shell at the worktree
+            // so the user can run their own diff tooling (read-only stays
+            // true — maestro itself never edits from the overlay).
+            if let Err(err) = app.shell_launcher.open_shell_at(&worktree_path) {
+                app.activity_log.push_simple(
+                    "INTERACTION".into(),
+                    format!("could not open shell at worktree: {err}"),
+                    crate::tui::activity_log::LogLevel::Warn,
+                );
+            }
+        }
         ScreenAction::LaunchUnifiedSession(config) => {
             let config = config.with_agent_id(app.selected_agent_id());
             app.pending_commands

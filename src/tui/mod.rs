@@ -963,6 +963,43 @@ mod handle_screen_action_tests {
     }
 
     #[test]
+    fn open_interaction_diff_uses_merge_base_against_project_base_branch() {
+        // #918: the dispatch arm computes the diff through the GitOps seam
+        // with the project base branch, then opens the overlay.
+        let mock = crate::git::MockGitOps {
+            diff_text: "diff --git a/x.rs b/x.rs\n+++ b/x.rs\n@@ -1 +1 @@\n+hi\n".to_string(),
+            ..crate::git::MockGitOps::new()
+        };
+        let calls = mock.diff_calls.clone();
+        let mut app = make_app().with_git_ops(Box::new(mock));
+        app.screen_state.interaction_screen = Some(crate::tui::screens::InteractionScreen::new());
+
+        handle_screen_action(
+            &mut app,
+            ScreenAction::OpenInteractionDiff {
+                worktree_path: std::path::PathBuf::from("/tmp/maestro/issue-42"),
+            },
+        );
+
+        let recorded = calls.lock().unwrap();
+        assert_eq!(recorded.len(), 1, "exactly one diff computation");
+        assert_eq!(
+            recorded[0].0,
+            std::path::PathBuf::from("/tmp/maestro/issue-42")
+        );
+        assert_eq!(recorded[0].1, "main", "base ref is the project base branch");
+        drop(recorded);
+        assert!(
+            app.screen_state
+                .interaction_screen
+                .as_ref()
+                .map(|s| s.diff_review_open())
+                .unwrap_or(false),
+            "overlay must open on success"
+        );
+    }
+
+    #[test]
     fn handle_refresh_suggestions_action_queues_fetch_suggestion_data() {
         let mut app = make_app();
         app.transition_to_dashboard();

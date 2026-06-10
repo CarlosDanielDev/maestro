@@ -133,6 +133,12 @@ pub enum ScreenAction {
     RefreshSuggestions,
     /// Launch a unified session for multiple issues (single branch, single PR).
     LaunchUnifiedSession(UnifiedSessionConfig),
+    /// Open the read-only diff reviewer on the Interaction screen (#918):
+    /// the app computes `git diff merge-base(base, HEAD)` for this worktree
+    /// through the `GitOps` seam and hands the text back to the screen.
+    OpenInteractionDiff { worktree_path: std::path::PathBuf },
+    /// Open a shell at the worktree (the diff reviewer's `o` escape hatch).
+    OpenWorktreeShell { worktree_path: std::path::PathBuf },
     /// Dispatch a Team Wizard run. Carries the resolved team name + the user's
     /// input selection plus the wizard's concurrency cap. The dispatcher
     /// re-resolves the `ResolvedTeam` from the wizard's cache, builds a

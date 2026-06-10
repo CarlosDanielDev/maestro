@@ -14,6 +14,11 @@ use super::GitOps;
 
 pub struct MockGitOps {
     pub should_fail: bool,
+    /// Canned unified diff returned by `diff_against_merge_base` (#918).
+    pub diff_text: String,
+    /// Recorded `(worktree_path, base_branch)` args from
+    /// `diff_against_merge_base` calls (#918).
+    pub diff_calls: std::sync::Arc<std::sync::Mutex<Vec<(std::path::PathBuf, String)>>>,
     pub remote_branches: Vec<String>,
     pub commits_ahead: bool,
     /// Pre-canned answer from `head_is_wip_backup`. Tests that exercise
@@ -29,6 +34,8 @@ impl MockGitOps {
     pub fn new() -> Self {
         Self {
             should_fail: false,
+            diff_text: String::new(),
+            diff_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             remote_branches: Vec::new(),
             commits_ahead: false,
             head_is_wip: false,
@@ -120,5 +127,16 @@ impl GitOps for MockGitOps {
             anyhow::bail!("mock: head_is_wip_backup failed");
         }
         Ok(self.head_is_wip)
+    }
+
+    fn diff_against_merge_base(&self, worktree_path: &Path, base_branch: &str) -> Result<String> {
+        if self.should_fail {
+            anyhow::bail!("mock: diff_against_merge_base failed");
+        }
+        self.diff_calls
+            .lock()
+            .unwrap()
+            .push((worktree_path.to_path_buf(), base_branch.to_string()));
+        Ok(self.diff_text.clone())
     }
 }

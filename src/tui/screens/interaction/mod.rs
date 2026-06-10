@@ -4,6 +4,7 @@
 //! renders it. Per-turn agent spawning lands in #737; the rich keymap and
 //! re-entry wiring land in #738. This screen sends no prompts.
 
+mod diff_review;
 mod history;
 mod input;
 mod keymap;
@@ -120,6 +121,9 @@ pub struct InteractionScreen {
     /// Time source for the auto-nav timer. `RealClock` in production; a fake
     /// in tests.
     clock: Box<dyn Clock>,
+    /// Read-only diff reviewer overlay (#918). `Some` while open; all input
+    /// routes to it first, like the quit modal.
+    diff_review: Option<diff_review::DiffReview>,
 }
 
 impl InteractionScreen {
@@ -161,6 +165,7 @@ impl InteractionScreen {
             teardown_pr_in_flight: None,
             pending_teardown_dispatch: None,
             clock: Box::new(RealClock),
+            diff_review: None,
         }
     }
 
@@ -292,6 +297,22 @@ impl InteractionScreen {
         if self.quit_modal_open {
             input::draw_quit_modal(f, area, theme, &self.worktree_path);
         }
+
+        if let Some(review) = self.diff_review.as_mut() {
+            review.draw(f, area, theme);
+        }
+    }
+
+    /// Open the diff reviewer overlay with the freshly computed diff (#918).
+    /// Session state is untouched — the overlay is a pure view.
+    pub(crate) fn open_diff_review(&mut self, diff_text: &str) {
+        self.diff_review = Some(diff_review::DiffReview::new(diff_text));
+    }
+
+    /// Scroll the open reviewer for snapshot tests / mouse routing.
+    #[cfg(test)]
+    pub(crate) fn diff_review_open(&self) -> bool {
+        self.diff_review.is_some()
     }
 
     #[cfg(test)]
@@ -342,6 +363,19 @@ impl Screen for InteractionScreen {
         else {
             return ScreenAction::None;
         };
+
+        if let Some(review) = self.diff_review.as_mut() {
+            return match review.handle_key(*code, *modifiers) {
+                diff_review::DiffReviewOutcome::Handled => ScreenAction::None,
+                diff_review::DiffReviewOutcome::Close => {
+                    self.diff_review = None;
+                    ScreenAction::None
+                }
+                diff_review::DiffReviewOutcome::OpenShell => ScreenAction::OpenWorktreeShell {
+                    worktree_path: self.worktree_path.clone(),
+                },
+            };
+        }
 
         if self.quit_modal_open {
             return self.handle_quit_modal(*code);
@@ -397,6 +431,23 @@ impl Screen for InteractionScreen {
             InteractionIntent::RequestQuit => {
                 self.quit_modal_open = true;
                 ScreenAction::None
+            }
+            InteractionIntent::OpenDiffReview => {
+                // Greyed without an isolated worktree (post-teardown or
+                // cwd-fallback) — there is nothing PR-equivalent to diff.
+                if self.worktree_root.as_os_str().is_empty() {
+                    return ScreenAction::LogActivity {
+                        tag: LOG_TAG.to_string(),
+                        message: format!(
+                            "Ctrl+D unavailable for #{} — no isolated worktree to diff",
+                            self.issue_number
+                        ),
+                        level: LogLevel::Info,
+                    };
+                }
+                ScreenAction::OpenInteractionDiff {
+                    worktree_path: self.worktree_path.clone(),
+                }
             }
             InteractionIntent::FeedEditor => {
                 self.editor.input(event.clone());
