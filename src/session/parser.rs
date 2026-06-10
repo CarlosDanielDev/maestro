@@ -230,17 +230,24 @@ pub(crate) fn content_block_event(block: &Value) -> Option<StreamEvent> {
 pub fn extract_session_id(line: &str) -> Option<String> {
     let v = serde_json::from_str::<Value>(line.trim()).ok()?;
     let id = v.get("session_id")?.as_str()?;
-    // Defense-in-depth: the id is reused verbatim as a `--resume <id>` argv
-    // operand, so reject anything outside the UUID charset. A rejected id just
-    // falls through to degraded re-init mode rather than into an argv.
-    if id.is_empty()
-        || !id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-    {
+    if !is_valid_session_id(id) {
         return None;
     }
     Some(id.to_string())
+}
+
+/// Defense-in-depth allowlist for provider session ids: the id is reused
+/// verbatim as a `--resume <id>` argv operand AND as a transcript filename
+/// component (interactive transport, #749/#751), so reject anything outside
+/// the UUID charset and anything flag-shaped. Shared by the headless stream
+/// capture above and the interactive resume path so the two transports can
+/// never drift (#751 security review).
+pub(crate) fn is_valid_session_id(id: &str) -> bool {
+    !id.is_empty()
+        && !id.starts_with('-')
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 fn parse_assistant_event(v: &Value) -> StreamEvent {

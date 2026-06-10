@@ -528,3 +528,46 @@ async fn portable_pty_backend_runs_stub_claude_end_to_end() {
     // Dropping the slots kills the parked stub child (PtyChild::Drop).
     slots.lock().await.clear();
 }
+
+#[tokio::test]
+async fn malicious_resume_id_never_reaches_argv_or_path() {
+    // #751 security review (HIGH): a tampered state file must not be able to
+    // inject argv options or traverse the transcript path. A flag-shaped or
+    // path-shaped resume id falls back to a FRESH --session-id spawn.
+    for evil in ["--dangerously-skip-permissions", "../../etc/passwd", "a b"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let transcript = transcript_path(tmp.path(), tmp.path(), FRESH_ID);
+        let backend = Arc::new(MockBackend::new(transcript));
+        let state = backend.state.clone();
+
+        let mut req = request(tmp.path());
+        req.resume_session_id = Some(evil.to_string());
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let result = run_session_turn(
+            backend,
+            empty_slots(),
+            run_spec(tmp.path()),
+            req,
+            tx,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.session_id.as_deref(),
+            Some(FRESH_ID),
+            "rejected id must bind a fresh conversation, not {evil:?}"
+        );
+        let spawn_args: Vec<Vec<String>> = state.spawn_args.lock().unwrap().clone();
+        assert!(
+            !spawn_args[0].iter().any(|a| a == evil),
+            "evil id must never reach argv: {spawn_args:?}"
+        );
+        assert!(
+            spawn_args[0].iter().any(|a| a == "--session-id"),
+            "fresh spawn expected: {spawn_args:?}"
+        );
+    }
+}

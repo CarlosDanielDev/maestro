@@ -199,10 +199,25 @@ pub(super) async fn run_session_turn(
     events: mpsc::UnboundedSender<AgentProviderEvent>,
     cancel: CancellationToken,
 ) -> Result<AgentRunResult, AgentError> {
+    // The resume id lands verbatim in argv (`--resume <id>`) and in the
+    // transcript filename, and it can come from a persisted (tamperable)
+    // state file — so it must pass the same allowlist the headless capture
+    // path enforces. A rejected id falls back to a FRESH conversation
+    // (degraded, like headless re-init) instead of reaching argv (#751 sec).
     let resume = request
         .resume_session_id
         .clone()
-        .filter(|id| !id.trim().is_empty());
+        .filter(|id| !id.trim().is_empty())
+        .filter(|id| {
+            let valid = crate::session::parser::is_valid_session_id(id);
+            if !valid {
+                warn!(
+                    provider_id = %spec.provider_id,
+                    "rejecting invalid resume_session_id; starting a fresh conversation"
+                );
+            }
+            valid
+        });
 
     let (bound_id, mut slot) = match resume {
         Some(id) => {
