@@ -130,13 +130,13 @@ impl IssuePromptOverlay {
                     OverlayAction::Confirm(Some(trimmed))
                 };
             }
-            // Focus cycling — single-issue dialog only. Multi-issue keeps its
-            // existing Ctrl+U flow and never leaves the prompt stop.
-            KeyCode::Tab if !self.is_multi() => {
+            // Focus cycling — both dialogs since #919 (the multi overlay
+            // gained the same checkbox stops as the single-issue one).
+            KeyCode::Tab => {
                 self.focus = self.focus.next();
                 return OverlayAction::None;
             }
-            KeyCode::BackTab if !self.is_multi() => {
+            KeyCode::BackTab => {
                 self.focus = self.focus.prev();
                 return OverlayAction::None;
             }
@@ -343,10 +343,15 @@ impl Screen for IssueBrowserScreen {
                     }
 
                     if unified {
+                        // #919 design decision: the checkboxes apply to the
+                        // one unified session; values are plumbed through and
+                        // later milestone issues wire the semantics.
                         return ScreenAction::LaunchUnifiedSession(super::UnifiedSessionConfig {
                             issues: selected_issues,
                             custom_prompt,
                             agent_id: None,
+                            produce_pr,
+                            interaction,
                         });
                     }
 
@@ -1708,5 +1713,102 @@ mod tests {
         assert_eq!(overlay.focus, LaunchFocus::Prompt);
         assert!(overlay.produce_pr, "default produce_pr is on");
         assert!(!overlay.interaction, "default interaction is off");
+    }
+}
+
+#[cfg(test)]
+mod multi_overlay_launch_options_tests {
+    //! #919: the multi-issue overlay gains the same checkbox stops + keymap
+    //! as the single-issue dialog, and the values flow into the emitted
+    //! configs (per-session AND unified).
+
+    use super::*;
+    use crate::tui::screens::test_helpers::key_event;
+    use crossterm::event::KeyCode;
+
+    fn multi_overlay() -> IssuePromptOverlay {
+        IssuePromptOverlay {
+            editor: IssuePromptOverlay::make_editor(""),
+            selected_issues: vec![(1, "One".to_string()), (2, "Two".to_string())],
+            unified_pr: false,
+            focus: LaunchFocus::Prompt,
+            produce_pr: true,
+            interaction: false,
+        }
+    }
+
+    #[test]
+    fn multi_overlay_tab_cycles_focus_stops() {
+        let mut overlay = multi_overlay();
+        assert_eq!(overlay.focus, LaunchFocus::Prompt);
+        overlay.handle_input(&key_event(KeyCode::Tab));
+        assert_eq!(overlay.focus, LaunchFocus::ProducePr);
+        overlay.handle_input(&key_event(KeyCode::Tab));
+        assert_eq!(overlay.focus, LaunchFocus::Interaction);
+        overlay.handle_input(&key_event(KeyCode::Tab));
+        assert_eq!(overlay.focus, LaunchFocus::Launch);
+        overlay.handle_input(&key_event(KeyCode::Tab));
+        assert_eq!(overlay.focus, LaunchFocus::Prompt, "ring wraps");
+        overlay.handle_input(&key_event(KeyCode::BackTab));
+        assert_eq!(overlay.focus, LaunchFocus::Launch, "BackTab cycles back");
+    }
+
+    #[test]
+    fn multi_overlay_space_toggles_focused_checkbox_only() {
+        let mut overlay = multi_overlay();
+        overlay.handle_input(&key_event(KeyCode::Tab)); // ProducePr
+        overlay.handle_input(&key_event(KeyCode::Char(' ')));
+        assert!(!overlay.produce_pr);
+        assert!(!overlay.interaction, "other checkbox untouched");
+        overlay.handle_input(&key_event(KeyCode::Tab)); // Interaction
+        overlay.handle_input(&key_event(KeyCode::Char(' ')));
+        assert!(overlay.interaction);
+    }
+
+    #[test]
+    fn unified_submit_carries_launch_options() {
+        let mut screen = IssueBrowserScreen::new(Vec::new());
+        let mut overlay = multi_overlay();
+        overlay.unified_pr = true;
+        overlay.produce_pr = false;
+        overlay.interaction = true;
+        screen.prompt_overlay = Some(overlay);
+
+        let action = screen.handle_input(
+            &key_event(KeyCode::Enter),
+            crate::tui::navigation::InputMode::Insert,
+        );
+        match action {
+            ScreenAction::LaunchUnifiedSession(cfg) => {
+                assert!(!cfg.produce_pr);
+                assert!(cfg.interaction);
+                assert_eq!(cfg.issues.len(), 2);
+            }
+            other => panic!("expected LaunchUnifiedSession, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn per_session_multi_submit_carries_launch_options() {
+        let mut screen = IssueBrowserScreen::new(Vec::new());
+        let mut overlay = multi_overlay();
+        overlay.produce_pr = false;
+        overlay.interaction = true;
+        screen.prompt_overlay = Some(overlay);
+
+        let action = screen.handle_input(
+            &key_event(KeyCode::Enter),
+            crate::tui::navigation::InputMode::Insert,
+        );
+        match action {
+            ScreenAction::LaunchSessions(configs) => {
+                assert_eq!(configs.len(), 2);
+                for config in configs {
+                    assert!(!config.produce_pr, "all sessions inherit the choice");
+                    assert!(config.interaction);
+                }
+            }
+            other => panic!("expected LaunchSessions, got {other:?}"),
+        }
     }
 }

@@ -1,0 +1,9 @@
+---
+source: src/agent_provider/claude/interactive_session_tests.rs
+expression: stream
+---
+AssistantMessage { text: "hello from stub" }
+TokenUpdate { usage: TokenUsage { input_tokens: 7, output_tokens: 4, cache_read_tokens: 100, cache_creation_tokens: 0 } }
+CostUpdate { cost_usd: 2.96e-5 }
+ContextUpdate { context_pct: 0.000535 }
+Completed { cost_usd: 0.0 }

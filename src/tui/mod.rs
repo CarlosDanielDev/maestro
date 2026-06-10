@@ -780,8 +780,11 @@ async fn event_loop(
                         continue;
                     };
                     let tx = app.data_tx.clone();
+                    // The pool's configured provider carries the transport
+                    // selector (#750) and owns any parked interactive PTY
+                    // children across turns (#751).
+                    let provider = app.pool.provider();
                     tokio::spawn(async move {
-                        use crate::session::interaction_turn::ClaudeCliSpawner;
                         use tokio_util::sync::CancellationToken;
 
                         let (events_tx, mut events_rx) = tokio::sync::mpsc::channel(64);
@@ -795,10 +798,9 @@ async fn event_loop(
                             }
                         });
 
-                        let spawner = ClaudeCliSpawner::default();
                         let cancel = CancellationToken::new();
                         if let Err(e) = session
-                            .send_turn(prompt, &model, &spawner, events_tx, cancel)
+                            .send_turn(prompt, &model, provider, events_tx, cancel)
                             .await
                         {
                             tracing::warn!("interaction turn for #{issue_number} failed: {e}");
@@ -958,6 +960,43 @@ mod handle_screen_action_tests {
 
     fn make_app() -> app::App {
         super::make_test_app("maestro-tui-mod-test")
+    }
+
+    #[test]
+    fn open_interaction_diff_uses_merge_base_against_project_base_branch() {
+        // #918: the dispatch arm computes the diff through the GitOps seam
+        // with the project base branch, then opens the overlay.
+        let mock = crate::git::MockGitOps {
+            diff_text: "diff --git a/x.rs b/x.rs\n+++ b/x.rs\n@@ -1 +1 @@\n+hi\n".to_string(),
+            ..crate::git::MockGitOps::new()
+        };
+        let calls = mock.diff_calls.clone();
+        let mut app = make_app().with_git_ops(Box::new(mock));
+        app.screen_state.interaction_screen = Some(crate::tui::screens::InteractionScreen::new());
+
+        handle_screen_action(
+            &mut app,
+            ScreenAction::OpenInteractionDiff {
+                worktree_path: std::path::PathBuf::from("/tmp/maestro/issue-42"),
+            },
+        );
+
+        let recorded = calls.lock().unwrap();
+        assert_eq!(recorded.len(), 1, "exactly one diff computation");
+        assert_eq!(
+            recorded[0].0,
+            std::path::PathBuf::from("/tmp/maestro/issue-42")
+        );
+        assert_eq!(recorded[0].1, "main", "base ref is the project base branch");
+        drop(recorded);
+        assert!(
+            app.screen_state
+                .interaction_screen
+                .as_ref()
+                .map(|s| s.diff_review_open())
+                .unwrap_or(false),
+            "overlay must open on success"
+        );
     }
 
     #[test]
@@ -1199,11 +1238,10 @@ mod handle_screen_action_tests {
         assert_eq!(app.tui_mode, app::TuiMode::Interaction);
         assert!(app.screen_state.interaction_screen.is_some());
         assert!(
-            app.activity_log
-                .entries()
-                .iter()
-                .any(|e| e.message.contains("started #10")),
-            "expected a 'started #10' activity-log line"
+            app.activity_log.entries().iter().any(|e| e
+                .message
+                .contains("#10 launched (mode: produce_pr=false, interaction=true")),
+            "expected a launched activity-log line (#742 pinned format)"
         );
     }
 
@@ -1248,8 +1286,8 @@ mod handle_screen_action_tests {
             app.activity_log
                 .entries()
                 .iter()
-                .any(|e| e.message.contains("resumed #10")),
-            "expected a 'resumed #10' activity-log line"
+                .any(|e| e.message.contains("#10 resumed")),
+            "expected a '#10 resumed' activity-log line"
         );
     }
 
@@ -1351,8 +1389,8 @@ mod handle_screen_action_tests {
             app.activity_log
                 .entries()
                 .iter()
-                .any(|e| e.message.contains("resumed #10")),
-            "re-entry must log resumed #10"
+                .any(|e| e.message.contains("#10 resumed")),
+            "re-entry must log #10 resumed"
         );
     }
 
@@ -1423,7 +1461,14 @@ mod handle_paste_tests {
     #[test]
     fn dispatch_paste_routes_to_prompt_input_screen_when_active() {
         let mut app = make_app();
-        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(
+            crate::tui::screens::PromptInputScreen::new().with_launch_defaults(
+                app.config
+                    .as_ref()
+                    .map(|c| c.launch_defaults())
+                    .unwrap_or((true, false)),
+            ),
+        );
         app.tui_mode = app::TuiMode::PromptInput;
 
         dispatch_paste_to_active_screen(&mut app, "hello from paste");
@@ -1440,7 +1485,14 @@ mod handle_paste_tests {
     #[test]
     fn dispatch_paste_preserves_embedded_newlines() {
         let mut app = make_app();
-        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(
+            crate::tui::screens::PromptInputScreen::new().with_launch_defaults(
+                app.config
+                    .as_ref()
+                    .map(|c| c.launch_defaults())
+                    .unwrap_or((true, false)),
+            ),
+        );
         app.tui_mode = app::TuiMode::PromptInput;
 
         dispatch_paste_to_active_screen(&mut app, "line1\nline2\nline3");
@@ -1457,7 +1509,14 @@ mod handle_paste_tests {
     #[test]
     fn dispatch_paste_does_not_launch_session() {
         let mut app = make_app();
-        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(
+            crate::tui::screens::PromptInputScreen::new().with_launch_defaults(
+                app.config
+                    .as_ref()
+                    .map(|c| c.launch_defaults())
+                    .unwrap_or((true, false)),
+            ),
+        );
         app.tui_mode = app::TuiMode::PromptInput;
         app.pending_commands.clear();
 
@@ -1478,7 +1537,14 @@ mod handle_paste_tests {
     #[test]
     fn app_handle_paste_with_prompt_input_active_inserts_text() {
         let mut app = make_app();
-        app.screen_state.prompt_input_screen = Some(crate::tui::screens::PromptInputScreen::new());
+        app.screen_state.prompt_input_screen = Some(
+            crate::tui::screens::PromptInputScreen::new().with_launch_defaults(
+                app.config
+                    .as_ref()
+                    .map(|c| c.launch_defaults())
+                    .unwrap_or((true, false)),
+            ),
+        );
         app.tui_mode = app::TuiMode::PromptInput;
 
         app.handle_paste("multi\nline\npaste");

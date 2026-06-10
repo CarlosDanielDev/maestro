@@ -474,8 +474,9 @@ fn open_interaction_session(
             .create_interaction_session(issue_number, produce_pr);
         screens::InteractionScreen::for_session(session)
     };
-    // Turns spawn the `claude` CLI (ClaudeCliSpawner) with the default model;
-    // surface that so the user knows who they are talking to (#738 QA).
+    // Turns run through the pool's configured provider (#751) with the
+    // default model; surface that so the user knows who they are talking to
+    // (#738 QA).
     screen.set_provider_context("claude", app.session_config.default_model.clone());
     // Name the work in the header, like the sessions view: look the title up
     // from the issue cache, falling back to the browser's loaded list (#738 QA).
@@ -505,12 +506,23 @@ fn open_interaction_session(
     }
 
     app.screen_state.interaction_screen = Some(screen);
-    let verb = if resumed { "resumed" } else { "started" };
-    app.activity_log.push_simple(
-        "INTERACTION".into(),
-        format!("{verb} #{issue_number}"),
-        crate::tui::activity_log::LogLevel::Info,
-    );
+    {
+        // Lifecycle span + pinned activity line (#742).
+        let span = tracing::info_span!("interaction.launch", issue = issue_number, resumed);
+        let _guard = span.enter();
+        let activity = if resumed {
+            crate::work::activity::InteractionActivity::Resumed {
+                issue: issue_number,
+            }
+        } else {
+            crate::work::activity::InteractionActivity::Launched {
+                issue: issue_number,
+                produce_pr,
+                transport: app.interaction_transport_label(),
+            }
+        };
+        app.activity_log.emit_interaction(&activity);
+    }
 
     if let Some(prompt) = first_turn {
         app.pending_commands
@@ -647,9 +659,14 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         Some(crate::tui::screens::ReleaseNotesScreen::new());
                 }
                 app::TuiMode::PromptInput => {
-                    app.screen_state.prompt_input_screen = Some(
-                        app::helpers::create_prompt_input_screen(&app.prompt_history),
-                    );
+                    app.screen_state.prompt_input_screen =
+                        Some(app::helpers::create_prompt_input_screen(
+                            &app.prompt_history,
+                            app.config
+                                .as_ref()
+                                .map(|c| c.launch_defaults())
+                                .unwrap_or((true, false)),
+                        ));
                 }
                 app::TuiMode::Interaction => {
                     app.screen_state
@@ -931,6 +948,42 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 app.preview_theme = Some(theme);
             } else {
                 app.preview_theme = None;
+            }
+        }
+        ScreenAction::OpenInteractionDiff { worktree_path } => {
+            // Diff base = merge-base(project base branch, HEAD) — the
+            // PR-equivalent view (#918). Computed through the GitOps seam so
+            // tests inject MockGitOps.
+            let base = app
+                .config
+                .as_ref()
+                .map(|c| c.project.base_branch.clone())
+                .unwrap_or_else(|| "main".to_string());
+            match app.git_ops.diff_against_merge_base(&worktree_path, &base) {
+                Ok(diff) => {
+                    if let Some(screen) = app.screen_state.interaction_screen.as_mut() {
+                        screen.open_diff_review(&diff);
+                    }
+                }
+                Err(err) => {
+                    app.activity_log.push_simple(
+                        "INTERACTION".into(),
+                        format!("diff review unavailable: {err}"),
+                        crate::tui::activity_log::LogLevel::Warn,
+                    );
+                }
+            }
+        }
+        ScreenAction::OpenWorktreeShell { worktree_path } => {
+            // The reviewer's `o` escape hatch: open a shell at the worktree
+            // so the user can run their own diff tooling (read-only stays
+            // true — maestro itself never edits from the overlay).
+            if let Err(err) = app.shell_launcher.open_shell_at(&worktree_path) {
+                app.activity_log.push_simple(
+                    "INTERACTION".into(),
+                    format!("could not open shell at worktree: {err}"),
+                    crate::tui::activity_log::LogLevel::Warn,
+                );
             }
         }
         ScreenAction::LaunchUnifiedSession(config) => {
@@ -1380,6 +1433,7 @@ mod build_known_agents_tests {
             extra_args: Vec::new(),
             permission_mode: None,
             allowed_tools: Vec::new(),
+            transport: None,
             sandbox: None,
             json: None,
             ephemeral: None,

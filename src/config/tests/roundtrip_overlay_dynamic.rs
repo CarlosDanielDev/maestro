@@ -23,6 +23,7 @@ fn qwen_fast_agent() -> AgentConfig {
         extra_args: Vec::new(),
         permission_mode: None,
         allowed_tools: Vec::new(),
+        transport: None,
         sandbox: None,
         json: None,
         ephemeral: None,

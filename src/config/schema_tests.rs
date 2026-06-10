@@ -466,8 +466,8 @@ fn agents_table_registered_with_flattened_map() {
     };
     assert_eq!(
         entry_fields.len(),
-        12,
-        "AGENTS_ENTRY_FIELDS must lock at 12 scalar/list fields"
+        13,
+        "AGENTS_ENTRY_FIELDS must lock at 13 scalar/list fields (12 from v0.29.x + transport, #750)"
     );
 }
 

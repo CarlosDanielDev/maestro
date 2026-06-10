@@ -1,117 +1,32 @@
-//! Integration tests for `InteractionSession::send_turn` (#737). No real
-//! process is spawned — a `FakeSpawner` feeds canned stream-json + exit outcome.
+//! Integration tests for `InteractionSession::send_turn` (#737, rewired onto
+//! the `AgentProvider` seam in #751). No real process: a `ScriptedProvider`
+//! pops one scripted turn per `run` call and records every `AgentRequest`,
+//! so the resume chain is asserted at the transport-agnostic boundary.
 
-use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::session::interaction::{InteractionSession, TurnRole};
-use crate::session::interaction_turn::{
-    SpawnAgent, SpawnError, TurnArgv, TurnEvent, TurnHandle, TurnOutcome,
-};
+use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
+use crate::session::interaction::{InteractionSession, InteractionState, TurnRole};
+use crate::session::interaction_turn::{TurnError, TurnEvent};
+use crate::session::types::StreamEvent;
 
-const SYS_WITH_SESSION_ID: &str =
-    r#"{"type":"system","subtype":"init","session_id":"abc123","tools":[]}"#;
-const SYS_NO_SESSION_ID: &str = r#"{"type":"system","subtype":"init","tools":[]}"#;
-const ASSISTANT_CHUNK_1: &str =
-    r#"{"type":"assistant","message":{"type":"text","text":"Hello, "}}"#;
-const ASSISTANT_CHUNK_2: &str = r#"{"type":"assistant","message":{"type":"text","text":"world."}}"#;
-const RESULT_EVENT: &str =
-    r#"{"type":"result","subtype":"success","cost_usd":0.01,"session_id":"abc123"}"#;
-/// Degraded fixture: neither the system nor the result line carries a
-/// `session_id`, so the turn must fall into degraded re-init mode.
-const RESULT_NO_SESSION_ID: &str = r#"{"type":"result","subtype":"success","cost_usd":0.01}"#;
-
-/// One canned turn: the stdout lines, plus the process exit outcome.
-struct Batch {
-    lines: Vec<&'static str>,
-    outcome: TurnOutcome,
-}
-
-impl Batch {
-    fn ok(lines: Vec<&'static str>) -> Self {
-        Self {
-            lines,
-            outcome: TurnOutcome {
-                exit_code: Some(0),
-                stderr_tail: String::new(),
-            },
-        }
-    }
-
-    fn exit(lines: Vec<&'static str>, code: i32, stderr: &str) -> Self {
-        Self {
-            lines,
-            outcome: TurnOutcome {
-                exit_code: Some(code),
-                stderr_tail: stderr.to_string(),
-            },
-        }
+fn chunk(text: &str) -> StreamEvent {
+    StreamEvent::AssistantMessage {
+        text: text.to_string(),
     }
 }
 
-/// Real fake `SpawnAgent`: pops a `Batch` per spawn, streams its lines into the
-/// channel, then resolves the outcome. Records every argv it was called with.
-struct FakeSpawner {
-    batches: Mutex<VecDeque<Batch>>,
-    calls: Arc<Mutex<Vec<TurnArgv>>>,
-    fail_next: bool,
-}
-
-impl FakeSpawner {
-    fn new(batches: Vec<Batch>) -> Self {
-        Self {
-            batches: Mutex::new(batches.into()),
-            calls: Arc::new(Mutex::new(Vec::new())),
-            fail_next: false,
-        }
-    }
-
-    fn failing() -> Self {
-        let mut s = Self::new(vec![]);
-        s.fail_next = true;
-        s
-    }
-}
-
-#[async_trait::async_trait]
-impl SpawnAgent for FakeSpawner {
-    async fn spawn(
-        &self,
-        argv: TurnArgv,
-        _cancel: CancellationToken,
-    ) -> Result<TurnHandle, SpawnError> {
-        self.calls.lock().unwrap().push(argv);
-        if self.fail_next {
-            return Err(SpawnError::Other("injected failure".into()));
-        }
-        let batch = self
-            .batches
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| Batch::ok(vec![]));
-
-        let (lines_tx, lines_rx) = mpsc::channel::<String>(64);
-        let (outcome_tx, outcome_rx) = oneshot::channel::<TurnOutcome>();
-
-        tokio::spawn(async move {
-            for line in batch.lines {
-                if lines_tx.send(line.to_string()).await.is_err() {
-                    break;
-                }
-            }
-            drop(lines_tx);
-            let _ = outcome_tx.send(batch.outcome);
-        });
-
-        Ok(TurnHandle {
-            lines: lines_rx,
-            outcome: outcome_rx,
-        })
+fn ok_turn(events: Vec<StreamEvent>, session_id: Option<&'static str>) -> ScriptedTurn {
+    ScriptedTurn {
+        events,
+        end: ScriptedEnd::Ok {
+            exit_code: Some(0),
+            session_id,
+        },
     }
 }
 
@@ -128,271 +43,298 @@ fn drain(rx: &mut mpsc::Receiver<TurnEvent>) -> Vec<TurnEvent> {
 }
 
 #[tokio::test]
-async fn first_turn_argv_has_expected_flags() {
+async fn first_turn_request_has_no_resume_and_carries_worktree_cwd() {
     let mut session = make_session();
     let (tx, _rx) = mpsc::channel(32);
-    let spawner = FakeSpawner::new(vec![Batch::ok(vec![SYS_WITH_SESSION_ID, RESULT_EVENT])]);
+    let provider = Arc::new(ScriptedProvider::new(vec![ok_turn(
+        vec![chunk("hi")],
+        Some("abc123"),
+    )]));
 
     session
         .send_turn(
-            "fix the bug".into(),
-            "claude-opus-4-8",
-            &spawner,
+            "hello".into(),
+            "claude-opus",
+            provider.clone(),
             tx,
             CancellationToken::new(),
         )
         .await
-        .unwrap();
+        .expect("turn must succeed");
 
-    let calls = spawner.calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    let argv = &calls[0].args;
-    assert!(argv.contains(&"--print".to_string()));
-    assert!(argv.contains(&"--verbose".to_string()));
-    assert!(
-        argv.windows(2)
-            .any(|w| w == ["--output-format", "stream-json"])
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].prompt, "hello");
+    assert_eq!(requests[0].model, "claude-opus");
+    assert_eq!(
+        requests[0].cwd.as_deref(),
+        Some(std::path::Path::new("/tmp/wt"))
     );
-    assert!(argv.windows(2).any(|w| w == ["--model", "claude-opus-4-8"]));
-    assert!(argv.windows(2).any(|w| w == ["-p", "fix the bug"]));
-    assert!(
-        !argv.contains(&"--resume".to_string()),
-        "first turn must not resume"
-    );
-    assert_eq!(calls[0].cwd, PathBuf::from("/tmp/wt"));
-}
-
-#[tokio::test]
-async fn subsequent_turn_argv_includes_resume_with_session_id() {
-    let mut session = make_session();
-    let spawner = FakeSpawner::new(vec![
-        Batch::ok(vec![SYS_WITH_SESSION_ID, RESULT_EVENT]),
-        Batch::ok(vec![SYS_WITH_SESSION_ID, RESULT_EVENT]),
-    ]);
-
-    let (tx1, _r1) = mpsc::channel(32);
-    session
-        .send_turn("p1".into(), "m", &spawner, tx1, CancellationToken::new())
-        .await
-        .unwrap();
-    let (tx2, _r2) = mpsc::channel(32);
-    session
-        .send_turn("p2".into(), "m", &spawner, tx2, CancellationToken::new())
-        .await
-        .unwrap();
-
-    let calls = spawner.calls.lock().unwrap();
-    assert_eq!(calls.len(), 2);
-    let argv2 = &calls[1].args;
-    let pos = argv2
-        .iter()
-        .position(|a| a == "--resume")
-        .expect("second turn must include --resume");
-    assert_eq!(argv2[pos + 1], "abc123");
-    assert!(
-        argv2.contains(&"--verbose".to_string()),
-        "resume turn must keep --verbose: claude CLI rejects --output-format=stream-json without it"
+    assert_eq!(
+        requests[0].resume_session_id, None,
+        "first turn must start a fresh conversation"
     );
 }
 
 #[tokio::test]
-async fn first_system_event_session_id_persisted_in_memory() {
+async fn subsequent_turn_request_includes_resume_session_id() {
     let mut session = make_session();
-    assert!(session.session_id.is_none());
+    let provider = Arc::new(ScriptedProvider::new(vec![
+        ok_turn(vec![chunk("first")], Some("abc123")),
+        ok_turn(vec![chunk("second")], Some("abc123")),
+    ]));
+
+    let (tx1, _rx1) = mpsc::channel(32);
+    session
+        .send_turn(
+            "p1".into(),
+            "m",
+            provider.clone(),
+            tx1,
+            CancellationToken::new(),
+        )
+        .await
+        .expect("turn 1");
+    let (tx2, _rx2) = mpsc::channel(32);
+    session
+        .send_turn(
+            "p2".into(),
+            "m",
+            provider.clone(),
+            tx2,
+            CancellationToken::new(),
+        )
+        .await
+        .expect("turn 2");
+
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[1].resume_session_id.as_deref(),
+        Some("abc123"),
+        "second turn must resume the bound session id"
+    );
+}
+
+#[tokio::test]
+async fn session_id_from_run_result_persisted_in_memory() {
+    let mut session = make_session();
     let (tx, _rx) = mpsc::channel(32);
-    let spawner = FakeSpawner::new(vec![Batch::ok(vec![SYS_WITH_SESSION_ID, RESULT_EVENT])]);
+    let provider = Arc::new(ScriptedProvider::new(vec![ok_turn(vec![], Some("abc123"))]));
 
     session
-        .send_turn("p".into(), "m", &spawner, tx, CancellationToken::new())
+        .send_turn("p".into(), "m", provider, tx, CancellationToken::new())
         .await
-        .unwrap();
+        .expect("turn");
 
-    assert_eq!(session.session_id, Some("abc123".to_string()));
+    assert_eq!(session.session_id.as_deref(), Some("abc123"));
+    assert_eq!(session.state, InteractionState::Idle);
 }
 
 #[tokio::test]
 async fn stream_chunks_flow_through_events_tx_in_order() {
     let mut session = make_session();
     let (tx, mut rx) = mpsc::channel(32);
-    let spawner = FakeSpawner::new(vec![Batch::ok(vec![
-        SYS_WITH_SESSION_ID,
-        ASSISTANT_CHUNK_1,
-        ASSISTANT_CHUNK_2,
-        RESULT_EVENT,
-    ])]);
+    let provider = Arc::new(ScriptedProvider::new(vec![ok_turn(
+        vec![chunk("Hello, "), chunk("world.")],
+        Some("abc123"),
+    )]));
 
     session
-        .send_turn("p".into(), "m", &spawner, tx, CancellationToken::new())
+        .send_turn("p".into(), "m", provider, tx, CancellationToken::new())
         .await
-        .unwrap();
+        .expect("turn");
 
     let events = drain(&mut rx);
-    assert!(matches!(
-        &events[0],
-        TurnEvent::TurnStarted {
-            role: TurnRole::Agent,
-            ..
-        }
-    ));
-    assert!(matches!(&events[1], TurnEvent::Chunk(s) if s == "Hello, "));
-    assert!(matches!(&events[2], TurnEvent::Chunk(s) if s == "world."));
-    assert!(matches!(
-        events.last(),
-        Some(TurnEvent::TurnFinished { .. })
-    ));
+    let chunks: Vec<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            TurnEvent::Chunk(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(chunks, vec!["Hello, ", "world."]);
+    assert!(
+        matches!(events.last(), Some(TurnEvent::TurnFinished { .. })),
+        "stream must end with TurnFinished: {events:?}"
+    );
+
+    let agent_turn = session
+        .history
+        .iter()
+        .find(|t| t.role == TurnRole::Agent)
+        .expect("agent turn recorded");
+    assert_eq!(agent_turn.content, "Hello, world.");
 }
 
 #[tokio::test]
-async fn turn_record_finished_at_set_on_result_event() {
+async fn turn_record_finished_at_set_after_run() {
     let mut session = make_session();
     let (tx, _rx) = mpsc::channel(32);
-    let spawner = FakeSpawner::new(vec![Batch::ok(vec![
-        SYS_WITH_SESSION_ID,
-        ASSISTANT_CHUNK_1,
-        RESULT_EVENT,
-    ])]);
+    let provider = Arc::new(ScriptedProvider::new(vec![ok_turn(
+        vec![chunk("x")],
+        Some("abc123"),
+    )]));
 
     session
-        .send_turn(
-            "my prompt".into(),
-            "m",
-            &spawner,
-            tx,
-            CancellationToken::new(),
-        )
+        .send_turn("p".into(), "m", provider, tx, CancellationToken::new())
         .await
-        .unwrap();
+        .expect("turn");
 
-    assert_eq!(session.history.len(), 2, "user + agent turns");
-    assert_eq!(session.history[0].role, TurnRole::User);
-    assert_eq!(session.history[0].content, "my prompt");
-    let agent = &session.history[1];
-    assert_eq!(agent.role, TurnRole::Agent);
-    assert!(agent.finished_at.is_some());
-    assert!(agent.content.contains("Hello, "));
-    assert_eq!(
-        session.state,
-        crate::session::interaction::InteractionState::Idle
-    );
+    let agent_turn = session
+        .history
+        .iter()
+        .find(|t| t.role == TurnRole::Agent)
+        .expect("agent turn");
+    assert!(agent_turn.finished_at.is_some());
 }
 
 #[tokio::test]
 async fn spawn_failure_sends_error_event_no_panic() {
     let mut session = make_session();
     let (tx, mut rx) = mpsc::channel(32);
-    let spawner = FakeSpawner::failing();
+    let provider = Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+        events: vec![],
+        end: ScriptedEnd::SpawnFail,
+    }]));
 
     let result = session
-        .send_turn("p".into(), "m", &spawner, tx, CancellationToken::new())
+        .send_turn("p".into(), "m", provider, tx, CancellationToken::new())
         .await;
 
-    assert!(matches!(
-        result,
-        Err(crate::session::interaction_turn::TurnError::Spawn(_))
-    ));
+    assert!(matches!(result, Err(TurnError::Spawn(_))));
+    assert_eq!(session.state, InteractionState::Idle);
     let events = drain(&mut rx);
-    assert!(matches!(events.last(), Some(TurnEvent::Error(_))));
-    assert_eq!(
-        session.state,
-        crate::session::interaction::InteractionState::Idle
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, TurnEvent::Error(msg) if msg.contains("spawn"))),
+        "an Error event must surface the spawn failure: {events:?}"
     );
 }
 
 #[tokio::test]
-async fn nonzero_exit_emits_error_event() {
+async fn failed_status_emits_error_event_and_system_marker() {
     let mut session = make_session();
     let (tx, mut rx) = mpsc::channel(32);
-    let spawner = FakeSpawner::new(vec![Batch::exit(vec![SYS_WITH_SESSION_ID], 2, "boom")]);
+    let provider = Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+        events: vec![],
+        end: ScriptedEnd::FailedStatus {
+            status: "2",
+            stderr: "boom",
+        },
+    }]));
 
     let result = session
-        .send_turn("p".into(), "m", &spawner, tx, CancellationToken::new())
+        .send_turn("p".into(), "m", provider, tx, CancellationToken::new())
         .await;
 
-    assert!(matches!(
-        result,
-        Err(crate::session::interaction_turn::TurnError::NonZeroExit { code: Some(2), .. })
-    ));
+    match result {
+        Err(TurnError::NonZeroExit { code, stderr_tail }) => {
+            assert_eq!(code, Some(2));
+            assert_eq!(stderr_tail, "boom");
+        }
+        other => panic!("expected NonZeroExit, got: {other:?}"),
+    }
     let events = drain(&mut rx);
-    assert!(events.iter().any(
-        |e| matches!(e, TurnEvent::Error(m) if m.contains("agent exit 2") && m.contains("boom"))
-    ));
-    assert_eq!(
-        session.state,
-        crate::session::interaction::InteractionState::Idle
+    assert!(
+        events.iter().any(|e| matches!(e, TurnEvent::Error(_))),
+        "Error event expected: {events:?}"
+    );
+    assert!(
+        session
+            .history
+            .iter()
+            .any(|t| t.role == TurnRole::System && t.content.contains("agent exit")),
+        "system marker expected: {:?}",
+        session.history
     );
 }
 
 #[tokio::test]
 async fn cancellation_appends_system_cancel_turn() {
     let mut session = make_session();
-    let (tx, _rx) = mpsc::channel(32);
+    let (tx, mut rx) = mpsc::channel(32);
+    let provider = Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+        events: vec![chunk("partial")],
+        end: ScriptedEnd::WaitForCancel,
+    }]));
+
     let cancel = CancellationToken::new();
-    cancel.cancel(); // pre-cancelled
-    let spawner = FakeSpawner::new(vec![Batch::ok(vec![
-        SYS_WITH_SESSION_ID,
-        ASSISTANT_CHUNK_1,
-    ])]);
+    let trigger = cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        trigger.cancel();
+    });
 
     let result = session
-        .send_turn("p".into(), "m", &spawner, tx, cancel)
+        .send_turn("p".into(), "m", provider, tx, cancel)
         .await;
 
-    assert!(result.is_ok(), "cancellation is a clean exit");
-    let sys: Vec<_> = session
-        .history
-        .iter()
-        .filter(|t| t.role == TurnRole::System)
-        .collect();
-    assert!(!sys.is_empty(), "a System cancel turn must be appended");
+    assert!(result.is_ok(), "cancellation is not an error: {result:?}");
+    assert_eq!(session.state, InteractionState::Idle);
     assert!(
-        sys.iter()
-            .any(|t| t.content.to_lowercase().contains("cancel"))
+        session
+            .history
+            .iter()
+            .any(|t| t.role == TurnRole::System && t.content.contains("cancelled")),
+        "system cancel marker expected: {:?}",
+        session.history
     );
-    assert_eq!(
-        session.state,
-        crate::session::interaction::InteractionState::Idle
+    let events = drain(&mut rx);
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, TurnEvent::Error(msg) if msg.contains("cancelled"))),
+        "cancel notice expected: {events:?}"
     );
 }
 
 #[tokio::test]
 async fn degraded_no_session_id_warns_and_next_turn_is_first_turn() {
     let mut session = make_session();
-    let spawner = FakeSpawner::new(vec![
-        Batch::ok(vec![
-            SYS_NO_SESSION_ID,
-            ASSISTANT_CHUNK_1,
-            RESULT_NO_SESSION_ID,
-        ]),
-        Batch::ok(vec![SYS_NO_SESSION_ID, RESULT_NO_SESSION_ID]),
-    ]);
+    let provider = Arc::new(ScriptedProvider::new(vec![
+        ok_turn(vec![chunk("no id this time")], None),
+        ok_turn(vec![chunk("still none")], None),
+    ]));
 
-    let (tx1, _r1) = mpsc::channel(32);
+    let (tx1, _rx1) = mpsc::channel(32);
     session
-        .send_turn("p1".into(), "m", &spawner, tx1, CancellationToken::new())
+        .send_turn(
+            "p1".into(),
+            "m",
+            provider.clone(),
+            tx1,
+            CancellationToken::new(),
+        )
         .await
-        .unwrap();
+        .expect("turn 1");
 
-    assert!(session.session_id.is_none(), "degraded: no session_id");
-    let sys: Vec<_> = session
-        .history
-        .iter()
-        .filter(|t| t.role == TurnRole::System)
-        .collect();
+    assert!(session.session_id.is_none());
     assert!(
-        sys.iter().any(|t| t.content.contains("session_id")),
-        "degraded warning System turn must mention session_id"
+        session
+            .history
+            .iter()
+            .any(|t| t.role == TurnRole::System && t.content.contains("could not bind")),
+        "degraded-mode marker expected: {:?}",
+        session.history
     );
 
-    let (tx2, _r2) = mpsc::channel(32);
+    let (tx2, _rx2) = mpsc::channel(32);
     session
-        .send_turn("p2".into(), "m", &spawner, tx2, CancellationToken::new())
+        .send_turn(
+            "p2".into(),
+            "m",
+            provider.clone(),
+            tx2,
+            CancellationToken::new(),
+        )
         .await
-        .unwrap();
+        .expect("turn 2");
 
-    let calls = spawner.calls.lock().unwrap();
-    assert_eq!(calls.len(), 2);
-    assert!(
-        !calls[1].args.contains(&"--resume".to_string()),
-        "degraded: turn 2 is a fresh first turn"
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(
+        requests[1].resume_session_id, None,
+        "without a bound id the next turn must re-init (no resume)"
     );
 }

@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::process::Stdio;
 use std::time::Duration;
-
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
@@ -372,6 +371,7 @@ impl AgentProvider for CodexProvider {
 
         Ok(AgentRunResult {
             exit_code: status.code(),
+            session_id: None,
         })
     }
 }

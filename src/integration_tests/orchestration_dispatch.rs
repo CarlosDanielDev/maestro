@@ -122,7 +122,10 @@ impl AgentProvider for FakeProvider {
             }
             FakeBehavior::Silent => {}
         }
-        Ok(AgentRunResult { exit_code: Some(0) })
+        Ok(AgentRunResult {
+            exit_code: Some(0),
+            session_id: None,
+        })
     }
 }
 

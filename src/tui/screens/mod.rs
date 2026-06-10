@@ -133,6 +133,12 @@ pub enum ScreenAction {
     RefreshSuggestions,
     /// Launch a unified session for multiple issues (single branch, single PR).
     LaunchUnifiedSession(UnifiedSessionConfig),
+    /// Open the read-only diff reviewer on the Interaction screen (#918):
+    /// the app computes `git diff merge-base(base, HEAD)` for this worktree
+    /// through the `GitOps` seam and hands the text back to the screen.
+    OpenInteractionDiff { worktree_path: std::path::PathBuf },
+    /// Open a shell at the worktree (the diff reviewer's `o` escape hatch).
+    OpenWorktreeShell { worktree_path: std::path::PathBuf },
     /// Dispatch a Team Wizard run. Carries the resolved team name + the user's
     /// input selection plus the wizard's concurrency cap. The dispatcher
     /// re-resolves the `ResolvedTeam` from the wizard's cache, builds a
@@ -285,6 +291,11 @@ pub struct UnifiedSessionConfig {
     pub custom_prompt: Option<String>,
     /// Configured agent id to use for the new session. `None` means app default.
     pub agent_id: Option<String>,
+    /// "Produce PR" launch option (#919) — plumbed; semantics wired by later
+    /// milestone issues (mirrors `SessionConfig.produce_pr` from #733).
+    pub produce_pr: bool,
+    /// "Interaction" launch option (#919) — plumbed like `produce_pr`.
+    pub interaction: bool,
 }
 
 impl UnifiedSessionConfig {
@@ -301,6 +312,10 @@ pub struct PromptSessionConfig {
     pub image_paths: Vec<String>,
     /// Configured agent id to use for the new session. `None` means app default.
     pub agent_id: Option<String>,
+    /// "Produce PR" launch option (#919) — plumbed like `SessionConfig`'s.
+    pub produce_pr: bool,
+    /// "Interaction" launch option (#919) — plumbed like `produce_pr`.
+    pub interaction: bool,
 }
 
 impl PromptSessionConfig {

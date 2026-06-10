@@ -456,6 +456,10 @@ impl IssueBrowserScreen {
                     Constraint::Length(issue_list_height), // issue list
                     Constraint::Length(1),                 // unified PR toggle
                     Constraint::Min(3),                    // text area
+                    Constraint::Length(1),                 // "Options:" label (#919)
+                    Constraint::Length(1),                 // Produce PR checkbox
+                    Constraint::Length(1),                 // Interaction checkbox
+                    Constraint::Length(1),                 // Launch button
                     Constraint::Length(1),                 // keybinds
                 ])
                 .split(inner);
@@ -493,13 +497,60 @@ impl IssueBrowserScreen {
                 theme,
             );
 
-            Self::draw_overlay_text_area(f, chunks[3], overlay, theme, false);
+            let prompt_focused = overlay.focus == LaunchFocus::Prompt;
+            Self::draw_overlay_text_area(f, chunks[3], overlay, theme, prompt_focused);
+
+            // Same option rows as the single-issue dialog (#919): the values
+            // apply to every launched session (or the one unified session).
+            let options_label = Paragraph::new(Line::from(Span::styled(
+                "Options (apply to all launched sessions):",
+                Style::default().fg(theme.text_secondary),
+            )));
+            f.render_widget(options_label, chunks[4]);
+
+            use crate::tui::widgets::unified_pr_toggle::draw_checkbox;
+            draw_checkbox(
+                f,
+                chunks[5],
+                overlay.produce_pr,
+                overlay.focus == LaunchFocus::ProducePr,
+                "Produce PR — sessions end when a linked PR is created",
+                theme,
+            );
+            draw_checkbox(
+                f,
+                chunks[6],
+                overlay.interaction,
+                overlay.focus == LaunchFocus::Interaction,
+                "Interaction — chat with the agent; sessions stay alive",
+                theme,
+            );
+
+            let launch_focused = overlay.focus == LaunchFocus::Launch;
+            if launch_focused {
+                f.render_widget(
+                    crate::tui::widgets::unified_pr_toggle::focus_bar(
+                        "  [ Launch all ]",
+                        chunks[7],
+                        theme,
+                    ),
+                    chunks[7],
+                );
+            } else {
+                let launch_button = Paragraph::new(Line::from(Span::styled(
+                    "  [ Launch all ]",
+                    Style::default().fg(theme.text_secondary),
+                )));
+                f.render_widget(launch_button, chunks[7]);
+            }
 
             draw_keybinds_bar(
                 f,
-                chunks[4],
+                chunks[8],
                 &[
                     ("Enter", "Launch all"),
+                    ("Tab", "Next field"),
+                    ("Space", "Toggle"),
                     ("Ctrl+U", "Unified PR"),
                     ("Shift+Enter", "New line"),
                     ("Esc", "Cancel"),

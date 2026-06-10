@@ -27,6 +27,7 @@ mod runtime;
 pub mod schema;
 mod sessions;
 mod toml_edit_helpers;
+pub mod transport_warning;
 mod tui;
 mod turboquant;
 mod views;
@@ -395,6 +396,5 @@ pub struct LoadedConfig {
     pub config: Config,
     pub path: std::path::PathBuf,
 }
-
 #[cfg(test)]
 mod tests;

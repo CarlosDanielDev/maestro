@@ -1,0 +1,14 @@
+---
+source: src/tui/snapshot_tests/interaction_log.rs
+expression: terminal.backend()
+---
+"╔═══════════════════════════════════════════════════[ Activity Log ]═══════════════════════════════════════════════════╗"
+"║HH:MM:SS [INTERACTION] #42 turn failed: agent exit 1                                                                  ║"
+"║HH:MM:SS [TEARDOWN] #42 worktree teardown FAILED: path still exists; worktree kept at /tmp/maestro/issue-42           ║"
+"║                                                                                                                      ║"
+"║                                                                                                                      ║"
+"║                                                                                                                      ║"
+"║                                                                                                                      ║"
+"║                                                                                                                      ║"
+"║                                                                                                                      ║"
+"╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝"

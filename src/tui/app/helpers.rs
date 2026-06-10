@@ -5,8 +5,9 @@ use crate::tui::screens::PromptInputScreen;
 
 pub(crate) fn create_prompt_input_screen(
     history: &crate::state::prompt_history::PromptHistoryStore,
+    launch_defaults: (bool, bool),
 ) -> PromptInputScreen {
-    let mut screen = PromptInputScreen::new();
+    let mut screen = PromptInputScreen::new().with_launch_defaults(launch_defaults);
     let prompts: Vec<String> = history.entries().iter().map(|e| e.prompt.clone()).collect();
     screen.set_history(prompts);
     screen

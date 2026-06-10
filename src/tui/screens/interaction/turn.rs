@@ -5,10 +5,9 @@
 //! pushes the user turn on send, and `apply_turn_event` folds the streaming
 //! `TurnEvent`s from `send_turn` into the live transcript.
 
-use super::{InteractionScreen, LOG_TAG};
+use super::InteractionScreen;
 use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
 use crate::session::interaction_turn::TurnEvent;
-use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::ScreenAction;
 use chrono::Utc;
 use crossterm::event::KeyCode;
@@ -135,14 +134,12 @@ impl InteractionScreen {
                     .stream_started_at
                     .map(|start| (*at - start).num_milliseconds().max(0))
                     .unwrap_or(0);
-                ScreenAction::LogActivity {
-                    tag: LOG_TAG.to_string(),
-                    message: format!(
-                        "#{} turn {}: {} chunks streamed ({} ms)",
-                        self.issue_number, self.turn_count, self.stream_chunks, ms
-                    ),
-                    level: LogLevel::Info,
-                }
+                super::activity_action(&crate::work::activity::InteractionActivity::TurnComplete {
+                    issue: self.issue_number,
+                    turn_index: self.turn_count,
+                    chunk_count: self.stream_chunks,
+                    duration_ms: ms,
+                })
             }
             TurnEvent::Error(msg) => {
                 let now = Utc::now();
@@ -153,7 +150,11 @@ impl InteractionScreen {
                     finished_at: Some(now),
                 });
                 self.state = InteractionState::Idle;
-                ScreenAction::None
+                // Every transition leaves exactly one log line (#742).
+                super::activity_action(&crate::work::activity::InteractionActivity::TurnFailed {
+                    issue: self.issue_number,
+                    detail: msg.clone(),
+                })
             }
         }
     }

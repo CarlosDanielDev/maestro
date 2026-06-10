@@ -1,74 +1,40 @@
-//! Per-turn `claude --resume` spawn loop for interactive sessions (#737).
+//! Per-turn agent loop for interactive sessions (#737, rewired in #751).
 //!
-//! Each call to [`InteractionSession::send_turn`] spawns a fresh `claude`
-//! process that resumes Claude CLI's persisted transcript. The spawn is hidden
-//! behind the [`SpawnAgent`] trait so tests feed canned stream-json without a
-//! real process; #751 will reimplement `SpawnAgent` on the `ClaudeTransport`
-//! seam (from #748) without touching `send_turn`.
+//! Each call to [`InteractionSession::send_turn`] runs one conversational
+//! turn through [`AgentProvider::run`] — the session no longer spawns
+//! `claude` itself. Whichever transport the user configured does the work:
+//! under `transport = "headless"` the provider spawns a fresh
+//! `claude --resume <id>` per turn (issue #737's semantics, now expressed as
+//! `AgentRequest::resume_session_id`); under `transport = "interactive"` the
+//! provider writes the turn into its long-lived PTY child and no new process
+//! is spawned. `send_turn` cannot tell the difference — events and the
+//! returned session id flow through the same seam.
 //!
 //! Persistence is the caller's job: `send_turn` mutates `self` (history,
-//! `session_id`, `state`) and returns; the owner of `MaestroState` persists via
-//! `StateStore`. This keeps `send_turn` pure/unit-testable (RUST-GUARDRAILS §7)
-//! and respects that the session does not own the state file.
+//! `session_id`, `state`) and returns; the owner of `MaestroState` persists
+//! via `StateStore`. This keeps `send_turn` unit-testable with a mock
+//! provider (RUST-GUARDRAILS §7) and respects that the session does not own
+//! the state file.
 
-use std::path::PathBuf;
-use std::process::Stdio;
+use std::sync::Arc;
 
 use chrono::Utc;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::agent_provider::types::{AgentError, AgentProvider, AgentProviderEvent, AgentRequest};
+
 use super::interaction::{InteractionSession, InteractionState, TurnRecord, TurnRole};
-use super::parser::{extract_session_id, parse_stream_line};
 use super::types::StreamEvent;
-
-/// How many bytes of child stderr to retain for error reporting.
-const STDERR_TAIL_CAP: usize = 2_000;
-/// Bounded capacity for the per-turn stdout line channel.
-const LINE_CHANNEL_CAP: usize = 64;
-
-/// Args + working directory for one spawned turn. Built by
-/// [`InteractionSession::build_turn_argv`]; consumed by [`SpawnAgent::spawn`].
-/// The program name is owned by the spawner (e.g. [`ClaudeCliSpawner::binary`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TurnArgv {
-    pub args: Vec<String>,
-    pub cwd: PathBuf,
-}
-
-/// Terminal summary of a spawned turn: process exit code + a capped stderr tail.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TurnOutcome {
-    pub exit_code: Option<i32>,
-    pub stderr_tail: String,
-}
-
-/// Live handle to a spawned turn: a bounded stream of stdout lines and a
-/// one-shot that resolves once the process exits.
-pub struct TurnHandle {
-    pub lines: mpsc::Receiver<String>,
-    pub outcome: oneshot::Receiver<TurnOutcome>,
-}
-
-/// Failure to launch the agent process.
-#[derive(Debug, thiserror::Error)]
-pub enum SpawnError {
-    #[error("spawn failed: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("spawn failed: {0}")]
-    Other(String),
-}
 
 /// Error returned by [`InteractionSession::send_turn`]. Cancellation is NOT an
 /// error — it returns `Ok(())` after appending a `System` marker turn.
 #[derive(Debug, thiserror::Error)]
 pub enum TurnError {
-    /// The agent process failed to launch.
-    #[error("failed to spawn claude: {0}")]
-    Spawn(#[from] SpawnError),
-    /// The agent process exited non-zero.
+    /// The agent run could not start (spawn/config failure).
+    #[error("failed to start agent turn: {0}")]
+    Spawn(String),
+    /// The agent process exited non-zero (or the provider reported failure).
     #[error("agent exit {code:?}: {stderr_tail}")]
     NonZeroExit {
         code: Option<i32>,
@@ -90,171 +56,55 @@ pub enum TurnEvent {
     Error(String),
 }
 
-/// Spawns one agent turn. Mockable so tests inject canned stream-json. The
-/// production impl is [`ClaudeCliSpawner`]; #751 implements this on the
-/// `ClaudeTransport` seam instead.
-#[async_trait::async_trait]
-pub trait SpawnAgent: Send + Sync {
-    async fn spawn(
-        &self,
-        argv: TurnArgv,
-        cancel: CancellationToken,
-    ) -> Result<TurnHandle, SpawnError>;
-}
-
-/// Production [`SpawnAgent`]: launches the real `claude` CLI via
-/// `tokio::process`. Mirrors the headless subprocess lifecycle
-/// (RUST-GUARDRAILS §5): explicit pipes, background line readers,
-/// `tokio::select!` cancel arm with `child.kill().await`.
-pub struct ClaudeCliSpawner {
-    binary: String,
-}
-
-impl ClaudeCliSpawner {
-    pub fn new(binary: impl Into<String>) -> Self {
-        Self {
-            binary: binary.into(),
-        }
-    }
-}
-
-impl Default for ClaudeCliSpawner {
-    fn default() -> Self {
-        Self::new("claude")
-    }
-}
-
-#[async_trait::async_trait]
-impl SpawnAgent for ClaudeCliSpawner {
-    async fn spawn(
-        &self,
-        argv: TurnArgv,
-        cancel: CancellationToken,
-    ) -> Result<TurnHandle, SpawnError> {
-        let mut cmd = Command::new(&self.binary);
-        cmd.args(&argv.args)
-            .current_dir(&argv.cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = cmd.spawn().map_err(SpawnError::Io)?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| SpawnError::Other("no stdout from claude CLI".to_string()))?;
-        let stderr = child.stderr.take();
-
-        let (lines_tx, lines_rx) = mpsc::channel::<String>(LINE_CHANNEL_CAP);
-        let (outcome_tx, outcome_rx) = oneshot::channel::<TurnOutcome>();
-
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(stdout).lines();
-            let stderr_handle = stderr.map(|s| {
-                tokio::spawn(async move {
-                    let mut buf = String::new();
-                    let mut lines = BufReader::new(s).lines();
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        if !buf.is_empty() {
-                            buf.push('\n');
-                        }
-                        buf.push_str(&line);
-                        if buf.len() > STDERR_TAIL_CAP {
-                            let start = buf.len() - STDERR_TAIL_CAP;
-                            buf = buf.split_off(start);
-                        }
-                    }
-                    buf
-                })
-            });
-
-            loop {
-                tokio::select! {
-                    _ = cancel.cancelled() => {
-                        let _ = child.kill().await;
-                        break;
-                    }
-                    next = reader.next_line() => match next {
-                        Ok(Some(line)) => {
-                            if lines_tx.send(line).await.is_err() {
-                                // Receiver dropped — stop reading, kill child.
-                                let _ = child.kill().await;
-                                break;
-                            }
-                        }
-                        _ => break,
-                    },
-                }
-            }
-
-            let status = child.wait().await.ok();
-            let stderr_tail = match stderr_handle {
-                Some(h) => h.await.unwrap_or_default(),
-                None => String::new(),
-            };
-            let _ = outcome_tx.send(TurnOutcome {
-                exit_code: status.and_then(|s| s.code()),
-                stderr_tail,
-            });
-        });
-
-        Ok(TurnHandle {
-            lines: lines_rx,
-            outcome: outcome_rx,
-        })
-    }
-}
-
 impl InteractionSession {
-    /// Build the argv for one turn. First turn (no `session_id`) starts a fresh
-    /// transcript; subsequent turns resume via `--resume <id>`.
-    pub fn build_turn_argv(&self, prompt: &str, model: &str) -> TurnArgv {
-        let args = match self.session_id.as_deref() {
-            None => vec![
-                "--print".to_string(),
-                "--verbose".to_string(),
-                "--output-format".to_string(),
-                "stream-json".to_string(),
-                "--model".to_string(),
-                model.to_string(),
-                "-p".to_string(),
-                prompt.to_string(),
-            ],
-            Some(id) => vec![
-                "--resume".to_string(),
-                id.to_string(),
-                "--print".to_string(),
-                "--verbose".to_string(),
-                "--output-format".to_string(),
-                "stream-json".to_string(),
-                "-p".to_string(),
-                prompt.to_string(),
-            ],
-        };
-        TurnArgv {
-            args,
-            cwd: self.worktree_path.clone(),
-        }
+    /// Build the provider request for one turn. The first turn has no
+    /// `resume_session_id` and starts a fresh conversation; subsequent turns
+    /// resume the bound id (headless: `--resume <id>`; interactive: the
+    /// provider's parked PTY child for that id).
+    pub fn build_turn_request(&self, prompt: &str, model: &str) -> AgentRequest {
+        let mut request = AgentRequest::stream_json(prompt.to_string(), model.to_string());
+        request.cwd = Some(self.worktree_path.clone());
+        request.resume_session_id = self.session_id.clone();
+        request
     }
 
-    /// Run one conversational turn: spawn `claude`, stream chunks through
-    /// `events_tx`, capture `session_id`, and append the turn to `history`.
+    /// Run one conversational turn through the configured provider: stream
+    /// chunks through `events_tx`, bind `session_id` from the run result,
+    /// and append the turn to `history`.
     ///
     /// Mutates `self` (history, `session_id`, `state`) in place; the caller
     /// persists via `StateStore`. Cancellation is a clean `Ok(())` after a
-    /// `System` marker turn. Stream parse errors are logged and skipped, never
-    /// fatal.
+    /// `System` marker turn. Stream parse errors are logged and skipped,
+    /// never fatal.
     pub async fn send_turn(
         &mut self,
         prompt: String,
         model: &str,
-        spawner: &dyn SpawnAgent,
+        provider: Arc<dyn AgentProvider>,
         events_tx: mpsc::Sender<TurnEvent>,
         cancel: CancellationToken,
     ) -> Result<(), TurnError> {
-        // argv is keyed on the *current* session_id, before this turn captures
-        // a new one — build it first.
-        let argv = self.build_turn_argv(&prompt, model);
+        // Lifecycle span (#742). `duration_ms`/`chunk_count` are recorded once
+        // the turn settles. Held only across the sync prologue; the async body
+        // re-enters it per await via `tracing::Instrument` semantics being
+        // unnecessary here because every record happens at the end, in scope.
+        let turn_index = self
+            .history
+            .iter()
+            .filter(|t| t.role == TurnRole::User)
+            .count()
+            + 1;
+        let span = tracing::info_span!(
+            "interaction.turn",
+            issue = self.issue_number,
+            turn_index,
+            duration_ms = tracing::field::Empty,
+            chunk_count = tracing::field::Empty,
+        );
+
+        // The request is keyed on the *current* session_id, before this turn
+        // binds a new one — build it first.
+        let request = self.build_turn_request(&prompt, model);
 
         let user_at = Utc::now();
         self.history.push(TurnRecord {
@@ -264,17 +114,6 @@ impl InteractionSession {
             finished_at: Some(user_at),
         });
         self.state = InteractionState::Streaming;
-
-        let mut handle = match spawner.spawn(argv, cancel.clone()).await {
-            Ok(handle) => handle,
-            Err(err) => {
-                let _ = events_tx
-                    .send(TurnEvent::Error(format!("failed to spawn claude: {err}")))
-                    .await;
-                self.state = InteractionState::Idle;
-                return Err(TurnError::Spawn(err));
-            }
-        };
 
         let started_at = Utc::now();
         let _ = events_tx
@@ -291,23 +130,102 @@ impl InteractionSession {
             finished_at: None,
         });
 
+        let (provider_tx, mut provider_rx) = mpsc::unbounded_channel::<AgentProviderEvent>();
+        let run_cancel = cancel.clone();
+        let run_task =
+            tokio::spawn(async move { provider.run(request, provider_tx, run_cancel).await });
+
+        // Drain provider events until the channel closes (the provider drops
+        // its sender when the run returns). Cancellation flows through the
+        // shared token — the provider kills/interrupts its child and the
+        // drain loop ends naturally.
         let mut cancelled = false;
+        let mut chunk_count: usize = 0;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => {
+                _ = cancel.cancelled(), if !cancelled => {
                     cancelled = true;
-                    break;
+                    // keep draining: the provider still flushes its tail
                 }
-                line = handle.lines.recv() => match line {
-                    Some(line) => self.apply_line(&line, agent_idx, &events_tx).await,
+                event = provider_rx.recv() => match event {
+                    Some(AgentProviderEvent::Stream(stream_event)) => {
+                        if matches!(stream_event, StreamEvent::AssistantMessage { .. }) {
+                            chunk_count += 1;
+                        }
+                        self.apply_stream_event(stream_event, agent_idx, &events_tx).await;
+                    }
+                    Some(AgentProviderEvent::Started(_)) => {}
                     None => break,
                 },
             }
         }
 
+        let run_result = run_task.await;
         let finished_at = Utc::now();
         self.history[agent_idx].finished_at = Some(finished_at);
         self.state = InteractionState::Idle;
+        span.record(
+            "duration_ms",
+            (finished_at - started_at).num_milliseconds().max(0),
+        );
+        span.record("chunk_count", chunk_count as u64);
+        let _guard = span.enter();
+
+        let outcome = match run_result {
+            Ok(outcome) => outcome,
+            Err(join_err) => {
+                let msg = format!("agent turn task failed: {join_err}");
+                let _ = events_tx.send(TurnEvent::Error(msg.clone())).await;
+                self.push_system(&msg, finished_at);
+                return Err(TurnError::Spawn(msg));
+            }
+        };
+
+        match outcome {
+            Ok(result) => {
+                // First bound id wins; later turns resume it.
+                if self.session_id.is_none() {
+                    self.session_id = result.session_id;
+                }
+                if let Some(code) = result.exit_code
+                    && code != 0
+                {
+                    let msg = format!("agent exit {code}");
+                    let _ = events_tx.send(TurnEvent::Error(msg.clone())).await;
+                    self.push_system(&msg, finished_at);
+                    return Err(TurnError::NonZeroExit {
+                        code: Some(code),
+                        stderr_tail: String::new(),
+                    });
+                }
+            }
+            Err(AgentError::Cancelled { .. }) => {
+                cancelled = true;
+            }
+            Err(err @ (AgentError::Spawn { .. } | AgentError::Config(_))) => {
+                let msg = format!("failed to spawn agent: {err}");
+                let _ = events_tx.send(TurnEvent::Error(msg.clone())).await;
+                self.push_system(&msg, finished_at);
+                return Err(TurnError::Spawn(err.to_string()));
+            }
+            Err(AgentError::FailedStatus { status, stderr, .. }) => {
+                let msg = format!("agent exit {status}: {stderr}");
+                let _ = events_tx.send(TurnEvent::Error(msg)).await;
+                self.push_system(&format!("agent exit {status}"), finished_at);
+                return Err(TurnError::NonZeroExit {
+                    code: status.parse::<i32>().ok(),
+                    stderr_tail: stderr,
+                });
+            }
+            Err(AgentError::Stream(msg)) => {
+                let _ = events_tx.send(TurnEvent::Error(msg.clone())).await;
+                self.push_system(&msg, finished_at);
+                return Err(TurnError::NonZeroExit {
+                    code: None,
+                    stderr_tail: msg,
+                });
+            }
+        }
 
         if cancelled {
             self.push_system("turn cancelled by user", finished_at);
@@ -317,21 +235,8 @@ impl InteractionSession {
             return Ok(());
         }
 
-        if let Ok(outcome) = handle.outcome.await
-            && let Some(code) = outcome.exit_code
-            && code != 0
-        {
-            let msg = format!("agent exit {code}: {}", outcome.stderr_tail);
-            let _ = events_tx.send(TurnEvent::Error(msg)).await;
-            self.push_system(&format!("agent exit {code}"), finished_at);
-            return Err(TurnError::NonZeroExit {
-                code: Some(code),
-                stderr_tail: outcome.stderr_tail,
-            });
-        }
-
         // Degraded mode: a successful turn that never yielded a session_id.
-        // The next turn re-inits (build_turn_argv stays on the first-turn arm).
+        // The next turn re-inits (build_turn_request sends no resume id).
         if self.session_id.is_none() {
             self.push_system(
                 "could not bind session_id; subsequent turns will re-init context",
@@ -345,30 +250,24 @@ impl InteractionSession {
         Ok(())
     }
 
-    /// Apply one stdout line: capture `session_id` (first one wins), forward
-    /// assistant text as a `Chunk`, log-and-skip unparseable lines.
-    async fn apply_line(
+    /// Apply one provider stream event: forward assistant text as a `Chunk`,
+    /// log-and-skip unparseable lines, ignore everything else (cost/context
+    /// updates belong to the one-shot session pipeline).
+    async fn apply_stream_event(
         &mut self,
-        line: &str,
+        event: StreamEvent,
         agent_idx: usize,
         events_tx: &mpsc::Sender<TurnEvent>,
     ) {
-        if self.session_id.is_none()
-            && let Some(id) = extract_session_id(line)
-        {
-            self.session_id = Some(id);
-        }
-        for event in parse_stream_line(line) {
-            match event {
-                StreamEvent::AssistantMessage { text } => {
-                    self.history[agent_idx].content.push_str(&text);
-                    let _ = events_tx.send(TurnEvent::Chunk(text)).await;
-                }
-                StreamEvent::Unknown { raw } => {
-                    tracing::warn!(line = %raw, "interaction: unparsed stream-json line; skipping");
-                }
-                _ => {}
+        match event {
+            StreamEvent::AssistantMessage { text } => {
+                self.history[agent_idx].content.push_str(&text);
+                let _ = events_tx.send(TurnEvent::Chunk(text)).await;
             }
+            StreamEvent::Unknown { raw } => {
+                tracing::warn!(line = %raw, "interaction: unparsed stream line; skipping");
+            }
+            _ => {}
         }
     }
 

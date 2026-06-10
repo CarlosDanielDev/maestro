@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod assigner;
 pub mod conflicts;
 pub mod dependencies;

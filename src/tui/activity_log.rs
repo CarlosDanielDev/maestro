@@ -72,6 +72,15 @@ pub enum LogLevel {
     Error,
 }
 
+impl From<crate::work::activity::ActivitySeverity> for LogLevel {
+    fn from(severity: crate::work::activity::ActivitySeverity) -> Self {
+        match severity {
+            crate::work::activity::ActivitySeverity::Info => LogLevel::Info,
+            crate::work::activity::ActivitySeverity::Warn => LogLevel::Warn,
+        }
+    }
+}
+
 impl LogLevel {
     pub fn color(&self, theme: &Theme) -> Color {
         match self {
@@ -108,6 +117,18 @@ impl ActivityLog {
                 self.scroll_offset = self.entries.len().saturating_sub(1);
             }
         }
+    }
+
+    /// Single funnel for INTERACTION/TEARDOWN lifecycle lines (#742): renders
+    /// the pinned format from [`InteractionActivity`], maps severity, and
+    /// mirrors the transition into the structured log.
+    pub fn emit_interaction(&mut self, activity: &crate::work::activity::InteractionActivity) {
+        activity.emit_tracing();
+        self.push_simple(
+            activity.tag().to_string(),
+            activity.message(),
+            activity.severity().into(),
+        );
     }
 
     pub fn push_simple(&mut self, label: String, message: String, level: LogLevel) {

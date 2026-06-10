@@ -1,9 +1,11 @@
 //! Snapshot tests for the terminator UI flow (#741).
 //!
-//! Four renders: idle-fire success, streaming-deferred, teardown-failure, and
-//! UserQuit-before-terminator. All use `FakeClock` so `terminated_at` is frozen
-//! and never trips auto-nav mid-render. Drives the screen only through public
-//! seams (this module lives outside the `interaction` privacy boundary).
+//! Five renders: idle-fire success, the #941 async in-flight state,
+//! streaming-deferred, teardown-failure, and UserQuit-before-terminator. All
+//! use `FakeClock` so `terminated_at` is frozen and never trips auto-nav
+//! mid-render. Teardown resolves asynchronously (#941): tests park the
+//! dispatch, resolve it through `MockTeardown`, and apply the result — the
+//! same dance the app's spawn_blocking dispatcher performs.
 //!
 //! Turn cards render a `role · HH:MM` header (#987) where the time is the
 //! turn's wall-clock `started_at`. Those turns are stamped by production code
@@ -15,14 +17,13 @@ use ratatui::{Terminal, backend::TestBackend};
 
 use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
 use crate::tui::navigation::InputMode;
-use crate::tui::screens::interaction::lifecycle::{FakeClock, MockTeardown};
+use crate::tui::screens::interaction::lifecycle::{FakeClock, MockTeardown, WorktreeTeardownPort};
 use crate::tui::screens::test_helpers::key_event_with_modifiers;
 use crate::tui::screens::{InteractionScreen, Screen};
 use crate::tui::theme::Theme;
 use crate::work::worktree_teardown::TeardownError;
 use crossterm::event::{KeyCode, KeyModifiers};
 use std::path::PathBuf;
-use std::rc::Rc;
 
 const W: u16 = 120;
 const H: u16 = 40;
@@ -36,15 +37,25 @@ fn pr_event(pr_number: u64) -> InteractionLifecycleEvent {
     }
 }
 
-fn base_screen(teardown: MockTeardown) -> InteractionScreen {
+fn base_screen() -> InteractionScreen {
     InteractionScreen::with_ports(
         42,
         PathBuf::from("/tmp/maestro/issue-42"),
         "feat/issue-42".to_string(),
         PathBuf::from("/tmp/maestro"),
-        Box::new(Rc::new(teardown)),
         Box::new(FakeClock::new()),
     )
+}
+
+/// Resolve a parked teardown dispatch through `teardown` (#941), mirroring
+/// the app's spawn_blocking dispatcher.
+fn resolve_teardown(screen: &mut InteractionScreen, teardown: &MockTeardown) {
+    if let Some(d) = screen.take_pending_teardown_dispatch() {
+        let result = teardown
+            .wipe(d.issue_number, &d.path, &d.branch, &d.root)
+            .map_err(|err| err.to_string());
+        let _ = screen.apply_teardown_result(result);
+    }
 }
 
 fn render(screen: &mut InteractionScreen) -> Terminal<TestBackend> {
@@ -66,8 +77,10 @@ fn with_time_mask(body: impl FnOnce()) {
 
 #[test]
 fn terminator_idle_success() {
-    let mut screen = base_screen(MockTeardown::ok());
+    let teardown = MockTeardown::ok();
+    let mut screen = base_screen();
     screen.on_terminator_signaled(pr_event(7));
+    resolve_teardown(&mut screen, &teardown);
 
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
@@ -83,8 +96,24 @@ fn terminator_idle_success() {
 }
 
 #[test]
+fn terminator_teardown_in_flight() {
+    // #941: between dispatch and result the input pane is replaced by the
+    // "wiping worktree" banner — the UI is alive, not frozen.
+    let mut screen = base_screen();
+    screen.on_terminator_signaled(pr_event(7));
+
+    let terminal = render(&mut screen);
+    let rendered = format!("{:?}", terminal.backend());
+    assert!(
+        rendered.contains("wiping worktree"),
+        "must show the in-flight banner:\n{rendered}"
+    );
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
+}
+
+#[test]
 fn terminator_streaming_deferred() {
-    let mut screen = base_screen(MockTeardown::ok());
+    let mut screen = base_screen();
     // Public seam: seed_turn pushes a User turn and flips to Streaming.
     screen.seed_turn("implement login".to_string());
     screen.on_terminator_signaled(pr_event(7));
@@ -101,8 +130,10 @@ fn terminator_streaming_deferred() {
 #[test]
 fn terminator_teardown_failure() {
     let err = TeardownError::PathStillExists(PathBuf::from("/tmp/maestro/issue-42"));
-    let mut screen = base_screen(MockTeardown::failing(err));
+    let teardown = MockTeardown::failing(err);
+    let mut screen = base_screen();
     screen.on_terminator_signaled(pr_event(7));
+    resolve_teardown(&mut screen, &teardown);
 
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
@@ -115,7 +146,7 @@ fn terminator_teardown_failure() {
 
 #[test]
 fn terminator_userquit_before_terminator() {
-    let mut screen = base_screen(MockTeardown::ok());
+    let mut screen = base_screen();
     // Public path to Terminated(UserQuit): Ctrl+W then confirm 'y'.
     screen.handle_input(
         &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),

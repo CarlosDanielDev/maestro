@@ -28,6 +28,9 @@ pub(crate) enum InteractionIntent {
     Back,
     /// `Ctrl+W` — open the quit-confirm modal (Ctrl+Q is the global TurboQuant toggle).
     RequestQuit,
+    /// `Ctrl+D` — open the read-only diff reviewer overlay (#918). Works in
+    /// `Idle` and `Streaming`; greyed when no isolated worktree exists.
+    OpenDiffReview,
     /// `Up` — scroll history up (any state).
     ScrollUp,
     /// `Down` — scroll history down (any state).
@@ -75,6 +78,11 @@ pub(crate) fn classify(
     // before screen dispatch in input_handler).
     if ctrl && code == KeyCode::Char('w') {
         return RequestQuit;
+    }
+    // Ctrl+D opens the diff reviewer from Idle AND Streaming (#918) — review
+    // while the agent keeps working.
+    if ctrl && code == KeyCode::Char('d') {
+        return OpenDiffReview;
     }
 
     // While streaming, every remaining send/edit key is ignored.
@@ -134,6 +142,10 @@ impl KeymapProvider for InteractionScreen {
                     description: "Newline",
                 },
                 pushup,
+                KeyBinding {
+                    key: "Ctrl+D",
+                    description: "Diff review",
+                },
                 KeyBinding {
                     key: "Ctrl+L",
                     description: "Clear input",

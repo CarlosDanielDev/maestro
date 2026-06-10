@@ -4,6 +4,8 @@
 //! renders it. Per-turn agent spawning lands in #737; the rich keymap and
 //! re-entry wiring land in #738. This screen sends no prompts.
 
+mod diff_review;
+mod diff_review_draw;
 mod history;
 mod input;
 mod keymap;
@@ -11,6 +13,7 @@ mod keymap;
 mod keymap_tests;
 mod layout;
 pub(crate) mod lifecycle;
+mod render;
 mod scroll;
 #[cfg(test)]
 mod terminator_tests;
@@ -28,18 +31,27 @@ use chrono::Utc;
 use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use keymap::{InteractionIntent, classify, pushup_prompt};
 use layout::{HEADER_HEIGHT, INPUT_HEIGHT, effective_offset, inset_x};
-use lifecycle::{Clock, RealClock, RealTeardown, WorktreeTeardownPort};
-use ratatui::{
-    Frame,
-    layout::{Constraint, Layout, Rect},
-    style::Style,
-};
+use lifecycle::{Clock, RealClock};
+use ratatui::{Frame, layout::Rect, style::Style};
 use std::path::PathBuf;
 use std::time::Instant;
 use tui_textarea::TextArea;
 
 /// Tag used for every Interaction activity-log line.
 const LOG_TAG: &str = "INTERACTION";
+
+/// Map a lifecycle transition to the screen-action log line (#742): pinned
+/// format + severity from `InteractionActivity`, mirrored into tracing.
+pub(crate) fn activity_action(
+    activity: &crate::work::activity::InteractionActivity,
+) -> ScreenAction {
+    activity.emit_tracing();
+    ScreenAction::LogActivity {
+        tag: activity.tag().to_string(),
+        message: activity.message(),
+        level: activity.severity().into(),
+    }
+}
 
 /// Dedicated chat-style screen for a long-lived interaction session.
 pub struct InteractionScreen {
@@ -96,12 +108,20 @@ pub struct InteractionScreen {
     queued_terminator: Option<InteractionLifecycleEvent>,
     /// When the screen entered `Terminated`. Drives the 500ms auto-nav timer.
     terminated_at: Option<Instant>,
-    /// Destructive worktree teardown seam (#740). `RealTeardown` in
-    /// production; a fake in tests.
-    teardown: Box<dyn WorktreeTeardownPort>,
+    /// PR number of the teardown currently running off-thread (#941). `Some`
+    /// from dispatch until `apply_teardown_result`; drives the "wiping
+    /// worktree…" banner.
+    teardown_pr_in_flight: Option<u64>,
+    /// Teardown work parked for the app layer to run under `spawn_blocking`
+    /// (#941). Set by the terminator path; taken via
+    /// [`Self::take_pending_teardown_dispatch`].
+    pending_teardown_dispatch: Option<lifecycle::TeardownDispatch>,
     /// Time source for the auto-nav timer. `RealClock` in production; a fake
     /// in tests.
     clock: Box<dyn Clock>,
+    /// Read-only diff reviewer overlay (#918). `Some` while open; all input
+    /// routes to it first, like the quit modal.
+    diff_review: Option<diff_review::DiffReview>,
 }
 
 impl InteractionScreen {
@@ -140,8 +160,10 @@ impl InteractionScreen {
             worktree_root: PathBuf::new(),
             queued_terminator: None,
             terminated_at: None,
-            teardown: Box::new(RealTeardown),
+            teardown_pr_in_flight: None,
+            pending_teardown_dispatch: None,
             clock: Box::new(RealClock),
+            diff_review: None,
         }
     }
 
@@ -200,74 +222,16 @@ impl InteractionScreen {
         self.editor.lines().join("\n")
     }
 
-    fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let chunks = Layout::vertical([
-            Constraint::Length(HEADER_HEIGHT),
-            Constraint::Min(0),
-            Constraint::Length(1),
-            Constraint::Length(INPUT_HEIGHT),
-        ])
-        .split(area);
-        let header_area = chunks[0];
-        // Inset the transcript by one column each side so the rounded card
-        // borders get a gutter and the right border never clips against the
-        // terminal edge (#987 QA).
-        let history_area = inset_x(chunks[1], 1);
-        let keybar_area = chunks[2];
-        let input_area = chunks[3];
+    /// Open the diff reviewer overlay with the freshly computed diff (#918).
+    /// Session state is untouched — the overlay is a pure view.
+    pub(crate) fn open_diff_review(&mut self, diff_text: &str) {
+        self.diff_review = Some(diff_review::DiffReview::new(diff_text));
+    }
 
-        input::draw_header(
-            f,
-            header_area,
-            theme,
-            &self.agent_label,
-            &self.model,
-            self.issue_number,
-            &self.issue_title,
-        );
-
-        let total = history::visual_total(&self.history, theme, history_area.width);
-        let viewport = history_area.height as usize;
-        self.last_max_offset = total.saturating_sub(viewport);
-        self.last_viewport = viewport;
-        let offset = effective_offset(self.auto_scroll, self.scroll_offset, total, viewport);
-        if self.auto_scroll {
-            self.scroll_offset = offset;
-        }
-
-        history::draw_history(
-            f,
-            history_area,
-            theme,
-            &self.history,
-            offset,
-            self.issue_number,
-            &self.issue_title,
-        );
-        input::draw_keybar(f, keybar_area, theme, self.pushup_enabled());
-        if self.state == InteractionState::Terminated {
-            input::draw_terminated_banner(f, input_area, theme, self.close_reason.as_ref());
-        } else {
-            let nerd = crate::icon_mode::use_nerd_font();
-            // Slow the throbber to ~7fps (the loop redraws at ~20fps): a calmer
-            // rotation reads as a clear spinner instead of a vibrating blob.
-            let calm = self.spinner_tick / 3;
-            let spinner = crate::tui::spinner::graph_node_frame(calm, nerd);
-            let wave = crate::tui::spinner::responding_wave(calm, nerd);
-            input::draw_input(
-                f,
-                input_area,
-                theme,
-                &self.editor,
-                self.is_streaming(),
-                spinner,
-                &wave,
-            );
-        }
-
-        if self.quit_modal_open {
-            input::draw_quit_modal(f, area, theme, &self.worktree_path);
-        }
+    /// Scroll the open reviewer for snapshot tests / mouse routing.
+    #[cfg(test)]
+    pub(crate) fn diff_review_open(&self) -> bool {
+        self.diff_review.is_some()
     }
 
     #[cfg(test)]
@@ -318,6 +282,19 @@ impl Screen for InteractionScreen {
         else {
             return ScreenAction::None;
         };
+
+        if let Some(review) = self.diff_review.as_mut() {
+            return match review.handle_key(*code, *modifiers) {
+                diff_review::DiffReviewOutcome::Handled => ScreenAction::None,
+                diff_review::DiffReviewOutcome::Close => {
+                    self.diff_review = None;
+                    ScreenAction::None
+                }
+                diff_review::DiffReviewOutcome::OpenShell => ScreenAction::OpenWorktreeShell {
+                    worktree_path: self.worktree_path.clone(),
+                },
+            };
+        }
 
         if self.quit_modal_open {
             return self.handle_quit_modal(*code);
@@ -373,6 +350,23 @@ impl Screen for InteractionScreen {
             InteractionIntent::RequestQuit => {
                 self.quit_modal_open = true;
                 ScreenAction::None
+            }
+            InteractionIntent::OpenDiffReview => {
+                // Greyed without an isolated worktree (post-teardown or
+                // cwd-fallback) — there is nothing PR-equivalent to diff.
+                if self.worktree_root.as_os_str().is_empty() {
+                    return ScreenAction::LogActivity {
+                        tag: LOG_TAG.to_string(),
+                        message: format!(
+                            "Ctrl+D unavailable for #{} — no isolated worktree to diff",
+                            self.issue_number
+                        ),
+                        level: LogLevel::Info,
+                    };
+                }
+                ScreenAction::OpenInteractionDiff {
+                    worktree_path: self.worktree_path.clone(),
+                }
             }
             InteractionIntent::FeedEditor => {
                 self.editor.input(event.clone());

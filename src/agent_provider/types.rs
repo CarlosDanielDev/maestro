@@ -63,6 +63,10 @@ pub struct AgentRequest {
     pub permission_mode: Option<String>,
     pub allowed_tools: Vec<String>,
     pub system_prompt_appendix: Option<String>,
+    /// Resume an existing provider conversation (#751). Headless claude maps
+    /// this to `--resume <id>`; the interactive transport reuses (or
+    /// re-attaches to) the PTY child bound to this id.
+    pub resume_session_id: Option<String>,
     /// Bypass per-provider pre-spawn gates (e.g. MiniMax quota refusal at
     /// 95%). Defaults to false; CLI flag `--force-quota` flips it on. The
     /// gate still records the spawn and logs a warning at higher levels.
@@ -80,6 +84,7 @@ impl AgentRequest {
             permission_mode: None,
             allowed_tools: Vec::new(),
             system_prompt_appendix: None,
+            resume_session_id: None,
             force: false,
         }
     }
@@ -94,6 +99,7 @@ impl AgentRequest {
             permission_mode: None,
             allowed_tools: Vec::new(),
             system_prompt_appendix: None,
+            resume_session_id: None,
             force: false,
         }
     }
@@ -104,9 +110,14 @@ pub struct AgentRunStarted {
     pub process_id: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct AgentRunResult {
     pub exit_code: Option<i32>,
+    /// Provider session id for resumable conversations (#751). Headless
+    /// claude captures it from the stream (`system`/init or `result` line);
+    /// the interactive transport returns the id its PTY child is bound to.
+    /// `None` for providers without resume semantics.
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,17 +135,28 @@ pub struct AgentHealthCheck {
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AgentProviderDefinition {
     pub id: String,
     pub provider: String,
+    #[serde(default)]
     pub binary: Option<String>,
+    #[serde(default)]
     pub base_url: Option<String>,
+    #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
     pub request_timeout_secs: Option<u64>,
+    #[serde(default)]
     pub api_key_env: Option<String>,
     /// Ollama-only context window in tokens. Drives the context-fill gauge.
+    #[serde(default)]
     pub num_ctx: Option<u32>,
+    /// Claude-only transport selector (#750): `"headless"` (default) or
+    /// `"interactive"` (PTY, preserves subscription billing post 2026-06-15).
+    #[serde(default)]
+    pub transport: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,10 +247,15 @@ impl AgentProviderFactory {
         match definition {
             Some(provider) if provider.provider == "claude" || provider.id == "claude" => {
                 let binary = provider.binary.as_deref().unwrap_or("claude");
+                let transport = crate::agent_provider::claude::ClaudeTransport::from_config_value(
+                    provider.transport.as_deref(),
+                )?;
                 Ok(Self {
-                    default_provider: Arc::new(crate::agent_provider::claude::ClaudeProvider::new(
-                        binary,
-                    )),
+                    default_provider: Arc::new(
+                        crate::agent_provider::claude::ClaudeProvider::with_transport(
+                            binary, transport,
+                        ),
+                    ),
                 })
             }
             Some(provider) if provider.provider == "qwen" || provider.id == "qwen" => {

@@ -96,6 +96,8 @@ fn prompt_input_enter_with_prompt_returns_launch_prompt_session() {
             prompt: "fix the bug".to_string(),
             image_paths: vec![],
             agent_id: None,
+            produce_pr: true,
+            interaction: false,
         })
     );
 }
@@ -111,6 +113,8 @@ fn prompt_input_enter_with_prompt_and_images_includes_image_paths() {
             prompt: "describe this".to_string(),
             image_paths: vec!["/tmp/a.png".to_string(), "/tmp/b.png".to_string()],
             agent_id: None,
+            produce_pr: true,
+            interaction: false,
         })
     );
 }
@@ -171,8 +175,15 @@ fn prompt_input_tab_switches_focus_to_image_list() {
 
 #[test]
 fn prompt_input_tab_toggles_back_to_prompt_editor() {
+    // The ring gained two checkbox stops in #919: editor → images →
+    // produce-pr → interaction → editor.
     let mut screen = mock_screen();
     screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+    assert!(screen.is_image_list_focused());
+    screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+    assert!(screen.is_produce_pr_focused());
+    screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
+    assert!(screen.is_interaction_focused());
     screen.handle_input(&key_event(KeyCode::Tab), InputMode::Normal);
     assert!(
         screen
@@ -320,6 +331,8 @@ fn prompt_session_config_stores_prompt_and_images() {
         prompt: "hello".to_string(),
         image_paths: vec!["/img.png".to_string()],
         agent_id: None,
+        produce_pr: true,
+        interaction: false,
     };
     assert_eq!(cfg.prompt, "hello");
     assert_eq!(cfg.image_paths, vec!["/img.png".to_string()]);
@@ -331,6 +344,8 @@ fn prompt_session_config_clone_is_independent() {
         prompt: "hello".to_string(),
         image_paths: vec![],
         agent_id: None,
+        produce_pr: true,
+        interaction: false,
     };
     let cloned = original.clone();
     original.prompt.push_str(" extra");

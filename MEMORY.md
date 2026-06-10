@@ -55,3 +55,17 @@ Session summaries (added when I say "session end" / "wrapping up" / "let's stop 
 ## 2026-05-23 — v0.29.5 cross-milestone handoff bundle #806/#875/#876/#877
 
 v0.29.5 bundle (user authorized PR-isolation override for context budget): one PR, four Closes refs, architect+QA blueprint per scope; disabled-agent filter (#806), Ctrl+V paste (#875), autocomplete (#876), LaunchTeam dispatch fan-out (#877); R3 (real run_team) was descoped to follow-up and landed in #881.
+
+## 2026-06-10 — Overnight batch: v0.30.5 complete + v0.30.0 partial (PR #991)
+
+**Worked on:** milestones v0.30.5 (Subscription Transport) and v0.30.0 (Interactive Iteration Sessions), one branch (`feat/v0.30-batch-transport-unification`), one commit per issue.
+
+**Completed (PR #991, Draft pending manual QA):** #747 #749 #750 #751 #752 (v0.30.5 complete — 2026-06-15 cutoff workaround shipped), #941 #742 #919 #918 #743, plus a security fix (resume_session_id allowlist). #936/#988/#953 closed directly (already on main via PR #990).
+
+**Decisions:**
+- PTY transport (#749): transcript-JSONL tailing chosen over screen-scraping; session id pinned with `--session-id` so the transcript path is deterministic pre-spawn (spike #747 GREEN). tmux fallback rejected as primary (external dep, no child ownership); stub feature `claude-tmux` kept.
+- #751: PTY children are PARKED between turns keyed by session id; reuse gated on `resume_session_id` matching, so one-shot runs never share a REPL context. Provider injected per turn (InteractionSession stays serde).
+- **Unification phases #947–#950 (+#935/#929/#930) deferred** — spec 2026-06-04 §6 mandates one PR per phase, and Phase 2's telemetry parity needs Phase 3's Session merge. Rejected: bundling them half-done into the overnight PR.
+- #918: shipped without syntect (AC allowed); `o` escape hatch = shell at worktree via ShellLauncher, not $EDITOR suspend.
+
+**Next-session priorities:** merge-gate PR #991 manual QA; then #947 → #948 → #949 → #950 in separate PRs; verify chat renderer sanitizes `StreamEvent::Unknown.raw` (security review informational).

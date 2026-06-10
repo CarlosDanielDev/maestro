@@ -2,11 +2,13 @@
 //!
 //! Covers the four AC behaviors — idle-fire, streaming-defer-then-drain,
 //! teardown-failure, and UserQuit-preclosed-skip — plus the 500ms auto-nav
-//! timer. Uses `MockTeardown` + `FakeClock` (from `lifecycle`) so no git or
-//! disk is touched.
+//! timer and the #941 async split (dispatch parked -> in-flight banner state
+//! -> result applied). Uses `MockTeardown` + `FakeClock` (from `lifecycle`)
+//! so no git or disk is touched; tests resolve the parked dispatch through
+//! the mock exactly as the app's spawn_blocking dispatcher does.
 
 use super::InteractionScreen;
-use super::lifecycle::{FakeClock, MockTeardown};
+use super::lifecycle::{FakeClock, MockTeardown, WorktreeTeardownPort};
 use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
 use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
 use crate::session::interaction_turn::TurnEvent;
@@ -35,15 +37,28 @@ fn pr_event(pr_number: u64) -> InteractionLifecycleEvent {
 /// worktree `/tmp/maestro/issue-42` (root `/tmp/maestro`), branch
 /// `feat/issue-42`. Returns the screen; the caller keeps the `Rc`/clock
 /// handles for post-call inspection.
-fn wired_screen(teardown: Rc<MockTeardown>, clock: FakeClock) -> InteractionScreen {
+fn wired_screen(_teardown: Rc<MockTeardown>, clock: FakeClock) -> InteractionScreen {
     InteractionScreen::with_ports(
         42,
         PathBuf::from("/tmp/maestro/issue-42"),
         "feat/issue-42".to_string(),
         PathBuf::from("/tmp/maestro"),
-        Box::new(Rc::clone(&teardown)),
         Box::new(clock),
     )
+}
+
+/// Resolve a parked teardown dispatch through `teardown`, mirroring the app's
+/// `spawn_blocking` dispatcher (#941). Returns the result-side action, or
+/// `None` when nothing was dispatched.
+fn resolve_teardown(
+    screen: &mut InteractionScreen,
+    teardown: &MockTeardown,
+) -> Option<crate::tui::screens::ScreenAction> {
+    let d = screen.take_pending_teardown_dispatch()?;
+    let result = teardown
+        .wipe(d.issue_number, &d.path, &d.branch, &d.root)
+        .map_err(|err| err.to_string());
+    Some(screen.apply_teardown_result(result))
 }
 
 fn system_turns(screen: &InteractionScreen) -> Vec<&TurnRecord> {
@@ -61,9 +76,21 @@ fn terminator_idle_fires_immediately_and_terminates() {
     let teardown = Rc::new(MockTeardown::ok());
     let mut screen = wired_screen(Rc::clone(&teardown), FakeClock::new());
 
-    let action = screen.on_terminator_signaled(pr_event(7));
+    let begin_action = screen.on_terminator_signaled(pr_event(7));
+
+    // #941: between dispatch and result the screen is in-flight, not frozen.
+    assert!(
+        matches!(begin_action, Some(ScreenAction::None)),
+        "the TEARDOWN log line arrives with the async result"
+    );
+    assert_ne!(screen.state_for_test(), InteractionState::Terminated);
+    assert!(screen.is_teardown_in_flight());
+    assert_eq!(teardown.call_count(), 0, "no blocking wipe on the UI path");
+
+    let action = resolve_teardown(&mut screen, &teardown);
 
     assert_eq!(screen.state_for_test(), InteractionState::Terminated);
+    assert!(!screen.is_teardown_in_flight());
     assert_eq!(
         screen.close_reason_for_test(),
         Some(CloseReason::PrCreated { pr_number: 7 })
@@ -72,7 +99,7 @@ fn terminator_idle_fires_immediately_and_terminates() {
     assert!(screen.terminated_at_is_set());
     assert!(
         matches!(action, Some(ScreenAction::LogActivity { .. })),
-        "idle-fire must return a TEARDOWN activity-log action"
+        "the result must produce a TEARDOWN activity-log action"
     );
 
     let sys = system_turns(&screen);
@@ -94,6 +121,7 @@ fn terminator_idle_teardown_receives_issue_path_branch() {
     let mut screen = wired_screen(Rc::clone(&teardown), FakeClock::new());
 
     screen.on_terminator_signaled(pr_event(7));
+    resolve_teardown(&mut screen, &teardown);
 
     let call = teardown.last_call().expect("one call recorded");
     assert_eq!(call.0, 42);
@@ -110,13 +138,16 @@ fn terminator_skips_teardown_when_no_trusted_worktree_root() {
         PathBuf::from("."),
         "maestro/issue-42".to_string(),
         PathBuf::new(), // empty root
-        Box::new(Rc::clone(&teardown)),
         Box::new(FakeClock::new()),
     );
 
     let action = screen.on_terminator_signaled(pr_event(7));
 
     assert_eq!(teardown.call_count(), 0, "no wipe without a trusted root");
+    assert!(
+        screen.take_pending_teardown_dispatch().is_none(),
+        "the skip path must not park a destructive dispatch"
+    );
     assert_eq!(screen.state_for_test(), InteractionState::Terminated);
     assert_eq!(
         screen.close_reason_for_test(),
@@ -145,6 +176,10 @@ fn terminator_streaming_defers_without_teardown() {
     assert!(action.is_none(), "deferral returns no action");
     assert_eq!(screen.state_for_test(), InteractionState::Streaming);
     assert!(screen.queued_terminator_is_set());
+    assert!(
+        screen.take_pending_teardown_dispatch().is_none(),
+        "no dispatch parked while deferred"
+    );
     assert_eq!(
         teardown.call_count(),
         0,
@@ -172,16 +207,20 @@ fn terminator_deferred_fires_when_turn_finishes() {
 
     let _ = screen.apply_turn_event(&TurnEvent::TurnFinished { at: fixed_t0() });
 
+    // The drain parks the dispatch; the app resolves it off-thread (#941).
+    assert!(screen.is_teardown_in_flight());
+    assert!(
+        !screen.queued_terminator_is_set(),
+        "queue cleared after drain"
+    );
+    resolve_teardown(&mut screen, &teardown);
+
     assert_eq!(screen.state_for_test(), InteractionState::Terminated);
     assert_eq!(
         screen.close_reason_for_test(),
         Some(CloseReason::PrCreated { pr_number: 7 })
     );
     assert_eq!(teardown.call_count(), 1, "teardown runs once on drain");
-    assert!(
-        !screen.queued_terminator_is_set(),
-        "queue cleared after drain"
-    );
 }
 
 // ── AC-3: teardown failure ───────────────────────────────────────────────────
@@ -193,7 +232,8 @@ fn terminator_teardown_failure_keeps_worktree_and_surfaces_error() {
     let teardown = Rc::new(MockTeardown::failing(err));
     let mut screen = wired_screen(Rc::clone(&teardown), FakeClock::new());
 
-    let action = screen.on_terminator_signaled(pr_event(7));
+    screen.on_terminator_signaled(pr_event(7));
+    let action = resolve_teardown(&mut screen, &teardown);
 
     assert_eq!(screen.state_for_test(), InteractionState::Terminated);
     assert_eq!(
@@ -232,6 +272,10 @@ fn terminator_userquit_preclosed_skips_teardown() {
     let action = screen.on_terminator_signaled(pr_event(7));
 
     assert_eq!(teardown.call_count(), 0, "preclosed must not run teardown");
+    assert!(
+        screen.take_pending_teardown_dispatch().is_none(),
+        "preclosed must not park a dispatch"
+    );
     assert_eq!(screen.state_for_test(), InteractionState::Terminated);
     assert_eq!(screen.close_reason_for_test(), Some(CloseReason::UserQuit));
     assert_eq!(
@@ -259,6 +303,7 @@ fn poll_auto_nav_false_before_delay_true_at_delay() {
     let mut screen = wired_screen(Rc::clone(&teardown), clock.clone());
 
     screen.on_terminator_signaled(pr_event(7));
+    resolve_teardown(&mut screen, &teardown);
     assert!(screen.terminated_at_is_set());
 
     assert!(!screen.poll_auto_nav(), "no time elapsed");

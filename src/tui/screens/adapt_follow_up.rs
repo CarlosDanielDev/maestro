@@ -50,6 +50,8 @@ impl AdaptFollowUpScreen {
             prompt: build_follow_up_prompt(direction),
             image_paths: Vec::new(),
             agent_id: None,
+            produce_pr: true,
+            interaction: false,
         })
     }
 }

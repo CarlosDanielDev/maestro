@@ -58,6 +58,11 @@ pub struct AgentConfig {
     pub permission_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_tools: Vec<String>,
+    /// Claude-only: how to drive the `claude` CLI. `"headless"` (default) is
+    /// the one-shot `--print` path; `"interactive"` runs the REPL on a PTY so
+    /// Pro/Max subscription billing survives the 2026-06-15 cutoff (#750).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -97,6 +102,7 @@ impl AgentConfig {
             extra_args: Vec::new(),
             permission_mode: Some(permission_mode.into()),
             allowed_tools,
+            transport: None,
             sandbox: None,
             json: None,
             ephemeral: None,
@@ -159,6 +165,27 @@ impl AgentConfig {
             }
         }
 
+        // Claude-only transport selector (#750). Same empty-string-as-unset
+        // handling as the other optional fields.
+        if let Some(transport) = self
+            .transport
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            if self.kind != AgentKind::Claude {
+                anyhow::bail!(
+                    "agents.{id}.transport is only valid for claude agents; remove it from {} agent `{id}`",
+                    self.kind.as_str()
+                );
+            }
+            if !matches!(transport, "headless" | "interactive") {
+                anyhow::bail!(
+                    "agents.{id}.transport `{transport}`: unknown transport, expected one of: headless, interactive"
+                );
+            }
+        }
+
         // Same empty-string-as-unset handling as base_url / command above.
         // An empty TextInput round-trips as `Some("")`; treat that as "no
         // api_key_env was specified" so users can clear the field in the
@@ -196,6 +223,8 @@ struct AgentConfigRaw {
     permission_mode: Option<String>,
     #[serde(default)]
     allowed_tools: Vec<String>,
+    #[serde(default)]
+    transport: Option<String>,
     #[serde(default)]
     sandbox: Option<String>,
     #[serde(default)]
@@ -252,6 +281,7 @@ impl From<AgentConfigRaw> for AgentConfig {
             extra_args: raw.extra_args,
             permission_mode: raw.permission_mode,
             allowed_tools: raw.allowed_tools,
+            transport: raw.transport,
             sandbox: raw.sandbox,
             json: raw.json,
             ephemeral: raw.ephemeral,

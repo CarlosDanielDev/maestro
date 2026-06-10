@@ -49,7 +49,10 @@ impl AgentProvider for HttpStubProvider {
         let _ = events.send(AgentProviderEvent::Stream(StreamEvent::Completed {
             cost_usd: 0.0,
         }));
-        Ok(AgentRunResult { exit_code: None })
+        Ok(AgentRunResult {
+            exit_code: None,
+            session_id: None,
+        })
     }
 }
 
@@ -106,6 +109,7 @@ fn factory_accepts_qwen_provider() {
             request_timeout_secs: None,
             api_key_env: None,
             num_ctx: None,
+            transport: None,
         }],
     })
     .expect("qwen provider config should build factory");
@@ -126,6 +130,7 @@ fn factory_accepts_codex_provider() {
             request_timeout_secs: None,
             api_key_env: None,
             num_ctx: None,
+            transport: None,
         }],
     })
     .expect("codex provider config should build factory");
@@ -146,6 +151,7 @@ fn factory_accepts_opencode_provider() {
             request_timeout_secs: None,
             api_key_env: None,
             num_ctx: None,
+            transport: None,
         }],
     })
     .expect("opencode provider config should build factory");
@@ -170,6 +176,7 @@ fn factory_accepts_ollama_provider() {
             request_timeout_secs: Some(5),
             api_key_env: None,
             num_ctx: None,
+            transport: None,
         }],
     })
     .expect("ollama provider config should build factory");
@@ -315,6 +322,7 @@ fn factory_accepts_minimax_provider() {
             request_timeout_secs: Some(5),
             api_key_env: Some("MINIMAX_API_KEY".to_string()),
             num_ctx: None,
+            transport: None,
         }],
     })
     .expect("minimax provider config should build factory");

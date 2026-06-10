@@ -40,6 +40,12 @@ pub trait GitOps: Send + Sync {
     /// worktree is missing or the branch has no commits — both are
     /// valid "no WIP at HEAD" answers.
     fn head_is_wip_backup(&self, worktree_path: &Path) -> Result<bool>;
+
+    /// PR-equivalent diff for the in-TUI reviewer (#918): unified diff of
+    /// the worktree's HEAD (plus uncommitted changes) against
+    /// `merge-base(base_branch, HEAD)` — the same file set GitHub shows for
+    /// the eventual PR.
+    fn diff_against_merge_base(&self, worktree_path: &Path, base_branch: &str) -> Result<String>;
 }
 
 /// Production implementation using git CLI commands.
@@ -282,6 +288,41 @@ impl GitOps for CliGitOps {
         }
         let subject = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(subject.starts_with(WIP_SUBJECT_PREFIX) && subject.ends_with(WIP_SUBJECT_SUFFIX))
+    }
+
+    fn diff_against_merge_base(&self, worktree_path: &Path, base_branch: &str) -> Result<String> {
+        crate::util::validate_gh_arg(base_branch, "base branch")?;
+        let merge_base = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .args(["merge-base", base_branch, "HEAD"])
+            .output()
+            .context("running git merge-base")?;
+        if !merge_base.status.success() {
+            anyhow::bail!(
+                "git merge-base failed: {}",
+                String::from_utf8_lossy(&merge_base.stderr).trim()
+            );
+        }
+        let base = String::from_utf8_lossy(&merge_base.stdout)
+            .trim()
+            .to_string();
+        if base.is_empty() {
+            anyhow::bail!("git merge-base returned no commit");
+        }
+        let diff = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .args(["diff", "--no-color", &base])
+            .output()
+            .context("running git diff")?;
+        if !diff.status.success() {
+            anyhow::bail!(
+                "git diff failed: {}",
+                String::from_utf8_lossy(&diff.stderr).trim()
+            );
+        }
+        Ok(String::from_utf8_lossy(&diff.stdout).to_string())
     }
 }
 
