@@ -56,6 +56,13 @@ Session summaries (added when I say "session end" / "wrapping up" / "let's stop 
 
 v0.29.5 bundle (user authorized PR-isolation override for context budget): one PR, four Closes refs, architect+QA blueprint per scope; disabled-agent filter (#806), Ctrl+V paste (#875), autocomplete (#876), LaunchTeam dispatch fan-out (#877); R3 (real run_team) was descoped to follow-up and landed in #881.
 
+## 2026-06-10 — #947 re-scoped: real pipeline Session for interactions (PR #992)
+
+**Decided:** Phase 2 (#947) gives the interaction a REAL pool-registered `SessionMode::Interactive` `Session` driven by `ManagedSession` (Option C). First turn = normal `spawn`; follow-ups = new `send_followup_turn` (`--resume <agent_session_id>`, allowlisted). Telemetry parity by construction — records land on the pool `Session` via the existing `handle_event` funnel. `interaction_turn.rs` deleted; `TurnEvent` lives in `session/interaction.rs`. Interactive sessions exempt from one-shot completion machinery (gates/auto-PR/notifications/#327 PR-detect) and skipped by `find_by_issue_mut`; follow-ups make NO status transition (Completed→Spawning illegal) until #948 adds the `Interactive` status.
+**Why:** The "normal resumed-turn pipeline" the issue presumed didn't exist — one-shot never set `resume_session_id` and dropped the provider conversation id. Building it once on `Session`/`ManagedSession` means #948 deletes `InteractionSession` without touching the turn path.
+**Rejected:** (a) Order swap #948-first — retiring `InteractionSession` forces the turn path to move anyway; the "swap" is really one oversized PR. (b) Telemetry shadow `Session` inside `InteractionSession` — invisible to dashboards (parity dishonest) and deleted by #948 (throwaway, spec decision 3).
+**Notes for #948:** settle interception closes the `session_bound`-after-`Completed` race; `settled_from` banner; enumerate all 4 terminal-status sites; delete `InteractionSession` + `upsert_interaction`/`clone_active_interaction` (quit path still uses them today). Milestone #57 graph needs ✅ for #947 after merge.
+
 ## 2026-06-10 — Overnight batch: v0.30.5 complete + v0.30.0 partial (PR #991)
 
 **Worked on:** milestones v0.30.5 (Subscription Transport) and v0.30.0 (Interactive Iteration Sessions), one branch (`feat/v0.30-batch-transport-unification`), one commit per issue.
