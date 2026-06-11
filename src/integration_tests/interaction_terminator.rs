@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
 use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
-use crate::tui::app::types::{TuiCommand, TuiDataEvent};
+use crate::tui::app::types::TuiCommand;
 use crate::work::pr_marker::PrMarker;
 
 fn make_marker_dir(home: &Path) -> PathBuf {
@@ -74,21 +74,44 @@ async fn marker_with_matching_issue_terminates_interaction_and_enqueues_pr_creat
     );
 }
 
+/// Prepare the live slot as if a turn is mid-stream on the pipeline path
+/// (#947): streaming agent record on the interaction + a registered
+/// Interactive-mode pipeline session. Returns the pipeline session id.
+fn start_streaming_turn(app: &mut crate::tui::app::App, issue: u64) -> uuid::Uuid {
+    let id = app
+        .pool
+        .ensure_interaction_pipeline_session(
+            issue,
+            "work the issue".to_string(),
+            "opus".to_string(),
+            "orchestrator".to_string(),
+        )
+        .expect("pipeline session registered");
+    let live = app
+        .pool
+        .find_active_interaction_by_issue_mut(issue)
+        .expect("active");
+    let now = chrono::Utc::now();
+    live.history.push(TurnRecord {
+        role: TurnRole::Agent,
+        content: String::new(),
+        started_at: now,
+        finished_at: None,
+    });
+    live.state = InteractionState::Streaming;
+    id
+}
+
 /// #936: a terminator queued while a turn was streaming must fire once that
-/// turn settles back to `Idle` and its output is merged. This is the deferred
-/// (mid-stream) firing path #739 explicitly did not cover.
+/// turn settles back to `Idle` and its output is merged. Since #947 the
+/// settle happens on the live slot when the pipeline session's `Completed`
+/// stream event lands — same contract, no clone/merge dance.
 #[tokio::test]
 async fn queued_terminator_fires_after_streaming_turn_settles() {
     let home = tempfile::tempdir().unwrap();
     let mut app = make_app_with_home(home.path().to_path_buf());
     app.pool.create_interaction_session(42, false);
-
-    // The turn's clone is taken BEFORE the marker arrives (mirrors `send_turn`):
-    // Idle, no queued terminator.
-    let mut completing = app
-        .pool
-        .clone_active_interaction(42)
-        .expect("active session to clone");
+    let session_id = start_streaming_turn(&mut app, 42);
 
     // Marker arrives mid-stream: the live slot is `Streaming`, so
     // `signal_terminator` queues the event instead of firing it.
@@ -97,7 +120,6 @@ async fn queued_terminator_fires_after_streaming_turn_settles() {
             .pool
             .find_active_interaction_by_issue_mut(42)
             .expect("active");
-        live.state = InteractionState::Streaming;
         live.signal_terminator(InteractionLifecycleEvent::PrLinkedToIssue {
             pr_number: 7,
             issue_number: 42,
@@ -110,22 +132,19 @@ async fn queued_terminator_fires_after_streaming_turn_settles() {
         );
     }
 
-    // The turn finishes: the clone settles to `Idle` and carries its reply.
-    let at = chrono::Utc::now();
-    completing.state = InteractionState::Idle;
-    completing.history.push(TurnRecord {
-        role: TurnRole::Agent,
-        content: "streamed reply".to_string(),
-        started_at: at,
-        finished_at: Some(at),
+    // The stream delivers the reply, then settles.
+    app.handle_session_event(crate::session::manager::SessionEvent {
+        session_id,
+        event: crate::session::types::StreamEvent::AssistantMessage {
+            text: "streamed reply".to_string(),
+        },
+    });
+    app.handle_session_event(crate::session::manager::SessionEvent {
+        session_id,
+        event: crate::session::types::StreamEvent::Completed { cost_usd: 0.01 },
     });
 
-    // Merge through the real turn-complete path.
-    app.handle_data_event(TuiDataEvent::InteractionTurnComplete {
-        session: Box::new(completing),
-    });
-
-    // Terminator fired after the merge → no active session remains.
+    // Terminator fired after the settle → no active session remains.
     assert!(
         app.pool.find_active_interaction_by_issue(42).is_none(),
         "queued terminator must fire once the streaming turn settles"
@@ -150,23 +169,18 @@ async fn queued_terminator_fires_after_streaming_turn_settles() {
     );
     assert!(
         closed.history.iter().any(|t| t.content == "streamed reply"),
-        "the completed turn's output must be preserved (fire after merge)"
+        "the completed turn's output must be preserved (fire after settle)"
     );
 }
 
 /// #936 idempotency: if the user terminated the session by other means while a
-/// turn was in flight, the completing clone must NOT resurrect it, and the
-/// queued terminator is a no-op.
+/// turn was in flight, a late `Completed` stream event must NOT resurrect it.
 #[tokio::test]
 async fn completing_turn_does_not_resurrect_user_quit_session() {
     let home = tempfile::tempdir().unwrap();
     let mut app = make_app_with_home(home.path().to_path_buf());
     app.pool.create_interaction_session(42, false);
-
-    let mut completing = app
-        .pool
-        .clone_active_interaction(42)
-        .expect("active session to clone");
+    let session_id = start_streaming_turn(&mut app, 42);
 
     // User quit mid-turn: the live slot is already Terminated.
     {
@@ -178,10 +192,10 @@ async fn completing_turn_does_not_resurrect_user_quit_session() {
         live.close_reason = Some(CloseReason::UserQuit);
     }
 
-    // The turn completes and tries to merge back as Idle.
-    completing.state = InteractionState::Idle;
-    app.handle_data_event(TuiDataEvent::InteractionTurnComplete {
-        session: Box::new(completing),
+    // The turn's settle event arrives late.
+    app.handle_session_event(crate::session::manager::SessionEvent {
+        session_id,
+        event: crate::session::types::StreamEvent::Completed { cost_usd: 0.01 },
     });
 
     let closed = app.pool.interaction_by_issue(42).expect("registered");
@@ -193,7 +207,7 @@ async fn completing_turn_does_not_resurrect_user_quit_session() {
     assert_eq!(
         closed.close_reason,
         Some(CloseReason::UserQuit),
-        "the original close reason must survive the completing merge"
+        "the original close reason must survive a late settle event"
     );
 }
 

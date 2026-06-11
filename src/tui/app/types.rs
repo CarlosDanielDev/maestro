@@ -383,10 +383,10 @@ pub enum TuiCommand {
         scheduler: Box<crate::orchestration::scheduler::Scheduler>,
         app_default_agent: String,
     },
-    /// Run one interaction turn in the background: `send_turn` on a clone of
-    /// the issue's `InteractionSession`, streaming `TurnEvent`s back via
-    /// `TuiDataEvent::InteractionTurnEvent` and writing the updated session
-    /// back via `TuiDataEvent::InteractionTurnComplete` (#738).
+    /// Run one interaction turn through the normal session pipeline
+    /// (#947): first turn spawns the Interactive-mode session, follow-ups
+    /// resume the bound conversation; the screen receives derived
+    /// `TuiDataEvent::InteractionTurnEvent`s (#738).
     SendInteractionTurn {
         issue_number: u64,
         prompt: String,
@@ -469,12 +469,7 @@ pub enum TuiDataEvent {
     /// Applied to the live Interaction screen.
     InteractionTurnEvent {
         issue_number: u64,
-        event: crate::session::interaction_turn::TurnEvent,
-    },
-    /// An interaction turn finished; carries the mutated session clone so the
-    /// pool can persist its `session_id`/history (#738).
-    InteractionTurnComplete {
-        session: Box<crate::session::interaction::InteractionSession>,
+        event: crate::session::interaction::TurnEvent,
     },
     /// Result of [`TuiCommand::FetchInteractionIssue`] (#953). On `Ok` the
     /// deferred first turn is built from the real issue prompt + appendix; on

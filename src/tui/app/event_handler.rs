@@ -1,13 +1,11 @@
 use super::App;
 use super::helpers::session_label;
 use super::types::PendingHook;
-use crate::config::ConflictPolicy;
 use crate::notifications::slack::SlackEvent;
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::manager::SessionEvent;
-use crate::session::transition::TransitionReason;
-use crate::session::types::{SessionStatus, StreamEvent};
-use crate::state::file_claims::{ClaimResult, FILE_CONFLICT_SENTINEL};
+use crate::session::types::StreamEvent;
+use crate::state::file_claims::FILE_CONFLICT_SENTINEL;
 use crate::tui::activity_log::LogLevel;
 
 fn format_session_notify_title(prefix: &str, issue: Option<u64>, label: &str) -> String {
@@ -25,98 +23,8 @@ impl App {
         let _ = self.session_logger.log_event(session_id, &evt.event);
         self.health_monitor.record_activity(session_id);
 
-        // File claim processing for mutating tools
-        if let StreamEvent::ToolUse {
-            ref tool,
-            file_path: Some(ref path),
-            ..
-        } = evt.event
-            && matches!(tool.as_str(), "Write" | "Edit")
-        {
-            let result = self.pool.file_claims.claim(path, session_id);
-            if let ClaimResult::Conflict { owner } = result {
-                let label = format!("S-{}", &session_id.to_string()[..8]);
-                let owner_short = &owner.to_string()[..8];
-
-                self.pool
-                    .file_claims
-                    .record_conflict(path, owner, session_id);
-
-                self.activity_log.push_simple(
-                    label,
-                    format!("CONFLICT: {} claimed by S-{}", path, owner_short),
-                    LogLevel::Error,
-                );
-
-                self.notifications.notify(
-                    crate::notifications::types::InterruptLevel::Critical,
-                    "File Conflict",
-                    &format!(
-                        "S-{} tried to write {} (owned by S-{})",
-                        &session_id.to_string()[..8],
-                        path,
-                        owner_short
-                    ),
-                );
-                self.notifications.notify_slack(SlackEvent::FileConflict {
-                    file_path: path.to_string(),
-                    sessions: vec![session_id.to_string(), owner.to_string()],
-                });
-
-                let policy = self
-                    .config
-                    .as_ref()
-                    .map(|c| c.sessions.conflict.policy)
-                    .unwrap_or(ConflictPolicy::Warn);
-
-                match policy {
-                    ConflictPolicy::Warn => {}
-                    ConflictPolicy::Pause => {
-                        #[cfg(unix)]
-                        if let Some(managed) = self.pool.get_active_mut(session_id) {
-                            let _ = managed.pause();
-                            let _ = managed.session.transition_to(
-                                SessionStatus::Paused,
-                                TransitionReason::ConflictPolicy,
-                            );
-                            managed
-                                .session
-                                .log_activity(format!("Paused due to conflict on {}", path));
-                            self.activity_log.push_simple(
-                                format!("S-{}", &session_id.to_string()[..8]),
-                                format!("Session paused (conflict policy) on {}", path),
-                                LogLevel::Warn,
-                            );
-                        }
-                    }
-                    ConflictPolicy::Kill => {
-                        if let Some(managed) = self.pool.get_active_mut(session_id) {
-                            let _ = managed.session.transition_to(
-                                SessionStatus::Killed,
-                                TransitionReason::ConflictPolicy,
-                            );
-                            managed
-                                .session
-                                .log_activity(format!("Killed due to conflict on {}", path));
-                            self.activity_log.push_simple(
-                                format!("S-{}", &session_id.to_string()[..8]),
-                                format!("Session killed (conflict policy) on {}", path),
-                                LogLevel::Error,
-                            );
-                        }
-                    }
-                }
-
-                self.pending_hooks.push(PendingHook {
-                    hook: HookPoint::FileConflict,
-                    ctx: HookContext::new()
-                        .with_session(&session_id.to_string(), None)
-                        .with_var("MAESTRO_CONFLICT_FILE", path)
-                        .with_var("MAESTRO_CONFLICT_OWNER", &owner.to_string())
-                        .with_var("MAESTRO_CONFLICT_POLICY", policy.label()),
-                });
-            }
-        }
+        // File claim processing for mutating tools (claim_conflicts.rs).
+        self.process_file_claim_event(session_id, &evt.event);
 
         // Sentinel detection
         if let StreamEvent::AssistantMessage { ref text } = evt.event
@@ -189,22 +97,30 @@ impl App {
                     // PR auto-detect (#327): scan each line of assistant
                     // output for a GitHub PR URL. On hit, queue
                     // `TuiCommand::PrCreated` which triggers /review.
+                    // Interactive sessions are exempt (#947): chat PRs go
+                    // through the /pushup marker path (#739, reworked in
+                    // Phase 4), not the one-shot auto-review trigger.
                     use crate::session::pr_capture::{GitHubPrUrlExtractor, PrUrlExtractor as _};
-                    let extractor = GitHubPrUrlExtractor::new();
-                    for line in text.lines() {
-                        if let Some(evt) = extractor.extract(line) {
-                            self.activity_log.push_simple(
-                                "PR".into(),
-                                format!("Detected PR #{}; triggering /review", evt.pr_number.0),
-                                LogLevel::Info,
-                            );
-                            self.pending_commands
-                                .push(crate::tui::app::TuiCommand::PrCreated {
-                                    pr_number: evt.pr_number.0,
-                                    owner: evt.owner,
-                                    repo: evt.repo,
-                                });
-                            break;
+                    if managed.session.session_mode
+                        != crate::session::types::SessionMode::Interactive
+                    {
+                        let extractor = GitHubPrUrlExtractor::new();
+                        for line in text.lines() {
+                            if let Some(evt) = extractor.extract(line) {
+                                self.activity_log.push_simple(
+                                    "PR".into(),
+                                    format!("Detected PR #{}; triggering /review", evt.pr_number.0),
+                                    LogLevel::Info,
+                                );
+                                self.pending_commands.push(
+                                    crate::tui::app::TuiCommand::PrCreated {
+                                        pr_number: evt.pr_number.0,
+                                        owner: evt.owner,
+                                        repo: evt.repo,
+                                    },
+                                );
+                                break;
+                            }
                         }
                     }
                 }
@@ -225,54 +141,64 @@ impl App {
                             LogLevel::Warn,
                         );
                     }
-                    let title = format_session_notify_title(
-                        "Session complete",
-                        managed.session.issue_number,
-                        &desktop_label,
-                    );
-                    let body = format!(
-                        "Cost ${:.2} — {} files changed",
-                        cost_usd,
-                        managed.session.files_touched.len()
-                    );
-                    self.desktop_notifier.notify(&title, &body);
-                    self.notifications
-                        .notify_slack(SlackEvent::SessionCompleted {
-                            session_id: managed.session.id.to_string(),
-                            issue_number: managed.session.issue_number,
-                            cost_usd: *cost_usd,
-                        });
-                    self.pending_hooks.push(PendingHook {
-                        hook: HookPoint::SessionCompleted,
-                        ctx: HookContext::new()
-                            .with_session(
-                                &managed.session.id.to_string(),
-                                managed.session.issue_number,
-                            )
-                            .with_cost(*cost_usd)
-                            .with_files(&managed.session.files_touched),
-                    });
-                    // Update prompt history outcome
-                    let outcome = if managed.session.is_hollow_completion {
-                        crate::state::prompt_history::PromptOutcome::Hollow
-                    } else {
-                        crate::state::prompt_history::PromptOutcome::Completed
-                    };
-                    self.prompt_history
-                        .update_outcome(managed.session.id, outcome);
-
-                    if let Some(issue_num) = managed.session.issue_number {
-                        self.pending_issue_completions
-                            .push(super::types::PendingIssueCompletion {
-                                issue_number: issue_num,
-                                issue_numbers: managed.session.issue_numbers.clone(),
-                                success: true,
+                    // Interactive settle (#947): the session stays alive
+                    // for follow-ups — no completion pipeline (gates /
+                    // auto-PR / teardown), no per-turn desktop/Slack/hook
+                    // noise. The chat transcript line comes from
+                    // forward_interactive_stream_event below.
+                    if managed.session.session_mode
+                        != crate::session::types::SessionMode::Interactive
+                    {
+                        let title = format_session_notify_title(
+                            "Session complete",
+                            managed.session.issue_number,
+                            &desktop_label,
+                        );
+                        let body = format!(
+                            "Cost ${:.2} — {} files changed",
+                            cost_usd,
+                            managed.session.files_touched.len()
+                        );
+                        self.desktop_notifier.notify(&title, &body);
+                        self.notifications
+                            .notify_slack(SlackEvent::SessionCompleted {
+                                session_id: managed.session.id.to_string(),
+                                issue_number: managed.session.issue_number,
                                 cost_usd: *cost_usd,
-                                files_touched: managed.session.files_touched.clone(),
-                                worktree_branch: managed.branch_name.clone(),
-                                worktree_path: managed.worktree_path.clone(),
-                                is_ci_fix: managed.session.ci_fix_context.is_some(),
                             });
+                        self.pending_hooks.push(PendingHook {
+                            hook: HookPoint::SessionCompleted,
+                            ctx: HookContext::new()
+                                .with_session(
+                                    &managed.session.id.to_string(),
+                                    managed.session.issue_number,
+                                )
+                                .with_cost(*cost_usd)
+                                .with_files(&managed.session.files_touched),
+                        });
+                        // Update prompt history outcome
+                        let outcome = if managed.session.is_hollow_completion {
+                            crate::state::prompt_history::PromptOutcome::Hollow
+                        } else {
+                            crate::state::prompt_history::PromptOutcome::Completed
+                        };
+                        self.prompt_history
+                            .update_outcome(managed.session.id, outcome);
+
+                        if let Some(issue_num) = managed.session.issue_number {
+                            self.pending_issue_completions.push(
+                                super::types::PendingIssueCompletion {
+                                    issue_number: issue_num,
+                                    issue_numbers: managed.session.issue_numbers.clone(),
+                                    success: true,
+                                    cost_usd: *cost_usd,
+                                    files_touched: managed.session.files_touched.clone(),
+                                    worktree_branch: managed.branch_name.clone(),
+                                    worktree_path: managed.worktree_path.clone(),
+                                    is_ci_fix: managed.session.ci_fix_context.is_some(),
+                                },
+                            );
+                        }
                     }
                 }
                 StreamEvent::Error { message } => {
@@ -282,33 +208,40 @@ impl App {
                         format!("ERROR: {}", message),
                         LogLevel::Error,
                     );
-                    self.prompt_history.update_outcome(
-                        managed.session.id,
-                        crate::state::prompt_history::PromptOutcome::Errored,
-                    );
-                    let title = format_session_notify_title(
-                        "Session errored",
-                        managed.session.issue_number,
-                        &desktop_label,
-                    );
-                    self.desktop_notifier.notify(&title, message);
-                    self.notifications.notify_slack(SlackEvent::SessionErrored {
-                        session_id: managed.session.id.to_string(),
-                        issue_number: managed.session.issue_number,
-                        error: message.clone(),
-                    });
-                    if let Some(issue_num) = managed.session.issue_number {
-                        self.pending_issue_completions
-                            .push(super::types::PendingIssueCompletion {
-                                issue_number: issue_num,
-                                issue_numbers: managed.session.issue_numbers.clone(),
-                                success: false,
-                                cost_usd: managed.session.cost_usd,
-                                files_touched: managed.session.files_touched.clone(),
-                                worktree_branch: managed.branch_name.clone(),
-                                worktree_path: managed.worktree_path.clone(),
-                                is_ci_fix: managed.session.ci_fix_context.is_some(),
-                            });
+                    // Interactive failure stays alive for discuss + retry
+                    // (#947, spec §4.3) — same exemption as Completed.
+                    if managed.session.session_mode
+                        != crate::session::types::SessionMode::Interactive
+                    {
+                        self.prompt_history.update_outcome(
+                            managed.session.id,
+                            crate::state::prompt_history::PromptOutcome::Errored,
+                        );
+                        let title = format_session_notify_title(
+                            "Session errored",
+                            managed.session.issue_number,
+                            &desktop_label,
+                        );
+                        self.desktop_notifier.notify(&title, message);
+                        self.notifications.notify_slack(SlackEvent::SessionErrored {
+                            session_id: managed.session.id.to_string(),
+                            issue_number: managed.session.issue_number,
+                            error: message.clone(),
+                        });
+                        if let Some(issue_num) = managed.session.issue_number {
+                            self.pending_issue_completions.push(
+                                super::types::PendingIssueCompletion {
+                                    issue_number: issue_num,
+                                    issue_numbers: managed.session.issue_numbers.clone(),
+                                    success: false,
+                                    cost_usd: managed.session.cost_usd,
+                                    files_touched: managed.session.files_touched.clone(),
+                                    worktree_branch: managed.branch_name.clone(),
+                                    worktree_path: managed.worktree_path.clone(),
+                                    is_ci_fix: managed.session.ci_fix_context.is_some(),
+                                },
+                            );
+                        }
                     }
                 }
                 StreamEvent::ContextUpdate { context_pct } => {
@@ -323,8 +256,11 @@ impl App {
                     // here keeps "WARNING [session_spawned]" out of the
                     // operator activity log where it would be misleading
                     // noise.
-                    if code == crate::session::manager::SESSION_SPAWNED_CODE {
+                    if code == crate::session::manager::SESSION_SPAWNED_CODE
+                        || code == crate::session::manager::SESSION_BOUND_CODE
+                    {
                         // no-op — already handled by managed.handle_event
+                        // (session_bound binds the resume id, #947)
                     } else {
                         // Surface every other Warning in the activity log so
                         // operators see them even before the structured
@@ -346,6 +282,11 @@ impl App {
                 _ => {}
             }
         }
+
+        // Interactive-mode sessions additionally feed the chat transcript:
+        // derive TurnEvents for the Interaction screen + persisted
+        // view-model (#947). No-op for one-shot sessions.
+        self.forward_interactive_stream_event(session_id, &evt.event);
 
         if matches!(evt.event, StreamEvent::ContextUpdate { .. }) {
             self.check_context_overflow(session_id);

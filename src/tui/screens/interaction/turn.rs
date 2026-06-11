@@ -6,8 +6,8 @@
 //! `TurnEvent`s from `send_turn` into the live transcript.
 
 use super::InteractionScreen;
+use crate::session::interaction::TurnEvent;
 use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
-use crate::session::interaction_turn::TurnEvent;
 use crate::tui::screens::ScreenAction;
 use chrono::Utc;
 use crossterm::event::KeyCode;
@@ -166,9 +166,9 @@ impl InteractionScreen {
             .filter(|t| t.role == TurnRole::Agent && t.finished_at.is_none())
     }
 
-    /// Content of the last agent turn — test seam for the live-turn integration.
+    /// Content of the last agent turn — test seam for the pipeline-turn
+    /// integration (#947, `interaction_pipeline_tests`).
     #[cfg(test)]
-    #[allow(dead_code)] // Reason: consumed by the bin-crate integration test interaction_turn_live
     pub(crate) fn last_agent_content(&self) -> String {
         self.history
             .iter()
@@ -176,14 +176,5 @@ impl InteractionScreen {
             .find(|t| t.role == TurnRole::Agent)
             .map(|t| t.content.clone())
             .unwrap_or_default()
-    }
-
-    /// True when the last turn is a `System` error turn — test seam (#738).
-    #[cfg(test)]
-    #[allow(dead_code)] // Reason: consumed by the bin-crate integration test interaction_turn_live
-    pub(crate) fn last_is_system_error(&self) -> bool {
-        self.history
-            .last()
-            .is_some_and(|t| t.role == TurnRole::System)
     }
 }

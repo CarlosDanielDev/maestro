@@ -100,6 +100,36 @@ fn app_dispatches_desktop_notification_on_session_error() {
 }
 
 #[test]
+fn session_bound_sentinel_is_suppressed_from_activity_log_and_binds_id() {
+    // #947: the session_bound lifecycle marker must bind the provider
+    // conversation id without surfacing as an operator-facing WARNING —
+    // same suppression contract as session_spawned (#803).
+    let mut app = make_test_app("session-bound-suppressed");
+    let session_id = promote_session(&mut app, session_with_issue(947));
+
+    app.handle_session_event(SessionEvent {
+        session_id,
+        event: StreamEvent::Warning {
+            code: crate::session::manager::SESSION_BOUND_CODE.to_string(),
+            message: "bound-id-947".to_string(),
+        },
+    });
+
+    let managed = app.pool.get_active_mut(session_id).expect("active session");
+    assert_eq!(
+        managed.session.agent_session_id.as_deref(),
+        Some("bound-id-947")
+    );
+    assert!(
+        !app.activity_log
+            .entries()
+            .iter()
+            .any(|e| e.message.contains("WARNING [session_bound]")),
+        "sentinel must not surface in the operator activity log"
+    );
+}
+
+#[test]
 fn tick_notify_error_logs_permission_denied_warning_then_drains() {
     let fake = FakeNotifier::new(true);
     fake.inject_error(NotifyError::PermissionDenied);

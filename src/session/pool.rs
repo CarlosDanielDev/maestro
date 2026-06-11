@@ -149,14 +149,6 @@ impl SessionPool {
         self.provider = provider;
     }
 
-    /// Handle to the configured default provider. Interaction turns run
-    /// through this so the transport selector (#750/#751) applies to chat —
-    /// and so the interactive transport's parked PTY children survive across
-    /// turns (the provider instance owns them).
-    pub fn provider(&self) -> Arc<dyn AgentProvider> {
-        Arc::clone(&self.provider)
-    }
-
     /// Set provider registry for per-session agent selection.
     pub fn set_agent_providers(&mut self, providers: HashMap<String, Arc<dyn AgentProvider>>) {
         self.agent_providers = providers;
@@ -444,17 +436,18 @@ impl SessionPool {
     }
 
     /// Mutable access to a managed session by issue number (active or finished).
+    /// Skips `SessionMode::Interactive` sessions (#947) — the one-shot
+    /// completion machinery (pr_retry, completion_pipeline, auto_pr) must
+    /// never grab a kept-alive chat session.
     pub fn find_by_issue_mut(&mut self, issue_number: u64) -> Option<&mut ManagedSession> {
-        if let Some(m) = self
-            .active
-            .iter_mut()
-            .find(|m| m.session.issue_number == Some(issue_number))
-        {
+        let is_match = |m: &&mut ManagedSession| {
+            m.session.issue_number == Some(issue_number)
+                && m.session.session_mode != crate::session::types::SessionMode::Interactive
+        };
+        if let Some(m) = self.active.iter_mut().find(is_match) {
             return Some(m);
         }
-        self.finished
-            .iter_mut()
-            .find(|m| m.session.issue_number == Some(issue_number))
+        self.finished.iter_mut().find(is_match)
     }
 
     /// Find the active (non-terminated) interaction session for an issue.
@@ -526,6 +519,57 @@ impl SessionPool {
         self.interactions
             .last()
             .expect("just pushed an interaction session")
+    }
+
+    /// Register the real pipeline session behind an interaction (#947): a
+    /// `SessionMode::Interactive` [`ManagedSession`] over the interaction's
+    /// existing worktree, driven by the pool's default provider (whose
+    /// parked PTY children survive across turns, #751). Idempotent per
+    /// issue — a second call returns the already-registered session id.
+    /// Returns `None` when no active interaction exists for the issue.
+    ///
+    /// Deliberate deviations from `try_promote`:
+    /// - bypasses `max_concurrent` — a user-driven chat must not queue
+    ///   behind batch sessions;
+    /// - no `system_prompt_appendix` — the appendix is embedded in the
+    ///   first-turn prompt by `build_interaction_launch_prompt` (#946).
+    pub fn ensure_interaction_pipeline_session(
+        &mut self,
+        issue_number: u64,
+        prompt: String,
+        model: String,
+        mode: String,
+    ) -> Option<Uuid> {
+        if let Some(existing) = self.interactive_pipeline_session_id(issue_number) {
+            return Some(existing);
+        }
+
+        let interaction = self.find_active_interaction_by_issue(issue_number)?;
+        let worktree_path = Some(interaction.worktree_path.clone());
+        let branch = Some(interaction.branch.clone());
+
+        let mut session = Session::new(prompt, model, mode, Some(issue_number), None);
+        session.session_mode = crate::session::types::SessionMode::Interactive;
+
+        let mut managed = ManagedSession::with_worktree(session, worktree_path, branch, None);
+        managed.set_provider(Arc::clone(&self.provider));
+        managed.permission_mode = Some(self.permission_mode.clone());
+        managed.allowed_tools = self.allowed_tools.clone();
+        let id = managed.session.id;
+        self.active.push(managed);
+        Some(id)
+    }
+
+    /// Id of the active Interactive-mode pipeline session for an issue
+    /// (#947), if one was registered.
+    pub fn interactive_pipeline_session_id(&self, issue_number: u64) -> Option<Uuid> {
+        self.active
+            .iter()
+            .find(|m| {
+                m.session.session_mode == crate::session::types::SessionMode::Interactive
+                    && m.session.issue_number == Some(issue_number)
+            })
+            .map(|m| m.session.id)
     }
 
     /// Clone the active interaction session for an issue. The clone is driven
@@ -769,6 +813,133 @@ mod tests {
             Some(appendix) => appendix,
             None => panic!("expected system prompt appendix"),
         }
+    }
+
+    // --- Issue #947: interaction pipeline session ---
+
+    #[test]
+    fn ensure_interaction_pipeline_session_registers_interactive_managed_session() {
+        let mut pool = make_pool(2);
+        pool.create_interaction_session(947, false);
+
+        let id = pool
+            .ensure_interaction_pipeline_session(
+                947,
+                "first prompt".to_string(),
+                "opus".to_string(),
+                "orchestrator".to_string(),
+            )
+            .expect("pipeline session registered");
+
+        let managed = must_get_active_mut(&mut pool, id);
+        assert_eq!(
+            managed.session.session_mode,
+            crate::session::types::SessionMode::Interactive
+        );
+        assert_eq!(managed.session.issue_number, Some(947));
+        assert_eq!(managed.session.prompt, "first prompt");
+        // Appendix is embedded in the first-turn prompt by
+        // build_interaction_launch_prompt (#946) — never set on the request.
+        assert!(managed.system_prompt_appendix.is_none());
+    }
+
+    #[test]
+    fn ensure_interaction_pipeline_session_is_idempotent_per_issue() {
+        let mut pool = make_pool(2);
+        pool.create_interaction_session(947, false);
+
+        let first = pool
+            .ensure_interaction_pipeline_session(
+                947,
+                "first".to_string(),
+                "opus".to_string(),
+                "orchestrator".to_string(),
+            )
+            .expect("registered");
+        let second = pool
+            .ensure_interaction_pipeline_session(
+                947,
+                "second".to_string(),
+                "opus".to_string(),
+                "orchestrator".to_string(),
+            )
+            .expect("same session");
+
+        assert_eq!(first, second);
+        assert_eq!(pool.active_count(), 1);
+    }
+
+    #[test]
+    fn ensure_interaction_pipeline_session_without_interaction_is_none() {
+        let mut pool = make_pool(2);
+        assert!(
+            pool.ensure_interaction_pipeline_session(
+                947,
+                "p".to_string(),
+                "opus".to_string(),
+                "orchestrator".to_string(),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn ensure_interaction_pipeline_session_reuses_interaction_worktree() {
+        let mut pool = make_pool(2);
+        let wt = pool
+            .create_interaction_session(947, false)
+            .worktree_path
+            .clone();
+
+        let id = pool
+            .ensure_interaction_pipeline_session(
+                947,
+                "p".to_string(),
+                "opus".to_string(),
+                "orchestrator".to_string(),
+            )
+            .expect("registered");
+
+        let managed = must_get_active_mut(&mut pool, id);
+        assert_eq!(managed.worktree_path.as_deref(), Some(wt.as_path()));
+    }
+
+    #[test]
+    fn ensure_interaction_pipeline_session_bypasses_capacity_cap() {
+        // A user-driven chat must not queue behind batch sessions.
+        let mut pool = make_pool(1);
+        pool.enqueue(make_session("batch"));
+        pool.try_promote();
+        assert_eq!(pool.active_count(), 1);
+
+        pool.create_interaction_session(947, false);
+        assert!(
+            pool.ensure_interaction_pipeline_session(
+                947,
+                "p".to_string(),
+                "opus".to_string(),
+                "orchestrator".to_string(),
+            )
+            .is_some()
+        );
+        assert_eq!(pool.active_count(), 2);
+    }
+
+    #[test]
+    fn find_by_issue_mut_skips_interactive_sessions() {
+        // One-shot completion machinery (pr_retry, completion_pipeline,
+        // auto_pr) must never grab a kept-alive chat session.
+        let mut pool = make_pool(2);
+        pool.create_interaction_session(947, false);
+        pool.ensure_interaction_pipeline_session(
+            947,
+            "p".to_string(),
+            "opus".to_string(),
+            "orchestrator".to_string(),
+        )
+        .expect("registered");
+
+        assert!(pool.find_by_issue_mut(947).is_none());
     }
 
     // --- Issue #734: interaction session registry ---

@@ -245,13 +245,6 @@ impl InteractionScreen {
         self.history.len()
     }
 
-    /// Current lifecycle state — test seam for the live-turn integration (#738).
-    #[cfg(test)]
-    #[allow(dead_code)] // Reason: consumed by the bin-crate integration test interaction_turn_live
-    pub(crate) fn history_state(&self) -> InteractionState {
-        self.state
-    }
-
     #[cfg(test)]
     fn scroll_down_for_test(&mut self, n: usize) {
         self.scroll_down(n);

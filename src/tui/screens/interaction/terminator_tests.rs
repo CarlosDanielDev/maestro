@@ -9,9 +9,9 @@
 
 use super::InteractionScreen;
 use super::lifecycle::{FakeClock, MockTeardown, WorktreeTeardownPort};
+use crate::session::interaction::TurnEvent;
 use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
 use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
-use crate::session::interaction_turn::TurnEvent;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::ScreenAction;
 use crate::work::worktree_teardown::TeardownError;

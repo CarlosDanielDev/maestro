@@ -223,7 +223,7 @@ pub fn sanitize_token_count(raw: u64) -> u64 {
     raw.min(TOKEN_COUNT_CAP)
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -297,6 +297,17 @@ pub struct Session {
     pub issue_numbers: Vec<u64>,
     pub model: String,
     pub mode: String,
+    /// How this session is driven (#947): one-shot run vs. kept-alive
+    /// interactive conversation. `serde(default)` (= `OneShot`) so
+    /// pre-#947 state files load unchanged. Distinct from `mode`, which
+    /// is the agent mode label (orchestrator / vibe).
+    #[serde(default)]
+    pub session_mode: SessionMode,
+    /// Provider-side conversation id (#947) — the id `--resume <id>`
+    /// takes. Bound once from the first run result via
+    /// [`Session::bind_agent_session_id`]; never set directly.
+    #[serde(default)]
+    pub agent_session_id: Option<String>,
     /// Configured agent id selected when this session was created.
     #[serde(default)]
     pub agent_id: Option<String>,
@@ -473,6 +484,8 @@ impl Session {
             issue_numbers: Vec::new(),
             model,
             mode,
+            session_mode: SessionMode::default(),
+            agent_session_id: None,
             agent_id: None,
             mode_config: None,
             started_at: None,
@@ -519,6 +532,20 @@ impl Session {
     /// Mirrors the activity-log cap but ×5 because one prompt can produce
     /// many tool calls and tool results (#868).
     pub const CALL_LOG_CAP: usize = 500;
+
+    /// Bind the provider-side conversation id (#947). The id is later
+    /// reused verbatim as a `--resume <id>` argv operand, so it must pass
+    /// the [`super::parser::is_valid_session_id`] allowlist (#751 security
+    /// review). First bound id wins — later binds are ignored so a
+    /// follow-up turn can never silently rebind the conversation.
+    /// Returns `true` when the id was stored.
+    pub fn bind_agent_session_id(&mut self, id: &str) -> bool {
+        if self.agent_session_id.is_some() || !super::parser::is_valid_session_id(id) {
+            return false;
+        }
+        self.agent_session_id = Some(id.to_string());
+        true
+    }
 
     /// Append a stream event to the persisted call log. Drops
     /// [`StreamEvent::Unknown`] (parse failure noise) and drains the oldest
@@ -979,6 +1006,66 @@ mod tests {
     #[test]
     fn session_mode_from_true_is_interactive() {
         assert_eq!(SessionMode::from(true), SessionMode::Interactive);
+    }
+
+    // --- Issue #947: Session.session_mode field + agent_session_id bind ---
+
+    fn make_947_session() -> Session {
+        Session::new(
+            "prompt".to_string(),
+            "claude-sonnet-4-6".to_string(),
+            "orchestrator".to_string(),
+            Some(947),
+            None,
+        )
+    }
+
+    #[test]
+    fn session_mode_field_defaults_to_one_shot() {
+        assert_eq!(make_947_session().session_mode, SessionMode::OneShot);
+    }
+
+    #[test]
+    fn session_mode_field_deserializes_missing_as_one_shot() {
+        // Pre-#947 state files carry no `session_mode` key.
+        let mut json = serde_json::to_value(make_947_session()).unwrap();
+        json.as_object_mut().unwrap().remove("session_mode");
+        let s: Session = serde_json::from_value(json).unwrap();
+        assert_eq!(s.session_mode, SessionMode::OneShot);
+    }
+
+    #[test]
+    fn agent_session_id_defaults_to_none() {
+        assert!(make_947_session().agent_session_id.is_none());
+    }
+
+    #[test]
+    fn bind_agent_session_id_accepts_valid_id() {
+        let mut s = make_947_session();
+        assert!(s.bind_agent_session_id("abc123-DEF_456"));
+        assert_eq!(s.agent_session_id.as_deref(), Some("abc123-DEF_456"));
+    }
+
+    #[test]
+    fn bind_agent_session_id_rejects_shell_metacharacters() {
+        let mut s = make_947_session();
+        assert!(!s.bind_agent_session_id("$(rm -rf /)"));
+        assert!(s.agent_session_id.is_none());
+    }
+
+    #[test]
+    fn bind_agent_session_id_rejects_flag_shaped_id() {
+        let mut s = make_947_session();
+        assert!(!s.bind_agent_session_id("--resume-injection"));
+        assert!(s.agent_session_id.is_none());
+    }
+
+    #[test]
+    fn bind_agent_session_id_first_bind_wins() {
+        let mut s = make_947_session();
+        assert!(s.bind_agent_session_id("first-id"));
+        assert!(!s.bind_agent_session_id("second-id"));
+        assert_eq!(s.agent_session_id.as_deref(), Some("first-id"));
     }
 
     #[test]

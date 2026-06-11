@@ -21,6 +21,15 @@ use tokio_util::sync::CancellationToken;
 /// special-cases it before the generic Warning path runs.
 pub const SESSION_SPAWNED_CODE: &str = "session_spawned";
 
+/// Sentinel `StreamEvent::Warning.code` carrying the provider-side
+/// conversation id (`AgentRunResult.session_id`) back to the main event
+/// loop once a run returns (#947). The id rides in `message` and is bound
+/// via [`Session::bind_agent_session_id`], which enforces the
+/// `is_valid_session_id` allowlist before the id can ever reach a
+/// `--resume` argv. Same lifecycle-marker rules as [`SESSION_SPAWNED_CODE`]:
+/// never surface it as an operator-facing warning.
+pub const SESSION_BOUND_CODE: &str = "session_bound";
+
 /// Events sent from a session back to the coordinator/TUI.
 #[derive(Debug, Clone)]
 pub struct SessionEvent {
@@ -136,6 +145,50 @@ impl ManagedSession {
         self.session.started_at = Some(Utc::now());
 
         let request = self.build_request();
+        self.spawn_provider_tasks(request, tx)
+    }
+
+    /// Build the request for a follow-up turn on the bound conversation
+    /// (#947): same builder as [`Self::build_request`] minus the
+    /// system-prompt appendix (already part of the resumed conversation's
+    /// first turn, #946) and first-turn images, plus
+    /// `resume_session_id`. A session with no bound id degrades to a
+    /// fresh conversation — same semantics the retired
+    /// `interaction_turn` loop had.
+    fn build_followup_request(&self, prompt: &str) -> AgentRequest {
+        let mut request = AgentRequest::stream_json(prompt.to_string(), self.session.model.clone());
+        request.cwd.clone_from(&self.worktree_path);
+        request.permission_mode.clone_from(&self.permission_mode);
+        request.allowed_tools.clone_from(&self.allowed_tools);
+        request.resume_session_id = self.session.agent_session_id.clone();
+        request
+    }
+
+    /// Run one follow-up turn through the normal pipeline (#947):
+    /// `claude --resume <id>` (or the provider's parked PTY child) with
+    /// events streaming through the same [`SessionEvent`] channel —
+    /// telemetry lands on this [`Session`] exactly like a one-shot turn.
+    ///
+    /// Deliberately NO status transition: the session keeps its settled
+    /// one-shot status (`Completed`/`FailedGates`/…) until #948 adds the
+    /// kept-alive `Interactive` status.
+    pub fn send_followup_turn(
+        &mut self,
+        prompt: String,
+        tx: mpsc::UnboundedSender<SessionEvent>,
+    ) -> Result<()> {
+        let request = self.build_followup_request(&prompt);
+        self.spawn_provider_tasks(request, tx)
+    }
+
+    /// Shared engine for [`Self::spawn`] and [`Self::send_followup_turn`]:
+    /// kick off the provider task plus the event-forwarding task, wire the
+    /// cancel token, and return immediately.
+    fn spawn_provider_tasks(
+        &mut self,
+        request: AgentRequest,
+        tx: mpsc::UnboundedSender<SessionEvent>,
+    ) -> Result<()> {
         let provider = Arc::clone(&self.provider);
         let provider_id = provider.id().to_string();
         let cancel = CancellationToken::new();
@@ -144,13 +197,26 @@ impl ManagedSession {
         let session_id = self.session.id;
 
         tokio::spawn(async move {
-            if let Err(err) = provider.run(request, provider_tx.clone(), cancel).await {
-                if matches!(err, AgentError::Cancelled { .. }) {
-                    return;
+            match provider.run(request, provider_tx.clone(), cancel).await {
+                Ok(result) => {
+                    // Forward the provider-side conversation id so the main
+                    // loop can bind it for `--resume` follow-ups (#947).
+                    if let Some(id) = result.session_id {
+                        let _ =
+                            provider_tx.send(AgentProviderEvent::Stream(StreamEvent::Warning {
+                                code: SESSION_BOUND_CODE.to_string(),
+                                message: id,
+                            }));
+                    }
                 }
-                let _ = provider_tx.send(AgentProviderEvent::Stream(StreamEvent::Error {
-                    message: err.to_string(),
-                }));
+                Err(err) => {
+                    if matches!(err, AgentError::Cancelled { .. }) {
+                        return;
+                    }
+                    let _ = provider_tx.send(AgentProviderEvent::Stream(StreamEvent::Error {
+                        message: err.to_string(),
+                    }));
+                }
             }
         });
 
@@ -358,6 +424,13 @@ impl ManagedSession {
                 self.session.current_activity = "Error".into();
                 self.session.log_activity(format!("Error: {}", message));
             }
+            StreamEvent::Warning { code, message } if code == SESSION_BOUND_CODE => {
+                // Bind the provider conversation id (#947). Validation +
+                // first-bind-wins live in `bind_agent_session_id`; a rejected
+                // id is intentionally silent here (logged nowhere the agent
+                // controls) — the next turn simply re-inits context.
+                let _ = self.session.bind_agent_session_id(message);
+            }
             StreamEvent::Warning { code, message } if code == SESSION_SPAWNED_CODE => {
                 // Non-blocking spawn handshake (see `spawn` docs): translate
                 // the synthetic Spawned marker into the Spawning → Running
@@ -446,6 +519,8 @@ mod tests {
             issue_number: None,
             issue_numbers: vec![],
             mode: "print".to_string(),
+            session_mode: crate::session::types::SessionMode::default(),
+            agent_session_id: None,
             agent_id: None,
             mode_config: None,
             started_at: None,
@@ -487,6 +562,167 @@ mod tests {
             hollow_dismissed: false,
         };
         ManagedSession::new(session)
+    }
+
+    // --- Issue #947: SESSION_BOUND sentinel binds the provider session id ---
+
+    #[test]
+    fn handle_event_session_bound_binds_agent_session_id() {
+        let mut ms = make_managed("p");
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "abc-123".to_string(),
+        });
+        assert_eq!(ms.session.agent_session_id.as_deref(), Some("abc-123"));
+    }
+
+    #[test]
+    fn handle_event_session_bound_rejects_hostile_id() {
+        let mut ms = make_managed("p");
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "$(rm -rf /)".to_string(),
+        });
+        assert!(ms.session.agent_session_id.is_none());
+    }
+
+    #[test]
+    fn handle_event_session_bound_does_not_log_warning_noise() {
+        // Lifecycle marker, not operator-facing — mirrors SESSION_SPAWNED.
+        let mut ms = make_managed("p");
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "abc-123".to_string(),
+        });
+        assert!(
+            !ms.session
+                .activity_log
+                .iter()
+                .any(|e| e.message.contains("WARNING")),
+            "sentinel must not surface as a WARNING activity line"
+        );
+    }
+
+    #[tokio::test]
+    async fn spawn_forwards_run_result_session_id_as_session_bound_sentinel() {
+        use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
+
+        let mut ms = make_managed("p");
+        ms.set_provider(Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+            events: vec![],
+            end: ScriptedEnd::Ok {
+                exit_code: Some(0),
+                session_id: Some("bound-id-1"),
+            },
+        }])));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        ms.spawn(tx).await.expect("spawn returns immediately");
+
+        let mut bound = None;
+        while let Some(evt) = rx.recv().await {
+            if let StreamEvent::Warning { code, message } = &evt.event
+                && code == SESSION_BOUND_CODE
+            {
+                bound = Some(message.clone());
+            }
+        }
+        assert_eq!(bound.as_deref(), Some("bound-id-1"));
+    }
+
+    // --- Issue #947: follow-up turns through the normal pipeline ---
+
+    #[test]
+    fn followup_request_carries_resume_id_and_no_appendix() {
+        let mut ms = make_managed("first prompt");
+        ms.system_prompt_appendix = Some("guardrails".to_string());
+        ms.permission_mode = Some("bypassPermissions".to_string());
+        assert!(ms.session.bind_agent_session_id("conv-1"));
+
+        let req = ms.build_followup_request("follow-up prompt");
+
+        assert_eq!(req.prompt, "follow-up prompt");
+        assert_eq!(req.resume_session_id.as_deref(), Some("conv-1"));
+        // Appendix already lives in the resumed conversation's first turn
+        // (#946) — re-sending would duplicate it.
+        assert!(req.system_prompt_appendix.is_none());
+        assert_eq!(req.permission_mode.as_deref(), Some("bypassPermissions"));
+    }
+
+    #[test]
+    fn followup_request_without_bound_id_degrades_to_fresh_conversation() {
+        let ms = make_managed("first prompt");
+        let req = ms.build_followup_request("follow-up");
+        assert!(req.resume_session_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn send_followup_turn_resumes_and_streams_through_session_events() {
+        use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
+
+        let mut ms = make_managed("first prompt");
+        assert!(ms.session.bind_agent_session_id("conv-2"));
+        let provider = Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+            events: vec![StreamEvent::AssistantMessage {
+                text: "follow-up answer".to_string(),
+            }],
+            end: ScriptedEnd::Ok {
+                exit_code: Some(0),
+                session_id: Some("conv-2"),
+            },
+        }]));
+        ms.set_provider(provider.clone());
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        ms.send_followup_turn("what about edge cases?".to_string(), tx)
+            .expect("follow-up dispatch");
+
+        let mut saw_answer = false;
+        while let Some(evt) = rx.recv().await {
+            if matches!(
+                &evt.event,
+                StreamEvent::AssistantMessage { text } if text == "follow-up answer"
+            ) {
+                saw_answer = true;
+            }
+        }
+        assert!(saw_answer, "assistant text must flow through SessionEvents");
+        let requests = provider.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].resume_session_id.as_deref(), Some("conv-2"));
+    }
+
+    #[tokio::test]
+    async fn send_followup_turn_does_not_change_session_status() {
+        use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
+        use crate::session::transition::TransitionReason;
+
+        let mut ms = make_managed("first prompt");
+        // Drive the one-shot machine to its settled status.
+        ms.session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        ms.session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        ms.session
+            .transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+
+        ms.set_provider(Arc::new(ScriptedProvider::new(vec![ScriptedTurn {
+            events: vec![],
+            end: ScriptedEnd::Ok {
+                exit_code: Some(0),
+                session_id: None,
+            },
+        }])));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        ms.send_followup_turn("retry the gates".to_string(), tx)
+            .expect("follow-up dispatch");
+        while rx.recv().await.is_some() {}
+
+        // No Spawning transition — Completed → Spawning is illegal and the
+        // kept-alive status only arrives with #948.
+        assert_eq!(ms.session.status, SessionStatus::Completed);
     }
 
     #[test]
