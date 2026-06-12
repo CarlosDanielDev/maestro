@@ -49,7 +49,7 @@ fn fold_ingest_into_prd(prd_slot: &mut Option<Prd>, sync: &PrdSyncResult) -> Opt
 
 impl App {
     /// Resolve model and mode from config and issue labels.
-    fn resolve_model_and_mode(
+    pub(crate) fn resolve_model_and_mode(
         &self,
         labels: &[String],
         agent_id: Option<&str>,
@@ -742,9 +742,6 @@ impl App {
                         self.activity_log.emit_interaction(&activity);
                     }
                 }
-            }
-            TuiDataEvent::InteractionTurnComplete { session } => {
-                self.pool.upsert_interaction(*session);
             }
             TuiDataEvent::InteractionIssueFetched {
                 issue_number,

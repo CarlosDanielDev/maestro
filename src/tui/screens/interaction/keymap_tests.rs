@@ -2,10 +2,10 @@
 //! event application (#738). Split from `tests.rs` for the file-size budget.
 
 use super::*;
+use crate::session::interaction::TurnEvent;
 use crate::session::interaction::{
     CloseReason, InteractionSession, InteractionState, TurnRecord, TurnRole,
 };
-use crate::session::interaction_turn::TurnEvent;
 use crate::tui::navigation::keymap::KeymapProvider;
 use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
 use chrono::{DateTime, TimeZone, Utc};

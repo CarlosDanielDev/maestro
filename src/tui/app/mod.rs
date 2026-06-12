@@ -3,6 +3,7 @@ mod budget;
 mod bypass;
 mod ci_error_review;
 mod ci_polling;
+mod claim_conflicts;
 pub(crate) mod clipboard_action;
 mod completion_git;
 mod completion_pipeline;
@@ -12,6 +13,13 @@ pub(crate) mod data_handler;
 mod event_handler;
 mod gate_retry;
 pub(crate) mod helpers;
+mod interaction_pipeline;
+#[cfg(test)]
+#[path = "interaction_pipeline_guard_tests.rs"]
+mod interaction_pipeline_guard_tests;
+#[cfg(test)]
+#[path = "interaction_pipeline_tests.rs"]
+mod interaction_pipeline_tests;
 mod issue_completion;
 mod plugins;
 mod pr_retry;

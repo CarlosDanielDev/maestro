@@ -770,46 +770,12 @@ async fn event_loop(
                     prompt,
                     model,
                 } => {
-                    // Drive the turn on a clone of the pool's session; stream
-                    // events back to the live screen, then hand the mutated
-                    // clone back so the pool can persist session_id/history.
-                    let Some(mut session) = app.pool.clone_active_interaction(issue_number) else {
-                        tracing::warn!(
-                            "SendInteractionTurn for #{issue_number} with no active session"
-                        );
-                        continue;
-                    };
-                    let tx = app.data_tx.clone();
-                    // The pool's configured provider carries the transport
-                    // selector (#750) and owns any parked interactive PTY
-                    // children across turns (#751).
-                    let provider = app.pool.provider();
-                    tokio::spawn(async move {
-                        use tokio_util::sync::CancellationToken;
-
-                        let (events_tx, mut events_rx) = tokio::sync::mpsc::channel(64);
-                        let forward_tx = tx.clone();
-                        let forwarder = tokio::spawn(async move {
-                            while let Some(event) = events_rx.recv().await {
-                                let _ = forward_tx.send(app::TuiDataEvent::InteractionTurnEvent {
-                                    issue_number,
-                                    event,
-                                });
-                            }
-                        });
-
-                        let cancel = CancellationToken::new();
-                        if let Err(e) = session
-                            .send_turn(prompt, &model, provider, events_tx, cancel)
-                            .await
-                        {
-                            tracing::warn!("interaction turn for #{issue_number} failed: {e}");
-                        }
-                        let _ = forwarder.await;
-                        let _ = tx.send(app::TuiDataEvent::InteractionTurnComplete {
-                            session: Box::new(session),
-                        });
-                    });
+                    // Route the turn through the normal session pipeline
+                    // (#947): first turn spawns the Interactive-mode
+                    // session, follow-ups resume the bound conversation.
+                    // Events flow back via the pool's SessionEvent channel.
+                    app.dispatch_interaction_turn(issue_number, prompt, model)
+                        .await;
                 }
             }
         }

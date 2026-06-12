@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Changed
+- Interactive turns now run through the normal session pipeline (Phase 2 of the unified-interactive-sessions design, #947): the first turn spawns a real `SessionMode::Interactive` session in the pool and follow-ups resume the bound conversation (`--resume <agent_session_id>`, allowlist-validated), so every turn records the same call-log/cost/token telemetry as a one-shot turn. New `Session.agent_session_id` + `session_bound` lifecycle sentinel capture the provider conversation id for all sessions; the `interaction_turn.rs` bare-spawn loop is removed and `TurnEvent` moved to `session/interaction.rs`. Interactive sessions are exempt from the one-shot completion machinery (gates/auto-PR/teardown, per-turn desktop/Slack noise, #327 PR auto-detect) pending the kept-alive `Interactive` status in Phase 3 (#948).
 - Interaction worktree teardown now runs off the UI thread (`spawn_blocking`); the screen shows a "wiping worktree…" banner while git runs and applies the result asynchronously — a wedged git no longer freezes the TUI (#941).
 
 ## [0.29.5] - 2026-05-29

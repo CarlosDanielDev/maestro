@@ -228,7 +228,7 @@ fn jump_to_latest_pins_to_bottom() {
 fn streaming_chunk_while_scrolled_up_does_not_yank_the_view() {
     // #988: the user scrolled up to read history; a streaming chunk arriving
     // must not reset auto_scroll or move scroll_offset (no yank to the tail).
-    use crate::session::interaction_turn::TurnEvent;
+    use crate::session::interaction::TurnEvent;
     let mut s = InteractionScreen::with_history(three_turn_fixture());
     // Begin an agent turn, then scroll up away from the tail.
     let at = fixed_t0();

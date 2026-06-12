@@ -52,6 +52,18 @@ pub struct TurnRecord {
     pub finished_at: Option<DateTime<Utc>>,
 }
 
+/// Streaming events consumed by the Interaction screen (#738) as a turn
+/// runs. Since #947 these are derived from the pipeline session's
+/// `StreamEvent`s (`App::forward_interactive_stream_event`); before that
+/// they were emitted by the retired `interaction_turn` bare-spawn loop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnEvent {
+    TurnStarted { role: TurnRole, at: DateTime<Utc> },
+    Chunk(String),
+    TurnFinished { at: DateTime<Utc> },
+    Error(String),
+}
+
 /// Persisted state for one interactive session attached to an issue.
 /// Scaffold only (#734): #736 renders it, #737 drives turns.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
