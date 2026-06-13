@@ -1257,16 +1257,25 @@ mod handle_screen_action_tests {
         );
     }
 
-    #[test]
-    fn launch_interaction_after_quit_creates_new_session() {
+    #[tokio::test]
+    async fn launch_interaction_after_quit_creates_new_session() {
+        // tokio: the #949 quit path parks the worktree wipe for
+        // spawn_blocking; the dispatch itself needs a live runtime.
         let mut app = make_app();
         handle_screen_action(
             &mut app,
             ScreenAction::LaunchSession(interaction_config(10, false)),
         );
         handle_screen_action(&mut app, ScreenAction::QuitInteraction { issue_number: 10 });
-        assert_eq!(app.tui_mode, app::TuiMode::IssueBrowser);
-        assert!(app.screen_state.interaction_screen.is_none());
+        // #949: the session terminates immediately; the screen waits for the
+        // wipe result (banner) and auto-navigates afterwards — emulate the
+        // app loop's Pop here.
+        assert!(
+            app.pool.interactive_managed(10).is_none(),
+            "quit must terminate the session"
+        );
+        handle_screen_action(&mut app, ScreenAction::Pop);
+        app.screen_state.interaction_screen = None;
 
         handle_screen_action(
             &mut app,

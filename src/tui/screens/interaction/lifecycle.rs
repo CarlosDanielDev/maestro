@@ -1,18 +1,14 @@
-//! Terminator UI flow for the Interaction screen (#741, async teardown #941).
+//! Quit + PR-linked lifecycle for the Interaction screen (#949, async
+//! teardown #941).
 //!
-//! Bridges #739's `InteractionLifecycleEvent::PrLinkedToIssue` to #740's
-//! `wipe_worktree`: appends `System` turns announcing the close, dispatches
-//! the worktree teardown OFF the UI thread, applies the result when it comes
-//! back, sets the terminal `close_reason`, and arms a 500ms auto-navigation
-//! timer.
-//!
-//! The flow is split in two (#941) so blocking `git` never runs on the UI
-//! thread:
-//! 1. the terminator path appends the opening `System` turn, flips the
-//!    in-flight flag, and parks a [`TeardownDispatch`] for the app layer;
-//! 2. the app runs the wipe under `tokio::task::spawn_blocking` and delivers
-//!    the outcome back as `TuiDataEvent::InteractionTeardownResult`, which
-//!    lands in [`InteractionScreen::apply_teardown_result`].
+//! Since #949 (spec §4.4) a `/pushup` PR no longer closes the session:
+//! [`InteractionScreen::on_pr_linked`] posts a `System` turn and the chat
+//! stays open. The destructive worktree wipe (#740) runs ONLY on explicit
+//! quit: [`InteractionScreen::begin_quit_teardown`] parks a
+//! [`TeardownDispatch`] for the app layer, the wipe runs under
+//! `tokio::task::spawn_blocking` (#941), and the outcome lands in
+//! [`InteractionScreen::apply_teardown_result`], which terminates the view
+//! and arms the 500ms auto-navigation timer.
 //!
 //! Two seams keep the flow testable without git or wall-clock sleeps:
 //! [`WorktreeTeardownPort`] (over `wipe_worktree`) and [`Clock`] (over
@@ -22,7 +18,6 @@
 use super::InteractionScreen;
 use super::view_state::{CloseReason, InteractionState};
 use crate::session::interaction::{TurnRecord, TurnRole};
-use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
 use crate::tui::screens::ScreenAction;
 use crate::work::worktree_teardown::{TeardownError, wipe_worktree};
 use chrono::Utc;
@@ -88,86 +83,53 @@ impl Clock for RealClock {
 }
 
 impl InteractionScreen {
-    /// Handle a terminator signal for this session.
-    ///
-    /// - `Idle`: fire now (append turns, run teardown, terminate).
-    /// - `Streaming`: queue it; [`Self::drain_queued_terminator`] fires it once
-    ///   the in-flight turn settles back to `Idle`.
-    /// - `Terminated`: the session was already closed. If the user pre-closed
-    ///   via `Ctrl+W`, log that teardown is skipped (#741 race contract);
-    ///   otherwise it is an idempotent no-op.
-    ///
-    /// Returns the `TEARDOWN` (or skip) activity-log action for the caller to
-    /// surface. The opening `INTERACTION closing` line is emitted at the
-    /// dispatch site.
-    pub(crate) fn on_terminator_signaled(
-        &mut self,
-        event: InteractionLifecycleEvent,
-    ) -> Option<ScreenAction> {
-        match self.state {
-            InteractionState::Terminated => {
-                if matches!(self.close_reason, Some(CloseReason::UserQuit)) {
-                    return Some(super::activity_action(
-                        &crate::work::activity::InteractionActivity::TeardownSkipped {
-                            issue: self.issue_number,
-                            why: "session pre-closed by user".to_string(),
-                        },
-                    ));
-                }
-                None
-            }
-            InteractionState::Streaming => {
-                self.queued_terminator = Some(event);
-                None
-            }
-            InteractionState::Idle => Some(self.fire_terminator(event)),
-        }
+    /// A `/pushup` PR was linked to this issue (#949, spec §4.4): announce
+    /// it in a `System` turn and keep the session open. No wipe, no
+    /// navigation, no state change. Returns the activity-log action.
+    pub(crate) fn on_pr_linked(&mut self, pr_number: u64) -> ScreenAction {
+        self.push_system_now(format!(
+            "PR #{pr_number} created — session stays open (Ctrl+W to quit)"
+        ));
+        super::activity_action(&crate::work::activity::InteractionActivity::PrLinked {
+            issue: self.issue_number,
+            pr_number,
+        })
     }
 
-    /// Fire a terminator that was deferred during `Streaming`. Called from the
-    /// `TurnFinished` arm once the turn settles to `Idle`. Returns the teardown
-    /// activity-log action, or `None` when nothing was queued.
-    pub(crate) fn drain_queued_terminator(&mut self) -> Option<ScreenAction> {
-        let event = self.queued_terminator.take()?;
-        Some(self.fire_terminator(event))
-    }
-
-    /// Start the teardown flow: announce and either finish synchronously (the
-    /// no-worktree skip path — no git involved) or park a
-    /// [`TeardownDispatch`] for the app layer and enter the in-flight state
-    /// (#941). The blocking wipe itself never runs here.
-    fn fire_terminator(&mut self, event: InteractionLifecycleEvent) -> ScreenAction {
-        let InteractionLifecycleEvent::PrLinkedToIssue { pr_number, .. } = event;
-
+    /// Start the quit teardown (#949): announce, then either finish
+    /// synchronously (the no-worktree skip path — no git involved) or park
+    /// a [`TeardownDispatch`] for the app layer and enter the in-flight
+    /// state (#941). The blocking wipe itself never runs here;
+    /// `Terminated(UserQuit)` lands in [`Self::apply_teardown_result`].
+    pub(crate) fn begin_quit_teardown(&mut self) -> ScreenAction {
         // No trusted worktree root (cwd fallback in pool.rs) → there is no
         // isolated worktree to remove, and running the destructive teardown
-        // with an untrusted root could target the main repo (#741 sec). Close
-        // the session without wiping — nothing blocking, so finish inline.
+        // with an untrusted root could target the main repo (#741 sec).
+        // Close the session without wiping — nothing blocking, finish inline.
         if self.worktree_root.as_os_str().is_empty() {
-            self.push_system_now(format!(
-                "PR #{pr_number} created → finishing session (no isolated worktree to remove)"
-            ));
+            self.push_system_now("quitting — no isolated worktree to remove".to_string());
             let log = super::activity_action(
                 &crate::work::activity::InteractionActivity::TeardownSkipped {
                     issue: self.issue_number,
                     why: "no isolated worktree".to_string(),
                 },
             );
-            return self.finalize_terminated(CloseReason::PrCreated { pr_number }, log);
+            return self.finalize_terminated(CloseReason::UserQuit, log);
         }
 
         self.push_system_now(format!(
-            "PR #{pr_number} created → finishing session and wiping worktree…"
+            "quitting — wiping worktree {}…",
+            self.worktree_path.display()
         ));
-        self.teardown_pr_in_flight = Some(pr_number);
+        self.teardown_in_flight = true;
         self.pending_teardown_dispatch = Some(TeardownDispatch {
             issue_number: self.issue_number,
             path: self.worktree_path.clone(),
             branch: self.branch.clone(),
             root: self.worktree_root.clone(),
         });
-        // The TEARDOWN log line comes with the async result; the dispatch site
-        // already logs the opening "INTERACTION closing" line.
+        // The TEARDOWN log line comes with the async result; the dispatch
+        // site already logs the opening "INTERACTION closing" line.
         ScreenAction::None
     }
 
@@ -179,21 +141,22 @@ impl InteractionScreen {
     }
 
     /// True while a dispatched teardown has not resolved yet. Drives the
-    /// "wiping worktree…" banner so the wait is visible, not a frozen frame.
+    /// "wiping worktree…" banner so the wait is visible, not a frozen
+    /// frame, and locks the input so no turn can race the wipe (#949).
     pub(crate) fn is_teardown_in_flight(&self) -> bool {
-        self.teardown_pr_in_flight.is_some()
+        self.teardown_in_flight
     }
 
     /// Apply the async teardown outcome delivered by
     /// `TuiDataEvent::InteractionTeardownResult` (#941): append the
     /// success/failure `System` turn, set `close_reason`, terminate, and arm
-    /// the auto-nav timer — the same end state the old synchronous path
-    /// produced. Returns `ScreenAction::None` when no teardown was in flight
-    /// (stale event).
+    /// the auto-nav timer. Returns `ScreenAction::None` when no teardown was
+    /// in flight (stale event).
     pub(crate) fn apply_teardown_result(&mut self, result: Result<(), String>) -> ScreenAction {
-        let Some(pr_number) = self.teardown_pr_in_flight.take() else {
+        if !self.teardown_in_flight {
             return ScreenAction::None;
-        };
+        }
+        self.teardown_in_flight = false;
 
         match result {
             Ok(()) => {
@@ -208,7 +171,7 @@ impl InteractionScreen {
                         path: self.worktree_path.clone(),
                     },
                 );
-                self.finalize_terminated(CloseReason::PrCreated { pr_number }, log)
+                self.finalize_terminated(CloseReason::UserQuit, log)
             }
             Err(err) => {
                 // git stderr can ride inside `err`; sanitize at ingestion (not

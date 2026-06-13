@@ -5,7 +5,6 @@ pub mod health;
 pub mod image;
 pub mod intent;
 pub mod interaction;
-pub mod interaction_lifecycle;
 pub mod logger;
 pub mod manager;
 pub mod parser;

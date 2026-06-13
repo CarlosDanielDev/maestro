@@ -1,7 +1,7 @@
 //! Unit tests for the Interaction screen keymap, quit modal, and turn
 //! event application (#738). Split from `tests.rs` for the file-size budget.
 
-use super::view_state::{CloseReason, InteractionState};
+use super::view_state::InteractionState;
 use super::*;
 use crate::session::interaction::{TurnEvent, TurnRecord, TurnRole};
 use crate::tui::navigation::keymap::KeymapProvider;
@@ -216,23 +216,25 @@ fn ctrl_w_streaming_opens_quit_modal() {
 }
 
 #[test]
-fn quit_modal_y_terminates_and_returns_quit_action() {
+fn quit_modal_y_returns_quit_action_without_terminating() {
+    // #949: the app terminates the session + starts the wipe; the screen
+    // terminates only when the teardown result lands.
     let mut s = screen_for(9, true, InteractionState::Idle);
     s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('y')), InputMode::Insert);
     assert_eq!(action, ScreenAction::QuitInteraction { issue_number: 9 });
-    assert_eq!(s.state, InteractionState::Terminated);
-    assert_eq!(s.close_reason, Some(CloseReason::UserQuit));
+    assert_ne!(s.state, InteractionState::Terminated);
+    assert_eq!(s.close_reason, None);
     assert!(!s.quit_modal_open);
 }
 
 #[test]
-fn quit_modal_uppercase_y_terminates() {
+fn quit_modal_uppercase_y_returns_quit_action() {
     let mut s = screen_for(9, true, InteractionState::Idle);
     s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('Y')), InputMode::Insert);
     assert_eq!(action, ScreenAction::QuitInteraction { issue_number: 9 });
-    assert_eq!(s.state, InteractionState::Terminated);
+    assert_ne!(s.state, InteractionState::Terminated);
 }
 
 #[test]

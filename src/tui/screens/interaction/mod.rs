@@ -24,7 +24,6 @@ pub(crate) mod view_state;
 
 use super::{Screen, ScreenAction};
 use crate::session::interaction::TurnRecord;
-use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::navigation::InputMode;
 use crate::tui::theme::Theme;
@@ -105,15 +104,12 @@ pub struct InteractionScreen {
     /// Root the worktree lives under (`worktree_path`'s parent). Gates the
     /// destructive teardown to a safe location (#740 sanity check).
     worktree_root: PathBuf,
-    /// A terminator that arrived mid-stream; fired once the turn settles to
-    /// `Idle` (#741 deferral). `None` in the common immediate path.
-    queued_terminator: Option<InteractionLifecycleEvent>,
+
     /// When the screen entered `Terminated`. Drives the 500ms auto-nav timer.
     terminated_at: Option<Instant>,
-    /// PR number of the teardown currently running off-thread (#941). `Some`
-    /// from dispatch until `apply_teardown_result`; drives the "wiping
-    /// worktree…" banner.
-    teardown_pr_in_flight: Option<u64>,
+    /// True while the quit teardown runs off-thread (#941/#949). Drives
+    /// the "wiping worktree…" banner and the input lock.
+    teardown_in_flight: bool,
     /// Teardown work parked for the app layer to run under `spawn_blocking`
     /// (#941). Set by the terminator path; taken via
     /// [`Self::take_pending_teardown_dispatch`].
@@ -160,9 +156,8 @@ impl InteractionScreen {
             last_viewport: 0,
             branch: String::new(),
             worktree_root: PathBuf::new(),
-            queued_terminator: None,
             terminated_at: None,
-            teardown_pr_in_flight: None,
+            teardown_in_flight: false,
             pending_teardown_dispatch: None,
             clock: Box::new(RealClock),
             diff_review: None,
@@ -298,6 +293,13 @@ impl Screen for InteractionScreen {
                     worktree_path: self.worktree_path.clone(),
                 },
             };
+        }
+
+        // Quit teardown in flight (#949): the session is already terminated
+        // and git is wiping the worktree off-thread — swallow input until
+        // the result lands (Terminated banner + auto-nav take over).
+        if self.is_teardown_in_flight() {
+            return ScreenAction::None;
         }
 
         if self.quit_modal_open {

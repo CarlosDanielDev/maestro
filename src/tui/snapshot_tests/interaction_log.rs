@@ -54,9 +54,13 @@ fn interaction_lifecycle_log_sequence_full_session() {
             duration_ms: 1430,
         },
         InteractionActivity::Resumed { issue: 42 },
+        InteractionActivity::PrLinked {
+            issue: 42,
+            pr_number: 7,
+        },
         InteractionActivity::Closing {
             issue: 42,
-            reason: CloseReasonSummary::PrCreated { pr_number: 7 },
+            reason: CloseReasonSummary::UserQuit,
         },
         InteractionActivity::TeardownOk {
             issue: 42,
@@ -72,7 +76,8 @@ fn interaction_lifecycle_log_sequence_full_session() {
         "#42 launched (mode: produce_pr=true, interaction=true, transport=interactive)",
         "#42 turn 1: 12 chunks streamed (1430 ms)",
         "#42 resumed",
-        "#42 closing (reason: PrCreated #7); wiping worktree",
+        "#42 PR #7 linked; session stays open",
+        "#42 closing (reason: UserQuit); wiping worktree",
         "#42 worktree removed at /tmp/maestro/issue-42; branch deleted",
     ] {
         assert!(

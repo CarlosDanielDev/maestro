@@ -195,7 +195,6 @@ pub(super) fn draw_terminated_banner(
 ) {
     let detail = match reason {
         Some(CloseReason::UserQuit) => "user quit",
-        Some(CloseReason::PrCreated { .. }) => "PR created",
         Some(CloseReason::AgentFailure { .. }) => "agent failure",
         None => "closed",
     };
@@ -215,13 +214,7 @@ pub(super) fn draw_terminated_banner(
 /// Render the async-teardown in-flight banner in place of the input pane
 /// (#941). The wipe runs off-thread; this keeps the wait visible (and the UI
 /// responsive) instead of freezing the frame.
-pub(super) fn draw_teardown_banner(
-    f: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    pr_number: u64,
-    spinner_tick: usize,
-) {
+pub(super) fn draw_teardown_banner(f: &mut Frame, area: Rect, theme: &Theme, spinner_tick: usize) {
     let nerd = crate::icon_mode::use_nerd_font();
     let spinner = crate::tui::spinner::graph_node_frame(spinner_tick / 3, nerd);
     let block = theme.styled_block("Closing", true);
@@ -229,7 +222,7 @@ pub(super) fn draw_teardown_banner(
     f.render_widget(block, area);
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            format!("{spinner} PR #{pr_number} created — wiping worktree…"),
+            format!("{spinner} quitting — wiping worktree…"),
             Style::default().fg(theme.text_secondary),
         )))
         .alignment(Alignment::Center),

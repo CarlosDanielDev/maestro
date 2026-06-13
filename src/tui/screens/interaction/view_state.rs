@@ -20,11 +20,12 @@ pub enum InteractionState {
     Terminated,
 }
 
-/// Why the interaction view ended (banner text).
+/// Why the interaction view ended (banner text). Since #949 a PR no
+/// longer closes the session — only quit (`UserQuit`) and a failed quit
+/// teardown (`AgentFailure`) remain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CloseReason {
-    PrCreated { pr_number: u64 },
     UserQuit,
     AgentFailure { tail: String },
 }

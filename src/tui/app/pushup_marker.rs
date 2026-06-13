@@ -24,9 +24,7 @@
 //!   Warn-log, delete the file, no command queued.
 
 use super::App;
-use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
 use crate::tui::activity_log::LogLevel;
-use crate::tui::screens::ScreenAction;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -114,31 +112,22 @@ impl App {
             self.consume_marker(&path);
             return;
         }
-        // #739: a marker carrying issue_number that matches an active
-        // interaction session terminates that session. Runs BEFORE the
-        // PrCreated enqueue so the single marker read drives both events.
-        // owner/repo are cloned here because they are moved into PrCreated
-        // below.
+        // #739 → #949 (spec §4.4): a marker carrying issue_number that
+        // matches a live interactive session marks it pr_linked and posts a
+        // System turn — the session stays open; NO wipe, NO navigation.
+        // Mid-stream markers defer the announcement to the turn boundary
+        // (#936) so the in-flight transcript is never interleaved. Runs
+        // BEFORE the PrCreated enqueue so the single marker read drives
+        // both events.
         if let Some(issue_number) = marker.issue_number
             && let Some(managed) = self.pool.interactive_managed_mut(issue_number)
         {
-            managed.signal_terminator(
-                crate::session::interaction_lifecycle::InteractionLifecycleEvent::PrLinkedToIssue {
-                    pr_number: marker.pr_number,
-                    issue_number,
-                    owner: marker.owner.clone(),
-                    repo: marker.repo.clone(),
-                },
-            );
-            // #741: drive the open Interaction screen's terminator UI flow —
-            // System turns + worktree teardown + auto-nav. The pool borrow ends
-            // with this block, so the screen access below is a disjoint borrow.
-            self.drive_interaction_terminator(
-                issue_number,
-                marker.pr_number,
-                marker.owner.clone(),
-                marker.repo.clone(),
-            );
+            let announce = managed.signal_pr_linked(marker.pr_number);
+            if let Some(pr_number) = announce {
+                // The pool borrow ends with `announce`; the announcement
+                // helper re-borrows pool + screen disjointly.
+                self.apply_pr_linked_announcement(issue_number, pr_number);
+            }
         }
         self.activity_log.push_simple(
             "PUSHUP".into(),
@@ -155,58 +144,6 @@ impl App {
                 repo: marker.repo,
             });
         self.consume_marker(&path);
-    }
-
-    /// Drive the open Interaction screen's terminator flow for `issue_number`
-    /// (#741). Pushes the opening `INTERACTION closing` activity line, runs the
-    /// screen's terminator handler (System turns + worktree teardown), and
-    /// surfaces the returned `TEARDOWN` log line. No-op when the open screen is
-    /// for a different issue or none is open. When the screen is mid-stream the
-    /// teardown is deferred and its line is surfaced later from the
-    /// `TurnFinished` path.
-    fn drive_interaction_terminator(
-        &mut self,
-        issue_number: u64,
-        pr_number: u64,
-        owner: String,
-        repo: String,
-    ) {
-        let Some(screen) = self.screen_state.interaction_screen.as_mut() else {
-            return;
-        };
-        if !screen.is_for_issue(issue_number) {
-            return;
-        }
-        // Lifecycle span (#742): the signal, the closing line, and the
-        // dispatch decision all happen inside it.
-        let span = tracing::info_span!(
-            "interaction.terminator",
-            issue = issue_number,
-            reason = "PrCreated"
-        );
-        let _guard = span.enter();
-        let action = screen.on_terminator_signaled(InteractionLifecycleEvent::PrLinkedToIssue {
-            pr_number,
-            issue_number,
-            owner,
-            repo,
-        });
-        self.activity_log
-            .emit_interaction(&crate::work::activity::InteractionActivity::Closing {
-                issue: issue_number,
-                reason: crate::work::activity::CloseReasonSummary::PrCreated { pr_number },
-            });
-        if let Some(ScreenAction::LogActivity {
-            tag,
-            message,
-            level,
-        }) = action
-        {
-            self.activity_log.push_simple(tag, message, level);
-        }
-        // #941: the blocking wipe never runs on the UI thread — take the
-        // parked dispatch (if the terminator fired) and run it off-thread.
-        self.spawn_pending_interaction_teardown();
     }
 
     /// Run a parked teardown dispatch under `spawn_blocking`, delivering the

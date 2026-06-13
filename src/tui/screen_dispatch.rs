@@ -1047,26 +1047,42 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             }
         }
         ScreenAction::QuitInteraction { issue_number } => {
-            // #948: quit = terminate the unified session. Worktree is
-            // preserved (teardown moves to this path in #949).
+            // #949 (spec §4.4): quit = terminate the unified session, THEN
+            // wipe the worktree off-thread (#740 safe-gated primitive under
+            // #941 spawn_blocking). The screen stays open showing the
+            // "wiping worktree…" banner; `Terminated(UserQuit)` + the 500ms
+            // auto-nav land with the teardown result.
             if let Some(managed) = app.pool.interactive_managed_mut(issue_number) {
-                let worktree = managed
-                    .worktree_path
-                    .as_ref()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| ".".to_string());
+                // Interrupt any in-flight turn before git touches the tree.
+                managed.cancel_inflight_turn();
                 let _ = managed.session.transition_to(
                     crate::session::types::SessionStatus::Killed,
                     crate::session::transition::TransitionReason::UserKill,
                 );
-                app.activity_log.push_simple(
-                    "INTERACTION".into(),
-                    format!("quit #{issue_number}; worktree kept at {worktree}"),
-                    crate::tui::activity_log::LogLevel::Info,
-                );
             }
-            app.screen_state.interaction_screen = None;
-            app.navigate_to(app::TuiMode::IssueBrowser);
+            app.activity_log.emit_interaction(
+                &crate::work::activity::InteractionActivity::Closing {
+                    issue: issue_number,
+                    reason: crate::work::activity::CloseReasonSummary::UserQuit,
+                },
+            );
+            let action = app
+                .screen_state
+                .interaction_screen
+                .as_mut()
+                .filter(|screen| screen.is_for_issue(issue_number))
+                .map(|screen| screen.begin_quit_teardown());
+            if let Some(crate::tui::screens::ScreenAction::LogActivity {
+                tag,
+                message,
+                level,
+            }) = action
+            {
+                app.activity_log.push_simple(tag, message, level);
+            }
+            // Run the parked wipe under spawn_blocking (#941). The no-wipe
+            // skip path parked nothing and already armed the auto-nav timer.
+            app.spawn_pending_interaction_teardown();
         }
         ScreenAction::LaunchTeam {
             team_name,

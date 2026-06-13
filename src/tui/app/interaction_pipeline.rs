@@ -119,9 +119,6 @@ impl App {
                     turn.finished_at = Some(at);
                 }
                 managed.session.turn_state = TurnState::Idle;
-                // A /pushup terminator queued mid-stream fires now that the
-                // streamed output is preserved (#936 contract).
-                managed.settle_queued_terminator();
                 Some(TurnEvent::TurnFinished { at })
             }
             StreamEvent::Error { message } => {
@@ -136,14 +133,58 @@ impl App {
                     finished_at: Some(at),
                 });
                 managed.session.turn_state = TurnState::Idle;
-                managed.settle_queued_terminator();
                 Some(TurnEvent::Error(message.clone()))
             }
             _ => None,
         };
+        // A /pushup announcement deferred mid-stream posts now that the
+        // streamed output is preserved (#936 contract, #949 semantics).
+        let deferred_pr = managed.settle_queued_pr_notice();
 
         if let Some(event) = turn_event {
             self.apply_interaction_turn_event(issue_number, event);
+        }
+        if let Some(pr_number) = deferred_pr {
+            self.apply_pr_linked_announcement(issue_number, pr_number);
+        }
+    }
+
+    /// Post the "PR #N created" announcement (#949, spec §4.4): a `System`
+    /// turn on the persisted transcript, the same turn on the open screen
+    /// (which stays open), and the activity-log line. Shared by the marker
+    /// path (idle turn) and the deferred settle path (#936).
+    pub(crate) fn apply_pr_linked_announcement(&mut self, issue_number: u64, pr_number: u64) {
+        let at = Utc::now();
+        if let Some(managed) = self.pool.interactive_managed_mut(issue_number) {
+            managed.session.turns.push(TurnRecord {
+                role: TurnRole::System,
+                content: format!("PR #{pr_number} created — session stays open (Ctrl+W to quit)"),
+                started_at: at,
+                finished_at: Some(at),
+            });
+        }
+        let action = self
+            .screen_state
+            .interaction_screen
+            .as_mut()
+            .filter(|screen| screen.is_for_issue(issue_number))
+            .map(|screen| screen.on_pr_linked(pr_number));
+        match action {
+            Some(crate::tui::screens::ScreenAction::LogActivity {
+                tag,
+                message,
+                level,
+            }) => self.activity_log.push_simple(tag, message, level),
+            _ => {
+                // Screen closed or on another issue: still log the line so
+                // the outcome is not silently dropped.
+                self.activity_log.emit_interaction(
+                    &crate::work::activity::InteractionActivity::PrLinked {
+                        issue: issue_number,
+                        pr_number,
+                    },
+                );
+            }
         }
     }
 
