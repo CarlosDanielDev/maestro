@@ -1,9 +1,8 @@
 //! Unit tests for the Interaction screen keymap, quit modal, and turn
 //! event application (#738). Split from `tests.rs` for the file-size budget.
 
-use super::view_state::InteractionState;
 use super::*;
-use crate::session::interaction::{TurnEvent, TurnRecord, TurnRole};
+use crate::session::interaction::{TurnEvent, TurnRecord, TurnRole, TurnState};
 use crate::tui::navigation::keymap::KeymapProvider;
 use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
 use chrono::{DateTime, TimeZone, Utc};
@@ -40,8 +39,22 @@ fn three_turn_fixture() -> Vec<TurnRecord> {
     ]
 }
 
-fn screen_for(issue: u64, produce_pr: bool, state: InteractionState) -> InteractionScreen {
-    InteractionScreen::test_fixture(issue, produce_pr, state, Vec::new(), "/tmp/maestro/wt-x")
+fn screen_for(issue: u64, produce_pr: bool, turn_state: TurnState) -> InteractionScreen {
+    InteractionScreen::test_fixture(
+        issue,
+        produce_pr,
+        turn_state,
+        Vec::new(),
+        "/tmp/maestro/wt-x",
+    )
+}
+
+/// Idle screen forced into the terminal lifecycle (#950: terminated is a
+/// screen-local bool, no longer a `turn_state` value).
+fn terminated_screen(issue: u64, produce_pr: bool) -> InteractionScreen {
+    let mut s = screen_for(issue, produce_pr, TurnState::Idle);
+    s.force_terminated_userquit_for_test();
+    s
 }
 
 fn type_text(s: &mut InteractionScreen, text: &str) {
@@ -56,7 +69,7 @@ fn ctrl(c: char) -> crossterm::event::Event {
 
 #[test]
 fn enter_idle_nonempty_locks_editor_and_sends_turn() {
-    let mut s = screen_for(7, true, InteractionState::Idle);
+    let mut s = screen_for(7, true, TurnState::Idle);
     type_text(&mut s, "fix it");
     let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
     assert_eq!(
@@ -67,21 +80,22 @@ fn enter_idle_nonempty_locks_editor_and_sends_turn() {
         }
     );
     assert_eq!(s.editor_text(), "");
-    assert_eq!(s.state, InteractionState::Streaming);
-    assert!(s.is_streaming());
+    // #950: the streaming lock now comes from the live session via the view;
+    // begin_turn only returns the send action.
+    assert!(!s.is_streaming());
 }
 
 #[test]
 fn enter_idle_empty_editor_is_noop() {
-    let mut s = screen_for(7, true, InteractionState::Idle);
+    let mut s = screen_for(7, true, TurnState::Idle);
     let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
-    assert_eq!(s.state, InteractionState::Idle);
+    assert!(!s.is_streaming());
 }
 
 #[test]
 fn shift_enter_inserts_newline_does_not_send() {
-    let mut s = screen_for(7, true, InteractionState::Idle);
+    let mut s = screen_for(7, true, TurnState::Idle);
     type_text(&mut s, "line1");
     let action = s.handle_input(
         &key_event_with_modifiers(KeyCode::Enter, KeyModifiers::SHIFT),
@@ -89,12 +103,12 @@ fn shift_enter_inserts_newline_does_not_send() {
     );
     assert_eq!(action, ScreenAction::None);
     assert_eq!(s.editor_text(), "line1\n");
-    assert_eq!(s.state, InteractionState::Idle);
+    assert!(!s.is_streaming());
 }
 
 #[test]
 fn ctrl_p_produce_pr_true_sends_pushup_prompt() {
-    let mut s = screen_for(42, true, InteractionState::Idle);
+    let mut s = screen_for(42, true, TurnState::Idle);
     let action = s.handle_input(&ctrl('p'), InputMode::Insert);
     match action {
         ScreenAction::SendInteractionTurn {
@@ -111,7 +125,7 @@ fn ctrl_p_produce_pr_true_sends_pushup_prompt() {
 
 #[test]
 fn ctrl_p_produce_pr_false_logs_and_does_not_send() {
-    let mut s = screen_for(42, false, InteractionState::Idle);
+    let mut s = screen_for(42, false, TurnState::Idle);
     let action = s.handle_input(&ctrl('p'), InputMode::Insert);
     match action {
         ScreenAction::LogActivity { tag, message, .. } => {
@@ -120,7 +134,7 @@ fn ctrl_p_produce_pr_false_logs_and_does_not_send() {
         }
         other => panic!("expected LogActivity, got {other:?}"),
     }
-    assert_eq!(s.state, InteractionState::Idle);
+    assert!(!s.is_streaming());
 }
 
 #[test]
@@ -128,7 +142,7 @@ fn ctrl_l_clears_editor_leaves_history() {
     let mut s = InteractionScreen::test_fixture(
         7,
         true,
-        InteractionState::Idle,
+        TurnState::Idle,
         three_turn_fixture(),
         "/tmp/maestro/wt-x",
     );
@@ -136,12 +150,12 @@ fn ctrl_l_clears_editor_leaves_history() {
     let action = s.handle_input(&ctrl('l'), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
     assert_eq!(s.editor_text(), "");
-    assert_eq!(s.history.len(), 3);
+    assert_eq!(s.history_len(), 3);
 }
 
 #[test]
 fn esc_idle_returns_pop() {
-    let mut s = screen_for(7, true, InteractionState::Idle);
+    let mut s = screen_for(7, true, TurnState::Idle);
     let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Insert);
     assert_eq!(action, ScreenAction::Pop);
     assert!(!s.quit_modal_open);
@@ -149,22 +163,22 @@ fn esc_idle_returns_pop() {
 
 #[test]
 fn esc_streaming_returns_pop() {
-    let mut s = screen_for(7, true, InteractionState::Streaming);
+    let mut s = screen_for(7, true, TurnState::Streaming);
     let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Insert);
     assert_eq!(action, ScreenAction::Pop);
 }
 
 #[test]
 fn streaming_ignores_enter() {
-    let mut s = screen_for(7, true, InteractionState::Streaming);
+    let mut s = screen_for(7, true, TurnState::Streaming);
     let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
-    assert_eq!(s.state, InteractionState::Streaming);
+    assert!(s.is_streaming());
 }
 
 #[test]
 fn streaming_ignores_ctrl_l() {
-    let mut s = screen_for(7, true, InteractionState::Streaming);
+    let mut s = screen_for(7, true, TurnState::Streaming);
     let action = s.handle_input(&ctrl('l'), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
 }
@@ -174,7 +188,7 @@ fn streaming_scroll_up_still_works() {
     let mut s = InteractionScreen::test_fixture(
         7,
         true,
-        InteractionState::Streaming,
+        TurnState::Streaming,
         three_turn_fixture(),
         "/tmp/maestro/wt-x",
     );
@@ -186,7 +200,7 @@ fn streaming_scroll_up_still_works() {
 
 #[test]
 fn terminated_any_key_returns_pop() {
-    let mut s = screen_for(7, true, InteractionState::Terminated);
+    let mut s = terminated_screen(7, true);
     assert_eq!(
         s.handle_input(&key_event(KeyCode::Char('x')), InputMode::Insert),
         ScreenAction::Pop
@@ -201,7 +215,7 @@ fn terminated_any_key_returns_pop() {
 
 #[test]
 fn ctrl_w_opens_quit_modal() {
-    let mut s = screen_for(7, true, InteractionState::Idle);
+    let mut s = screen_for(7, true, TurnState::Idle);
     let action = s.handle_input(&ctrl('w'), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
     assert!(s.quit_modal_open);
@@ -209,47 +223,47 @@ fn ctrl_w_opens_quit_modal() {
 
 #[test]
 fn ctrl_w_streaming_opens_quit_modal() {
-    let mut s = screen_for(7, true, InteractionState::Streaming);
+    let mut s = screen_for(7, true, TurnState::Streaming);
     s.handle_input(&ctrl('w'), InputMode::Insert);
     assert!(s.quit_modal_open);
-    assert_eq!(s.state, InteractionState::Streaming);
+    assert!(s.is_streaming());
 }
 
 #[test]
 fn quit_modal_y_returns_quit_action_without_terminating() {
     // #949: the app terminates the session + starts the wipe; the screen
     // terminates only when the teardown result lands.
-    let mut s = screen_for(9, true, InteractionState::Idle);
+    let mut s = screen_for(9, true, TurnState::Idle);
     s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('y')), InputMode::Insert);
     assert_eq!(action, ScreenAction::QuitInteraction { issue_number: 9 });
-    assert_ne!(s.state, InteractionState::Terminated);
+    assert!(!s.terminated_for_test());
     assert_eq!(s.close_reason, None);
     assert!(!s.quit_modal_open);
 }
 
 #[test]
 fn quit_modal_uppercase_y_returns_quit_action() {
-    let mut s = screen_for(9, true, InteractionState::Idle);
+    let mut s = screen_for(9, true, TurnState::Idle);
     s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('Y')), InputMode::Insert);
     assert_eq!(action, ScreenAction::QuitInteraction { issue_number: 9 });
-    assert_ne!(s.state, InteractionState::Terminated);
+    assert!(!s.terminated_for_test());
 }
 
 #[test]
 fn quit_modal_n_cancels() {
-    let mut s = screen_for(9, true, InteractionState::Idle);
+    let mut s = screen_for(9, true, TurnState::Idle);
     s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('n')), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
     assert!(!s.quit_modal_open);
-    assert_eq!(s.state, InteractionState::Idle);
+    assert!(!s.is_streaming());
 }
 
 #[test]
 fn quit_modal_esc_cancels_modal_not_screen() {
-    let mut s = screen_for(9, true, InteractionState::Idle);
+    let mut s = screen_for(9, true, TurnState::Idle);
     s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Esc), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
@@ -260,7 +274,7 @@ fn quit_modal_esc_cancels_modal_not_screen() {
 
 #[test]
 fn keybindings_list_expected_keys() {
-    let s = screen_for(7, true, InteractionState::Idle);
+    let s = screen_for(7, true, TurnState::Idle);
     let keys: Vec<&str> = s
         .keybindings()
         .into_iter()
@@ -282,7 +296,7 @@ fn keybindings_list_expected_keys() {
 
 #[test]
 fn keybindings_ctrl_p_greyed_when_produce_pr_false() {
-    let s = screen_for(7, false, InteractionState::Idle);
+    let s = screen_for(7, false, TurnState::Idle);
     let desc = s
         .keybindings()
         .into_iter()
@@ -293,52 +307,41 @@ fn keybindings_ctrl_p_greyed_when_produce_pr_false() {
     assert!(desc.contains("greyed"), "got: {desc}");
 }
 
-// --- apply_turn_event ---
+// --- log_turn_event (#950: telemetry + activity-log only; the transcript
+// lives on the live session, written by the pipeline) ---
 
 #[test]
-fn apply_turn_started_pushes_agent_turn_and_streams() {
-    let mut s = screen_for(7, true, InteractionState::Idle);
+fn log_turn_started_and_chunks_return_none() {
+    let mut s = screen_for(7, true, TurnState::Idle);
     let at = fixed_t0();
-    let action = s.apply_turn_event(&TurnEvent::TurnStarted {
-        role: TurnRole::Agent,
-        at,
-    });
-    assert_eq!(action, ScreenAction::None);
-    assert_eq!(s.state, InteractionState::Streaming);
-    assert_eq!(s.history.len(), 1);
-    assert_eq!(s.history[0].role, TurnRole::Agent);
-    assert!(s.history[0].finished_at.is_none());
+    assert_eq!(
+        s.log_turn_event(&TurnEvent::TurnStarted {
+            role: TurnRole::Agent,
+            at,
+        }),
+        ScreenAction::None
+    );
+    assert_eq!(
+        s.log_turn_event(&TurnEvent::Chunk("hello".into())),
+        ScreenAction::None
+    );
 }
 
 #[test]
-fn apply_chunk_appends_to_streaming_agent_turn() {
-    let mut s = screen_for(7, true, InteractionState::Idle);
-    s.apply_turn_event(&TurnEvent::TurnStarted {
-        role: TurnRole::Agent,
-        at: fixed_t0(),
-    });
-    s.apply_turn_event(&TurnEvent::Chunk("hello ".into()));
-    s.apply_turn_event(&TurnEvent::Chunk("world".into()));
-    assert_eq!(s.history.last().unwrap().content, "hello world");
-    assert_eq!(s.state, InteractionState::Streaming);
-}
-
-#[test]
-fn apply_turn_finished_transitions_idle_and_logs_chunk_count() {
-    let mut s = screen_for(13, true, InteractionState::Idle);
+fn log_turn_finished_emits_chunk_count_and_duration() {
+    let mut s = screen_for(13, true, TurnState::Idle);
     // Simulate a send so turn_count == 1.
     type_text(&mut s, "hi");
     s.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
     let start = fixed_t0();
-    s.apply_turn_event(&TurnEvent::TurnStarted {
+    s.log_turn_event(&TurnEvent::TurnStarted {
         role: TurnRole::Agent,
         at: start,
     });
-    s.apply_turn_event(&TurnEvent::Chunk("a".into()));
-    s.apply_turn_event(&TurnEvent::Chunk("b".into()));
+    s.log_turn_event(&TurnEvent::Chunk("a".into()));
+    s.log_turn_event(&TurnEvent::Chunk("b".into()));
     let finished = start + chrono::Duration::milliseconds(250);
-    let action = s.apply_turn_event(&TurnEvent::TurnFinished { at: finished });
-    assert_eq!(s.state, InteractionState::Idle);
+    let action = s.log_turn_event(&TurnEvent::TurnFinished { at: finished });
     match action {
         ScreenAction::LogActivity { tag, message, .. } => {
             assert_eq!(tag, "INTERACTION");
@@ -352,29 +355,23 @@ fn apply_turn_finished_transitions_idle_and_logs_chunk_count() {
 }
 
 #[test]
-fn apply_error_appends_system_turn_and_returns_idle() {
-    let mut s = screen_for(7, true, InteractionState::Streaming);
-    s.apply_turn_event(&TurnEvent::TurnStarted {
-        role: TurnRole::Agent,
-        at: fixed_t0(),
-    });
-    // #742: a failed turn leaves exactly one log line.
-    let action = s.apply_turn_event(&TurnEvent::Error("agent exit 1".into()));
+fn log_error_returns_turn_failed_activity() {
+    let mut s = screen_for(7, true, TurnState::Streaming);
+    // #742: a failed turn leaves exactly one log line. The System turn for
+    // the error is pushed to the session by the pipeline, not the screen.
+    let action = s.log_turn_event(&TurnEvent::Error("agent exit 1".into()));
     let ScreenAction::LogActivity { tag, message, .. } = action else {
         panic!("expected a TurnFailed LogActivity, got {action:?}");
     };
     assert_eq!(tag, "INTERACTION");
     assert_eq!(message, "#7 turn failed: agent exit 1");
-    assert_eq!(s.state, InteractionState::Idle);
-    let last = s.history.last().unwrap();
-    assert_eq!(last.role, TurnRole::System);
 }
 
 #[test]
 fn set_issue_title_sanitizes_terminal_escapes() {
     // Security (#738): external GitHub titles must not inject terminal escapes
     // via the header/starter-hint renderers.
-    let mut s = screen_for(7, true, InteractionState::Idle);
+    let mut s = screen_for(7, true, TurnState::Idle);
     s.set_issue_title("evil\x1b[2Jtitle\u{7}");
     // No ESC or BEL control chars survive (newlines are allowed by the helper).
     assert!(

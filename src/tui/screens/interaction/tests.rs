@@ -1,8 +1,10 @@
 //! Unit tests for the Interaction screen state machine (#736).
 
 use super::layout::{effective_offset, inset_x};
+use super::view_state::InteractionView;
 use super::*;
 use crate::session::interaction::TurnRole;
+use crate::session::types::SessionStatus;
 use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
 use chrono::{DateTime, TimeZone, Utc};
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -224,49 +226,50 @@ fn jump_to_latest_pins_to_bottom() {
     assert_eq!(s.scroll_offset, 42, "End jumps to the newest line");
 }
 
-#[test]
-fn streaming_chunk_while_scrolled_up_does_not_yank_the_view() {
-    // #988: the user scrolled up to read history; a streaming chunk arriving
-    // must not reset auto_scroll or move scroll_offset (no yank to the tail).
-    use crate::session::interaction::TurnEvent;
-    let mut s = InteractionScreen::with_history(three_turn_fixture());
-    // Begin an agent turn, then scroll up away from the tail.
-    let at = fixed_t0();
-    let _ = s.apply_turn_event(&TurnEvent::TurnStarted {
-        role: TurnRole::Agent,
-        at,
-    });
-    s.auto_scroll = false;
-    s.scroll_offset = 2;
-
-    let _ = s.apply_turn_event(&TurnEvent::Chunk("streamed text".to_string()));
-
-    assert!(
-        !s.auto_scroll,
-        "a streaming chunk must not re-enable tail-following"
-    );
-    assert_eq!(
-        s.scroll_offset, 2,
-        "a streaming chunk must not move the user's scroll position"
-    );
+fn streaming_view(turns: Vec<TurnRecord>) -> InteractionView {
+    InteractionView {
+        turns,
+        turn_state: crate::session::interaction::TurnState::Streaming,
+        settled_from: None,
+        pr_linked: None,
+    }
 }
 
 #[test]
-fn push_turn_appends_to_history() {
+fn set_view_while_scrolled_up_does_not_yank_the_view() {
+    // #950: a view refresh (a chunk landed on the session) must not reset
+    // auto_scroll or move scroll_offset.
+    let mut s = InteractionScreen::with_history(three_turn_fixture());
+    s.auto_scroll = false;
+    s.scroll_offset = 2;
+
+    let mut grown = three_turn_fixture();
+    grown.push(user_turn("streamed text"));
+    s.set_view(streaming_view(grown));
+
+    assert!(!s.auto_scroll, "a view refresh must not re-pin the tail");
+    assert_eq!(s.scroll_offset, 2, "a view refresh must not move scroll");
+}
+
+#[test]
+fn set_view_replaces_transcript_each_frame() {
+    // The injected view is the source of truth — a later view wins; turns
+    // never accumulate on the screen.
     let mut s = InteractionScreen::new();
-    s.push_turn(user_turn("hello"));
-    assert_eq!(s.history.len(), 1);
-    assert_eq!(s.history[0].content, "hello");
+    s.set_view(streaming_view(vec![user_turn("one")]));
+    assert_eq!(s.history_len(), 1);
+    s.set_view(streaming_view(three_turn_fixture()));
+    assert_eq!(s.history_len(), 3);
 }
 
 #[test]
-fn push_turn_preserves_scroll_offset_when_scrolled_up() {
-    let mut s = InteractionScreen::with_history(three_turn_fixture());
-    s.auto_scroll = false;
-    s.scroll_offset = 2;
-    s.push_turn(user_turn("new"));
-    assert!(!s.auto_scroll);
-    assert_eq!(s.scroll_offset, 2);
+fn set_view_drives_lock_and_handles_empty() {
+    let mut s = InteractionScreen::new();
+    s.set_view(InteractionView::default());
+    assert_eq!(s.history_len(), 0, "empty view does not panic");
+    assert!(!s.is_streaming());
+    s.set_view(streaming_view(Vec::new()));
+    assert!(s.is_streaming(), "TurnState::Streaming locks input");
 }
 
 #[test]
@@ -364,25 +367,33 @@ fn desired_input_mode_returns_insert() {
     assert_eq!(s.desired_input_mode(), Some(InputMode::Insert));
 }
 
-// --- edge cases ---
-
 #[test]
-fn turn_with_empty_content_does_not_panic_on_push() {
+fn long_and_empty_content_turns_in_view_do_not_panic() {
     let mut s = InteractionScreen::new();
-    s.push_turn(TurnRecord {
-        role: TurnRole::User,
-        content: String::new(),
-        started_at: fixed_t0(),
-        finished_at: None,
-    });
-    assert_eq!(s.history.len(), 1);
-    assert_eq!(s.history[0].content, "");
+    s.set_view(streaming_view(vec![
+        TurnRecord {
+            role: TurnRole::User,
+            content: String::new(),
+            started_at: fixed_t0(),
+            finished_at: None,
+        },
+        user_turn(&"x".repeat(10_000)),
+    ]));
+    assert_eq!(s.history_len(), 2);
 }
 
 #[test]
-fn very_long_single_turn_push_does_not_panic() {
-    let long = "x".repeat(10_000);
+fn banner_reflects_settled_from_and_pr_linked() {
+    // #950 headline: the status banner is derived from the injected view.
     let mut s = InteractionScreen::new();
-    s.push_turn(user_turn(&long));
-    assert_eq!(s.history[0].content.len(), 10_000);
+    assert_eq!(s.banner(), None, "no banner until the session settles");
+    s.set_view(InteractionView {
+        turns: Vec::new(),
+        turn_state: crate::session::interaction::TurnState::Idle,
+        settled_from: Some(SessionStatus::Completed),
+        pr_linked: Some(42),
+    });
+    let banner = s.banner().expect("settled view has a banner");
+    assert!(banner.contains("COMPLETED"), "got: {banner}");
+    assert!(banner.contains("PR #42"), "got: {banner}");
 }

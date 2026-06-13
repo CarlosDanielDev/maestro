@@ -694,7 +694,7 @@ impl App {
                     .screen_state
                     .interaction_screen
                     .as_mut()
-                    .map(|screen| screen.apply_turn_event(&event));
+                    .map(|screen| screen.log_turn_event(&event));
                 if let Some(crate::tui::screens::ScreenAction::LogActivity {
                     tag,
                     message,
@@ -891,8 +891,12 @@ mod tests {
             app.state.issue_cache.contains_key(&953),
             "the fetched issue is cached for later lookups"
         );
+        // #950: the screen no longer mirrors turns — the seeded first turn is
+        // proved by the queued SendInteractionTurn command above. The screen's
+        // view stays empty until the pipeline writes the turn to the session
+        // and the next frame projects it in.
         let screen = app.screen_state.interaction_screen.as_ref().unwrap();
-        assert_eq!(screen.history_len(), 1, "the real first turn is seeded");
+        assert_eq!(screen.history_len(), 0, "the screen owns no transcript");
     }
 
     #[test]

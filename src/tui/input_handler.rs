@@ -719,6 +719,31 @@ async fn handle_confirm_kill(app: &mut App, key: &KeyEvent, session_id: uuid::Uu
     KeyAction::Consumed
 }
 
+/// Where the session switcher sends the user on `Enter` (#930). A live
+/// Interactive-mode session rejoins its chat screen; everything else opens the
+/// one-shot Detail view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SwitcherTarget {
+    /// Rejoin the kept-alive Interactive session for this issue.
+    Interaction(u64),
+    /// Open the read-only Detail view for this session id.
+    Detail(uuid::Uuid),
+}
+
+/// Decide where the switcher routes `session` (#930). Pure — unit-testable
+/// without the TUI.
+pub(crate) fn switcher_target(session: &crate::session::types::Session) -> SwitcherTarget {
+    use crate::session::types::SessionMode;
+    if session.session_mode == SessionMode::Interactive
+        && !session.status.is_terminal()
+        && let Some(issue) = session.issue_number
+    {
+        SwitcherTarget::Interaction(issue)
+    } else {
+        SwitcherTarget::Detail(session.id)
+    }
+}
+
 fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
     match key.code {
         KeyCode::Esc => {
@@ -741,19 +766,29 @@ fn handle_session_switcher(app: &mut App, key: &KeyEvent) {
             }
         }
         KeyCode::Enter => {
-            let selected_id = app.screen_state.session_switcher.as_ref().and_then(|sw| {
+            let target = app.screen_state.session_switcher.as_ref().and_then(|sw| {
                 let sessions = app.pool.all_sessions();
-                sw.selected_session(&sessions).map(|s| s.id)
+                sw.selected_session(&sessions).map(switcher_target)
             });
-            if let Some(id) = selected_id {
+            if let Some(target) = target {
                 app.screen_state.session_switcher = None;
                 // Consume the SessionSwitcher from the nav-stack so [Esc]
-                // from Detail returns to whatever pushed SessionSwitcher
+                // from the target returns to whatever pushed SessionSwitcher
                 // (Overview) instead of an empty Switcher mode with no
                 // screen-state, which leaves the header showing Switcher
                 // chords while no modal is drawn (sibling of #893).
                 app.navigate_back();
-                app.navigate_to(app::TuiMode::Detail(id));
+                match target {
+                    // #930: a live Interactive session rejoins its chat — the
+                    // same re-entry path #738 uses, treating it like any live
+                    // session.
+                    SwitcherTarget::Interaction(issue) => {
+                        crate::tui::screen_dispatch::open_interaction_session(
+                            app, issue, false, None,
+                        );
+                    }
+                    SwitcherTarget::Detail(id) => app.navigate_to(app::TuiMode::Detail(id)),
+                }
             }
         }
         _ => {}
@@ -2351,6 +2386,76 @@ mod tests {
             TuiMode::Landing,
             "Esc on Overview must pop back to the previous mode"
         );
+    }
+
+    // --- #930: session-switcher routing (switcher_target) ---
+
+    #[test]
+    fn switcher_target_live_interactive_rejoins_chat() {
+        use crate::session::types::{Session, SessionMode, SessionStatus};
+        let mut s = Session::new(
+            "p".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(42),
+            None,
+        );
+        s.session_mode = SessionMode::Interactive;
+        s.status = SessionStatus::Interactive;
+        assert_eq!(switcher_target(&s), SwitcherTarget::Interaction(42));
+    }
+
+    #[test]
+    fn switcher_target_killed_interactive_opens_detail() {
+        use crate::session::types::{Session, SessionMode, SessionStatus};
+        let mut s = Session::new(
+            "p".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(42),
+            None,
+        );
+        s.session_mode = SessionMode::Interactive;
+        s.status = SessionStatus::Killed;
+        assert_eq!(switcher_target(&s), SwitcherTarget::Detail(s.id));
+    }
+
+    #[test]
+    fn switcher_target_one_shot_opens_detail() {
+        use crate::session::types::Session;
+        let s = Session::new(
+            "p".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(42),
+            None,
+        );
+        assert_eq!(switcher_target(&s), SwitcherTarget::Detail(s.id));
+    }
+
+    #[test]
+    fn switcher_enter_on_live_interactive_rejoins_chat() {
+        // #930: selecting a live Interactive session in the switcher reopens
+        // its chat screen, not the one-shot Detail view.
+        let mut app = make_app();
+        app.pool.create_interaction_session(
+            42,
+            false,
+            "opus".to_string(),
+            "orchestrator".to_string(),
+        );
+        app.screen_state.session_switcher =
+            Some(crate::tui::session_switcher::SessionSwitcher::default());
+
+        handle_session_switcher(&mut app, &key_code(KeyCode::Enter));
+
+        assert!(
+            matches!(app.tui_mode, TuiMode::Interaction),
+            "live Interactive session must rejoin the chat, got {:?}",
+            app.tui_mode
+        );
+        assert!(app.screen_state.interaction_screen.is_some());
+        assert!(app.screen_state.session_switcher.is_none());
     }
 
     /// Regression for 2026-05-23: `[Enter] Detail` on Overview routed

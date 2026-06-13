@@ -16,7 +16,7 @@
 //! resolve the dispatch through `MockTeardown` + `FakeClock`.
 
 use super::InteractionScreen;
-use super::view_state::{CloseReason, InteractionState};
+use super::view_state::CloseReason;
 use crate::session::interaction::{TurnRecord, TurnRole};
 use crate::tui::screens::ScreenAction;
 use crate::work::worktree_teardown::{TeardownError, wipe_worktree};
@@ -83,13 +83,12 @@ impl Clock for RealClock {
 }
 
 impl InteractionScreen {
-    /// A `/pushup` PR was linked to this issue (#949, spec §4.4): announce
-    /// it in a `System` turn and keep the session open. No wipe, no
-    /// navigation, no state change. Returns the activity-log action.
-    pub(crate) fn on_pr_linked(&mut self, pr_number: u64) -> ScreenAction {
-        self.push_system_now(format!(
-            "PR #{pr_number} created — session stays open (Ctrl+W to quit)"
-        ));
+    /// A `/pushup` PR was linked to this issue (#949, spec §4.4): keep the
+    /// session open and return the activity-log action. The "PR #N" `System`
+    /// turn is appended to the live session by the pipeline
+    /// (`apply_pr_linked_announcement`) and read back through the view, so the
+    /// screen no longer pushes it (#950 — was a double-write).
+    pub(crate) fn on_pr_linked(&self, pr_number: u64) -> ScreenAction {
         super::activity_action(&crate::work::activity::InteractionActivity::PrLinked {
             issue: self.issue_number,
             pr_number,
@@ -198,15 +197,18 @@ impl InteractionScreen {
     /// by every `fire_terminator` exit so the transition is recorded once.
     fn finalize_terminated(&mut self, reason: CloseReason, action: ScreenAction) -> ScreenAction {
         self.close_reason = Some(reason);
-        self.state = InteractionState::Terminated;
+        self.terminated = true;
         self.terminated_at = Some(self.clock.now());
         action
     }
 
-    /// Append a finished `System` turn stamped now.
+    /// Append a finished `System` turn stamped now to the frozen view (#950).
+    /// Only the quit-teardown epilogue uses this: by then the session is
+    /// `Killed`, so the app has stopped refreshing the view and these turns
+    /// survive on the terminal banner instead of being overwritten.
     fn push_system_now(&mut self, content: String) {
         let now = Utc::now();
-        self.history.push(TurnRecord {
+        self.view.turns.push(TurnRecord {
             role: TurnRole::System,
             content,
             started_at: now,

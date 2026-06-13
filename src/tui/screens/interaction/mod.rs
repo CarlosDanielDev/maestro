@@ -23,7 +23,7 @@ mod turn;
 pub(crate) mod view_state;
 
 use super::{Screen, ScreenAction};
-use crate::session::interaction::TurnRecord;
+use crate::session::interaction::{TurnRecord, TurnState};
 use crate::tui::activity_log::LogLevel;
 use crate::tui::navigation::InputMode;
 use crate::tui::theme::Theme;
@@ -36,7 +36,7 @@ use ratatui::{Frame, layout::Rect, style::Style};
 use std::path::PathBuf;
 use std::time::Instant;
 use tui_textarea::TextArea;
-use view_state::{CloseReason, InteractionState};
+use view_state::{CloseReason, InteractionView};
 
 /// Tag used for every Interaction activity-log line.
 const LOG_TAG: &str = "INTERACTION";
@@ -62,9 +62,13 @@ pub struct InteractionScreen {
     produce_pr: bool,
     /// Worktree shown in the quit-confirm modal ("kept for manual inspection").
     worktree_path: PathBuf,
-    /// Lifecycle state mirrored from the domain `InteractionSession`. Drives
-    /// the input lock (`Streaming`) and the terminal banner (`Terminated`).
-    state: InteractionState,
+    /// Per-frame projection of the live `Session` (#950): transcript +
+    /// `turn_state` (input lock) + `settled_from`/`pr_linked` (status banner).
+    /// Refreshed via [`Self::set_view`] each draw; the screen owns no turns.
+    view: InteractionView,
+    /// True once the quit teardown finished (#949). Screen-local — the session
+    /// is `Killed` by then. Drives the terminal banner and any-key auto-nav.
+    terminated: bool,
     /// Why the session ended, set when the user confirms `Ctrl+W`.
     close_reason: Option<CloseReason>,
     /// True while the `Ctrl+W` confirm modal is visible.
@@ -85,7 +89,6 @@ pub struct InteractionScreen {
     /// Issue title shown in the header so the frame names the work, like the
     /// sessions view does (#738 QA).
     issue_title: String,
-    history: Vec<TurnRecord>,
     editor: TextArea<'static>,
     /// First visible history line. Meaningful only when `auto_scroll` is off.
     scroll_offset: usize,
@@ -123,22 +126,26 @@ pub struct InteractionScreen {
 }
 
 impl InteractionScreen {
-    /// Construct an empty screen (no turns). Used by the dispatch construct
-    /// arm in #736; live sessions bind via [`Self::for_session`].
+    /// Construct an empty screen (no turns). Live sessions bind via
+    /// [`Self::for_managed`].
     pub fn new() -> Self {
         Self::with_history(Vec::new())
     }
 
-    /// Construct a screen pre-seeded with `history`. The seam #737 and the
-    /// snapshot tests use to inject turns.
-    pub fn with_history(history: Vec<TurnRecord>) -> Self {
+    /// Construct a screen pre-seeded with `turns` — test/snapshot seam that
+    /// injects a transcript into the view without a live session (#950).
+    pub fn with_history(turns: Vec<TurnRecord>) -> Self {
         let mut editor = TextArea::default();
         editor.set_cursor_line_style(Style::default());
         Self {
             issue_number: 0,
             produce_pr: true,
             worktree_path: PathBuf::new(),
-            state: InteractionState::Idle,
+            view: InteractionView {
+                turns,
+                ..InteractionView::default()
+            },
+            terminated: false,
             close_reason: None,
             quit_modal_open: false,
             stream_started_at: None,
@@ -148,7 +155,6 @@ impl InteractionScreen {
             agent_label: String::new(),
             model: String::new(),
             issue_title: String::new(),
-            history,
             editor,
             scroll_offset: 0,
             auto_scroll: true,
@@ -164,26 +170,20 @@ impl InteractionScreen {
         }
     }
 
-    /// Bind a live unified interactive session (#948): copy its issue,
-    /// launch flags, worktree, turn activity, and a snapshot of its
-    /// transcript. Used by the dispatch launch + re-entry paths (#738).
-    /// The screen is a view; the pool's `Session` remains the persistence
-    /// source of truth. Only live (non-terminal) sessions are bound, so
-    /// the view never starts `Terminated`.
+    /// Bind a live unified interactive session (#948): copy its issue, launch
+    /// flags, worktree, and a starting view projection. Used by the dispatch
+    /// launch + re-entry paths (#738). The pool's `Session` stays the source
+    /// of truth; the app refreshes the view each frame (#950).
     pub fn for_managed(managed: &crate::session::manager::ManagedSession) -> Self {
-        use crate::session::interaction::TurnState;
         let session = &managed.session;
-        let mut screen = Self::with_history(session.turns.clone());
+        let mut screen = Self::new();
+        screen.view = InteractionView::from_session(session);
         screen.issue_number = session.issue_number.unwrap_or_default();
         screen.produce_pr = session.produce_pr;
         screen.worktree_path = managed
             .worktree_path
             .clone()
             .unwrap_or_else(|| PathBuf::from("."));
-        screen.state = match session.turn_state {
-            TurnState::Streaming => InteractionState::Streaming,
-            TurnState::Idle => InteractionState::Idle,
-        };
         screen.branch = managed.branch_name.clone().unwrap_or_default();
         // The worktree lives at `<root>/issue-N`, so its parent is the root the
         // teardown sanity-check gates against (#741 D1). Only an ABSOLUTE parent
@@ -199,9 +199,28 @@ impl InteractionScreen {
         screen
     }
 
-    /// True while a turn streams — the input pane is locked.
+    /// True while a turn streams — the input pane is locked. Read from the
+    /// live session's `turn_state` via the injected view (#950).
     pub fn is_streaming(&self) -> bool {
-        self.state == InteractionState::Streaming
+        self.view.turn_state == TurnState::Streaming
+    }
+
+    /// Project the live session into the rendered view (#950). Called each
+    /// frame before draw; not called once the session is `Killed`, so the
+    /// post-quit view freezes for the terminal banner.
+    pub(crate) fn set_view(&mut self, view: InteractionView) {
+        self.view = view;
+    }
+
+    /// Status-banner text from `settled_from` + `pr_linked` (#950).
+    pub(crate) fn banner(&self) -> Option<String> {
+        self.view.banner()
+    }
+
+    /// Issue this screen is bound to — lets the app fetch the live session to
+    /// project into the view each frame (#950).
+    pub(crate) fn issue_number(&self) -> u64 {
+        self.issue_number
     }
 
     /// True when this screen is bound to `issue_number`. Gates the terminator
@@ -211,16 +230,9 @@ impl InteractionScreen {
     }
 
     /// True when the `Ctrl+P` pushup chord is active (launched with
-    /// `produce_pr` and not mid-stream). Drives the greyed footer hint.
+    /// `produce_pr`, idle, and not terminated). Drives the greyed footer hint.
     pub fn pushup_enabled(&self) -> bool {
-        self.produce_pr && self.state == InteractionState::Idle
-    }
-
-    /// Append a turn. Preserves the user's read position: when scrolled up
-    /// (`auto_scroll` off), the offset is left untouched so incoming turns
-    /// don't yank the viewport.
-    pub fn push_turn(&mut self, turn: TurnRecord) {
-        self.history.push(turn);
+        self.produce_pr && self.view.turn_state == TurnState::Idle && !self.terminated
     }
 
     /// Current editor contents joined into one string. Seam for #738's submit.
@@ -232,35 +244,6 @@ impl InteractionScreen {
     /// Session state is untouched — the overlay is a pure view.
     pub(crate) fn open_diff_review(&mut self, diff_text: &str) {
         self.diff_review = Some(diff_review::DiffReview::new(diff_text));
-    }
-
-    /// Scroll the open reviewer for snapshot tests / mouse routing.
-    #[cfg(test)]
-    pub(crate) fn diff_review_open(&self) -> bool {
-        self.diff_review.is_some()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn scroll_up_for_test(&mut self, n: usize) {
-        self.scroll_up(n);
-    }
-
-    /// History length — test seam for dispatch re-entry assertions (#738).
-    #[cfg(test)]
-    pub(crate) fn history_len(&self) -> usize {
-        self.history.len()
-    }
-
-    #[cfg(test)]
-    fn scroll_down_for_test(&mut self, n: usize) {
-        self.scroll_down(n);
-    }
-
-    /// Tail-follow flag — cross-module test seam for the mouse-routing
-    /// assertion in `tui::mod` (#988).
-    #[cfg(test)]
-    pub(crate) fn auto_scroll_for_test(&self) -> bool {
-        self.auto_scroll
     }
 }
 
@@ -306,7 +289,13 @@ impl Screen for InteractionScreen {
             return self.handle_quit_modal(*code);
         }
 
-        match classify(self.state, self.produce_pr, *code, *modifiers) {
+        match classify(
+            self.view.turn_state,
+            self.terminated,
+            self.produce_pr,
+            *code,
+            *modifiers,
+        ) {
             InteractionIntent::Back => ScreenAction::Pop,
             InteractionIntent::ScrollUp => {
                 self.scroll_up(1);

@@ -1312,9 +1312,10 @@ mod handle_screen_action_tests {
         cfg.custom_prompt = Some("plan the work".into());
         handle_screen_action(&mut app, ScreenAction::LaunchSession(cfg));
 
-        let screen = app.screen_state.interaction_screen.as_ref().unwrap();
-        assert!(screen.is_streaming(), "dialog prompt should start a turn");
-        assert_eq!(screen.history_len(), 1, "the prompt is the first User turn");
+        // #950: the screen owns no transcript and no local streaming flag —
+        // the first turn is proved by the queued command. The User+Agent turns
+        // and the Streaming lock land on the session when the pipeline runs the
+        // dispatch; the next frame projects them into the view.
         assert!(
             app.pending_commands.iter().any(|c| matches!(
                 c,

@@ -186,6 +186,27 @@ pub(super) fn draw_quit_modal(f: &mut Frame, area: Rect, theme: &Theme, worktree
     );
 }
 
+/// Render the one-row status banner shown once the session settles (#950):
+/// how the underlying run ended (`settled_from`) plus any linked PR. Sits
+/// between the transcript and the keybar; the chat input stays active below.
+pub(super) fn draw_settled_banner(f: &mut Frame, area: Rect, theme: &Theme, text: &str) {
+    let line = Line::from(vec![
+        Span::styled("─ ", Style::default().fg(theme.border_inactive)),
+        Span::styled(text.to_string(), Style::default().fg(theme.accent_info)),
+        Span::raw(" "),
+    ]);
+    let used: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+    let fill = (area.width as usize).saturating_sub(used);
+    let mut spans = line.spans;
+    if fill > 0 {
+        spans.push(Span::styled(
+            "─".repeat(fill),
+            Style::default().fg(theme.border_inactive),
+        ));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
 /// Render the terminated banner in place of the input pane.
 pub(super) fn draw_terminated_banner(
     f: &mut Frame,

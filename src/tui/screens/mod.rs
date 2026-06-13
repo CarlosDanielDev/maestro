@@ -33,6 +33,7 @@ pub use ci_error_review::{CiErrorReviewScreen, CiErrorReviewState, FetchPhase};
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
 pub use interaction::InteractionScreen;
+pub(crate) use interaction::view_state::InteractionView;
 pub use issue_browser::IssueBrowserScreen;
 pub use issue_wizard::IssueWizardScreen;
 pub use landing::LandingScreen;

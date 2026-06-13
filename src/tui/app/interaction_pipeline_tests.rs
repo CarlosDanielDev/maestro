@@ -106,9 +106,13 @@ async fn first_turn_runs_through_pipeline_and_binds_resume_id() {
     assert_eq!(session.turns[1].content, "hello from the flow");
     assert!(session.turns[1].finished_at.is_some());
 
-    // The live screen saw the same transcript.
-    let screen = app.screen_state.interaction_screen.as_ref().unwrap();
-    assert_eq!(screen.last_agent_content(), "hello from the flow");
+    // #950: the screen is a pure view — projecting the live session yields the
+    // same transcript it renders.
+    let view = crate::tui::screens::InteractionView::from_session(session);
+    assert_eq!(
+        view.turns.last().map(|t| t.content.as_str()),
+        Some("hello from the flow")
+    );
 }
 
 #[tokio::test]

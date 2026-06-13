@@ -6,7 +6,7 @@
 //! `handle_input` at one level of indentation.
 
 use super::InteractionScreen;
-use super::view_state::InteractionState;
+use crate::session::interaction::TurnState;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -50,15 +50,17 @@ pub(crate) enum InteractionIntent {
 /// Classify one key press. Order matters: terminal/global keys resolve before
 /// the streaming lock so `Esc`, `Ctrl+W`, and scroll still work mid-stream.
 pub(crate) fn classify(
-    state: InteractionState,
+    turn_state: TurnState,
+    terminated: bool,
     produce_pr: bool,
     code: KeyCode,
     mods: KeyModifiers,
 ) -> InteractionIntent {
     use InteractionIntent::*;
 
-    // A terminated session leaves on any key.
-    if state == InteractionState::Terminated {
+    // A terminated session leaves on any key (#950: terminal lifecycle is
+    // screen-local; the live turn_state only models Idle/Streaming).
+    if terminated {
         return Back;
     }
 
@@ -86,7 +88,7 @@ pub(crate) fn classify(
     }
 
     // While streaming, every remaining send/edit key is ignored.
-    if state == InteractionState::Streaming {
+    if turn_state == TurnState::Streaming {
         return Locked;
     }
 
@@ -175,7 +177,7 @@ impl KeymapProvider for InteractionScreen {
 mod tests {
     use super::*;
     use InteractionIntent::*;
-    use InteractionState::{Idle, Streaming, Terminated};
+    use TurnState::{Idle, Streaming};
 
     fn ctrl(c: char) -> (KeyCode, KeyModifiers) {
         (KeyCode::Char(c), KeyModifiers::CONTROL)
@@ -184,7 +186,7 @@ mod tests {
     #[test]
     fn enter_idle_sends_input() {
         assert_eq!(
-            classify(Idle, true, KeyCode::Enter, KeyModifiers::NONE),
+            classify(Idle, false, true, KeyCode::Enter, KeyModifiers::NONE),
             SendInput
         );
     }
@@ -192,19 +194,20 @@ mod tests {
     #[test]
     fn enter_streaming_is_locked() {
         assert_eq!(
-            classify(Streaming, true, KeyCode::Enter, KeyModifiers::NONE),
+            classify(Streaming, false, true, KeyCode::Enter, KeyModifiers::NONE),
             Locked
         );
     }
 
     #[test]
     fn any_key_terminated_navigates_back() {
+        // #950: terminated is a screen-local bool, not a turn_state value.
         assert_eq!(
-            classify(Terminated, true, KeyCode::Enter, KeyModifiers::NONE),
+            classify(Idle, true, true, KeyCode::Enter, KeyModifiers::NONE),
             Back
         );
         assert_eq!(
-            classify(Terminated, true, KeyCode::Char('x'), KeyModifiers::NONE),
+            classify(Idle, true, true, KeyCode::Char('x'), KeyModifiers::NONE),
             Back
         );
     }
@@ -212,7 +215,7 @@ mod tests {
     #[test]
     fn shift_enter_inserts_newline() {
         assert_eq!(
-            classify(Idle, true, KeyCode::Enter, KeyModifiers::SHIFT),
+            classify(Idle, false, true, KeyCode::Enter, KeyModifiers::SHIFT),
             InsertNewline
         );
     }
@@ -220,42 +223,45 @@ mod tests {
     #[test]
     fn ctrl_p_idle_with_produce_pr_sends_pushup() {
         let (c, m) = ctrl('p');
-        assert_eq!(classify(Idle, true, c, m), SendPushup);
+        assert_eq!(classify(Idle, false, true, c, m), SendPushup);
     }
 
     #[test]
     fn ctrl_p_idle_without_produce_pr_is_disabled() {
         let (c, m) = ctrl('p');
-        assert_eq!(classify(Idle, false, c, m), PushupDisabled);
+        assert_eq!(classify(Idle, false, false, c, m), PushupDisabled);
     }
 
     #[test]
     fn ctrl_p_streaming_is_locked() {
         let (c, m) = ctrl('p');
-        assert_eq!(classify(Streaming, true, c, m), Locked);
+        assert_eq!(classify(Streaming, false, true, c, m), Locked);
     }
 
     #[test]
     fn ctrl_l_idle_clears_input() {
         let (c, m) = ctrl('l');
-        assert_eq!(classify(Idle, true, c, m), ClearInput);
+        assert_eq!(classify(Idle, false, true, c, m), ClearInput);
     }
 
     #[test]
     fn ctrl_l_streaming_is_locked() {
         let (c, m) = ctrl('l');
-        assert_eq!(classify(Streaming, true, c, m), Locked);
+        assert_eq!(classify(Streaming, false, true, c, m), Locked);
     }
 
     #[test]
     fn esc_idle_returns_back() {
-        assert_eq!(classify(Idle, true, KeyCode::Esc, KeyModifiers::NONE), Back);
+        assert_eq!(
+            classify(Idle, false, true, KeyCode::Esc, KeyModifiers::NONE),
+            Back
+        );
     }
 
     #[test]
     fn esc_streaming_returns_back() {
         assert_eq!(
-            classify(Streaming, true, KeyCode::Esc, KeyModifiers::NONE),
+            classify(Streaming, false, true, KeyCode::Esc, KeyModifiers::NONE),
             Back
         );
     }
@@ -263,13 +269,13 @@ mod tests {
     #[test]
     fn ctrl_w_idle_opens_quit_modal() {
         let (c, m) = ctrl('w');
-        assert_eq!(classify(Idle, true, c, m), RequestQuit);
+        assert_eq!(classify(Idle, false, true, c, m), RequestQuit);
     }
 
     #[test]
     fn ctrl_w_streaming_opens_quit_modal() {
         let (c, m) = ctrl('w');
-        assert_eq!(classify(Streaming, true, c, m), RequestQuit);
+        assert_eq!(classify(Streaming, false, true, c, m), RequestQuit);
     }
 
     #[test]
@@ -277,18 +283,18 @@ mod tests {
         // Ctrl+Q is the global TurboQuant toggle (input_handler), consumed
         // before screen dispatch — interaction must not also bind it.
         let (c, m) = ctrl('q');
-        assert_ne!(classify(Idle, true, c, m), RequestQuit);
+        assert_ne!(classify(Idle, false, true, c, m), RequestQuit);
     }
 
     #[test]
     fn scroll_keys_work_in_every_state() {
         for state in [Idle, Streaming] {
             assert_eq!(
-                classify(state, true, KeyCode::Up, KeyModifiers::NONE),
+                classify(state, false, true, KeyCode::Up, KeyModifiers::NONE),
                 ScrollUp
             );
             assert_eq!(
-                classify(state, true, KeyCode::Down, KeyModifiers::NONE),
+                classify(state, false, true, KeyCode::Down, KeyModifiers::NONE),
                 ScrollDown
             );
         }
@@ -300,15 +306,15 @@ mod tests {
         // page/jump the transcript in both Idle and Streaming.
         for state in [Idle, Streaming] {
             assert_eq!(
-                classify(state, true, KeyCode::PageUp, KeyModifiers::NONE),
+                classify(state, false, true, KeyCode::PageUp, KeyModifiers::NONE),
                 PageUp
             );
             assert_eq!(
-                classify(state, true, KeyCode::PageDown, KeyModifiers::NONE),
+                classify(state, false, true, KeyCode::PageDown, KeyModifiers::NONE),
                 PageDown
             );
             assert_eq!(
-                classify(state, true, KeyCode::End, KeyModifiers::NONE),
+                classify(state, false, true, KeyCode::End, KeyModifiers::NONE),
                 JumpToLatest
             );
         }
@@ -317,7 +323,7 @@ mod tests {
     #[test]
     fn plain_char_idle_feeds_editor() {
         assert_eq!(
-            classify(Idle, true, KeyCode::Char('h'), KeyModifiers::NONE),
+            classify(Idle, false, true, KeyCode::Char('h'), KeyModifiers::NONE),
             FeedEditor
         );
     }
@@ -325,7 +331,7 @@ mod tests {
     #[test]
     fn plain_p_without_control_feeds_editor() {
         assert_eq!(
-            classify(Idle, true, KeyCode::Char('p'), KeyModifiers::NONE),
+            classify(Idle, false, true, KeyCode::Char('p'), KeyModifiers::NONE),
             FeedEditor
         );
     }

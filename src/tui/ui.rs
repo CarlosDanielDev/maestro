@@ -290,7 +290,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::Interaction => {
+            // Project the live session into the screen each frame (#950): the
+            // screen owns no transcript. Skipped once the session is `Killed`
+            // (quit) — `interactive_managed` returns None then, so the view
+            // freezes for the terminal banner.
             if let Some(ref mut screen) = app.screen_state.interaction_screen {
+                if let Some(managed) = app.pool.interactive_managed(screen.issue_number()) {
+                    screen.set_view(crate::tui::screens::InteractionView::from_session(
+                        &managed.session,
+                    ));
+                }
                 screen.set_spinner_context(spinner_tick);
                 screen.draw(f, chunks[1], &app.theme);
             }
