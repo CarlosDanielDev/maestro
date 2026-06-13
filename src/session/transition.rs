@@ -23,6 +23,10 @@ pub enum TransitionReason {
     ContextOverflow,
     PrNeeded,
     ConflictFixStarted,
+    /// A `/pushup` PR linked to the session's issue terminated an
+    /// interactive session (#948, was `CloseReason::PrCreated`). Phase 4
+    /// (#949) makes PR detection non-terminal and retires this path.
+    PrLinked,
 }
 
 /// Record of a single state transition.
@@ -162,6 +166,7 @@ mod tests {
                 SessionStatus::Running,
                 SessionStatus::Errored,
                 SessionStatus::Killed,
+                SessionStatus::Interactive,
             ],
         );
     }
@@ -180,6 +185,7 @@ mod tests {
                 SessionStatus::NeedsPr,
                 SessionStatus::CiFix,
                 SessionStatus::ConflictFix,
+                SessionStatus::Interactive,
             ],
         );
     }
@@ -200,6 +206,7 @@ mod tests {
                 SessionStatus::Retrying,
                 SessionStatus::Killed,
                 SessionStatus::Errored,
+                SessionStatus::Interactive,
             ],
         );
     }
@@ -218,6 +225,7 @@ mod tests {
                 SessionStatus::FailedGates,
                 SessionStatus::Completed,
                 SessionStatus::Errored,
+                SessionStatus::Interactive,
             ],
         );
     }
@@ -245,6 +253,7 @@ mod tests {
                 SessionStatus::Spawning,
                 SessionStatus::Errored,
                 SessionStatus::Killed,
+                SessionStatus::Interactive,
             ],
         );
     }
@@ -257,6 +266,7 @@ mod tests {
                 SessionStatus::Spawning,
                 SessionStatus::Errored,
                 SessionStatus::Killed,
+                SessionStatus::Interactive,
             ],
         );
     }
@@ -265,7 +275,11 @@ mod tests {
     fn valid_transitions_needs_pr() {
         assert_transitions(
             SessionStatus::NeedsPr,
-            &[SessionStatus::Completed, SessionStatus::Errored],
+            &[
+                SessionStatus::Completed,
+                SessionStatus::Errored,
+                SessionStatus::Interactive,
+            ],
         );
     }
 
@@ -277,6 +291,7 @@ mod tests {
                 SessionStatus::Spawning,
                 SessionStatus::Errored,
                 SessionStatus::Killed,
+                SessionStatus::Interactive,
             ],
         );
     }

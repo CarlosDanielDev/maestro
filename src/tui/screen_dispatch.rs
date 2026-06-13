@@ -458,21 +458,24 @@ fn open_interaction_session(
     produce_pr: bool,
     seed_prompt: Option<String>,
 ) {
-    let resumed = app
-        .pool
-        .find_active_interaction_by_issue(issue_number)
-        .is_some();
-    let mut screen = if resumed {
-        let session = app
+    let resumed = app.pool.interactive_managed(issue_number).is_some();
+    if !resumed {
+        // Unified launch (#948): one real Interactive-mode Session.
+        // Model/mode start from the configured defaults and are
+        // re-resolved at first-turn dispatch once the issue cache is warm.
+        app.pool.create_interaction_session(
+            issue_number,
+            produce_pr,
+            app.session_config.default_model.clone(),
+            app.session_config.default_mode.clone(),
+        );
+    }
+    let mut screen = {
+        let managed = app
             .pool
-            .find_active_interaction_by_issue(issue_number)
-            .expect("active interaction checked just above");
-        screens::InteractionScreen::for_session(session)
-    } else {
-        let session = app
-            .pool
-            .create_interaction_session(issue_number, produce_pr);
-        screens::InteractionScreen::for_session(session)
+            .interactive_managed(issue_number)
+            .expect("interactive session exists or was just created");
+        screens::InteractionScreen::for_managed(managed)
     };
     // Turns run through the pool's configured provider (#751) with the
     // default model; surface that so the user knows who they are talking to
@@ -1037,23 +1040,25 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // Re-entry (#738 AC): if an active interaction session exists for
             // this issue, reopen it with full history and skip the launch
             // dialog. Otherwise fall back to the normal launch dialog.
-            if app
-                .pool
-                .find_active_interaction_by_issue(issue_number)
-                .is_some()
-            {
+            if app.pool.interactive_managed(issue_number).is_some() {
                 open_interaction_session(app, issue_number, false, None);
             } else if let Some(browser) = app.screen_state.issue_browser_screen.as_mut() {
                 browser.open_launch_overlay_for_selected();
             }
         }
         ScreenAction::QuitInteraction { issue_number } => {
-            if let Some(mut session) = app.pool.clone_active_interaction(issue_number) {
-                session.state = crate::session::interaction::InteractionState::Terminated;
-                session.close_reason = Some(crate::session::interaction::CloseReason::UserQuit);
-                session.closed_at = Some(chrono::Utc::now());
-                let worktree = session.worktree_path.display().to_string();
-                app.pool.upsert_interaction(session);
+            // #948: quit = terminate the unified session. Worktree is
+            // preserved (teardown moves to this path in #949).
+            if let Some(managed) = app.pool.interactive_managed_mut(issue_number) {
+                let worktree = managed
+                    .worktree_path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| ".".to_string());
+                let _ = managed.session.transition_to(
+                    crate::session::types::SessionStatus::Killed,
+                    crate::session::transition::TransitionReason::UserKill,
+                );
                 app.activity_log.push_simple(
                     "INTERACTION".into(),
                     format!("quit #{issue_number}; worktree kept at {worktree}"),
@@ -1587,7 +1592,12 @@ mod interaction_launch_tests {
             .issue_cache
             .insert(946, issue(946, "Title", "body"));
         // Create an active session first so re-entry is detected as resumed.
-        app.pool.create_interaction_session(946, false);
+        app.pool.create_interaction_session(
+            946,
+            false,
+            "opus".to_string(),
+            "orchestrator".to_string(),
+        );
 
         open_interaction_session(&mut app, 946, false, Some("ignored seed".into()));
 

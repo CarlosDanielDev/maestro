@@ -6,7 +6,7 @@
 //! `handle_input` at one level of indentation.
 
 use super::InteractionScreen;
-use crate::session::interaction::InteractionState;
+use super::view_state::InteractionState;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crossterm::event::{KeyCode, KeyModifiers};
 

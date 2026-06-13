@@ -1,6 +1,5 @@
 use crate::provider::github::types::PendingPr;
 use crate::provider::types::Issue;
-use crate::session::interaction::InteractionSession;
 use crate::session::types::Session;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -102,11 +101,6 @@ pub struct MaestroState {
     /// Team orchestrator runs. Defaults to empty for backward compatibility.
     #[serde(default)]
     pub team_runs: Vec<TeamRun>,
-    /// Interactive (chat-style) sessions, keyed by issue number (#734).
-    /// Defaults to empty for backward compatibility — old state files
-    /// without this key load with no interactions. Population lands in #737.
-    #[serde(default)]
-    pub interactions: Vec<InteractionSession>,
 }
 
 impl Default for MaestroState {
@@ -122,7 +116,6 @@ impl Default for MaestroState {
             pending_prs: Vec::new(),
             pending_completions: Vec::new(),
             team_runs: Vec::new(),
-            interactions: Vec::new(),
         }
     }
 }
@@ -534,43 +527,6 @@ mod tests {
         let state: MaestroState = serde_json::from_str(json).unwrap();
         assert!(
             state.pending_completions.is_empty(),
-            "must default to empty vec for backward compatibility"
-        );
-    }
-
-    // --- Issue #734: MaestroState::interactions persistence ---
-
-    #[test]
-    fn maestro_state_interactions_defaults_to_empty_vec() {
-        let state = MaestroState::default();
-        assert!(state.interactions.is_empty());
-    }
-
-    #[test]
-    fn maestro_state_interactions_round_trips_via_serde() {
-        use crate::session::interaction::InteractionSession;
-
-        let mut state = MaestroState::default();
-        state.interactions.push(InteractionSession::new(
-            99,
-            std::path::PathBuf::from("/tmp/x"),
-            "branch".into(),
-            true,
-        ));
-
-        let json = serde_json::to_string(&state).unwrap();
-        let rt: MaestroState = serde_json::from_str(&json).unwrap();
-        assert_eq!(rt.interactions.len(), 1);
-        assert_eq!(rt.interactions[0].issue_number, 99);
-    }
-
-    #[test]
-    fn maestro_state_interactions_deserializes_with_default_when_absent() {
-        // Legacy state JSON without the new field should still load.
-        let json = r#"{"sessions":[],"total_cost_usd":0.0,"file_claims":{},"last_updated":null}"#;
-        let state: MaestroState = serde_json::from_str(json).unwrap();
-        assert!(
-            state.interactions.is_empty(),
             "must default to empty vec for backward compatibility"
         );
     }

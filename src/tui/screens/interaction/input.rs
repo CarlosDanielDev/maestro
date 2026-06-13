@@ -5,7 +5,7 @@
 //! greyed when `produce_pr` was unchecked, the quit-confirm modal, and the
 //! terminated banner. The editor owns the text buffer and cursor logic.
 
-use crate::session::interaction::CloseReason;
+use super::view_state::CloseReason;
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,

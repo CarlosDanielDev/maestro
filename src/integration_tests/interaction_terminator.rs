@@ -1,15 +1,18 @@
 //! Integration tests for #739 — InteractionLifecycleEvent + signal_terminator
-//! wired into `poll_last_pr_created_marker`.
+//! wired into `poll_last_pr_created_marker`, ported to the unified
+//! interactive session (#948).
 //!
-//! A `/pushup` marker carrying `issue_number` that matches an active
-//! interaction session must terminate that session AND still enqueue the
+//! A `/pushup` marker carrying `issue_number` that matches a live
+//! interactive session must terminate that session AND still enqueue the
 //! existing `PrCreated` command (single read → both events). Legacy markers
 //! (no `issue_number`) take only the `PrCreated` path.
 
 use std::path::{Path, PathBuf};
 
-use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
+use crate::session::interaction::{TurnRole, TurnState};
 use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
+use crate::session::transition::TransitionReason;
+use crate::session::types::SessionStatus;
 use crate::tui::app::types::TuiCommand;
 use crate::work::pr_marker::PrMarker;
 
@@ -34,10 +37,29 @@ fn make_app_with_home(home: PathBuf) -> crate::tui::app::App {
     crate::tui::make_test_app("interaction-terminator").with_home_dir(home)
 }
 
+fn create_interaction(app: &mut crate::tui::app::App, issue: u64) -> uuid::Uuid {
+    app.pool.create_interaction_session(
+        issue,
+        false,
+        "opus".to_string(),
+        "orchestrator".to_string(),
+    )
+}
+
 fn pr_created_queued(app: &crate::tui::app::App, pr_number: u64) -> bool {
     app.pending_commands
         .iter()
         .any(|c| matches!(c, TuiCommand::PrCreated { pr_number: n, .. } if *n == pr_number))
+}
+
+/// Last transition recorded on the session behind `id`.
+fn last_transition_reason(
+    app: &mut crate::tui::app::App,
+    id: uuid::Uuid,
+) -> Option<TransitionReason> {
+    app.pool
+        .get_active_mut(id)
+        .and_then(|m| m.session.transition_history.last().map(|t| t.reason))
 }
 
 #[tokio::test]
@@ -47,25 +69,26 @@ async fn marker_with_matching_issue_terminates_interaction_and_enqueues_pr_creat
     write_marker(&marker_path, 7, Some(42));
 
     let mut app = make_app_with_home(home.path().to_path_buf());
-    app.pool.create_interaction_session(42, false);
+    let id = create_interaction(&mut app, 42);
 
     app.poll_last_pr_created_marker().await;
 
     // Marker consumed.
     assert!(!marker_path.exists(), "marker must be deleted");
 
-    // Interaction terminated — no active session remains for issue 42.
+    // Interaction terminated — no live session remains for issue 42.
     assert!(
-        app.pool.find_active_interaction_by_issue(42).is_none(),
+        app.pool.interactive_managed(42).is_none(),
         "interaction for issue 42 must be terminated"
     );
 
-    // close_reason is PrCreated { pr_number: 7 }.
-    let reason = app
-        .pool
-        .interaction_close_reason(42)
-        .expect("close_reason must be set");
-    assert_eq!(*reason, CloseReason::PrCreated { pr_number: 7 });
+    // The termination is audited as PrLinked on the unified session.
+    let managed = app.pool.get_active_mut(id).expect("session registered");
+    assert_eq!(managed.session.status, SessionStatus::Killed);
+    assert_eq!(
+        last_transition_reason(&mut app, id),
+        Some(TransitionReason::PrLinked)
+    );
 
     // The existing PrCreated path still fires (single read → both events).
     assert!(
@@ -74,60 +97,53 @@ async fn marker_with_matching_issue_terminates_interaction_and_enqueues_pr_creat
     );
 }
 
-/// Prepare the live slot as if a turn is mid-stream on the pipeline path
-/// (#947): streaming agent record on the interaction + a registered
-/// Interactive-mode pipeline session. Returns the pipeline session id.
+/// Prepare the live session as if a turn is mid-stream on the pipeline
+/// path (#947): streaming agent record + `TurnState::Streaming`.
 fn start_streaming_turn(app: &mut crate::tui::app::App, issue: u64) -> uuid::Uuid {
-    let id = app
+    let id = create_interaction(app, issue);
+    let managed = app
         .pool
-        .ensure_interaction_pipeline_session(
-            issue,
-            "work the issue".to_string(),
-            "opus".to_string(),
-            "orchestrator".to_string(),
-        )
-        .expect("pipeline session registered");
-    let live = app
-        .pool
-        .find_active_interaction_by_issue_mut(issue)
-        .expect("active");
+        .interactive_managed_mut(issue)
+        .expect("live interaction");
     let now = chrono::Utc::now();
-    live.history.push(TurnRecord {
-        role: TurnRole::Agent,
-        content: String::new(),
-        started_at: now,
-        finished_at: None,
-    });
-    live.state = InteractionState::Streaming;
+    managed
+        .session
+        .turns
+        .push(crate::session::interaction::TurnRecord {
+            role: TurnRole::Agent,
+            content: String::new(),
+            started_at: now,
+            finished_at: None,
+        });
+    managed.session.turn_state = TurnState::Streaming;
     id
 }
 
 /// #936: a terminator queued while a turn was streaming must fire once that
-/// turn settles back to `Idle` and its output is merged. Since #947 the
-/// settle happens on the live slot when the pipeline session's `Completed`
-/// stream event lands — same contract, no clone/merge dance.
+/// turn settles back to idle and its output is merged. Since #948 the
+/// settle happens on the live session when its `Completed` stream event
+/// lands — same contract, no clone/merge dance.
 #[tokio::test]
 async fn queued_terminator_fires_after_streaming_turn_settles() {
     let home = tempfile::tempdir().unwrap();
     let mut app = make_app_with_home(home.path().to_path_buf());
-    app.pool.create_interaction_session(42, false);
     let session_id = start_streaming_turn(&mut app, 42);
 
-    // Marker arrives mid-stream: the live slot is `Streaming`, so
+    // Marker arrives mid-stream: the turn is streaming, so
     // `signal_terminator` queues the event instead of firing it.
     {
-        let live = app
+        let managed = app
             .pool
-            .find_active_interaction_by_issue_mut(42)
-            .expect("active");
-        live.signal_terminator(InteractionLifecycleEvent::PrLinkedToIssue {
+            .interactive_managed_mut(42)
+            .expect("live interaction");
+        managed.signal_terminator(InteractionLifecycleEvent::PrLinkedToIssue {
             pr_number: 7,
             issue_number: 42,
             owner: "owner".into(),
             repo: "repo".into(),
         });
         assert!(
-            live.queued_terminator.is_some(),
+            managed.queued_terminator.is_some(),
             "precondition: terminator queued while streaming"
         );
     }
@@ -144,52 +160,51 @@ async fn queued_terminator_fires_after_streaming_turn_settles() {
         event: crate::session::types::StreamEvent::Completed { cost_usd: 0.01 },
     });
 
-    // Terminator fired after the settle → no active session remains.
+    // Terminator fired after the settle → no live session remains.
     assert!(
-        app.pool.find_active_interaction_by_issue(42).is_none(),
+        app.pool.interactive_managed(42).is_none(),
         "queued terminator must fire once the streaming turn settles"
     );
 
-    let closed = app
-        .pool
-        .interaction_by_issue(42)
-        .expect("session still registered (terminated)");
-    assert_eq!(closed.state, InteractionState::Terminated);
-    assert_eq!(
-        closed.close_reason,
-        Some(CloseReason::PrCreated { pr_number: 7 })
-    );
+    let managed = app.pool.get_active_mut(session_id).expect("registered");
+    assert_eq!(managed.session.status, SessionStatus::Killed);
     assert!(
-        closed.closed_at.is_some(),
-        "closed_at must be stamped on the deferred fire"
-    );
-    assert!(
-        closed.queued_terminator.is_none(),
+        managed.queued_terminator.is_none(),
         "queued_terminator must be cleared after firing"
     );
     assert!(
-        closed.history.iter().any(|t| t.content == "streamed reply"),
+        managed
+            .session
+            .turns
+            .iter()
+            .any(|t| t.content == "streamed reply"),
         "the completed turn's output must be preserved (fire after settle)"
+    );
+    assert_eq!(
+        last_transition_reason(&mut app, session_id),
+        Some(TransitionReason::PrLinked)
     );
 }
 
-/// #936 idempotency: if the user terminated the session by other means while a
-/// turn was in flight, a late `Completed` stream event must NOT resurrect it.
+/// #936 idempotency: if the user terminated the session by other means while
+/// a turn was in flight, a late settle must NOT fire the queued terminator
+/// twice or resurrect the session.
 #[tokio::test]
 async fn completing_turn_does_not_resurrect_user_quit_session() {
     let home = tempfile::tempdir().unwrap();
     let mut app = make_app_with_home(home.path().to_path_buf());
-    app.pool.create_interaction_session(42, false);
     let session_id = start_streaming_turn(&mut app, 42);
 
-    // User quit mid-turn: the live slot is already Terminated.
+    // User quit mid-turn: the session is already terminal.
     {
-        let live = app
+        let managed = app
             .pool
-            .find_active_interaction_by_issue_mut(42)
-            .expect("active");
-        live.state = InteractionState::Terminated;
-        live.close_reason = Some(CloseReason::UserQuit);
+            .interactive_managed_mut(42)
+            .expect("live interaction");
+        managed
+            .session
+            .transition_to(SessionStatus::Killed, TransitionReason::UserKill)
+            .unwrap();
     }
 
     // The turn's settle event arrives late.
@@ -198,15 +213,15 @@ async fn completing_turn_does_not_resurrect_user_quit_session() {
         event: crate::session::types::StreamEvent::Completed { cost_usd: 0.01 },
     });
 
-    let closed = app.pool.interaction_by_issue(42).expect("registered");
+    let managed = app.pool.get_active_mut(session_id).expect("registered");
     assert_eq!(
-        closed.state,
-        InteractionState::Terminated,
+        managed.session.status,
+        SessionStatus::Killed,
         "a user-quit session must stay terminated"
     );
     assert_eq!(
-        closed.close_reason,
-        Some(CloseReason::UserQuit),
+        last_transition_reason(&mut app, session_id),
+        Some(TransitionReason::UserKill),
         "the original close reason must survive a late settle event"
     );
 }
@@ -242,7 +257,7 @@ async fn legacy_marker_without_issue_number_enqueues_pr_created_only() {
 
     let mut app = make_app_with_home(home.path().to_path_buf());
     // Seed an unrelated interaction — must not be touched.
-    app.pool.create_interaction_session(99, false);
+    create_interaction(&mut app, 99);
 
     app.poll_last_pr_created_marker().await;
 
@@ -252,10 +267,10 @@ async fn legacy_marker_without_issue_number_enqueues_pr_created_only() {
         "PrCreated must be enqueued for legacy marker"
     );
 
-    // The seeded interaction for issue 99 must remain active and Idle.
-    let still_active = app
+    // The seeded interaction for issue 99 must remain live and idle.
+    let still_live = app
         .pool
-        .find_active_interaction_by_issue(99)
-        .expect("interaction 99 must remain active");
-    assert_eq!(still_active.state, InteractionState::Idle);
+        .interactive_managed(99)
+        .expect("interaction 99 must remain live");
+    assert_eq!(still_live.session.turn_state, TurnState::Idle);
 }

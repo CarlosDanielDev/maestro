@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use super::App;
 use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
-use crate::session::interaction::{InteractionState, TurnRole};
+use crate::session::interaction::{TurnRole, TurnState};
 use crate::session::types::{SessionMode, SessionStatus, StreamEvent};
 use crate::tui::make_test_app;
 
@@ -21,13 +21,18 @@ pub(super) fn app_with_interaction(
     let mut app = make_test_app(name);
     let provider = Arc::new(ScriptedProvider::new(turns));
     app.pool.set_provider(provider.clone());
-    app.pool.create_interaction_session(issue, false);
-    let session = app
+    app.pool.create_interaction_session(
+        issue,
+        false,
+        "opus".to_string(),
+        "orchestrator".to_string(),
+    );
+    let managed = app
         .pool
-        .find_active_interaction_by_issue(issue)
+        .interactive_managed(issue)
         .expect("interaction just created");
     app.screen_state.interaction_screen =
-        Some(crate::tui::screens::InteractionScreen::for_session(session));
+        Some(crate::tui::screens::InteractionScreen::for_managed(managed));
     app.tui_mode = crate::tui::app::TuiMode::Interaction;
     (app, provider)
 }
@@ -75,7 +80,10 @@ async fn first_turn_runs_through_pipeline_and_binds_resume_id() {
         .expect("pipeline session registered");
     let managed = app.pool.get_active_mut(id).expect("active");
     assert_eq!(managed.session.session_mode, SessionMode::Interactive);
-    assert_eq!(managed.session.status, SessionStatus::Completed);
+    // #948: the settle is intercepted — the session stays alive with the
+    // one-shot outcome recorded in settled_from.
+    assert_eq!(managed.session.status, SessionStatus::Interactive);
+    assert_eq!(managed.session.settled_from, Some(SessionStatus::Completed));
     assert_eq!(
         managed.session.agent_session_id.as_deref(),
         Some("conv-947")
@@ -90,16 +98,13 @@ async fn first_turn_runs_through_pipeline_and_binds_resume_id() {
     assert!(requests[0].resume_session_id.is_none());
     assert_eq!(requests[0].prompt, "do the work");
 
-    // The persisted view-model mirrors the turn.
-    let interaction = app
-        .pool
-        .find_active_interaction_by_issue(947)
-        .expect("interaction alive");
-    assert_eq!(interaction.state, InteractionState::Idle);
-    let roles: Vec<TurnRole> = interaction.history.iter().map(|t| t.role).collect();
+    // The persisted transcript lives on the Session (#948).
+    let session = &app.pool.get_active_mut(id).expect("active").session;
+    assert_eq!(session.turn_state, TurnState::Idle);
+    let roles: Vec<TurnRole> = session.turns.iter().map(|t| t.role).collect();
     assert_eq!(roles, vec![TurnRole::User, TurnRole::Agent]);
-    assert_eq!(interaction.history[1].content, "hello from the flow");
-    assert!(interaction.history[1].finished_at.is_some());
+    assert_eq!(session.turns[1].content, "hello from the flow");
+    assert!(session.turns[1].finished_at.is_some());
 
     // The live screen saw the same transcript.
     let screen = app.screen_state.interaction_screen.as_ref().unwrap();
@@ -132,8 +137,9 @@ async fn followup_turn_resumes_the_bound_conversation() {
         .filter(|s| s.session_mode == SessionMode::Interactive)
         .collect();
     assert_eq!(interactive.len(), 1);
-    // Status untouched by the follow-up (kept-alive arrives with #948).
-    assert_eq!(interactive[0].status, SessionStatus::Completed);
+    // #948: kept alive across both turns; the follow-up re-settles.
+    assert_eq!(interactive[0].status, SessionStatus::Interactive);
+    assert_eq!(interactive[0].settled_from, Some(SessionStatus::Completed));
 
     let requests = provider.requests.lock().unwrap();
     assert_eq!(requests.len(), 2);
@@ -141,11 +147,12 @@ async fn followup_turn_resumes_the_bound_conversation() {
     assert_eq!(requests[1].resume_session_id.as_deref(), Some("conv-947"));
     assert_eq!(requests[1].prompt, "second");
 
-    let interaction = app
+    let session = app
         .pool
-        .find_active_interaction_by_issue(947)
+        .interactive_managed(947)
+        .map(|m| m.session.clone())
         .expect("interaction alive");
-    let roles: Vec<TurnRole> = interaction.history.iter().map(|t| t.role).collect();
+    let roles: Vec<TurnRole> = session.turns.iter().map(|t| t.role).collect();
     assert_eq!(
         roles,
         vec![
@@ -155,7 +162,57 @@ async fn followup_turn_resumes_the_bound_conversation() {
             TurnRole::Agent
         ]
     );
-    assert_eq!(interaction.history[3].content, "second answer");
+    assert_eq!(session.turns[3].content, "second answer");
+}
+
+/// Spec §9 (#948): settling from a failure lands in the kept-alive state
+/// and a follow-up retry resumes the SAME conversation.
+#[tokio::test]
+async fn failure_settles_interactive_and_followup_retries_on_same_resume_id() {
+    let (mut app, provider) = app_with_interaction(
+        "ip-failure-stays-alive",
+        947,
+        vec![
+            ScriptedTurn {
+                events: vec![StreamEvent::Error {
+                    message: "clippy failed".to_string(),
+                }],
+                end: ScriptedEnd::Ok {
+                    exit_code: Some(0),
+                    session_id: Some("conv-947"),
+                },
+            },
+            scripted_turn("fixed it", "conv-947"),
+        ],
+    );
+
+    app.dispatch_interaction_turn(947, "run the gates".to_string(), "opus".to_string())
+        .await;
+    pump_session_events(&mut app).await;
+
+    // Failure is not terminal for interactive sessions (spec §4.3).
+    let id = app
+        .pool
+        .interactive_pipeline_session_id(947)
+        .expect("session stays alive after failure");
+    {
+        let session = &app.pool.get_active_mut(id).expect("active").session;
+        assert_eq!(session.status, SessionStatus::Interactive);
+        assert_eq!(session.settled_from, Some(SessionStatus::Errored));
+        assert_eq!(session.turn_state, TurnState::Idle, "input unlocked");
+    }
+
+    // Discuss + retry: the follow-up resumes the same conversation.
+    app.dispatch_interaction_turn(947, "fix the clippy error".to_string(), "opus".to_string())
+        .await;
+    pump_session_events(&mut app).await;
+
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[1].resume_session_id.as_deref(), Some("conv-947"));
+
+    let session = &app.pool.get_active_mut(id).expect("active").session;
+    assert_eq!(session.settled_from, Some(SessionStatus::Completed));
 }
 
 /// The #947 acceptance criterion: a follow-up turn emits the same

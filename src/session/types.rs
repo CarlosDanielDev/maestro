@@ -43,6 +43,11 @@ pub enum SessionStatus {
     CiFix,
     NeedsPr,
     ConflictFix,
+    /// Kept-alive state for `SessionMode::Interactive` sessions (#948):
+    /// the one-shot flow settled (see `Session.settled_from`) and the
+    /// session now accepts follow-up turns on the same resume id.
+    /// NOT terminal — only an explicit quit/kill ends it.
+    Interactive,
 }
 
 /// How a session is driven: a single one-shot run, or a long-lived
@@ -93,6 +98,7 @@ impl SessionStatus {
             Self::CiFix => IconId::Wrench,
             Self::NeedsPr => IconId::GitPr,
             Self::ConflictFix => IconId::GitMerge,
+            Self::Interactive => IconId::Play,
         }
     }
 
@@ -113,6 +119,7 @@ impl SessionStatus {
             Self::CiFix => "[W]",
             Self::NeedsPr => "[P]",
             Self::ConflictFix => "[M]",
+            Self::Interactive => "[I]",
         }
     }
 
@@ -141,6 +148,7 @@ impl SessionStatus {
             Self::CiFix => "CI_FIX",
             Self::NeedsPr => "NEEDS_PR",
             Self::ConflictFix => "CONFLICT_FIX",
+            Self::Interactive => "INTERACTIVE",
         }
     }
 
@@ -149,7 +157,13 @@ impl SessionStatus {
         use SessionStatus::*;
         match self {
             Queued => &[Spawning, Killed, CiFix, ConflictFix],
-            Spawning => &[Running, Errored, Killed],
+            // `Interactive` appears as a target wherever a settleable
+            // terminal ({Completed, FailedGates, NeedsPr, Errored}) does:
+            // the #948 interception in `Session::transition_to` rewrites
+            // those targets to `Interactive` for interactive-mode sessions,
+            // so the rewritten transition must validate from the same
+            // source statuses. One-shot sessions never request it.
+            Spawning => &[Running, Errored, Killed, Interactive],
             Running => &[
                 Completed,
                 Errored,
@@ -160,19 +174,23 @@ impl SessionStatus {
                 NeedsPr,
                 CiFix,
                 ConflictFix,
+                Interactive,
             ],
             Paused => &[Running, Killed],
-            Stalled => &[Retrying, Killed, Errored],
+            Stalled => &[Retrying, Killed, Errored, Interactive],
             Completed => &[],
-            GatesRunning => &[NeedsReview, FailedGates, Completed, Errored],
+            GatesRunning => &[NeedsReview, FailedGates, Completed, Errored, Interactive],
             NeedsReview => &[],
             FailedGates => &[],
             Errored => &[Retrying],
-            Retrying => &[Spawning, Errored, Killed],
-            CiFix => &[Spawning, Errored, Killed],
-            NeedsPr => &[Completed, Errored],
-            ConflictFix => &[Spawning, Errored, Killed],
+            Retrying => &[Spawning, Errored, Killed, Interactive],
+            CiFix => &[Spawning, Errored, Killed, Interactive],
+            NeedsPr => &[Completed, Errored, Interactive],
+            ConflictFix => &[Spawning, Errored, Killed, Interactive],
             Killed => &[],
+            // Kept alive until explicit quit/kill; re-settles onto itself
+            // after each follow-up turn (settled_from updates).
+            Interactive => &[Interactive, Killed],
         }
     }
 
@@ -308,6 +326,26 @@ pub struct Session {
     /// [`Session::bind_agent_session_id`]; never set directly.
     #[serde(default)]
     pub agent_session_id: Option<String>,
+    /// The one-shot outcome an Interactive session settled from (#948):
+    /// `Completed` / `FailedGates` / `NeedsPr` / `Errored`. Set by the
+    /// `transition_to` interception; shown in the kept-alive banner.
+    /// Always `None` for one-shot sessions.
+    #[serde(default)]
+    pub settled_from: Option<SessionStatus>,
+    /// Turn-level activity inside the kept-alive state (#948) — drives
+    /// the chat input lock. In-memory only.
+    #[serde(skip)]
+    pub turn_state: super::interaction::TurnState,
+    /// Chat transcript for Interactive sessions (#948) — the `Session`
+    /// owns the turns (was `InteractionSession.history`). Persisted so
+    /// re-entry survives a restart. Empty for one-shot sessions.
+    #[serde(default)]
+    pub turns: Vec<super::interaction::TurnRecord>,
+    /// Launch-time "Produce PR" choice for Interactive sessions (#948,
+    /// was `InteractionSession.produce_pr`). Gates the Ctrl+P pushup
+    /// chord on the Interaction screen.
+    #[serde(default)]
+    pub produce_pr: bool,
     /// Configured agent id selected when this session was created.
     #[serde(default)]
     pub agent_id: Option<String>,
@@ -486,6 +524,10 @@ impl Session {
             mode,
             session_mode: SessionMode::default(),
             agent_session_id: None,
+            settled_from: None,
+            turn_state: super::interaction::TurnState::Idle,
+            turns: Vec::new(),
+            produce_pr: false,
             agent_id: None,
             mode_config: None,
             started_at: None,
@@ -571,6 +613,24 @@ impl Session {
         target: SessionStatus,
         reason: super::transition::TransitionReason,
     ) -> Result<(), super::transition::IllegalTransition> {
+        // Kept-alive interception (#948): an Interactive-mode session that
+        // would settle on a one-shot outcome stays alive instead. This is
+        // the single choke point — every present and future terminal-status
+        // site is covered structurally (spec 2026-06-04 §8). `Killed` is
+        // NOT intercepted: explicit quit/kill really ends the session.
+        let target = if self.session_mode == SessionMode::Interactive
+            && matches!(
+                target,
+                SessionStatus::Completed
+                    | SessionStatus::FailedGates
+                    | SessionStatus::NeedsPr
+                    | SessionStatus::Errored
+            ) {
+            self.settled_from = Some(target);
+            SessionStatus::Interactive
+        } else {
+            target
+        };
         if !self.status.can_transition_to(target) {
             return Err(super::transition::IllegalTransition {
                 from: self.status,
@@ -1066,6 +1126,163 @@ mod tests {
         assert!(s.bind_agent_session_id("first-id"));
         assert!(!s.bind_agent_session_id("second-id"));
         assert_eq!(s.agent_session_id.as_deref(), Some("first-id"));
+    }
+
+    // --- Issue #948: SessionStatus::Interactive + kept-alive settle ---
+
+    fn make_interactive_session() -> Session {
+        let mut s = make_947_session();
+        s.session_mode = SessionMode::Interactive;
+        s
+    }
+
+    fn drive_to_running(s: &mut Session) {
+        use crate::session::transition::TransitionReason;
+        s.transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        s.transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+    }
+
+    #[test]
+    fn interactive_status_serializes_as_snake_case() {
+        let json = serde_json::to_string(&SessionStatus::Interactive).unwrap();
+        assert_eq!(json, r#""interactive""#);
+    }
+
+    #[test]
+    fn interactive_status_has_label_and_symbol() {
+        let status = SessionStatus::Interactive;
+        assert!(!status.symbol().is_empty());
+        assert_eq!(status.label(), "INTERACTIVE");
+    }
+
+    #[test]
+    fn interactive_status_is_not_terminal() {
+        assert!(!SessionStatus::Interactive.is_terminal());
+        assert!(SessionStatus::Interactive.can_transition_to(SessionStatus::Killed));
+        assert!(SessionStatus::Interactive.can_transition_to(SessionStatus::Interactive));
+    }
+
+    #[test]
+    fn interactive_session_settles_to_interactive_on_completed() {
+        use crate::session::transition::TransitionReason;
+        let mut s = make_interactive_session();
+        drive_to_running(&mut s);
+        s.transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+        assert_eq!(s.status, SessionStatus::Interactive);
+        assert_eq!(s.settled_from, Some(SessionStatus::Completed));
+    }
+
+    #[test]
+    fn interactive_session_failure_stays_alive() {
+        use crate::session::transition::TransitionReason;
+        let mut s = make_interactive_session();
+        drive_to_running(&mut s);
+        s.transition_to(SessionStatus::Errored, TransitionReason::StreamError)
+            .unwrap();
+        assert_eq!(s.status, SessionStatus::Interactive);
+        assert_eq!(s.settled_from, Some(SessionStatus::Errored));
+    }
+
+    #[test]
+    fn interactive_session_gates_failure_stays_alive() {
+        use crate::session::transition::TransitionReason;
+        let mut s = make_interactive_session();
+        drive_to_running(&mut s);
+        s.transition_to(SessionStatus::GatesRunning, TransitionReason::GatesStarted)
+            .unwrap();
+        s.transition_to(SessionStatus::FailedGates, TransitionReason::GatesFailed)
+            .unwrap();
+        assert_eq!(s.status, SessionStatus::Interactive);
+        assert_eq!(s.settled_from, Some(SessionStatus::FailedGates));
+    }
+
+    #[test]
+    fn interactive_session_needs_pr_stays_alive() {
+        use crate::session::transition::TransitionReason;
+        let mut s = make_interactive_session();
+        drive_to_running(&mut s);
+        s.transition_to(SessionStatus::NeedsPr, TransitionReason::PrNeeded)
+            .unwrap();
+        assert_eq!(s.status, SessionStatus::Interactive);
+        assert_eq!(s.settled_from, Some(SessionStatus::NeedsPr));
+    }
+
+    #[test]
+    fn interactive_resettle_updates_settled_from() {
+        use crate::session::transition::TransitionReason;
+        let mut s = make_interactive_session();
+        drive_to_running(&mut s);
+        s.transition_to(SessionStatus::Errored, TransitionReason::StreamError)
+            .unwrap();
+        assert_eq!(s.settled_from, Some(SessionStatus::Errored));
+        // Follow-up turn settles again — the banner shows the LATEST outcome.
+        s.transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+        assert_eq!(s.status, SessionStatus::Interactive);
+        assert_eq!(s.settled_from, Some(SessionStatus::Completed));
+    }
+
+    #[test]
+    fn interactive_kill_passes_through_as_terminal() {
+        use crate::session::transition::TransitionReason;
+        let mut s = make_interactive_session();
+        drive_to_running(&mut s);
+        s.transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+        s.transition_to(SessionStatus::Killed, TransitionReason::UserKill)
+            .unwrap();
+        assert_eq!(s.status, SessionStatus::Killed);
+        assert!(s.status.is_terminal());
+    }
+
+    #[test]
+    fn one_shot_session_never_enters_the_interactive_tail() {
+        use crate::session::transition::TransitionReason;
+        let mut s = make_947_session(); // OneShot
+        drive_to_running(&mut s);
+        s.transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+        assert_eq!(s.status, SessionStatus::Completed);
+        assert_eq!(s.settled_from, None);
+    }
+
+    #[test]
+    fn interception_records_interactive_in_transition_history() {
+        use crate::session::transition::TransitionReason;
+        let mut s = make_interactive_session();
+        drive_to_running(&mut s);
+        s.transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+        let last = s.transition_history.last().unwrap();
+        assert_eq!(last.to, SessionStatus::Interactive);
+        assert_eq!(last.reason, TransitionReason::StreamCompleted);
+    }
+
+    #[test]
+    fn turn_state_defaults_to_idle_and_is_not_persisted() {
+        let s = make_interactive_session();
+        assert_eq!(s.turn_state, crate::session::interaction::TurnState::Idle);
+        let json = serde_json::to_value(&s).unwrap();
+        assert!(
+            json.get("turn_state").is_none(),
+            "turn_state is in-memory turn activity, never persisted"
+        );
+    }
+
+    #[test]
+    fn turns_and_produce_pr_default_and_survive_missing_keys() {
+        let mut json = serde_json::to_value(make_947_session()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.remove("turns");
+        obj.remove("produce_pr");
+        obj.remove("settled_from");
+        let s: Session = serde_json::from_value(json).unwrap();
+        assert!(s.turns.is_empty());
+        assert!(!s.produce_pr);
+        assert_eq!(s.settled_from, None);
     }
 
     #[test]

@@ -6,8 +6,8 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
 };
 
+use super::view_state::InteractionState;
 use super::{HEADER_HEIGHT, INPUT_HEIGHT, InteractionScreen, effective_offset, inset_x};
-use crate::session::interaction::InteractionState;
 use crate::tui::screens::interaction::{history, input};
 use crate::tui::theme::Theme;
 

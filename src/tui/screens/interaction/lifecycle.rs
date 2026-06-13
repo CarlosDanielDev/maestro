@@ -20,7 +20,8 @@
 //! resolve the dispatch through `MockTeardown` + `FakeClock`.
 
 use super::InteractionScreen;
-use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
+use super::view_state::{CloseReason, InteractionState};
+use crate::session::interaction::{TurnRecord, TurnRole};
 use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
 use crate::tui::screens::ScreenAction;
 use crate::work::worktree_teardown::{TeardownError, wipe_worktree};
@@ -136,9 +137,7 @@ impl InteractionScreen {
     /// [`TeardownDispatch`] for the app layer and enter the in-flight state
     /// (#941). The blocking wipe itself never runs here.
     fn fire_terminator(&mut self, event: InteractionLifecycleEvent) -> ScreenAction {
-        let InteractionLifecycleEvent::PrLinkedToIssue { pr_number, .. } = event else {
-            return ScreenAction::None;
-        };
+        let InteractionLifecycleEvent::PrLinkedToIssue { pr_number, .. } = event;
 
         // No trusted worktree root (cwd fallback in pool.rs) → there is no
         // isolated worktree to remove, and running the destructive teardown

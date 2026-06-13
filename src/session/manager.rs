@@ -51,6 +51,11 @@ pub struct ManagedSession {
     pub permission_mode: Option<String>,
     /// Allowed tools whitelist.
     pub allowed_tools: Vec<String>,
+    /// A terminator signalled while a turn was streaming (#936/#948,
+    /// was `InteractionSession.queued_terminator`). Fired by
+    /// [`Self::settle_queued_terminator`] once the turn settles back to
+    /// `TurnState::Idle`. In-memory turn-boundary state.
+    pub queued_terminator: Option<crate::session::interaction_lifecycle::InteractionLifecycleEvent>,
     last_tool_start: Option<std::time::Instant>,
     thinking_start: Option<std::time::Instant>,
 }
@@ -67,6 +72,7 @@ impl ManagedSession {
             system_prompt_appendix: None,
             permission_mode: None,
             allowed_tools: Vec::new(),
+            queued_terminator: None,
             last_tool_start: None,
             thinking_start: None,
         }
@@ -88,6 +94,7 @@ impl ManagedSession {
             system_prompt_appendix,
             permission_mode: None,
             allowed_tools: Vec::new(),
+            queued_terminator: None,
             last_tool_start: None,
             thinking_start: None,
         }
@@ -179,6 +186,60 @@ impl ManagedSession {
     ) -> Result<()> {
         let request = self.build_followup_request(&prompt);
         self.spawn_provider_tasks(request, tx)
+    }
+
+    /// Signal that this interactive session should terminate because a PR
+    /// was linked to its issue (#739, ported off `InteractionSession` in
+    /// #948).
+    ///
+    /// - turn idle → fire now (session → `Killed`, reason `PrLinked`).
+    /// - turn streaming → queue; [`Self::settle_queued_terminator`] fires
+    ///   it once the in-flight turn settles (#936 mid-turn deferral).
+    /// - already terminal → idempotent no-op.
+    pub fn signal_terminator(
+        &mut self,
+        event: crate::session::interaction_lifecycle::InteractionLifecycleEvent,
+    ) {
+        if self.session.status.is_terminal() {
+            tracing::debug!(
+                issue_number = self.session.issue_number,
+                "terminator already fired; ignoring"
+            );
+            return;
+        }
+        if self.session.turn_state == crate::session::interaction::TurnState::Streaming {
+            self.queued_terminator = Some(event);
+            return;
+        }
+        self.fire_terminator();
+    }
+
+    /// Fire a terminator deferred while a turn was streaming (#936), now
+    /// that the turn has settled back to `TurnState::Idle` and its output
+    /// is preserved on `session.turns`. No-op without a queued event or
+    /// while still streaming; a session terminated by other means drops
+    /// the queue (never resurrected).
+    pub fn settle_queued_terminator(&mut self) {
+        if self.session.turn_state == crate::session::interaction::TurnState::Streaming {
+            return;
+        }
+        if self.session.status.is_terminal() {
+            self.queued_terminator = None;
+            return;
+        }
+        if self.queued_terminator.take().is_some() {
+            self.fire_terminator();
+        }
+    }
+
+    /// Terminate the interactive session for a linked PR: `Killed` is the
+    /// only terminal status the #948 keep-alive interception lets through.
+    /// Phase 4 (#949) replaces termination with `pr_linked` bookkeeping.
+    fn fire_terminator(&mut self) {
+        let _ = self.session.transition_to(
+            SessionStatus::Killed,
+            crate::session::transition::TransitionReason::PrLinked,
+        );
     }
 
     /// Shared engine for [`Self::spawn`] and [`Self::send_followup_turn`]:
@@ -521,6 +582,10 @@ mod tests {
             mode: "print".to_string(),
             session_mode: crate::session::types::SessionMode::default(),
             agent_session_id: None,
+            settled_from: None,
+            turn_state: crate::session::interaction::TurnState::Idle,
+            turns: vec![],
+            produce_pr: false,
             agent_id: None,
             mode_config: None,
             started_at: None,
@@ -627,6 +692,81 @@ mod tests {
             }
         }
         assert_eq!(bound.as_deref(), Some("bound-id-1"));
+    }
+
+    // --- Issue #948: interaction terminator on the unified session ---
+
+    fn make_interactive_managed() -> ManagedSession {
+        use crate::session::transition::TransitionReason;
+        let mut ms = make_managed("interactive work");
+        ms.session.session_mode = crate::session::types::SessionMode::Interactive;
+        ms.session
+            .transition_to(SessionStatus::Spawning, TransitionReason::Promoted)
+            .unwrap();
+        ms.session
+            .transition_to(SessionStatus::Running, TransitionReason::Spawned)
+            .unwrap();
+        // Settle into the kept-alive tail.
+        ms.session
+            .transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
+            .unwrap();
+        assert_eq!(ms.session.status, SessionStatus::Interactive);
+        ms
+    }
+
+    fn pr_linked_event() -> crate::session::interaction_lifecycle::InteractionLifecycleEvent {
+        crate::session::interaction_lifecycle::InteractionLifecycleEvent::PrLinkedToIssue {
+            pr_number: 7,
+            issue_number: 42,
+            owner: "owner".into(),
+            repo: "repo".into(),
+        }
+    }
+
+    #[test]
+    fn signal_terminator_fires_immediately_when_turn_idle() {
+        let mut ms = make_interactive_managed();
+        ms.signal_terminator(pr_linked_event());
+        assert_eq!(ms.session.status, SessionStatus::Killed);
+        assert!(ms.queued_terminator.is_none());
+    }
+
+    #[test]
+    fn signal_terminator_defers_while_turn_streaming() {
+        let mut ms = make_interactive_managed();
+        ms.session.turn_state = crate::session::interaction::TurnState::Streaming;
+        ms.signal_terminator(pr_linked_event());
+        assert_eq!(
+            ms.session.status,
+            SessionStatus::Interactive,
+            "mid-turn terminator must defer (#936 contract)"
+        );
+        assert!(ms.queued_terminator.is_some());
+
+        // The turn settles → the queued terminator fires.
+        ms.session.turn_state = crate::session::interaction::TurnState::Idle;
+        ms.settle_queued_terminator();
+        assert_eq!(ms.session.status, SessionStatus::Killed);
+        assert!(ms.queued_terminator.is_none());
+    }
+
+    #[test]
+    fn settle_without_queued_terminator_is_a_noop() {
+        let mut ms = make_interactive_managed();
+        ms.settle_queued_terminator();
+        assert_eq!(ms.session.status, SessionStatus::Interactive);
+    }
+
+    #[test]
+    fn signal_terminator_on_terminated_session_is_a_noop() {
+        use crate::session::transition::TransitionReason;
+        let mut ms = make_interactive_managed();
+        ms.session
+            .transition_to(SessionStatus::Killed, TransitionReason::UserKill)
+            .unwrap();
+        ms.signal_terminator(pr_linked_event());
+        assert_eq!(ms.session.status, SessionStatus::Killed);
+        assert!(ms.queued_terminator.is_none());
     }
 
     // --- Issue #947: follow-up turns through the normal pipeline ---

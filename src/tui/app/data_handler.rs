@@ -840,13 +840,18 @@ mod tests {
     /// mirroring `open_interaction_session`'s deferred-launch state (#953).
     fn app_with_deferred_interaction(name: &str, issue_number: u64) -> App {
         let mut app = crate::tui::make_test_app(name);
-        app.pool.create_interaction_session(issue_number, false);
-        let session = app
+        app.pool.create_interaction_session(
+            issue_number,
+            false,
+            "opus".to_string(),
+            "orchestrator".to_string(),
+        );
+        let managed = app
             .pool
-            .find_active_interaction_by_issue(issue_number)
+            .interactive_managed(issue_number)
             .expect("session just created");
         app.screen_state.interaction_screen =
-            Some(crate::tui::screens::InteractionScreen::for_session(session));
+            Some(crate::tui::screens::InteractionScreen::for_managed(managed));
         app.tui_mode = crate::tui::app::TuiMode::Interaction;
         app
     }

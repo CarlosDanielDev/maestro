@@ -5,7 +5,6 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::image::copy_images_to_worktree;
-use super::interaction::InteractionSession;
 use super::manager::{ManagedSession, SessionEvent};
 use super::types::{Session, SessionOrigin, SessionStatus};
 use super::worktree::WorktreeManager;
@@ -42,9 +41,6 @@ pub struct SessionPool {
     /// disables injection — used in unit tests that don't care about
     /// templates and as a no-op fallback when XDG cache resolution fails.
     rendered_template_store: Option<Arc<dyn RenderedTemplateStore>>,
-    /// Active interactive (chat-style) sessions (#734). Created on launch and
-    /// driven by the per-turn spawn loop (#738).
-    interactions: Vec<InteractionSession>,
 }
 
 impl SessionPool {
@@ -70,7 +66,6 @@ impl SessionPool {
             system_prompt_budget: 0,
             knowledge_appendix: None,
             rendered_template_store: None,
-            interactions: Vec::new(),
         }
     }
 
@@ -450,62 +445,51 @@ impl SessionPool {
         self.finished.iter_mut().find(is_match)
     }
 
-    /// Find the active (non-terminated) interaction session for an issue.
-    /// Returns `None` if none exists or the only match was already closed.
-    pub fn find_active_interaction_by_issue(
-        &self,
-        issue_number: u64,
-    ) -> Option<&InteractionSession> {
-        self.interactions
-            .iter()
-            .find(|i| i.issue_number == issue_number && i.is_active())
+    /// Live (non-terminal) interactive-mode session for an issue (#948).
+    /// Replaces `find_active_interaction_by_issue` — "active" now means
+    /// the unified `Session` has not reached a terminal status.
+    pub fn interactive_managed(&self, issue_number: u64) -> Option<&ManagedSession> {
+        self.active.iter().find(|m| {
+            m.session.session_mode == crate::session::types::SessionMode::Interactive
+                && m.session.issue_number == Some(issue_number)
+                && !m.session.status.is_terminal()
+        })
     }
 
-    /// Mutable twin of [`Self::find_active_interaction_by_issue`] (#739).
-    /// Used by the `/pushup` marker consumer to call `signal_terminator` on
-    /// the live session.
-    pub fn find_active_interaction_by_issue_mut(
-        &mut self,
-        issue_number: u64,
-    ) -> Option<&mut InteractionSession> {
-        self.interactions
-            .iter_mut()
-            .find(|i| i.issue_number == issue_number && i.is_active())
+    /// Mutable twin of [`Self::interactive_managed`] (#739/#948). Used by
+    /// the `/pushup` marker consumer to call `signal_terminator` and by
+    /// the turn dispatch to mutate `turns`/`turn_state`.
+    pub fn interactive_managed_mut(&mut self, issue_number: u64) -> Option<&mut ManagedSession> {
+        self.active.iter_mut().find(|m| {
+            m.session.session_mode == crate::session::types::SessionMode::Interactive
+                && m.session.issue_number == Some(issue_number)
+                && !m.session.status.is_terminal()
+        })
     }
 
-    /// Return the `close_reason` of the first interaction registered for
-    /// `issue_number` (active or terminated). Test-only introspection.
-    #[cfg(test)]
-    pub fn interaction_close_reason(
-        &self,
-        issue_number: u64,
-    ) -> Option<&super::interaction::CloseReason> {
-        self.interactions
-            .iter()
-            .find(|i| i.issue_number == issue_number)
-            .and_then(|i| i.close_reason.as_ref())
-    }
-
-    /// First interaction registered for `issue_number`, in any state. Test-only
-    /// introspection — `find_active_interaction_by_issue` returns `None` once a
-    /// session is `Terminated`, so this lets tests inspect a closed session's
-    /// preserved history / cleared queue (#936).
-    #[cfg(test)]
-    pub fn interaction_by_issue(&self, issue_number: u64) -> Option<&InteractionSession> {
-        self.interactions
-            .iter()
-            .find(|i| i.issue_number == issue_number)
-    }
-
-    /// Create a fresh interaction session for `issue_number`, building a
-    /// worktree (non-fatal — falls back to cwd) and registering it. Returns a
-    /// reference to the newly created session. Mirrors the worktree handling
-    /// in [`Self::try_promote`] so interaction sessions get the same isolation.
+    /// Create + register the unified interactive session for `issue_number`
+    /// (#947/#948): a real `SessionMode::Interactive` [`Session`] over a
+    /// fresh worktree (non-fatal — falls back to cwd), driven by the pool's
+    /// default provider (whose parked PTY children survive across turns,
+    /// #751). Idempotent while a live interactive session exists for the
+    /// issue. The prompt is seeded at first-turn dispatch (deferred issue
+    /// fetch, #953).
+    ///
+    /// Deliberate deviations from `try_promote`:
+    /// - bypasses `max_concurrent` — a user-driven chat must not queue
+    ///   behind batch sessions;
+    /// - no `system_prompt_appendix` — the appendix is embedded in the
+    ///   first-turn prompt by `build_interaction_launch_prompt` (#946).
     pub fn create_interaction_session(
         &mut self,
         issue_number: u64,
         produce_pr: bool,
-    ) -> &InteractionSession {
+        model: String,
+        mode: String,
+    ) -> Uuid {
+        if let Some(existing) = self.interactive_pipeline_session_id(issue_number) {
+            return existing;
+        }
         let slug = format!("issue-{issue_number}");
         let (worktree_path, branch) = match self.worktree_mgr.create(&slug) {
             Ok(path) => (path, format!("maestro/{slug}")),
@@ -514,79 +498,38 @@ impl SessionPool {
                 (PathBuf::from("."), format!("maestro/{slug}"))
             }
         };
-        let session = InteractionSession::new(issue_number, worktree_path, branch, produce_pr);
-        self.interactions.push(session);
-        self.interactions
-            .last()
-            .expect("just pushed an interaction session")
-    }
-
-    /// Register the real pipeline session behind an interaction (#947): a
-    /// `SessionMode::Interactive` [`ManagedSession`] over the interaction's
-    /// existing worktree, driven by the pool's default provider (whose
-    /// parked PTY children survive across turns, #751). Idempotent per
-    /// issue — a second call returns the already-registered session id.
-    /// Returns `None` when no active interaction exists for the issue.
-    ///
-    /// Deliberate deviations from `try_promote`:
-    /// - bypasses `max_concurrent` — a user-driven chat must not queue
-    ///   behind batch sessions;
-    /// - no `system_prompt_appendix` — the appendix is embedded in the
-    ///   first-turn prompt by `build_interaction_launch_prompt` (#946).
-    pub fn ensure_interaction_pipeline_session(
-        &mut self,
-        issue_number: u64,
-        prompt: String,
-        model: String,
-        mode: String,
-    ) -> Option<Uuid> {
-        if let Some(existing) = self.interactive_pipeline_session_id(issue_number) {
-            return Some(existing);
-        }
-
-        let interaction = self.find_active_interaction_by_issue(issue_number)?;
-        let worktree_path = Some(interaction.worktree_path.clone());
-        let branch = Some(interaction.branch.clone());
-
-        let mut session = Session::new(prompt, model, mode, Some(issue_number), None);
+        let mut session = Session::new(String::new(), model, mode, Some(issue_number), None);
         session.session_mode = crate::session::types::SessionMode::Interactive;
-
-        let mut managed = ManagedSession::with_worktree(session, worktree_path, branch, None);
+        session.produce_pr = produce_pr;
+        let mut managed =
+            ManagedSession::with_worktree(session, Some(worktree_path), Some(branch), None);
         managed.set_provider(Arc::clone(&self.provider));
         managed.permission_mode = Some(self.permission_mode.clone());
         managed.allowed_tools = self.allowed_tools.clone();
         let id = managed.session.id;
         self.active.push(managed);
-        Some(id)
+        id
     }
 
-    /// Id of the active Interactive-mode pipeline session for an issue
-    /// (#947), if one was registered.
+    /// Id of the live Interactive-mode pipeline session for an issue
+    /// (#947), if one exists. Terminal (quit/PR-terminated) sessions are
+    /// excluded so re-entry after a close starts fresh.
     pub fn interactive_pipeline_session_id(&self, issue_number: u64) -> Option<Uuid> {
-        self.active
-            .iter()
-            .find(|m| {
-                m.session.session_mode == crate::session::types::SessionMode::Interactive
-                    && m.session.issue_number == Some(issue_number)
-            })
-            .map(|m| m.session.id)
+        self.interactive_managed(issue_number).map(|m| m.session.id)
     }
 
-    /// Clone the active interaction session for an issue. The clone is driven
-    /// by `send_turn` in a background task; the result is written back via
-    /// [`Self::upsert_interaction`]. Returns `None` when no active session
-    /// exists for the issue.
-    pub fn clone_active_interaction(&self, issue_number: u64) -> Option<InteractionSession> {
-        self.find_active_interaction_by_issue(issue_number).cloned()
-    }
-
-    /// Number of registered interaction sessions (active + terminated).
+    /// Number of registered interactive sessions, any state (#738 re-entry
+    /// assertions).
     #[cfg(test)]
     pub fn interaction_count(&self) -> usize {
-        self.interactions.len()
+        self.active
+            .iter()
+            .chain(self.finished.iter())
+            .filter(|m| m.session.session_mode == crate::session::types::SessionMode::Interactive)
+            .count()
     }
 
-    /// Append a turn to the active interaction session for `issue_number`.
+    /// Append a turn to the live interactive session for `issue_number`.
     /// Test seam for re-entry assertions (#738).
     #[cfg(test)]
     pub fn test_push_interaction_turn(
@@ -594,45 +537,8 @@ impl SessionPool {
         issue_number: u64,
         turn: super::interaction::TurnRecord,
     ) {
-        if let Some(s) = self
-            .interactions
-            .iter_mut()
-            .find(|i| i.issue_number == issue_number && i.is_active())
-        {
-            s.history.push(turn);
-        }
-    }
-
-    /// Replace the stored interaction session for `session.issue_number`, or
-    /// push it when none is registered. Used to persist `session_id`/history
-    /// after a turn and to record termination.
-    ///
-    /// A session the user already terminated is NOT resurrected: if a turn was
-    /// in-flight when the user quit (`Ctrl+Q`), its completing clone arrives
-    /// here `Idle` and must not overwrite the `Terminated` record — otherwise
-    /// re-entry would reopen a quit session.
-    pub fn upsert_interaction(&mut self, mut session: InteractionSession) {
-        if let Some(slot) = self
-            .interactions
-            .iter_mut()
-            .find(|i| i.issue_number == session.issue_number)
-        {
-            if slot.is_active() {
-                // #936: a PR terminator may have been queued on the live slot
-                // while this turn was streaming. The completing clone was taken
-                // before the marker arrived, so it does not carry the queue —
-                // carry it forward, then fire it now that the turn has settled
-                // (the streamed output is preserved because we fire *after* the
-                // overwrite, not before). A slot the user already quit is
-                // `!is_active()` and is left untouched above (never resurrected).
-                if session.queued_terminator.is_none() {
-                    session.queued_terminator = slot.queued_terminator.take();
-                }
-                *slot = session;
-                slot.settle_queued_terminator();
-            }
-        } else {
-            self.interactions.push(session);
+        if let Some(m) = self.interactive_managed_mut(issue_number) {
+            m.session.turns.push(turn);
         }
     }
 
@@ -815,21 +721,21 @@ mod tests {
         }
     }
 
-    // --- Issue #947: interaction pipeline session ---
+    // --- Issues #947/#948: unified interaction pipeline session ---
+
+    fn create_unified(pool: &mut SessionPool, issue: u64, produce_pr: bool) -> Uuid {
+        pool.create_interaction_session(
+            issue,
+            produce_pr,
+            "opus".to_string(),
+            "orchestrator".to_string(),
+        )
+    }
 
     #[test]
-    fn ensure_interaction_pipeline_session_registers_interactive_managed_session() {
+    fn create_interaction_session_registers_interactive_managed_session() {
         let mut pool = make_pool(2);
-        pool.create_interaction_session(947, false);
-
-        let id = pool
-            .ensure_interaction_pipeline_session(
-                947,
-                "first prompt".to_string(),
-                "opus".to_string(),
-                "orchestrator".to_string(),
-            )
-            .expect("pipeline session registered");
+        let id = create_unified(&mut pool, 947, true);
 
         let managed = must_get_active_mut(&mut pool, id);
         assert_eq!(
@@ -837,91 +743,46 @@ mod tests {
             crate::session::types::SessionMode::Interactive
         );
         assert_eq!(managed.session.issue_number, Some(947));
-        assert_eq!(managed.session.prompt, "first prompt");
+        assert!(managed.session.produce_pr);
+        assert_eq!(managed.session.status, SessionStatus::Queued);
         // Appendix is embedded in the first-turn prompt by
         // build_interaction_launch_prompt (#946) — never set on the request.
         assert!(managed.system_prompt_appendix.is_none());
+        assert_eq!(pool.interaction_count(), 1);
     }
 
     #[test]
-    fn ensure_interaction_pipeline_session_is_idempotent_per_issue() {
+    fn create_interaction_session_is_idempotent_while_live() {
         let mut pool = make_pool(2);
-        pool.create_interaction_session(947, false);
-
-        let first = pool
-            .ensure_interaction_pipeline_session(
-                947,
-                "first".to_string(),
-                "opus".to_string(),
-                "orchestrator".to_string(),
-            )
-            .expect("registered");
-        let second = pool
-            .ensure_interaction_pipeline_session(
-                947,
-                "second".to_string(),
-                "opus".to_string(),
-                "orchestrator".to_string(),
-            )
-            .expect("same session");
-
+        let first = create_unified(&mut pool, 947, false);
+        let second = create_unified(&mut pool, 947, false);
         assert_eq!(first, second);
         assert_eq!(pool.active_count(), 1);
     }
 
     #[test]
-    fn ensure_interaction_pipeline_session_without_interaction_is_none() {
+    fn create_interaction_session_after_termination_starts_fresh() {
+        use crate::session::transition::TransitionReason;
         let mut pool = make_pool(2);
-        assert!(
-            pool.ensure_interaction_pipeline_session(
-                947,
-                "p".to_string(),
-                "opus".to_string(),
-                "orchestrator".to_string(),
-            )
-            .is_none()
-        );
+        let first = create_unified(&mut pool, 947, false);
+        must_get_active_mut(&mut pool, first)
+            .session
+            .transition_to(SessionStatus::Killed, TransitionReason::UserKill)
+            .unwrap();
+
+        let second = create_unified(&mut pool, 947, false);
+        assert_ne!(first, second, "a quit interaction must not be reopened");
     }
 
     #[test]
-    fn ensure_interaction_pipeline_session_reuses_interaction_worktree() {
-        let mut pool = make_pool(2);
-        let wt = pool
-            .create_interaction_session(947, false)
-            .worktree_path
-            .clone();
-
-        let id = pool
-            .ensure_interaction_pipeline_session(
-                947,
-                "p".to_string(),
-                "opus".to_string(),
-                "orchestrator".to_string(),
-            )
-            .expect("registered");
-
-        let managed = must_get_active_mut(&mut pool, id);
-        assert_eq!(managed.worktree_path.as_deref(), Some(wt.as_path()));
-    }
-
-    #[test]
-    fn ensure_interaction_pipeline_session_bypasses_capacity_cap() {
+    fn create_interaction_session_bypasses_capacity_cap() {
         // A user-driven chat must not queue behind batch sessions.
         let mut pool = make_pool(1);
         pool.enqueue(make_session("batch"));
         pool.try_promote();
         assert_eq!(pool.active_count(), 1);
 
-        pool.create_interaction_session(947, false);
-        assert!(
-            pool.ensure_interaction_pipeline_session(
-                947,
-                "p".to_string(),
-                "opus".to_string(),
-                "orchestrator".to_string(),
-            )
-            .is_some()
-        );
+        create_unified(&mut pool, 947, false);
         assert_eq!(pool.active_count(), 2);
     }
 
@@ -930,149 +791,66 @@ mod tests {
         // One-shot completion machinery (pr_retry, completion_pipeline,
         // auto_pr) must never grab a kept-alive chat session.
         let mut pool = make_pool(2);
-        pool.create_interaction_session(947, false);
-        pool.ensure_interaction_pipeline_session(
-            947,
-            "p".to_string(),
-            "opus".to_string(),
-            "orchestrator".to_string(),
-        )
-        .expect("registered");
-
+        create_unified(&mut pool, 947, false);
         assert!(pool.find_by_issue_mut(947).is_none());
     }
 
-    // --- Issue #734: interaction session registry ---
-
-    fn make_interaction(issue: u64) -> crate::session::interaction::InteractionSession {
-        crate::session::interaction::InteractionSession::new(
-            issue,
-            std::path::PathBuf::from("/tmp"),
-            format!("feat/issue-{issue}"),
-            false,
-        )
-    }
-
     #[test]
-    fn pool_interactions_starts_empty() {
+    fn interactive_managed_returns_none_when_empty() {
         let pool = make_pool(2);
-        assert!(pool.interactions.is_empty());
+        assert!(pool.interactive_managed(1).is_none());
     }
 
     #[test]
-    fn find_active_interaction_by_issue_returns_none_when_empty() {
-        let pool = make_pool(2);
-        assert!(pool.find_active_interaction_by_issue(1).is_none());
-    }
-
-    #[test]
-    fn find_active_interaction_by_issue_returns_none_when_issue_not_found() {
+    fn interactive_managed_returns_none_for_other_issue() {
         let mut pool = make_pool(2);
-        pool.interactions.push(make_interaction(42));
-        assert!(pool.find_active_interaction_by_issue(99).is_none());
+        create_unified(&mut pool, 42, false);
+        assert!(pool.interactive_managed(99).is_none());
     }
 
     #[test]
-    fn find_active_interaction_by_issue_finds_active_interaction() {
+    fn interactive_managed_finds_live_session() {
         let mut pool = make_pool(2);
-        pool.interactions.push(make_interaction(42));
-        let found = pool.find_active_interaction_by_issue(42);
+        create_unified(&mut pool, 42, false);
+        let found = pool.interactive_managed(42);
         assert!(found.is_some());
-        assert_eq!(found.unwrap().issue_number, 42);
+        assert_eq!(found.unwrap().session.issue_number, Some(42));
     }
 
     #[test]
-    fn find_active_interaction_by_issue_skips_terminated_interaction() {
-        use crate::session::interaction::InteractionState;
+    fn interactive_managed_skips_terminated_session() {
+        use crate::session::transition::TransitionReason;
         let mut pool = make_pool(2);
-        let mut interaction = make_interaction(42);
-        interaction.state = InteractionState::Terminated;
-        pool.interactions.push(interaction);
-        assert!(pool.find_active_interaction_by_issue(42).is_none());
+        let id = create_unified(&mut pool, 42, false);
+        must_get_active_mut(&mut pool, id)
+            .session
+            .transition_to(SessionStatus::Killed, TransitionReason::UserKill)
+            .unwrap();
+        assert!(pool.interactive_managed(42).is_none());
     }
 
     #[test]
-    fn create_interaction_session_registers_and_sets_fields() {
+    fn interactive_managed_skips_one_shot_session_on_same_issue() {
         let mut pool = make_pool(2);
-        let session = pool.create_interaction_session(55, true);
-        assert_eq!(session.issue_number, 55);
-        assert!(session.produce_pr);
-        assert_eq!(
-            session.state,
-            crate::session::interaction::InteractionState::Idle
+        pool.enqueue(make_session_with_issue("one shot", 42));
+        pool.try_promote();
+        assert!(pool.interactive_managed(42).is_none());
+    }
+
+    #[test]
+    fn test_push_interaction_turn_lands_on_session_turns() {
+        let mut pool = make_pool(2);
+        let id = create_unified(&mut pool, 42, false);
+        pool.test_push_interaction_turn(
+            42,
+            crate::session::interaction::TurnRecord {
+                role: crate::session::interaction::TurnRole::User,
+                content: "hi".into(),
+                started_at: chrono::Utc::now(),
+                finished_at: Some(chrono::Utc::now()),
+            },
         );
-        assert_eq!(pool.interaction_count(), 1);
-    }
-
-    #[test]
-    fn clone_active_interaction_returns_owned_copy() {
-        let mut pool = make_pool(2);
-        pool.create_interaction_session(55, false);
-        let cloned = pool.clone_active_interaction(55);
-        assert!(cloned.is_some());
-        assert_eq!(cloned.unwrap().issue_number, 55);
-        assert!(pool.clone_active_interaction(99).is_none());
-    }
-
-    #[test]
-    fn upsert_interaction_replaces_active_session_in_place() {
-        let mut pool = make_pool(2);
-        pool.create_interaction_session(55, false);
-        let mut updated = pool.clone_active_interaction(55).unwrap();
-        updated.session_id = Some("abc123".into());
-        pool.upsert_interaction(updated);
-        assert_eq!(pool.interaction_count(), 1);
-        assert_eq!(
-            pool.find_active_interaction_by_issue(55)
-                .unwrap()
-                .session_id
-                .as_deref(),
-            Some("abc123")
-        );
-    }
-
-    #[test]
-    fn upsert_interaction_pushes_when_no_active_match() {
-        let mut pool = make_pool(2);
-        let session = make_interaction(77);
-        pool.upsert_interaction(session);
-        assert_eq!(pool.interaction_count(), 1);
-    }
-
-    #[test]
-    fn upsert_interaction_does_not_resurrect_terminated_session() {
-        use crate::session::interaction::{CloseReason, InteractionState};
-        let mut pool = make_pool(2);
-        let mut terminated = make_interaction(55);
-        terminated.state = InteractionState::Terminated;
-        terminated.close_reason = Some(CloseReason::UserQuit);
-        pool.interactions.push(terminated);
-
-        // A turn that was in-flight at quit completes Idle and writes back.
-        let mut completing = make_interaction(55);
-        completing.state = InteractionState::Idle;
-        pool.upsert_interaction(completing);
-
-        assert_eq!(pool.interaction_count(), 1, "must not push a duplicate");
-        assert!(
-            pool.find_active_interaction_by_issue(55).is_none(),
-            "a terminated session must stay terminated"
-        );
-    }
-
-    #[test]
-    fn find_active_interaction_by_issue_returns_first_active_when_multiple() {
-        use crate::session::interaction::InteractionState;
-        let mut pool = make_pool(2);
-        let mut terminated = make_interaction(42);
-        terminated.state = InteractionState::Terminated;
-        terminated.branch = "terminated".into();
-        pool.interactions.push(terminated);
-        let active = make_interaction(42);
-        pool.interactions.push(active);
-        let found = pool.find_active_interaction_by_issue(42);
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().branch, "feat/issue-42");
+        assert_eq!(must_get_active_mut(&mut pool, id).session.turns.len(), 1);
     }
 
     #[test]
@@ -1799,43 +1577,51 @@ mod tests {
         );
     }
 
-    // --- Issue #739: find_active_interaction_by_issue_mut ---
+    // --- Issue #739/#948: interactive_managed_mut ---
 
     #[test]
-    fn find_active_interaction_by_issue_mut_returns_mutable_ref_for_active() {
+    fn interactive_managed_mut_returns_mutable_ref_for_live() {
         let mut pool = make_pool(2);
-        pool.interactions.push(make_interaction(42));
+        create_unified(&mut pool, 42, false);
 
-        let found = pool.find_active_interaction_by_issue_mut(42);
+        let found = pool.interactive_managed_mut(42);
         assert!(found.is_some());
-        found.unwrap().session_id = Some("mutated".into());
+        assert!(
+            found
+                .unwrap()
+                .session
+                .bind_agent_session_id("mutated-id-42")
+        );
 
         assert_eq!(
-            pool.find_active_interaction_by_issue(42)
+            pool.interactive_managed(42)
                 .unwrap()
-                .session_id
+                .session
+                .agent_session_id
                 .as_deref(),
-            Some("mutated"),
+            Some("mutated-id-42"),
             "mutation through the mutable ref must persist"
         );
     }
 
     #[test]
-    fn find_active_interaction_by_issue_mut_returns_none_when_absent() {
+    fn interactive_managed_mut_returns_none_when_absent() {
         let mut pool = make_pool(2);
-        assert!(pool.find_active_interaction_by_issue_mut(99).is_none());
+        assert!(pool.interactive_managed_mut(99).is_none());
     }
 
     #[test]
-    fn find_active_interaction_by_issue_mut_skips_terminated() {
-        use crate::session::interaction::InteractionState;
+    fn interactive_managed_mut_skips_terminated() {
+        use crate::session::transition::TransitionReason;
         let mut pool = make_pool(2);
-        let mut s = make_interaction(42);
-        s.state = InteractionState::Terminated;
-        pool.interactions.push(s);
+        let id = create_unified(&mut pool, 42, false);
+        must_get_active_mut(&mut pool, id)
+            .session
+            .transition_to(SessionStatus::Killed, TransitionReason::UserKill)
+            .unwrap();
 
         assert!(
-            pool.find_active_interaction_by_issue_mut(42).is_none(),
+            pool.interactive_managed_mut(42).is_none(),
             "terminated session must not be returned by _mut lookup"
         );
     }

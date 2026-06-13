@@ -6,8 +6,9 @@
 //! `TurnEvent`s from `send_turn` into the live transcript.
 
 use super::InteractionScreen;
+use super::view_state::{CloseReason, InteractionState};
 use crate::session::interaction::TurnEvent;
-use crate::session::interaction::{CloseReason, InteractionState, TurnRecord, TurnRole};
+use crate::session::interaction::{TurnRecord, TurnRole};
 use crate::tui::screens::ScreenAction;
 use chrono::Utc;
 use crossterm::event::KeyCode;

@@ -312,7 +312,9 @@ pub(super) fn graph_block(theme: &Theme) -> Block<'static> {
 pub(super) fn status_modifier(status: SessionStatus) -> Modifier {
     use SessionStatus::*;
     match status {
-        Running | GatesRunning | NeedsReview | NeedsPr | CiFix | ConflictFix => Modifier::BOLD,
+        Running | GatesRunning | NeedsReview | NeedsPr | CiFix | ConflictFix | Interactive => {
+            Modifier::BOLD
+        }
         Errored | FailedGates => Modifier::DIM | Modifier::BOLD,
         Completed | Killed | Paused => Modifier::DIM,
         Stalled => Modifier::DIM | Modifier::REVERSED,
