@@ -20,9 +20,10 @@ mod terminator_tests;
 #[cfg(test)]
 mod tests;
 mod turn;
+pub(crate) mod view_state;
 
 use super::{Screen, ScreenAction};
-use crate::session::interaction::{CloseReason, InteractionSession, InteractionState, TurnRecord};
+use crate::session::interaction::TurnRecord;
 use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
 use crate::tui::activity_log::LogLevel;
 use crate::tui::navigation::InputMode;
@@ -36,6 +37,7 @@ use ratatui::{Frame, layout::Rect, style::Style};
 use std::path::PathBuf;
 use std::time::Instant;
 use tui_textarea::TextArea;
+use view_state::{CloseReason, InteractionState};
 
 /// Tag used for every Interaction activity-log line.
 const LOG_TAG: &str = "INTERACTION";
@@ -167,24 +169,33 @@ impl InteractionScreen {
         }
     }
 
-    /// Bind a live `InteractionSession`: copy its issue, launch flags,
-    /// worktree, state, and a snapshot of its history. Used by the dispatch
-    /// launch + re-entry paths (#738). The screen is a view; the pool's
-    /// session remains the persistence source of truth.
-    pub fn for_session(session: &InteractionSession) -> Self {
-        let mut screen = Self::with_history(session.history.clone());
-        screen.issue_number = session.issue_number;
+    /// Bind a live unified interactive session (#948): copy its issue,
+    /// launch flags, worktree, turn activity, and a snapshot of its
+    /// transcript. Used by the dispatch launch + re-entry paths (#738).
+    /// The screen is a view; the pool's `Session` remains the persistence
+    /// source of truth. Only live (non-terminal) sessions are bound, so
+    /// the view never starts `Terminated`.
+    pub fn for_managed(managed: &crate::session::manager::ManagedSession) -> Self {
+        use crate::session::interaction::TurnState;
+        let session = &managed.session;
+        let mut screen = Self::with_history(session.turns.clone());
+        screen.issue_number = session.issue_number.unwrap_or_default();
         screen.produce_pr = session.produce_pr;
-        screen.worktree_path = session.worktree_path.clone();
-        screen.state = session.state;
-        screen.close_reason = session.close_reason.clone();
-        screen.branch = session.branch.clone();
+        screen.worktree_path = managed
+            .worktree_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("."));
+        screen.state = match session.turn_state {
+            TurnState::Streaming => InteractionState::Streaming,
+            TurnState::Idle => InteractionState::Idle,
+        };
+        screen.branch = managed.branch_name.clone().unwrap_or_default();
         // The worktree lives at `<root>/issue-N`, so its parent is the root the
         // teardown sanity-check gates against (#741 D1). Only an ABSOLUTE parent
         // is trusted: the pool's cwd-fallback sets `worktree_path = "."`, whose
         // parent is `""` — leaving the root empty makes `fire_terminator` skip
         // the destructive teardown instead of operating on the main repo.
-        screen.worktree_root = session
+        screen.worktree_root = screen
             .worktree_path
             .parent()
             .filter(|p| p.is_absolute())

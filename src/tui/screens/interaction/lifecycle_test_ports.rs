@@ -6,8 +6,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use super::super::InteractionScreen;
+use super::super::view_state::{CloseReason, InteractionState};
 use super::{Clock, WorktreeTeardownPort};
-use crate::session::interaction::{CloseReason, InteractionState, TurnRecord};
+use crate::session::interaction::TurnRecord;
 use crate::work::worktree_teardown::TeardownError;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -133,6 +134,36 @@ impl InteractionScreen {
 
     pub(crate) fn force_state_for_test(&mut self, state: InteractionState) {
         self.state = state;
+    }
+
+    /// Screen bound to a synthetic unified interactive session (#948) —
+    /// the test twin of the `for_managed` launch path.
+    pub(crate) fn test_fixture(
+        issue: u64,
+        produce_pr: bool,
+        state: InteractionState,
+        history: Vec<TurnRecord>,
+        worktree: &str,
+    ) -> Self {
+        let mut session = crate::session::types::Session::new(
+            String::new(),
+            "opus".to_string(),
+            "orchestrator".to_string(),
+            Some(issue),
+            None,
+        );
+        session.session_mode = crate::session::types::SessionMode::Interactive;
+        session.produce_pr = produce_pr;
+        session.turns = history;
+        let managed = crate::session::manager::ManagedSession::with_worktree(
+            session,
+            Some(PathBuf::from(worktree)),
+            Some(format!("feat/issue-{issue}")),
+            None,
+        );
+        let mut screen = Self::for_managed(&managed);
+        screen.force_state_for_test(state);
+        screen
     }
 
     pub(crate) fn force_terminated_userquit_for_test(&mut self) {

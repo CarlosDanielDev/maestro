@@ -6,10 +6,9 @@
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 
-use crate::session::interaction::{
-    CloseReason, InteractionSession, InteractionState, TurnRecord, TurnRole,
-};
+use crate::session::interaction::{TurnRecord, TurnRole};
 use crate::tui::navigation::InputMode;
+use crate::tui::screens::interaction::view_state::InteractionState;
 use crate::tui::screens::test_helpers::key_event_with_modifiers;
 use crate::tui::screens::{InteractionScreen, Screen};
 use crate::tui::theme::Theme;
@@ -103,21 +102,13 @@ fn interaction_screen_scrolled_up() {
 
 // --- #738: keymap-state render fixtures ---
 
-fn session(
+fn screen(
     issue: u64,
     produce_pr: bool,
     state: InteractionState,
     history: Vec<TurnRecord>,
-) -> InteractionSession {
-    let mut s = InteractionSession::new(
-        issue,
-        PathBuf::from("/tmp/maestro/issue-42"),
-        format!("feat/issue-{issue}"),
-        produce_pr,
-    );
-    s.state = state;
-    s.history = history;
-    s
+) -> InteractionScreen {
+    InteractionScreen::test_fixture(issue, produce_pr, state, history, "/tmp/maestro/issue-42")
 }
 
 #[test]
@@ -126,8 +117,7 @@ fn interaction_screen_streaming_locks_input() {
         turn(TurnRole::User, "implement login", false),
         turn(TurnRole::Agent, "Working on it", true),
     ];
-    let mut screen =
-        InteractionScreen::for_session(&session(42, true, InteractionState::Streaming, history));
+    let mut screen = screen(42, true, InteractionState::Streaming, history);
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
     assert!(
@@ -140,11 +130,8 @@ fn interaction_screen_streaming_locks_input() {
 #[test]
 fn interaction_screen_terminated_banner() {
     let history = vec![turn(TurnRole::User, "stop", false)];
-    let mut screen = InteractionScreen::for_session(&{
-        let mut s = session(42, true, InteractionState::Terminated, history);
-        s.close_reason = Some(CloseReason::UserQuit);
-        s
-    });
+    let mut screen = screen(42, true, InteractionState::Terminated, history);
+    screen.force_terminated_userquit_for_test();
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
     assert!(
@@ -156,8 +143,7 @@ fn interaction_screen_terminated_banner() {
 
 #[test]
 fn interaction_screen_quit_modal_open() {
-    let mut screen =
-        InteractionScreen::for_session(&session(42, true, InteractionState::Idle, vec![]));
+    let mut screen = screen(42, true, InteractionState::Idle, vec![]);
     screen.handle_input(
         &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),
         InputMode::Insert,
@@ -173,8 +159,7 @@ fn interaction_screen_quit_modal_open() {
 
 #[test]
 fn interaction_screen_ctrl_p_greyed_without_produce_pr() {
-    let mut screen =
-        InteractionScreen::for_session(&session(42, false, InteractionState::Idle, vec![]));
+    let mut screen = screen(42, false, InteractionState::Idle, vec![]);
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
     assert!(
@@ -186,8 +171,7 @@ fn interaction_screen_ctrl_p_greyed_without_produce_pr() {
 
 #[test]
 fn interaction_screen_header_shows_agent_and_model() {
-    let mut screen =
-        InteractionScreen::for_session(&session(7, true, InteractionState::Idle, vec![]));
+    let mut screen = screen(7, true, InteractionState::Idle, vec![]);
     screen.set_provider_context("claude", "opus");
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());

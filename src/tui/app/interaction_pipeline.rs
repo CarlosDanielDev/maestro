@@ -1,31 +1,34 @@
-//! Interactive turns through the normal session pipeline (#947).
+//! Interactive turns through the normal session pipeline (#947/#948).
 //!
-//! Phase 2 of the unified-interactive-sessions design (spec
+//! Phases 2+3 of the unified-interactive-sessions design (spec
 //! `docs/superpowers/specs/2026-06-04-unified-interactive-sessions-design.md`
-//! §4.3, §6): an interaction's turns run on a real `SessionMode::Interactive`
+//! §4.1, §4.3, §6): an interaction IS a `SessionMode::Interactive`
 //! [`crate::session::types::Session`] in the pool — same prompt path,
 //! provider routing, and telemetry funnel (`ManagedSession::handle_event`)
-//! as a one-shot turn. The first turn is a normal `spawn`; follow-ups go
-//! through `send_followup_turn` (`--resume <agent_session_id>`).
+//! as a one-shot turn. The first turn is a normal `spawn` (the issue work,
+//! narrated in chat); follow-ups go through `send_followup_turn`
+//! (`--resume <agent_session_id>`). When a turn would settle on a one-shot
+//! terminal status, the `Session::transition_to` interception keeps the
+//! session alive (`SessionStatus::Interactive` + `settled_from`).
 //!
 //! The Interaction screen stays a [`TurnEvent`] consumer: this module
 //! derives chat `TurnEvent`s from the session's `StreamEvent`s and applies
-//! them through the existing `TuiDataEvent::InteractionTurnEvent` arm, so
-//! the screen and the persisted `InteractionSession` view-model keep the
-//! exact transcript semantics the retired `interaction_turn` loop had.
+//! them through the existing `TuiDataEvent::InteractionTurnEvent` arm. The
+//! transcript persists on `Session::turns`; turn activity lives on
+//! `Session::turn_state`.
 
 use chrono::Utc;
 use uuid::Uuid;
 
 use super::App;
-use crate::session::interaction::{InteractionState, TurnEvent, TurnRecord, TurnRole};
-use crate::session::types::{SessionMode, StreamEvent};
+use crate::session::interaction::{TurnEvent, TurnRecord, TurnRole, TurnState};
+use crate::session::types::{SessionMode, SessionStatus, StreamEvent};
 
 impl App {
-    /// Dispatch one interaction turn through the normal pipeline (#947).
-    /// First turn for the issue → register the pipeline session and
-    /// `spawn` it (the issue work, narrated in chat). Later turns →
-    /// `send_followup_turn` on the bound conversation.
+    /// Dispatch one interaction turn through the normal pipeline. First
+    /// turn for the issue (session still `Queued`) → seed the prompt and
+    /// `spawn`. Later turns → `send_followup_turn` on the bound
+    /// conversation.
     pub(crate) async fn dispatch_interaction_turn(
         &mut self,
         issue_number: u64,
@@ -35,25 +38,36 @@ impl App {
         let mode = self.interaction_mode_label(issue_number);
 
         let now = Utc::now();
-        let Some(interaction) = self.pool.find_active_interaction_by_issue_mut(issue_number) else {
-            tracing::warn!("SendInteractionTurn for #{issue_number} with no active interaction");
+        let Some(managed) = self.pool.interactive_managed_mut(issue_number) else {
+            tracing::warn!("SendInteractionTurn for #{issue_number} with no live interaction");
             return;
         };
-        // Mirror the turn into the persisted view-model; the screen keeps
+        // Mirror the turn into the persisted transcript; the screen keeps
         // its own copy via the TurnStarted event below.
-        interaction.history.push(TurnRecord {
+        managed.session.turns.push(TurnRecord {
             role: TurnRole::User,
             content: prompt.clone(),
             started_at: now,
             finished_at: Some(now),
         });
-        interaction.history.push(TurnRecord {
+        managed.session.turns.push(TurnRecord {
             role: TurnRole::Agent,
             content: String::new(),
             started_at: now,
             finished_at: None,
         });
-        interaction.state = InteractionState::Streaming;
+        managed.session.turn_state = TurnState::Streaming;
+
+        // First turn = the session has never spawned: it carries the built
+        // issue prompt (#946) and re-resolves model/mode now that the issue
+        // cache is warm (the launch-time values were defaults, #953).
+        let first_turn = managed.session.status == SessionStatus::Queued;
+        if first_turn {
+            managed.session.prompt = prompt.clone();
+            managed.session.model = model;
+            managed.session.mode = mode;
+        }
+        let id = managed.session.id;
 
         self.apply_interaction_turn_event(
             issue_number,
@@ -64,35 +78,13 @@ impl App {
         );
 
         let tx = self.pool.event_tx();
-        if let Some(id) = self.pool.interactive_pipeline_session_id(issue_number) {
-            let result = self
-                .pool
-                .get_active_mut(id)
-                .map(|managed| managed.send_followup_turn(prompt, tx));
-            if let Some(Err(e)) = result {
-                self.fail_interaction_turn(
-                    issue_number,
-                    format!("failed to start follow-up turn: {e}"),
-                );
-            }
-        } else {
-            let Some(id) =
-                self.pool
-                    .ensure_interaction_pipeline_session(issue_number, prompt, model, mode)
-            else {
-                self.fail_interaction_turn(
-                    issue_number,
-                    "no interaction registered for this issue".to_string(),
-                );
-                return;
-            };
-            let result = match self.pool.get_active_mut(id) {
-                Some(managed) => managed.spawn(tx).await,
-                None => return,
-            };
-            if let Err(e) = result {
-                self.fail_interaction_turn(issue_number, format!("failed to spawn turn: {e}"));
-            }
+        let result = match self.pool.get_active_mut(id) {
+            Some(managed) if first_turn => managed.spawn(tx).await,
+            Some(managed) => managed.send_followup_turn(prompt, tx),
+            None => return,
+        };
+        if let Err(e) = result {
+            self.fail_interaction_turn(issue_number, format!("failed to start turn: {e}"));
         }
     }
 
@@ -104,62 +96,47 @@ impl App {
         session_id: Uuid,
         event: &StreamEvent,
     ) {
-        let Some((session_mode, issue_number)) = self
-            .pool
-            .get_active_mut(session_id)
-            .map(|m| (m.session.session_mode, m.session.issue_number))
-        else {
+        let Some(managed) = self.pool.get_active_mut(session_id) else {
             return;
         };
-        if session_mode != SessionMode::Interactive {
+        if managed.session.session_mode != SessionMode::Interactive {
             return;
         }
-        let Some(issue_number) = issue_number else {
+        let Some(issue_number) = managed.session.issue_number else {
             return;
         };
 
         let turn_event = match event {
             StreamEvent::AssistantMessage { text } => {
-                if let Some(interaction) =
-                    self.pool.find_active_interaction_by_issue_mut(issue_number)
-                    && let Some(turn) = streaming_agent_turn(interaction)
-                {
+                if let Some(turn) = streaming_agent_turn(&mut managed.session.turns) {
                     turn.content.push_str(text);
                 }
                 Some(TurnEvent::Chunk(text.clone()))
             }
             StreamEvent::Completed { .. } => {
                 let at = Utc::now();
-                if let Some(interaction) =
-                    self.pool.find_active_interaction_by_issue_mut(issue_number)
-                {
-                    if let Some(turn) = streaming_agent_turn(interaction) {
-                        turn.finished_at = Some(at);
-                    }
-                    interaction.state = InteractionState::Idle;
-                    // A /pushup terminator queued mid-stream fires now that
-                    // the streamed output is preserved (#936 contract).
-                    interaction.settle_queued_terminator();
+                if let Some(turn) = streaming_agent_turn(&mut managed.session.turns) {
+                    turn.finished_at = Some(at);
                 }
+                managed.session.turn_state = TurnState::Idle;
+                // A /pushup terminator queued mid-stream fires now that the
+                // streamed output is preserved (#936 contract).
+                managed.settle_queued_terminator();
                 Some(TurnEvent::TurnFinished { at })
             }
             StreamEvent::Error { message } => {
                 let at = Utc::now();
-                if let Some(interaction) =
-                    self.pool.find_active_interaction_by_issue_mut(issue_number)
-                {
-                    if let Some(turn) = streaming_agent_turn(interaction) {
-                        turn.finished_at = Some(at);
-                    }
-                    interaction.history.push(TurnRecord {
-                        role: TurnRole::System,
-                        content: message.clone(),
-                        started_at: at,
-                        finished_at: Some(at),
-                    });
-                    interaction.state = InteractionState::Idle;
-                    interaction.settle_queued_terminator();
+                if let Some(turn) = streaming_agent_turn(&mut managed.session.turns) {
+                    turn.finished_at = Some(at);
                 }
+                managed.session.turns.push(TurnRecord {
+                    role: TurnRole::System,
+                    content: message.clone(),
+                    started_at: at,
+                    finished_at: Some(at),
+                });
+                managed.session.turn_state = TurnState::Idle;
+                managed.settle_queued_terminator();
                 Some(TurnEvent::Error(message.clone()))
             }
             _ => None,
@@ -174,17 +151,17 @@ impl App {
     /// streaming records, surface a `System` note, unlock the input.
     fn fail_interaction_turn(&mut self, issue_number: u64, message: String) {
         let at = Utc::now();
-        if let Some(interaction) = self.pool.find_active_interaction_by_issue_mut(issue_number) {
-            if let Some(turn) = streaming_agent_turn(interaction) {
+        if let Some(managed) = self.pool.interactive_managed_mut(issue_number) {
+            if let Some(turn) = streaming_agent_turn(&mut managed.session.turns) {
                 turn.finished_at = Some(at);
             }
-            interaction.history.push(TurnRecord {
+            managed.session.turns.push(TurnRecord {
                 role: TurnRole::System,
                 content: message.clone(),
                 started_at: at,
                 finished_at: Some(at),
             });
-            interaction.state = InteractionState::Idle;
+            managed.session.turn_state = TurnState::Idle;
         }
         self.apply_interaction_turn_event(issue_number, TurnEvent::Error(message));
     }
@@ -216,11 +193,8 @@ impl App {
 }
 
 /// The in-flight agent record (last `Agent` turn not yet finished).
-fn streaming_agent_turn(
-    interaction: &mut crate::session::interaction::InteractionSession,
-) -> Option<&mut TurnRecord> {
-    interaction
-        .history
+fn streaming_agent_turn(turns: &mut [TurnRecord]) -> Option<&mut TurnRecord> {
+    turns
         .last_mut()
         .filter(|t| t.role == TurnRole::Agent && t.finished_at.is_none())
 }

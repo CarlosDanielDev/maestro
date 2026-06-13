@@ -120,9 +120,9 @@ impl App {
         // owner/repo are cloned here because they are moved into PrCreated
         // below.
         if let Some(issue_number) = marker.issue_number
-            && let Some(session) = self.pool.find_active_interaction_by_issue_mut(issue_number)
+            && let Some(managed) = self.pool.interactive_managed_mut(issue_number)
         {
-            session.signal_terminator(
+            managed.signal_terminator(
                 crate::session::interaction_lifecycle::InteractionLifecycleEvent::PrLinkedToIssue {
                     pr_number: marker.pr_number,
                     issue_number,

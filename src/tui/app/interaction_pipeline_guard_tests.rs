@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use super::interaction_pipeline_tests::{app_with_interaction, pump_session_events, scripted_turn};
 use crate::agent_provider::test_fakes::{ScriptedEnd, ScriptedProvider, ScriptedTurn};
-use crate::session::interaction::{InteractionState, TurnRole};
+use crate::session::interaction::{TurnRole, TurnState};
 use crate::session::types::StreamEvent;
 use crate::tui::make_test_app;
 
@@ -87,20 +87,18 @@ async fn provider_error_unlocks_the_turn_with_a_system_note() {
         .await;
     pump_session_events(&mut app).await;
 
-    let interaction = app
+    let session = app
         .pool
-        .find_active_interaction_by_issue(947)
+        .interactive_managed(947)
+        .map(|m| m.session.clone())
         .expect("interaction alive");
     assert_eq!(
-        interaction.state,
-        InteractionState::Idle,
+        session.turn_state,
+        TurnState::Idle,
         "a failed turn must settle back to Idle so the input unlocks"
     );
     assert!(
-        interaction
-            .history
-            .iter()
-            .any(|t| t.role == TurnRole::System),
+        session.turns.iter().any(|t| t.role == TurnRole::System),
         "failure surfaces as a System turn"
     );
 }
@@ -139,15 +137,13 @@ async fn unknown_stream_lines_never_reach_the_transcript() {
     let screen = app.screen_state.interaction_screen.as_ref().unwrap();
     assert_eq!(screen.last_agent_content(), "ok");
 
-    let interaction = app
+    let session = app
         .pool
-        .find_active_interaction_by_issue(947)
+        .interactive_managed(947)
+        .map(|m| m.session.clone())
         .expect("interaction alive");
     assert!(
-        !interaction
-            .history
-            .iter()
-            .any(|t| t.content.contains("evil")),
+        !session.turns.iter().any(|t| t.content.contains("evil")),
         "raw unparsed lines must never enter the persisted history"
     );
 

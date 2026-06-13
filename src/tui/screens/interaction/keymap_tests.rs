@@ -1,16 +1,13 @@
 //! Unit tests for the Interaction screen keymap, quit modal, and turn
 //! event application (#738). Split from `tests.rs` for the file-size budget.
 
+use super::view_state::{CloseReason, InteractionState};
 use super::*;
-use crate::session::interaction::TurnEvent;
-use crate::session::interaction::{
-    CloseReason, InteractionSession, InteractionState, TurnRecord, TurnRole,
-};
+use crate::session::interaction::{TurnEvent, TurnRecord, TurnRole};
 use crate::tui::navigation::keymap::KeymapProvider;
 use crate::tui::screens::test_helpers::{key_event, key_event_with_modifiers};
 use chrono::{DateTime, TimeZone, Utc};
 use crossterm::event::{KeyCode, KeyModifiers};
-use std::path::PathBuf;
 
 fn fixed_t0() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 1, 1, 9, 0, 0).unwrap()
@@ -43,19 +40,8 @@ fn three_turn_fixture() -> Vec<TurnRecord> {
     ]
 }
 
-fn session_for(issue: u64, produce_pr: bool, state: InteractionState) -> InteractionSession {
-    let mut s = InteractionSession::new(
-        issue,
-        PathBuf::from("/tmp/maestro/wt-x"),
-        format!("feat/issue-{issue}"),
-        produce_pr,
-    );
-    s.state = state;
-    s
-}
-
 fn screen_for(issue: u64, produce_pr: bool, state: InteractionState) -> InteractionScreen {
-    InteractionScreen::for_session(&session_for(issue, produce_pr, state))
+    InteractionScreen::test_fixture(issue, produce_pr, state, Vec::new(), "/tmp/maestro/wt-x")
 }
 
 fn type_text(s: &mut InteractionScreen, text: &str) {
@@ -139,11 +125,13 @@ fn ctrl_p_produce_pr_false_logs_and_does_not_send() {
 
 #[test]
 fn ctrl_l_clears_editor_leaves_history() {
-    let mut s = InteractionScreen::for_session(&{
-        let mut sess = session_for(7, true, InteractionState::Idle);
-        sess.history = three_turn_fixture();
-        sess
-    });
+    let mut s = InteractionScreen::test_fixture(
+        7,
+        true,
+        InteractionState::Idle,
+        three_turn_fixture(),
+        "/tmp/maestro/wt-x",
+    );
     type_text(&mut s, "partial");
     let action = s.handle_input(&ctrl('l'), InputMode::Insert);
     assert_eq!(action, ScreenAction::None);
@@ -183,11 +171,13 @@ fn streaming_ignores_ctrl_l() {
 
 #[test]
 fn streaming_scroll_up_still_works() {
-    let mut s = InteractionScreen::for_session(&{
-        let mut sess = session_for(7, true, InteractionState::Streaming);
-        sess.history = three_turn_fixture();
-        sess
-    });
+    let mut s = InteractionScreen::test_fixture(
+        7,
+        true,
+        InteractionState::Streaming,
+        three_turn_fixture(),
+        "/tmp/maestro/wt-x",
+    );
     s.scroll_offset = 5;
     s.auto_scroll = false;
     s.handle_input(&key_event(KeyCode::Up), InputMode::Insert);

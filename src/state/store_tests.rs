@@ -413,7 +413,7 @@ fn store_load_legacy_state_without_interactions_field_succeeds() {
     );
     let loaded = must(store.load(), "legacy state should load");
     assert!(
-        loaded.interactions.is_empty(),
-        "interactions must default to empty when absent from state file"
+        loaded.team_runs.is_empty(),
+        "team_runs must default to empty when absent from state file"
     );
 }
