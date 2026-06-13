@@ -452,7 +452,7 @@ fn handle_normalize_agent_config(app: &mut app::App) {
 /// active session and skips creation + the launch dialog; otherwise a fresh
 /// session (with worktree) is created. Logs a `resumed`/`started` line and
 /// navigates to the screen (#738).
-fn open_interaction_session(
+pub(crate) fn open_interaction_session(
     app: &mut app::App,
     issue_number: u64,
     produce_pr: bool,

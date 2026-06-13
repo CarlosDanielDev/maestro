@@ -134,14 +134,15 @@ async fn unknown_stream_lines_never_reach_the_transcript() {
         .await;
     pump_session_events(&mut app).await;
 
-    let screen = app.screen_state.interaction_screen.as_ref().unwrap();
-    assert_eq!(screen.last_agent_content(), "ok");
-
     let session = app
         .pool
         .interactive_managed(947)
         .map(|m| m.session.clone())
         .expect("interaction alive");
+
+    // #950: the screen renders a projection of the live session.
+    let view = crate::tui::screens::InteractionView::from_session(&session);
+    assert_eq!(view.turns.last().map(|t| t.content.as_str()), Some("ok"));
     assert!(
         !session.turns.iter().any(|t| t.content.contains("evil")),
         "raw unparsed lines must never enter the persisted history"

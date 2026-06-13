@@ -6,15 +6,15 @@
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 
-use crate::session::interaction::{TurnRecord, TurnRole};
+use crate::session::interaction::{TurnRecord, TurnRole, TurnState};
+use crate::session::types::SessionStatus;
 use crate::tui::navigation::InputMode;
-use crate::tui::screens::interaction::view_state::InteractionState;
+use crate::tui::screens::InteractionView;
 use crate::tui::screens::test_helpers::key_event_with_modifiers;
 use crate::tui::screens::{InteractionScreen, Screen};
 use crate::tui::theme::Theme;
 use chrono::{DateTime, TimeZone, Utc};
 use crossterm::event::{KeyCode, KeyModifiers};
-use std::path::PathBuf;
 
 const W: u16 = 120;
 const H: u16 = 40;
@@ -105,10 +105,30 @@ fn interaction_screen_scrolled_up() {
 fn screen(
     issue: u64,
     produce_pr: bool,
-    state: InteractionState,
+    turn_state: TurnState,
     history: Vec<TurnRecord>,
 ) -> InteractionScreen {
-    InteractionScreen::test_fixture(issue, produce_pr, state, history, "/tmp/maestro/issue-42")
+    InteractionScreen::test_fixture(
+        issue,
+        produce_pr,
+        turn_state,
+        history,
+        "/tmp/maestro/issue-42",
+    )
+}
+
+/// Build the view a settled session would inject (#950).
+fn settled_view(
+    turns: Vec<TurnRecord>,
+    settled_from: SessionStatus,
+    pr_linked: Option<u64>,
+) -> InteractionView {
+    InteractionView {
+        turns,
+        turn_state: TurnState::Idle,
+        settled_from: Some(settled_from),
+        pr_linked,
+    }
 }
 
 #[test]
@@ -117,7 +137,7 @@ fn interaction_screen_streaming_locks_input() {
         turn(TurnRole::User, "implement login", false),
         turn(TurnRole::Agent, "Working on it", true),
     ];
-    let mut screen = screen(42, true, InteractionState::Streaming, history);
+    let mut screen = screen(42, true, TurnState::Streaming, history);
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
     assert!(
@@ -130,7 +150,7 @@ fn interaction_screen_streaming_locks_input() {
 #[test]
 fn interaction_screen_terminated_banner() {
     let history = vec![turn(TurnRole::User, "stop", false)];
-    let mut screen = screen(42, true, InteractionState::Terminated, history);
+    let mut screen = screen(42, true, TurnState::Idle, history);
     screen.force_terminated_userquit_for_test();
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
@@ -142,8 +162,63 @@ fn interaction_screen_terminated_banner() {
 }
 
 #[test]
+fn interaction_screen_settled_completed_banner() {
+    let mut screen = screen(42, true, TurnState::Idle, vec![]);
+    screen.set_view(settled_view(
+        vec![turn(TurnRole::User, "ship it", false)],
+        SessionStatus::Completed,
+        None,
+    ));
+    let terminal = render(&mut screen);
+    let rendered = format!("{:?}", terminal.backend());
+    assert!(
+        rendered.contains("COMPLETED"),
+        "settled banner must name the outcome:\n{rendered}"
+    );
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
+}
+
+#[test]
+fn interaction_screen_settled_with_pr_banner() {
+    let mut screen = screen(42, true, TurnState::Idle, vec![]);
+    screen.set_view(settled_view(
+        vec![turn(TurnRole::System, "PR opened", false)],
+        SessionStatus::Completed,
+        Some(7),
+    ));
+    let terminal = render(&mut screen);
+    let rendered = format!("{:?}", terminal.backend());
+    assert!(
+        rendered.contains("PR #7"),
+        "banner must show the PR:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("COMPLETED"),
+        "banner must show outcome:\n{rendered}"
+    );
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
+}
+
+#[test]
+fn interaction_screen_settled_failed_gates_banner() {
+    let mut screen = screen(42, true, TurnState::Idle, vec![]);
+    screen.set_view(settled_view(
+        vec![turn(TurnRole::System, "gates failed", false)],
+        SessionStatus::FailedGates,
+        None,
+    ));
+    let terminal = render(&mut screen);
+    let rendered = format!("{:?}", terminal.backend());
+    assert!(
+        rendered.to_lowercase().contains("retry") || rendered.contains("FAILED_GATES"),
+        "failed-gates banner must invite a retry:\n{rendered}"
+    );
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
+}
+
+#[test]
 fn interaction_screen_quit_modal_open() {
-    let mut screen = screen(42, true, InteractionState::Idle, vec![]);
+    let mut screen = screen(42, true, TurnState::Idle, vec![]);
     screen.handle_input(
         &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),
         InputMode::Insert,
@@ -159,7 +234,7 @@ fn interaction_screen_quit_modal_open() {
 
 #[test]
 fn interaction_screen_ctrl_p_greyed_without_produce_pr() {
-    let mut screen = screen(42, false, InteractionState::Idle, vec![]);
+    let mut screen = screen(42, false, TurnState::Idle, vec![]);
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
     assert!(
@@ -171,7 +246,7 @@ fn interaction_screen_ctrl_p_greyed_without_produce_pr() {
 
 #[test]
 fn interaction_screen_header_shows_agent_and_model() {
-    let mut screen = screen(7, true, InteractionState::Idle, vec![]);
+    let mut screen = screen(7, true, TurnState::Idle, vec![]);
     screen.set_provider_context("claude", "opus");
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());

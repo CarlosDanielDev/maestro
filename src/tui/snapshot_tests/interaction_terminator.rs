@@ -16,8 +16,9 @@
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 
+use crate::session::interaction::{TurnRecord, TurnRole, TurnState};
 use crate::tui::screens::interaction::lifecycle::{FakeClock, MockTeardown, WorktreeTeardownPort};
-use crate::tui::screens::{InteractionScreen, Screen};
+use crate::tui::screens::{InteractionScreen, InteractionView, Screen};
 use crate::tui::theme::Theme;
 use crate::work::worktree_teardown::TeardownError;
 use std::path::PathBuf;
@@ -66,9 +67,23 @@ fn with_time_mask(body: impl FnOnce()) {
 #[test]
 fn pr_linked_keeps_chat_open() {
     // #949 (spec §4.4): a linked PR posts a System turn and the chat stays
-    // open — editable input, no banner, no teardown.
+    // open — editable input, no banner, no teardown. #950: that System turn
+    // is written to the live session by the pipeline and rendered through the
+    // injected view, so the test seeds the view the pipeline would produce.
     let mut screen = base_screen();
     let _ = screen.on_pr_linked(7);
+    let now = chrono::Utc::now();
+    screen.set_view(InteractionView {
+        turns: vec![TurnRecord {
+            role: TurnRole::System,
+            content: "PR #7 created — session stays open (Ctrl+W to quit)".to_string(),
+            started_at: now,
+            finished_at: Some(now),
+        }],
+        turn_state: TurnState::Idle,
+        settled_from: None,
+        pr_linked: Some(7),
+    });
 
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());

@@ -1,16 +1,15 @@
-//! Turn lifecycle for the Interaction screen (#738).
+//! Turn send + telemetry for the Interaction screen (#738).
 //!
-//! Splits the send/quit/stream state transitions out of `mod.rs` (file-size
-//! budget). These methods own the screen's view of history: `begin_turn`
-//! pushes the user turn on send, and `apply_turn_event` folds the streaming
-//! `TurnEvent`s from `send_turn` into the live transcript.
+//! Splits the send path and per-turn counters out of `mod.rs` (file-size
+//! budget). Since #950 the transcript lives on the live `Session` (written by
+//! the pipeline): `begin_turn` only returns the send action and bumps the
+//! counters, and `log_turn_event` folds streaming `TurnEvent`s into the
+//! activity-log line without touching turns.
 
 use super::InteractionScreen;
-use super::view_state::InteractionState;
 use crate::session::interaction::TurnEvent;
-use crate::session::interaction::{TurnRecord, TurnRole};
+use crate::session::interaction::TurnRole;
 use crate::tui::screens::ScreenAction;
-use chrono::Utc;
 use crossterm::event::KeyCode;
 use ratatui::style::Style;
 use tui_textarea::TextArea;
@@ -54,18 +53,12 @@ impl InteractionScreen {
         self.editor = editor;
     }
 
-    /// Append a finished `User` turn for `content` and flip into `Streaming`,
-    /// resetting the per-turn chunk/timer counters. Returns the
+    /// Reset the per-turn chunk/timer counters and return the
     /// `SendInteractionTurn` action the dispatch turns into a spawned turn.
+    /// The User turn + `Streaming` flip now happen on the live session in the
+    /// pipeline (`dispatch_interaction_turn`, #947/#950) — the screen reads
+    /// them back through the injected view, so it no longer pushes the turn.
     pub(super) fn begin_turn(&mut self, content: String) -> ScreenAction {
-        let now = Utc::now();
-        self.history.push(TurnRecord {
-            role: TurnRole::User,
-            content: content.clone(),
-            started_at: now,
-            finished_at: Some(now),
-        });
-        self.state = InteractionState::Streaming;
         self.stream_started_at = None;
         self.stream_chunks = 0;
         self.turn_count += 1;
@@ -89,11 +82,13 @@ impl InteractionScreen {
         }
     }
 
-    /// Apply one streaming [`TurnEvent`] to the screen's view of history.
-    /// `TurnFinished` returns the per-turn activity-log line; other events
-    /// return [`ScreenAction::None`]. The pool's session is updated in
-    /// parallel by `send_turn`; this keeps the rendered transcript live.
-    pub fn apply_turn_event(&mut self, event: &TurnEvent) -> ScreenAction {
+    /// Fold one streaming [`TurnEvent`] into the screen's per-turn telemetry
+    /// counters and emit the activity-log line (#950). The transcript itself
+    /// lives on the live session (written by the pipeline) and is read back
+    /// through the injected view — this method never mutates turns or
+    /// lifecycle. `TurnFinished`/`Error` return the pinned activity-log line
+    /// (#742); other events return [`ScreenAction::None`].
+    pub fn log_turn_event(&mut self, event: &TurnEvent) -> ScreenAction {
         match event {
             TurnEvent::TurnStarted {
                 role: TurnRole::Agent,
@@ -101,28 +96,14 @@ impl InteractionScreen {
             } => {
                 self.stream_started_at = Some(*at);
                 self.stream_chunks = 0;
-                self.state = InteractionState::Streaming;
-                self.history.push(TurnRecord {
-                    role: TurnRole::Agent,
-                    content: String::new(),
-                    started_at: *at,
-                    finished_at: None,
-                });
                 ScreenAction::None
             }
             TurnEvent::TurnStarted { .. } => ScreenAction::None,
-            TurnEvent::Chunk(text) => {
-                if let Some(turn) = self.streaming_agent_turn() {
-                    turn.content.push_str(text);
-                }
+            TurnEvent::Chunk(_) => {
                 self.stream_chunks += 1;
                 ScreenAction::None
             }
             TurnEvent::TurnFinished { at } => {
-                if let Some(turn) = self.streaming_agent_turn() {
-                    turn.finished_at = Some(*at);
-                }
-                self.state = InteractionState::Idle;
                 let ms = self
                     .stream_started_at
                     .map(|start| (*at - start).num_milliseconds().max(0))
@@ -135,39 +116,14 @@ impl InteractionScreen {
                 })
             }
             TurnEvent::Error(msg) => {
-                let now = Utc::now();
-                self.history.push(TurnRecord {
-                    role: TurnRole::System,
-                    content: msg.clone(),
-                    started_at: now,
-                    finished_at: Some(now),
-                });
-                self.state = InteractionState::Idle;
-                // Every transition leaves exactly one log line (#742).
+                // Every transition leaves exactly one log line (#742). The
+                // System turn for the error is pushed onto the session by the
+                // pipeline (`fail_interaction_turn`), not here.
                 super::activity_action(&crate::work::activity::InteractionActivity::TurnFailed {
                     issue: self.issue_number,
                     detail: msg.clone(),
                 })
             }
         }
-    }
-
-    /// The in-flight agent turn (last `Agent` turn that has not finished).
-    fn streaming_agent_turn(&mut self) -> Option<&mut TurnRecord> {
-        self.history
-            .last_mut()
-            .filter(|t| t.role == TurnRole::Agent && t.finished_at.is_none())
-    }
-
-    /// Content of the last agent turn — test seam for the pipeline-turn
-    /// integration (#947, `interaction_pipeline_tests`).
-    #[cfg(test)]
-    pub(crate) fn last_agent_content(&self) -> String {
-        self.history
-            .iter()
-            .rev()
-            .find(|t| t.role == TurnRole::Agent)
-            .map(|t| t.content.clone())
-            .unwrap_or_default()
     }
 }

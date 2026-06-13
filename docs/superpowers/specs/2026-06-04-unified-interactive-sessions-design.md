@@ -82,7 +82,7 @@ Each phase is its own issue, its own TDD cycle, its own PR. Phases are sequentia
 2. **Pipeline reuse.** Follow-up turns go through the normal resumed-turn path (shared prompt builder + provider routing + telemetry); retire the `interaction_turn.rs` bare-spawn loop.
 3. **State unify.** Add `SessionStatus::Interactive` + `Session.settled_from` + `Session.turn_state`; transition one-shot → Interactive on settle; retire `InteractionState` and `InteractionSession`.
 4. **Teardown rework.** Move `wipe_worktree` to the quit path; strip auto-wipe + auto-nav from #741; repoint #739 to a notifier.
-5. **Screen-as-view + switcher.** Interaction screen renders the live `Session`; wire the session switcher (#930); delete dead code from the retired machine.
+5. **Screen-as-view + switcher.** ✅ **Implemented — #950.** `InteractionView { turns, turn_state, settled_from, pr_linked }` injected each frame by `ui.rs` via `InteractionScreen::set_view`; screen owns no transcript. `history` field + `InteractionState` enum removed; pipeline writes turns to `Session.turns`. New `Session::interactive_banner` / `session::interaction::settled_banner` / `draw_settled_banner` render the settled-from + PR status. Session switcher (#930): `switcher_target` in `input_handler.rs` routes a live Interactive session to its chat screen instead of Detail view.
 
 ## 7. Backlog impact
 

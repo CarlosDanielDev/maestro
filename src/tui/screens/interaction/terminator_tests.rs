@@ -12,7 +12,7 @@
 
 use super::InteractionScreen;
 use super::lifecycle::{FakeClock, MockTeardown, WorktreeTeardownPort};
-use super::view_state::{CloseReason, InteractionState};
+use super::view_state::CloseReason;
 use crate::session::interaction::{TurnRecord, TurnRole};
 use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::ScreenAction;
@@ -66,10 +66,9 @@ fn pr_linked_keeps_session_open_without_teardown() {
 
     let action = screen.on_pr_linked(7);
 
-    assert_eq!(
-        screen.state_for_test(),
-        InteractionState::Idle,
-        "a linked PR must NOT change the screen state (#949, spec §4.4)"
+    assert!(
+        !screen.terminated_for_test(),
+        "a linked PR must NOT terminate the screen (#949, spec §4.4)"
     );
     assert_eq!(screen.close_reason_for_test(), None);
     assert!(!screen.is_teardown_in_flight());
@@ -83,10 +82,13 @@ fn pr_linked_keeps_session_open_without_teardown() {
         "no auto-navigation on PR detection"
     );
 
-    let sys = system_turns(&screen);
-    assert_eq!(sys.len(), 1, "one System announcement");
-    assert!(sys[0].content.contains("PR #7"));
-    assert!(sys[0].content.contains("session stays open"));
+    // #950: the "PR #N" System turn is appended to the live session by the
+    // pipeline (`apply_pr_linked_announcement`), not by the screen — so the
+    // screen's view shows no extra turn here. on_pr_linked only logs.
+    assert!(
+        system_turns(&screen).is_empty(),
+        "the screen must not push the PR announcement (pipeline owns it)"
+    );
     match action {
         ScreenAction::LogActivity { message, .. } => {
             assert!(
@@ -112,13 +114,13 @@ fn quit_teardown_wipes_once_and_terminates_userquit() {
         matches!(begin_action, ScreenAction::None),
         "the TEARDOWN log line arrives with the async result"
     );
-    assert_ne!(screen.state_for_test(), InteractionState::Terminated);
+    assert!(!screen.terminated_for_test());
     assert!(screen.is_teardown_in_flight());
     assert_eq!(teardown.call_count(), 0, "no blocking wipe on the UI path");
 
     let action = resolve_teardown(&mut screen, &teardown);
 
-    assert_eq!(screen.state_for_test(), InteractionState::Terminated);
+    assert!(screen.terminated_for_test());
     assert!(!screen.is_teardown_in_flight());
     assert_eq!(screen.close_reason_for_test(), Some(CloseReason::UserQuit));
     assert_eq!(teardown.call_count(), 1, "teardown must be called once");
@@ -173,7 +175,7 @@ fn quit_skips_teardown_when_no_trusted_worktree_root() {
         screen.take_pending_teardown_dispatch().is_none(),
         "the skip path must not park a destructive dispatch"
     );
-    assert_eq!(screen.state_for_test(), InteractionState::Terminated);
+    assert!(screen.terminated_for_test());
     assert_eq!(screen.close_reason_for_test(), Some(CloseReason::UserQuit));
     let sys = system_turns(&screen);
     assert!(
@@ -197,7 +199,7 @@ fn quit_teardown_failure_keeps_worktree_and_surfaces_error() {
     screen.begin_quit_teardown();
     let action = resolve_teardown(&mut screen, &teardown);
 
-    assert_eq!(screen.state_for_test(), InteractionState::Terminated);
+    assert!(screen.terminated_for_test());
     assert_eq!(
         screen.close_reason_for_test(),
         Some(CloseReason::AgentFailure {
@@ -230,9 +232,8 @@ fn stale_teardown_result_is_ignored() {
     let action = screen.apply_teardown_result(Ok(()));
 
     assert!(matches!(action, ScreenAction::None));
-    assert_ne!(
-        screen.state_for_test(),
-        InteractionState::Terminated,
+    assert!(
+        !screen.terminated_for_test(),
         "a stale result must not terminate the screen"
     );
 }

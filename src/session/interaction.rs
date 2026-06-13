@@ -42,6 +42,26 @@ pub struct TurnRecord {
     pub finished_at: Option<DateTime<Utc>>,
 }
 
+/// Human status line for a kept-alive Interactive session (#950): how the
+/// underlying one-shot run settled, plus any linked PR. `None` until the
+/// session settles (`settled_from` is `None`). Pure — shared by
+/// [`super::types::Session::interactive_banner`] and the screen's view so the
+/// text has one source.
+pub fn settled_banner(
+    settled_from: Option<super::types::SessionStatus>,
+    pr_linked: Option<u64>,
+) -> Option<String> {
+    let status = settled_from?;
+    let mut text = format!("Settled from {}", status.label());
+    if status == super::types::SessionStatus::FailedGates {
+        text.push_str(" — retry below");
+    }
+    if let Some(pr) = pr_linked {
+        text.push_str(&format!(" · PR #{pr} linked"));
+    }
+    Some(text)
+}
+
 /// Streaming events consumed by the Interaction screen (#738) as a turn
 /// runs. Since #947 these are derived from the pipeline session's
 /// `StreamEvent`s (`App::forward_interactive_stream_event`); before that

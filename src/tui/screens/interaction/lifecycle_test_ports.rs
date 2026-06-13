@@ -6,9 +6,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use super::super::InteractionScreen;
-use super::super::view_state::{CloseReason, InteractionState};
+use super::super::view_state::CloseReason;
 use super::{Clock, WorktreeTeardownPort};
-use crate::session::interaction::TurnRecord;
+use crate::session::interaction::{TurnRecord, TurnState};
 use crate::work::worktree_teardown::TeardownError;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -113,11 +113,37 @@ impl InteractionScreen {
     }
 
     pub(crate) fn history_for_test(&self) -> &[TurnRecord] {
-        &self.history
+        &self.view.turns
     }
 
-    pub(crate) fn state_for_test(&self) -> InteractionState {
-        self.state
+    /// History length — test seam for dispatch re-entry assertions (#738).
+    pub(crate) fn history_len(&self) -> usize {
+        self.view.turns.len()
+    }
+
+    /// Open-reviewer flag for snapshot tests / mouse routing (#918).
+    pub(crate) fn diff_review_open(&self) -> bool {
+        self.diff_review.is_some()
+    }
+
+    pub(crate) fn scroll_up_for_test(&mut self, n: usize) {
+        self.scroll_up(n);
+    }
+
+    pub(crate) fn scroll_down_for_test(&mut self, n: usize) {
+        self.scroll_down(n);
+    }
+
+    /// Tail-follow flag — cross-module test seam for the mouse-routing
+    /// assertion in `tui::mod` (#988).
+    pub(crate) fn auto_scroll_for_test(&self) -> bool {
+        self.auto_scroll
+    }
+
+    /// Terminal-lifecycle flag for the quit-teardown assertions (#950 replaces
+    /// the old `state == Terminated` check).
+    pub(crate) fn terminated_for_test(&self) -> bool {
+        self.terminated
     }
 
     pub(crate) fn close_reason_for_test(&self) -> Option<CloseReason> {
@@ -128,16 +154,13 @@ impl InteractionScreen {
         self.terminated_at.is_some()
     }
 
-    pub(crate) fn force_state_for_test(&mut self, state: InteractionState) {
-        self.state = state;
-    }
-
     /// Screen bound to a synthetic unified interactive session (#948) —
-    /// the test twin of the `for_managed` launch path.
+    /// the test twin of the `for_managed` launch path. `turn_state` seeds the
+    /// injected view's Idle/Streaming lock (#950).
     pub(crate) fn test_fixture(
         issue: u64,
         produce_pr: bool,
-        state: InteractionState,
+        turn_state: TurnState,
         history: Vec<TurnRecord>,
         worktree: &str,
     ) -> Self {
@@ -151,19 +174,18 @@ impl InteractionScreen {
         session.session_mode = crate::session::types::SessionMode::Interactive;
         session.produce_pr = produce_pr;
         session.turns = history;
+        session.turn_state = turn_state;
         let managed = crate::session::manager::ManagedSession::with_worktree(
             session,
             Some(PathBuf::from(worktree)),
             Some(format!("feat/issue-{issue}")),
             None,
         );
-        let mut screen = Self::for_managed(&managed);
-        screen.force_state_for_test(state);
-        screen
+        Self::for_managed(&managed)
     }
 
     pub(crate) fn force_terminated_userquit_for_test(&mut self) {
-        self.state = InteractionState::Terminated;
+        self.terminated = true;
         self.close_reason = Some(CloseReason::UserQuit);
     }
 }
