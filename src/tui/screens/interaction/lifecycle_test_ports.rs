@@ -128,10 +128,6 @@ impl InteractionScreen {
         self.terminated_at.is_some()
     }
 
-    pub(crate) fn queued_terminator_is_set(&self) -> bool {
-        self.queued_terminator.is_some()
-    }
-
     pub(crate) fn force_state_for_test(&mut self, state: InteractionState) {
         self.state = state;
     }

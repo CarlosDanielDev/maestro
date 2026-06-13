@@ -23,9 +23,11 @@ pub enum TransitionReason {
     ContextOverflow,
     PrNeeded,
     ConflictFixStarted,
-    /// A `/pushup` PR linked to the session's issue terminated an
-    /// interactive session (#948, was `CloseReason::PrCreated`). Phase 4
-    /// (#949) makes PR detection non-terminal and retires this path.
+    /// Historical (#948→#949): a `/pushup` PR used to terminate an
+    /// interactive session with this reason. #949 made PR detection
+    /// non-terminal (`Session.pr_linked`), so nothing constructs this
+    /// anymore — the variant stays so state files written by #948 builds
+    /// (transition_history entries) still deserialize.
     PrLinked,
 }
 

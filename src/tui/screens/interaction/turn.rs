@@ -6,7 +6,7 @@
 //! `TurnEvent`s from `send_turn` into the live transcript.
 
 use super::InteractionScreen;
-use super::view_state::{CloseReason, InteractionState};
+use super::view_state::InteractionState;
 use crate::session::interaction::TurnEvent;
 use crate::session::interaction::{TurnRecord, TurnRole};
 use crate::tui::screens::ScreenAction;
@@ -75,18 +75,16 @@ impl InteractionScreen {
         }
     }
 
-    /// Resolve a key while the quit-confirm modal is open: `y`/`Y` terminates
-    /// (worktree preserved); anything else cancels the modal.
+    /// Resolve a key while the quit-confirm modal is open: `y`/`Y` quits —
+    /// the app terminates the session and starts the worktree wipe (#949);
+    /// the screen terminates when the teardown result lands. Anything else
+    /// cancels the modal.
     pub(super) fn handle_quit_modal(&mut self, code: KeyCode) -> ScreenAction {
         self.quit_modal_open = false;
         match code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                self.state = InteractionState::Terminated;
-                self.close_reason = Some(CloseReason::UserQuit);
-                ScreenAction::QuitInteraction {
-                    issue_number: self.issue_number,
-                }
-            }
+            KeyCode::Char('y') | KeyCode::Char('Y') => ScreenAction::QuitInteraction {
+                issue_number: self.issue_number,
+            },
             _ => ScreenAction::None,
         }
     }
@@ -125,12 +123,6 @@ impl InteractionScreen {
                     turn.finished_at = Some(*at);
                 }
                 self.state = InteractionState::Idle;
-                // A terminator deferred mid-stream fires now that the turn has
-                // settled to Idle (#741). Its TEARDOWN log line supersedes the
-                // per-turn stats line for this final turn.
-                if let Some(action) = self.drain_queued_terminator() {
-                    return action;
-                }
                 let ms = self
                     .stream_started_at
                     .map(|start| (*at - start).num_milliseconds().max(0))

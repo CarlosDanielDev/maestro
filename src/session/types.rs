@@ -346,6 +346,12 @@ pub struct Session {
     /// chord on the Interaction screen.
     #[serde(default)]
     pub produce_pr: bool,
+    /// `/pushup` PR linked to this interactive session's issue (#949,
+    /// spec §4.4). Set by `ManagedSession::signal_pr_linked`; the session
+    /// stays alive — teardown happens only on explicit quit. Carries the
+    /// PR number for the System-turn announcement and the banner.
+    #[serde(default)]
+    pub pr_linked: Option<u64>,
     /// Configured agent id selected when this session was created.
     #[serde(default)]
     pub agent_id: Option<String>,
@@ -528,6 +534,7 @@ impl Session {
             turn_state: super::interaction::TurnState::Idle,
             turns: Vec::new(),
             produce_pr: false,
+            pr_linked: None,
             agent_id: None,
             mode_config: None,
             started_at: None,

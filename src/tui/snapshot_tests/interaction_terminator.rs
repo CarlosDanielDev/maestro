@@ -1,11 +1,12 @@
-//! Snapshot tests for the terminator UI flow (#741).
+//! Snapshot tests for the PR-linked + quit-teardown UI flow (#741 → #949).
 //!
-//! Five renders: idle-fire success, the #941 async in-flight state,
-//! streaming-deferred, teardown-failure, and UserQuit-before-terminator. All
-//! use `FakeClock` so `terminated_at` is frozen and never trips auto-nav
-//! mid-render. Teardown resolves asynchronously (#941): tests park the
-//! dispatch, resolve it through `MockTeardown`, and apply the result — the
-//! same dance the app's spawn_blocking dispatcher performs.
+//! Five renders: PR-linked keeps the chat open, quit success, the #941
+//! async in-flight state, quit teardown failure, and the untrusted-root
+//! quit skip. All use `FakeClock` so `terminated_at` is frozen and never
+//! trips auto-nav mid-render. Teardown resolves asynchronously (#941):
+//! tests park the dispatch, resolve it through `MockTeardown`, and apply
+//! the result — the same dance the app's spawn_blocking dispatcher
+//! performs.
 //!
 //! Turn cards render a `role · HH:MM` header (#987) where the time is the
 //! turn's wall-clock `started_at`. Those turns are stamped by production code
@@ -15,27 +16,14 @@
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 
-use crate::session::interaction_lifecycle::InteractionLifecycleEvent;
-use crate::tui::navigation::InputMode;
 use crate::tui::screens::interaction::lifecycle::{FakeClock, MockTeardown, WorktreeTeardownPort};
-use crate::tui::screens::test_helpers::key_event_with_modifiers;
 use crate::tui::screens::{InteractionScreen, Screen};
 use crate::tui::theme::Theme;
 use crate::work::worktree_teardown::TeardownError;
-use crossterm::event::{KeyCode, KeyModifiers};
 use std::path::PathBuf;
 
 const W: u16 = 120;
 const H: u16 = 40;
-
-fn pr_event(pr_number: u64) -> InteractionLifecycleEvent {
-    InteractionLifecycleEvent::PrLinkedToIssue {
-        pr_number,
-        issue_number: 42,
-        owner: "owner".into(),
-        repo: "repo".into(),
-    }
-}
 
 fn base_screen() -> InteractionScreen {
     InteractionScreen::with_ports(
@@ -76,17 +64,41 @@ fn with_time_mask(body: impl FnOnce()) {
 }
 
 #[test]
-fn terminator_idle_success() {
-    let teardown = MockTeardown::ok();
+fn pr_linked_keeps_chat_open() {
+    // #949 (spec §4.4): a linked PR posts a System turn and the chat stays
+    // open — editable input, no banner, no teardown.
     let mut screen = base_screen();
-    screen.on_terminator_signaled(pr_event(7));
-    resolve_teardown(&mut screen, &teardown);
+    let _ = screen.on_pr_linked(7);
 
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
     assert!(
         rendered.contains("PR #7"),
-        "must show the PR turn:\n{rendered}"
+        "must show the PR announcement turn:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("session stays open"),
+        "the announcement names the kept-alive behavior:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Terminated"),
+        "no terminated banner on PR detection:\n{rendered}"
+    );
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
+}
+
+#[test]
+fn quit_teardown_success() {
+    let teardown = MockTeardown::ok();
+    let mut screen = base_screen();
+    let _ = screen.begin_quit_teardown();
+    resolve_teardown(&mut screen, &teardown);
+
+    let terminal = render(&mut screen);
+    let rendered = format!("{:?}", terminal.backend());
+    assert!(
+        rendered.contains("worktree removed"),
+        "must show the teardown result turn:\n{rendered}"
     );
     assert!(
         rendered.contains("terminated"),
@@ -96,11 +108,11 @@ fn terminator_idle_success() {
 }
 
 #[test]
-fn terminator_teardown_in_flight() {
+fn quit_teardown_in_flight() {
     // #941: between dispatch and result the input pane is replaced by the
     // "wiping worktree" banner — the UI is alive, not frozen.
     let mut screen = base_screen();
-    screen.on_terminator_signaled(pr_event(7));
+    let _ = screen.begin_quit_teardown();
 
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
@@ -112,27 +124,11 @@ fn terminator_teardown_in_flight() {
 }
 
 #[test]
-fn terminator_streaming_deferred() {
-    let mut screen = base_screen();
-    // Public seam: seed_turn pushes a User turn and flips to Streaming.
-    screen.seed_turn("implement login".to_string());
-    screen.on_terminator_signaled(pr_event(7));
-
-    let terminal = render(&mut screen);
-    let rendered = format!("{:?}", terminal.backend());
-    assert!(
-        rendered.contains("locked"),
-        "deferred state stays streaming with a locked input:\n{rendered}"
-    );
-    with_time_mask(|| assert_snapshot!(terminal.backend()));
-}
-
-#[test]
-fn terminator_teardown_failure() {
+fn quit_teardown_failure() {
     let err = TeardownError::PathStillExists(PathBuf::from("/tmp/maestro/issue-42"));
     let teardown = MockTeardown::failing(err);
     let mut screen = base_screen();
-    screen.on_terminator_signaled(pr_event(7));
+    let _ = screen.begin_quit_teardown();
     resolve_teardown(&mut screen, &teardown);
 
     let terminal = render(&mut screen);
@@ -145,27 +141,26 @@ fn terminator_teardown_failure() {
 }
 
 #[test]
-fn terminator_userquit_before_terminator() {
-    let mut screen = base_screen();
-    // Public path to Terminated(UserQuit): Ctrl+W then confirm 'y'.
-    screen.handle_input(
-        &key_event_with_modifiers(KeyCode::Char('w'), KeyModifiers::CONTROL),
-        InputMode::Insert,
+fn quit_skip_without_trusted_root() {
+    // cwd-fallback: no isolated worktree → quit terminates inline, no wipe.
+    let mut screen = InteractionScreen::with_ports(
+        42,
+        PathBuf::from("."),
+        "maestro/issue-42".to_string(),
+        PathBuf::new(), // empty root
+        Box::new(FakeClock::new()),
     );
-    screen.handle_input(
-        &key_event_with_modifiers(KeyCode::Char('y'), KeyModifiers::NONE),
-        InputMode::Insert,
-    );
-    // A later marker must NOT run teardown nor append turns.
-    screen.on_terminator_signaled(pr_event(7));
+    let _ = screen.begin_quit_teardown();
 
     let terminal = render(&mut screen);
     let rendered = format!("{:?}", terminal.backend());
     assert!(
+        rendered.contains("no isolated worktree"),
+        "must show the skip turn:\n{rendered}"
+    );
+    assert!(
         rendered.contains("terminated"),
         "must show the terminated banner:\n{rendered}"
     );
-    // No card header is rendered in the UserQuit-before-terminator state (the
-    // marker is ignored, no turn appended), so there is no `· HH:MM` to mask.
-    assert_snapshot!(terminal.backend());
+    with_time_mask(|| assert_snapshot!(terminal.backend()));
 }

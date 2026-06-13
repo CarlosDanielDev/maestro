@@ -24,7 +24,6 @@ pub enum ActivitySeverity {
 /// Compact rendering of `CloseReason` for the closing line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CloseReasonSummary {
-    PrCreated { pr_number: u64 },
     UserQuit,
     AgentFailure,
 }
@@ -32,7 +31,6 @@ pub enum CloseReasonSummary {
 impl std::fmt::Display for CloseReasonSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PrCreated { pr_number } => write!(f, "PrCreated #{pr_number}"),
             Self::UserQuit => write!(f, "UserQuit"),
             Self::AgentFailure => write!(f, "AgentFailure"),
         }
@@ -67,7 +65,13 @@ pub enum InteractionActivity {
         issue: u64,
         detail: String,
     },
-    /// Terminator fired — the session is closing.
+    /// A `/pushup` PR was linked to the issue — the session stays open
+    /// (#949, spec §4.4).
+    PrLinked {
+        issue: u64,
+        pr_number: u64,
+    },
+    /// The user quit — the session is closing.
     Closing {
         issue: u64,
         reason: CloseReasonSummary,
@@ -127,6 +131,9 @@ impl InteractionActivity {
                 "#{issue} turn {turn_index}: {chunk_count} chunks streamed ({duration_ms} ms)"
             ),
             Self::TurnFailed { issue, detail } => format!("#{issue} turn failed: {detail}"),
+            Self::PrLinked { issue, pr_number } => {
+                format!("#{issue} PR #{pr_number} linked; session stays open")
+            }
             Self::Closing { issue, reason } => {
                 format!("#{issue} closing (reason: {reason}); wiping worktree")
             }
@@ -167,6 +174,13 @@ impl InteractionActivity {
             ),
             Self::TurnFailed { issue, detail } => {
                 tracing::warn!(issue, detail, "interaction turn failed")
+            }
+            Self::PrLinked { issue, pr_number } => {
+                tracing::info!(
+                    issue,
+                    pr_number,
+                    "interaction pr linked; session stays open"
+                )
             }
             Self::Closing { issue, reason } => {
                 tracing::info!(issue, reason = %reason, "interaction closing")
@@ -236,10 +250,21 @@ mod tests {
     fn closing_line_is_pinned() {
         let line = InteractionActivity::Closing {
             issue: 42,
-            reason: CloseReasonSummary::PrCreated { pr_number: 7 },
+            reason: CloseReasonSummary::UserQuit,
         }
         .message();
-        assert_eq!(line, "#42 closing (reason: PrCreated #7); wiping worktree");
+        assert_eq!(line, "#42 closing (reason: UserQuit); wiping worktree");
+    }
+
+    #[test]
+    fn pr_linked_line_is_pinned() {
+        let activity = InteractionActivity::PrLinked {
+            issue: 42,
+            pr_number: 7,
+        };
+        assert_eq!(activity.message(), "#42 PR #7 linked; session stays open");
+        assert_eq!(activity.tag(), "INTERACTION");
+        assert_eq!(activity.severity(), ActivitySeverity::Info);
     }
 
     #[test]

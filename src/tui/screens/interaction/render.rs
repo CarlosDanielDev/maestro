@@ -59,11 +59,11 @@ impl InteractionScreen {
         input::draw_keybar(f, keybar_area, theme, self.pushup_enabled());
         if self.state == InteractionState::Terminated {
             input::draw_terminated_banner(f, input_area, theme, self.close_reason.as_ref());
-        } else if let Some(pr_number) = self.teardown_pr_in_flight {
+        } else if self.teardown_in_flight {
             // Async teardown in flight (#941): the UI stays responsive while
             // git runs off-thread — show what's happening instead of an
             // editable input pane.
-            input::draw_teardown_banner(f, input_area, theme, pr_number, self.spinner_tick);
+            input::draw_teardown_banner(f, input_area, theme, self.spinner_tick);
         } else {
             let nerd = crate::icon_mode::use_nerd_font();
             // Slow the throbber to ~7fps (the loop redraws at ~20fps): a calmer
