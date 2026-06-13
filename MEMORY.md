@@ -56,6 +56,13 @@ Session summaries (added when I say "session end" / "wrapping up" / "let's stop 
 
 v0.29.5 bundle (user authorized PR-isolation override for context budget): one PR, four Closes refs, architect+QA blueprint per scope; disabled-agent filter (#806), Ctrl+V paste (#875), autocomplete (#876), LaunchTeam dispatch fan-out (#877); R3 (real run_team) was descoped to follow-up and landed in #881.
 
+## 2026-06-12 — #948 state unify: transition_to choke point + InteractionSession retired (PR #993)
+
+**Decided:** Settle interception lives INSIDE `Session::transition_to` (single choke point, guarded on `SessionMode::Interactive`), not at the call sites — spec §8's missed-branch risk solved structurally. `Killed` is the only non-intercepted terminal; `/pushup` terminator fires as `Killed`/`TransitionReason::PrLinked` until #949. Transcript persists on `Session.turns` (re-entry now survives restarts — the old `MaestroState.interactions` was dead persistence, never hydrated/synced; dropped). Screen keeps a view-local `view_state.rs` (InteractionState + CloseReason) until #950 — the one AC deviation, flagged on the PR.
+**Why:** Per-site branching is exactly the failure mode the spec feared; the choke point covers future sites too. Retiring the screen enums now would drag Phase 5's screen-as-view into Phase 3.
+**Rejected:** (a) #948a/#948b split — port compiled in one pass, split unnecessary. (b) Interception-only scope C — AC demanded the struct retirement; only the view enum stayed.
+**Notes for #949:** repoint wipe_worktree to the quit path; PR marker → `pr_linked` notify instead of terminate (kills the `Killed`-skull cosmetic wart + the PrLinked reason path); #936 deferral semantics now live in `ManagedSession::settle_queued_terminator`.
+
 ## 2026-06-10 — #947 re-scoped: real pipeline Session for interactions (PR #992)
 
 **Decided:** Phase 2 (#947) gives the interaction a REAL pool-registered `SessionMode::Interactive` `Session` driven by `ManagedSession` (Option C). First turn = normal `spawn`; follow-ups = new `send_followup_turn` (`--resume <agent_session_id>`, allowlisted). Telemetry parity by construction — records land on the pool `Session` via the existing `handle_event` funnel. `interaction_turn.rs` deleted; `TurnEvent` lives in `session/interaction.rs`. Interactive sessions exempt from one-shot completion machinery (gates/auto-PR/notifications/#327 PR-detect) and skipped by `find_by_issue_mut`; follow-ups make NO status transition (Completed→Spawning illegal) until #948 adds the `Interactive` status.
