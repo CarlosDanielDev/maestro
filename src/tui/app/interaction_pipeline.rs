@@ -36,6 +36,10 @@ impl App {
         model: String,
     ) {
         let mode = self.interaction_mode_label(issue_number);
+        // Re-resolve the model from the session's selected agent (#929):
+        // the launch-time value is the global default, wrong for a
+        // non-Claude provider.
+        let model = self.interaction_turn_model(issue_number, model);
 
         let now = Utc::now();
         let Some(managed) = self.pool.interactive_managed_mut(issue_number) else {
@@ -230,6 +234,28 @@ impl App {
                     .1
             })
             .unwrap_or_else(|| self.session_config.default_mode.clone())
+    }
+
+    /// Per-agent model for the pipeline session's first turn (#929).
+    /// Resolved from the session's selected agent like a one-shot launch:
+    /// the launch-time value is the global default, but opencode/qwen need
+    /// their OWN configured model — handing a non-Claude provider Claude's
+    /// `opus` produces `Model not found: opus/.`. Falls back to `fallback`
+    /// (the passed launch model) when the session is gone or the cache is
+    /// cold; `resolve_model_and_mode` itself falls back to the default
+    /// model when the agent declares none, so the Claude path is unchanged.
+    fn interaction_turn_model(&self, issue_number: u64, fallback: String) -> String {
+        let Some(managed) = self.pool.interactive_managed(issue_number) else {
+            return fallback;
+        };
+        let agent_id = managed.session.agent_id.clone();
+        let labels = self
+            .state
+            .issue_cache
+            .get(&issue_number)
+            .map(|issue| issue.labels.clone())
+            .unwrap_or_default();
+        self.resolve_model_and_mode(&labels, agent_id.as_deref()).0
     }
 }
 
