@@ -18,6 +18,9 @@ mod interaction_pipeline;
 #[path = "interaction_pipeline_guard_tests.rs"]
 mod interaction_pipeline_guard_tests;
 #[cfg(test)]
+#[path = "interaction_pipeline_provider_tests.rs"]
+mod interaction_pipeline_provider_tests;
+#[cfg(test)]
 #[path = "interaction_pipeline_tests.rs"]
 mod interaction_pipeline_tests;
 mod issue_completion;
