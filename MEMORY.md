@@ -56,6 +56,13 @@ Session summaries (added when I say "session end" / "wrapping up" / "let's stop 
 
 v0.29.5 bundle (user authorized PR-isolation override for context budget): one PR, four Closes refs, architect+QA blueprint per scope; disabled-agent filter (#806), Ctrl+V paste (#875), autocomplete (#876), LaunchTeam dispatch fan-out (#877); R3 (real run_team) was descoped to follow-up and landed in #881.
 
+## 2026-06-12 — #949 PR-keeps-alive: notify + quit-wipe (PR #994)
+
+**Decided:** `Session.pr_linked: Option<u64>` (number, not spec's bool — feeds the System turn + #950 banner). Flag sets instantly; announcement defers to turn boundary while streaming (`ManagedSession.queued_pr_notice`, #936 contract kept so the transcript never interleaves). Quit now WIPES the worktree (was: kept) — `cancel_inflight_turn` interrupts the provider child before git runs; #741 machinery re-pointed at quit (banner → spawn_blocking wipe → Terminated(UserQuit) → auto-nav). Deleted: `interaction_lifecycle.rs`, `CloseReason::PrCreated`, screen queued-terminator. `TransitionReason::PrLinked` kept deserializable for #948-era state files.
+**Why:** Spec §4.4 locked PR-keeps-alive + teardown-on-quit; mid-stream System-turn insertion would break the streaming-agent-record invariant, hence deferral.
+**Rejected:** quit keep/wipe two-choice modal (not in spec; spec decision 2 says teardown on quit); posting the announcement mid-stream by inserting before the streaming record (fiddly on both transcript copies).
+**Notes for #950:** screen-as-view deletes `view_state.rs`; render `pr_linked` + `settled_from` banners from the live Session; closes #930 switcher. Turn-level cancel now has a real consumer (`cancel_inflight_turn`) — a mid-turn cancel key becomes feasible.
+
 ## 2026-06-12 — #948 state unify: transition_to choke point + InteractionSession retired (PR #993)
 
 **Decided:** Settle interception lives INSIDE `Session::transition_to` (single choke point, guarded on `SessionMode::Interactive`), not at the call sites — spec §8's missed-branch risk solved structurally. `Killed` is the only non-intercepted terminal; `/pushup` terminator fires as `Killed`/`TransitionReason::PrLinked` until #949. Transcript persists on `Session.turns` (re-entry now survives restarts — the old `MaestroState.interactions` was dead persistence, never hydrated/synced; dropped). Screen keeps a view-local `view_state.rs` (InteractionState + CloseReason) until #950 — the one AC deviation, flagged on the PR.
