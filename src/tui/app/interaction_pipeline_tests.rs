@@ -26,6 +26,7 @@ pub(super) fn app_with_interaction(
         false,
         "opus".to_string(),
         "orchestrator".to_string(),
+        None,
     );
     let managed = app
         .pool
@@ -217,6 +218,49 @@ async fn failure_settles_interactive_and_followup_retries_on_same_resume_id() {
 
     let session = &app.pool.get_active_mut(id).expect("active").session;
     assert_eq!(session.settled_from, Some(SessionStatus::Completed));
+}
+
+/// #929 AC#5: a provider that fails a conversational turn surfaces a
+/// `System` turn explaining it and leaves the session Idle/usable — no
+/// panic, no silent hang. Characterizes the unification's failure-settle
+/// path (#947) which already implements this.
+#[tokio::test]
+async fn failed_turn_surfaces_system_explanation_and_stays_usable() {
+    let (mut app, _provider) = app_with_interaction(
+        "ip-failure-system-turn",
+        929,
+        vec![ScriptedTurn {
+            events: vec![StreamEvent::Error {
+                message: "provider has no conversational support".to_string(),
+            }],
+            end: ScriptedEnd::Ok {
+                exit_code: Some(1),
+                session_id: None,
+            },
+        }],
+    );
+
+    app.dispatch_interaction_turn(929, "hello".to_string(), "opus".to_string())
+        .await;
+    pump_session_events(&mut app).await;
+
+    let id = app
+        .pool
+        .interactive_pipeline_session_id(929)
+        .expect("session stays alive after a failed turn");
+    let session = &app.pool.get_active_mut(id).expect("active").session;
+
+    assert_eq!(session.turn_state, TurnState::Idle, "input stays usable");
+    let system_turn = session
+        .turns
+        .iter()
+        .find(|t| t.role == TurnRole::System)
+        .expect("a System turn must explain the failure to the user");
+    assert!(
+        system_turn.content.contains("no conversational support"),
+        "System turn must carry the provider's explanation, got: {}",
+        system_turn.content
+    );
 }
 
 /// The #947 acceptance criterion: a follow-up turn emits the same

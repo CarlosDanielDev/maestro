@@ -845,6 +845,7 @@ mod tests {
             false,
             "opus".to_string(),
             "orchestrator".to_string(),
+            None,
         );
         let managed = app
             .pool

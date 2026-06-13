@@ -486,6 +486,7 @@ impl SessionPool {
         produce_pr: bool,
         model: String,
         mode: String,
+        agent_id: Option<String>,
     ) -> Uuid {
         if let Some(existing) = self.interactive_pipeline_session_id(issue_number) {
             return existing;
@@ -501,9 +502,15 @@ impl SessionPool {
         let mut session = Session::new(String::new(), model, mode, Some(issue_number), None);
         session.session_mode = crate::session::types::SessionMode::Interactive;
         session.produce_pr = produce_pr;
+        // #929: carry the selected agent id so turns route to that provider
+        // (qwen/minimax/HTTP-generic), not the Claude default. The first turn
+        // spawns this ManagedSession directly, bypassing `try_promote`'s
+        // `resolve_provider`, so the provider is resolved here too.
+        session.agent_id = agent_id;
+        let provider = Arc::clone(self.resolve_provider(&session));
         let mut managed =
             ManagedSession::with_worktree(session, Some(worktree_path), Some(branch), None);
-        managed.set_provider(Arc::clone(&self.provider));
+        managed.set_provider(provider);
         managed.permission_mode = Some(self.permission_mode.clone());
         managed.allowed_tools = self.allowed_tools.clone();
         let id = managed.session.id;
@@ -729,6 +736,7 @@ mod tests {
             produce_pr,
             "opus".to_string(),
             "orchestrator".to_string(),
+            None,
         )
     }
 
@@ -784,6 +792,52 @@ mod tests {
 
         create_unified(&mut pool, 947, false);
         assert_eq!(pool.active_count(), 2);
+    }
+
+    #[test]
+    fn create_interaction_session_routes_to_selected_agent_provider() {
+        // #929: an interaction launched while a non-Claude agent is selected
+        // must run its turns against that provider, not the Claude default.
+        let mut pool = make_pool(1);
+        let mut providers: std::collections::HashMap<String, Arc<dyn AgentProvider>> =
+            std::collections::HashMap::new();
+        providers.insert("qwen".to_string(), Arc::new(FakeHttpProvider));
+        pool.set_agent_providers(providers);
+
+        let id = pool.create_interaction_session(
+            7,
+            false,
+            "qwen-2.5".to_string(),
+            "orchestrator".to_string(),
+            Some("qwen".to_string()),
+        );
+
+        let managed = pool.get_active_mut(id).expect("session is active");
+        assert_eq!(
+            managed.session.agent_id.as_deref(),
+            Some("qwen"),
+            "selected agent id must ride on the session"
+        );
+        assert_eq!(
+            managed.provider_id(),
+            "qwen",
+            "turns must route to the selected provider, not the Claude default"
+        );
+    }
+
+    #[test]
+    fn create_interaction_session_falls_back_to_default_provider_when_agent_unknown() {
+        // An unset/unknown agent id keeps the Claude default — no panic.
+        let mut pool = make_pool(1);
+        let id = pool.create_interaction_session(
+            7,
+            false,
+            "opus".to_string(),
+            "orchestrator".to_string(),
+            None,
+        );
+        let managed = pool.get_active_mut(id).expect("session is active");
+        assert_eq!(managed.provider_id(), "claude");
     }
 
     #[test]

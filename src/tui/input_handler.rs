@@ -2443,6 +2443,7 @@ mod tests {
             false,
             "opus".to_string(),
             "orchestrator".to_string(),
+            None,
         );
         app.screen_state.session_switcher =
             Some(crate::tui::session_switcher::SessionSwitcher::default());
