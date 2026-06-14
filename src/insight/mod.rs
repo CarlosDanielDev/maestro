@@ -5,6 +5,8 @@
 //! `features`, `design_system`, `architecture`, and `coverage` sections are
 //! present but empty, filled by later phases.
 
+pub mod coverage;
+pub mod features;
 pub mod modules;
 pub mod repo_stats;
 pub mod schema;
@@ -16,7 +18,11 @@ use std::process::Command;
 
 /// Build the full static [`Scan`] for the repository at `root`.
 pub fn scan(root: &Path) -> Scan {
-    let modules = collect_modules(&root.join("src"));
+    let mut modules = collect_modules(&root.join("src"));
+    let mut features = collect_features(root);
+    coverage::map_modules(&mut features, &mut modules);
+    let coverage = coverage::compute_coverage(&features, &modules);
+
     let repo_stats = repo_stats::collect(root);
     let commit_sha = current_sha(root);
     Scan {
@@ -24,12 +30,66 @@ pub fn scan(root: &Path) -> Scan {
         generated_at: chrono::Utc::now().to_rfc3339(),
         commit_sha,
         repo_stats,
-        features: vec![],
+        features,
         modules,
         design_system: DesignSystem::default(),
         architecture: Architecture::default(),
-        coverage: Coverage::default(),
+        coverage,
     }
+}
+
+/// Collect every user-facing surface from the 4 entry points: the CLI
+/// `Commands` enum, the TUI `TuiMode` enum, slash-command templates, and
+/// subagent definitions. All reads are best-effort — a missing file or
+/// unparseable source contributes nothing rather than aborting the scan.
+fn collect_features(root: &Path) -> Vec<Feature> {
+    let cli_src = std::fs::read_to_string(root.join("src/cli.rs")).unwrap_or_default();
+    let tui_src = std::fs::read_to_string(root.join("src/tui/app/types.rs")).unwrap_or_default();
+
+    let mut features = Vec::new();
+    features.extend(features::surfaces_from_enum(
+        &cli_src,
+        "Commands",
+        SurfaceType::Cli,
+        "src/cli.rs:Commands",
+    ));
+    features.extend(features::surfaces_from_enum(
+        &tui_src,
+        "TuiMode",
+        SurfaceType::TuiMode,
+        "src/tui/app/types.rs:TuiMode",
+    ));
+    features.extend(features::surfaces_from_md_dir(
+        &read_md_dir(&root.join(".maestro/templates/commands")),
+        SurfaceType::SlashCommand,
+        ".maestro/templates/commands",
+    ));
+    features.extend(features::surfaces_from_md_dir(
+        &read_md_dir(&root.join(".claude/agents")),
+        SurfaceType::Subagent,
+        ".claude/agents",
+    ));
+    features
+}
+
+/// Read a directory of `.md` files into `(file_stem, contents)` pairs, sorted by
+/// stem for stable output. Best-effort: unreadable dir or files are skipped.
+fn read_md_dir(dir: &Path) -> Vec<(String, String)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, String)> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+        .filter_map(|p| {
+            let stem = p.file_stem()?.to_string_lossy().to_string();
+            let contents = std::fs::read_to_string(&p).ok()?;
+            Some((stem, contents))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
 }
 
 /// Walk each top-level `src/<name>` directory (or `src/<name>.rs`) into one
@@ -123,6 +183,30 @@ mod tests {
             .expect("module");
         assert!(session.loc > 0);
         assert!(session.public_api.contains(&"run".to_string()));
+    }
+
+    #[test]
+    fn scan_with_features_returns_non_trivial_output() {
+        // Integration smoke test: run the full pipeline against the real repo.
+        // These are lower bounds, not exact counts — lower them cautiously.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let s = scan(root);
+
+        assert!(
+            s.features.len() > 40,
+            "expected > 40 features from 4 surfaces, got {}",
+            s.features.len()
+        );
+        assert!(
+            s.coverage.surfaces_total > 0,
+            "coverage.surfaces_total must be non-zero after extraction"
+        );
+        assert!(
+            s.coverage.surfaces_documented <= s.coverage.surfaces_total,
+            "documented ({}) cannot exceed total ({})",
+            s.coverage.surfaces_documented,
+            s.coverage.surfaces_total
+        );
     }
 
     #[test]
