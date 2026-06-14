@@ -45,9 +45,9 @@ pub fn analyze_source(path: &str, src: &str) -> Module {
     }
 }
 
-/// Extract the text of an inner doc-comment (`//!`), which `syn` lowers to a
-/// `#[doc = "..."]` attribute.
-fn extract_doc(attr: &syn::Attribute) -> Option<String> {
+/// Extract the text of a doc-comment (`//!` or `///`), which `syn` lowers to a
+/// `#[doc = "..."]` attribute. Shared with [`super::features`] for variant docs.
+pub(crate) fn extract_doc(attr: &syn::Attribute) -> Option<String> {
     if !attr.path().is_ident("doc") {
         return None;
     }

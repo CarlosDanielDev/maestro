@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-06-14T19:15:42.862642+00:00",
-  "commit_sha": "b2f1c7b2620f31e19b8d45004608e76862d70d45",
+  "generated_at": "2026-06-14T21:01:39.467234+00:00",
+  "commit_sha": "cf71233568cfbbb245bcc412ffad6d75d3b4dfa1",
   "repo_stats": {
     "loc_by_lang": {
-      "markdown": 264688,
-      "rust": 1299227,
+      "markdown": 264697,
+      "rust": 1299916,
       "toml": 8592
     },
-    "file_count": 6279,
-    "commits": 1311,
+    "file_count": 6281,
+    "commits": 1313,
     "contributors": 2,
     "first_commit_date": "2026-03-19",
     "releases": [
@@ -199,7 +199,977 @@
       }
     ]
   },
-  "features": [],
+  "features": [
+    {
+      "id": "cli-run",
+      "surface_type": "cli",
+      "name": "Run",
+      "entry_points": [
+        "src/cli.rs:Commands::Run"
+      ],
+      "modules": [],
+      "summary_static": "Run sessions from GitHub issues or a prompt",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-queue",
+      "surface_type": "cli",
+      "name": "Queue",
+      "entry_points": [
+        "src/cli.rs:Commands::Queue"
+      ],
+      "modules": [],
+      "summary_static": "Show queued/pending issues from GitHub",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-add",
+      "surface_type": "cli",
+      "name": "Add",
+      "entry_points": [
+        "src/cli.rs:Commands::Add"
+      ],
+      "modules": [],
+      "summary_static": "Add an issue to the work queue manually",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-status",
+      "surface_type": "cli",
+      "name": "Status",
+      "entry_points": [
+        "src/cli.rs:Commands::Status"
+      ],
+      "modules": [],
+      "summary_static": "Show current state without TUI",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-cost",
+      "surface_type": "cli",
+      "name": "Cost",
+      "entry_points": [
+        "src/cli.rs:Commands::Cost"
+      ],
+      "modules": [],
+      "summary_static": "Show spending report",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-init",
+      "surface_type": "cli",
+      "name": "Init",
+      "entry_points": [
+        "src/cli.rs:Commands::Init"
+      ],
+      "modules": [
+        "src/init"
+      ],
+      "summary_static": "Initialize maestro.toml in current directory",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-clean",
+      "surface_type": "cli",
+      "name": "Clean",
+      "entry_points": [
+        "src/cli.rs:Commands::Clean"
+      ],
+      "modules": [],
+      "summary_static": "Clean orphaned worktrees left by crashed sessions",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-logs",
+      "surface_type": "cli",
+      "name": "Logs",
+      "entry_points": [
+        "src/cli.rs:Commands::Logs"
+      ],
+      "modules": [],
+      "summary_static": "Show session transcript logs",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-resume",
+      "surface_type": "cli",
+      "name": "Resume",
+      "entry_points": [
+        "src/cli.rs:Commands::Resume"
+      ],
+      "modules": [],
+      "summary_static": "Resume interrupted sessions from saved state",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-test-slack",
+      "surface_type": "cli",
+      "name": "TestSlack",
+      "entry_points": [
+        "src/cli.rs:Commands::TestSlack"
+      ],
+      "modules": [],
+      "summary_static": "Test Slack webhook configuration",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-completions",
+      "surface_type": "cli",
+      "name": "Completions",
+      "entry_points": [
+        "src/cli.rs:Commands::Completions"
+      ],
+      "modules": [],
+      "summary_static": "Generate shell completions",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-doctor",
+      "surface_type": "cli",
+      "name": "Doctor",
+      "entry_points": [
+        "src/cli.rs:Commands::Doctor"
+      ],
+      "modules": [
+        "src/doctor"
+      ],
+      "summary_static": "Check environment setup and required tools",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-insight",
+      "surface_type": "cli",
+      "name": "Insight",
+      "entry_points": [
+        "src/cli.rs:Commands::Insight"
+      ],
+      "modules": [
+        "src/insight"
+      ],
+      "summary_static": "Scan the repo and write the static insight artifact",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-adapt",
+      "surface_type": "cli",
+      "name": "Adapt",
+      "entry_points": [
+        "src/cli.rs:Commands::Adapt"
+      ],
+      "modules": [
+        "src/adapt"
+      ],
+      "summary_static": "Onboard an existing project to the maestro workflow",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-prd",
+      "surface_type": "cli",
+      "name": "Prd",
+      "entry_points": [
+        "src/cli.rs:Commands::Prd"
+      ],
+      "modules": [
+        "src/prd"
+      ],
+      "summary_static": "Generate a Product Requirements Document from project analysis",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-sanitize",
+      "surface_type": "cli",
+      "name": "Sanitize",
+      "entry_points": [
+        "src/cli.rs:Commands::Sanitize"
+      ],
+      "modules": [
+        "src/sanitize"
+      ],
+      "summary_static": "Analyze codebase for dead code and code smells",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-turbo-quant",
+      "surface_type": "cli",
+      "name": "TurboQuant",
+      "entry_points": [
+        "src/cli.rs:Commands::TurboQuant"
+      ],
+      "modules": [],
+      "summary_static": "Run TurboQuant vector quantization benchmarks",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-mangen",
+      "surface_type": "cli",
+      "name": "Mangen",
+      "entry_points": [
+        "src/cli.rs:Commands::Mangen"
+      ],
+      "modules": [],
+      "summary_static": "Generate man page (hidden, for packaging)",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-team",
+      "surface_type": "cli",
+      "name": "Team",
+      "entry_points": [
+        "src/cli.rs:Commands::Team"
+      ],
+      "modules": [],
+      "summary_static": "Manage and launch team orchestration presets",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "cli-sync-templates",
+      "surface_type": "cli",
+      "name": "SyncTemplates",
+      "entry_points": [
+        "src/cli.rs:Commands::SyncTemplates"
+      ],
+      "modules": [],
+      "summary_static": "Render canonical command templates per provider and track drift.",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-overview",
+      "surface_type": "tui_mode",
+      "name": "Overview",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Overview"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-detail",
+      "surface_type": "tui_mode",
+      "name": "Detail",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Detail"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-dependency-graph",
+      "surface_type": "tui_mode",
+      "name": "DependencyGraph",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::DependencyGraph"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-agent-graph",
+      "surface_type": "tui_mode",
+      "name": "AgentGraph",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::AgentGraph"
+      ],
+      "modules": [],
+      "summary_static": "Bipartite agent/file graph view (#525/#526/#527). Only reachable",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-fullscreen",
+      "surface_type": "tui_mode",
+      "name": "Fullscreen",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Fullscreen"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-cost-dashboard",
+      "surface_type": "tui_mode",
+      "name": "CostDashboard",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::CostDashboard"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-dashboard",
+      "surface_type": "tui_mode",
+      "name": "Dashboard",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Dashboard"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-landing",
+      "surface_type": "tui_mode",
+      "name": "Landing",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Landing"
+      ],
+      "modules": [],
+      "summary_static": "Persistent landing menu shown at startup.",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-issue-browser",
+      "surface_type": "tui_mode",
+      "name": "IssueBrowser",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::IssueBrowser"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-milestone-view",
+      "surface_type": "tui_mode",
+      "name": "MilestoneView",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::MilestoneView"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-prompt-input",
+      "surface_type": "tui_mode",
+      "name": "PromptInput",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::PromptInput"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-interaction",
+      "surface_type": "tui_mode",
+      "name": "Interaction",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Interaction"
+      ],
+      "modules": [],
+      "summary_static": "Dedicated chat-style interaction screen for a long-lived agent",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-completion-summary",
+      "surface_type": "tui_mode",
+      "name": "CompletionSummary",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::CompletionSummary"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-continuous-pause",
+      "surface_type": "tui_mode",
+      "name": "ContinuousPause",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::ContinuousPause"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-queue-confirmation",
+      "surface_type": "tui_mode",
+      "name": "QueueConfirmation",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::QueueConfirmation"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-queue-execution",
+      "surface_type": "tui_mode",
+      "name": "QueueExecution",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::QueueExecution"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-hollow-retry",
+      "surface_type": "tui_mode",
+      "name": "HollowRetry",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::HollowRetry"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-token-dashboard",
+      "surface_type": "tui_mode",
+      "name": "TokenDashboard",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::TokenDashboard"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-sanitize",
+      "surface_type": "tui_mode",
+      "name": "Sanitize",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Sanitize"
+      ],
+      "modules": [
+        "src/sanitize"
+      ],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-settings",
+      "surface_type": "tui_mode",
+      "name": "Settings",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Settings"
+      ],
+      "modules": [
+        "src/settings"
+      ],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-session-switcher",
+      "surface_type": "tui_mode",
+      "name": "SessionSwitcher",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::SessionSwitcher"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-adapt-wizard",
+      "surface_type": "tui_mode",
+      "name": "AdaptWizard",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::AdaptWizard"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-pr-review",
+      "surface_type": "tui_mode",
+      "name": "PrReview",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::PrReview"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-release-notes",
+      "surface_type": "tui_mode",
+      "name": "ReleaseNotes",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::ReleaseNotes"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-issue-wizard",
+      "surface_type": "tui_mode",
+      "name": "IssueWizard",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::IssueWizard"
+      ],
+      "modules": [],
+      "summary_static": "Multi-step wizard for guided issue creation. The screen is built",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-milestone-wizard",
+      "surface_type": "tui_mode",
+      "name": "MilestoneWizard",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::MilestoneWizard"
+      ],
+      "modules": [],
+      "summary_static": "AI-guided wizard for milestone planning. Built across #294/#297.",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-project-stats",
+      "surface_type": "tui_mode",
+      "name": "ProjectStats",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::ProjectStats"
+      ],
+      "modules": [],
+      "summary_static": "Read-only stats dashboard. Built in #292.",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-log-viewer",
+      "surface_type": "tui_mode",
+      "name": "LogViewer",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::LogViewer"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-confirm-kill",
+      "surface_type": "tui_mode",
+      "name": "ConfirmKill",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::ConfirmKill"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-confirm-exit",
+      "surface_type": "tui_mode",
+      "name": "ConfirmExit",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::ConfirmExit"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-session-summary",
+      "surface_type": "tui_mode",
+      "name": "SessionSummary",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::SessionSummary"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-turboquant-dashboard",
+      "surface_type": "tui_mode",
+      "name": "TurboquantDashboard",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::TurboquantDashboard"
+      ],
+      "modules": [],
+      "summary_static": "",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-adapt-follow-up",
+      "surface_type": "tui_mode",
+      "name": "AdaptFollowUp",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::AdaptFollowUp"
+      ],
+      "modules": [],
+      "summary_static": "Overlay shown after an adapt-flavored session completes, presenting the",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-prd",
+      "surface_type": "tui_mode",
+      "name": "Prd",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Prd"
+      ],
+      "modules": [
+        "src/prd"
+      ],
+      "summary_static": "Interactive PRD screen (#321). Renders Vision/Goals/Non-Goals/",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-roadmap",
+      "surface_type": "tui_mode",
+      "name": "Roadmap",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::Roadmap"
+      ],
+      "modules": [],
+      "summary_static": "Roadmap-by-milestone screen (#329). Semver-sorted milestones with",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-bypass-warning",
+      "surface_type": "tui_mode",
+      "name": "BypassWarning",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::BypassWarning"
+      ],
+      "modules": [],
+      "summary_static": "First-time bypass-mode warning screen (#328). User must type",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-milestone-health",
+      "surface_type": "tui_mode",
+      "name": "MilestoneHealth",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::MilestoneHealth"
+      ],
+      "modules": [
+        "src/milestone_health"
+      ],
+      "summary_static": "Milestone health-check wizard: DOR + dep-graph review (#500).",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-gate-output-viewer",
+      "surface_type": "tui_mode",
+      "name": "GateOutputViewer",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::GateOutputViewer"
+      ],
+      "modules": [],
+      "summary_static": "Paged view of a `FailedGates` session's full gate stderr (#560).",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-ci-error-review",
+      "surface_type": "tui_mode",
+      "name": "CiErrorReview",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::CiErrorReview"
+      ],
+      "modules": [],
+      "summary_static": "CI Error Review popup — manual entry point that previews the failed",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-team-wizard",
+      "surface_type": "tui_mode",
+      "name": "TeamWizard",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::TeamWizard"
+      ],
+      "modules": [],
+      "summary_static": "Team orchestration wizard. Three flows: Compose / Launch / Manage.",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-budget-pre-spawn",
+      "surface_type": "tui_mode",
+      "name": "BudgetPreSpawn",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::BudgetPreSpawn"
+      ],
+      "modules": [],
+      "summary_static": "Pre-spawn budget gate modal (#776/#850). Opens before",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "tui-mode-call-log",
+      "surface_type": "tui_mode",
+      "name": "CallLog",
+      "entry_points": [
+        "src/tui/app/types.rs:TuiMode::CallLog"
+      ],
+      "modules": [],
+      "summary_static": "Per-agent call-log viewer (#868). Reached from `Detail(id)` via the",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "slash-command-implement",
+      "surface_type": "slash_command",
+      "name": "implement",
+      "entry_points": [
+        ".maestro/templates/commands/implement.md"
+      ],
+      "modules": [],
+      "summary_static": "Fetch a GitHub issue and implement it following the enforced TDD harness.",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "slash-command-plan-feature",
+      "surface_type": "slash_command",
+      "name": "plan-feature",
+      "entry_points": [
+        ".maestro/templates/commands/plan-feature.md"
+      ],
+      "modules": [],
+      "summary_static": "Plan a feature across your project, creating API contracts first, then milestones and issues with dependency tracking.",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "slash-command-pushup",
+      "surface_type": "slash_command",
+      "name": "pushup",
+      "entry_points": [
+        ".maestro/templates/commands/pushup.md"
+      ],
+      "modules": [],
+      "summary_static": "Commit semantically, push, create PR, link issue, and complete tasks.",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "slash-command-simplify",
+      "surface_type": "slash_command",
+      "name": "simplify",
+      "entry_points": [
+        ".maestro/templates/commands/simplify.md"
+      ],
+      "modules": [],
+      "summary_static": "Review the working-tree diff against the project's design philosophy and remove what does not earn its place.",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "subagent-subagent-architect",
+      "surface_type": "subagent",
+      "name": "subagent-architect",
+      "entry_points": [
+        ".claude/agents/subagent-architect.md"
+      ],
+      "modules": [],
+      "summary_static": "- **Detect user language**: Always detect and respond in the same language the user is using",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "subagent-subagent-docs-analyst",
+      "surface_type": "subagent",
+      "name": "subagent-docs-analyst",
+      "entry_points": [
+        ".claude/agents/subagent-docs-analyst.md"
+      ],
+      "modules": [],
+      "summary_static": "- **Detect user language**: Always detect and respond in the same language the user is using",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "subagent-subagent-gatekeeper",
+      "surface_type": "subagent",
+      "name": "subagent-gatekeeper",
+      "entry_points": [
+        ".claude/agents/subagent-gatekeeper.md"
+      ],
+      "modules": [],
+      "summary_static": "You are the first gate in the `/implement` flow. You receive a GitHub issue",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "subagent-subagent-idea-triager",
+      "surface_type": "subagent",
+      "name": "subagent-idea-triager",
+      "entry_points": [
+        ".claude/agents/subagent-idea-triager.md"
+      ],
+      "modules": [],
+      "summary_static": "You are the upstream gate for the maestro idea inbox. You receive a GitHub",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "subagent-subagent-master-planner",
+      "surface_type": "subagent",
+      "name": "subagent-master-planner",
+      "entry_points": [
+        ".claude/agents/subagent-master-planner.md"
+      ],
+      "modules": [],
+      "summary_static": "- **Detect user language**: Always detect and respond in the same language the user is using",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "subagent-subagent-qa",
+      "surface_type": "subagent",
+      "name": "subagent-qa",
+      "entry_points": [
+        ".claude/agents/subagent-qa.md"
+      ],
+      "modules": [],
+      "summary_static": "- **Detect user language**: Always detect and respond in the same language the user is using",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    },
+    {
+      "id": "subagent-subagent-security-analyst",
+      "surface_type": "subagent",
+      "name": "subagent-security-analyst",
+      "entry_points": [
+        ".claude/agents/subagent-security-analyst.md"
+      ],
+      "modules": [],
+      "summary_static": "- **Detect user language**: Always detect and respond in the same language the user is using",
+      "behavior_narrative": null,
+      "since": null,
+      "related": []
+    }
+  ],
   "modules": [
     {
       "path": "src/adapt",
@@ -207,7 +1177,9 @@
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
-      "feature_ids": []
+      "feature_ids": [
+        "cli-adapt"
+      ]
     },
     {
       "path": "src/agent_provider",
@@ -219,20 +1191,7 @@
     },
     {
       "path": "src/budget",
-      "loc": 308,
-      "public_api": [
-        "BudgetAction",
-        "BudgetCheck",
-        "BudgetEnforcer",
-        "PreSpawnDecision"
-      ],
-      "doc_comment": null,
-      "depends_on": [],
-      "feature_ids": []
-    },
-    {
-      "path": "src/budget",
-      "loc": 360,
+      "loc": 668,
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
@@ -335,7 +1294,9 @@
         "src/config",
         "src/provider"
       ],
-      "feature_ids": []
+      "feature_ids": [
+        "cli-doctor"
+      ]
     },
     {
       "path": "src/flags",
@@ -427,15 +1388,19 @@
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
-      "feature_ids": []
+      "feature_ids": [
+        "cli-init"
+      ]
     },
     {
       "path": "src/insight",
-      "loc": 603,
+      "loc": 1292,
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
-      "feature_ids": []
+      "feature_ids": [
+        "cli-insight"
+      ]
     },
     {
       "path": "src/integration_tests",
@@ -475,7 +1440,9 @@
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
-      "feature_ids": []
+      "feature_ids": [
+        "tui-mode-milestone-health"
+      ]
     },
     {
       "path": "src/models",
@@ -543,7 +1510,10 @@
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
-      "feature_ids": []
+      "feature_ids": [
+        "cli-prd",
+        "tui-mode-prd"
+      ]
     },
     {
       "path": "src/prompts",
@@ -612,7 +1582,10 @@
       "depends_on": [
         "src/tui"
       ],
-      "feature_ids": []
+      "feature_ids": [
+        "cli-sanitize",
+        "tui-mode-sanitize"
+      ]
     },
     {
       "path": "src/session",
@@ -628,7 +1601,9 @@
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
-      "feature_ids": []
+      "feature_ids": [
+        "tui-mode-settings"
+      ]
     },
     {
       "path": "src/state",
@@ -713,8 +1688,45 @@
     "entry_binaries": []
   },
   "coverage": {
-    "surfaces_total": 0,
-    "surfaces_documented": 0,
-    "modules_orphaned": []
+    "surfaces_total": 73,
+    "surfaces_documented": 47,
+    "modules_orphaned": [
+      "src/agent_provider",
+      "src/budget",
+      "src/changelog",
+      "src/cli",
+      "src/cli_team",
+      "src/commands",
+      "src/config",
+      "src/continuous",
+      "src/flags",
+      "src/gates",
+      "src/git",
+      "src/git_mock",
+      "src/git_tests",
+      "src/icon_mode",
+      "src/icons",
+      "src/integration_tests",
+      "src/lib",
+      "src/main",
+      "src/mascot",
+      "src/models",
+      "src/modes",
+      "src/notifications",
+      "src/orchestration",
+      "src/plugins",
+      "src/prompts",
+      "src/provider",
+      "src/review",
+      "src/session",
+      "src/state",
+      "src/system",
+      "src/templates",
+      "src/tui",
+      "src/turboquant",
+      "src/updater",
+      "src/util",
+      "src/work"
+    ]
   }
 }

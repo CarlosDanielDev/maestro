@@ -5,6 +5,8 @@
 //! `features`, `design_system`, `architecture`, and `coverage` sections are
 //! present but empty, filled by later phases.
 
+pub mod coverage;
+pub mod features;
 pub mod modules;
 pub mod repo_stats;
 pub mod schema;
@@ -16,7 +18,11 @@ use std::process::Command;
 
 /// Build the full static [`Scan`] for the repository at `root`.
 pub fn scan(root: &Path) -> Scan {
-    let modules = collect_modules(&root.join("src"));
+    let mut modules = collect_modules(&root.join("src"));
+    let mut features = collect_features(root);
+    coverage::map_modules(&mut features, &mut modules);
+    let coverage = coverage::compute_coverage(&features, &modules);
+
     let repo_stats = repo_stats::collect(root);
     let commit_sha = current_sha(root);
     Scan {
@@ -24,38 +30,102 @@ pub fn scan(root: &Path) -> Scan {
         generated_at: chrono::Utc::now().to_rfc3339(),
         commit_sha,
         repo_stats,
-        features: vec![],
+        features,
         modules,
         design_system: DesignSystem::default(),
         architecture: Architecture::default(),
-        coverage: Coverage::default(),
+        coverage,
     }
+}
+
+/// Collect every user-facing surface from the 4 entry points: the CLI
+/// `Commands` enum, the TUI `TuiMode` enum, slash-command templates, and
+/// subagent definitions. All reads are best-effort — a missing file or
+/// unparseable source contributes nothing rather than aborting the scan.
+fn collect_features(root: &Path) -> Vec<Feature> {
+    let cli_src = std::fs::read_to_string(root.join("src/cli.rs")).unwrap_or_default();
+    let tui_src = std::fs::read_to_string(root.join("src/tui/app/types.rs")).unwrap_or_default();
+
+    let mut features = Vec::new();
+    features.extend(features::surfaces_from_enum(
+        &cli_src,
+        "Commands",
+        SurfaceType::Cli,
+        "src/cli.rs:Commands",
+    ));
+    features.extend(features::surfaces_from_enum(
+        &tui_src,
+        "TuiMode",
+        SurfaceType::TuiMode,
+        "src/tui/app/types.rs:TuiMode",
+    ));
+    features.extend(features::surfaces_from_md_dir(
+        &read_md_dir(&root.join(".maestro/templates/commands")),
+        SurfaceType::SlashCommand,
+        ".maestro/templates/commands",
+    ));
+    features.extend(features::surfaces_from_md_dir(
+        &read_md_dir(&root.join(".claude/agents")),
+        SurfaceType::Subagent,
+        ".claude/agents",
+    ));
+    features
+}
+
+/// Read a directory of `.md` files into `(file_stem, contents)` pairs, sorted by
+/// stem for stable output. Best-effort: unreadable dir or files are skipped.
+fn read_md_dir(dir: &Path) -> Vec<(String, String)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, String)> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+        .filter_map(|p| {
+            let stem = p.file_stem()?.to_string_lossy().to_string();
+            let contents = std::fs::read_to_string(&p).ok()?;
+            Some((stem, contents))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
 }
 
 /// Walk each top-level `src/<name>` directory (or `src/<name>.rs`) into one
 /// [`Module`], combining a directory's `.rs` files for analysis and LOC.
 fn collect_modules(src: &Path) -> Vec<Module> {
-    let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(src) else {
-        return out;
+        return Vec::new();
     };
+
+    // Group source files by module path so a module present as both `foo.rs`
+    // and `foo/` (Rust module + submodules) is analyzed once, not twice.
+    let mut by_module: std::collections::BTreeMap<String, Vec<std::path::PathBuf>> =
+        std::collections::BTreeMap::new();
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        let (mod_path, files): (String, Vec<std::path::PathBuf>) = if path.is_dir() {
+        if path.is_dir() {
             let files = walkdir::WalkDir::new(&path)
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("rs"))
-                .map(|e| e.path().to_path_buf())
-                .collect();
-            (format!("src/{name}"), files)
+                .map(|e| e.path().to_path_buf());
+            by_module
+                .entry(format!("src/{name}"))
+                .or_default()
+                .extend(files);
         } else if path.extension().and_then(|x| x.to_str()) == Some("rs") {
-            (format!("src/{}", name.trim_end_matches(".rs")), vec![path])
-        } else {
-            continue;
-        };
+            by_module
+                .entry(format!("src/{}", name.trim_end_matches(".rs")))
+                .or_default()
+                .push(path);
+        }
+    }
 
+    let mut out = Vec::new();
+    for (mod_path, files) in by_module {
         let mut combined = String::new();
         let mut loc = 0u64;
         for file_path in &files {
@@ -123,6 +193,53 @@ mod tests {
             .expect("module");
         assert!(session.loc > 0);
         assert!(session.public_api.contains(&"run".to_string()));
+    }
+
+    #[test]
+    fn collect_modules_merges_file_and_dir_of_same_name() {
+        // A module that exists as both `foo.rs` and `foo/` (Rust module +
+        // submodules) must yield ONE `src/foo`, not a duplicate.
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(src.join("budget")).unwrap();
+        std::fs::write(src.join("budget.rs"), "//! Budget.\npub fn cap() {}\n").unwrap();
+        std::fs::write(src.join("budget").join("ledger.rs"), "pub fn spend() {}\n").unwrap();
+
+        let modules = collect_modules(&src);
+
+        let budget: Vec<_> = modules.iter().filter(|m| m.path == "src/budget").collect();
+        assert_eq!(budget.len(), 1, "foo.rs + foo/ must merge into one module");
+        let m = budget[0];
+        assert!(m.public_api.contains(&"cap".to_string()), "from budget.rs");
+        assert!(
+            m.public_api.contains(&"spend".to_string()),
+            "from budget/ledger.rs"
+        );
+        assert!(m.loc >= 3, "loc must sum both files, got {}", m.loc);
+    }
+
+    #[test]
+    fn scan_with_features_returns_non_trivial_output() {
+        // Integration smoke test: run the full pipeline against the real repo.
+        // These are lower bounds, not exact counts — lower them cautiously.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let s = scan(root);
+
+        assert!(
+            s.features.len() > 40,
+            "expected > 40 features from 4 surfaces, got {}",
+            s.features.len()
+        );
+        assert!(
+            s.coverage.surfaces_total > 0,
+            "coverage.surfaces_total must be non-zero after extraction"
+        );
+        assert!(
+            s.coverage.surfaces_documented <= s.coverage.surfaces_total,
+            "documented ({}) cannot exceed total ({})",
+            s.coverage.surfaces_documented,
+            s.coverage.surfaces_total
+        );
     }
 
     #[test]
