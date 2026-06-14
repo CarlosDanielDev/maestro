@@ -468,19 +468,37 @@ pub(crate) fn open_interaction_session(
             produce_pr,
             app.session_config.default_model.clone(),
             app.session_config.default_mode.clone(),
+            Some(app.selected_agent_id()),
         );
     }
-    let mut screen = {
+    // Read the resolved agent id off the live session so the header reflects
+    // who the turns actually run against (#929), not a hardcoded "claude".
+    let (mut screen, agent_label, agent_id) = {
         let managed = app
             .pool
             .interactive_managed(issue_number)
             .expect("interactive session exists or was just created");
-        screens::InteractionScreen::for_managed(managed)
+        let agent_label = crate::tui::agent_badge::agent_label(managed.session.agent_id.as_deref());
+        let agent_id = managed.session.agent_id.clone();
+        (
+            screens::InteractionScreen::for_managed(managed),
+            agent_label,
+            agent_id,
+        )
     };
-    // Turns run through the pool's configured provider (#751) with the
-    // default model; surface that so the user knows who they are talking to
-    // (#738 QA).
-    screen.set_provider_context("claude", app.session_config.default_model.clone());
+    // Resolve the model the SAME way the first turn will (#929): from the
+    // selected agent's config, not the launch-time default. The session
+    // still carries the default model until the first turn re-resolves it,
+    // so reading `session.model` here would show Claude's `opus` for a
+    // non-Claude agent. Keep header + turn in lockstep.
+    let labels = app
+        .lookup_issue(issue_number)
+        .map(|i| i.labels.clone())
+        .unwrap_or_default();
+    let model = app.resolve_model_and_mode(&labels, agent_id.as_deref()).0;
+    // Surface the resolved provider + model so the user knows who they are
+    // talking to (#738 QA, #929 multi-provider).
+    screen.set_provider_context(agent_label, model);
     // Name the work in the header, like the sessions view: look the title up
     // from the issue cache, falling back to the browser's loaded list (#738 QA).
     let title = app
@@ -1613,6 +1631,7 @@ mod interaction_launch_tests {
             false,
             "opus".to_string(),
             "orchestrator".to_string(),
+            None,
         );
 
         open_interaction_session(&mut app, 946, false, Some("ignored seed".into()));
@@ -1620,6 +1639,63 @@ mod interaction_launch_tests {
         assert!(
             first_turn_prompt(&app).is_none(),
             "resumed session must not queue a first turn"
+        );
+    }
+
+    #[test]
+    fn interaction_header_reflects_selected_non_claude_agent() {
+        // #929: with a non-Claude agent selected, the header must show that
+        // agent AND its configured model, not a hardcoded "claude" / "opus".
+        let mut app = crate::tui::make_test_app("issue-929-header");
+        app.config = Some(
+            toml::from_str(
+                r#"
+[project]
+repo = "owner/repo"
+[sessions]
+default_model = "opus"
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+enabled = true
+command = "claude"
+[agents.qwen]
+kind = "qwen"
+enabled = true
+command = "qwen"
+model = "qwen-2.5"
+"#,
+            )
+            .expect("test config parse"),
+        );
+        app.selected_agent_id = "qwen".to_string();
+        app.state
+            .issue_cache
+            .insert(929, issue(929, "Multi-provider chat", "body"));
+
+        open_interaction_session(&mut app, 929, false, None);
+
+        let screen = app
+            .screen_state
+            .interaction_screen
+            .as_ref()
+            .expect("interaction screen must be open");
+        assert_eq!(
+            screen.agent_label(),
+            "qwen",
+            "header must reflect the selected agent, not a hardcoded claude"
+        );
+        assert_eq!(
+            screen.model(),
+            "qwen-2.5",
+            "header must reflect the agent's configured model, not Claude's opus"
         );
     }
 }

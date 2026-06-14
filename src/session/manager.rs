@@ -105,6 +105,13 @@ impl ManagedSession {
         self.provider = provider;
     }
 
+    /// Id of the provider this session's turns run against (#929 routing
+    /// assertions). Reads existing state; gated out of production.
+    #[cfg(test)]
+    pub(crate) fn provider_id(&self) -> &str {
+        self.provider.id()
+    }
+
     #[cfg(test)]
     fn set_claude_binary_for_test(&mut self, binary: impl Into<String>) {
         self.provider = Arc::new(ClaudeProvider::new(binary));

@@ -121,6 +121,18 @@ impl InteractionScreen {
         self.view.turns.len()
     }
 
+    /// Resolved agent label shown in the header — test seam for the
+    /// multi-provider header assertion (#929).
+    pub(crate) fn agent_label(&self) -> &str {
+        &self.agent_label
+    }
+
+    /// Resolved model shown in the header — test seam for the
+    /// multi-provider header assertion (#929).
+    pub(crate) fn model(&self) -> &str {
+        &self.model
+    }
+
     /// Open-reviewer flag for snapshot tests / mouse routing (#918).
     pub(crate) fn diff_review_open(&self) -> bool {
         self.diff_review.is_some()

@@ -26,6 +26,7 @@ pub(super) fn app_with_interaction(
         false,
         "opus".to_string(),
         "orchestrator".to_string(),
+        None,
     );
     let managed = app
         .pool

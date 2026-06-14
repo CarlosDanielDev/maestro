@@ -42,6 +42,7 @@ fn create_interaction(app: &mut crate::tui::app::App, issue: u64) -> uuid::Uuid 
         false,
         "opus".to_string(),
         "orchestrator".to_string(),
+        None,
     )
 }
 
