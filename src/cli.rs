@@ -199,6 +199,11 @@ pub enum Commands {
     },
     /// Check environment setup and required tools
     Doctor,
+    /// Scan the repo and write the static insight artifact
+    Insight {
+        #[command(subcommand)]
+        action: InsightAction,
+    },
     /// Onboard an existing project to the maestro workflow
     Adapt {
         /// Path to the project to onboard (defaults to current directory)
@@ -302,6 +307,12 @@ pub enum Commands {
 pub enum BenchmarkOutputFormat {
     Text,
     Json,
+}
+
+#[derive(Subcommand)]
+pub enum InsightAction {
+    /// Generate the static insight artifact (docs/insight/scan.json)
+    Scan,
 }
 
 #[derive(Subcommand)]

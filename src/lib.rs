@@ -27,6 +27,7 @@ pub mod flags;
 pub mod gates;
 pub mod git;
 pub mod init;
+pub mod insight;
 pub mod mascot;
 pub mod milestone_health;
 pub mod models;
