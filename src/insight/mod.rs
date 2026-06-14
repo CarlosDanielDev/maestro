@@ -95,27 +95,37 @@ fn read_md_dir(dir: &Path) -> Vec<(String, String)> {
 /// Walk each top-level `src/<name>` directory (or `src/<name>.rs`) into one
 /// [`Module`], combining a directory's `.rs` files for analysis and LOC.
 fn collect_modules(src: &Path) -> Vec<Module> {
-    let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(src) else {
-        return out;
+        return Vec::new();
     };
+
+    // Group source files by module path so a module present as both `foo.rs`
+    // and `foo/` (Rust module + submodules) is analyzed once, not twice.
+    let mut by_module: std::collections::BTreeMap<String, Vec<std::path::PathBuf>> =
+        std::collections::BTreeMap::new();
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        let (mod_path, files): (String, Vec<std::path::PathBuf>) = if path.is_dir() {
+        if path.is_dir() {
             let files = walkdir::WalkDir::new(&path)
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("rs"))
-                .map(|e| e.path().to_path_buf())
-                .collect();
-            (format!("src/{name}"), files)
+                .map(|e| e.path().to_path_buf());
+            by_module
+                .entry(format!("src/{name}"))
+                .or_default()
+                .extend(files);
         } else if path.extension().and_then(|x| x.to_str()) == Some("rs") {
-            (format!("src/{}", name.trim_end_matches(".rs")), vec![path])
-        } else {
-            continue;
-        };
+            by_module
+                .entry(format!("src/{}", name.trim_end_matches(".rs")))
+                .or_default()
+                .push(path);
+        }
+    }
 
+    let mut out = Vec::new();
+    for (mod_path, files) in by_module {
         let mut combined = String::new();
         let mut loc = 0u64;
         for file_path in &files {
@@ -183,6 +193,29 @@ mod tests {
             .expect("module");
         assert!(session.loc > 0);
         assert!(session.public_api.contains(&"run".to_string()));
+    }
+
+    #[test]
+    fn collect_modules_merges_file_and_dir_of_same_name() {
+        // A module that exists as both `foo.rs` and `foo/` (Rust module +
+        // submodules) must yield ONE `src/foo`, not a duplicate.
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(src.join("budget")).unwrap();
+        std::fs::write(src.join("budget.rs"), "//! Budget.\npub fn cap() {}\n").unwrap();
+        std::fs::write(src.join("budget").join("ledger.rs"), "pub fn spend() {}\n").unwrap();
+
+        let modules = collect_modules(&src);
+
+        let budget: Vec<_> = modules.iter().filter(|m| m.path == "src/budget").collect();
+        assert_eq!(budget.len(), 1, "foo.rs + foo/ must merge into one module");
+        let m = budget[0];
+        assert!(m.public_api.contains(&"cap".to_string()), "from budget.rs");
+        assert!(
+            m.public_api.contains(&"spend".to_string()),
+            "from budget/ledger.rs"
+        );
+        assert!(m.loc >= 3, "loc must sum both files, got {}", m.loc);
     }
 
     #[test]

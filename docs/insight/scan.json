@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-06-14T20:50:36.549944+00:00",
-  "commit_sha": "f692b0fb146684b69983b6a030251d89b4e6f1f6",
+  "generated_at": "2026-06-14T21:01:39.467234+00:00",
+  "commit_sha": "cf71233568cfbbb245bcc412ffad6d75d3b4dfa1",
   "repo_stats": {
     "loc_by_lang": {
-      "markdown": 264695,
-      "rust": 1299823,
+      "markdown": 264697,
+      "rust": 1299916,
       "toml": 8592
     },
     "file_count": 6281,
-    "commits": 1312,
+    "commits": 1313,
     "contributors": 2,
     "first_commit_date": "2026-03-19",
     "releases": [
@@ -1191,20 +1191,7 @@
     },
     {
       "path": "src/budget",
-      "loc": 308,
-      "public_api": [
-        "BudgetAction",
-        "BudgetCheck",
-        "BudgetEnforcer",
-        "PreSpawnDecision"
-      ],
-      "doc_comment": null,
-      "depends_on": [],
-      "feature_ids": []
-    },
-    {
-      "path": "src/budget",
-      "loc": 360,
+      "loc": 668,
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
@@ -1407,7 +1394,7 @@
     },
     {
       "path": "src/insight",
-      "loc": 1199,
+      "loc": 1292,
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
@@ -1705,7 +1692,6 @@
     "surfaces_documented": 47,
     "modules_orphaned": [
       "src/agent_provider",
-      "src/budget",
       "src/budget",
       "src/changelog",
       "src/cli",
