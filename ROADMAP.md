@@ -7,6 +7,10 @@
 
 ## Released
 
+### v0.30.0 — Interactive iteration sessions ✅ (2026-06-13)
+
+Interaction unified into the regular session pipeline: a session can stay alive after its one-shot run as a kept-alive `Interactive` chat, with follow-up turns reusing the same prompt build, provider routing, and telemetry. Multi-provider follow-up turns (#929), native in-session diff reviewer (#918), and an opencode-style transcript redesign with scroll rework (#987, #988).
+
 ### v0.28.0 — Template sync engine ✅ (2026-05-16)
 
 Canonical command specs in `.maestro/templates/`, rendered per-provider via `maestro sync-templates`. SHA-256 lockfile + CI drift check. HTTP-provider runtime template injection. Cross-platform release tarball ergonomics.
