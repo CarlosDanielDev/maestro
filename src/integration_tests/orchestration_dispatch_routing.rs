@@ -203,3 +203,43 @@ async fn dispatch_pipeline_each_role_routes_to_correct_provider() {
         vec!["codex", "opencode", "qwen"]
     );
 }
+
+/// #1000 — production wiring shape. `ProductionSchedulerRunner` builds its
+/// factory as `AgentProviderFactory::default().with_agent_providers(map)`
+/// (no explicit default provider; the claude default fills the default slot).
+/// This proves that exact construction routes each role to its bound
+/// provider, distinct from the tests above which inject a named default.
+#[tokio::test]
+async fn production_factory_shape_routes_all_roles_correctly() {
+    let log: ProviderLog = Arc::new(Mutex::new(vec![]));
+    let team = team_with(vec![
+        (TeamRole::Implementer, full_binding("codex", None)),
+        (TeamRole::Reviewer, full_binding("opencode", None)),
+        (TeamRole::Docs, full_binding("qwen", None)),
+    ]);
+    let mut map: HashMap<String, Arc<dyn AgentProvider>> = HashMap::new();
+    map.insert("codex".into(), rec("codex", code_change_json(), &log));
+    map.insert("opencode".into(), rec("opencode", review_json(), &log));
+    map.insert("qwen".into(), rec("qwen", docs_change_json(), &log));
+
+    // Exact factory shape from team_launch.rs after #1000. Every binding has
+    // a known id, so the claude default slot is never reached (no binary).
+    let factory = AgentProviderFactory::default().with_agent_providers(map);
+    let ctx = DispatchContext::new(team, None, "claude-sonnet-4-5").with_provider_factory(factory);
+
+    dispatch_subagent(&ctx, TeamRole::Implementer, "implement")
+        .await
+        .expect("implementer ok");
+    dispatch_subagent(&ctx, TeamRole::Reviewer, "review")
+        .await
+        .expect("reviewer ok");
+    dispatch_subagent(&ctx, TeamRole::Docs, "docs")
+        .await
+        .expect("docs ok");
+
+    assert_eq!(
+        *log.lock().expect("log lock"),
+        vec!["codex", "opencode", "qwen"],
+        "each role routes to its bound provider, not the default"
+    );
+}

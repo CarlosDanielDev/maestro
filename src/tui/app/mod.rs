@@ -73,21 +73,8 @@ use tokio::sync::mpsc;
 /// phrasings and drifts over time.
 pub(crate) const AUTH_RECOVERY_HINT: &str = "Run `gh auth login` then press Shift+P to retry.";
 
-fn enabled_agent_ids(config: &Config) -> Vec<String> {
-    if config.agents.entries.is_empty() {
-        return vec!["claude".to_string()];
-    }
-    config
-        .agents
-        .entries
-        .iter()
-        .filter(|(_, agent)| agent.enabled)
-        .map(|(id, _)| id.clone())
-        .collect()
-}
-
 fn default_enabled_agent_id(config: &Config) -> String {
-    let ids = enabled_agent_ids(config);
+    let ids = crate::commands::agent_provider_map::enabled_agent_ids(config);
     if ids.iter().any(|id| id == &config.agents.default) {
         config.agents.default.clone()
     } else {
@@ -95,20 +82,6 @@ fn default_enabled_agent_id(config: &Config) -> String {
             .next()
             .unwrap_or_else(|| "claude".to_string())
     }
-}
-
-fn build_agent_provider_map(
-    config: &Config,
-) -> std::collections::HashMap<String, std::sync::Arc<dyn crate::agent_provider::AgentProvider>> {
-    let mut providers = std::collections::HashMap::new();
-    for id in enabled_agent_ids(config) {
-        if let Ok(resolved) = config.resolve_agent(Some(&id))
-            && let Ok(provider) = crate::commands::run::provider_for_agent(&resolved)
-        {
-            providers.insert(id, provider);
-        }
-    }
-    providers
 }
 
 pub struct App {
@@ -590,8 +563,9 @@ impl App {
     /// this finally honors it).
     pub fn apply_agents_config(&mut self, config: &Config) {
         self.selected_agent_id = default_enabled_agent_id(config);
-        self.pool
-            .set_agent_providers(build_agent_provider_map(config));
+        self.pool.set_agent_providers(
+            crate::commands::agent_provider_map::build_agent_provider_map(config),
+        );
     }
 
     pub fn configure(&mut self, config: Config) {
@@ -604,8 +578,9 @@ impl App {
         self.store
             .set_call_log_persist(config.sessions.call_log_persist);
         self.selected_agent_id = default_enabled_agent_id(&config);
-        self.pool
-            .set_agent_providers(build_agent_provider_map(&config));
+        self.pool.set_agent_providers(
+            crate::commands::agent_provider_map::build_agent_provider_map(&config),
+        );
 
         // Shared adapter so fork and pool observe the same enabled state.
         let tq_adapter = if config.turboquant.enabled {
@@ -707,7 +682,7 @@ impl App {
     fn enabled_agent_ids(&self) -> Vec<String> {
         self.config
             .as_ref()
-            .map(enabled_agent_ids)
+            .map(crate::commands::agent_provider_map::enabled_agent_ids)
             .unwrap_or_else(|| vec!["claude".to_string()])
     }
 
@@ -999,7 +974,10 @@ enabled = false
         )
         .unwrap();
 
-        assert_eq!(enabled_agent_ids(&config), vec!["codex".to_string()]);
+        assert_eq!(
+            crate::commands::agent_provider_map::enabled_agent_ids(&config),
+            vec!["codex".to_string()]
+        );
         assert_eq!(default_enabled_agent_id(&config), "codex");
     }
 
@@ -1026,7 +1004,10 @@ enabled = true
         )
         .unwrap();
 
-        assert_eq!(enabled_agent_ids(&config), vec!["qwen".to_string()]);
+        assert_eq!(
+            crate::commands::agent_provider_map::enabled_agent_ids(&config),
+            vec!["qwen".to_string()]
+        );
         assert_eq!(default_enabled_agent_id(&config), "qwen");
     }
 

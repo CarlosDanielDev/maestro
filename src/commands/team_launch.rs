@@ -65,12 +65,25 @@ impl SchedulerRunner for ProductionSchedulerRunner {
         use crate::orchestration::dispatch::{DispatchContext, dispatch_subagent};
         use crate::orchestration::primitives::{NextStep, make_machine};
 
+        use crate::agent_provider::AgentProviderFactory;
+
         let config = Config::find_and_load().ok().map(Arc::new);
         let default_model = config
             .as_ref()
             .map(|c| c.sessions.default_model.clone())
             .unwrap_or_else(|| "opus".to_string());
-        let ctx = DispatchContext::new(team.clone(), config, default_model);
+
+        // #1000: populate the per-agent provider map so each RoleBinding.agent
+        // routes to its configured binary instead of always hitting the claude
+        // default. #897 shipped the lookup; this is the production wiring.
+        // No config (run outside a project) keeps the default factory.
+        let mut ctx = DispatchContext::new(team.clone(), config.clone(), default_model);
+        if let Some(cfg) = config.as_deref() {
+            let factory = AgentProviderFactory::default().with_agent_providers(
+                crate::commands::agent_provider_map::build_agent_provider_map(cfg),
+            );
+            ctx = ctx.with_provider_factory(factory);
+        }
 
         tracing::info!(
             target: "maestro::team::launch",
