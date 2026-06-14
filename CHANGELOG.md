@@ -14,7 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-06-13
+
+> **Interactive Iteration Sessions.** Interaction is no longer a separate
+> concept — it is a regular `Session` that, instead of terminating after its
+> one-shot run, transitions to a kept-alive `Interactive` state and accepts
+> follow-up turns through the same pipeline, provider routing, and telemetry.
+> Multi-provider chat (Claude, Codex, Qwen, OpenCode, Ollama, MiniMax) follows
+> from that unification.
+
 ### Added
+- Interactive iteration sessions — launch an issue in Interaction mode and the session runs its flow, then stays alive as a live chat transcript instead of terminating; follow-up turns resume the same agent conversation. The unification landed across phases #946 (real issue prompt + appendix at launch), #947 (follow-ups reuse the normal resumed-turn pipeline), #948 (kept-alive `Interactive` status), #949 (PR keeps the session alive), and #950 (Interaction screen as a view over the live `Session` + session switcher rejoin).
+- Provider-routed interaction turns — interactive follow-ups route through the selected agent and resolve the per-agent model, so chat works with any configured provider, not just Claude (#929).
+- Native in-session diff reviewer (gitui-derived) — review the session's changes read-only inside the TUI without dropping to a terminal (#918).
+- Interaction transcript redesign — opencode-style bordered message cards plus scroll rework (mouse wheel + PageUp/Down + jump-to-latest) (#987, #988).
 - Interaction sessions user guide at `docs/guides/interaction-sessions.md` (launch combos, keymap, lifecycle, troubleshooting) + README feature bullet (#743).
 - Launch-option checkboxes (`Produce PR`, `Interaction`) extended to the multi-issue launch overlay and the free-form prompt screen, with the same Tab/Space/Enter keymap and `[behavior.launch]` defaults as the single-issue dialog; `UnifiedSessionConfig`/`PromptSessionConfig` carry the values (#919).
 - Structured `[INTERACTION]`/`[TEARDOWN]` activity-log lines pinned in `src/work/activity.rs` + tracing spans (`interaction.launch/turn/terminator/teardown`) around every lifecycle stage (#742).

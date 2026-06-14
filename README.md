@@ -6,9 +6,9 @@
 [![MSRV](https://img.shields.io/badge/rustc-1.89%2B-orange.svg)](Cargo.toml)
 [![Discord](https://img.shields.io/discord/1498709440465998038?logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/WHsk2FuQEH)
 
-> Multi-session [Claude Code](https://claude.ai/claude-code) orchestrator with a Matrix-style terminal control center.
+> Multi-agent orchestrator for [Claude Code](https://claude.ai/claude-code), Codex, Qwen, OpenCode, Ollama, and MiniMax — with a Matrix-style terminal control center.
 
-Maestro spawns and monitors multiple Claude Code sessions working on the same project simultaneously. It provides real-time visibility into what each session is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.
+Maestro spawns and monitors multiple AI agent sessions working on the same project simultaneously. Mix providers — run Claude, Codex, Qwen, OpenCode, Ollama, and MiniMax side by side, or pick one per session. It provides real-time visibility into what each session is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.
 
 <img src="docs/assets/readme-hero.svg" alt="Maestro TUI welcome screen" />
 
@@ -19,7 +19,7 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 ## Features
 
 ### Session orchestration
-- Multi-session pool — run up to N concurrent Claude sessions with automatic queue promotion
+- Multi-session pool — run up to N concurrent agent sessions with automatic queue promotion
 - Interaction sessions — chat with the agent working your issue in a live transcript, with PR auto-detection ([guide](docs/guides/interaction-sessions.md))
 - Git worktree isolation per session prevents file conflicts
 - File claim registry blocks two sessions from editing the same file simultaneously
@@ -135,7 +135,7 @@ Maestro checks for new versions on startup and shows an in-TUI banner — press 
 ```bash
 maestro init                                              # interactive maestro.toml setup
 maestro init --non-interactive                            # headless GitHub defaults
-maestro doctor                                            # verify gh/az/claude/git
+maestro doctor                                            # verify gh/az/agent CLI/git
 maestro run --prompt "Refactor the auth module to async"  # ad-hoc session
 maestro run --issue 42                                    # session for a GitHub issue
 maestro run --milestone "v1.0"                            # all open issues in a milestone
@@ -156,7 +156,7 @@ repo        = "owner/repo"
 base_branch = "main"
 
 [sessions]
-max_concurrent = 3            # parallel Claude sessions
+max_concurrent = 3            # parallel agent sessions
 default_model  = "opus"       # opus | sonnet | haiku
 default_mode   = "orchestrator"
 
@@ -252,7 +252,7 @@ The full schema — agent providers, completion gates, context-overflow tuning, 
 See [`directory-tree.md`](directory-tree.md) for the full source layout. At a high level:
 
 1. `src/cli.rs` parses the command and dispatches to a handler.
-2. The session pool spawns `claude` subprocesses, each in an isolated git worktree, parsing their `stream-json` output.
+2. The session pool spawns agent subprocesses (`claude` by default, or any configured provider — Codex, Qwen, OpenCode; Ollama and MiniMax stream over HTTP), each in an isolated git worktree, parsing their streamed output.
 3. The ratatui TUI renders the pool state, activity log, and dashboards from a shared in-memory store persisted to `maestro-state.json`.
 
 → [Wiki › Architecture](https://github.com/CarlosDanielDev/maestro/wiki/Architecture)
@@ -294,11 +294,11 @@ SHA-256 checksums of every rendered file are recorded in `.maestro/templates.loc
 
 ## Integration with `.claude/`
 
-Maestro wraps — not replaces — your existing `.claude/` agent system. Each spawned Claude session inherits your project's `CLAUDE.md`, agents, skills, and commands. Maestro adds coordination context (file claims, peer awareness) via `--append-system-prompt`.
+When you run the Claude provider, Maestro wraps — not replaces — your existing `.claude/` agent system. Each spawned Claude session inherits your project's `CLAUDE.md`, agents, skills, and commands. Maestro adds coordination context (file claims, peer awareness) via `--append-system-prompt`. Other providers read their own equivalent files (`.codex/AGENTS.md`, `AGENTS.md`, `GEMINI.md`) — `maestro sync-templates` keeps command specs rendered per provider.
 
 ## Roadmap
 
-[`ROADMAP.md`](ROADMAP.md) is the single source of truth for shipped and upcoming work; [`CHANGELOG.md`](CHANGELOG.md) has detailed release notes. The latest release is **v0.28.0** (template sync engine + HTTP-provider runtime injection). Browse open milestones at [github.com/CarlosDanielDev/maestro/milestones](https://github.com/CarlosDanielDev/maestro/milestones); the latest released binary is always at [releases/latest](https://github.com/CarlosDanielDev/maestro/releases/latest).
+[`ROADMAP.md`](ROADMAP.md) is the single source of truth for shipped and upcoming work; [`CHANGELOG.md`](CHANGELOG.md) has detailed release notes. The latest release is **v0.30.0** (interactive iteration sessions — kept-alive chat over the real session pipeline, multi-provider follow-up turns, native in-session diff reviewer). Browse open milestones at [github.com/CarlosDanielDev/maestro/milestones](https://github.com/CarlosDanielDev/maestro/milestones); the latest released binary is always at [releases/latest](https://github.com/CarlosDanielDev/maestro/releases/latest).
 
 ## Contributing
 
