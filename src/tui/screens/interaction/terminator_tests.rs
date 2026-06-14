@@ -17,6 +17,7 @@ use crate::session::interaction::{TurnRecord, TurnRole};
 use crate::tui::activity_log::LogLevel;
 use crate::tui::screens::ScreenAction;
 use crate::work::worktree_teardown::TeardownError;
+use crossterm::event::KeyCode;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
@@ -140,6 +141,51 @@ fn quit_teardown_wipes_once_and_terminates_userquit() {
             .contains("worktree removed at /tmp/maestro/issue-42")
     );
     assert!(sys[1].content.contains("branch feat/issue-42 deleted"));
+}
+
+// ── RC4 (2026-06-14): quit must not silently discard unpushed work ────────────
+// When a PR was intended (`produce_pr`) but none was ever linked, the work
+// lives only on the local worktree branch (gates failed → no PR → never
+// pushed). The first [y] must WARN and keep the modal open; only a second
+// [y] confirms the discard. A session whose work is already captured in a
+// linked PR quits on the first [y] as before.
+
+#[test]
+fn quit_with_unsaved_pr_work_requires_double_confirm() {
+    let mut screen = wired_screen(Rc::new(MockTeardown::ok()), FakeClock::new());
+    screen.produce_pr = true; // a PR was intended …
+    screen.view.pr_linked = None; // … but none was ever created → uncaptured work
+    screen.quit_modal_open = true;
+
+    let first = screen.handle_quit_modal(KeyCode::Char('y'));
+    assert!(
+        matches!(first, ScreenAction::None),
+        "first [y] with unsaved PR work must warn, not quit"
+    );
+    assert!(
+        screen.quit_modal_open,
+        "modal stays open to surface the data-loss warning"
+    );
+
+    let second = screen.handle_quit_modal(KeyCode::Char('y'));
+    assert!(
+        matches!(second, ScreenAction::QuitInteraction { .. }),
+        "second [y] confirms the discard"
+    );
+}
+
+#[test]
+fn quit_with_linked_pr_confirms_immediately() {
+    let mut screen = wired_screen(Rc::new(MockTeardown::ok()), FakeClock::new());
+    screen.produce_pr = true;
+    screen.view.pr_linked = Some(7); // work captured in a PR → safe to wipe
+    screen.quit_modal_open = true;
+
+    let action = screen.handle_quit_modal(KeyCode::Char('y'));
+    assert!(
+        matches!(action, ScreenAction::QuitInteraction { .. }),
+        "a linked PR means no unsaved work; quit needs no second confirm"
+    );
 }
 
 #[test]

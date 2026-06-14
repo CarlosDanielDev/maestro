@@ -73,6 +73,11 @@ pub struct InteractionScreen {
     close_reason: Option<CloseReason>,
     /// True while the `Ctrl+W` confirm modal is visible.
     quit_modal_open: bool,
+    /// Set once the user has seen the "unpushed work will be lost" warning
+    /// on the quit modal (RC4). The first `[y]` on a `produce_pr` session
+    /// with no linked PR flips this and re-shows the modal; the second `[y]`
+    /// confirms the discard. Reset whenever the modal closes.
+    quit_loss_acknowledged: bool,
     /// Wall-clock start of the in-flight turn (from `TurnStarted`). Used to
     /// compute the elapsed-ms figure in the per-turn activity-log line.
     stream_started_at: Option<chrono::DateTime<Utc>>,
@@ -148,6 +153,7 @@ impl InteractionScreen {
             terminated: false,
             close_reason: None,
             quit_modal_open: false,
+            quit_loss_acknowledged: false,
             stream_started_at: None,
             stream_chunks: 0,
             turn_count: 0,
