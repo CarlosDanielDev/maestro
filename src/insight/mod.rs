@@ -6,6 +6,7 @@
 //! present but empty, filled by later phases.
 
 pub mod coverage;
+pub mod design_system;
 pub mod features;
 pub mod modules;
 pub mod repo_stats;
@@ -24,6 +25,7 @@ pub fn scan(root: &Path) -> Scan {
     let coverage = coverage::compute_coverage(&features, &modules);
 
     let repo_stats = repo_stats::collect(root);
+    let design_system = collect_design_system(root);
     let commit_sha = current_sha(root);
     Scan {
         schema_version: 1,
@@ -32,7 +34,7 @@ pub fn scan(root: &Path) -> Scan {
         repo_stats,
         features,
         modules,
-        design_system: DesignSystem::default(),
+        design_system,
         architecture: Architecture::default(),
         coverage,
     }
@@ -70,6 +72,16 @@ fn collect_features(root: &Path) -> Vec<Feature> {
         ".claude/agents",
     ));
     features
+}
+
+/// Read the three design-system source files (theme, icon registry, mascot
+/// frames) and extract the `design_system` block. All reads are best-effort — a
+/// missing file becomes an empty source and contributes an empty section.
+fn collect_design_system(root: &Path) -> DesignSystem {
+    let theme_src = std::fs::read_to_string(root.join("src/tui/theme.rs")).unwrap_or_default();
+    let icons_src = std::fs::read_to_string(root.join("src/icons.rs")).unwrap_or_default();
+    let frames_src = std::fs::read_to_string(root.join("src/mascot/frames.rs")).unwrap_or_default();
+    design_system::collect(&theme_src, &icons_src, &frames_src)
 }
 
 /// Read a directory of `.md` files into `(file_stem, contents)` pairs, sorted by
@@ -239,6 +251,10 @@ mod tests {
             "documented ({}) cannot exceed total ({})",
             s.coverage.surfaces_documented,
             s.coverage.surfaces_total
+        );
+        assert!(
+            !s.design_system.palette.is_empty(),
+            "design_system.palette must be non-empty when scanning the real repo"
         );
     }
 
