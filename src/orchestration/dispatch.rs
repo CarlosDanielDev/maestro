@@ -6,9 +6,9 @@
 //!
 //! ## Design notes
 //!
-//! - **Provider lookup:** v1 uses `factory.default_provider()` for every
-//!   dispatched call. Multi-agent routing (resolve `RoleBinding.agent` to a
-//!   distinct provider) is a follow-up — see TODO at the lookup site.
+//! - **Provider lookup:** each dispatched role routes to the provider bound
+//!   to its `RoleBinding` via `agent` → `fallback_agent` → factory default
+//!   (#897). See [`agent_id_for_binding`] and the lookup at the call site.
 //! - **`ManagedSession` is not used.** L1 dispatch is one-shot ("spawn →
 //!   drain → return"); `ManagedSession`'s pause/resume/worktree lifecycle is
 //!   TUI-coupled and out of scope for L1. This honors spec §5's intent (a
@@ -181,12 +181,27 @@ pub async fn dispatch_subagent(
         permission_mode,
     );
 
-    // TODO(L1-multi-provider): resolve `binding.agent` against a
-    // multi-provider factory. v1 uses the default provider for every call.
-    let provider = ctx.factory.default_provider();
+    let provider = ctx
+        .factory
+        .provider_for_agent_id(agent_id_for_binding(binding));
 
     let raw = drive_provider(provider, request).await?;
     parse_result(role, &raw)
+}
+
+/// Resolve the agent id for a role's binding, mirroring #881's L2 chain
+/// (`Scheduler::agent_for_issue`): primary `agent` → `fallback_agent` →
+/// empty string. Returning `""` (rather than a hardcoded default) keeps the
+/// last-resort decision inside the factory's `provider_for_agent_id`, so the
+/// default provider lives in one place.
+fn agent_id_for_binding(binding: &RoleBinding) -> &str {
+    if !binding.agent.is_empty() {
+        return &binding.agent;
+    }
+    match binding.fallback_agent.as_deref() {
+        Some(fallback) if !fallback.is_empty() => fallback,
+        _ => "",
+    }
 }
 
 fn resolve_role_mode(

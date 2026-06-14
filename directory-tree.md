@@ -702,6 +702,7 @@ maestro/
 │   │   ├── init.rs                        # Integration tests for `maestro init` and `maestro init --reset`: fresh write, idempotent guard, merge-preserves-user-keys, polyglot detection  [Issue #505]
 │   │   ├── milestone_health_wizard.rs     # 9 end-to-end tests for the Milestone Review wizard against MockGitHubClient: DOR detection, graph anomaly detection, patch round-trip, patch_milestone_description dispatch  [Issue #500]
 │   │   ├── orchestration_dispatch.rs      # End-to-end L1 dispatch tests using `FakeProvider` with canned `StreamEvent::AssistantText` payloads; exercises full `dispatch_subagent()` path: mode resolution, prompt assembly, stream aggregation, structured-result capture  [Issue #663]
+│   │   ├── orchestration_dispatch_routing.rs  # Integration tests for per-role L1 provider routing: verifies RoleBinding.agent → fallback_agent → factory-default resolution in dispatch  [Issue #897]
 │   │   ├── orchestration_smoke.rs         # 2-issue scheduler smoke test: drives two issues through a mock SchedulerRunner (one success, one failure) and asserts exit-code semantics and per-issue outcome reporting  [Issue #665]
 │   │   ├── orchestration_mock_task.rs     # Mock `Task()` test helper for L2 orchestrator tests
 │   │   ├── orchestration_pipeline.rs      # End-to-end pipeline tests using mock `Task()` tool
@@ -1269,6 +1270,7 @@ maestro/
 | `src/integration_tests/interaction_terminator.rs` | Integration tests for the `signal_terminator` / `fire_terminator` state machine and the `PrLinkedToIssue` emit path wired through `poll_last_pr_created_marker` (Issue #739) |
 | `src/integration_tests/doctor_run_health_check.rs` | Smoke tests for `run_health_check` library function (Issue #663) |
 | `src/integration_tests/orchestration_dispatch.rs` | End-to-end L1 dispatch tests with `FakeProvider`; exercises `dispatch_subagent()` path (Issue #663) |
+| `src/integration_tests/orchestration_dispatch_routing.rs` | Integration tests for per-role L1 provider routing: verifies `RoleBinding.agent` → `fallback_agent` → factory-default resolution in dispatch (Issue #897) |
 | `src/integration_tests/session_lifecycle.rs` | 11 tests covering enqueue, promote, and complete session lifecycle via `handle_event()` |
 | `src/integration_tests/stream_parsing.rs` | 22 tests covering stream event parsing and parser round-trips |
 | `src/integration_tests/completion_pipeline.rs` | 9 tests covering label transitions and PR creation |

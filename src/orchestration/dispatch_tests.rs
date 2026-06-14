@@ -123,3 +123,33 @@ fn parse_verdict_for_triager() {
         other => panic!("expected Verdict, got {other:?}"),
     }
 }
+
+#[test]
+fn agent_id_for_binding_returns_agent_when_set() {
+    let binding = RoleBinding {
+        agent: "opencode".into(),
+        fallback_agent: None,
+        ..Default::default()
+    };
+    assert_eq!(agent_id_for_binding(&binding), "opencode");
+}
+
+#[test]
+fn agent_id_for_binding_returns_fallback_when_agent_empty() {
+    let binding = RoleBinding {
+        agent: String::new(),
+        fallback_agent: Some("qwen".into()),
+        ..Default::default()
+    };
+    assert_eq!(agent_id_for_binding(&binding), "qwen");
+}
+
+#[test]
+fn agent_id_for_binding_returns_empty_when_both_empty() {
+    let binding = RoleBinding {
+        agent: String::new(),
+        fallback_agent: None,
+        ..Default::default()
+    };
+    assert_eq!(agent_id_for_binding(&binding), "");
+}

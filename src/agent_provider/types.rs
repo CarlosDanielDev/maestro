@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -229,12 +230,17 @@ pub trait AgentProvider: Send + Sync {
 #[derive(Clone)]
 pub struct AgentProviderFactory {
     default_provider: Arc<dyn AgentProvider>,
+    /// Per-agent-id providers for L1 role routing (#897). Empty for the
+    /// single-provider default path; populated via [`Self::with_agent_providers`].
+    /// Mirrors `SessionPool::agent_providers`.
+    agent_providers: HashMap<String, Arc<dyn AgentProvider>>,
 }
 
 impl AgentProviderFactory {
     pub fn claude_default() -> Self {
         Self {
             default_provider: Arc::new(crate::agent_provider::claude::ClaudeProvider::default()),
+            agent_providers: HashMap::new(),
         }
     }
 
@@ -244,43 +250,31 @@ impl AgentProviderFactory {
             .iter()
             .find(|provider| provider.id == config.default_provider);
 
-        match definition {
+        let default_provider: Arc<dyn AgentProvider> = match definition {
             Some(provider) if provider.provider == "claude" || provider.id == "claude" => {
                 let binary = provider.binary.as_deref().unwrap_or("claude");
                 let transport = crate::agent_provider::claude::ClaudeTransport::from_config_value(
                     provider.transport.as_deref(),
                 )?;
-                Ok(Self {
-                    default_provider: Arc::new(
-                        crate::agent_provider::claude::ClaudeProvider::with_transport(
-                            binary, transport,
-                        ),
+                Arc::new(
+                    crate::agent_provider::claude::ClaudeProvider::with_transport(
+                        binary, transport,
                     ),
-                })
+                )
             }
             Some(provider) if provider.provider == "qwen" || provider.id == "qwen" => {
                 let binary = provider.binary.as_deref().unwrap_or("qwen");
-                Ok(Self {
-                    default_provider: Arc::new(crate::agent_provider::qwen::QwenProvider::new(
-                        binary,
-                    )),
-                })
+                Arc::new(crate::agent_provider::qwen::QwenProvider::new(binary))
             }
             Some(provider) if provider.provider == "codex" || provider.id == "codex" => {
                 let binary = provider.binary.as_deref().unwrap_or("codex");
-                Ok(Self {
-                    default_provider: Arc::new(crate::agent_provider::codex::CodexProvider::new(
-                        binary,
-                    )),
-                })
+                Arc::new(crate::agent_provider::codex::CodexProvider::new(binary))
             }
             Some(provider) if provider.provider == "opencode" || provider.id == "opencode" => {
                 let binary = provider.binary.as_deref().unwrap_or("opencode");
-                Ok(Self {
-                    default_provider: Arc::new(
-                        crate::agent_provider::opencode::OpenCodeProvider::new(binary),
-                    ),
-                })
+                Arc::new(crate::agent_provider::opencode::OpenCodeProvider::new(
+                    binary,
+                ))
             }
             Some(provider) if provider.provider == "ollama" || provider.id == "ollama" => {
                 let model = provider.model.clone().ok_or_else(|| {
@@ -290,19 +284,17 @@ impl AgentProviderFactory {
                     .base_url
                     .clone()
                     .unwrap_or_else(|| "http://localhost:11434".to_string());
-                Ok(Self {
-                    default_provider: Arc::new(
-                        crate::agent_provider::ollama::OllamaProvider::with_num_ctx(
-                            provider.id.clone(),
-                            base_url,
-                            model,
-                            provider.request_timeout_secs.unwrap_or(120),
-                            provider.api_key_env.clone(),
-                            provider.num_ctx,
-                        )
-                        .map_err(crate::agent_provider::ollama::OllamaError::into_agent_error)?,
-                    ),
-                })
+                Arc::new(
+                    crate::agent_provider::ollama::OllamaProvider::with_num_ctx(
+                        provider.id.clone(),
+                        base_url,
+                        model,
+                        provider.request_timeout_secs.unwrap_or(120),
+                        provider.api_key_env.clone(),
+                        provider.num_ctx,
+                    )
+                    .map_err(crate::agent_provider::ollama::OllamaError::into_agent_error)?,
+                )
             }
             Some(provider) if provider.provider == "minimax" || provider.id == "minimax" => {
                 let model = provider
@@ -313,42 +305,73 @@ impl AgentProviderFactory {
                     .base_url
                     .clone()
                     .unwrap_or_else(|| "https://api.minimax.io/v1".to_string());
-                Ok(Self {
-                    default_provider: Arc::new(
-                        crate::agent_provider::minimax::MinimaxProvider::new(
-                            provider.id.clone(),
-                            base_url,
-                            model,
-                            provider.request_timeout_secs.unwrap_or(120),
-                            provider
-                                .api_key_env
-                                .clone()
-                                .or_else(|| Some("MINIMAX_API_KEY".to_string())),
-                        )
-                        .map_err(crate::agent_provider::minimax::MinimaxError::into_agent_error)?,
-                    ),
-                })
+                Arc::new(
+                    crate::agent_provider::minimax::MinimaxProvider::new(
+                        provider.id.clone(),
+                        base_url,
+                        model,
+                        provider.request_timeout_secs.unwrap_or(120),
+                        provider
+                            .api_key_env
+                            .clone()
+                            .or_else(|| Some("MINIMAX_API_KEY".to_string())),
+                    )
+                    .map_err(crate::agent_provider::minimax::MinimaxError::into_agent_error)?,
+                )
             }
-            Some(provider) => Err(AgentError::Config(format!(
-                "unsupported default agent provider `{}`",
-                provider.provider
-            ))),
-            None if config.default_provider == "claude" => Ok(Self::claude_default()),
-            None => Err(AgentError::Config(format!(
-                "default agent provider `{}` is not configured",
-                config.default_provider
-            ))),
-        }
+            Some(provider) => {
+                return Err(AgentError::Config(format!(
+                    "unsupported default agent provider `{}`",
+                    provider.provider
+                )));
+            }
+            None if config.default_provider == "claude" => {
+                return Ok(Self::claude_default());
+            }
+            None => {
+                return Err(AgentError::Config(format!(
+                    "default agent provider `{}` is not configured",
+                    config.default_provider
+                )));
+            }
+        };
+        Ok(Self::with_default_provider(default_provider))
     }
 
     pub fn with_default_provider(provider: Arc<dyn AgentProvider>) -> Self {
         Self {
             default_provider: provider,
+            agent_providers: HashMap::new(),
         }
+    }
+
+    /// Register the per-agent-id provider map used for per-role L1 routing
+    /// (#897). Builder-style so existing `with_default_provider(...)` call
+    /// sites stay valid. Mirrors `SessionPool::set_agent_providers`.
+    pub fn with_agent_providers(
+        mut self,
+        providers: HashMap<String, Arc<dyn AgentProvider>>,
+    ) -> Self {
+        self.agent_providers = providers;
+        self
     }
 
     pub fn default_provider(&self) -> Arc<dyn AgentProvider> {
         Arc::clone(&self.default_provider)
+    }
+
+    /// Resolve a provider by `agent_id`, falling back to the default provider
+    /// when the id is empty or unknown. Never panics — an unknown id is a
+    /// valid path (issue #897 edge case: a role binding with no matching
+    /// registered provider). Mirrors `SessionPool::resolve_provider`.
+    pub fn provider_for_agent_id(&self, agent_id: &str) -> Arc<dyn AgentProvider> {
+        if agent_id.is_empty() {
+            return self.default_provider();
+        }
+        self.agent_providers
+            .get(agent_id)
+            .map(Arc::clone)
+            .unwrap_or_else(|| self.default_provider())
     }
 }
 

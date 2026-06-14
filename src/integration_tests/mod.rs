@@ -28,6 +28,8 @@ mod milestone_health_wizard;
 #[cfg(test)]
 mod orchestration_dispatch;
 #[cfg(test)]
+mod orchestration_dispatch_routing;
+#[cfg(test)]
 mod orchestration_mock_task;
 #[cfg(test)]
 mod orchestration_pipeline;
