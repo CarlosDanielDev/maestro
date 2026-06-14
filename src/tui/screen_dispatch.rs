@@ -1417,7 +1417,12 @@ fn populate_team_wizard_data(
     use crate::orchestration::loader::Loader;
     use std::collections::BTreeSet;
 
-    let loader = Loader::default_for_cwd();
+    let mut loader = Loader::default_for_cwd();
+    // Merge inline `[teams.*]` from maestro.toml — without this the picker
+    // shows only built-in + filesystem-tier teams, never project-config teams.
+    if let Some(cfg) = config {
+        loader = loader.with_project_inline(&cfg.teams);
+    }
 
     let resolved = match loader.resolve() {
         Ok(map) => map,
@@ -1530,6 +1535,45 @@ mod build_known_agents_tests {
         let team_agents = BTreeSet::from(["claude".to_string()]);
         let result = build_known_agents_from_config(team_agents, None);
         assert_eq!(result, vec!["claude".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod populate_team_wizard_tests {
+    use super::{populate_team_wizard_data, screens};
+    use crate::config::Config;
+
+    fn config_with_mixed_coder() -> Config {
+        let toml = r#"
+[project]
+repo = "owner/repo"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[github]
+[notifications]
+[teams.mixed-coder]
+primitive = "pipeline"
+min_agents = ["claude", "opencode"]
+implementer = "claude"
+reviewer = "opencode"
+docs = "claude"
+"#;
+        toml::from_str(toml).expect("parse test config")
+    }
+
+    #[test]
+    fn inline_config_team_appears_in_resolved_teams() {
+        let cfg = config_with_mixed_coder();
+        let mut screen = screens::TeamWizardScreen::default();
+        populate_team_wizard_data(&mut screen, Some(&cfg));
+        assert!(
+            screen.resolved_teams().contains_key("mixed-coder"),
+            "[teams.mixed-coder] from maestro.toml must surface in the picker; got: {:?}",
+            screen.resolved_teams().keys().collect::<Vec<_>>()
+        );
     }
 }
 

@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- L1 sub-agent dispatch now routes each role to its bound provider (`RoleBinding.agent` → `fallback_agent` → factory default), matching the L2 routing shipped in #881. (#897)
+
+### Fixed
+- Team Picker now lists `[teams.*]` teams defined in `maestro.toml` — `populate_team_wizard_data` merges inline project-config teams into the loader, which previously showed only built-in and filesystem-tier presets. (#897)
+
 ## [0.30.0] - 2026-06-13
 
 > **Interactive Iteration Sessions.** Interaction is no longer a separate
