@@ -1,0 +1,720 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-14T19:15:42.862642+00:00",
+  "commit_sha": "b2f1c7b2620f31e19b8d45004608e76862d70d45",
+  "repo_stats": {
+    "loc_by_lang": {
+      "markdown": 264688,
+      "rust": 1299227,
+      "toml": 8592
+    },
+    "file_count": 6279,
+    "commits": 1311,
+    "contributors": 2,
+    "first_commit_date": "2026-03-19",
+    "releases": [
+      {
+        "version": "0.30.0",
+        "date": "2026-06-13"
+      },
+      {
+        "version": "0.29.5",
+        "date": "2026-05-29"
+      },
+      {
+        "version": "0.29.0",
+        "date": "2026-05-21"
+      },
+      {
+        "version": "0.28.1",
+        "date": "2026-05-18"
+      },
+      {
+        "version": "0.28.0",
+        "date": "2026-05-16"
+      },
+      {
+        "version": "0.26.0",
+        "date": "2026-05-12"
+      },
+      {
+        "version": "0.25.1",
+        "date": "2026-05-06"
+      },
+      {
+        "version": "0.25.0",
+        "date": "2026-05-06"
+      },
+      {
+        "version": "0.24.1",
+        "date": "2026-05-05"
+      },
+      {
+        "version": "0.24.0",
+        "date": "2026-05-05"
+      },
+      {
+        "version": "0.23.0",
+        "date": "2026-05-04"
+      },
+      {
+        "version": "0.22.0",
+        "date": "2026-05-04"
+      },
+      {
+        "version": "0.21.0",
+        "date": "2026-05-04"
+      },
+      {
+        "version": "0.20.0",
+        "date": "2026-05-04"
+      },
+      {
+        "version": "0.19.0",
+        "date": "2026-05-04"
+      },
+      {
+        "version": "0.18.0",
+        "date": "2026-05-03"
+      },
+      {
+        "version": "0.17.1",
+        "date": "2026-05-03"
+      },
+      {
+        "version": "0.17.0",
+        "date": "2026-05-02"
+      },
+      {
+        "version": "0.16.1",
+        "date": "2026-04-29"
+      },
+      {
+        "version": "0.16.0",
+        "date": "2026-04-25"
+      },
+      {
+        "version": "0.15.2",
+        "date": "2026-04-24"
+      },
+      {
+        "version": "0.15.1",
+        "date": "2026-04-24"
+      },
+      {
+        "version": "0.15.0",
+        "date": "2026-04-23"
+      },
+      {
+        "version": "0.14.1",
+        "date": "2026-04-22"
+      },
+      {
+        "version": "0.14.0",
+        "date": "2026-04-21"
+      },
+      {
+        "version": "0.13.1",
+        "date": "2026-04-17"
+      },
+      {
+        "version": "0.13.0",
+        "date": "2026-04-16"
+      },
+      {
+        "version": "0.12.0",
+        "date": "2026-04-14"
+      },
+      {
+        "version": "0.11.1",
+        "date": "2026-04-14"
+      },
+      {
+        "version": "0.11.0",
+        "date": "2026-04-14"
+      },
+      {
+        "version": "0.10.1",
+        "date": "2026-04-11"
+      },
+      {
+        "version": "0.10.0",
+        "date": "2026-04-10"
+      },
+      {
+        "version": "0.9.0",
+        "date": "2026-04-09"
+      },
+      {
+        "version": "0.8.0",
+        "date": "2026-04-09"
+      },
+      {
+        "version": "0.7.0",
+        "date": "2026-04-09"
+      },
+      {
+        "version": "0.6.2",
+        "date": "2026-04-09"
+      },
+      {
+        "version": "0.6.1",
+        "date": "2026-04-09"
+      },
+      {
+        "version": "0.6.0",
+        "date": "2026-04-09"
+      },
+      {
+        "version": "0.5.3",
+        "date": "2026-04-08"
+      },
+      {
+        "version": "0.5.2",
+        "date": "2026-04-07"
+      },
+      {
+        "version": "0.5.1",
+        "date": "2026-04-07"
+      },
+      {
+        "version": "0.5.0",
+        "date": "2026-04-07"
+      },
+      {
+        "version": "0.4.0",
+        "date": "2026-04-06"
+      },
+      {
+        "version": "0.3.0",
+        "date": "2026-04-01"
+      },
+      {
+        "version": "0.2.0",
+        "date": "2026-03-31"
+      },
+      {
+        "version": "0.1.0",
+        "date": "2026-03-24"
+      }
+    ]
+  },
+  "features": [],
+  "modules": [
+    {
+      "path": "src/adapt",
+      "loc": 6292,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/agent_provider",
+      "loc": 9800,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/budget",
+      "loc": 308,
+      "public_api": [
+        "BudgetAction",
+        "BudgetCheck",
+        "BudgetEnforcer",
+        "PreSpawnDecision"
+      ],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/budget",
+      "loc": 360,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/changelog",
+      "loc": 537,
+      "public_api": [
+        "ChangeCategory",
+        "ChangeItem",
+        "ChangeSection",
+        "ChangelogData",
+        "VersionEntry",
+        "changelog",
+        "changelog_raw",
+        "current_version",
+        "highlights",
+        "parse"
+      ],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/cli",
+      "loc": 1658,
+      "public_api": [
+        "BenchmarkOutputFormat",
+        "Cli",
+        "Commands",
+        "InsightAction",
+        "PrdSourceArg",
+        "RoleArg",
+        "SanitizeOutputFormat",
+        "SanitizeSeverityFilter",
+        "TurboQuantAction",
+        "cmd_completions",
+        "cmd_mangen",
+        "generate_completions"
+      ],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/cli_team",
+      "loc": 76,
+      "public_api": [
+        "TeamSubcommand",
+        "TeamTier"
+      ],
+      "doc_comment": "`team` subcommand surface for the `maestro` CLI.",
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/commands",
+      "loc": 4730,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/config",
+      "loc": 10292,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/continuous",
+      "loc": 213,
+      "public_api": [
+        "ContinuousFailure",
+        "ContinuousModeState"
+      ],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/doctor",
+      "loc": 1367,
+      "public_api": [
+        "CheckResult",
+        "CheckSeverity",
+        "DoctorReport",
+        "print_report",
+        "run_all_checks",
+        "run_all_checks_for_agent",
+        "validate_preflight",
+        "validate_provider_setup_for_agent"
+      ],
+      "doc_comment": null,
+      "depends_on": [
+        "src/agent_provider",
+        "src/config",
+        "src/provider"
+      ],
+      "feature_ids": []
+    },
+    {
+      "path": "src/flags",
+      "loc": 624,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/gates",
+      "loc": 589,
+      "public_api": [
+        "CompletionGate",
+        "GateCheck",
+        "GateResult",
+        "GateRunner",
+        "MockGateRunner",
+        "all_gates_passed",
+        "all_required_gates_passed"
+      ],
+      "doc_comment": null,
+      "depends_on": [
+        "src/config",
+        "src/util"
+      ],
+      "feature_ids": []
+    },
+    {
+      "path": "src/git",
+      "loc": 338,
+      "public_api": [
+        "CliGitOps",
+        "GitOps",
+        "WIP_SUBJECT_PREFIX",
+        "WIP_SUBJECT_SUFFIX"
+      ],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/git_mock",
+      "loc": 142,
+      "public_api": [
+        "MockGitOps"
+      ],
+      "doc_comment": "Hand-rolled mock for `GitOps` (test-only). Lives in a sibling file",
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/git_tests",
+      "loc": 327,
+      "public_api": [],
+      "doc_comment": "Test module for `src/git.rs`. Lives in a sibling file so the",
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/icon_mode",
+      "loc": 101,
+      "public_api": [
+        "init_from_config",
+        "use_nerd_font"
+      ],
+      "doc_comment": "Shared icon mode detection — single source of truth for ASCII vs Nerd Font.",
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/icons",
+      "loc": 154,
+      "public_api": [
+        "IconId",
+        "IconPair",
+        "get",
+        "get_for_mode"
+      ],
+      "doc_comment": "Shared icon registry: centralized Nerd Font / ASCII icon definitions.",
+      "depends_on": [
+        "src/icon_mode"
+      ],
+      "feature_ids": []
+    },
+    {
+      "path": "src/init",
+      "loc": 1392,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/insight",
+      "loc": 603,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/integration_tests",
+      "loc": 5040,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/lib",
+      "loc": 51,
+      "public_api": [],
+      "doc_comment": "Library facade — exposes only self-contained modules for benchmarks.",
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/main",
+      "loc": 584,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/mascot",
+      "loc": 1278,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/milestone_health",
+      "loc": 1654,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/models",
+      "loc": 111,
+      "public_api": [
+        "ModelRouter"
+      ],
+      "doc_comment": null,
+      "depends_on": [
+        "src/provider"
+      ],
+      "feature_ids": []
+    },
+    {
+      "path": "src/modes",
+      "loc": 159,
+      "public_api": [
+        "builtin_modes",
+        "mode_from_labels",
+        "resolve_mode",
+        "resolve_mode_for_labels",
+        "resolve_session_mode_config"
+      ],
+      "doc_comment": "Session mode resolution for maestro.",
+      "depends_on": [
+        "src/config",
+        "src/session"
+      ],
+      "feature_ids": []
+    },
+    {
+      "path": "src/notifications",
+      "loc": 1088,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/orchestration",
+      "loc": 4460,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/plugins",
+      "loc": 399,
+      "public_api": [
+        "HookContext",
+        "HookPoint",
+        "PluginResult",
+        "PluginRunner"
+      ],
+      "doc_comment": null,
+      "depends_on": [
+        "src/config"
+      ],
+      "feature_ids": []
+    },
+    {
+      "path": "src/prd",
+      "loc": 2083,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/prompts",
+      "loc": 520,
+      "public_api": [
+        "ProjectLanguage",
+        "PromptBuilder",
+        "default_guardrail",
+        "detect_project_language",
+        "resolve_guardrail"
+      ],
+      "doc_comment": null,
+      "depends_on": [
+        "src/config",
+        "src/provider",
+        "src/session"
+      ],
+      "feature_ids": []
+    },
+    {
+      "path": "src/provider",
+      "loc": 9667,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/review",
+      "loc": 2065,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/sanitize",
+      "loc": 2562,
+      "public_api": [
+        "AnalysisResult",
+        "ClaudeAnalyzer",
+        "CodeScanner",
+        "FailingAnalyzer",
+        "Finding",
+        "JsonReporter",
+        "MarkdownReporter",
+        "MockCodeScanner",
+        "MockSmellAnalyzer",
+        "OutputFormat",
+        "ReportGenerator",
+        "RustScanner",
+        "SanitizeConfig",
+        "SanitizeReport",
+        "SanitizeScreen",
+        "ScanResult",
+        "Severity",
+        "SeverityFilter",
+        "SmellAnalyzer",
+        "SmellCategory",
+        "SourceLocation",
+        "TextReporter",
+        "cmd_sanitize",
+        "collect_rs_files"
+      ],
+      "doc_comment": null,
+      "depends_on": [
+        "src/tui"
+      ],
+      "feature_ids": []
+    },
+    {
+      "path": "src/session",
+      "loc": 12025,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/settings",
+      "loc": 468,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/state",
+      "loc": 2157,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/system",
+      "loc": 296,
+      "public_api": [
+        "MockResourceMonitor",
+        "ResourceMonitor",
+        "ResourceSnapshot",
+        "SysInfoMonitor"
+      ],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/templates",
+      "loc": 2713,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/tui",
+      "loc": 92596,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/turboquant",
+      "loc": 2152,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/updater",
+      "loc": 1612,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/util",
+      "loc": 526,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    },
+    {
+      "path": "src/work",
+      "loc": 3119,
+      "public_api": [],
+      "doc_comment": null,
+      "depends_on": [],
+      "feature_ids": []
+    }
+  ],
+  "design_system": {
+    "palette": [],
+    "styles": [],
+    "icons": [],
+    "mascot": null,
+    "layout_conventions": []
+  },
+  "architecture": {
+    "layers": [],
+    "module_graph_edges": [],
+    "entry_binaries": []
+  },
+  "coverage": {
+    "surfaces_total": 0,
+    "surfaces_documented": 0,
+    "modules_orphaned": []
+  }
+}

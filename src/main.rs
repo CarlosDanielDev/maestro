@@ -19,6 +19,7 @@ mod git;
 mod icon_mode;
 mod icons;
 mod init;
+mod insight;
 mod models;
 mod modes;
 mod notifications;
@@ -154,6 +155,9 @@ async fn main() -> anyhow::Result<()> {
             dry_run,
         }),
         Some(Commands::Doctor) => cmd_doctor(),
+        Some(Commands::Insight { action }) => match action {
+            cli::InsightAction::Scan => insight::run_cli(std::path::Path::new(".")),
+        },
         Some(Commands::Adapt {
             path,
             dry_run,
