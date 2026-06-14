@@ -85,19 +85,25 @@ fn box_body_line(spans: Vec<Span<'static>>, inner_width: usize, border: Style) -
     Line::from(out)
 }
 
-/// Build the card header: `╭─ {role} · {HH:MM} [ …] ───╮`, padded with `─`
-/// to `card_width`. The whole header is one styled span in the role color.
-/// A streaming turn carries a trailing `…` after the time.
+/// Typing cursor appended to the last body line of a streaming card so the
+/// box reads as live (#996 polish). One column, role-colored.
+const TYPING_CURSOR: char = '▌';
+
+/// Build the card header: `╭─ {role} · {HH:MM} [ {spinner}] ───╮`, padded
+/// with `─` to `card_width`. The whole header is one styled span in the role
+/// color. A streaming turn carries a trailing animated spinner frame after
+/// the time (`streaming_frame = Some(c)`); a settled turn passes `None`.
 fn header_line(
     role_word: &str,
     hhmm: &str,
-    streaming: bool,
+    streaming_frame: Option<char>,
     card_width: usize,
     border: Style,
 ) -> Line<'static> {
     let mut label = format!("╭─ {role_word} · {hhmm}");
-    if streaming {
-        label.push_str(" …");
+    if let Some(frame) = streaming_frame {
+        label.push(' ');
+        label.push(frame);
     }
     label.push(' ');
     let label_cols = label.chars().count();
@@ -108,19 +114,35 @@ fn header_line(
     Line::from(Span::styled(label, border))
 }
 
-/// Build the card footer `╰───╯` spanning `card_width`. Only emitted for
-/// settled turns.
+/// Build the card footer `╰───╯` spanning `card_width`. Emitted for every
+/// card, streaming or settled, so a card in progress is never an open box.
 fn footer_line(card_width: usize, border: Style) -> Line<'static> {
     let fill = card_width.saturating_sub(2);
     Line::from(Span::styled(format!("╰{}╯", "─".repeat(fill)), border))
 }
 
+/// Static-frame wrapper over [`build_lines_core`] used by [`visual_total`] and
+/// the unit tests: a frozen `…` spinner, no typing cursor. Row count is
+/// identical to the animated draw path (the spinner is one column like `…`,
+/// and the cursor never adds a line), so scroll math stays 1:1.
+pub(super) fn build_lines(history: &[TurnRecord], theme: &Theme, width: u16) -> Vec<Line<'static>> {
+    build_lines_core(history, theme, width, '…', false)
+}
+
 /// Build the flat list of visual lines for a transcript as bordered cards.
 /// Each turn becomes a header line, one or more `│`-gutter body lines (from
-/// `render_markdown`, truncated to the inner width), a footer line when
-/// settled, and a blank separator. The flat `Vec<Line>` shape is preserved so
-/// the scroll math in [`visual_total`] stays a 1:1 row count.
-pub(super) fn build_lines(history: &[TurnRecord], theme: &Theme, width: u16) -> Vec<Line<'static>> {
+/// `render_markdown`, truncated to the inner width), a footer line (always —
+/// the box is never left open), and a blank separator. A streaming turn shows
+/// `streaming_frame` in its header; when `cursor` is set, a `▌` is appended to
+/// its last body line. The flat `Vec<Line>` shape is preserved so the scroll
+/// math in [`visual_total`] stays a 1:1 row count.
+pub(super) fn build_lines_core(
+    history: &[TurnRecord],
+    theme: &Theme,
+    width: u16,
+    streaming_frame: char,
+    cursor: bool,
+) -> Vec<Line<'static>> {
     let card_width = (width as usize).max(MIN_CARD_WIDTH);
     let inner_width = card_width.saturating_sub(4);
     let mut lines: Vec<Line<'static>> = Vec::new();
@@ -137,22 +159,31 @@ pub(super) fn build_lines(history: &[TurnRecord], theme: &Theme, width: u16) -> 
         lines.push(header_line(
             role_word(turn.role),
             &hhmm,
-            streaming,
+            streaming.then_some(streaming_frame),
             card_width,
             border,
         ));
         let content = crate::tui::screens::sanitize_for_terminal(&turn.content);
         let body = render_markdown(&content, theme, inner_width as u16);
+        let show_cursor = streaming && cursor;
         if body.lines.is_empty() {
-            lines.push(box_body_line(Vec::new(), inner_width, border));
+            let spans = if show_cursor {
+                vec![Span::styled(TYPING_CURSOR.to_string(), border)]
+            } else {
+                Vec::new()
+            };
+            lines.push(box_body_line(spans, inner_width, border));
         } else {
-            for body_line in body.lines {
-                lines.push(box_body_line(body_line.spans, inner_width, border));
+            let last = body.lines.len() - 1;
+            for (i, body_line) in body.lines.into_iter().enumerate() {
+                let mut spans = body_line.spans;
+                if show_cursor && i == last {
+                    spans.push(Span::styled(TYPING_CURSOR.to_string(), border));
+                }
+                lines.push(box_body_line(spans, inner_width, border));
             }
         }
-        if !streaming {
-            lines.push(footer_line(card_width, border));
-        }
+        lines.push(footer_line(card_width, border));
         lines.push(Line::from(""));
     }
     lines
@@ -167,16 +198,21 @@ pub(super) fn draw_history(
     theme: &Theme,
     history: &[TurnRecord],
     offset: usize,
-    issue_number: u64,
-    issue_title: &str,
+    issue: (u64, &str),
+    spinner_tick: usize,
 ) {
+    let (issue_number, issue_title) = issue;
     if history.is_empty() {
         f.render_widget(starter_hint(theme, issue_number, issue_title), area);
         return;
     }
     // Cards are pre-boxed to exactly `area.width`, so no soft-wrap is needed
     // (wrapping would corrupt the borders). Scroll vertically by the offset.
-    let lines = build_lines(history, theme, area.width);
+    // The streaming card animates in lockstep with the input box: same
+    // `spinner_tick / 3` calm cadence + a `▌` typing cursor (#996 polish).
+    let nerd = crate::icon_mode::use_nerd_font();
+    let frame = crate::tui::spinner::graph_node_frame(spinner_tick / 3, nerd);
+    let lines = build_lines_core(history, theme, area.width, frame, true);
     let paragraph = Paragraph::new(lines).scroll((offset as u16, 0));
     f.render_widget(paragraph, area);
 }

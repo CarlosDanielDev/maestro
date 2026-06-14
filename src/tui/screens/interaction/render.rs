@@ -63,8 +63,8 @@ impl InteractionScreen {
             theme,
             &self.view.turns,
             offset,
-            self.issue_number,
-            &self.issue_title,
+            (self.issue_number, &self.issue_title),
+            self.spinner_tick,
         );
         if banner_rows == 1
             && let Some(text) = banner

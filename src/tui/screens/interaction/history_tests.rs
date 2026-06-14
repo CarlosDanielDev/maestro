@@ -97,18 +97,65 @@ fn build_lines_settled_card_has_header_body_footer_and_blank() {
 }
 
 #[test]
-fn build_lines_streaming_card_has_no_footer() {
+fn build_lines_streaming_card_is_closed_box_with_footer() {
+    // A streaming card must render a complete box (bottom border present),
+    // never an open-bottomed "clipped" box while the agent responds.
     let theme = Theme::dark();
     let history = vec![turn(TurnRole::Agent, "Working on it", true)];
     let lines = build_lines(&history, &theme, 80);
     assert_eq!(
         count_prefix(&lines, "╰"),
-        0,
-        "streaming turn must omit footer"
+        1,
+        "streaming card must be a closed box (footer present)"
+    );
+}
+
+#[test]
+fn streaming_header_renders_the_spinner_frame() {
+    // The streaming header animates: the trailing indicator is the passed
+    // spinner frame, not a static ellipsis.
+    let theme = Theme::dark();
+    let history = vec![turn(TurnRole::Agent, "hi", true)];
+    let lines = build_lines_core(&history, &theme, 80, '⠋', false);
+    assert!(
+        line_text(&lines[0]).contains('⠋'),
+        "streaming header carries the spinner frame"
     );
     assert!(
-        line_text(&lines[0]).contains('…'),
-        "streaming header carries …"
+        !line_text(&lines[0]).contains('…'),
+        "spinner replaces the static ellipsis"
+    );
+}
+
+#[test]
+fn streaming_body_shows_typing_cursor_when_enabled() {
+    let theme = Theme::dark();
+    let history = vec![turn(TurnRole::Agent, "hello", true)];
+    let lines = build_lines_core(&history, &theme, 80, '⠋', true);
+    assert!(
+        line_text(&lines[1]).contains('▌'),
+        "streaming body shows a typing cursor, got: {}",
+        line_text(&lines[1])
+    );
+}
+
+#[test]
+fn settled_card_has_no_spinner_or_cursor() {
+    let theme = Theme::dark();
+    let history = vec![turn(TurnRole::Agent, "done", false)];
+    let lines = build_lines_core(&history, &theme, 80, '⠋', true);
+    assert!(
+        !line_text(&lines[0]).contains('⠋'),
+        "settled header has no spinner"
+    );
+    assert!(
+        !line_text(&lines[1]).contains('▌'),
+        "settled body has no typing cursor"
+    );
+    assert_eq!(
+        count_prefix(&lines, "╰"),
+        1,
+        "settled card stays a closed box"
     );
 }
 
