@@ -73,12 +73,32 @@ impl InteractionScreen {
     /// the screen terminates when the teardown result lands. Anything else
     /// cancels the modal.
     pub(super) fn handle_quit_modal(&mut self, code: KeyCode) -> ScreenAction {
-        self.quit_modal_open = false;
         match code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => ScreenAction::QuitInteraction {
-                issue_number: self.issue_number,
-            },
-            _ => ScreenAction::None,
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                // RC4 guard: quitting wipes the worktree AND deletes the
+                // branch. When a PR was intended (`produce_pr`) but none was
+                // ever linked, the work lives only on this local branch
+                // (gates failed → no PR → never pushed). Require a second
+                // `[y]` so that work is never discarded silently. Work
+                // already captured in a linked PR quits on the first `[y]`.
+                if self.produce_pr && self.view.pr_linked.is_none() && !self.quit_loss_acknowledged
+                {
+                    self.quit_loss_acknowledged = true;
+                    // Keep the modal open so the render layer can surface the
+                    // stronger "unpushed work will be lost" warning.
+                    return ScreenAction::None;
+                }
+                self.quit_modal_open = false;
+                self.quit_loss_acknowledged = false;
+                ScreenAction::QuitInteraction {
+                    issue_number: self.issue_number,
+                }
+            }
+            _ => {
+                self.quit_modal_open = false;
+                self.quit_loss_acknowledged = false;
+                ScreenAction::None
+            }
         }
     }
 

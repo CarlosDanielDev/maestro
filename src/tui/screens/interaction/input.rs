@@ -166,11 +166,25 @@ pub(super) fn draw_keybar(f: &mut Frame, area: Rect, theme: &Theme, pushup_enabl
 }
 
 /// Render the `Ctrl+W` quit-confirm modal centered over `area`.
-pub(super) fn draw_quit_modal(f: &mut Frame, area: Rect, theme: &Theme, worktree: &Path) {
-    let text = format!(
-        "Quit interaction? Worktree at {} kept for manual inspection. [y/N]",
-        worktree.display()
-    );
+pub(super) fn draw_quit_modal(
+    f: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    worktree: &Path,
+    warn_unsaved: bool,
+) {
+    let text = if warn_unsaved {
+        // RC4: this session has unpushed work and no linked PR. Quitting
+        // deletes the worktree branch — say so plainly and require a
+        // deliberate second confirm.
+        "Unpushed work will be LOST — no PR was created. Press y again to discard, N to keep working."
+            .to_string()
+    } else {
+        format!(
+            "Quit interaction? Worktree at {} kept for manual inspection. [y/N]",
+            worktree.display()
+        )
+    };
     let modal = centered_rect(area, (text.len() as u16 + 6).min(area.width), 3);
     f.render_widget(Clear, modal);
     let block = theme.styled_block("Confirm", true);

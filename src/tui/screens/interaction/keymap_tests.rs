@@ -234,6 +234,10 @@ fn quit_modal_y_returns_quit_action_without_terminating() {
     // #949: the app terminates the session + starts the wipe; the screen
     // terminates only when the teardown result lands.
     let mut s = screen_for(9, true, TurnState::Idle);
+    // Work captured in a linked PR → no unsaved work, so `[y]` quits on the
+    // first press (the double-confirm guard only fires when no PR was linked;
+    // see terminator_tests::quit_with_unsaved_pr_work_requires_double_confirm).
+    s.view.pr_linked = Some(1);
     s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('y')), InputMode::Insert);
     assert_eq!(action, ScreenAction::QuitInteraction { issue_number: 9 });
@@ -245,6 +249,8 @@ fn quit_modal_y_returns_quit_action_without_terminating() {
 #[test]
 fn quit_modal_uppercase_y_returns_quit_action() {
     let mut s = screen_for(9, true, TurnState::Idle);
+    // Linked PR → no unsaved work → uppercase `Y` quits on the first press.
+    s.view.pr_linked = Some(1);
     s.handle_input(&ctrl('w'), InputMode::Insert);
     let action = s.handle_input(&key_event(KeyCode::Char('Y')), InputMode::Insert);
     assert_eq!(action, ScreenAction::QuitInteraction { issue_number: 9 });

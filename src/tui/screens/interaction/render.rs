@@ -98,7 +98,13 @@ impl InteractionScreen {
         }
 
         if self.quit_modal_open {
-            input::draw_quit_modal(f, area, theme, &self.worktree_path);
+            input::draw_quit_modal(
+                f,
+                area,
+                theme,
+                &self.worktree_path,
+                self.quit_loss_acknowledged,
+            );
         }
 
         if let Some(review) = self.diff_review.as_mut() {
