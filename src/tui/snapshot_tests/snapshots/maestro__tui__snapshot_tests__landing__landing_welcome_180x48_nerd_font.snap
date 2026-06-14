@@ -1,5 +1,6 @@
 ---
 source: src/tui/snapshot_tests/landing.rs
+assertion_line: 88
 expression: terminal.backend()
 ---
 "                                                            ███╗   ███╗ █████╗ ███████╗███████╗████████╗██████╗  ██████╗                                                            "
@@ -36,7 +37,7 @@ expression: terminal.backend()
 "║│███     ▁▁▁                                                                   ││▄    █              ██                                                                          │║"
 "║│███     ███                                                                   ││█  ▆ █      ▆▂ ▆  ▆▂██▆                                                                         │║"
 "║│11█     █4█                                                                   ││█ ▆█▅█▃     ██ █  █████                                                                         │║"
-"║│Add Fix Chg Per Doc                                                           ││█▃█████▇ ▅ ▇██▁█▃▃█████▃                                                                        │║"
+"║│Add Fix Chg Per Doc                                                           ││█▃█████▇ ▅ ▇██▁█▃▃█████▅                                                                        │║"
 "║└──────────────────────────────────────────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────────────────────────┘║"
 "║┌Highlights──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐║"
 "║│  [Added] Interactive iteration sessions — launch an issue in Interaction mode and the session runs its flow, then stays alive as a live chat transcript instead of terminating;│║"

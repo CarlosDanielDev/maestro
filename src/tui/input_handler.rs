@@ -432,6 +432,15 @@ fn handle_completion_summary_failed_gates(app: &mut App, key: &KeyEvent) -> KeyA
         .cloned();
 
     match (key.code, key.modifiers) {
+        (KeyCode::Char('o'), _) => {
+            // `[o]` Open PR: the recovery footer advertises this key, so
+            // it must be live here too — not just in the success handler.
+            // When CI-style gates fail *after* PR creation the session
+            // carries a pr_link to open; when no PR exists (local gates)
+            // `open_first_completion_pr` surfaces a clear notice instead
+            // of silently doing nothing.
+            open_first_completion_pr(app);
+        }
         (KeyCode::Char('s'), _) => {
             if let Some(sl) = first_failed.as_ref()
                 && let Some(wt) = sl.worktree_path.as_ref()
@@ -2013,6 +2022,29 @@ mod tests {
             suggestions: vec![],
             selected_suggestion: 0,
         }
+    }
+
+    // ── [o] Open PR must be wired in failed-gates recovery mode ──────
+    // Regression (2026-06-14): the recovery handler had no `[o]` arm, so
+    // the advertised "Open PR" hint was a dead key after a gate failure.
+    // With no pr_link present it must at least surface the "No PR link
+    // available" notice — proving `[o]` now routes to
+    // `open_first_completion_pr` instead of falling into `_ => {}`.
+    #[test]
+    fn failed_gates_o_key_routes_to_open_pr() {
+        let mut app = make_app();
+        app.tui_mode = TuiMode::CompletionSummary;
+        app.completion_summary = Some(failed_gates_summary(Some(".maestro/worktrees/issue-560")));
+
+        handle_completion_summary(&mut app, &key('o'));
+
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("No PR link available")),
+            "[o] in failed-gates recovery mode must route to open_first_completion_pr"
+        );
     }
 
     #[test]
