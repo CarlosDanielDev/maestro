@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-08-11
+
+### Security
+- Completion-gate `Command` and plugin `run` commands now execute as a parsed argv vector instead of through `sh -c`, closing a CWE-78 local command-injection / RCE vector — a crafted gate or plugin command string could inject a second process via `;`, `|`, `$(...)`, or backticks. Commands are tokenized with `shlex` (quote-aware, so quoted arguments such as `--body 'a b c'` survive intact) and the program is executed directly; shell operators (pipes, redirects, globs, `$VAR`) are treated as literal arguments by design. Supersedes #648.
+
 ## [0.31.0] - 2026-08-11
 
 > **Insight static map + role-routed dispatch.** `maestro insight scan` emits a

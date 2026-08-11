@@ -352,10 +352,7 @@ mod tests {
             required: true,
         };
         let _ = run_single_gate(&gate, dir.path());
-        assert!(
-            !marker.exists(),
-            "shell injection executed — marker file was created"
-        );
+        assert!(!marker.exists(), "shell injection executed");
     }
 
     #[test]
