@@ -27,6 +27,24 @@ pub fn validate_env_var_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Split a command string into `(program, args)` using shell-word tokenization
+/// **without invoking a shell**. Closes CWE-78: metacharacters like `;`, `|`,
+/// `&&`, `$(...)`, and backticks are never interpreted, so a crafted completion
+/// gate or plugin command cannot inject a second process. Quoted arguments are
+/// preserved (unlike `split_whitespace`), so `--body 'a b c'` stays one arg.
+///
+/// Shell operators (pipes, redirections, globs, `$VAR` expansion) are treated
+/// as literal argv by design — a command is a program plus arguments, not a
+/// shell script. Returns `None` for an empty command or unbalanced quotes.
+pub fn parse_command(command: &str) -> Option<(String, Vec<String>)> {
+    let mut parts = shlex::split(command)?;
+    if parts.is_empty() {
+        return None;
+    }
+    let program = parts.remove(0);
+    Some((program, parts))
+}
+
 /// Validate a branch name against safe characters only.
 pub fn validate_branch_name(branch: &str) -> Result<()> {
     if branch.is_empty() {
@@ -152,6 +170,46 @@ pub fn validate_body(raw: &str, field: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- parse_command (CWE-78) ---
+
+    #[test]
+    fn parse_command_simple() {
+        let (prog, args) = parse_command("cargo test").unwrap();
+        assert_eq!(prog, "cargo");
+        assert_eq!(args, vec!["test"]);
+    }
+
+    #[test]
+    fn parse_command_preserves_quoted_span() {
+        // A quoted argument with spaces stays ONE arg (split_whitespace would not).
+        let (prog, args) =
+            parse_command("gh pr review --body 'Automated review by Maestro'").unwrap();
+        assert_eq!(prog, "gh");
+        assert_eq!(
+            args,
+            vec!["pr", "review", "--body", "Automated review by Maestro"]
+        );
+    }
+
+    #[test]
+    fn parse_command_keeps_metacharacters_literal() {
+        // `;`, `|`, `$()` are tokenized as ordinary args, never shell-interpreted.
+        let (prog, args) = parse_command("true ; rm -rf /").unwrap();
+        assert_eq!(prog, "true");
+        assert_eq!(args, vec![";", "rm", "-rf", "/"]);
+    }
+
+    #[test]
+    fn parse_command_empty_is_none() {
+        assert!(parse_command("").is_none());
+        assert!(parse_command("   ").is_none());
+    }
+
+    #[test]
+    fn parse_command_unbalanced_quotes_is_none() {
+        assert!(parse_command("echo 'unterminated").is_none());
+    }
 
     // --- Env var validation ---
 
