@@ -110,6 +110,11 @@ skip = [
     # thiserror: redox_users (via directories) pins 1.x; maestro/syntect use 2.x.
     { name = "thiserror", version = "1", reason = "redox_users via directories pins v1; workspace and syntect use v2 — no upgrade path without replacing directories/redox_users" },
     { name = "thiserror-impl", version = "1", reason = "proc-macro pair for thiserror v1 pulled by redox_users via directories" },
+    # syn: under --all-features CI resolves two syn 2.x versions (transitive via
+    # thiserror v1/v2 impls) alongside the insight design_system extractor's
+    # direct dep (#1011). Name-only skip covers all versions — resilient to
+    # Cargo.lock churn, matching the windows-sys entry below.
+    { name = "syn", reason = "multiple syn 2.x versions across the thiserror-impl v1/v2 + insight design_system (#1011) dep graph under --all-features — no single-version pin possible" },
     # windows-core (sysinfo via 0.57); iana-time-zone/chrono use 0.62.2.
     { name = "windows-core", version = "0.57", reason = "sysinfo pins v0.57; iana-time-zone/chrono use v0.62 — no upgrade path" },
     # windows-implement: windows v0.57 (sysinfo) uses 0.57.0; iana-time-zone uses v0.60.2.

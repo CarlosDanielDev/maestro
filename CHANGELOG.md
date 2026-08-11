@@ -14,12 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-08-11
+
+> **Insight static map + role-routed dispatch.** `maestro insight scan` emits a
+> versioned maintenance map of the codebase, and L1 sub-agent dispatch now
+> routes each role to its bound provider end-to-end.
+
+### Added
+- **`maestro insight scan`** — a static maintenance-map extractor that emits a versioned `docs/insight/scan.json`: extractor scaffold, schema, `repo_stats`, and module map (#1009); feature extraction across 4 surfaces plus coverage stats (#1010); and design-system extraction — palette, icons, and the Clawd mascot frames — parsed from real source via `syn`, with infallible extractors (missing or unparseable source yields an empty section, never a panic) (#1011).
+
 ### Changed
 - L1 sub-agent dispatch now routes each role to its bound provider (`RoleBinding.agent` → `fallback_agent` → factory default), matching the L2 routing shipped in #881. (#897)
 - Headless team launch now populates the per-agent provider map on the production L1 dispatch context, so `ProductionSchedulerRunner` fires each role's bound binary instead of always the factory default. The map builder (`build_agent_provider_map`) moved to `commands::agent_provider_map`, shared by the TUI session pool and the headless launch path. (#1000)
 
 ### Fixed
 - Team Picker now lists `[teams.*]` teams defined in `maestro.toml` — `populate_team_wizard_data` merges inline project-config teams into the loader, which previously showed only built-in and filesystem-tier presets. (#897)
+- Interaction sessions now require a second confirm before quitting with unsaved work, so an in-progress turn is not lost to an accidental quit. (#1008)
 
 ## [0.30.0] - 2026-06-13
 
