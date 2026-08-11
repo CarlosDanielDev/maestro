@@ -60,8 +60,16 @@ impl PluginRunner {
         let start = std::time::Instant::now();
 
         let result = tokio::time::timeout(self.timeout, async {
-            let mut cmd = Command::new("sh");
-            cmd.args(["-c", &plugin.run]);
+            // CWE-78: parse into argv and exec directly — no `sh -c`, so a
+            // plugin `run` string can't inject via `;`, `|`, `$(...)`, etc.
+            let Some((program, args)) = crate::util::parse_command(&plugin.run) else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "empty or malformed plugin command",
+                ));
+            };
+            let mut cmd = Command::new(&program);
+            cmd.args(&args);
 
             // Defense-in-depth: re-validate env vars at execution time.
             // HookContext::with_var() validates at insertion, but ctx.vars
@@ -180,10 +188,13 @@ mod tests {
 
     #[tokio::test]
     async fn fire_passes_env_vars() {
+        // `printenv` reads the var from the child's environment. Structured
+        // exec does not expand `$VAR` in args (no shell) — the env var is still
+        // set on the process, so printenv is the correct probe.
         let plugins = vec![make_plugin(
             "env-test",
             "session_started",
-            "echo $MAESTRO_SESSION_ID",
+            "printenv MAESTRO_SESSION_ID",
         )];
         let runner = PluginRunner::new(plugins, 5);
         let ctx = HookContext::new().with_session("test-id-123", None);
@@ -206,7 +217,8 @@ mod tests {
 
     #[tokio::test]
     async fn fire_handles_failed_command() {
-        let plugins = vec![make_plugin("fail", "session_completed", "exit 1")];
+        // `exit` is a shell builtin; use `false` (a real binary) under structured exec.
+        let plugins = vec![make_plugin("fail", "session_completed", "false")];
         let runner = PluginRunner::new(plugins, 5);
         let ctx = HookContext::new();
         let results = runner.fire(HookPoint::SessionCompleted, &ctx).await;
@@ -216,7 +228,9 @@ mod tests {
 
     #[tokio::test]
     async fn fire_rejects_non_maestro_env_vars() {
-        let plugins = vec![make_plugin("env-test", "session_started", "echo $PATH")];
+        // `printenv PATH` reads the value the child actually received, so the
+        // assertion below verifies the injected PATH=/evil was filtered out.
+        let plugins = vec![make_plugin("env-test", "session_started", "printenv PATH")];
         let runner = PluginRunner::new(plugins, 5);
         let mut ctx = HookContext::new();
         // Manually inject a dangerous env var (bypassing with_var validation)

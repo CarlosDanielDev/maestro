@@ -24,13 +24,12 @@ impl GateCheck for GateRunner {
 fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
     match gate {
         CompletionGate::TestsPass { command } => {
-            let parts: Vec<&str> = command.split_whitespace().collect();
-            if parts.is_empty() {
-                return GateResult::fail("tests_pass", "Empty test command");
-            }
+            let Some((program, args)) = crate::util::parse_command(command) else {
+                return GateResult::fail("tests_pass", "Empty or malformed test command");
+            };
 
-            let result = Command::new(parts[0])
-                .args(&parts[1..])
+            let result = Command::new(&program)
+                .args(&args)
                 .current_dir(worktree_path)
                 .output();
 
@@ -88,12 +87,14 @@ fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
         }
 
         CompletionGate::Command { name, command, .. } => {
-            if command.trim().is_empty() {
-                return GateResult::fail(name, "Empty command");
-            }
+            // CWE-78: parse into argv and exec directly — no `sh -c`, so a
+            // command string can't inject via `;`, `|`, `$(...)`, backticks, etc.
+            let Some((program, args)) = crate::util::parse_command(command) else {
+                return GateResult::fail(name, "Empty or malformed command");
+            };
 
-            let result = Command::new("sh")
-                .args(["-c", command])
+            let result = Command::new(&program)
+                .args(&args)
                 .current_dir(worktree_path)
                 .output();
 
@@ -336,6 +337,39 @@ mod tests {
         let result = run_single_gate(&gate, dir.path());
         assert!(!result.passed);
         assert!(result.message.contains("Empty"));
+    }
+
+    #[test]
+    fn command_gate_does_not_interpret_shell_metacharacters() {
+        // CWE-78 regression guard: a `;`-chained payload must NOT spawn a second
+        // process. Under `sh -c` the `touch` would run; under structured exec
+        // `true` just receives `;`, `touch`, <path> as literal args.
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("pwned");
+        let gate = CompletionGate::Command {
+            name: "inject".into(),
+            command: format!("true ; touch {}", marker.display()),
+            required: true,
+        };
+        let _ = run_single_gate(&gate, dir.path());
+        assert!(
+            !marker.exists(),
+            "shell injection executed — marker file was created"
+        );
+    }
+
+    #[test]
+    fn command_gate_preserves_quoted_arguments() {
+        // shlex keeps a quoted span as ONE argv entry (split_whitespace would
+        // shatter it). `test "a b" = "a b"` exits 0 only if both args stayed whole.
+        let dir = tempfile::tempdir().unwrap();
+        let gate = CompletionGate::Command {
+            name: "quoted".into(),
+            command: "test \"a b\" = \"a b\"".into(),
+            required: true,
+        };
+        let result = run_single_gate(&gate, dir.path());
+        assert!(result.passed, "quoted args must survive intact");
     }
 
     #[test]
