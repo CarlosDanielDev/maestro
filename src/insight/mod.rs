@@ -137,21 +137,41 @@ fn collect_modules(src: &Path) -> Vec<Module> {
     }
 
     let mut out = Vec::new();
-    for (mod_path, files) in by_module {
-        let mut combined = String::new();
+    for (mod_path, mut files) in by_module {
+        // Analyze each file on its own and union the results. Concatenating raw
+        // sources and parsing the blob is order-dependent: a file whose inner
+        // `//!` doc-comment lands mid-blob makes the whole module fail to parse,
+        // and readdir order differs across filesystems (local vs CI). Sorting
+        // gives a deterministic doc-comment pick.
+        files.sort();
         let mut loc = 0u64;
+        let mut public_api = Vec::new();
+        let mut depends_on = Vec::new();
+        let mut doc_comment = None;
         for file_path in &files {
-            if let Ok(contents) = std::fs::read_to_string(file_path) {
-                loc += contents.lines().count() as u64;
-                combined.push_str(&contents);
-                combined.push('\n');
-            }
+            let Ok(contents) = std::fs::read_to_string(file_path) else {
+                continue;
+            };
+            loc += contents.lines().count() as u64;
+            let m = modules::analyze_source(&mod_path, &contents);
+            public_api.extend(m.public_api);
+            depends_on.extend(m.depends_on);
+            doc_comment = doc_comment.or(m.doc_comment);
         }
-        let mut m = modules::analyze_source(&mod_path, &combined);
-        m.loc = loc;
-        // Self-edges from combining files within the module are meaningless.
-        m.depends_on.retain(|d| d != &mod_path);
-        out.push(m);
+        public_api.sort();
+        public_api.dedup();
+        // Self-edges from files within the same module are meaningless.
+        depends_on.retain(|d| d != &mod_path);
+        depends_on.sort();
+        depends_on.dedup();
+        out.push(Module {
+            path: mod_path,
+            loc,
+            public_api,
+            doc_comment,
+            depends_on,
+            feature_ids: vec![],
+        });
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
     out
