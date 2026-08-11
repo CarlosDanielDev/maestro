@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-06-14T21:01:39.467234+00:00",
-  "commit_sha": "cf71233568cfbbb245bcc412ffad6d75d3b4dfa1",
+  "generated_at": "2026-06-14T22:06:44.002492+00:00",
+  "commit_sha": "d587c4c0bafd8a5927f1a473fcc0f96bea20e187",
   "repo_stats": {
     "loc_by_lang": {
       "markdown": 264697,
-      "rust": 1299916,
+      "rust": 1300362,
       "toml": 8592
     },
-    "file_count": 6281,
+    "file_count": 6282,
     "commits": 1313,
     "contributors": 2,
     "first_commit_date": "2026-03-19",
@@ -1394,7 +1394,7 @@
     },
     {
       "path": "src/insight",
-      "loc": 1292,
+      "loc": 1738,
       "public_api": [],
       "doc_comment": null,
       "depends_on": [],
@@ -1676,10 +1676,360 @@
     }
   ],
   "design_system": {
-    "palette": [],
+    "palette": [
+      {
+        "name": "branding_fg",
+        "value": "Black"
+      },
+      {
+        "name": "branding_bg",
+        "value": "Green"
+      },
+      {
+        "name": "text_primary",
+        "value": "White"
+      },
+      {
+        "name": "text_secondary",
+        "value": "DarkGray"
+      },
+      {
+        "name": "text_muted",
+        "value": "DarkGray"
+      },
+      {
+        "name": "border_active",
+        "value": "Green"
+      },
+      {
+        "name": "border_inactive",
+        "value": "DarkGray"
+      },
+      {
+        "name": "border_focused",
+        "value": "White"
+      },
+      {
+        "name": "status_running",
+        "value": "Green"
+      },
+      {
+        "name": "status_completed",
+        "value": "Blue"
+      },
+      {
+        "name": "status_errored",
+        "value": "Red"
+      },
+      {
+        "name": "status_paused",
+        "value": "Yellow"
+      },
+      {
+        "name": "status_killed",
+        "value": "Red"
+      },
+      {
+        "name": "status_queued",
+        "value": "DarkGray"
+      },
+      {
+        "name": "status_spawning",
+        "value": "Cyan"
+      },
+      {
+        "name": "status_stalled",
+        "value": "Yellow"
+      },
+      {
+        "name": "status_retrying",
+        "value": "Magenta"
+      },
+      {
+        "name": "status_gates_running",
+        "value": "Cyan"
+      },
+      {
+        "name": "status_needs_review",
+        "value": "LightYellow"
+      },
+      {
+        "name": "status_ci_fix",
+        "value": "LightMagenta"
+      },
+      {
+        "name": "accent_success",
+        "value": "Green"
+      },
+      {
+        "name": "accent_warning",
+        "value": "Yellow"
+      },
+      {
+        "name": "accent_error",
+        "value": "Red"
+      },
+      {
+        "name": "accent_info",
+        "value": "Cyan"
+      },
+      {
+        "name": "accent_identifier",
+        "value": "Cyan"
+      },
+      {
+        "name": "gauge_low",
+        "value": "Green"
+      },
+      {
+        "name": "gauge_medium",
+        "value": "Yellow"
+      },
+      {
+        "name": "gauge_high",
+        "value": "Red"
+      },
+      {
+        "name": "gauge_background",
+        "value": "DarkGray"
+      },
+      {
+        "name": "notification_critical",
+        "value": "Red"
+      },
+      {
+        "name": "notification_blocker",
+        "value": "LightRed"
+      },
+      {
+        "name": "notification_default",
+        "value": "Yellow"
+      },
+      {
+        "name": "keybind_key",
+        "value": "Yellow"
+      },
+      {
+        "name": "keybind_label_bg",
+        "value": "DarkGray"
+      },
+      {
+        "name": "keybind_label_fg",
+        "value": "Black"
+      },
+      {
+        "name": "selection_bg",
+        "value": "Cyan"
+      },
+      {
+        "name": "selection_fg",
+        "value": "Black"
+      },
+      {
+        "name": "title_accent",
+        "value": "Yellow"
+      },
+      {
+        "name": "fkey_badge_bg",
+        "value": "Yellow"
+      },
+      {
+        "name": "fkey_badge_fg",
+        "value": "Black"
+      }
+    ],
     "styles": [],
-    "icons": [],
-    "mascot": null,
+    "icons": [
+      {
+        "name": "ChevronRight",
+        "value": ""
+      },
+      {
+        "name": "ChevronDown",
+        "value": ""
+      },
+      {
+        "name": "ArrowRight",
+        "value": ""
+      },
+      {
+        "name": "ArrowLeft",
+        "value": ""
+      },
+      {
+        "name": "ArrowUp",
+        "value": "↑"
+      },
+      {
+        "name": "ArrowDown",
+        "value": "↓"
+      },
+      {
+        "name": "AngleLeft",
+        "value": ""
+      },
+      {
+        "name": "AngleRight",
+        "value": ""
+      },
+      {
+        "name": "CheckCircle",
+        "value": ""
+      },
+      {
+        "name": "CheckCircleFill",
+        "value": ""
+      },
+      {
+        "name": "XCircle",
+        "value": ""
+      },
+      {
+        "name": "Circle",
+        "value": ""
+      },
+      {
+        "name": "DotFill",
+        "value": ""
+      },
+      {
+        "name": "Skip",
+        "value": ""
+      },
+      {
+        "name": "Hourglass",
+        "value": ""
+      },
+      {
+        "name": "Warning",
+        "value": "⚠"
+      },
+      {
+        "name": "Play",
+        "value": ""
+      },
+      {
+        "name": "Pause",
+        "value": ""
+      },
+      {
+        "name": "Sync",
+        "value": ""
+      },
+      {
+        "name": "Skull",
+        "value": ""
+      },
+      {
+        "name": "Alert",
+        "value": ""
+      },
+      {
+        "name": "Refresh",
+        "value": ""
+      },
+      {
+        "name": "Wrench",
+        "value": ""
+      },
+      {
+        "name": "GitPr",
+        "value": ""
+      },
+      {
+        "name": "GitMerge",
+        "value": ""
+      },
+      {
+        "name": "Search",
+        "value": ""
+      },
+      {
+        "name": "IssueOpened",
+        "value": "󰝦"
+      },
+      {
+        "name": "IssueClosed",
+        "value": "󰓒"
+      },
+      {
+        "name": "Milestone",
+        "value": "󰐱"
+      },
+      {
+        "name": "NeedsReview",
+        "value": ""
+      },
+      {
+        "name": "GaugeFilled",
+        "value": "▓"
+      },
+      {
+        "name": "GaugeEmpty",
+        "value": "░"
+      },
+      {
+        "name": "Selector",
+        "value": "▸"
+      },
+      {
+        "name": "SeparatorV",
+        "value": "│"
+      },
+      {
+        "name": "SeparatorH",
+        "value": "══"
+      },
+      {
+        "name": "Fisheye",
+        "value": "◉"
+      },
+      {
+        "name": "CheckboxOn",
+        "value": "✓"
+      },
+      {
+        "name": "CheckboxOff",
+        "value": "○"
+      },
+      {
+        "name": "Expand",
+        "value": ""
+      },
+      {
+        "name": "Collapse",
+        "value": ""
+      },
+      {
+        "name": "Agents",
+        "value": "󰙍"
+      },
+      {
+        "name": "Cost",
+        "value": "$"
+      },
+      {
+        "name": "Clock",
+        "value": ""
+      },
+      {
+        "name": "Repo",
+        "value": ""
+      },
+      {
+        "name": "User",
+        "value": ""
+      },
+      {
+        "name": "Branch",
+        "value": ""
+      }
+    ],
+    "mascot": {
+      "name": "Clawd",
+      "frame_count": 6,
+      "description": "ASCII-block mascot with 6 animation states"
+    },
     "layout_conventions": []
   },
   "architecture": {
