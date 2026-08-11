@@ -112,6 +112,10 @@ pub(super) async fn run_session_turn(
     let (bound_id, mut slot) = match resume {
         Some(id) => {
             let parked = slots.lock().await.remove(&id);
+            // clippy::manual_filter (rust 1.97+) suggests `.filter()`, but filter's
+            // closure gets `&Slot` while `slot.child.try_wait()` needs `&mut` — the
+            // and_then form is required here.
+            #[allow(clippy::manual_filter)]
             let live = parked.and_then(|mut slot| {
                 if matches!(slot.child.try_wait(), Ok(None)) {
                     Some(slot)
