@@ -75,6 +75,9 @@ pub struct PromptInputScreen {
     pub(crate) focus_ring: FocusRing,
     pub(crate) image_path_input: String,
     pub(crate) editing_image_path: bool,
+    /// Poka-yoke (#1023): inline error when the typed image path is not an
+    /// existing file. Cleared on edit or a successful add.
+    pub(crate) image_path_error: Option<String>,
     pub(crate) selected_image: usize,
     pub(crate) clipboard: Box<dyn ClipboardProvider>,
     /// Transient status message shown after clipboard paste.
@@ -159,6 +162,7 @@ impl PromptInputScreen {
             ]),
             image_path_input: String::new(),
             editing_image_path: false,
+            image_path_error: None,
             selected_image: 0,
             clipboard,
             status_message: None,

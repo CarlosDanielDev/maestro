@@ -137,10 +137,10 @@ fn prompt_input_enter_with_whitespace_only_prompt_is_rejected() {
 fn prompt_input_enter_in_image_path_editing_does_not_submit_session() {
     let mut screen = screen_in_image_list_focus();
     screen.editing_image_path = true;
-    screen.image_path_input = "/tmp/shot.png".to_string();
+    screen.image_path_input = "Cargo.toml".to_string();
     let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
     assert_eq!(action, ScreenAction::None);
-    assert_eq!(screen.image_paths, vec!["/tmp/shot.png".to_string()]);
+    assert_eq!(screen.image_paths, vec!["Cargo.toml".to_string()]);
 }
 
 // --- Group 4: Esc ---
@@ -218,9 +218,9 @@ fn prompt_input_typing_in_image_path_input_accumulates_text() {
 fn prompt_input_enter_confirms_image_path_and_appends_to_list() {
     let mut screen = screen_in_image_list_focus();
     screen.editing_image_path = true;
-    screen.image_path_input = "/tmp/shot.png".to_string();
+    screen.image_path_input = "Cargo.toml".to_string();
     screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
-    assert_eq!(screen.image_paths, vec!["/tmp/shot.png".to_string()]);
+    assert_eq!(screen.image_paths, vec!["Cargo.toml".to_string()]);
     assert!(!screen.editing_image_path);
     assert_eq!(screen.image_path_input, "");
 }
@@ -350,4 +350,35 @@ fn prompt_session_config_clone_is_independent() {
     let cloned = original.clone();
     original.prompt.push_str(" extra");
     assert_eq!(cloned.prompt, "hello");
+}
+
+// --- Poka-yoke (#1023): image path must exist before it is added ---
+
+#[test]
+fn image_path_existing_file_is_added() {
+    let mut s = mock_screen();
+    s.editing_image_path = true;
+    for c in "Cargo.toml".chars() {
+        s.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
+    }
+    s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert_eq!(s.image_paths, vec!["Cargo.toml".to_string()]);
+    assert!(s.image_path_error.is_none());
+    assert!(!s.editing_image_path);
+}
+
+#[test]
+fn image_path_missing_file_is_rejected() {
+    let mut s = mock_screen();
+    s.editing_image_path = true;
+    for c in "does_not_exist_9f3.png".chars() {
+        s.handle_input(&key_event(KeyCode::Char(c)), InputMode::Normal);
+    }
+    s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+    assert!(s.image_paths.is_empty(), "missing path must not be added");
+    assert!(s.image_path_error.is_some(), "shows an inline error");
+    assert!(
+        s.editing_image_path,
+        "stays in edit mode so the user can fix it"
+    );
 }

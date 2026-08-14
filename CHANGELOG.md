@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.3] - 2026-08-14
+
+> **Poka-yoke pass 2.** Three more destructive/lossy TUI actions are now
+> mistake-proofed, following the v0.31.2 guards.
+
+### Fixed
+- **PRD `[d]` delete** of a goal/non-goal now requires a second `d` to confirm; the footer shows a confirm warning while armed and any other key cancels. Previously a single `d` deleted and autosaved with no undo.
+- **PromptInput image path** is now rejected with an inline error if no file exists at the typed path, instead of being accepted and failing silently at launch.
+- **PR-review submit** now requires a confirming second `Enter` for `Approve` and `Request changes` before the review is posted to GitHub, and blocks a `Request changes` with an empty body. `Comment` still submits directly.
+
 ## [0.31.2] - 2026-08-14
 
 > **Poka-yoke pass.** Four destructive TUI keypresses that fired with no

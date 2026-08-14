@@ -122,6 +122,12 @@ impl PromptInputScreen {
                 ),
                 Span::styled("_", Style::default().fg(theme.accent_success)),
             ]));
+            if let Some(ref err) = self.image_path_error {
+                lines.push(Line::from(Span::styled(
+                    format!("  ⚠ {err}"),
+                    Style::default().fg(theme.accent_error),
+                )));
+            }
         }
         if self.is_image_list_focused() && !self.editing_image_path {
             lines.push(Line::from(Span::styled(
