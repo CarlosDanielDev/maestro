@@ -352,7 +352,9 @@ fn draw_timeline(f: &mut Frame, area: Rect, block: Block<'_>, prd: &Prd, theme: 
 }
 
 fn draw_hints(f: &mut Frame, area: Rect, screen: &PrdScreen, theme: &Theme) {
-    let hint = if screen.edit.is_some() {
+    let hint = if screen.pending_reset {
+        "⚠ Press [R] again to CONFIRM reset (deletes the local PRD)  ·  any other key cancels"
+    } else if screen.edit.is_some() {
         "[Enter] save  [Esc] cancel  type to fill"
     } else {
         match screen.focus {

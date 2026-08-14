@@ -716,7 +716,10 @@ async fn handle_log_viewer(app: &mut App, key: &KeyEvent, _id: uuid::Uuid) -> Ke
 
 async fn handle_confirm_kill(app: &mut App, key: &KeyEvent, session_id: uuid::Uuid) -> KeyAction {
     match key.code {
-        KeyCode::Char('y') | KeyCode::Enter => {
+        // Poka-yoke (#8): only `y` kills. Enter is the confirm/default key
+        // everywhere else, so it must NOT destroy a session on reflex — it
+        // falls through and leaves the modal open.
+        KeyCode::Char('y') => {
             app.kill_selected_session(session_id).await;
             app.navigate_back_or_dashboard();
         }
@@ -1510,6 +1513,30 @@ mod tests {
         assert!(matches!(app.tui_mode, TuiMode::ConfirmExit));
         assert_eq!(app.nav_stack.peek(), Some(&TuiMode::Overview));
         assert!(app.running);
+    }
+
+    // ── Poka-yoke (#8): ConfirmKill must not treat Enter as "kill" ────────
+
+    #[tokio::test]
+    async fn confirm_kill_enter_does_not_kill() {
+        // Enter is the safe/confirm key everywhere else, so a reflexive Enter
+        // must NOT destroy a session. The modal stays open; only `y` kills.
+        let mut app = make_app();
+        let id = uuid::Uuid::new_v4();
+        app.tui_mode = TuiMode::ConfirmKill(id);
+        app.nav_stack.push(TuiMode::Overview);
+        handle_key(&mut app, key_code(KeyCode::Enter)).await;
+        assert!(matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
+    }
+
+    #[tokio::test]
+    async fn confirm_kill_n_still_cancels() {
+        let mut app = make_app();
+        let id = uuid::Uuid::new_v4();
+        app.tui_mode = TuiMode::ConfirmKill(id);
+        app.nav_stack.push(TuiMode::Overview);
+        handle_key(&mut app, key('n')).await;
+        assert!(!matches!(app.tui_mode, TuiMode::ConfirmKill(_)));
     }
 
     // ── Issue #342: Nav-stack integration tests ──────────────────────────

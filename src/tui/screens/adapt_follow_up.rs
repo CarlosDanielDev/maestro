@@ -98,12 +98,12 @@ impl Screen for AdaptFollowUpScreen {
                     self.move_up();
                 }
                 KeyCode::Char(c) if c.is_ascii_digit() && *c != '0' => {
+                    // Poka-yoke (#5): digits only move the selection. Launching a
+                    // billable session requires an explicit Enter — a stray number
+                    // key must never spawn.
                     let idx = (*c as usize) - ('1' as usize);
                     if idx < self.suggestions.len() {
                         self.selected = idx;
-                        if let Some(cfg) = self.current_prompt() {
-                            return ScreenAction::LaunchPromptSession(cfg);
-                        }
                     }
                 }
                 KeyCode::Enter => {
@@ -269,12 +269,22 @@ mod tests {
     }
 
     #[test]
-    fn digit_key_selects_and_launches() {
+    fn digit_key_selects_only_does_not_launch() {
+        // Poka-yoke (#5): a stray number key must NOT spawn a billable session.
+        // Digits move the selection; Enter is the only launch key.
         let mut s = make_screen();
         let action = s.handle_input(&key_event(KeyCode::Char('2')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::None);
+        assert_eq!(s.selected, 1);
+    }
+
+    #[test]
+    fn digit_then_enter_launches_selected() {
+        let mut s = make_screen();
+        s.handle_input(&key_event(KeyCode::Char('2')), InputMode::Normal);
+        let action = s.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
         match action {
             ScreenAction::LaunchPromptSession(cfg) => {
-                assert_eq!(s.selected, 1);
                 assert!(cfg.prompt.contains("Fill docs"));
             }
             other => panic!("expected LaunchPromptSession, got {:?}", other),
