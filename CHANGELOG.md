@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.2] - 2026-08-14
+
+> **Poka-yoke pass.** Four destructive TUI keypresses that fired with no
+> confirmation are now mistake-proofed.
+
+### Fixed
+- **PRD `[R]` reset** now requires a second `R` to confirm before deleting the local PRD file; the footer shows a confirm warning while armed and any other key cancels. Previously a single `R` deleted the file irreversibly.
+- **Kill-session confirm** no longer treats `Enter` as "kill" — only `y` confirms, matching the overlay's `[y]`/`[n]` hint. A reflexive `Enter` (the confirm/default key everywhere else) no longer destroys a session.
+- **Adapt follow-up** number keys `1-9` now only move the selection; `Enter` is the sole launch key. Previously a stray digit immediately spawned a billable session.
+- **Adapt wizard cache-clear** (`x`/`Del`) now requires a second press to confirm before wiping the resumable cache; the keybind hint reflects the armed state.
+
 ## [0.31.1] - 2026-08-11
 
 ### Security
