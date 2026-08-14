@@ -77,6 +77,10 @@ fn handle_edit_key(
 }
 
 fn handle_view_key(key: KeyEvent, screen: &mut PrdScreen, prd: &mut Prd) -> PrdAction {
+    // Poka-yoke (#1022): any key other than `d` disarms a pending goal delete.
+    if !matches!(key.code, KeyCode::Char('d')) {
+        screen.pending_delete = false;
+    }
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => PrdAction::Back,
         KeyCode::Tab | KeyCode::BackTab => {
@@ -128,13 +132,23 @@ fn handle_view_key(key: KeyEvent, screen: &mut PrdScreen, prd: &mut Prd) -> PrdA
             }
         }
         KeyCode::Char('d') => {
-            let removed = match screen.focus {
-                PrdSection::Goals => screen.delete_focused_goal(prd),
-                PrdSection::NonGoals => screen.delete_focused_non_goal(prd),
-                _ => false,
-            };
-            if removed {
-                PrdAction::Save
+            if screen.pending_delete {
+                // Second `d` — confirm the delete.
+                screen.pending_delete = false;
+                let removed = match screen.focus {
+                    PrdSection::Goals => screen.delete_focused_goal(prd),
+                    PrdSection::NonGoals => screen.delete_focused_non_goal(prd),
+                    _ => false,
+                };
+                if removed {
+                    PrdAction::Save
+                } else {
+                    PrdAction::None
+                }
+            } else if matches!(screen.focus, PrdSection::Goals | PrdSection::NonGoals) {
+                // First `d` only arms — the delete needs a second press.
+                screen.pending_delete = true;
+                PrdAction::None
             } else {
                 PrdAction::None
             }
@@ -180,6 +194,45 @@ mod tests {
             handle_key(&mut s, &mut p, key(KeyCode::Char('e'))),
             PrdAction::Export
         );
+    }
+
+    // ── Poka-yoke (#1022): goal delete needs a second `d` ────────────────
+
+    #[test]
+    fn first_d_arms_delete_without_removing() {
+        let mut s = PrdScreen::new();
+        let mut p = Prd::new();
+        s.focus = PrdSection::Goals;
+        p.add_goal("keep me");
+        let action = handle_key(&mut s, &mut p, key(KeyCode::Char('d')));
+        assert_eq!(action, PrdAction::None);
+        assert!(s.pending_delete, "first d must arm the confirm");
+        assert_eq!(p.goals.len(), 1, "first d must NOT delete");
+    }
+
+    #[test]
+    fn second_d_confirms_delete() {
+        let mut s = PrdScreen::new();
+        let mut p = Prd::new();
+        s.focus = PrdSection::Goals;
+        p.add_goal("bye");
+        handle_key(&mut s, &mut p, key(KeyCode::Char('d')));
+        let action = handle_key(&mut s, &mut p, key(KeyCode::Char('d')));
+        assert_eq!(action, PrdAction::Save);
+        assert_eq!(p.goals.len(), 0, "second d deletes");
+        assert!(!s.pending_delete);
+    }
+
+    #[test]
+    fn other_key_disarms_delete() {
+        let mut s = PrdScreen::new();
+        let mut p = Prd::new();
+        s.focus = PrdSection::Goals;
+        p.add_goal("keep");
+        handle_key(&mut s, &mut p, key(KeyCode::Char('d')));
+        handle_key(&mut s, &mut p, key(KeyCode::Char('j'))); // any other key
+        assert!(!s.pending_delete, "a non-d key cancels the armed delete");
+        assert_eq!(p.goals.len(), 1);
     }
 
     #[test]
@@ -301,6 +354,7 @@ mod tests {
         let mut p = Prd::new();
         p.add_goal("a");
         p.add_goal("b");
+        handle_key(&mut s, &mut p, key(KeyCode::Char('d'))); // arm (poka-yoke #1022)
         let action = handle_key(&mut s, &mut p, key(KeyCode::Char('d')));
         assert_eq!(action, PrdAction::Save);
         assert_eq!(p.goals.len(), 1);

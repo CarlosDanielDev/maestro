@@ -5,7 +5,7 @@ pub mod types;
 
 pub use types::*;
 
-use crate::provider::types::PullRequest;
+use crate::provider::types::{PullRequest, ReviewEvent};
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
@@ -23,6 +23,10 @@ pub struct PrReviewScreen {
     pub form: ReviewForm,
     pub error: Option<String>,
     pub spinner_tick: usize,
+    /// Poka-yoke (#1021): armed by the first Enter on an Approve/Request-changes
+    /// review; the GitHub POST only fires on a second Enter. Editing the body or
+    /// switching the event type disarms it.
+    pub pending_submit: bool,
 }
 
 impl PrReviewScreen {
@@ -36,6 +40,7 @@ impl PrReviewScreen {
             form: ReviewForm::default(),
             error: None,
             spinner_tick: 0,
+            pending_submit: false,
         }
     }
 
@@ -133,14 +138,46 @@ impl PrReviewScreen {
         match code {
             KeyCode::Tab => {
                 self.form.event = self.form.event.next();
+                self.pending_submit = false;
+                self.error = None;
             }
             KeyCode::BackTab => {
                 self.form.event = self.form.event.prev();
+                self.pending_submit = false;
+                self.error = None;
             }
             KeyCode::Backspace => {
                 self.form.body.pop();
+                self.pending_submit = false;
+                self.error = None;
             }
             KeyCode::Enter => {
+                // Poka-yoke (#1021): Request-changes needs a body, and both
+                // Approve and Request-changes need a second Enter to confirm
+                // before the review is POSTed to GitHub. Comment submits directly.
+                if self.form.event == ReviewEvent::RequestChanges
+                    && self.form.body.trim().is_empty()
+                {
+                    self.pending_submit = false;
+                    self.error = Some("Request changes needs a non-empty body.".to_string());
+                    return ScreenAction::None;
+                }
+                let needs_confirm = matches!(
+                    self.form.event,
+                    ReviewEvent::Approve | ReviewEvent::RequestChanges
+                );
+                if needs_confirm && !self.pending_submit {
+                    self.pending_submit = true;
+                    self.error = Some(match self.form.event {
+                        ReviewEvent::Approve => {
+                            "Press Enter again to confirm APPROVE on this PR.".to_string()
+                        }
+                        _ => "Press Enter again to confirm REQUEST CHANGES on this PR.".to_string(),
+                    });
+                    return ScreenAction::None;
+                }
+                self.pending_submit = false;
+                self.error = None;
                 if let Some(ref pr) = self.current_pr {
                     return ScreenAction::SubmitPrReview {
                         pr_number: pr.number,
@@ -150,10 +187,14 @@ impl PrReviewScreen {
                 }
             }
             KeyCode::Esc => {
+                self.pending_submit = false;
+                self.error = None;
                 self.step = PrReviewStep::PrDetail;
             }
             KeyCode::Char(c) => {
                 self.form.body.push(c);
+                self.pending_submit = false;
+                self.error = None;
             }
             _ => {}
         }
@@ -603,6 +644,8 @@ mod tests {
         let mut screen = screen_at_submit_review();
         screen.form.event = ReviewEvent::Approve;
         screen.form.body = "LGTM".to_string();
+        // Poka-yoke (#1021): Approve needs a confirming second Enter.
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         assert_eq!(
             action,
@@ -616,8 +659,11 @@ mod tests {
 
     #[test]
     fn submit_review_enter_with_empty_body_still_returns_submit_action() {
+        // Approve with an empty body is legitimate ("approve, no comment") — it
+        // still submits, but only after the #1021 confirm.
         let mut screen = screen_at_submit_review();
         screen.form.event = ReviewEvent::Approve;
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
         assert_eq!(
             action,
@@ -626,6 +672,83 @@ mod tests {
                 event: ReviewEvent::Approve,
                 body: String::new(),
             }
+        );
+    }
+
+    // ── Poka-yoke (#1021): confirm submit + block empty-body Request-changes ──
+
+    #[test]
+    fn submit_review_approve_first_enter_arms_not_submits() {
+        let mut screen = screen_at_submit_review();
+        screen.form.event = ReviewEvent::Approve;
+        screen.form.body = "LGTM".to_string();
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+        assert_eq!(action, ScreenAction::None, "first Enter must not POST");
+        assert!(screen.pending_submit);
+        assert!(screen.error.is_some(), "shows a confirm prompt");
+    }
+
+    #[test]
+    fn submit_review_request_changes_empty_body_is_blocked() {
+        let mut screen = screen_at_submit_review();
+        screen.form.event = ReviewEvent::RequestChanges;
+        screen.form.body.clear();
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+        assert_eq!(
+            action,
+            ScreenAction::None,
+            "empty-body request-changes must not POST"
+        );
+        assert!(!screen.pending_submit);
+        assert!(screen.error.is_some());
+    }
+
+    #[test]
+    fn submit_review_request_changes_with_body_confirms_then_submits() {
+        let mut screen = screen_at_submit_review();
+        screen.form.event = ReviewEvent::RequestChanges;
+        screen.form.body = "needs work".to_string();
+        let first = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+        assert_eq!(first, ScreenAction::None);
+        assert!(screen.pending_submit);
+        let second = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+        assert_eq!(
+            second,
+            ScreenAction::SubmitPrReview {
+                pr_number: 1,
+                event: ReviewEvent::RequestChanges,
+                body: "needs work".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn submit_review_comment_submits_without_confirm() {
+        let mut screen = screen_at_submit_review();
+        screen.form.event = ReviewEvent::Comment;
+        screen.form.body = "note".to_string();
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+        assert_eq!(
+            action,
+            ScreenAction::SubmitPrReview {
+                pr_number: 1,
+                event: ReviewEvent::Comment,
+                body: "note".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn submit_review_editing_body_disarms_pending_submit() {
+        let mut screen = screen_at_submit_review();
+        screen.form.event = ReviewEvent::Approve;
+        screen.form.body = "ok".to_string();
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert); // arm
+        assert!(screen.pending_submit);
+        screen.handle_input(&key_event(KeyCode::Char('!')), InputMode::Insert);
+        assert!(
+            !screen.pending_submit,
+            "editing the body cancels the armed submit"
         );
     }
 

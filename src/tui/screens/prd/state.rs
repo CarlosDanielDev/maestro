@@ -123,6 +123,9 @@ pub struct PrdScreen {
     /// Poka-yoke (#1): armed by the first `[R]` press; the irreversible PRD
     /// file delete only runs on a second `[R]`. Any other key disarms it.
     pub pending_reset: bool,
+    /// Poka-yoke (#1022): armed by the first `[d]` press on a goal/non-goal;
+    /// the delete only runs on a second `[d]`. Any other key disarms it.
+    pub pending_delete: bool,
 }
 
 impl Default for PrdScreen {
@@ -144,6 +147,7 @@ impl PrdScreen {
             save_status: PrdSaveStatus::default(),
             first_view: true,
             pending_reset: false,
+            pending_delete: false,
         }
     }
 

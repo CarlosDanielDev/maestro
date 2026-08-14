@@ -146,17 +146,31 @@ impl Screen for PromptInputScreen {
             if self.editing_image_path {
                 match code {
                     KeyCode::Enter => {
-                        if !self.image_path_input.is_empty() {
-                            self.image_paths.push(self.image_path_input.clone());
+                        let candidate = self.image_path_input.trim();
+                        if candidate.is_empty() {
+                            // Empty = cancel the add.
+                            self.editing_image_path = false;
+                            self.image_path_input.clear();
+                            self.image_path_error = None;
+                        } else if std::path::Path::new(candidate).is_file() {
+                            self.image_paths.push(candidate.to_string());
+                            self.editing_image_path = false;
+                            self.image_path_input.clear();
+                            self.image_path_error = None;
+                        } else {
+                            // Poka-yoke (#1023): reject a path with no existing
+                            // file behind it. Stay in edit mode so the user can
+                            // fix the typo instead of failing silently at launch.
+                            self.image_path_error = Some(format!("No file at: {candidate}"));
                         }
-                        self.editing_image_path = false;
-                        self.image_path_input.clear();
                     }
                     KeyCode::Backspace => {
                         self.image_path_input.pop();
+                        self.image_path_error = None;
                     }
                     KeyCode::Char(c) => {
                         self.image_path_input.push(*c);
+                        self.image_path_error = None;
                     }
                     _ => {}
                 }
