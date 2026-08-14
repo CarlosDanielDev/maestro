@@ -29,6 +29,9 @@ pub struct AdaptScreen {
     pub cancelled: bool,
     /// Whether a cache from a previous incomplete run was loaded.
     pub loaded_from_cache: bool,
+    /// Poka-yoke (#9): armed by the first cache-clear keypress; the wipe only
+    /// happens on the second. Any other key disarms it.
+    pub pending_clear: bool,
 }
 
 impl AdaptScreen {
@@ -52,6 +55,7 @@ impl AdaptScreen {
             scroll_offset: 0,
             cancelled: false,
             loaded_from_cache,
+            pending_clear: false,
         }
     }
 
@@ -228,6 +232,10 @@ impl AdaptScreen {
     }
 
     fn handle_configure_input(&mut self, code: KeyCode) -> ScreenAction {
+        // Poka-yoke (#9): any key other than the clear chord disarms a pending wipe.
+        if !matches!(code, KeyCode::Delete | KeyCode::Char('x')) {
+            self.pending_clear = false;
+        }
         match code {
             KeyCode::Char('j') | KeyCode::Down if self.selected_field < FIELD_COUNT - 1 => {
                 self.selected_field += 1;
@@ -265,10 +273,17 @@ impl AdaptScreen {
                 }
                 return ScreenAction::StartAdaptPipeline(self.build_adapt_config());
             }
-            KeyCode::Delete | KeyCode::Char('x') if self.loaded_from_cache => {
+            KeyCode::Delete | KeyCode::Char('x')
+                if self.loaded_from_cache && self.pending_clear =>
+            {
                 self.results = AdaptResults::default();
                 AdaptResults::clear_cache();
                 self.loaded_from_cache = false;
+                self.pending_clear = false;
+            }
+            KeyCode::Delete | KeyCode::Char('x') if self.loaded_from_cache => {
+                // Poka-yoke (#9): first press only arms — the wipe needs a second.
+                self.pending_clear = true;
             }
             KeyCode::Esc => return ScreenAction::Pop,
             _ => {}
@@ -304,7 +319,11 @@ impl KeymapProvider for AdaptScreen {
                 if self.loaded_from_cache {
                     action_bindings.push(KeyBinding {
                         key: "x",
-                        description: "Clear cache (fresh run)",
+                        description: if self.pending_clear {
+                            "Press x again to clear cache"
+                        } else {
+                            "Clear cache (fresh run)"
+                        },
                     });
                 }
                 action_bindings.push(KeyBinding {
@@ -422,6 +441,31 @@ mod tests {
     use super::*;
     use crate::adapt::types::*;
     use crate::tui::screens::test_helpers::key_event;
+
+    #[test]
+    fn cache_clear_requires_two_presses() {
+        // Poka-yoke (#9): one x must never wipe the resumable cache — it only arms.
+        let mut s = AdaptScreen::new();
+        s.loaded_from_cache = true;
+        s.pending_clear = false;
+        s.selected_field = 1; // non-text field so `x` reaches the clear arm
+        s.handle_configure_input(KeyCode::Char('x'));
+        assert!(s.pending_clear, "first x must arm the confirm");
+        assert!(s.loaded_from_cache, "first x must NOT wipe the cache");
+    }
+
+    #[test]
+    fn cache_clear_disarms_on_other_key() {
+        let mut s = AdaptScreen::new();
+        s.loaded_from_cache = true;
+        s.pending_clear = true;
+        s.selected_field = 1;
+        s.handle_configure_input(KeyCode::Char('j'));
+        assert!(
+            !s.pending_clear,
+            "a stray non-clear key cancels the armed clear"
+        );
+    }
 
     fn make_mock_profile() -> ProjectProfile {
         ProjectProfile {

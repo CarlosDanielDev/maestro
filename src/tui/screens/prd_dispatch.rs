@@ -31,6 +31,14 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
         return handle_explore_key(app, key.code);
     }
 
+    // Poka-yoke (#1): a pending PRD reset is disarmed by any key other than
+    // `R`. Runs before the R handler below so a second R still confirms.
+    if !matches!(key.code, crossterm::event::KeyCode::Char('R'))
+        && let Some(s) = app.screen_state.prd_screen.as_mut()
+    {
+        s.pending_reset = false;
+    }
+
     // Top-level keys that aren't part of the focused-section editor.
     match key.code {
         crossterm::event::KeyCode::Char('o') => {
@@ -39,7 +47,28 @@ pub fn dispatch_input(app: &mut App, event: &Event) -> ScreenAction {
             return ScreenAction::None;
         }
         crossterm::event::KeyCode::Char('R') => {
-            reset_prd(app);
+            let armed = app
+                .screen_state
+                .prd_screen
+                .as_ref()
+                .is_some_and(|s| s.pending_reset);
+            if armed {
+                // Second R — confirm the irreversible delete.
+                if let Some(s) = app.screen_state.prd_screen.as_mut() {
+                    s.pending_reset = false;
+                }
+                reset_prd(app);
+            } else {
+                // First R — arm and warn, do NOT touch the file yet.
+                if let Some(s) = app.screen_state.prd_screen.as_mut() {
+                    s.pending_reset = true;
+                }
+                app.activity_log.push_simple(
+                    "PRD".into(),
+                    "Press R again to confirm reset — this deletes the local PRD file.".into(),
+                    LogLevel::Warn,
+                );
+            }
             return ScreenAction::None;
         }
         _ => {}
@@ -269,4 +298,41 @@ fn queue_sync(app: &mut App) {
 
 fn repo_root() -> std::path::PathBuf {
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn first_r_arms_reset_without_deleting() {
+        // Poka-yoke (#1): a single R must never delete the PRD file — it arms.
+        let mut app = crate::tui::make_test_app("prd-reset-arm");
+        let action = dispatch_input(&mut app, &key(KeyCode::Char('R')));
+        assert_eq!(action, ScreenAction::None);
+        let armed = app
+            .screen_state
+            .prd_screen
+            .as_ref()
+            .is_some_and(|s| s.pending_reset);
+        assert!(armed, "first R must only arm the confirm, not reset");
+    }
+
+    #[test]
+    fn other_key_disarms_pending_reset() {
+        let mut app = crate::tui::make_test_app("prd-reset-disarm");
+        dispatch_input(&mut app, &key(KeyCode::Char('R'))); // arm
+        dispatch_input(&mut app, &key(KeyCode::Down)); // any other key
+        let armed = app
+            .screen_state
+            .prd_screen
+            .as_ref()
+            .is_some_and(|s| s.pending_reset);
+        assert!(!armed, "a non-R key must cancel the armed reset");
+    }
 }

@@ -120,6 +120,9 @@ pub struct PrdScreen {
     /// Whether the screen is being viewed for the first time this session
     /// (used to render a one-line "what is this" intro).
     pub first_view: bool,
+    /// Poka-yoke (#1): armed by the first `[R]` press; the irreversible PRD
+    /// file delete only runs on a second `[R]`. Any other key disarms it.
+    pub pending_reset: bool,
 }
 
 impl Default for PrdScreen {
@@ -140,6 +143,7 @@ impl PrdScreen {
             sync_status: PrdSyncStatus::Idle,
             save_status: PrdSaveStatus::default(),
             first_view: true,
+            pending_reset: false,
         }
     }
 
