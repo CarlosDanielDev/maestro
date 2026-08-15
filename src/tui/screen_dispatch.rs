@@ -1151,14 +1151,40 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             }
         }
         ScreenAction::LaunchSessions(configs) => {
-            let agent_id = app.selected_agent_id();
-            let configs = configs
-                .into_iter()
-                .map(|config| config.with_agent_id(agent_id.clone()))
-                .collect();
-            app.pending_commands
-                .push(app::TuiCommand::LaunchSessions(configs));
-            app.tui_mode = app::TuiMode::Overview;
+            // Poka-yoke (#1020/#1024): a 2+ session fan-out never spawns blindly.
+            // Interpose the QueueConfirmation review screen (count + list +
+            // conflict panel, remove-before-launch); confirming there emits
+            // LaunchQueue. A single launch spawns directly.
+            if configs.len() >= 2 {
+                use crate::work::conflicts::{IssueWithFiles, predict_conflicts};
+                let issues: Vec<IssueWithFiles> = configs
+                    .iter()
+                    .filter_map(|c| {
+                        c.issue_number.map(|n| IssueWithFiles {
+                            issue_number: n,
+                            files_to_modify: None,
+                        })
+                    })
+                    .collect();
+                let report = predict_conflicts(&issues);
+                app.screen_state.queue_confirmation_screen = Some(
+                    crate::tui::screens::QueueConfirmationScreen::from_session_configs(
+                        configs, report,
+                    ),
+                );
+                // navigate_to (not a raw tui_mode set) so Esc/cancel returns to
+                // the milestone / issue-browser screen the launch came from.
+                app.navigate_to(app::TuiMode::QueueConfirmation);
+            } else {
+                let agent_id = app.selected_agent_id();
+                let configs = configs
+                    .into_iter()
+                    .map(|config| config.with_agent_id(agent_id.clone()))
+                    .collect();
+                app.pending_commands
+                    .push(app::TuiCommand::LaunchSessions(configs));
+                app.tui_mode = app::TuiMode::Overview;
+            }
         }
         ScreenAction::LaunchPromptSession(config) => {
             let config = config.with_agent_id(app.selected_agent_id());
@@ -1740,6 +1766,54 @@ model = "qwen-2.5"
             screen.model(),
             "qwen-2.5",
             "header must reflect the agent's configured model, not Claude's opus"
+        );
+    }
+}
+
+#[cfg(test)]
+mod queue_confirm_routing_tests {
+    use super::handle_screen_action;
+    use crate::tui::app::{TuiCommand, TuiMode};
+    use crate::tui::screens::{ScreenAction, SessionConfig};
+
+    fn cfg(n: u64) -> SessionConfig {
+        SessionConfig {
+            issue_number: Some(n),
+            title: format!("Issue #{n}"),
+            ..SessionConfig::default()
+        }
+    }
+
+    #[test]
+    fn mass_launch_routes_through_queue_confirmation() {
+        // Poka-yoke (#1020/#1024): a 2+ fan-out must land on the review screen,
+        // not spawn directly.
+        let mut app = crate::tui::make_test_app("qc-route-mass");
+        handle_screen_action(
+            &mut app,
+            ScreenAction::LaunchSessions(vec![cfg(1), cfg(2), cfg(3)]),
+        );
+        assert!(matches!(app.tui_mode, TuiMode::QueueConfirmation));
+        assert!(app.screen_state.queue_confirmation_screen.is_some());
+        assert!(
+            !app.pending_commands
+                .iter()
+                .any(|c| matches!(c, TuiCommand::LaunchSessions(_))),
+            "2+ launch must not fan out directly"
+        );
+    }
+
+    #[test]
+    fn single_launch_spawns_directly() {
+        let mut app = crate::tui::make_test_app("qc-route-single");
+        handle_screen_action(&mut app, ScreenAction::LaunchSessions(vec![cfg(7)]));
+        assert!(matches!(app.tui_mode, TuiMode::Overview));
+        assert!(app.screen_state.queue_confirmation_screen.is_none());
+        assert!(
+            app.pending_commands
+                .iter()
+                .any(|c| matches!(c, TuiCommand::LaunchSessions(_))),
+            "single launch spawns directly"
         );
     }
 }

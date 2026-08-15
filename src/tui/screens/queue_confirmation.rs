@@ -25,6 +25,10 @@ pub struct QueueConfirmationScreen {
     conflict_report: ConflictReport,
     pub(crate) selected: usize,
     scroll_offset: usize,
+    /// Full-fidelity launch configs (custom prompt, produce-PR, interaction),
+    /// kept in lock-step with `entries` so removing an entry drops its config
+    /// too. Returned verbatim on confirm — nothing the user chose is lost.
+    configs: Vec<SessionConfig>,
 }
 
 impl QueueConfirmationScreen {
@@ -49,11 +53,50 @@ impl QueueConfirmationScreen {
             })
             .collect();
 
+        let configs: Vec<SessionConfig> = entries
+            .iter()
+            .map(|e| SessionConfig {
+                issue_number: Some(e.issue_number),
+                title: e.title.clone(),
+                ..SessionConfig::default()
+            })
+            .collect();
+
         Self {
             entries,
             conflict_report,
             selected: 0,
             scroll_offset: 0,
+            configs,
+        }
+    }
+
+    /// Build the screen straight from the launch configs a fan-out produced,
+    /// preserving every per-session choice (custom prompt, produce-PR,
+    /// interaction). Configs without an issue number are dropped. Used to
+    /// interpose this review screen before a 2+ session mass-launch (#1020/#1024).
+    pub fn from_session_configs(
+        configs: Vec<SessionConfig>,
+        conflict_report: ConflictReport,
+    ) -> Self {
+        let mut entries = Vec::new();
+        let mut kept = Vec::new();
+        for c in configs {
+            if let Some(n) = c.issue_number {
+                entries.push(ConfirmationEntry {
+                    issue_number: n,
+                    title: c.title.clone(),
+                    files_to_modify: None,
+                });
+                kept.push(c);
+            }
+        }
+        Self {
+            entries,
+            conflict_report,
+            selected: 0,
+            scroll_offset: 0,
+            configs: kept,
         }
     }
 
@@ -243,6 +286,9 @@ impl Screen for QueueConfirmationScreen {
                 }
                 KeyCode::Char('d') | KeyCode::Delete if !self.entries.is_empty() => {
                     self.entries.remove(self.selected);
+                    if self.selected < self.configs.len() {
+                        self.configs.remove(self.selected);
+                    }
                     if self.selected >= self.entries.len() && self.selected > 0 {
                         self.selected -= 1;
                     }
@@ -252,18 +298,9 @@ impl Screen for QueueConfirmationScreen {
                     }
                 }
                 KeyCode::Enter if !self.entries.is_empty() => {
-                    let configs: Vec<SessionConfig> = self
-                        .entries
-                        .iter()
-                        .map(|e| SessionConfig {
-                            issue_number: Some(e.issue_number),
-                            title: e.title.clone(),
-                            custom_prompt: None,
-                            agent_id: None,
-                            ..SessionConfig::default()
-                        })
-                        .collect();
-                    return ScreenAction::LaunchQueue(configs);
+                    // Return the stored full-fidelity configs verbatim so the
+                    // user's per-session choices survive the review step.
+                    return ScreenAction::LaunchQueue(self.configs.clone());
                 }
                 KeyCode::Esc => return ScreenAction::Pop,
                 _ => {}
@@ -468,6 +505,70 @@ mod tests {
         let mut screen = make_screen(&[10]);
         let action = screen.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
         assert_eq!(action, ScreenAction::Pop);
+    }
+
+    fn config(number: u64, produce_pr: bool, prompt: Option<&str>) -> SessionConfig {
+        SessionConfig {
+            issue_number: Some(number),
+            title: format!("Issue #{}", number),
+            custom_prompt: prompt.map(|s| s.to_string()),
+            agent_id: None,
+            produce_pr,
+            interaction: false,
+        }
+    }
+
+    #[test]
+    fn from_session_configs_preserves_launch_options_on_enter() {
+        // Poka-yoke (#1024): routing a fan-out through the review screen must
+        // not drop the user's per-session choices.
+        let mut screen = QueueConfirmationScreen::from_session_configs(
+            vec![
+                config(10, false, Some("focus on tests")),
+                config(20, true, None),
+            ],
+            safe_report(),
+        );
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchQueue(configs) => {
+                assert_eq!(configs.len(), 2);
+                assert_eq!(configs[0].issue_number, Some(10));
+                assert!(!configs[0].produce_pr);
+                assert_eq!(configs[0].custom_prompt.as_deref(), Some("focus on tests"));
+                assert!(configs[1].produce_pr);
+            }
+            other => panic!("expected LaunchQueue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn from_session_configs_drops_configs_without_issue_number() {
+        let mut bad = config(0, true, None);
+        bad.issue_number = None;
+        let screen = QueueConfirmationScreen::from_session_configs(
+            vec![config(10, true, None), bad],
+            safe_report(),
+        );
+        assert_eq!(screen.items().len(), 1);
+    }
+
+    #[test]
+    fn d_removes_paired_config_and_entry() {
+        let mut screen = QueueConfirmationScreen::from_session_configs(
+            vec![config(10, false, None), config(20, true, None)],
+            safe_report(),
+        );
+        // Remove the first entry.
+        screen.handle_input(&key_event(KeyCode::Char('d')), InputMode::Normal);
+        let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Normal);
+        match action {
+            ScreenAction::LaunchQueue(configs) => {
+                assert_eq!(configs.len(), 1);
+                assert_eq!(configs[0].issue_number, Some(20));
+            }
+            other => panic!("expected LaunchQueue, got {:?}", other),
+        }
     }
 
     #[test]
