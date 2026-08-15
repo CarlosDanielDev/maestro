@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.4] - 2026-08-15
+
+> **Poka-yoke pass 3.** Mass session launches now go through a review step
+> instead of fanning out on a single keypress.
+
+### Added
+- **Queue confirmation for mass launches** — running a milestone's "run all" or launching a multi-issue selection from the issue browser (2+ sessions) now opens the QueueConfirmation review screen first: it shows the session count, the issue list, a conflict panel, and lets you remove entries before launching. Confirming launches via the queued executor; cancelling returns to where you were. A single-session launch still spawns directly. Per-session choices (custom prompt, produce-PR, interaction) are preserved through the review step. (#1020, #1024)
+
 ## [0.31.3] - 2026-08-14
 
 > **Poka-yoke pass 2.** Three more destructive/lossy TUI actions are now
