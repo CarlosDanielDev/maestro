@@ -1,6 +1,6 @@
 [package]
 name = "maestro"
-version = "0.31.3"
+version = "0.31.4"
 edition = "2024"
 rust-version = "1.89"
 description = "Multi-agent orchestrator (Claude, Codex, Qwen, OpenCode, Ollama, MiniMax) with a Matrix-style TUI"
