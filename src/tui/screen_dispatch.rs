@@ -1156,13 +1156,21 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             // conflict panel, remove-before-launch); confirming there emits
             // LaunchQueue. A single launch spawns directly.
             if configs.len() >= 2 {
-                use crate::work::conflicts::{IssueWithFiles, predict_conflicts};
+                use crate::work::conflicts::{
+                    IssueWithFiles, files_to_modify_from_body, predict_conflicts,
+                };
+                // Pull each issue's declared file scope from the cache so the
+                // conflict panel shows real overlaps, not just "unknown scope".
                 let issues: Vec<IssueWithFiles> = configs
                     .iter()
                     .filter_map(|c| {
                         c.issue_number.map(|n| IssueWithFiles {
                             issue_number: n,
-                            files_to_modify: None,
+                            files_to_modify: app
+                                .state
+                                .issue_cache
+                                .get(&n)
+                                .and_then(|iss| files_to_modify_from_body(&iss.body)),
                         })
                     })
                     .collect();
@@ -1815,5 +1823,34 @@ mod queue_confirm_routing_tests {
                 .any(|c| matches!(c, TuiCommand::LaunchSessions(_))),
             "single launch spawns directly"
         );
+    }
+
+    #[test]
+    fn mass_launch_lights_up_conflicts_from_cached_file_scope() {
+        use crate::provider::types::Issue;
+        let mut app = crate::tui::make_test_app("qc-route-conflict");
+        let mk = |n: u64| Issue {
+            number: n,
+            title: format!("Issue #{n}"),
+            body: "## Files to Modify\n- src/shared.rs".to_string(),
+            labels: vec![],
+            state: "open".to_string(),
+            html_url: String::new(),
+            milestone: None,
+            assignees: vec![],
+        };
+        app.state.issue_cache.insert(1, mk(1));
+        app.state.issue_cache.insert(2, mk(2));
+        handle_screen_action(&mut app, ScreenAction::LaunchSessions(vec![cfg(1), cfg(2)]));
+        let screen = app
+            .screen_state
+            .queue_confirmation_screen
+            .as_ref()
+            .expect("confirmation screen built");
+        assert!(
+            !screen.conflict_report().is_safe,
+            "two issues sharing src/shared.rs must register a conflict"
+        );
+        assert_eq!(screen.conflict_report().conflicts.len(), 1);
     }
 }

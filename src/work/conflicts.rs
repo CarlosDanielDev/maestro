@@ -72,6 +72,46 @@ pub fn predict_conflicts(issues: &[IssueWithFiles]) -> ConflictReport {
     }
 }
 
+/// Parse the `## Files to Modify` section of an issue body into a file list,
+/// so a mass-launch can predict real conflicts instead of "unknown scope".
+///
+/// Reads bullet items (`-`/`*`), taking the first token of each as the path
+/// (drops surrounding backticks and any trailing " — description"). Returns
+/// `None` when the section is absent or lists no real files (e.g. "- None"),
+/// which `predict_conflicts` treats as unknown scope.
+pub fn files_to_modify_from_body(body: &str) -> Option<Vec<String>> {
+    let mut in_section = false;
+    let mut files = Vec::new();
+    for line in body.lines() {
+        let t = line.trim();
+        if t == "## Files to Modify" {
+            in_section = true;
+            continue;
+        }
+        if in_section && t.starts_with("## ") {
+            break;
+        }
+        if !in_section {
+            continue;
+        }
+        let Some(rest) = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) else {
+            continue;
+        };
+        // First token is the path; strip backticks and drop any description.
+        let path = rest
+            .trim()
+            .trim_start_matches('`')
+            .split(['`', ' ', '\t'])
+            .next()
+            .unwrap_or_default()
+            .trim();
+        if !path.is_empty() && !path.eq_ignore_ascii_case("none") {
+            files.push(path.to_string());
+        }
+    }
+    if files.is_empty() { None } else { Some(files) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,6 +121,39 @@ mod tests {
             issue_number: number,
             files_to_modify: files.map(|v| v.into_iter().map(String::from).collect()),
         }
+    }
+
+    #[test]
+    fn files_from_body_parses_bullets_with_backticks_and_descriptions() {
+        let body = "## Overview\nx\n\n## Files to Modify\n- `src/a.rs`\n- src/b.rs — the reason\n* `src/c.rs`\n\n## Test Hints\n- none";
+        assert_eq!(
+            files_to_modify_from_body(body),
+            Some(vec![
+                "src/a.rs".to_string(),
+                "src/b.rs".to_string(),
+                "src/c.rs".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn files_from_body_none_when_section_absent() {
+        assert_eq!(files_to_modify_from_body("## Overview\njust text"), None);
+    }
+
+    #[test]
+    fn files_from_body_none_when_only_none_entry() {
+        let body = "## Files to Modify\n- None\n\n## Blocked By\n- None";
+        assert_eq!(files_to_modify_from_body(body), None);
+    }
+
+    #[test]
+    fn files_from_body_stops_at_next_section() {
+        let body = "## Files to Modify\n- src/a.rs\n## Blocked By\n- src/should_not_appear.rs";
+        assert_eq!(
+            files_to_modify_from_body(body),
+            Some(vec!["src/a.rs".to_string()])
+        );
     }
 
     fn conflict_for<'a>(report: &'a ConflictReport, path: &str) -> Option<&'a FileConflict> {
