@@ -3,6 +3,7 @@ pub mod bypass_indicator;
 mod ci_monitor;
 mod dropdown;
 mod empty_state;
+pub mod input;
 mod list_editor;
 mod number_stepper;
 pub mod stats_bar;

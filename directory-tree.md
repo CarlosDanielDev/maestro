@@ -696,6 +696,10 @@ maestro/
 │   │       ├── bypass_indicator.rs        # BypassIndicatorWidget: small status badge rendered in the F-key bar when --bypass-review is active, warning the user that the review council is disabled  [Issue #328]
 │   │       ├── ci_monitor.rs              # CiMonitorWidget: compact bordered box rendering live CI check-run status for a PR; status icons, check names, elapsed times, and a summary footer; adds [e] keybind hint in footer when failed checks are present  [Issue #695]
 │   │       ├── dropdown.rs                # Dropdown selection widget with keyboard navigation
+│   │       ├── input/                     # Canonical text-input widget: one editing engine for every input site (foundation only, no site migrated)  [Issue #963]
+│   │       │   ├── mod.rs                 # Input/InputConfig + render re-exports
+│   │       │   ├── core.rs                # TextArea backend: single/multi-line, InputConfig builder (placeholder/max_len/initial), input(Event) with single-line Enter-swallow + newline collapse + max-length clamp, text/lines/cursor/set_text accessors
+│   │       │   └── render.rs              # Wrap via screens::wrap + manual cursor placement; pure visible() helper kept terminal-free for unit tests
 │   │       ├── list_editor.rs             # Editable list widget for adding and removing string items
 │   │       ├── number_stepper.rs          # Numeric increment/decrement stepper widget
 │   │       ├── stats_bar.rs               # StatsBar widget: home-screen footer bar showing per-window cost, token, and quota metrics; renders a "QUOTA: forced N in window" badge when MiniMax forced_count > 0  [Issue #845]
