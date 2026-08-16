@@ -12,5 +12,10 @@
 mod core;
 mod render;
 
+// Foundation only: no non-test site consumes these yet, so the re-exports read
+// as unused imports until the #968–#972 migrations land. `-A dead_code` in CI
+// covers the types themselves but not the `pub use`, so allow it here.
+#[allow(unused_imports)]
 pub use core::{Input, InputConfig};
+#[allow(unused_imports)]
 pub use render::render;
