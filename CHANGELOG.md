@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.5] - 2026-08-15
+
+### Added
+- **Real conflict detection in the mass-launch review.** The QueueConfirmation screen now parses each issue's `## Files to Modify` section from its cached body, so overlapping file claims surface as actual conflicts (with the shared paths) before a 2+ session launch — instead of every issue reading "unknown scope." Issues that declare no file scope still fall back to the unknown-scope warning. (follow-up to #1020/#1024)
+
 ## [0.31.4] - 2026-08-15
 
 > **Poka-yoke pass 3.** Mass session launches now go through a review step
