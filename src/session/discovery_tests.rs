@@ -8,6 +8,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
@@ -156,16 +157,25 @@ fn scan_missing_transcript_root_yields_empty() {
 #[test]
 fn scan_120_transcripts_completes_under_1s() {
     let home = tempdir().unwrap();
+    // 40 filler lines per transcript: the 1s bound must measure real
+    // parsing work over a realistic tree, not a walk over empty stubs.
+    let filler = "{\"type\":\"mode\",\"mode\":\"normal\"}\n".repeat(40);
     let mut expected = 0;
     for d in 0..20 {
         for s in 0..6 {
-            write_transcript(
+            let path = write_transcript(
                 home.path(),
                 &format!("proj-{d}"),
                 &format!("00000000-0000-4000-8000-{d:012}{s:012}"),
                 &format!("/tmp/proj-{d}"),
                 if s % 2 == 0 { Some("Perf title") } else { None },
             );
+            fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(filler.as_bytes())
+                .unwrap();
             expected += 1;
         }
     }
@@ -178,6 +188,118 @@ fn scan_120_transcripts_completes_under_1s() {
     assert!(
         elapsed < Duration::from_secs(1),
         "scan of 120 transcripts took {elapsed:?}, bound is 1s"
+    );
+}
+
+#[test]
+fn scan_reports_the_line_session_id_not_the_file_name() {
+    let home = tempdir().unwrap();
+    // Done-when #2 pins BOTH id and cwd to the lines: this file's name
+    // carries a different id than its lines do.
+    write_transcript(
+        home.path(),
+        "mislabeled",
+        SESSION_A,
+        "/tmp/mislabeled",
+        None,
+    );
+    let real = home
+        .path()
+        .join(".claude/projects/mislabeled")
+        .join(format!("{SESSION_A}.jsonl"));
+    fs::rename(
+        &real,
+        real.with_file_name("99999999-9999-9999-9999-999999999999.jsonl"),
+    )
+    .unwrap();
+
+    let sessions = scan_transcripts(home.path());
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(
+        sessions[0].session_id, SESSION_A,
+        "session id must come from the transcript lines, not the file name"
+    );
+}
+
+#[test]
+fn scan_continues_past_unreadable_lines_and_counts_them() {
+    let home = tempdir().unwrap();
+    let dir = home.path().join(".claude/projects/corrupt");
+    fs::create_dir_all(&dir).unwrap();
+    // The identity line sits AFTER an unreadable line: finding SESSION_A
+    // proves the scan continued instead of stopping at the first error.
+    let mut body: Vec<u8> = Vec::new();
+    body.extend_from_slice(b"{\"type\":\"mode\",\"mode\":\"normal\"}\n");
+    body.extend_from_slice(b"\xff\xfe broken utf-8\n");
+    body.extend_from_slice(
+        format!(
+            "{{\"type\":\"user\",\"cwd\":\"/tmp/corrupt\",\"sessionId\":\"{SESSION_A}\",\
+             \"message\":{{\"role\":\"user\",\"content\":\"after the bad line\"}}}}\n"
+        )
+        .as_bytes(),
+    );
+    fs::write(dir.join(format!("{SESSION_A}.jsonl")), body).unwrap();
+
+    let sessions = scan_transcripts(home.path());
+    assert_eq!(sessions.len(), 1, "unreadable lines must not end the scan");
+    assert_eq!(
+        sessions[0].session_id, SESSION_A,
+        "id found after the bad line proves the scan continued"
+    );
+    assert_eq!(sessions[0].skipped_lines, 1, "damage must be counted");
+}
+
+#[cfg(unix)]
+#[test]
+fn scan_skips_symlinks_instead_of_following_them() {
+    let home = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+
+    // Control: a plain transcript inside the projects root.
+    write_transcript(
+        home.path(),
+        "real-proj",
+        SESSION_A,
+        "/tmp/real",
+        Some("Real"),
+    );
+
+    // A project dir that is a symlink to a directory outside the root.
+    write_transcript(
+        outside.path(),
+        "outside-proj",
+        SESSION_B,
+        "/tmp/outside",
+        Some("Outside"),
+    );
+    let outside_proj = outside.path().join(".claude/projects/outside-proj");
+    std::os::unix::fs::symlink(
+        &outside_proj,
+        home.path().join(".claude/projects/linked-proj"),
+    )
+    .unwrap();
+
+    // A transcript symlink smuggled into a real project dir.
+    let smuggled = write_transcript(
+        outside.path(),
+        "smuggler",
+        SESSION_C,
+        "/tmp/smuggled",
+        Some("Smuggled"),
+    );
+    std::os::unix::fs::symlink(
+        &smuggled,
+        home.path()
+            .join(".claude/projects/real-proj/smuggled.jsonl"),
+    )
+    .unwrap();
+
+    let sessions = scan_transcripts(home.path());
+    let ids: Vec<&str> = sessions.iter().map(|s| s.session_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec![SESSION_A],
+        "symlinked project dirs and transcript files must be skipped, not followed"
     );
 }
 

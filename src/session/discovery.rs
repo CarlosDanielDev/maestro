@@ -25,7 +25,12 @@ pub struct DiscoveredSession {
     /// truncated, else empty.
     pub title: String,
     /// Transcript file mtime — the only liveness signal this slice emits.
+    /// A file whose mtime cannot be read falls back to `UNIX_EPOCH`, which
+    /// sorts it last: unreadable mtime must not pass as recent activity.
     pub last_active: SystemTime,
+    /// Lines that could not be read (IO or UTF-8 errors). The scan never
+    /// stops at them; this count is how the damage stays visible.
+    pub skipped_lines: usize,
 }
 
 /// Enumerate every readable transcript under `home/.claude/projects/`, most
@@ -39,10 +44,18 @@ pub fn scan_transcripts(home: &Path) -> Vec<DiscoveredSession> {
     };
     let mut sessions = Vec::new();
     for project in project_dirs.flatten() {
+        // Symlinks are never followed: a planted link inside the projects
+        // root must not send the scan at arbitrary outside targets.
+        if project.file_type().map_or(true, |t| t.is_symlink()) {
+            continue;
+        }
         let Ok(transcripts) = fs::read_dir(project.path()) else {
             continue;
         };
         for transcript in transcripts.flatten() {
+            if transcript.file_type().map_or(true, |t| t.is_symlink()) {
+                continue;
+            }
             let path = transcript.path();
             if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
                 continue;
@@ -66,8 +79,15 @@ fn read_session(path: &Path) -> Option<DiscoveredSession> {
     let mut cwd = None;
     let mut title = None;
     let mut fallback = None;
+    let mut skipped_lines = 0usize;
 
-    for line in reader.lines().map_while(Result::ok) {
+    for item in reader.lines() {
+        // A line that cannot be read (IO or UTF-8) never ends the scan;
+        // the damage is counted on the session instead.
+        let Ok(line) = item else {
+            skipped_lines += 1;
+            continue;
+        };
         let Ok(v) = serde_json::from_str::<Value>(line.trim()) else {
             continue;
         };
@@ -103,6 +123,7 @@ fn read_session(path: &Path) -> Option<DiscoveredSession> {
         last_active: fs::metadata(path)
             .and_then(|m| m.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH),
+        skipped_lines,
     })
 }
 
