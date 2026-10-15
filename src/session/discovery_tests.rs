@@ -157,8 +157,9 @@ fn scan_missing_transcript_root_yields_empty() {
 #[test]
 fn scan_120_transcripts_completes_under_1s() {
     let home = tempdir().unwrap();
-    // 40 filler lines per transcript: the 1s bound must measure real
-    // parsing work over a realistic tree, not a walk over empty stubs.
+    // 40 filler lines per transcript: the 200ms budget (issue bound 1s,
+    // asserted at 5x headroom) must measure real parsing work over a
+    // realistic tree, not a walk over empty stubs.
     let filler = "{\"type\":\"mode\",\"mode\":\"normal\"}\n".repeat(40);
     let mut expected = 0;
     for d in 0..20 {
@@ -186,8 +187,8 @@ fn scan_120_transcripts_completes_under_1s() {
     let elapsed = start.elapsed();
     assert_eq!(sessions.len(), 120, "every transcript must be found");
     assert!(
-        elapsed < Duration::from_secs(1),
-        "scan of 120 transcripts took {elapsed:?}, bound is 1s"
+        elapsed < Duration::from_millis(200),
+        "scan of 120 transcripts took {elapsed:?}, budget is 200ms"
     );
 }
 
