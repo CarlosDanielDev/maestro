@@ -32,6 +32,9 @@ __pycache__/
 # Claude Code local state
 .claude/scheduled_tasks.lock
 
+# CodeGraph index (wave-created per-worktree artifact)
+.codegraph/
+
 # Environment files (may contain secrets)
 .env
 .env.*
