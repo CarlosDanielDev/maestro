@@ -1,5 +1,6 @@
 pub mod cleanup;
 pub mod context_monitor;
+pub mod discovery;
 pub mod fork;
 pub mod health;
 pub mod image;
