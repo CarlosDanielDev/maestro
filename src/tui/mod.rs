@@ -103,6 +103,20 @@ pub(crate) fn leave_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     )
 }
 
+/// Claim the real terminal for the dashboard. `--once` is CI/scripting mode and
+/// never draws, so it must not enter raw mode or the alternate screen (#1048).
+fn init_terminal(
+    once_mode: bool,
+) -> anyhow::Result<Option<Terminal<CrosstermBackend<io::Stdout>>>> {
+    if once_mode {
+        return Ok(None);
+    }
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    enter_tui_mode(&mut stdout)?;
+    Ok(Some(Terminal::new(CrosstermBackend::new(stdout))?))
+}
+
 /// Route a mouse wheel-up to the right scroll target (#988). On the
 /// Interaction screen the wheel scrolls the chat transcript; everywhere else it
 /// keeps the legacy `panel_view` behavior so no other screen regresses.
@@ -132,11 +146,7 @@ fn route_mouse_scroll_down(app: &mut App) {
 /// Run the TUI event loop.
 pub async fn run(mut app: App) -> anyhow::Result<()> {
     let no_splash = app.no_splash;
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    enter_tui_mode(&mut stdout)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = init_terminal(app.once_mode)?;
 
     // The legacy timed splash is replaced by the persistent Landing screen
     // (#290). Only intercept the Dashboard boot path — session-launching
@@ -150,9 +160,11 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 
     let result = event_loop(&mut terminal, &mut app).await;
 
-    disable_raw_mode()?;
-    leave_tui_mode(terminal.backend_mut())?;
-    terminal.show_cursor()?;
+    if let Some(terminal) = terminal.as_mut() {
+        disable_raw_mode()?;
+        leave_tui_mode(terminal.backend_mut())?;
+        terminal.show_cursor()?;
+    }
 
     app.kill_all().await;
 
@@ -170,7 +182,7 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 }
 
 async fn event_loop(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut Option<Terminal<CrosstermBackend<io::Stdout>>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
     spawn_version_check(app.data_tx.clone());
@@ -194,7 +206,9 @@ async fn event_loop(
             app.call_log_state.reconcile_follow_tail(total);
         }
 
-        terminal.draw(|f| ui::draw(f, app))?;
+        if let Some(terminal) = terminal.as_mut() {
+            terminal.draw(|f| ui::draw(f, app))?;
+        }
 
         app.check_completions().await?;
 
@@ -207,7 +221,9 @@ async fn event_loop(
             );
         }
 
-        if event::poll(Duration::from_millis(50))? {
+        if let Some(terminal) = terminal.as_mut()
+            && event::poll(Duration::from_millis(50))?
+        {
             match event::read()? {
                 Event::Key(key) => {
                     if let crate::updater::UpgradeState::ReadyToRestart { .. } = &app.upgrade_state
@@ -242,6 +258,9 @@ async fn event_loop(
                 }
                 _ => {}
             }
+        } else if app.once_mode {
+            // --once has no screen and no keys: pace the loop without the tty.
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
         while let Ok(data_evt) = app.data_rx.try_recv() {
@@ -916,6 +935,19 @@ pub(crate) fn make_test_app(name: &str) -> app::App {
         "bypassPermissions".into(),
         vec![],
     )
+}
+
+#[cfg(test)]
+mod once_mode_terminal_tests {
+    use super::*;
+
+    #[test]
+    fn once_mode_claims_no_terminal() {
+        // #1048: `--once` runs headless. Building a terminal would enter raw
+        // mode, which fails without a tty, so none may be built at all.
+        let terminal = init_terminal(true).expect("once mode must not touch the tty");
+        assert!(terminal.is_none());
+    }
 }
 
 #[cfg(test)]
