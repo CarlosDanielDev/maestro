@@ -1,0 +1,4 @@
+{"type":"mode","mode":"normal","sessionId":"aaaa1111-1111-1111-1111-111111111111"}
+{"type":"user","cwd":"/tmp/proj/alpha","sessionId":"aaaa1111-1111-1111-1111-111111111111","uuid":"u1","parentUuid":null,"isSidechain":false,"userType":"external","timestamp":"2026-06-10T04:46:20.000Z","message":{"role":"user","content":"this prompt is ignored because an ai-title line exists"}}
+{"type":"assistant","cwd":"/tmp/proj/alpha","sessionId":"aaaa1111-1111-1111-1111-111111111111","uuid":"a1","parentUuid":"u1","requestId":"req_1","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-haiku-4-5-20251001","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":5}}}
+{"type":"ai-title","aiTitle":"Alpha plan review","sessionId":"aaaa1111-1111-1111-1111-111111111111"}
