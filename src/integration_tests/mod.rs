@@ -6,6 +6,8 @@
 #[cfg(test)]
 mod adapt_pipeline;
 #[cfg(test)]
+mod adopt_pipeline;
+#[cfg(test)]
 mod budget_prespawn_gate;
 #[cfg(test)]
 mod canonical_command_specs;

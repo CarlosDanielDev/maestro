@@ -1,3 +1,4 @@
+pub mod adopt;
 pub mod cleanup;
 pub mod context_monitor;
 pub mod discovery;
