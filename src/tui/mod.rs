@@ -117,10 +117,23 @@ fn init_terminal(
     Ok(Some(Terminal::new(CrosstermBackend::new(stdout))?))
 }
 
-/// Whether the end-of-work check runs. `--once` must reach its exit even with
-/// the completion modal off, or a CI run with `modal_on_complete = false` hangs.
-fn completion_check_enabled(modal_on_complete: bool, once_mode: bool) -> bool {
-    modal_on_complete || once_mode
+/// Whether the end-of-work check runs this tick. `--once` must reach its exit
+/// even with the completion modal off, or a CI run with
+/// `modal_on_complete = false` hangs (#1048).
+fn completion_ready(app: &App, modal_on_complete: bool) -> bool {
+    (modal_on_complete || app.once_mode)
+        && app.all_done()
+        && app.continuous_mode.is_none()
+        && app.queue_executor.is_none()
+        && app.completion_summary.is_none()
+        && !app.completion_summary_dismissed
+        && !matches!(
+            app.tui_mode,
+            app::TuiMode::Dashboard
+                | app::TuiMode::IssueBrowser
+                | app::TuiMode::PromptInput
+                | app::TuiMode::CompletionSummary
+        )
 }
 
 /// Route a mouse wheel-up to the right scroll target (#988). On the
@@ -899,20 +912,7 @@ async fn event_loop(
             .map(|c| c.tui.modal_on_complete)
             .unwrap_or(true);
 
-        if completion_check_enabled(modal_on_complete, app.once_mode)
-            && app.all_done()
-            && app.continuous_mode.is_none()
-            && app.queue_executor.is_none()
-            && app.completion_summary.is_none()
-            && !app.completion_summary_dismissed
-            && !matches!(
-                app.tui_mode,
-                app::TuiMode::Dashboard
-                    | app::TuiMode::IssueBrowser
-                    | app::TuiMode::PromptInput
-                    | app::TuiMode::CompletionSummary
-            )
-        {
+        if completion_ready(app, modal_on_complete) {
             if app.screen_state.home_screen.is_some() && app.pool.total_count() == 0 {
                 app.tui_mode = app::TuiMode::Dashboard;
                 continue;
@@ -955,12 +955,57 @@ mod once_mode_terminal_tests {
         assert!(terminal.is_none());
     }
 
+    use crate::work::dependencies::DependencyGraph;
+    use crate::work::executor::QueueExecutor;
+    use crate::work::queue::WorkQueue;
+
+    /// An app whose pool holds one finished session, so `all_done()` is true.
+    fn app_with_all_done() -> App {
+        let mut app = make_test_app("once-exit-test");
+        let session = crate::session::types::Session::new(
+            "prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        let id = session.id;
+        app.pool.enqueue(session);
+        let _ = app.pool.try_promote();
+        app.pool.finalize_retain_worktree(id);
+        app
+    }
+
     #[test]
-    fn once_mode_exit_check_ignores_modal_flag() {
-        // #1048: with the modal off, `--once` must still reach its exit check.
-        assert!(completion_check_enabled(false, true));
-        assert!(completion_check_enabled(true, false));
-        assert!(!completion_check_enabled(false, false));
+    fn completion_ready_runs_for_once_with_modal_off() {
+        // #1048: with the modal off, `--once` must still reach its exit.
+        let mut app = app_with_all_done();
+        app.once_mode = true;
+        assert!(completion_ready(&app, false));
+    }
+
+    #[test]
+    fn completion_ready_skips_modal_off_outside_once() {
+        let app = app_with_all_done();
+        assert!(!completion_ready(&app, false));
+    }
+
+    #[test]
+    fn completion_ready_waits_for_continuous_mode() {
+        let mut app = app_with_all_done();
+        app.once_mode = true;
+        app.continuous_mode = Some(crate::continuous::ContinuousModeState::new());
+        assert!(!completion_ready(&app, false));
+    }
+
+    #[test]
+    fn completion_ready_waits_for_queue_executor() {
+        let mut app = app_with_all_done();
+        app.once_mode = true;
+        let queue = WorkQueue::validate_selection(&[], &DependencyGraph::build(&[]))
+            .expect("empty selection is a valid queue");
+        app.queue_executor = Some(QueueExecutor::new(&queue));
+        assert!(!completion_ready(&app, false));
     }
 }
 
