@@ -181,43 +181,26 @@ impl DynamicMapWidget {
         }
 
         match key.code {
-            KeyCode::Char('a') => {
-                self.open_add_modal();
-                WidgetAction::None
-            }
-            KeyCode::Char('d') if self.active_idx.is_some() => {
-                self.open_remove_modal();
-                WidgetAction::None
-            }
-            KeyCode::Char('u') => {
-                self.attempt_undo();
-                WidgetAction::None
-            }
+            KeyCode::Char('a') => self.open_add_modal(),
+            KeyCode::Char('d') if self.active_idx.is_some() => self.open_remove_modal(),
+            KeyCode::Char('u') => self.attempt_undo(),
             // `[` / `]` switch entries while focus is on the subtab strip.
             // Avoid them when an EntryField is focused so they remain
             // available as literals for inner text widgets.
-            KeyCode::Char(']') if matches!(self.focus, MapFocus::SubtabStrip) => {
-                self.next_tab();
-                WidgetAction::None
-            }
-            KeyCode::Char('[') if matches!(self.focus, MapFocus::SubtabStrip) => {
-                self.prev_tab();
-                WidgetAction::None
-            }
+            KeyCode::Char(']') if matches!(self.focus, MapFocus::SubtabStrip) => self.next_tab(),
+            KeyCode::Char('[') if matches!(self.focus, MapFocus::SubtabStrip) => self.prev_tab(),
             KeyCode::Down | KeyCode::Tab => {
                 // Cooperative: let a focused nested widget advance first.
                 if self.try_advance_focused_inner(true) {
                     return WidgetAction::None;
                 }
                 self.focus_next_field();
-                WidgetAction::None
             }
             KeyCode::Up | KeyCode::BackTab => {
                 if self.try_advance_focused_inner(false) {
                     return WidgetAction::None;
                 }
                 self.focus_prev_field();
-                WidgetAction::None
             }
             _ => {
                 if let MapFocus::EntryField(n) = self.focus
@@ -233,9 +216,9 @@ impl DynamicMapWidget {
                     self.clamp_focus_to_visible();
                     return action;
                 }
-                WidgetAction::None
             }
         }
+        WidgetAction::None
     }
 
     pub fn needs_insert_mode(&self) -> bool {
