@@ -117,6 +117,12 @@ fn init_terminal(
     Ok(Some(Terminal::new(CrosstermBackend::new(stdout))?))
 }
 
+/// Whether the end-of-work check runs. `--once` must reach its exit even with
+/// the completion modal off, or a CI run with `modal_on_complete = false` hangs.
+fn completion_check_enabled(modal_on_complete: bool, once_mode: bool) -> bool {
+    modal_on_complete || once_mode
+}
+
 /// Route a mouse wheel-up to the right scroll target (#988). On the
 /// Interaction screen the wheel scrolls the chat transcript; everywhere else it
 /// keeps the legacy `panel_view` behavior so no other screen regresses.
@@ -893,7 +899,7 @@ async fn event_loop(
             .map(|c| c.tui.modal_on_complete)
             .unwrap_or(true);
 
-        if modal_on_complete
+        if completion_check_enabled(modal_on_complete, app.once_mode)
             && app.all_done()
             && app.continuous_mode.is_none()
             && app.queue_executor.is_none()
@@ -947,6 +953,14 @@ mod once_mode_terminal_tests {
         // mode, which fails without a tty, so none may be built at all.
         let terminal = init_terminal(true).expect("once mode must not touch the tty");
         assert!(terminal.is_none());
+    }
+
+    #[test]
+    fn once_mode_exit_check_ignores_modal_flag() {
+        // #1048: with the modal off, `--once` must still reach its exit check.
+        assert!(completion_check_enabled(false, true));
+        assert!(completion_check_enabled(true, false));
+        assert!(!completion_check_enabled(false, false));
     }
 }
 
