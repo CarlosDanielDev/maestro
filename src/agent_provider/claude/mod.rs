@@ -15,6 +15,10 @@ mod interactive_types;
 mod pty_backend;
 mod transcript_parser;
 
+// Curated re-export: the adopt pipeline (#1053) stats the transcript the
+// interactive transport will read, via the same path rule.
+pub(crate) use interactive_types::transcript_path;
+
 use std::sync::Arc;
 
 use std::path::Path;

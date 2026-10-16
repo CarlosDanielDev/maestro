@@ -326,6 +326,12 @@ pub struct Session {
     /// [`Session::bind_agent_session_id`]; never set directly.
     #[serde(default)]
     pub agent_session_id: Option<String>,
+    /// Original working directory of an adopted conversation (#1053).
+    /// `claude --resume` locates the transcript by cwd, so an adopted
+    /// session's requests must run there — not in a worktree. `None` for
+    /// maestro-spawned sessions, whose request cwd is the worktree path.
+    #[serde(default)]
+    pub adopted_cwd: Option<std::path::PathBuf>,
     /// The one-shot outcome an Interactive session settled from (#948):
     /// `Completed` / `FailedGates` / `NeedsPr` / `Errored`. Set by the
     /// `transition_to` interception; shown in the kept-alive banner.
@@ -530,6 +536,7 @@ impl Session {
             mode,
             session_mode: SessionMode::default(),
             agent_session_id: None,
+            adopted_cwd: None,
             settled_from: None,
             turn_state: super::interaction::TurnState::Idle,
             turns: Vec::new(),
@@ -1133,6 +1140,44 @@ mod tests {
         assert!(s.bind_agent_session_id("first-id"));
         assert!(!s.bind_agent_session_id("second-id"));
         assert_eq!(s.agent_session_id.as_deref(), Some("first-id"));
+    }
+
+    #[test]
+    fn bind_agent_session_id_same_id_twice_is_a_noop() {
+        // #1053: an adopted session arrives pre-bound; the first turn's
+        // SESSION_BOUND warning re-binds the identical id. Must not clobber
+        // the binding nor error — the id survives unchanged.
+        let mut s = make_947_session();
+        assert!(s.bind_agent_session_id("same-id"));
+        assert!(!s.bind_agent_session_id("same-id"));
+        assert_eq!(s.agent_session_id.as_deref(), Some("same-id"));
+    }
+
+    // --- Issue #1053: adopt pipeline — adopted sessions carry their cwd ---
+
+    #[test]
+    fn adopted_cwd_defaults_to_none() {
+        assert!(make_947_session().adopted_cwd.is_none());
+    }
+
+    #[test]
+    fn adopted_cwd_round_trips_via_serde() {
+        let mut s = make_947_session();
+        s.adopted_cwd = Some(std::path::PathBuf::from("/repo/original"));
+        let rt: Session =
+            serde_json::from_slice(&serde_json::to_vec(&s).expect("serialize")).expect("valid");
+        assert_eq!(
+            rt.adopted_cwd.as_deref(),
+            Some(std::path::Path::new("/repo/original"))
+        );
+    }
+
+    #[test]
+    fn adopted_cwd_deserializes_with_default_when_field_absent() {
+        let mut json = serde_json::to_value(make_947_session()).unwrap();
+        json.as_object_mut().unwrap().remove("adopted_cwd");
+        let s: Session = serde_json::from_value(json).unwrap();
+        assert!(s.adopted_cwd.is_none());
     }
 
     // --- Issue #948: SessionStatus::Interactive + kept-alive settle ---

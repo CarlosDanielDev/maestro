@@ -120,13 +120,25 @@ impl ManagedSession {
     fn build_request(&self) -> AgentRequest {
         let mut request =
             AgentRequest::stream_json(self.session.prompt.clone(), self.session.model.clone());
-        request.cwd.clone_from(&self.worktree_path);
+        // Worktree cwd for maestro-spawned sessions; the transcript's
+        // original cwd for adopted ones (#1053) — `claude --resume`
+        // locates the transcript by cwd.
+        request.cwd = self
+            .worktree_path
+            .clone()
+            .or_else(|| self.session.adopted_cwd.clone());
         request.images.clone_from(&self.session.image_paths);
         request.permission_mode.clone_from(&self.permission_mode);
         request.allowed_tools.clone_from(&self.allowed_tools);
         request
             .system_prompt_appendix
             .clone_from(&self.system_prompt_appendix);
+        // #1053: an adopted session arrives pre-bound to an external
+        // conversation — its FIRST turn must resume it (`--resume <id>`).
+        // maestro-spawned sessions are never pre-bound at spawn time, so
+        // this stays None for them and the full first-turn shape
+        // (images + appendix) is preserved either way.
+        request.resume_session_id = self.session.agent_session_id.clone();
         request
     }
 
@@ -171,11 +183,13 @@ impl ManagedSession {
     /// fresh conversation — same semantics the retired
     /// `interaction_turn` loop had.
     fn build_followup_request(&self, prompt: &str) -> AgentRequest {
-        let mut request = AgentRequest::stream_json(prompt.to_string(), self.session.model.clone());
-        request.cwd.clone_from(&self.worktree_path);
-        request.permission_mode.clone_from(&self.permission_mode);
-        request.allowed_tools.clone_from(&self.allowed_tools);
-        request.resume_session_id = self.session.agent_session_id.clone();
+        let mut request = self.build_request();
+        request.prompt = prompt.to_string();
+        // Follow-ups resume the conversation built in turn 1 (#946/#947):
+        // the appendix already lives in that conversation's first turn and
+        // first-turn images don't re-apply.
+        request.images.clear();
+        request.system_prompt_appendix = None;
         request
     }
 
@@ -584,6 +598,7 @@ mod tests {
             mode: "print".to_string(),
             session_mode: crate::session::types::SessionMode::default(),
             agent_session_id: None,
+            adopted_cwd: None,
             settled_from: None,
             turn_state: crate::session::interaction::TurnState::Idle,
             turns: vec![],
@@ -669,6 +684,112 @@ mod tests {
                 .any(|e| e.message.contains("WARNING")),
             "sentinel must not surface as a WARNING activity line"
         );
+    }
+
+    // --- Issue #1053: adopt pipeline — first-turn resume + id survival ---
+
+    #[test]
+    fn first_turn_request_resumes_prebound_conversation() {
+        // ADR (a) in #1053: an adopted session arrives pre-bound — its
+        // first turn reuses the follow-up builder so `--resume` fires from
+        // turn 1 in the transcript's original cwd.
+        let mut ms = make_managed("adopt me");
+        assert!(ms.session.bind_agent_session_id("ext-conv-1"));
+        ms.session.adopted_cwd = Some(std::path::PathBuf::from("/repo/original"));
+
+        let request = ms.build_request();
+
+        assert_eq!(request.resume_session_id.as_deref(), Some("ext-conv-1"));
+        assert_eq!(
+            request.cwd.as_deref(),
+            Some(std::path::Path::new("/repo/original"))
+        );
+        assert_eq!(request.prompt, "adopt me");
+    }
+
+    #[test]
+    fn prebound_first_turn_request_keeps_full_first_turn_shape() {
+        // Judge review of #1071: the pre-bound path must not silently drop
+        // first-turn images or the system-prompt appendix — the request
+        // shape is identical to a maestro-spawned first turn, plus resume.
+        let mut ms = make_managed("adopt me");
+        assert!(ms.session.bind_agent_session_id("ext-conv-1"));
+        ms.session.adopted_cwd = Some(std::path::PathBuf::from("/repo/original"));
+        ms.session.image_paths = vec![std::path::PathBuf::from("/img/a.png")];
+        ms.system_prompt_appendix = Some("guardrail appendix".to_string());
+
+        let request = ms.build_request();
+
+        assert_eq!(request.resume_session_id.as_deref(), Some("ext-conv-1"));
+        assert_eq!(request.images, vec![std::path::PathBuf::from("/img/a.png")]);
+        assert_eq!(
+            request.system_prompt_appendix.as_deref(),
+            Some("guardrail appendix")
+        );
+    }
+
+    #[test]
+    fn followup_request_falls_back_to_adopted_cwd_without_worktree() {
+        let mut ms = make_managed("p");
+        assert!(ms.session.bind_agent_session_id("ext-conv-1"));
+        ms.session.adopted_cwd = Some(std::path::PathBuf::from("/repo/original"));
+
+        let request = ms.build_followup_request("next");
+
+        assert_eq!(
+            request.cwd.as_deref(),
+            Some(std::path::Path::new("/repo/original"))
+        );
+        assert_eq!(request.resume_session_id.as_deref(), Some("ext-conv-1"));
+    }
+
+    #[test]
+    fn plain_first_turn_request_keeps_worktree_cwd_and_no_resume() {
+        // Guard the delegation against clobbering the normal spawn path.
+        let mut ms = make_managed("p");
+        ms.worktree_path = Some(std::path::PathBuf::from("/wt/issue-947"));
+
+        let request = ms.build_request();
+
+        assert!(
+            request.resume_session_id.is_none(),
+            "unbound sessions must spawn a fresh conversation"
+        );
+        assert_eq!(
+            request.cwd.as_deref(),
+            Some(std::path::Path::new("/wt/issue-947"))
+        );
+    }
+
+    #[test]
+    fn handle_event_session_bound_same_id_is_a_noop_on_prebound_session() {
+        // #1053: adopted sessions arrive pre-bound; the first turn's
+        // SESSION_BOUND warning re-binds the identical id. Must not
+        // clobber the binding nor surface an error.
+        let mut ms = make_managed("p");
+        assert!(ms.session.bind_agent_session_id("ext-conv-1"));
+
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "ext-conv-1".to_string(),
+        });
+
+        assert_eq!(ms.session.agent_session_id.as_deref(), Some("ext-conv-1"));
+    }
+
+    #[test]
+    fn handle_event_session_bound_different_id_keeps_first_bind() {
+        // The existing first-bind-wins rejection, pinned at the
+        // SESSION_BOUND warning path (#1053).
+        let mut ms = make_managed("p");
+        assert!(ms.session.bind_agent_session_id("first-id"));
+
+        ms.handle_event(&StreamEvent::Warning {
+            code: SESSION_BOUND_CODE.to_string(),
+            message: "second-id".to_string(),
+        });
+
+        assert_eq!(ms.session.agent_session_id.as_deref(), Some("first-id"));
     }
 
     #[tokio::test]

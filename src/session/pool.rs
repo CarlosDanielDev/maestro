@@ -525,6 +525,58 @@ impl SessionPool {
         self.interactive_managed(issue_number).map(|m| m.session.id)
     }
 
+    /// Adopt an external Claude Code conversation (#1053): create an
+    /// Interactive session already bound to `agent_session_id`, running in
+    /// the transcript's original `cwd`. Never a worktree — `claude
+    /// --resume` locates the transcript by cwd, so the wrong cwd would
+    /// make the conversation unreachable. The first turn resumes the
+    /// external thread via the pre-bound delegation in
+    /// [`ManagedSession::build_request`]; turn 2+ flows through the
+    /// normal follow-up path.
+    ///
+    /// Refuses ids that fail the `--resume` argv allowlist
+    /// ([`Session::bind_agent_session_id`]) BEFORE anything else — a
+    /// hostile id never reaches path construction.
+    ///
+    /// The live-session guard ([`super::adopt::transcript_is_live`]) then
+    /// stats the transcript; a recent mtime only flips the returned
+    /// `live_warning` — the adopt proceeds (council verdict: warn, never
+    /// block).
+    pub fn create_adopted_session(
+        &mut self,
+        agent_session_id: &str,
+        cwd: std::path::PathBuf,
+        title: Option<String>,
+        model: String,
+    ) -> anyhow::Result<super::adopt::AdoptOutcome> {
+        let mut session =
+            Session::new(String::new(), model, "orchestrator".to_string(), None, None);
+        session.session_mode = crate::session::types::SessionMode::Interactive;
+        session.issue_title = title;
+        if !session.bind_agent_session_id(agent_session_id) {
+            return Err(anyhow::anyhow!(
+                "invalid agent session id {agent_session_id:?} — adoption refused (the id feeds `--resume` argv)"
+            ));
+        }
+        // Live-session check only AFTER the id is allowlist-validated —
+        // no path is ever built from an unvalidated id (belt alongside
+        // `transcript_is_live_in`'s own guard).
+        let live_warning =
+            super::adopt::transcript_is_live(agent_session_id, &cwd, std::time::SystemTime::now());
+        session.adopted_cwd = Some(cwd);
+        let provider = Arc::clone(self.resolve_provider(&session));
+        let mut managed = ManagedSession::with_worktree(session, None, None, None);
+        managed.set_provider(provider);
+        managed.permission_mode = Some(self.permission_mode.clone());
+        managed.allowed_tools = self.allowed_tools.clone();
+        let outcome = super::adopt::AdoptOutcome {
+            session_id: managed.session.id,
+            live_warning,
+        };
+        self.active.push(managed);
+        Ok(outcome)
+    }
+
     /// Number of registered interactive sessions, any state (#738 re-entry
     /// assertions).
     #[cfg(test)]
@@ -757,6 +809,74 @@ mod tests {
         // build_interaction_launch_prompt (#946) — never set on the request.
         assert!(managed.system_prompt_appendix.is_none());
         assert_eq!(pool.interaction_count(), 1);
+    }
+
+    // --- Issue #1053: adopt pipeline ---
+
+    fn create_adopted(pool: &mut SessionPool) -> crate::session::adopt::AdoptOutcome {
+        pool.create_adopted_session(
+            "ext-conv-1",
+            std::path::PathBuf::from("/repo/original"),
+            Some("My external chat".to_string()),
+            "opus".to_string(),
+        )
+        .expect("valid id is adoptable")
+    }
+
+    #[test]
+    fn create_adopted_session_binds_id_without_worktree_and_keeps_cwd() {
+        let mut pool = make_pool(2);
+        let outcome = create_adopted(&mut pool);
+
+        assert!(
+            !outcome.live_warning,
+            "no transcript exists for (real $HOME, /repo/original, ext-conv-1) — no live warning"
+        );
+
+        let managed = must_get_active_mut(&mut pool, outcome.session_id);
+        assert_eq!(
+            managed.session.agent_session_id.as_deref(),
+            Some("ext-conv-1"),
+            "the external conversation id must be pre-bound"
+        );
+        assert!(
+            managed.worktree_path.is_none(),
+            "adopted sessions never run in a worktree"
+        );
+        assert_eq!(
+            managed.session.adopted_cwd.as_deref(),
+            Some(std::path::Path::new("/repo/original")),
+            "session cwd must be the transcript's original cwd"
+        );
+        assert_eq!(
+            managed.session.session_mode,
+            crate::session::types::SessionMode::Interactive
+        );
+        assert_eq!(
+            managed.session.issue_title.as_deref(),
+            Some("My external chat")
+        );
+        assert_eq!(managed.session.status, SessionStatus::Queued);
+    }
+
+    #[test]
+    fn create_adopted_session_refuses_hostile_agent_id() {
+        let mut pool = make_pool(2);
+
+        let err = pool
+            .create_adopted_session(
+                "$(rm -rf /)",
+                std::path::PathBuf::from("/repo"),
+                None,
+                "opus".to_string(),
+            )
+            .expect_err("hostile id must be refused — it feeds `--resume` argv");
+
+        assert!(err.to_string().contains("invalid agent session id"));
+        assert!(
+            pool.all_sessions().is_empty(),
+            "refused adoption must not register a session"
+        );
     }
 
     #[test]

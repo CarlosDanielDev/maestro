@@ -82,12 +82,14 @@ impl RunSpec {
 }
 
 /// Claude Code's project-dir munge: `/` and `.` both become `-`.
-pub(super) fn munge_project_dir(cwd: &Path) -> String {
+pub(crate) fn munge_project_dir(cwd: &Path) -> String {
     cwd.to_string_lossy().replace(['/', '.'], "-")
 }
 
-/// Transcript JSONL path for a session rooted at `home`.
-pub(super) fn transcript_path(home: &Path, cwd: &Path, session_id: &str) -> PathBuf {
+/// Transcript JSONL path for a session rooted at `home`. Shared with the
+/// adopt pipeline (#1053), which stats the same file for its live-session
+/// guard.
+pub(crate) fn transcript_path(home: &Path, cwd: &Path, session_id: &str) -> PathBuf {
     home.join(".claude")
         .join("projects")
         .join(munge_project_dir(cwd))
