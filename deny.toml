@@ -140,12 +140,20 @@ skip = [
     { name = "windows_x86_64_gnu", reason = "transitive via windows-targets; per-target variant" },
     { name = "windows_x86_64_gnullvm", reason = "transitive via windows-targets; per-target variant" },
     { name = "windows_x86_64_msvc", reason = "transitive via windows-targets; per-target variant" },
-    { name = "wit-bindgen", reason = "transitive via wasm-adjacent deps; multiple versions" },
     # shlex: maestro depends on shlex 1.x directly; a fresh Linux/musl CI
     # resolution surfaces a second 1.x via build-deps (cc) that the committed
     # macOS lockfile dedupes. Both are post-RUSTSEC-2024-0006 (cargo-audit
     # passes). Name-only skip is robust to lockfile drift.
     { name = "shlex", reason = "maestro direct dep + transitive build-dep (cc); duplicate 1.x surfaces only on Linux/musl CI resolution; both versions are advisory-clean" },
+    # base64: reqwest 0.12 pins 0.22; hyper-util and plist (via syntect) use 0.23.
+    # Name-only skip is robust to lockfile drift between macOS and Linux CI.
+    { name = "base64", reason = "reqwest 0.12 uses v0.22; hyper-util/plist use v0.23 — no upgrade path without a reqwest major bump" },
+    # rand_core: maestro's direct rand 0.8 pins 0.6; the proptest/tempfile dev
+    # chain uses 0.10. Dedupe requires the rand 0.8 → 0.9+ migration (API
+    # renames across the crate) — real work, tracked separately from CI repair.
+    { name = "rand_core", reason = "rand 0.8 pins v0.6; proptest (dev) chain uses v0.10 — dedupe needs the rand 0.9+ migration, out of scope for gate repair" },
+    # miniz_oxide: png 0.18 uses 0.8; flate2 1.1 (maestro/syntect/tiff) uses 0.9.
+    { name = "miniz_oxide", reason = "png 0.18 uses v0.8; flate2 1.1 uses v0.9 — no upgrade path without a png bump" },
 ]
 skip-tree = []
 
