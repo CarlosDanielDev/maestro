@@ -2,6 +2,7 @@ use super::app;
 use super::screens::{self, Screen, ScreenAction};
 use crate::provider::types::Issue;
 use crate::session::transition::TransitionReason;
+use crate::util::sanitize::sanitize_log;
 use crossterm::event::Event;
 use std::collections::BTreeSet;
 
@@ -572,7 +573,8 @@ pub(crate) fn open_interaction_session(
 /// Surface an adoption refusal on the picker that asked for it, and in the
 /// activity log. The picker stays open so another row can be picked.
 fn refuse_adoption(app: &mut app::App, reason: String) {
-    let message = format!("adoption refused: {reason}");
+    // The reason can embed the transcript cwd, which is untrusted.
+    let message = sanitize_log(&format!("adoption refused: {reason}"));
     app.activity_log.push_simple(
         "ADOPT".into(),
         message.clone(),
@@ -632,7 +634,7 @@ fn adopt_external_session(
         "ADOPT".into(),
         format!(
             "Adopted external session {agent_session_id} in {}",
-            cwd.display()
+            sanitize_log(&cwd.display().to_string())
         ),
         crate::tui::activity_log::LogLevel::Info,
     );

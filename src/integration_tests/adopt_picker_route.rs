@@ -149,3 +149,64 @@ fn refused_cwd_keeps_the_picker_open_with_a_visible_status() {
         .expect("refusal must set a visible status on the picker");
     assert!(status.contains("not a directory"), "status was: {status}");
 }
+
+/// A cwd with ESC bytes must not reach the activity log, on either the
+/// success line or the refusal line (both interpolate the cwd).
+#[test]
+fn success_log_line_carries_no_control_bytes_for_a_hostile_cwd() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let hostile = home.path().join("ok\x1b[31mdir");
+    std::fs::create_dir(&hostile).expect("the filesystem accepts ESC in a dir name");
+    let mut app = crate::tui::make_test_app("adopt-log-success");
+    let mut picker = AdoptPickerScreen::new(
+        vec![row(
+            "ext-hostile-1",
+            hostile.to_str().expect("utf8"),
+            "t",
+            86_400,
+        )],
+        now(),
+    );
+
+    let action = press(&mut picker, KeyCode::Enter);
+    adopt_via_dispatcher(&mut app, action);
+
+    assert_eq!(app.tui_mode, TuiMode::Interaction, "adoption must succeed");
+    assert_no_control_bytes_in_log(&app);
+}
+
+#[test]
+fn refusal_log_line_carries_no_control_bytes_for_a_hostile_cwd() {
+    let mut app = crate::tui::make_test_app("adopt-log-refused");
+    let hostile = format!("{REPO_CWD}/\x1b[31mmissing-1054b");
+    app.screen_state.adopt_picker_screen = Some(AdoptPickerScreen::new(
+        vec![row("ext-hostile-2", &hostile, "t", 86_400)],
+        now(),
+    ));
+    let picker = app
+        .screen_state
+        .adopt_picker_screen
+        .as_mut()
+        .expect("picker was just set");
+    let action = press(picker, KeyCode::Enter);
+    adopt_via_dispatcher(&mut app, action);
+
+    assert_no_control_bytes_in_log(&app);
+    assert!(
+        app.activity_log
+            .entries()
+            .iter()
+            .any(|e| e.message.contains("adoption refused")),
+        "the refusal must still be logged"
+    );
+}
+
+fn assert_no_control_bytes_in_log(app: &App) {
+    for entry in app.activity_log.entries() {
+        assert!(
+            !entry.message.chars().any(char::is_control),
+            "control byte in activity log: {:?}",
+            entry.message
+        );
+    }
+}
