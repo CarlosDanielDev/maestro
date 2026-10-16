@@ -426,6 +426,23 @@ mod tests {
         assert_eq!(item.target, LandingTarget::Push(TuiMode::MilestoneHealth));
     }
 
+    // #1054: the adopt-picker entry point.
+    #[test]
+    fn shortcut_a_pushes_adopt_picker() {
+        let mut s = LandingScreen::new();
+        let action = s.handle_input(&key_event(KeyCode::Char('a')), InputMode::Normal);
+        assert_eq!(action, ScreenAction::Push(TuiMode::AdoptPicker));
+    }
+
+    #[test]
+    fn landing_menu_contains_adopt_entry() {
+        let item = MENU_ITEMS.iter().find(|m| m.shortcut == 'a');
+        assert!(item.is_some());
+        let item = item.unwrap();
+        assert_eq!(item.label, "Adopt Session");
+        assert_eq!(item.target, LandingTarget::Push(TuiMode::AdoptPicker));
+    }
+
     #[test]
     fn unknown_letter_returns_none() {
         let mut s = LandingScreen::new();

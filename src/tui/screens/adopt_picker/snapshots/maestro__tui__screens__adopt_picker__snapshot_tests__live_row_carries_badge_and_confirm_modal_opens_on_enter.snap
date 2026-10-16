@@ -1,0 +1,20 @@
+---
+source: src/tui/screens/adopt_picker/snapshot_tests.rs
+expression: "render(&mut screen, 90, 16)"
+---
+╔═══════════════════════════════════[ Adopt Session ]════════════════════════════════════╗
+║Type to filter…                                                                         ║
+║> maestro still typing  just now  [LIVE]                                                ║
+║  api-service add╔══════════════[ Session may be live ]═══════════════╗                 ║
+║  maestro docs pa║This transcript was modified recently.              ║                 ║
+║                 ║The session may still be running elsewhere.         ║                 ║
+║                 ║                                                    ║                 ║
+║                 ║Adopt anyway?                                       ║                 ║
+║                 ║                                                    ║                 ║
+║                 ║[y] Adopt   [n/Esc] Cancel                          ║                 ║
+║                 ║                                                    ║                 ║
+║                 ║                                                    ║                 ║
+║                 ╚════════════════════════════════════════════════════╝                 ║
+║                                                                                        ║
+╚════════════════════════════════════════════════════════════════════════════════════════╝
+[↑/↓] Navigate  [Type] Filter  [Enter] Adopt  [Esc] Back

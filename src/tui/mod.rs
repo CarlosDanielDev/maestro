@@ -23,7 +23,7 @@ pub mod markdown;
 pub mod marquee;
 pub mod navigation;
 pub mod panels;
-mod screen_dispatch;
+pub(crate) mod screen_dispatch;
 pub mod screens;
 pub mod session_summary;
 pub mod session_switcher;

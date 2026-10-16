@@ -6,6 +6,8 @@
 #[cfg(test)]
 mod adapt_pipeline;
 #[cfg(test)]
+mod adopt_picker_route;
+#[cfg(test)]
 mod adopt_pipeline;
 #[cfg(test)]
 mod budget_prespawn_gate;

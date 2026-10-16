@@ -37,5 +37,6 @@ pub const MENU_ITEMS: &[LandingMenuItem] = &[
     LandingMenuItem::push("Roadmap", 'r', TuiMode::Roadmap),
     LandingMenuItem::push("Milestone Review", 'h', TuiMode::MilestoneHealth),
     LandingMenuItem::push("Teams", 't', TuiMode::TeamWizard),
+    LandingMenuItem::push("Adopt Session", 'a', TuiMode::AdoptPicker),
     LandingMenuItem::push("Quit", 'q', TuiMode::ConfirmExit),
 ];
