@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>maestro — multi-agent orchestrator for AI coding agents</title>
+<meta name="description" content="Maestro spawns and monitors multiple AI providers sessions working on the same project simultaneously. It provides real-time visibility into what each agent is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.">
+<style>
+  :root {
+    --bg: #0b0e0c;
+    --panel: #0f1411;
+    --fg: #d8ded9;
+    --dim: #87928b;
+    --line: #212923;
+    --accent: #45e08a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 400 16px/1.65 ui-monospace, "JetBrains Mono", "IBM Plex Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  main { max-width: 46rem; margin: 0 auto; padding: 0 1.25rem; }
+  a { color: var(--dim); text-decoration: none; }
+  a:hover { color: var(--accent); }
+  code { color: var(--fg); }
+
+  nav {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 1.5rem 0; border-bottom: 1px solid var(--line);
+  }
+  .brand { color: var(--fg); font-weight: 700; }
+  .brand::before { content: "◆ "; color: var(--accent); }
+  nav .links { display: flex; gap: 1.25rem; }
+
+  .hero { padding: 4.5rem 0 3rem; }
+  .tagline { color: var(--dim); margin: 0 0 1rem; }
+  h1 {
+    font-size: clamp(2rem, 7vw, 3.4rem);
+    line-height: 1.1; font-weight: 800; margin: 0; letter-spacing: -0.02em;
+  }
+  .uline { color: var(--accent); font-weight: 700; white-space: nowrap; overflow: hidden; margin: 0.75rem 0 1.5rem; }
+  .hero p.body { max-width: 40rem; margin: 0 0 2rem; }
+
+  .install { background: var(--panel); border: 1px solid var(--line); padding: 1rem 1.25rem; }
+  .install .cmd { margin: 0; white-space: nowrap; overflow-x: auto; }
+  .install .cmd::before { content: "$ "; color: var(--accent); }
+  .install .cmd + .cmd { margin-top: 0.5rem; }
+  .install .note { color: var(--dim); font-size: 0.8rem; margin: 0.75rem 0 0; }
+
+  .badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.5rem; }
+  .badges img { height: 20px; }
+
+  .mockup { padding: 1rem 0 3.5rem; }
+  .screen {
+    background: var(--panel); border: 1px solid var(--line);
+    padding: 1rem 1.25rem; overflow-x: auto; margin: 0;
+    font-size: clamp(0.5rem, 2.2vw, 0.8rem); line-height: 1.45;
+  }
+  .screen .st-done { color: var(--accent); }
+  .screen .st-queue { color: var(--dim); }
+  .fkeys {
+    color: var(--dim); font-size: clamp(0.5rem, 2.2vw, 0.75rem);
+    margin: 0.5rem 0 0; line-height: 1.5;
+  }
+
+  section.blocks { padding: 2.5rem 0 3.5rem; border-top: 1px solid var(--line); }
+  .kicker { color: var(--dim); margin: 0 0 0.5rem; }
+  h2 { font-size: clamp(1.4rem, 4vw, 1.9rem); font-weight: 800; margin: 0 0 2rem; letter-spacing: -0.01em; }
+  .block { margin: 0 0 1.75rem; max-width: 40rem; }
+  .block:last-child { margin-bottom: 0; }
+  .block h3 { display: inline; font-size: 1rem; font-weight: 700; margin: 0; }
+  .block h3::before { content: "✗ "; color: var(--accent); }
+  .block p { display: inline; margin: 0; color: var(--fg); }
+
+  footer {
+    border-top: 1px solid var(--line); padding: 1.75rem 0 2.5rem;
+    color: var(--dim); font-size: 0.85rem;
+  }
+  footer .inner { max-width: 46rem; margin: 0 auto; padding: 0 1.25rem; }
+  footer p { margin: 0 0 0.5rem; }
+  footer .links { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+</style>
+</head>
+<body>
+<main>
+
+  <nav>
+    <a class="brand" href="/">maestro</a>
+    <div class="links">
+      <a href="https://github.com/CarlosDanielDev/maestro">source ↗</a>
+      <a href="https://discord.gg/WHsk2FuQEH">discord ↗</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <p class="tagline">every ai agent. one terminal dashboard.</p>
+    <h1>stop herding agents.<br>start conducting.</h1>
+    <div class="uline" aria-hidden="true">========================================</div>
+    <p class="body">Maestro spawns and monitors multiple AI coding agents on the same project — live status, real costs, conflict-free worktrees — from one TUI dashboard.</p>
+
+    <div class="install">
+      <p class="cmd">cargo install --git https://github.com/CarlosDanielDev/maestro</p>
+      <p class="cmd">brew install carlosdanieldev/tap/maestro --formula</p>
+      <p class="note">crates.io `maestro` is an unrelated crate — install from this repo. `--formula` because an unrelated cask named "maestro" exists in homebrew core.</p>
+    </div>
+
+    <div class="badges">
+      <a href="https://github.com/CarlosDanielDev/maestro/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/CarlosDanielDev/maestro/ci.yml?branch=main&amp;label=CI" alt="CI status badge" loading="lazy"></a>
+      <a href="https://github.com/CarlosDanielDev/maestro/releases/latest"><img src="https://img.shields.io/github/v/release/CarlosDanielDev/maestro" alt="latest release badge" loading="lazy"></a>
+      <a href="https://github.com/CarlosDanielDev/maestro/blob/main/Cargo.toml"><img src="https://img.shields.io/badge/rustc-1.89%2B-orange" alt="MSRV 1.89+ badge" loading="lazy"></a>
+      <a href="https://discord.gg/WHsk2FuQEH"><img src="https://img.shields.io/discord/1498709440465998038?logo=discord&amp;logoColor=white&amp;label=Discord&amp;color=5865F2" alt="Discord badge" loading="lazy"></a>
+      <a href="https://github.com/CarlosDanielDev/maestro/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license badge" loading="lazy"></a>
+    </div>
+  </header>
+
+  <div class="mockup">
+    <pre class="screen" aria-label="maestro TUI dashboard mockup">┏━ maestro · session pool ━━━━━━━━━━━━━━━━┓
+┃                                         ┃
+┃ ID   ISSUE  STATUS       COST           ┃
+┃ s1   #1052  ● RUNNING    $1.24          ┃
+┃ s2   #1057  <span class="st-done">✓ COMPLETED</span>  $0.87          ┃
+┃ s3   #1060  ● RUNNING    $0.42          ┃
+┃ s4   #1061  <span class="st-queue">○ QUEUED</span>     —              ┃
+┃ s5   #1062  <span class="st-done">✓ COMPLETED</span>  $1.09          ┃
+┃                                         ┃
+┃ ◆ 5 sessions   <span class="st-done">✓ 2 completed</span>   Σ $3.62  ┃
+┃                                         ┃
+┃ $ ▌                                     ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛</pre>
+    <pre class="fkeys" aria-hidden="true">F1 Help  F2 Summary  F3 Full  F4 Costs  F5 Tokens
+F6 Deps  F9 Pause  F10 Kill  Ctrl+X Exit</pre>
+  </div>
+
+  <section class="blocks">
+    <p class="kicker">honest boundaries</p>
+    <h2>three things it will not pretend to be</h2>
+
+    <div class="block">
+      <h3>not autonomous.</h3>
+      <p>Every session stops at the gates — fmt, clippy, tests — and the PR waits for your review. Maestro coordinates the work; the OK is yours.</p>
+    </div>
+
+    <div class="block">
+      <h3>not a ci replacement.</h3>
+      <p>No hosted runners, no yaml pipelines. It is a local TUI driving real agent CLIs on your machine, in your terminal.</p>
+    </div>
+
+    <div class="block">
+      <h3>not a prompt wrapper.</h3>
+      <p>A real state machine, one git worktree per session, a file-claim registry against edit collisions, and cost tracking per session.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <p>maestro · MIT © CarlosDanielDev</p>
+    <div class="links">
+      <a href="https://github.com/CarlosDanielDev/maestro">source ↗</a>
+      <a href="https://github.com/CarlosDanielDev/maestro/issues">issues ↗</a>
+      <a href="https://github.com/CarlosDanielDev/maestro/releases">releases ↗</a>
+      <a href="https://discord.gg/WHsk2FuQEH">discord ↗</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
