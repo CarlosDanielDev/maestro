@@ -18,6 +18,9 @@ use crate::tui::navigation::InputMode;
 use crate::tui::screen_dispatch::handle_screen_action;
 use crate::tui::screens::{AdoptPickerScreen, ScreenAction};
 
+/// A real directory: `create_adopted_session` refuses cwds that are not dirs.
+const REPO_CWD: &str = env!("CARGO_MANIFEST_DIR");
+
 fn now() -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000)
 }
@@ -63,12 +66,7 @@ fn adopt_via_dispatcher(app: &mut App, action: ScreenAction) {
 fn adopt_creates_interactive_session_and_routes_to_interaction() {
     let mut app = crate::tui::make_test_app("adopt-picker-route");
     let mut picker = AdoptPickerScreen::new(
-        vec![row(
-            "ext-stale-1",
-            "/home/dev/maestro",
-            "fix the parser",
-            86_400,
-        )],
+        vec![row("ext-stale-1", REPO_CWD, "fix the parser", 86_400)],
         now(),
     );
 
@@ -84,7 +82,7 @@ fn adopt_creates_interactive_session_and_routes_to_interaction() {
     assert_eq!(session.agent_session_id.as_deref(), Some("ext-stale-1"));
     assert_eq!(
         session.adopted_cwd.as_deref(),
-        Some(PathBuf::from("/home/dev/maestro").as_path())
+        Some(PathBuf::from(REPO_CWD).as_path())
     );
     assert_eq!(session.session_mode, SessionMode::Interactive);
     assert!(
@@ -97,10 +95,8 @@ fn adopt_creates_interactive_session_and_routes_to_interaction() {
 #[test]
 fn picker_live_row_confirms_before_adopt() {
     let mut app = crate::tui::make_test_app("adopt-picker-live");
-    let mut picker = AdoptPickerScreen::new(
-        vec![row("ext-live-1", "/home/dev/hot", "still typing", 30)],
-        now(),
-    );
+    let mut picker =
+        AdoptPickerScreen::new(vec![row("ext-live-1", REPO_CWD, "still typing", 30)], now());
 
     // Enter on a live row opens the confirm modal and adopts nothing yet.
     assert_eq!(press(&mut picker, KeyCode::Enter), ScreenAction::None);
@@ -122,4 +118,34 @@ fn picker_live_row_confirms_before_adopt() {
     let adopted = adopted_sessions(&app);
     assert_eq!(adopted.len(), 1);
     assert_eq!(adopted[0].agent_session_id.as_deref(), Some("ext-live-1"));
+}
+
+/// A refused cwd must not navigate away, and the refusal must show on the
+/// picker itself (the activity log is not rendered by this screen).
+#[test]
+fn refused_cwd_keeps_the_picker_open_with_a_visible_status() {
+    let mut app = crate::tui::make_test_app("adopt-picker-refused");
+    let missing = format!("{REPO_CWD}/no-such-dir-1054b");
+    app.screen_state.adopt_picker_screen = Some(AdoptPickerScreen::new(
+        vec![row("ext-missing-1", &missing, "gone", 86_400)],
+        now(),
+    ));
+    let picker = app
+        .screen_state
+        .adopt_picker_screen
+        .as_mut()
+        .expect("picker was just set");
+    let action = press(picker, KeyCode::Enter);
+
+    adopt_via_dispatcher(&mut app, action);
+
+    assert_ne!(app.tui_mode, TuiMode::Interaction);
+    assert!(adopted_sessions(&app).is_empty());
+    let status = app
+        .screen_state
+        .adopt_picker_screen
+        .as_ref()
+        .and_then(|p| p.status())
+        .expect("refusal must set a visible status on the picker");
+    assert!(status.contains("not a directory"), "status was: {status}");
 }

@@ -193,10 +193,36 @@ fn confirm_yes_adopts_the_live_row() {
 }
 
 #[test]
-fn confirm_enter_also_adopts() {
+fn confirm_enter_cancels() {
     let mut screen = screen_with(live_then_stale());
     screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
     let action = screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+    assert_eq!(action, ScreenAction::None, "Enter must not adopt");
+    assert!(!screen.confirm_pending(), "Enter closes the modal");
+}
+
+#[test]
+fn double_enter_never_adopts_a_live_row() {
+    let mut screen = screen_with(live_then_stale());
+    let mut actions = Vec::new();
+    for _ in 0..3 {
+        actions.push(screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert));
+    }
+    assert!(
+        actions.iter().all(|a| *a == ScreenAction::None),
+        "no Enter sequence may adopt a live row: {actions:?}"
+    );
+    assert!(
+        screen.confirm_pending(),
+        "the third Enter reopens the modal"
+    );
+}
+
+#[test]
+fn uppercase_y_adopts_the_live_row() {
+    let mut screen = screen_with(live_then_stale());
+    screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+    let action = screen.handle_input(&key_event(KeyCode::Char('Y')), InputMode::Insert);
     assert!(matches!(action, ScreenAction::AdoptSession { .. }));
 }
 
@@ -218,15 +244,16 @@ fn confirm_cancel_stays_on_the_picker() {
 }
 
 #[test]
-fn typing_is_swallowed_while_confirm_is_open() {
+fn other_keys_cancel_the_confirm_modal() {
     let mut screen = screen_with(live_then_stale());
     screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
-    screen.handle_input(&key_event(KeyCode::Char('x')), InputMode::Insert);
+    let action = screen.handle_input(&key_event(KeyCode::Char('x')), InputMode::Insert);
+    assert_eq!(action, ScreenAction::None);
     assert_eq!(
         screen.filter_text, "",
-        "filter must not change behind the modal"
+        "a cancelling key must not reach the filter"
     );
-    assert!(screen.confirm_pending());
+    assert!(!screen.confirm_pending());
 }
 
 // ---- navigation ----
@@ -262,4 +289,13 @@ fn up_does_not_underflow() {
 fn desired_input_mode_is_insert_while_typing_filter() {
     let screen = screen_with(stale_fixtures());
     assert_eq!(screen.desired_input_mode(), Some(InputMode::Insert));
+}
+
+#[test]
+fn status_line_survives_until_the_next_key() {
+    let mut screen = screen_with(stale_fixtures());
+    screen.set_status("adoption refused: nope".to_string());
+    assert_eq!(screen.status(), Some("adoption refused: nope"));
+    screen.handle_input(&key_event(KeyCode::Down), InputMode::Insert);
+    assert_eq!(screen.status(), None);
 }

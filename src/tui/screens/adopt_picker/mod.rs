@@ -40,6 +40,9 @@ pub struct AdoptPickerScreen {
     confirm_live: Option<usize>,
     /// Visible list height from the last draw, for scroll sync.
     last_visible_height: usize,
+    /// One-line feedback for the last refused adoption. Cleared by the
+    /// next key, so it never goes stale.
+    status: Option<String>,
 }
 
 impl AdoptPickerScreen {
@@ -55,6 +58,7 @@ impl AdoptPickerScreen {
             now,
             confirm_live: None,
             last_visible_height: 20,
+            status: None,
         };
         screen.reapply_filter();
         screen
@@ -96,6 +100,16 @@ impl AdoptPickerScreen {
             .duration_since(session.last_active)
             .unwrap_or_default()
             < ADOPT_QUIET_PERIOD
+    }
+
+    /// Show a refusal (or other feedback) on the picker itself.
+    pub fn set_status(&mut self, message: String) {
+        self.status = Some(message);
+    }
+
+    /// The feedback line currently shown, if any.
+    pub fn status(&self) -> Option<&str> {
+        self.status.as_deref()
     }
 
     /// True while the live-session confirm modal is open.
@@ -197,21 +211,18 @@ impl Screen for AdoptPickerScreen {
         else {
             return ScreenAction::None;
         };
+        self.status = None;
 
         // Live-session confirm modal: swallows everything else so typing
         // cannot change the list behind it.
+        // Cancel is the default: only `y` adopts; every other key closes
+        // the modal without adopting.
         if self.confirm_live.is_some() {
-            match code {
-                KeyCode::Char('y') | KeyCode::Enter => {
-                    self.confirm_live = None;
-                    return self.adopt_payload().unwrap_or(ScreenAction::None);
-                }
-                KeyCode::Char('n') | KeyCode::Esc => {
-                    self.confirm_live = None;
-                    return ScreenAction::None;
-                }
-                _ => return ScreenAction::None,
-            }
+            self.confirm_live = None;
+            return match code {
+                KeyCode::Char('y' | 'Y') => self.adopt_payload().unwrap_or(ScreenAction::None),
+                _ => ScreenAction::None,
+            };
         }
 
         match code {

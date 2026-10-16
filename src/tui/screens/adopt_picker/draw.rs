@@ -2,14 +2,19 @@ use super::AdoptPickerScreen;
 use crate::tui::help::centered_rect;
 use crate::tui::screens::draw_keybinds_bar;
 use crate::tui::theme::Theme;
+use crate::util::sanitize::sanitize_log;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::{Clear, Paragraph, Wrap},
 };
 use std::time::SystemTime;
+
+// Every transcript-derived string (title, repo, cwd) passes `sanitize_log`
+// here, at the render sink: ESC/BEL and the rest of the control range become
+// spaces, so ANSI/OSC sequences from a transcript never reach the terminal.
 
 impl AdoptPickerScreen {
     pub(super) fn draw_impl(&mut self, f: &mut Frame, area: Rect, theme: &Theme) {
@@ -28,7 +33,12 @@ impl AdoptPickerScreen {
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(1)])
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ])
             .split(inner);
 
         self.draw_filter_line(f, chunks[0], theme);
@@ -52,6 +62,9 @@ impl AdoptPickerScreen {
         } else {
             self.draw_rows(f, chunks[1], theme);
         }
+
+        self.draw_detail_line(f, chunks[2], theme);
+        self.draw_status_line(f, chunks[3], theme);
 
         draw_keybinds_bar(
             f,
@@ -77,6 +90,29 @@ impl AdoptPickerScreen {
             format!("Filter: {}▏", self.filter_text)
         };
         let line = Line::from(Span::styled(text, Style::default().fg(theme.text_muted)));
+        f.render_widget(Paragraph::new(line), area);
+    }
+
+    /// The full cwd of the selected row. The row column shows only the repo
+    /// name, so this is what the user checks before adopting.
+    fn draw_detail_line(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let text = match self.selected_session() {
+            Some(session) => format!("cwd: {}", sanitize_log(&session.cwd.display().to_string())),
+            None => String::new(),
+        };
+        let line = Line::from(Span::styled(text, Style::default().fg(theme.text_muted)));
+        f.render_widget(Paragraph::new(line), area);
+    }
+
+    /// Feedback for the last refused adoption, on the picker itself.
+    fn draw_status_line(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+        let Some(message) = self.status() else {
+            return;
+        };
+        let line = Line::from(Span::styled(
+            sanitize_log(message),
+            Style::default().fg(theme.accent_warning),
+        ));
         f.render_widget(Paragraph::new(line), area);
     }
 
@@ -113,13 +149,13 @@ impl AdoptPickerScreen {
         let title = if session.title.is_empty() {
             "(untitled)".to_string()
         } else {
-            session.title.clone()
+            sanitize_log(&session.title)
         };
 
         let mut spans = vec![
             Span::styled(prefix.to_string(), base),
             Span::styled(
-                format!("{} ", super::repo_name(&session.cwd)),
+                format!("{} ", sanitize_log(&super::repo_name(&session.cwd))),
                 Style::default().fg(theme.accent_success),
             ),
             Span::styled(title, base),
@@ -161,12 +197,16 @@ impl AdoptPickerScreen {
     }
 
     fn draw_confirm_modal(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let popup = centered_rect(60, 60, area);
+        let popup = centered_rect(60, 70, area);
         f.render_widget(Clear, popup);
         let block = theme.styled_block("Session may be live", true);
         let inner = block.inner(popup);
         f.render_widget(block, popup);
 
+        let directory = self
+            .selected_session()
+            .map(|s| sanitize_log(&s.cwd.display().to_string()))
+            .unwrap_or_default();
         let lines = vec![
             Line::from(Span::styled(
                 "This transcript was modified recently.",
@@ -177,19 +217,23 @@ impl AdoptPickerScreen {
                 Style::default().fg(theme.text_primary),
             )),
             Line::default(),
+            Line::from(vec![
+                Span::styled("Directory: ", Style::default().fg(theme.text_muted)),
+                Span::styled(directory, Style::default().fg(theme.text_primary)),
+            ]),
+            Line::default(),
             Line::from(Span::styled(
                 "Adopt anyway?",
                 Style::default().fg(theme.accent_warning),
             )),
-            Line::default(),
             Line::from(vec![
                 Span::styled("[y]", Style::default().fg(theme.accent_success)),
                 Span::raw(" Adopt   "),
-                Span::styled("[n/Esc]", Style::default().fg(theme.text_muted)),
+                Span::styled("[any other key]", Style::default().fg(theme.text_muted)),
                 Span::raw(" Cancel"),
             ]),
         ];
-        f.render_widget(Paragraph::new(lines), inner);
+        f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
     }
 }
 

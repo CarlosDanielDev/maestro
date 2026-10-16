@@ -4,17 +4,17 @@ expression: "render(&mut screen, 90, 16)"
 ---
 ╔═══════════════════════════════════[ Adopt Session ]════════════════════════════════════╗
 ║Type to filter…                                                                         ║
-║> maestro still typing  just now  [LIVE]                                                ║
-║  api-service add╔══════════════[ Session may be live ]═══════════════╗                 ║
-║  maestro docs pa║This transcript was modified recently.              ║                 ║
-║                 ║The session may still be running elsewhere.         ║                 ║
+║> maestro still t╔══════════════[ Session may be live ]═══════════════╗                 ║
+║  api-service add║This transcript was modified recently.              ║                 ║
+║  maestro docs pa║The session may still be running elsewhere.         ║                 ║
+║                 ║                                                    ║                 ║
+║                 ║Directory: /home/dev/maestro                        ║                 ║
 ║                 ║                                                    ║                 ║
 ║                 ║Adopt anyway?                                       ║                 ║
+║                 ║[y] Adopt   [any other key] Cancel                  ║                 ║
 ║                 ║                                                    ║                 ║
-║                 ║[y] Adopt   [n/Esc] Cancel                          ║                 ║
 ║                 ║                                                    ║                 ║
-║                 ║                                                    ║                 ║
+║cwd: /home/dev/ma║                                                    ║                 ║
 ║                 ╚════════════════════════════════════════════════════╝                 ║
-║                                                                                        ║
 ╚════════════════════════════════════════════════════════════════════════════════════════╝
 [↑/↓] Navigate  [Type] Filter  [Enter] Adopt  [Esc] Back

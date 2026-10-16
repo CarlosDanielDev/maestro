@@ -82,3 +82,55 @@ fn filter_with_no_match_shows_match_empty_state() {
     type_text(&mut screen, "zzz");
     insta::assert_snapshot!(render(&mut screen, 90, 10));
 }
+
+/// Transcript title and cwd are untrusted: ANSI/OSC sequences must never
+/// reach the terminal (#1043 class).
+#[test]
+fn hostile_title_and_cwd_render_without_control_bytes() {
+    let rows = vec![DiscoveredSession {
+        session_id: "h-1".to_string(),
+        cwd: PathBuf::from("/home/dev/\x1b]0;pwn\x07repo"),
+        title: "\x1b]0;pwn\x07ok \x1b[31mred".to_string(),
+        last_active: now() - Duration::from_secs(7_200),
+        skipped_lines: 0,
+    }];
+    let mut screen = AdoptPickerScreen::new(rows, now());
+    let out = render(&mut screen, 90, 10);
+    assert!(!out.contains('\x1b'), "ESC must not reach the terminal");
+    assert!(!out.contains('\x07'), "BEL must not reach the terminal");
+    assert!(out.contains("ok"), "printable title text stays visible");
+    assert!(
+        out.contains("pwn"),
+        "printable part of the OSC payload stays"
+    );
+}
+
+#[test]
+fn selected_row_shows_the_full_cwd() {
+    let rows = vec![session(
+        "id-1",
+        "/home/dev/projects/very/deep/maestro-app",
+        "docs",
+        60,
+    )];
+    let mut screen = AdoptPickerScreen::new(rows, now());
+    let out = render(&mut screen, 90, 10);
+    assert!(out.contains("/home/dev/projects/very/deep/maestro-app"));
+}
+
+#[test]
+fn confirm_modal_shows_the_full_cwd_being_adopted() {
+    let rows = vec![session("live-1", "/home/dev/maestro-app", "typing", 30)];
+    let mut screen = AdoptPickerScreen::new(rows, now());
+    screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+    let out = render(&mut screen, 90, 16);
+    assert!(out.contains("/home/dev/maestro-app"));
+}
+
+#[test]
+fn refused_adoption_status_is_drawn_on_the_picker() {
+    let mut screen = AdoptPickerScreen::new(fixture(), now());
+    screen.set_status("adoption refused: adopted cwd is not a directory".to_string());
+    let out = render(&mut screen, 90, 10);
+    assert!(out.contains("adoption refused: adopted cwd is not a directory"));
+}

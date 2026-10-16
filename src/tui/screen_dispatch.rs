@@ -569,6 +569,20 @@ pub(crate) fn open_interaction_session(
     app.navigate_to(app::TuiMode::Interaction);
 }
 
+/// Surface an adoption refusal on the picker that asked for it, and in the
+/// activity log. The picker stays open so another row can be picked.
+fn refuse_adoption(app: &mut app::App, reason: String) {
+    let message = format!("adoption refused: {reason}");
+    app.activity_log.push_simple(
+        "ADOPT".into(),
+        message.clone(),
+        crate::tui::activity_log::LogLevel::Warn,
+    );
+    if let Some(picker) = app.screen_state.adopt_picker_screen.as_mut() {
+        picker.set_status(message);
+    }
+}
+
 /// Adopt the external conversation picked on the AdoptPicker (#1054):
 /// create the adopted session in the pool bound to the external id, open
 /// the Interaction screen on it, and navigate. The model is the app's
@@ -591,11 +605,7 @@ fn adopt_external_session(
     ) {
         Ok(outcome) => outcome,
         Err(e) => {
-            app.activity_log.push_simple(
-                "ADOPT".into(),
-                format!("adoption refused: {e}"),
-                crate::tui::activity_log::LogLevel::Warn,
-            );
+            refuse_adoption(app, e.to_string());
             return;
         }
     };
@@ -609,11 +619,7 @@ fn adopt_external_session(
     });
 
     let Some(managed) = app.pool.get_active_mut(outcome.session_id) else {
-        app.activity_log.push_simple(
-            "ADOPT".into(),
-            "adoption refused: session vanished before it could open".into(),
-            crate::tui::activity_log::LogLevel::Warn,
-        );
+        refuse_adoption(app, "session vanished before it could open".to_string());
         return;
     };
     let agent_label = crate::tui::agent_badge::agent_label(managed.session.agent_id.as_deref());

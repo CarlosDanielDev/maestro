@@ -8,7 +8,7 @@ expression: "render(&mut screen, 90, 10)"
 ║                                                                                        ║
 ║                                                                                        ║
 ║                                                                                        ║
-║                                                                                        ║
+║cwd: /home/dev/api-service                                                              ║
 ║                                                                                        ║
 ╚════════════════════════════════════════════════════════════════════════════════════════╝
 [↑/↓] Navigate  [Type] Filter  [Enter] Adopt  [Esc] Back
