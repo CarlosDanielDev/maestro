@@ -1,0 +1,18 @@
+{
+  "gate": [
+    "cargo fmt -- --check",
+    "cargo clippy -- -D warnings -A dead_code",
+    "cargo test --verbose",
+    "cargo test --verbose 2>&1 | (! grep -q \"pending snapshots\")",
+    "cargo run --quiet -- sync-templates --check",
+    "cargo test --quiet docs_gen_no_drift --bin maestro",
+    "bash scripts/check-file-size.sh",
+    "bash scripts/check-rules-drift.sh",
+    "cargo deny check",
+    "bash scripts/check-layers.sh"
+  ],
+  "base": "main",
+  "serial": [
+    "Cargo.toml"
+  ]
+}
