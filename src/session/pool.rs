@@ -534,13 +534,14 @@ impl SessionPool {
     /// [`ManagedSession::build_request`]; turn 2+ flows through the
     /// normal follow-up path.
     ///
-    /// The live-session guard ([`super::adopt::transcript_is_live`])
-    /// stats the transcript before adopting; a recent mtime only flips
-    /// the returned `live_warning` — the adopt proceeds (council verdict:
-    /// warn, never block).
-    ///
     /// Refuses ids that fail the `--resume` argv allowlist
-    /// ([`Session::bind_agent_session_id`]).
+    /// ([`Session::bind_agent_session_id`]) BEFORE anything else — a
+    /// hostile id never reaches path construction.
+    ///
+    /// The live-session guard ([`super::adopt::transcript_is_live`]) then
+    /// stats the transcript; a recent mtime only flips the returned
+    /// `live_warning` — the adopt proceeds (council verdict: warn, never
+    /// block).
     pub fn create_adopted_session(
         &mut self,
         agent_session_id: &str,
@@ -548,18 +549,21 @@ impl SessionPool {
         title: Option<String>,
         model: String,
     ) -> anyhow::Result<super::adopt::AdoptOutcome> {
-        let live_warning =
-            super::adopt::transcript_is_live(agent_session_id, &cwd, std::time::SystemTime::now());
         let mut session =
             Session::new(String::new(), model, "orchestrator".to_string(), None, None);
         session.session_mode = crate::session::types::SessionMode::Interactive;
         session.issue_title = title;
-        session.adopted_cwd = Some(cwd);
         if !session.bind_agent_session_id(agent_session_id) {
             return Err(anyhow::anyhow!(
                 "invalid agent session id {agent_session_id:?} — adoption refused (the id feeds `--resume` argv)"
             ));
         }
+        // Live-session check only AFTER the id is allowlist-validated —
+        // no path is ever built from an unvalidated id (belt alongside
+        // `transcript_is_live_in`'s own guard).
+        let live_warning =
+            super::adopt::transcript_is_live(agent_session_id, &cwd, std::time::SystemTime::now());
+        session.adopted_cwd = Some(cwd);
         let provider = Arc::clone(self.resolve_provider(&session));
         let mut managed = ManagedSession::with_worktree(session, None, None, None);
         managed.set_provider(provider);
@@ -826,7 +830,7 @@ mod tests {
 
         assert!(
             !outcome.live_warning,
-            "no transcript fixture exists for a fresh uuid — no live warning"
+            "no transcript exists for (real $HOME, /repo/original, ext-conv-1) — no live warning"
         );
 
         let managed = must_get_active_mut(&mut pool, outcome.session_id);

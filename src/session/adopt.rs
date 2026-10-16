@@ -51,11 +51,21 @@ pub(crate) fn transcript_is_live(id: &str, cwd: &Path, now: SystemTime) -> bool 
     let Ok(home) = std::env::var("HOME") else {
         return false;
     };
-    modified_within(
-        &transcript_path(Path::new(&home), cwd, id),
-        now,
-        ADOPT_QUIET_PERIOD,
-    )
+    transcript_is_live_in(Path::new(&home), id, cwd, now)
+}
+
+/// [`transcript_is_live`] with the transcript root injected (tests pass a
+/// tempdir; production resolves `$HOME`).
+///
+/// Security guard (the #1031-#1033 path-traversal class): the id must
+/// pass the same allowlist that gates `--resume` argv BEFORE any path is
+/// built. Without it, an absolute id makes `PathBuf::join` replace the
+/// whole base and the stat would probe an attacker-chosen file.
+pub(crate) fn transcript_is_live_in(home: &Path, id: &str, cwd: &Path, now: SystemTime) -> bool {
+    if !crate::session::parser::is_valid_session_id(id) {
+        return false;
+    }
+    modified_within(&transcript_path(home, cwd, id), now, ADOPT_QUIET_PERIOD)
 }
 
 #[cfg(test)]
@@ -97,6 +107,65 @@ mod tests {
         assert!(
             modified_within(&fresh, now - Duration::from_secs(60), ADOPT_QUIET_PERIOD),
             "future mtime (clock skew) must count as fresh"
+        );
+    }
+
+    #[test]
+    fn transcript_is_live_positive_and_negative_paths_with_injected_home() {
+        // Judge review of #1071: the live guard needs positive-path
+        // coverage on a controlled base — never the real `$HOME`.
+        let home = tempfile::tempdir().expect("tempdir home");
+        let cwd = std::path::Path::new("/repo/original");
+        let transcript = transcript_path(home.path(), cwd, "fresh-id");
+        std::fs::create_dir_all(transcript.parent().expect("parent dir")).expect("mkdir");
+        std::fs::write(&transcript, "{}").expect("write fixture");
+        let now = SystemTime::now();
+
+        assert!(
+            transcript_is_live_in(home.path(), "fresh-id", cwd, now),
+            "fresh transcript at the munged location must be live"
+        );
+        assert!(
+            !transcript_is_live_in(
+                home.path(),
+                "fresh-id",
+                cwd,
+                now + Duration::from_secs(1200)
+            ),
+            "stale transcript must not be live"
+        );
+        assert!(
+            !transcript_is_live_in(home.path(), "absent-id", cwd, now),
+            "missing transcript must not be live"
+        );
+    }
+
+    #[test]
+    fn transcript_is_live_refuses_path_escaping_ids() {
+        // Security guard (the #1031-#1033 class): an id may never steer
+        // the stat outside the transcript root. Without the allowlist
+        // check, an absolute id makes `PathBuf::join` replace the base
+        // entirely and probes an attacker-chosen file's mtime.
+        let home = tempfile::tempdir().expect("tempdir home");
+        let victim_dir = tempfile::tempdir().expect("victim tempdir");
+        let victim = victim_dir.path().join("victim.jsonl");
+        std::fs::write(&victim, "{}").expect("write fresh victim fixture");
+
+        let escaping_id = victim_dir
+            .path()
+            .join("victim")
+            .to_str()
+            .expect("utf-8 tempdir")
+            .to_string();
+
+        assert!(
+            !transcript_is_live_in(
+                home.path(),
+                &escaping_id,
+                std::path::Path::new("/repo/original"),
+                SystemTime::now()
+            ),
+            "a path-escaping id must never be probed, even when the target file is fresh"
         );
     }
 }

@@ -118,23 +118,27 @@ impl ManagedSession {
     }
 
     fn build_request(&self) -> AgentRequest {
-        // #1053: an adopted session arrives pre-bound to an external
-        // conversation — turn 1 must resume it (`--resume <id>`), reusing
-        // the follow-up builder (ADR option (a) in the issue). maestro-
-        // spawned sessions are never pre-bound at spawn time, so this
-        // delegation is adoption-only.
-        if self.session.agent_session_id.is_some() {
-            return self.build_followup_request(&self.session.prompt);
-        }
         let mut request =
             AgentRequest::stream_json(self.session.prompt.clone(), self.session.model.clone());
-        request.cwd.clone_from(&self.worktree_path);
+        // Worktree cwd for maestro-spawned sessions; the transcript's
+        // original cwd for adopted ones (#1053) — `claude --resume`
+        // locates the transcript by cwd.
+        request.cwd = self
+            .worktree_path
+            .clone()
+            .or_else(|| self.session.adopted_cwd.clone());
         request.images.clone_from(&self.session.image_paths);
         request.permission_mode.clone_from(&self.permission_mode);
         request.allowed_tools.clone_from(&self.allowed_tools);
         request
             .system_prompt_appendix
             .clone_from(&self.system_prompt_appendix);
+        // #1053: an adopted session arrives pre-bound to an external
+        // conversation — its FIRST turn must resume it (`--resume <id>`).
+        // maestro-spawned sessions are never pre-bound at spawn time, so
+        // this stays None for them and the full first-turn shape
+        // (images + appendix) is preserved either way.
+        request.resume_session_id = self.session.agent_session_id.clone();
         request
     }
 
@@ -179,17 +183,13 @@ impl ManagedSession {
     /// fresh conversation — same semantics the retired
     /// `interaction_turn` loop had.
     fn build_followup_request(&self, prompt: &str) -> AgentRequest {
-        let mut request = AgentRequest::stream_json(prompt.to_string(), self.session.model.clone());
-        // Worktree cwd for maestro-spawned sessions; the transcript's
-        // original cwd for adopted ones (#1053) — `claude --resume`
-        // locates the transcript by cwd.
-        request.cwd = self
-            .worktree_path
-            .clone()
-            .or_else(|| self.session.adopted_cwd.clone());
-        request.permission_mode.clone_from(&self.permission_mode);
-        request.allowed_tools.clone_from(&self.allowed_tools);
-        request.resume_session_id = self.session.agent_session_id.clone();
+        let mut request = self.build_request();
+        request.prompt = prompt.to_string();
+        // Follow-ups resume the conversation built in turn 1 (#946/#947):
+        // the appendix already lives in that conversation's first turn and
+        // first-turn images don't re-apply.
+        request.images.clear();
+        request.system_prompt_appendix = None;
         request
     }
 
@@ -705,6 +705,27 @@ mod tests {
             Some(std::path::Path::new("/repo/original"))
         );
         assert_eq!(request.prompt, "adopt me");
+    }
+
+    #[test]
+    fn prebound_first_turn_request_keeps_full_first_turn_shape() {
+        // Judge review of #1071: the pre-bound path must not silently drop
+        // first-turn images or the system-prompt appendix — the request
+        // shape is identical to a maestro-spawned first turn, plus resume.
+        let mut ms = make_managed("adopt me");
+        assert!(ms.session.bind_agent_session_id("ext-conv-1"));
+        ms.session.adopted_cwd = Some(std::path::PathBuf::from("/repo/original"));
+        ms.session.image_paths = vec![std::path::PathBuf::from("/img/a.png")];
+        ms.system_prompt_appendix = Some("guardrail appendix".to_string());
+
+        let request = ms.build_request();
+
+        assert_eq!(request.resume_session_id.as_deref(), Some("ext-conv-1"));
+        assert_eq!(request.images, vec![std::path::PathBuf::from("/img/a.png")]);
+        assert_eq!(
+            request.system_prompt_appendix.as_deref(),
+            Some("guardrail appendix")
+        );
     }
 
     #[test]
