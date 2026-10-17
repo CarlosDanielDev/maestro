@@ -31,6 +31,8 @@ pub struct ReqwestQuotaHttp {
 impl ReqwestQuotaHttp {
     pub fn new() -> Result<Self, TransportError> {
         let client = reqwest::Client::builder()
+            // A usage endpoint has no reason to redirect. Never forward the bearer token.
+            .redirect(reqwest::redirect::Policy::none())
             .timeout(REQUEST_TIMEOUT)
             .user_agent(concat!("maestro/", env!("CARGO_PKG_VERSION")))
             .build()
@@ -65,8 +67,10 @@ struct RawWindow {
     resets_at: Option<String>,
 }
 
-/// Lenient parse. Each window stands alone. A missing, malformed, or undated
-/// window is `None`, never 0%. Returns `None` when no window parses.
+/// Lenient parse. Each window stands alone. A missing, malformed, undated, or
+/// out-of-range window is `None`, never 0%. Returns `None` when no window parses.
+///
+/// ASSUMED, UNVERIFIED against the live API: `utilization` is a percent in 0..=100.
 pub fn parse_usage(body: &str) -> Option<ProviderWindows> {
     let root: serde_json::Value = serde_json::from_str(body).ok()?;
     let windows = ProviderWindows {
@@ -86,8 +90,10 @@ fn window(root: &serde_json::Value, key: &str) -> Option<QuotaWindow> {
     let resets_at: DateTime<Utc> = DateTime::parse_from_rfc3339(&raw.resets_at?)
         .ok()?
         .with_timezone(&Utc);
+    // NaN fails `contains` too, so it is rejected with the rest.
+    let utilization_pct = raw.utilization.filter(|pct| (0.0..=100.0).contains(pct))?;
     Some(QuotaWindow {
-        utilization_pct: raw.utilization?,
+        utilization_pct,
         resets_at,
     })
 }
