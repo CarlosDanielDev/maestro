@@ -26,6 +26,8 @@ fn install_stub(dir: &Path) -> PathBuf {
 }
 
 fn write_config(dir: &Path, stub: &Path) {
+    // Escape the path as a TOML string; a bare `format!` breaks on quotes or backslashes.
+    let command = toml::Value::String(stub.display().to_string()).to_string();
     let toml = format!(
         r#"[project]
 repo = "owner/repo"
@@ -49,24 +51,35 @@ default = "stub"
 
 [agents.stub]
 kind = "claude"
-command = "{}"
-"#,
-        stub.display()
+command = {command}
+"#
     );
     fs::write(dir.join("maestro.toml"), toml).expect("write maestro.toml");
 }
 
 /// Runs `maestro run --prompt hello --once --skip-doctor` in `dir`, killing it after `RUN_TIMEOUT`.
+///
+/// Hermetic: HOME and XDG dirs point under `home`, and inherited `MAESTRO_*` vars are removed,
+/// so the developer shell cannot leak in. PATH is inherited, but the stub is referenced by
+/// absolute path, so a real `claude` on PATH is never used.
+///
+/// On timeout only maestro is killed, not an agent it spawned. stdout/stderr are files,
+/// not pipes, so `cargo test` cannot hang on a full pipe.
 fn run_maestro_once(dir: &Path, home: &Path) -> ExitStatus {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_maestro"))
-        .args(["run", "--prompt", "hello", "--once", "--skip-doctor"])
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_maestro"));
+    cmd.args(["run", "--prompt", "hello", "--once", "--skip-doctor"])
         .current_dir(dir)
         .env("HOME", home)
+        .env("XDG_CACHE_HOME", home.join("cache"))
+        .env("XDG_DATA_HOME", home.join("data"))
+        .env("XDG_CONFIG_HOME", home.join("config"))
         .stdin(Stdio::null())
         .stdout(File::create(dir.join("stdout.txt")).expect("create stdout.txt"))
-        .stderr(File::create(dir.join("stderr.txt")).expect("create stderr.txt"))
-        .spawn()
-        .expect("spawn maestro binary");
+        .stderr(File::create(dir.join("stderr.txt")).expect("create stderr.txt"));
+    for (key, _) in std::env::vars().filter(|(k, _)| k.starts_with("MAESTRO_")) {
+        cmd.env_remove(key);
+    }
+    let mut child = cmd.spawn().expect("spawn maestro binary");
 
     let deadline = Instant::now() + RUN_TIMEOUT;
     loop {
@@ -111,6 +124,10 @@ fn find_completed_stub_session(dir: &Path) -> serde_json::Value {
         })
 }
 
+/// Success path only. The app marks a session `completed` even when the stub exits nonzero,
+/// emits `error_during_execution`, or omits the result line (checked by mutation). So `status`
+/// alone is weak. The real assertions are `agent_session_id == STUB_SESSION_ID` (which fails
+/// when the agent never reported) and the `ASSISTANT: stub reply` log line.
 #[test]
 fn run_once_completes_offline_against_stub_agent() {
     let work = TempDir::new().expect("temp work dir");
@@ -135,8 +152,8 @@ fn run_once_completes_offline_against_stub_agent() {
         .join(format!("{session_id}.log"));
     let log = read_or_empty(&log_path);
     assert!(
-        log.contains("ASSISTANT:"),
-        "{} has no ASSISTANT line:\n{log}",
+        log.contains("ASSISTANT: stub reply"),
+        "{} has no `ASSISTANT: stub reply` line:\n{log}",
         log_path.display()
     );
 }
