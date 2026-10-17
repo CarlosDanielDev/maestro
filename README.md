@@ -8,7 +8,7 @@
 
 > Multi-agent orchestrator for [Claude Code](https://claude.ai/claude-code), Codex, Qwen, OpenCode, Ollama, and MiniMax — with a Matrix-style terminal control center.
 >
-> Landing page: [carlosdanieldev.github.io/maestro](https://carlosdanieldev.github.io/maestro/) — static shell, no build step ([site source](https://github.com/CarlosDanielDev/maestro/tree/gh-pages)).
+> Landing page: [carlosdanieldev.github.io/maestro](https://carlosdanieldev.github.io/maestro/) ([features](https://carlosdanieldev.github.io/maestro/#features) · [quickstart](https://carlosdanieldev.github.io/maestro/#quickstart)) — static shell, no build step ([site source](https://github.com/CarlosDanielDev/maestro/tree/gh-pages)).
 
 Maestro spawns and monitors multiple AI agent sessions working on the same project simultaneously. Mix providers — run Claude, Codex, Qwen, OpenCode, Ollama, and MiniMax side by side, or pick one per session. It provides real-time visibility into what each session is doing, how much it's spending, and coordinates their work to prevent conflicts — all from a single TUI dashboard.
 
