@@ -569,11 +569,13 @@ impl SessionPool {
         // Two live sessions on one conversation would drive it twice. A
         // finished or killed session may be adopted again. The check lives
         // here, not in the dispatcher, so every caller gets it.
-        if let Some(open) = self.all_sessions().into_iter().find(|s| {
-            s.agent_session_id.as_deref() == Some(agent_session_id) && !s.status.is_terminal()
-        }) {
+        if let Some(open) = self
+            .all_sessions()
+            .into_iter()
+            .find(|s| s.agent_session_id.as_deref() == Some(agent_session_id) && s.status.is_live())
+        {
             return Err(anyhow::anyhow!(
-                "{agent_session_id} is already open in session {} — open it from the Fleet board",
+                "{agent_session_id} is already open in session {}",
                 open.id
             ));
         }
@@ -977,6 +979,33 @@ mod tests {
                 again.is_ok(),
                 "a {terminal:?} session must not block adoption"
             );
+        }
+    }
+
+    /// The status of the first adopted session decides whether the transcript
+    /// is held. Errored and FailedGates are not terminal, but no process is
+    /// attached to them, so they must not block re-adoption for good.
+    #[test]
+    fn create_adopted_session_status_decides_whether_the_transcript_is_held() {
+        use SessionStatus::*;
+        for (status, held) in [
+            (Retrying, true),
+            (Paused, true),
+            (Errored, false),
+            (FailedGates, false),
+        ] {
+            let mut pool = make_pool(2);
+            let first = create_adopted(&mut pool).session_id;
+            must_get_active_mut(&mut pool, first).session.status = status;
+
+            let again = pool.create_adopted_session(
+                "ext-conv-1",
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+                None,
+                "opus".to_string(),
+            );
+
+            assert_eq!(again.is_err(), held, "{status:?} held={held}");
         }
     }
 

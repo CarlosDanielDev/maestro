@@ -145,6 +145,24 @@ fn next_key_clears_a_stale_status_line() {
     assert!(screen.status().is_none());
 }
 
+/// The board's own confirm call site: Ctrl+y and Alt+y on a live row cancel.
+#[test]
+fn ctrl_and_alt_y_on_the_live_confirm_do_not_adopt() {
+    use crossterm::event::{Event, KeyEvent, KeyModifiers};
+
+    for mods in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+        let mut screen = FleetBoardScreen::new(vec![external_row("ext work", 10)], now());
+        press(&mut screen, KeyCode::Enter);
+        assert!(screen.confirm_pending(), "Enter opens the confirm first");
+
+        let chord = Event::Key(KeyEvent::new(KeyCode::Char('y'), mods));
+        let action = screen.handle_input(&chord, InputMode::Insert);
+
+        assert_eq!(action, ScreenAction::None, "{mods:?}+y must not adopt");
+        assert!(!screen.confirm_pending(), "{mods:?}+y closes the confirm");
+    }
+}
+
 /// Ctrl and Alt chords are commands, not filter text. Shift still types.
 #[test]
 fn ctrl_and_alt_letters_do_not_enter_the_filter() {

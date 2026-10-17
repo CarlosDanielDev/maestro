@@ -201,6 +201,28 @@ impl SessionStatus {
     pub const fn is_terminal(&self) -> bool {
         self.valid_transitions().is_empty()
     }
+
+    /// True while an agent process may still be driving this session's
+    /// conversation. Adoption of the same transcript is refused while this
+    /// holds, so two processes never resume one conversation. Exhaustive on
+    /// purpose: a new variant must pick a side.
+    pub const fn is_live(&self) -> bool {
+        use SessionStatus::*;
+        match self {
+            // No process yet, or a process is running or about to be.
+            Queued | Spawning | Running | Retrying | CiFix | ConflictFix => true,
+            // Paused and stalled keep their process attached; they can resume.
+            Paused | Stalled => true,
+            // Kept alive until an explicit quit or kill.
+            Interactive => true,
+            // The agent already exited. Gates, PR and review steps run without
+            // a conversation process (NeedsReview waits for a human).
+            GatesRunning | NeedsPr | NeedsReview => false,
+            // Settled: no process, no further turns. Errored may be retried,
+            // but only by a later adopt, not by a live process.
+            Completed | FailedGates | Errored | Killed => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
