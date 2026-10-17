@@ -205,6 +205,7 @@ async fn event_loop(
     app: &mut App,
 ) -> anyhow::Result<()> {
     spawn_version_check(app.data_tx.clone());
+    app.start_quota_refresh();
 
     loop {
         // Apply session stream updates before drawing. In particular, a
@@ -213,6 +214,7 @@ async fn event_loop(
         while let Ok(evt) = app.event_rx.try_recv() {
             app.handle_session_event(evt);
         }
+        app.apply_quota_updates();
 
         // Live-tail: when the call-log pane is open with follow mode on,
         // snap the cursor to the newest entry that just landed (#886).

@@ -24,6 +24,7 @@ mod milestone;
 mod milestone_wizard;
 mod overview;
 mod prompt_input;
+mod quota_badges;
 mod roadmap;
 mod schema_tab;
 mod schema_tab_modals;

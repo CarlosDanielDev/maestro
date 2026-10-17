@@ -235,7 +235,7 @@ heavy_task_limit = 2
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `enabled` | bool | `false` | Reserved. No effect in this release: nothing reads this flag yet, so enabling it does nothing. Routing and quota reads are not wired to it. Only Claude Code has a quota source in v1. |
+| `enabled` | bool | `false` | Opt-in provider quota checks. When `true`, maestro polls each provider's usage windows every 60s in the background, routes a new session with no explicit provider to the one with the most headroom, shows a badge per provider on the token dashboard, and alerts once when a window reaches 97% (re-arms below 90%). When `false`, no credential is read and no request is sent. Only Claude Code has a quota source in v1. |
 
 *Source: `src/config/quota.rs`.*
 
