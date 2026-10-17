@@ -158,3 +158,41 @@ fn filter_matches_repo_and_title_case_insensitively() {
 
     assert!(sorted_indices(&rows, "zzz-none", FleetSort::ActivityDesc).is_empty());
 }
+
+#[test]
+fn maestro_spawned_session_bound_to_its_transcript_is_managed_and_listed_once() {
+    let mut spawned = pool_session("wire the parser");
+    assert!(spawned.bind_agent_session_id("ext-spawned-1"));
+
+    let rows = build_rows(
+        &[&spawned],
+        "maestro",
+        &[transcript(
+            "ext-spawned-1",
+            "/home/dev/maestro",
+            "wire the parser",
+            60,
+        )],
+    );
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "the transcript must not appear a second time"
+    );
+    assert_eq!(rows[0].kind, FleetKind::Managed);
+    assert!(matches!(rows[0].source, FleetSource::Pool { .. }));
+}
+
+#[test]
+fn adopted_session_whose_transcript_is_missing_is_still_adopted() {
+    let mut adopted = pool_session("fix parser");
+    assert!(adopted.bind_agent_session_id("ext-gone-1"));
+    adopted.adopted_cwd = Some(PathBuf::from("/home/dev/api-service"));
+
+    let rows = build_rows(&[&adopted], "maestro", &[]);
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].kind, FleetKind::Adopted);
+    assert_eq!(rows[0].repo, "api-service");
+}

@@ -13,11 +13,12 @@ use uuid::Uuid;
 /// Where a row came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FleetKind {
-    /// A maestro pool session with no matching external transcript.
+    /// A maestro pool session that was not adopted (spawned by maestro).
     Managed,
     /// An external transcript maestro has not adopted.
     External,
-    /// A pool session bound to a discovered transcript. Shown once, here.
+    /// A pool session adopted from an external transcript (`adopted_cwd`
+    /// is set). Its transcript, if still on disk, is shown once, here.
     Adopted,
 }
 
@@ -60,8 +61,14 @@ impl FleetSort {
 }
 
 /// Merge pool sessions (`repo` is the current repo) with machine-wide
-/// transcripts. A transcript whose id a pool session is bound to becomes
-/// that pool row, kind `Adopted`, and is not listed twice.
+/// transcripts.
+///
+/// Kind comes from the session alone: `Adopted` iff it was adopted
+/// (`adopted_cwd` is set, #1053), `Managed` otherwise. A maestro-spawned
+/// session also binds its transcript id, so the id match never decides the
+/// kind. The match does two other jobs: a transcript claimed by a pool row
+/// is not listed again as `External`, and it fills the row's repo, cwd and
+/// last-active time.
 pub fn build_rows(
     pool: &[&Session],
     repo: &str,
@@ -75,49 +82,50 @@ pub fn build_rows(
             .agent_session_id
             .as_deref()
             .and_then(|id| transcripts.iter().find(|t| t.session_id == id));
-        let title = session
-            .issue_title
-            .clone()
-            .unwrap_or_else(|| session.prompt.clone());
-        let status = session.status.label().to_string();
-        let row = match bound {
-            Some(transcript) => {
-                claimed.insert(transcript.session_id.as_str());
-                FleetRow {
-                    kind: FleetKind::Adopted,
-                    source: FleetSource::Pool {
-                        session_id: session.id,
-                    },
-                    repo: repo_name(&transcript.cwd),
-                    title: if title.is_empty() {
-                        transcript.title.clone()
-                    } else {
-                        title
-                    },
-                    status,
-                    cwd: Some(transcript.cwd.clone()),
-                    last_active: Some(transcript.last_active),
-                }
-            }
-            None => FleetRow {
-                kind: FleetKind::Managed,
-                source: FleetSource::Pool {
-                    session_id: session.id,
-                },
-                repo: session
+        if let Some(transcript) = bound {
+            claimed.insert(transcript.session_id.as_str());
+        }
+        let kind = if session.adopted_cwd.is_some() {
+            FleetKind::Adopted
+        } else {
+            FleetKind::Managed
+        };
+        let (repo_col, cwd, last_active) = match bound {
+            Some(transcript) => (
+                repo_name(&transcript.cwd),
+                Some(transcript.cwd.clone()),
+                Some(transcript.last_active),
+            ),
+            None => (
+                session
                     .adopted_cwd
                     .as_deref()
                     .map_or_else(|| repo.to_string(), repo_name),
-                title,
-                status,
-                cwd: session.adopted_cwd.clone(),
-                last_active: session
+                session.adopted_cwd.clone(),
+                session
                     .finished_at
                     .or(session.started_at)
                     .map(SystemTime::from),
-            },
+            ),
         };
-        rows.push(row);
+        let title = match session.issue_title.clone() {
+            Some(title) if !title.is_empty() => title,
+            _ => bound
+                .map(|t| t.title.clone())
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| session.prompt.clone()),
+        };
+        rows.push(FleetRow {
+            kind,
+            source: FleetSource::Pool {
+                session_id: session.id,
+            },
+            repo: repo_col,
+            title,
+            status: session.status.label().to_string(),
+            cwd,
+            last_active,
+        });
     }
 
     for transcript in transcripts {
