@@ -11,7 +11,7 @@ use crate::session::discovery::scan_transcripts;
 use crate::session::types::Session;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
-use crate::tui::screens::adopt_picker::repo_name;
+use crate::tui::screens::adopt_picker::{confirms_adopt, is_live_at, repo_name};
 use crate::tui::theme::Theme;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{Frame, layout::Rect};
@@ -36,6 +36,9 @@ pub struct FleetBoardScreen {
     /// One-line feedback for the last refused action. Cleared by the next
     /// key, so it never goes stale.
     status: Option<String>,
+    /// The live-session confirm is open for the selected external row. Only
+    /// `y`/`Y` adopts; every other key cancels.
+    confirm_live: bool,
 }
 
 impl FleetBoardScreen {
@@ -51,6 +54,7 @@ impl FleetBoardScreen {
             now,
             last_visible_height: 20,
             status: None,
+            confirm_live: false,
         };
         screen.reapply();
         screen
@@ -99,6 +103,19 @@ impl FleetBoardScreen {
     /// The feedback line currently shown, if any.
     pub fn status(&self) -> Option<&str> {
         self.status.as_deref()
+    }
+
+    /// True while the live-session confirm modal is open.
+    pub fn confirm_pending(&self) -> bool {
+        self.confirm_live
+    }
+
+    /// True when the selected row's transcript is inside the adopt quiet
+    /// period, so the source session may still be running (#1053).
+    pub(super) fn selected_is_live(&self) -> bool {
+        self.selected_row()
+            .and_then(|row| row.last_active)
+            .is_some_and(|at| is_live_at(at, self.now))
     }
 
     pub(super) fn rows_is_empty(&self) -> bool {
@@ -157,22 +174,38 @@ impl FleetBoardScreen {
         }
     }
 
-    /// Enter on a pool row asks the dispatcher to open its screen. An
-    /// external row opens nothing: adopting it is the Adopt Session screen's
-    /// job (#1068 will move that action here).
+    /// Enter on a pool row asks the dispatcher to open its screen. Enter on
+    /// an external row adopts it, unless the transcript is live: then the
+    /// confirm opens first.
     fn activate(&mut self) -> ScreenAction {
         let Some(source) = self.selected_row().map(|r| r.source.clone()) else {
             return ScreenAction::None;
         };
         match source {
             FleetSource::Pool { session_id } => ScreenAction::OpenFleetRow { session_id },
-            FleetSource::Transcript { .. } => {
-                self.set_status(
-                    "External session: adopt it from Adopt Session (a) on the Landing menu."
-                        .to_string(),
-                );
+            FleetSource::Transcript { .. } if self.selected_is_live() => {
+                self.confirm_live = true;
                 ScreenAction::None
             }
+            FleetSource::Transcript { .. } => self.adopt_action(),
+        }
+    }
+
+    /// The Adopt Session picker's action for the selected external row, with
+    /// the same fields the picker sends. Shared entry point: the dispatcher
+    /// runs one adopt pipeline for both screens (#1068).
+    fn adopt_action(&self) -> ScreenAction {
+        let Some(row) = self.selected_row() else {
+            return ScreenAction::None;
+        };
+        let (FleetSource::Transcript { agent_session_id }, Some(cwd)) = (&row.source, &row.cwd)
+        else {
+            return ScreenAction::None;
+        };
+        ScreenAction::AdoptSession {
+            agent_session_id: agent_session_id.clone(),
+            cwd: cwd.clone(),
+            title: (!row.title.is_empty()).then(|| row.title.clone()),
         }
     }
 }
@@ -196,7 +229,7 @@ impl KeymapProvider for FleetBoardScreen {
                 },
                 KeyBinding {
                     key: "Enter",
-                    description: "Open row",
+                    description: "Open or adopt row",
                 },
                 KeyBinding {
                     key: "Esc",
@@ -219,6 +252,16 @@ impl Screen for FleetBoardScreen {
             return ScreenAction::None;
         };
         self.status = None;
+
+        // Live-session confirm: swallows every key so typing cannot change
+        // the list behind it. Only `y`/`Y` adopts.
+        if self.confirm_live {
+            self.confirm_live = false;
+            if confirms_adopt(code) {
+                return self.adopt_action();
+            }
+            return ScreenAction::None;
+        }
 
         match code {
             KeyCode::Esc => {

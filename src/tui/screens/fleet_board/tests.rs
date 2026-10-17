@@ -83,15 +83,35 @@ fn enter_on_pool_row_asks_to_open_that_session() {
     assert_eq!(action, ScreenAction::OpenFleetRow { session_id });
 }
 
+/// A stale external row asks the dispatcher for the picker's adopt action,
+/// with the same fields the picker sends.
 #[test]
-fn enter_on_external_row_opens_nothing_and_shows_adopt_hint_on_screen() {
-    let mut screen = FleetBoardScreen::new(vec![external_row("ext work", 10)], now());
+fn enter_on_stale_external_row_asks_to_adopt_it() {
+    let row = external_row("ext work", 86_400);
+    let FleetSource::Transcript { agent_session_id } = row.source.clone() else {
+        unreachable!("external_row builds a transcript source");
+    };
+    let mut screen = FleetBoardScreen::new(vec![row], now());
 
     let action = press(&mut screen, KeyCode::Enter);
 
-    assert_eq!(action, ScreenAction::None);
-    let status = screen.status().expect("hint must show on the board");
-    assert!(status.contains("Adopt Session"), "got: {status}");
+    assert_eq!(
+        action,
+        ScreenAction::AdoptSession {
+            agent_session_id,
+            cwd: PathBuf::from("/home/dev/api-service"),
+            title: Some("ext work".to_string()),
+        }
+    );
+}
+
+/// A live external row must not adopt on Enter: it opens the confirm modal.
+#[test]
+fn enter_on_live_external_row_opens_the_confirm_and_adopts_nothing() {
+    let mut screen = FleetBoardScreen::new(vec![external_row("ext work", 10)], now());
+
+    assert_eq!(press(&mut screen, KeyCode::Enter), ScreenAction::None);
+    assert!(screen.confirm_pending());
 }
 
 #[test]
@@ -117,7 +137,7 @@ fn typing_filters_and_esc_clears_the_filter_before_leaving() {
 #[test]
 fn next_key_clears_a_stale_status_line() {
     let mut screen = FleetBoardScreen::new(vec![external_row("ext work", 10)], now());
-    press(&mut screen, KeyCode::Enter);
+    screen.set_status("adoption refused".to_string());
     assert!(screen.status().is_some());
 
     press(&mut screen, KeyCode::Down);

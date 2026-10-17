@@ -1,0 +1,6 @@
+---
+source: src/tui/screens/fleet_board/snapshot_tests.rs
+assertion_line: 173
+expression: footer.trim_end()
+---
+[↑/↓] Navigate  [Type] Filter  [Tab] Sort  [Enter] Open/Adopt  [Esc] Back

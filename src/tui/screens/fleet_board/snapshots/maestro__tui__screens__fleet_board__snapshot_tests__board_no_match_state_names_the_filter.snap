@@ -1,5 +1,6 @@
 ---
 source: src/tui/screens/fleet_board/snapshot_tests.rs
+assertion_line: 109
 expression: "render(&mut screen, 110, 10)"
 ---
 ╔════════════════════════════════════[ Fleet Board (last active first) ]═════════════════════════════════════╗
@@ -11,4 +12,4 @@ expression: "render(&mut screen, 110, 10)"
 ║                                                                                                            ║
 ║                                                                                                            ║
 ╚════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-[↑/↓] Navigate  [Type] Filter  [Tab] Sort  [Enter] Open  [Esc] Back
+[↑/↓] Navigate  [Type] Filter  [Tab] Sort  [Enter] Open/Adopt  [Esc] Back

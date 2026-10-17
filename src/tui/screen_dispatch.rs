@@ -571,8 +571,9 @@ pub(crate) fn open_interaction_session(
     app.navigate_to(app::TuiMode::Interaction);
 }
 
-/// Surface an adoption refusal on the picker that asked for it, and in the
-/// activity log. The picker stays open so another row can be picked.
+/// Surface an adoption refusal on the screen that asked for it (the picker
+/// or the Fleet board), and in the activity log. That screen stays open so
+/// another row can be picked.
 fn refuse_adoption(app: &mut app::App, reason: String) {
     // The reason can embed the transcript cwd, which is untrusted.
     let message = sanitize_log(&format!("adoption refused: {reason}"));
@@ -581,7 +582,11 @@ fn refuse_adoption(app: &mut app::App, reason: String) {
         message.clone(),
         crate::tui::activity_log::LogLevel::Warn,
     );
-    if let Some(picker) = app.screen_state.adopt_picker_screen.as_mut() {
+    if app.tui_mode == app::TuiMode::FleetBoard {
+        if let Some(board) = app.screen_state.fleet_board_screen.as_mut() {
+            board.set_status(message);
+        }
+    } else if let Some(picker) = app.screen_state.adopt_picker_screen.as_mut() {
         picker.set_status(message);
     }
 }
@@ -599,6 +604,18 @@ fn adopt_external_session(
     cwd: std::path::PathBuf,
     title: Option<String>,
 ) {
+    // A stale picker or board still lists a transcript that is already
+    // adopted. A second session bound to the same id would resume one
+    // conversation twice.
+    if app
+        .pool
+        .all_sessions()
+        .iter()
+        .any(|s| s.agent_session_id.as_deref() == Some(agent_session_id.as_str()))
+    {
+        refuse_adoption(app, format!("{agent_session_id} is already in the pool"));
+        return;
+    }
     let model = app.session_config.default_model.clone();
     let outcome =
         match app

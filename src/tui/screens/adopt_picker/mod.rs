@@ -12,7 +12,7 @@
 
 mod draw;
 
-pub(crate) use draw::relative_time;
+pub(crate) use draw::{draw_live_confirm, relative_time};
 
 use super::{Screen, ScreenAction};
 use crate::session::adopt::ADOPT_QUIET_PERIOD;
@@ -96,12 +96,7 @@ impl AdoptPickerScreen {
     /// True when the transcript was touched inside the adopt quiet period —
     /// the source session may still be live somewhere else (#1053).
     pub fn is_live(&self, session: &DiscoveredSession) -> bool {
-        // A future mtime (clock skew) counts as maximally fresh, matching
-        // `session::adopt::modified_within`.
-        self.now
-            .duration_since(session.last_active)
-            .unwrap_or_default()
-            < ADOPT_QUIET_PERIOD
+        is_live_at(session.last_active, self.now)
     }
 
     /// Show a refusal (or other feedback) on the picker itself.
@@ -169,6 +164,20 @@ impl AdoptPickerScreen {
     }
 }
 
+/// True when a transcript touched at `last_active` is still inside the adopt
+/// quiet period as of `now` (#1053). Shared by the picker and the Fleet board.
+pub(crate) fn is_live_at(last_active: SystemTime, now: SystemTime) -> bool {
+    // A future mtime (clock skew) counts as maximally fresh, matching
+    // `session::adopt::modified_within`.
+    now.duration_since(last_active).unwrap_or_default() < ADOPT_QUIET_PERIOD
+}
+
+/// The live-session confirm modal reads one key: only `y`/`Y` adopts. Every
+/// other key cancels, so Enter-Enter never adopts by accident.
+pub(crate) fn confirms_adopt(code: &KeyCode) -> bool {
+    matches!(code, KeyCode::Char('y' | 'Y'))
+}
+
 /// Last path component of `cwd` — the repo column ("maestro" for
 /// `/home/carlos/projects/maestro`). Falls back to the whole path.
 pub(crate) fn repo_name(cwd: &std::path::Path) -> String {
@@ -221,10 +230,10 @@ impl Screen for AdoptPickerScreen {
         // the modal without adopting.
         if self.confirm_live.is_some() {
             self.confirm_live = None;
-            return match code {
-                KeyCode::Char('y' | 'Y') => self.adopt_payload().unwrap_or(ScreenAction::None),
-                _ => ScreenAction::None,
-            };
+            if confirms_adopt(code) {
+                return self.adopt_payload().unwrap_or(ScreenAction::None);
+            }
+            return ScreenAction::None;
         }
 
         match code {

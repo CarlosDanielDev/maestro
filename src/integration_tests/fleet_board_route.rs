@@ -90,48 +90,6 @@ fn fleet_rows_route_to_existing_screens() {
     assert!(app.screen_state.interaction_screen.is_some());
 }
 
-#[test]
-fn external_row_only_hints_at_adopt_and_stays_on_the_board() {
-    let mut app = crate::tui::make_test_app("fleet-board-external");
-    let rows = build_rows(
-        &[],
-        "maestro",
-        &[transcript(
-            "ext-fleet-only-3",
-            "/home/dev/api-service",
-            "add auth",
-            90,
-        )],
-    );
-    app.tui_mode = TuiMode::FleetBoard;
-    app.screen_state.fleet_board_screen = Some(FleetBoardScreen::new(rows, now()));
-    let board = app
-        .screen_state
-        .fleet_board_screen
-        .as_mut()
-        .expect("board was just set");
-
-    let action = press(board, KeyCode::Enter);
-    handle_screen_action(&mut app, action);
-
-    assert_eq!(
-        app.tui_mode,
-        TuiMode::FleetBoard,
-        "no navigation for external rows"
-    );
-    assert!(
-        app.pool.all_sessions().is_empty(),
-        "nothing adopted from the board"
-    );
-    let status = app
-        .screen_state
-        .fleet_board_screen
-        .as_ref()
-        .and_then(|b| b.status())
-        .expect("the adopt hint must show on the board");
-    assert!(status.contains("Adopt Session"), "status was: {status}");
-}
-
 /// A pool row with no detail view (not an active interactive session) stays
 /// on the board and says so on the board's own status line.
 #[test]

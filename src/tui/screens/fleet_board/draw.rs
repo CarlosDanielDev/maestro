@@ -1,5 +1,5 @@
 use super::{FleetBoardScreen, FleetKind, FleetRow, FleetSort};
-use crate::tui::screens::adopt_picker::relative_time;
+use crate::tui::screens::adopt_picker::{draw_live_confirm, relative_time};
 use crate::tui::screens::draw_keybinds_bar;
 use crate::tui::theme::Theme;
 use crate::util::sanitize::sanitize_log;
@@ -76,11 +76,16 @@ impl FleetBoardScreen {
                 ("↑/↓", "Navigate"),
                 ("Type", "Filter"),
                 ("Tab", "Sort"),
-                ("Enter", "Open"),
+                ("Enter", "Open/Adopt"),
                 ("Esc", "Back"),
             ],
             theme,
         );
+
+        let cwd = self.selected_row().and_then(|row| row.cwd.as_ref());
+        if let (true, Some(cwd)) = (self.confirm_pending(), cwd) {
+            draw_live_confirm(f, area, theme, &cwd.display().to_string());
+        }
     }
 
     fn draw_filter_line(&self, f: &mut Frame, area: Rect, theme: &Theme) {

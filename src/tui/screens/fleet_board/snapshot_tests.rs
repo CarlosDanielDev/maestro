@@ -141,3 +141,37 @@ fn empty_state_echoes_filter_without_control_bytes() {
     );
     assert!(!rendered.contains('\u{1b}'), "ESC reached the buffer");
 }
+
+/// The live confirm names the directory, and a hostile title or cwd in it
+/// must reach the buffer as spaces, like every other board sink.
+#[test]
+fn live_confirm_renders_hostile_cwd_without_control_bytes() {
+    let mut row = external("evil\u{1b}]0;x\u{7}", "repo", 10);
+    row.cwd = Some(PathBuf::from("/home/dev/\u{1b}[2J"));
+    let mut screen = FleetBoardScreen::new(vec![row], now());
+    screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+
+    let rendered = render(&mut screen, 110, 24);
+
+    assert!(
+        rendered.contains("Session may be live"),
+        "confirm must show"
+    );
+    assert!(rendered.contains("Directory:"), "cwd line must show");
+    assert!(!rendered.contains('\u{1b}'), "ESC reached the buffer");
+    assert!(!rendered.contains('\u{7}'), "BEL reached the buffer");
+}
+
+/// The footer names every board action: adopt or open, sort, filter, back.
+#[test]
+fn fleet_board_footer_keymap() {
+    let mut screen = FleetBoardScreen::new(fixture(), now());
+
+    let rendered = render(&mut screen, 110, 10);
+    let footer = rendered.lines().last().expect("board has rows");
+
+    for token in ["Navigate", "Filter", "Sort", "Open/Adopt", "Back"] {
+        assert!(footer.contains(token), "footer lacks {token}: {footer}");
+    }
+    insta::assert_snapshot!(footer.trim_end());
+}
