@@ -20,7 +20,7 @@ use crate::session::discovery::DiscoveredSession;
 use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::theme::Theme;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{Frame, layout::Rect};
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -172,10 +172,12 @@ pub(crate) fn is_live_at(last_active: SystemTime, now: SystemTime) -> bool {
     now.duration_since(last_active).unwrap_or_default() < ADOPT_QUIET_PERIOD
 }
 
-/// The live-session confirm modal reads one key: only `y`/`Y` adopts. Every
-/// other key cancels, so Enter-Enter never adopts by accident.
-pub(crate) fn confirms_adopt(code: &KeyCode) -> bool {
-    matches!(code, KeyCode::Char('y' | 'Y'))
+/// The live-session confirm modal reads one key: only a plain `y`/`Y` adopts
+/// (Shift is allowed for the capital). Ctrl, Alt and Super chords cancel, so
+/// a modifier cannot adopt a live row by accident. Every other key cancels.
+pub(crate) fn confirms_adopt(code: &KeyCode, modifiers: KeyModifiers) -> bool {
+    let plain = modifiers.is_empty() || modifiers == KeyModifiers::SHIFT;
+    plain && matches!(code, KeyCode::Char('y' | 'Y'))
 }
 
 /// Last path component of `cwd` — the repo column ("maestro" for
@@ -216,6 +218,7 @@ impl Screen for AdoptPickerScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
         let Event::Key(KeyEvent {
             code,
+            modifiers,
             kind: KeyEventKind::Press,
             ..
         }) = event
@@ -230,7 +233,7 @@ impl Screen for AdoptPickerScreen {
         // the modal without adopting.
         if self.confirm_live.is_some() {
             self.confirm_live = None;
-            if confirms_adopt(code) {
+            if confirms_adopt(code, *modifiers) {
                 return self.adopt_payload().unwrap_or(ScreenAction::None);
             }
             return ScreenAction::None;

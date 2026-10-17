@@ -604,18 +604,6 @@ fn adopt_external_session(
     cwd: std::path::PathBuf,
     title: Option<String>,
 ) {
-    // A stale picker or board still lists a transcript that is already
-    // adopted. A second session bound to the same id would resume one
-    // conversation twice.
-    if app
-        .pool
-        .all_sessions()
-        .iter()
-        .any(|s| s.agent_session_id.as_deref() == Some(agent_session_id.as_str()))
-    {
-        refuse_adoption(app, format!("{agent_session_id} is already in the pool"));
-        return;
-    }
     let model = app.session_config.default_model.clone();
     let outcome =
         match app

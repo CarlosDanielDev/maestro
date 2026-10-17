@@ -146,6 +146,27 @@ fn fleet_live_row_confirms_and_defaults_to_cancel() {
     assert_eq!(adopted[0].agent_session_id.as_deref(), Some(EXTERNAL_ID));
 }
 
+/// Ctrl+y and Alt+y on the board's live confirm must cancel, not adopt.
+#[test]
+fn fleet_live_confirm_ignores_ctrl_and_alt_y() {
+    use crossterm::event::{Event, KeyEvent, KeyModifiers};
+    let mut app = crate::tui::make_test_app("fleet-action-modifier");
+    let rows = build_rows(
+        &[],
+        "maestro",
+        &[transcript(EXTERNAL_ID, REPO_CWD, "still typing", 30)],
+    );
+    for mods in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+        open_board(&mut app, rows.clone());
+        press(board(&mut app), KeyCode::Enter);
+        let chord = Event::Key(KeyEvent::new(KeyCode::Char('y'), mods));
+        let action = board(&mut app).handle_input(&chord, InputMode::Insert);
+        assert_eq!(action, ScreenAction::None, "{mods:?}+y must not adopt");
+        assert!(!board(&mut app).confirm_pending(), "{mods:?}+y closes it");
+    }
+    assert!(adopted_sessions(&app).is_empty(), "nothing adopted");
+}
+
 /// Adopting the same transcript twice from a stale board must not create a
 /// second pool session bound to the same external id.
 #[test]

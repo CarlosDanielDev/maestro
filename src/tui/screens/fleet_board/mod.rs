@@ -257,7 +257,7 @@ impl Screen for FleetBoardScreen {
         // the list behind it. Only `y`/`Y` adopts.
         if self.confirm_live {
             self.confirm_live = false;
-            if confirms_adopt(code) {
+            if confirms_adopt(code, *modifiers) {
                 return self.adopt_action();
             }
             return ScreenAction::None;
