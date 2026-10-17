@@ -1,6 +1,9 @@
 use super::*;
+use crate::agent_provider::quota::badge;
+use crate::agent_provider::quota::types::{ProviderWindows, QuotaWindow};
 use crate::tui::theme::Theme;
 use crate::tui::token_dashboard::draw_token_dashboard_with_badges;
+use chrono::{Duration, TimeZone, Utc};
 use insta::assert_snapshot;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -9,10 +12,29 @@ use ratatui::backend::TestBackend;
 fn token_dashboard_quota_badges_per_provider_120x40() {
     let mut terminal = test_terminal();
     let theme = Theme::dark();
+    // Badges come from the real badge function, so a rendering change shows up here.
+    let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+    let real_window = ProviderWindows {
+        five_hour: Some(QuotaWindow {
+            utilization_pct: 90.0,
+            resets_at: now + Duration::minutes(150),
+        }),
+        seven_day: None,
+        seven_day_sonnet: None,
+        stale: false,
+    };
+    let stale_window = ProviderWindows {
+        stale: true,
+        five_hour: Some(QuotaWindow {
+            utilization_pct: 40.0,
+            resets_at: now + Duration::minutes(150),
+        }),
+        ..real_window.clone()
+    };
     let badges = vec![
-        "claude 90% ↻2h30m ⇑".to_string(),
-        "qwen 40% ↻2h30m → stale".to_string(),
-        "minimax no data".to_string(),
+        badge::badge("minimax", None, now),
+        badge::badge("qwen", Some(&stale_window), now),
+        badge::badge("claude", Some(&real_window), now),
     ];
 
     terminal

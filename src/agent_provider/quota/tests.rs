@@ -6,6 +6,8 @@
 //! (JSON has no comments, so the note lives here.)
 
 mod cache;
+mod cadence;
+mod failures;
 mod parsing;
 mod retry;
 mod security;

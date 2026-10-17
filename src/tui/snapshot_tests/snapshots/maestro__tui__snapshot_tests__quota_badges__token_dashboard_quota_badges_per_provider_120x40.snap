@@ -2,7 +2,7 @@
 source: src/tui/snapshot_tests/quota_badges.rs
 expression: terminal.backend()
 ---
-"╔═══════════════[ Per-Provider Usage · claude 90% ↻2h30m ⇑ · qwen 40% ↻2h30m → stale · minimax no data ]═══════════════╗"
+"╔═══════════════[ Per-Provider Usage · minimax no data · qwen 40% ↻2h30m → stale · claude 90% ↻2h30m ⇑ ]═══════════════╗"
 "║ Provider        Cost                   Context                     Quota                                             ║"
 "║ (no active sessions)                                                                                                 ║"
 "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝"

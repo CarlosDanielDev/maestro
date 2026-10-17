@@ -33,6 +33,7 @@ pub mod alert;
 pub mod badge;
 mod cache;
 mod credentials;
+mod failures;
 pub mod fetch;
 pub mod pacing;
 pub mod routing;
@@ -45,16 +46,28 @@ use std::path::{Path, PathBuf};
 
 use crate::agent_provider::minimax::quota::{Clock, SystemClock};
 use cache::{CacheEntry, RATE_LIMIT_BACKOFF};
+use failures::{FailureLog, Level};
 use fetch::{QuotaHttp, ReqwestQuotaHttp};
 use types::{ProviderWindows, TransportError};
 
 const CLAUDE_PROVIDER_ID: &str = "claude";
+
+/// Extra gap on top of the cache TTL. A tick that lands inside the TTL window
+/// is skipped, so the refresh loop must wait longer than the TTL.
+const REFRESH_SLACK: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How often a live refresh should poll. Derived from the cache TTL, so the
+/// two cannot drift apart.
+pub fn refresh_interval() -> std::time::Duration {
+    cache::TTL.to_std().unwrap_or_default() + REFRESH_SLACK
+}
 
 pub struct QuotaFetcher {
     home: PathBuf,
     cache_dir: PathBuf,
     http: Box<dyn QuotaHttp>,
     clock: Box<dyn Clock>,
+    failures: FailureLog,
 }
 
 /// Outcome of one HTTP attempt, reduced to what the cache needs.
@@ -84,7 +97,13 @@ impl QuotaFetcher {
             cache_dir,
             http,
             clock,
+            failures: FailureLog::default(),
         }
+    }
+
+    /// `(warn reports, debug reports)` for failed fetches so far.
+    pub(super) fn failure_counts(&self) -> (usize, usize) {
+        self.failures.counts()
     }
 
     /// Production wiring: real HTTP client and wall clock.
@@ -164,21 +183,34 @@ impl QuotaFetcher {
     async fn request(&self, token: &str) -> Fetched {
         match self.http.get_usage(token).await {
             Ok(response) if response.status == 200 => match fetch::parse_usage(&response.body) {
-                Some(windows) => Fetched::Windows(windows),
+                Some(windows) => {
+                    self.failures.record_success();
+                    Fetched::Windows(windows)
+                }
                 None => {
-                    tracing::warn!("quota response had no parseable window");
+                    self.report_failure("no parseable window");
                     Fetched::Failed
                 }
             },
             Ok(response) if response.status == 429 => Fetched::RateLimited,
             Ok(response) => {
-                tracing::warn!(status = response.status, "quota fetch failed");
+                self.report_failure(&format!("status {}", response.status));
                 Fetched::Failed
             }
             Err(err) => {
-                tracing::warn!(error = %err, "quota fetch failed");
+                self.report_failure(&err.to_string());
                 Fetched::Failed
             }
+        }
+    }
+}
+
+impl QuotaFetcher {
+    /// Warn once per failure streak. Later failures log at debug.
+    fn report_failure(&self, detail: &str) {
+        match self.failures.record_failure() {
+            Level::Warn => tracing::warn!(%detail, "quota fetch failed"),
+            Level::Debug => tracing::debug!(%detail, "quota fetch still failing"),
         }
     }
 }

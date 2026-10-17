@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -15,14 +14,12 @@ use super::App;
 use crate::agent_provider::minimax::quota::{Clock, SystemClock};
 use crate::agent_provider::quota::alert::QuotaAlerts;
 use crate::agent_provider::quota::badge;
+use crate::agent_provider::quota::refresh_interval;
 use crate::agent_provider::quota::routing::collect_windows;
 use crate::agent_provider::quota::types::ProviderWindows;
 use crate::agent_provider::quota::{QuotaFetcher, alert::sanitize_provider_id};
 use crate::notifications::types::InterruptLevel;
 use crate::tui::activity_log::LogLevel;
-
-/// Same as the quota cache TTL, so each poll can see new data.
-pub const REFRESH_EVERY: Duration = Duration::from_secs(60);
 
 pub type Snapshot = HashMap<String, ProviderWindows>;
 
@@ -65,15 +62,20 @@ pub fn spawn_refresh(
     }
     let fetcher = Arc::clone(fetcher);
     Some(tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(REFRESH_EVERY);
+        let mut ticker = tokio::time::interval(refresh_interval());
         let mut logged_empty = false;
         loop {
             ticker.tick().await;
             let ids: Vec<&str> = provider_ids.iter().map(String::as_str).collect();
             let snapshot = collect_windows(true, &fetcher, &ids).await;
-            if snapshot.is_empty() && !logged_empty {
-                tracing::info!("no quota windows available; badges show no data");
+            // Log once per no-data streak. Data arriving again ends the streak.
+            if snapshot.is_empty() {
+                if !logged_empty {
+                    tracing::info!("no quota windows available; badges show no data");
+                }
                 logged_empty = true;
+            } else {
+                logged_empty = false;
             }
             if tx.send(snapshot).is_err() {
                 break;
@@ -324,6 +326,35 @@ mod tests {
         feed(&mut app, &tx, 40.0);
 
         assert_eq!(app.quota_badges(), vec!["claude 40% ↻2h30m →".to_string()]);
+    }
+
+    #[test]
+    fn explicit_provider_wins_over_quota_routing() {
+        // Routing would pick qwen (claude is critical), but the session names
+        // claude. The explicit choice must stay.
+        let (mut app, tx) = app_with_feed();
+        app.pool.set_agent_providers(HashMap::from([(
+            "qwen".to_string(),
+            Arc::new(FakeHttpProvider) as Arc<dyn AgentProvider>,
+        )]));
+        let mut hot = snapshot(90.0);
+        hot.insert("qwen".to_string(), snapshot(40.0)["claude"].clone());
+        tx.send(hot).expect("feed open");
+        app.apply_quota_updates();
+        let pinned = crate::session::types::Session::new(
+            "pinned".into(),
+            "model".into(),
+            "default".into(),
+            None,
+            None,
+        )
+        .with_agent_id(Some("claude".to_string()));
+        app.pool.enqueue(pinned);
+
+        let ids = app.pool.try_promote();
+        let managed = app.pool.get_active_mut(ids[0]).expect("promoted");
+
+        assert_eq!(managed.provider_id(), "claude");
     }
 
     #[test]

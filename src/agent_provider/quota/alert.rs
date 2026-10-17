@@ -1,6 +1,11 @@
 //! Quota alert with hysteresis (issue #1065). Fires once when a window crosses
 //! 97%. Re-arms only after it drops below 90%, so a window that hovers near
 //! 97% does not alert on every poll.
+//!
+//! First sight: the armed state starts `true` and lives only in memory. A
+//! window already at or above 97% when maestro starts fires once, on the first
+//! poll. A restart fires again while the window stays high. This is intended:
+//! the alert is most useful when the window is already close to its limit.
 
 use std::collections::HashMap;
 
@@ -121,6 +126,15 @@ mod tests {
         assert!(alerts.observe(&one("claude", 95.0)).is_empty());
         assert!(alerts.observe(&one("claude", 89.0)).is_empty());
         assert_eq!(alerts.observe(&one("claude", 97.5)).len(), 1);
+    }
+
+    #[test]
+    fn first_observation_above_97_fires_once_then_stays_quiet() {
+        // State starts armed and lives in memory. A window already at or above
+        // 97% when maestro starts fires once, on the first poll, and no more.
+        let mut alerts = QuotaAlerts::default();
+        assert_eq!(alerts.observe(&one("claude", 98.0)).len(), 1);
+        assert!(alerts.observe(&one("claude", 98.0)).is_empty());
     }
 
     #[test]
