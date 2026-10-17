@@ -142,7 +142,14 @@ pub(crate) fn welcome_layout(area: Rect) -> WelcomeLayout {
     } else {
         menu_y + menu_height + if show_whats_new { WHATS_NEW_GAP } else { 0 }
     };
-    let footer_y = whats_new_y + whats_new_block_height + 1;
+    // A blank line separates the footer when it fits. On a short terminal the
+    // footer takes that row instead, so the quit and notes hints stay visible.
+    let footer_gap = if whats_new_y + whats_new_block_height + 1 < area.y + area.height {
+        1
+    } else {
+        0
+    };
+    let footer_y = whats_new_y + whats_new_block_height + footer_gap;
 
     WelcomeLayout {
         menu_x,

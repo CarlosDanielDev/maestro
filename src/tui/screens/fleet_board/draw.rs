@@ -59,7 +59,7 @@ impl FleetBoardScreen {
                 f,
                 chunks[1],
                 theme,
-                &format!("No sessions match '{}'", self.filter_text),
+                &format!("No sessions match '{}'", sanitize_log(&self.filter_text)),
                 "Backspace edits the filter; Esc clears it.",
             );
         } else {

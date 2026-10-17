@@ -666,28 +666,35 @@ fn show_interaction_screen(
     true
 }
 
-/// Enter on a pool row of the Fleet board (#1067). An active interactive
-/// session opens on its Interaction screen; every other session opens the
-/// Dashboard, where the pool is listed.
+/// Enter on a pool row of the Fleet board (#1067). Only an active
+/// interactive session has a detail screen (Interaction). Any other row
+/// stays on the board, which says why on its status line: the Dashboard has
+/// no status surface to show the reason on. Nothing navigates silently.
 fn open_fleet_row(app: &mut app::App, session_id: uuid::Uuid) {
     let Some(session) = app.pool.get_session(session_id) else {
-        refuse_fleet_row(app, "That session is no longer in the pool.".to_string());
+        fleet_notice(
+            app,
+            "That session is no longer in the pool.".to_string(),
+            crate::tui::activity_log::LogLevel::Warn,
+        );
         return;
     };
     let interactive = session.session_mode == crate::session::types::SessionMode::Interactive;
     let title = session.issue_title.clone();
     if !(interactive && show_interaction_screen(app, session_id, title)) {
-        app.navigate_to(app::TuiMode::Dashboard);
+        fleet_notice(
+            app,
+            "No detail view for this session. It is finished, queued or not interactive."
+                .to_string(),
+            crate::tui::activity_log::LogLevel::Info,
+        );
     }
 }
 
-/// Feedback for a refused Fleet board action, on the board and in the log.
-fn refuse_fleet_row(app: &mut app::App, message: String) {
-    app.activity_log.push_simple(
-        "FLEET".into(),
-        sanitize_log(&message),
-        crate::tui::activity_log::LogLevel::Warn,
-    );
+/// A Fleet board notice, shown on the board's status line and in the log.
+fn fleet_notice(app: &mut app::App, message: String, level: crate::tui::activity_log::LogLevel) {
+    app.activity_log
+        .push_simple("FLEET".into(), sanitize_log(&message), level);
     if let Some(board) = app.screen_state.fleet_board_screen.as_mut() {
         board.set_status(message);
     }

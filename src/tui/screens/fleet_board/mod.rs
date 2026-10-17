@@ -13,7 +13,7 @@ use crate::tui::navigation::InputMode;
 use crate::tui::navigation::keymap::{KeyBinding, KeyBindingGroup, KeymapProvider};
 use crate::tui::screens::adopt_picker::repo_name;
 use crate::tui::theme::Theme;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{Frame, layout::Rect};
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -60,6 +60,13 @@ impl FleetBoardScreen {
     /// repo column for pool rows is the directory maestro runs in. An unset
     /// `HOME` or a missing `~/.claude/projects` is an empty scan, never an
     /// error.
+    ///
+    /// Known limitation: the scan is synchronous and reads every line of
+    /// every transcript. On a transcript tree that is gigabytes in size, the
+    /// raw read alone takes seconds on a cold cache, and the UI thread waits.
+    /// A follow-up will bound the cost for this screen and the adopt picker
+    /// alike, by reading only a tail window for the title and/or running the
+    /// scan on a background thread.
     pub fn scan(pool: &[&Session], now: SystemTime) -> Self {
         let transcripts = match std::env::var_os("HOME") {
             Some(home) => scan_transcripts(&PathBuf::from(home)),
@@ -204,6 +211,7 @@ impl Screen for FleetBoardScreen {
     fn handle_input(&mut self, event: &Event, _mode: InputMode) -> ScreenAction {
         let Event::Key(KeyEvent {
             code,
+            modifiers,
             kind: KeyEventKind::Press,
             ..
         }) = event
@@ -241,7 +249,7 @@ impl Screen for FleetBoardScreen {
                 ScreenAction::None
             }
             KeyCode::Enter => self.activate(),
-            KeyCode::Char(c) => {
+            KeyCode::Char(c) if is_text_input(*modifiers) => {
                 self.filter_text.push(*c);
                 self.reapply();
                 ScreenAction::None
@@ -257,6 +265,12 @@ impl Screen for FleetBoardScreen {
     fn desired_input_mode(&self) -> Option<InputMode> {
         Some(InputMode::Insert)
     }
+}
+
+/// Only plain and Shift-modified keys type filter text. Ctrl, Alt and Super
+/// chords are commands, so they must not leak into the filter.
+fn is_text_input(modifiers: KeyModifiers) -> bool {
+    !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
 }
 
 #[cfg(test)]

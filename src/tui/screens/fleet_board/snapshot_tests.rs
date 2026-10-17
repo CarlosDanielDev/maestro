@@ -125,3 +125,19 @@ fn hostile_title_and_cwd_render_without_control_bytes() {
     assert!(!rendered.contains('\u{7}'), "BEL reached the buffer");
     assert!(rendered.contains("evil"), "visible text must survive");
 }
+
+/// The empty-state headline echoes the filter, so a control byte typed into
+/// the filter must not reach the buffer.
+#[test]
+fn empty_state_echoes_filter_without_control_bytes() {
+    let mut screen = FleetBoardScreen::new(fixture(), now());
+    screen.handle_input(&key_event(KeyCode::Char('\u{1b}')), InputMode::Insert);
+
+    let rendered = render(&mut screen, 110, 10);
+
+    assert!(
+        rendered.contains("No sessions match"),
+        "empty state must show"
+    );
+    assert!(!rendered.contains('\u{1b}'), "ESC reached the buffer");
+}

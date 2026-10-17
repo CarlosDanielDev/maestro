@@ -21,4 +21,4 @@ expression: terminal.backend()
 "                   [a]  Adopt Session                       "
 "                   [f]  Fleet Board                         "
 "                   [q]  Quit                                "
-"                                                            "
+"                   <q> quit  <n> notes                      "

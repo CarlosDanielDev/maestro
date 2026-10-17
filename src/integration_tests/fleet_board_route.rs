@@ -131,3 +131,85 @@ fn external_row_only_hints_at_adopt_and_stays_on_the_board() {
         .expect("the adopt hint must show on the board");
     assert!(status.contains("Adopt Session"), "status was: {status}");
 }
+
+/// A pool row with no detail view (not an active interactive session) stays
+/// on the board and says so on the board's own status line.
+#[test]
+fn pool_row_without_detail_view_says_so_on_the_board() {
+    use crate::session::types::Session;
+
+    let mut app = crate::tui::make_test_app("fleet-board-no-detail");
+    let mut queued = Session::new(
+        String::new(),
+        "opus".into(),
+        "orchestrator".into(),
+        None,
+        None,
+    );
+    queued.issue_title = Some("one-shot work".into());
+    let session_id = queued.id;
+    app.pool.enqueue(queued);
+
+    let rows = build_rows(&app.pool.all_sessions(), "maestro", &[]);
+    app.tui_mode = TuiMode::FleetBoard;
+    app.screen_state.fleet_board_screen = Some(FleetBoardScreen::new(rows, now()));
+    let board = app
+        .screen_state
+        .fleet_board_screen
+        .as_mut()
+        .expect("board was just set");
+    let action = press(board, KeyCode::Enter);
+    assert_eq!(action, ScreenAction::OpenFleetRow { session_id });
+    handle_screen_action(&mut app, action);
+
+    assert_eq!(app.tui_mode, TuiMode::FleetBoard, "no silent navigation");
+    assert!(app.screen_state.interaction_screen.is_none());
+    let status = app
+        .screen_state
+        .fleet_board_screen
+        .as_ref()
+        .and_then(|b| b.status())
+        .expect("the no-detail notice must show on the board");
+    assert!(status.contains("No detail view"), "status was: {status}");
+}
+
+/// An interactive session that is not active (queued here; finished sessions
+/// take the same branch) has no Interaction screen either.
+#[test]
+fn inactive_interactive_pool_row_says_so_on_the_board() {
+    use crate::session::types::{Session, SessionMode};
+
+    let mut app = crate::tui::make_test_app("fleet-board-inactive-interactive");
+    let mut queued = Session::new(
+        String::new(),
+        "opus".into(),
+        "orchestrator".into(),
+        None,
+        None,
+    );
+    queued.session_mode = SessionMode::Interactive;
+    let session_id = queued.id;
+    app.pool.enqueue(queued);
+
+    let rows = build_rows(&app.pool.all_sessions(), "maestro", &[]);
+    app.tui_mode = TuiMode::FleetBoard;
+    app.screen_state.fleet_board_screen = Some(FleetBoardScreen::new(rows, now()));
+    let board = app
+        .screen_state
+        .fleet_board_screen
+        .as_mut()
+        .expect("board was just set");
+    let action = press(board, KeyCode::Enter);
+    handle_screen_action(&mut app, action);
+
+    assert_eq!(app.tui_mode, TuiMode::FleetBoard);
+    assert!(app.screen_state.interaction_screen.is_none());
+    let status = app
+        .screen_state
+        .fleet_board_screen
+        .as_ref()
+        .and_then(|b| b.status())
+        .expect("the notice must show on the board");
+    assert!(status.contains("No detail view"), "status was: {status}");
+    let _ = session_id;
+}

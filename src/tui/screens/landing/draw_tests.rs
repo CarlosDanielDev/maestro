@@ -20,3 +20,21 @@ fn styles_are_enabled_for_normal_term() {
         false
     ));
 }
+
+/// The footer carries the quit and notes hints. At 60x20 the grown menu
+/// leaves no room for the blank line above the footer; the footer must still
+/// land inside the area.
+#[test]
+fn footer_stays_inside_the_area_at_60x20_when_the_menu_grows() {
+    use super::welcome_layout;
+    use ratatui::layout::Rect;
+
+    let area = Rect::new(0, 0, 60, 20);
+    let layout = welcome_layout(area);
+
+    assert!(
+        layout.footer_y < area.y + area.height,
+        "footer at row {} is off the 20-row area",
+        layout.footer_y
+    );
+}

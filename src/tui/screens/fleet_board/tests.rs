@@ -124,3 +124,24 @@ fn next_key_clears_a_stale_status_line() {
 
     assert!(screen.status().is_none());
 }
+
+/// Ctrl and Alt chords are commands, not filter text. Shift still types.
+#[test]
+fn ctrl_and_alt_letters_do_not_enter_the_filter() {
+    use crossterm::event::{Event, KeyEvent, KeyModifiers};
+
+    let mut screen = FleetBoardScreen::new(vec![pool_row("docs pass", 10)], now());
+    for mods in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+        let chord = Event::Key(KeyEvent::new(KeyCode::Char('x'), mods));
+        screen.handle_input(&chord, InputMode::Insert);
+    }
+    assert!(
+        screen.filter_text.is_empty(),
+        "got {:?}",
+        screen.filter_text
+    );
+
+    let shifted = Event::Key(KeyEvent::new(KeyCode::Char('D'), KeyModifiers::SHIFT));
+    screen.handle_input(&shifted, InputMode::Insert);
+    assert_eq!(screen.filter_text, "D");
+}

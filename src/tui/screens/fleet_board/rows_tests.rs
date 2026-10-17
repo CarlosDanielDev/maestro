@@ -196,3 +196,30 @@ fn adopted_session_whose_transcript_is_missing_is_still_adopted() {
     assert_eq!(rows[0].kind, FleetKind::Adopted);
     assert_eq!(rows[0].repo, "api-service");
 }
+
+fn tied(id: &str, cwd: &str) -> FleetRow {
+    FleetRow {
+        kind: FleetKind::External,
+        source: FleetSource::Transcript {
+            agent_session_id: id.to_string(),
+        },
+        repo: repo_name(&PathBuf::from(cwd)),
+        title: id.to_string(),
+        status: "external".to_string(),
+        cwd: Some(PathBuf::from(cwd)),
+        last_active: Some(now() - Duration::from_secs(100)),
+    }
+}
+
+/// Equal activity times must not follow the input (read_dir) order. Ties
+/// break by cwd, then by id, in both sort modes.
+#[test]
+fn ties_break_by_cwd_then_id_in_both_sort_modes() {
+    let rows = vec![tied("c", "/x"), tied("a", "/y"), tied("b", "/x")];
+
+    let desc = sorted_indices(&rows, "", FleetSort::ActivityDesc);
+    let stale = sorted_indices(&rows, "", FleetSort::StaleFirst);
+
+    assert_eq!(titles(&rows, &desc), ["b", "c", "a"]);
+    assert_eq!(titles(&rows, &stale), ["b", "c", "a"]);
+}

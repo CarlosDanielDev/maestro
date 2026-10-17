@@ -162,8 +162,12 @@ pub fn sorted_indices(rows: &[FleetRow], filter: &str, sort: FleetSort) -> Vec<u
         .map(|(i, _)| i)
         .collect();
     match sort {
-        FleetSort::ActivityDesc => indices.sort_by_key(|&i| Reverse(activity_key(&rows[i]))),
-        FleetSort::StaleFirst => indices.sort_by_key(|&i| activity_key(&rows[i])),
+        FleetSort::ActivityDesc => {
+            indices.sort_by_key(|&i| (Reverse(activity_key(&rows[i])), tie_key(&rows[i])));
+        }
+        FleetSort::StaleFirst => {
+            indices.sort_by_key(|&i| (activity_key(&rows[i]), tie_key(&rows[i])));
+        }
     }
     indices
 }
@@ -171,6 +175,16 @@ pub fn sorted_indices(rows: &[FleetRow], filter: &str, sort: FleetSort) -> Vec<u
 /// A row that never started sorts as the oldest activity.
 fn activity_key(row: &FleetRow) -> SystemTime {
     row.last_active.unwrap_or(UNIX_EPOCH)
+}
+
+/// Breaks activity ties by cwd, then by source id. Input order comes from
+/// directory reads, which differ per machine, so it must not decide ties.
+fn tie_key(row: &FleetRow) -> (Option<PathBuf>, String) {
+    let id = match &row.source {
+        FleetSource::Pool { session_id } => session_id.to_string(),
+        FleetSource::Transcript { agent_session_id } => agent_session_id.clone(),
+    };
+    (row.cwd.clone(), id)
 }
 
 #[cfg(test)]
