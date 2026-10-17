@@ -19,6 +19,6 @@ expression: terminal.backend()
 "                   [h]  Milestone Review                    "
 "                   [t]  Teams                               "
 "                   [a]  Adopt Session                       "
+"                   [f]  Fleet Board                         "
 "                   [q]  Quit                                "
 "                                                            "
-"                   <q> quit  <n> notes                      "

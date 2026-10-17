@@ -4,6 +4,7 @@ pub mod adopt_picker;
 pub mod bypass_dispatch;
 pub mod bypass_warning;
 pub mod ci_error_review;
+pub mod fleet_board;
 pub mod gate_output_viewer;
 pub mod hollow_retry;
 pub mod home;
@@ -32,6 +33,7 @@ pub mod wrap;
 pub use adapt_follow_up::AdaptFollowUpScreen;
 pub use adopt_picker::AdoptPickerScreen;
 pub use ci_error_review::{CiErrorReviewScreen, CiErrorReviewState, FetchPhase};
+pub use fleet_board::FleetBoardScreen;
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
 pub use interaction::InteractionScreen;
@@ -220,6 +222,10 @@ pub enum ScreenAction {
     /// active interaction session for the issue (skipping the launch dialog)
     /// or, when none exists, opens the launch dialog (#738 re-entry AC).
     ResumeOrLaunchIssue { issue_number: u64 },
+    /// Enter on a pool row of the Fleet board (#1067). The dispatcher opens
+    /// the session's screen: Interaction when it is active and interactive,
+    /// the Dashboard otherwise.
+    OpenFleetRow { session_id: uuid::Uuid },
     /// Adopt the external Claude Code conversation selected on the
     /// AdoptPicker screen (#1054). The dispatcher creates the adopted
     /// session in the pool (`create_adopted_session`) and routes to the

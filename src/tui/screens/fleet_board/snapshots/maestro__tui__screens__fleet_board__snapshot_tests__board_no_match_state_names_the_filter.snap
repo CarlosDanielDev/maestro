@@ -1,0 +1,14 @@
+---
+source: src/tui/screens/fleet_board/snapshot_tests.rs
+expression: "render(&mut screen, 110, 10)"
+---
+╔════════════════════════════════════[ Fleet Board (last active first) ]═════════════════════════════════════╗
+║Filter: zzz▏                                                                                                ║
+║No sessions match 'zzz'                                                                                     ║
+║Backspace edits the filter; Esc clears it.                                                                  ║
+║                                                                                                            ║
+║                                                                                                            ║
+║                                                                                                            ║
+║                                                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+[↑/↓] Navigate  [Type] Filter  [Tab] Sort  [Enter] Open  [Esc] Back

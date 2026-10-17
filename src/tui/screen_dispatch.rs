@@ -186,6 +186,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::CiErrorReview => app.screen_state.ci_error_review_screen.as_mut()?,
         app::TuiMode::TeamWizard => app.screen_state.team_wizard_screen.as_mut()?,
         app::TuiMode::AdoptPicker => app.screen_state.adopt_picker_screen.as_mut()?,
+        app::TuiMode::FleetBoard => app.screen_state.fleet_board_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -599,18 +600,17 @@ fn adopt_external_session(
     title: Option<String>,
 ) {
     let model = app.session_config.default_model.clone();
-    let outcome = match app.pool.create_adopted_session(
-        &agent_session_id,
-        cwd.clone(),
-        title.clone(),
-        model.clone(),
-    ) {
-        Ok(outcome) => outcome,
-        Err(e) => {
-            refuse_adoption(app, e.to_string());
-            return;
-        }
-    };
+    let outcome =
+        match app
+            .pool
+            .create_adopted_session(&agent_session_id, cwd.clone(), title.clone(), model)
+        {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                refuse_adoption(app, e.to_string());
+                return;
+            }
+        };
 
     // Name the work in the header from the transcript title, falling back
     // to the repo the conversation ran in (#738 QA convention).
@@ -620,16 +620,10 @@ fn adopt_external_session(
             .unwrap_or_else(|| "external conversation".to_string())
     });
 
-    let Some(managed) = app.pool.get_active_mut(outcome.session_id) else {
+    if !show_interaction_screen(app, outcome.session_id, Some(header_title)) {
         refuse_adoption(app, "session vanished before it could open".to_string());
         return;
-    };
-    let agent_label = crate::tui::agent_badge::agent_label(managed.session.agent_id.as_deref());
-    let mut screen = screens::InteractionScreen::for_managed(managed);
-    screen.set_provider_context(agent_label, model);
-    screen.set_issue_title(header_title);
-
-    app.screen_state.interaction_screen = Some(screen);
+    }
     app.activity_log.push_simple(
         "ADOPT".into(),
         format!(
@@ -647,7 +641,56 @@ fn adopt_external_session(
             crate::tui::activity_log::LogLevel::Warn,
         );
     }
+}
+
+/// Open the Interaction screen on an active pool session and navigate to
+/// it. `false` when the session is not active (finished or queued), with
+/// nothing changed.
+fn show_interaction_screen(
+    app: &mut app::App,
+    session_id: uuid::Uuid,
+    header_title: Option<String>,
+) -> bool {
+    let model = app.session_config.default_model.clone();
+    let Some(managed) = app.pool.get_active_mut(session_id) else {
+        return false;
+    };
+    let agent_label = crate::tui::agent_badge::agent_label(managed.session.agent_id.as_deref());
+    let mut screen = screens::InteractionScreen::for_managed(managed);
+    screen.set_provider_context(agent_label, model);
+    if let Some(title) = header_title {
+        screen.set_issue_title(title);
+    }
+    app.screen_state.interaction_screen = Some(screen);
     app.navigate_to(app::TuiMode::Interaction);
+    true
+}
+
+/// Enter on a pool row of the Fleet board (#1067). An active interactive
+/// session opens on its Interaction screen; every other session opens the
+/// Dashboard, where the pool is listed.
+fn open_fleet_row(app: &mut app::App, session_id: uuid::Uuid) {
+    let Some(session) = app.pool.get_session(session_id) else {
+        refuse_fleet_row(app, "That session is no longer in the pool.".to_string());
+        return;
+    };
+    let interactive = session.session_mode == crate::session::types::SessionMode::Interactive;
+    let title = session.issue_title.clone();
+    if !(interactive && show_interaction_screen(app, session_id, title)) {
+        app.navigate_to(app::TuiMode::Dashboard);
+    }
+}
+
+/// Feedback for a refused Fleet board action, on the board and in the log.
+fn refuse_fleet_row(app: &mut app::App, message: String) {
+    app.activity_log.push_simple(
+        "FLEET".into(),
+        sanitize_log(&message),
+        crate::tui::activity_log::LogLevel::Warn,
+    );
+    if let Some(board) = app.screen_state.fleet_board_screen.as_mut() {
+        board.set_status(message);
+    }
 }
 
 /// Process a ScreenAction returned by a screen's input handler.
@@ -785,6 +828,14 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         std::time::SystemTime::now(),
                     ));
                 }
+                app::TuiMode::FleetBoard => {
+                    // Sync scan on open (#1067): one local-disk walk, no timer.
+                    let pool = app.pool.all_sessions();
+                    app.screen_state.fleet_board_screen = Some(screens::FleetBoardScreen::scan(
+                        &pool,
+                        std::time::SystemTime::now(),
+                    ));
+                }
                 app::TuiMode::MilestoneHealth => {
                     app.screen_state.milestone_health_screen =
                         Some(crate::tui::screens::milestone_health::MilestoneHealthScreen::new());
@@ -881,6 +932,9 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::MilestoneHealth => {
                     app.screen_state.milestone_health_screen = None;
+                }
+                app::TuiMode::FleetBoard => {
+                    app.screen_state.fleet_board_screen = None;
                 }
                 app::TuiMode::AdoptPicker => {
                     app.screen_state.adopt_picker_screen = None;
@@ -1163,6 +1217,7 @@ pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
             cwd,
             title,
         } => adopt_external_session(app, agent_session_id, cwd, title),
+        ScreenAction::OpenFleetRow { session_id } => open_fleet_row(app, session_id),
         ScreenAction::QuitInteraction { issue_number } => {
             // #949 (spec §4.4): quit = terminate the unified session, THEN
             // wipe the worktree off-thread (#740 safe-gated primitive under

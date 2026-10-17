@@ -12,6 +12,8 @@
 
 mod draw;
 
+pub(crate) use draw::relative_time;
+
 use super::{Screen, ScreenAction};
 use crate::session::adopt::ADOPT_QUIET_PERIOD;
 use crate::session::discovery::DiscoveredSession;
@@ -169,7 +171,7 @@ impl AdoptPickerScreen {
 
 /// Last path component of `cwd` — the repo column ("maestro" for
 /// `/home/carlos/projects/maestro`). Falls back to the whole path.
-pub(super) fn repo_name(cwd: &std::path::Path) -> String {
+pub(crate) fn repo_name(cwd: &std::path::Path) -> String {
     cwd.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| cwd.to_string_lossy().into_owned())

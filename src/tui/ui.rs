@@ -314,6 +314,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::FleetBoard => {
+            if let Some(ref mut screen) = app.screen_state.fleet_board_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
         TuiMode::QueueExecution => {
             // Draw overview underneath
             let sessions = app.pool.all_sessions();
