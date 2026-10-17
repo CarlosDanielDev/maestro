@@ -7,6 +7,11 @@
 <meta name="color-scheme" content="dark">
 <title>maestro — multi-agent orchestrator for AI coding agents</title>
 <meta name="description" content="Maestro spawns and monitors multiple AI agent sessions working on the same project simultaneously — real-time visibility, costs, and conflict-free coordination from a single TUI. Landing page: https://carlosdanieldev.github.io/maestro/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="maestro — multi-agent orchestrator for AI coding agents">
+<meta property="og:description" content="Maestro spawns and monitors multiple AI agent sessions working on the same project simultaneously — real-time visibility, costs, and conflict-free coordination from a single TUI. Landing page: https://carlosdanieldev.github.io/maestro/">
+<meta property="og:url" content="https://carlosdanieldev.github.io/maestro/">
+<meta property="og:image" content="https://carlosdanieldev.github.io/maestro/docs/assets/readme-hero.svg">
 <style>
   :root {
     --bg: #0b0e0c;
@@ -67,8 +72,12 @@
     margin: 0.5rem 0 0; line-height: 1.5;
   }
 
-  section.blocks { padding: 2.5rem 0 3.5rem; border-top: 1px solid var(--line); }
+  section.features, section.quickstart, section.blocks { padding: 2.5rem 0 3.5rem; border-top: 1px solid var(--line); }
   .kicker { color: var(--dim); margin: 0 0 0.5rem; }
+  .features ul { list-style: none; margin: 0; padding: 0; max-width: 40rem; }
+  .features li { margin: 0 0 1rem; }
+  .features li::before { content: "› "; color: var(--accent); }
+  .quickstart pre { background: var(--panel); border: 1px solid var(--line); padding: 1rem 1.25rem; margin: 0; overflow-x: auto; font-size: 0.85rem; }
   h2 { font-size: clamp(1.4rem, 4vw, 1.9rem); font-weight: 800; margin: 0 0 2rem; letter-spacing: -0.01em; }
   .block { margin: 0 0 1.75rem; max-width: 40rem; }
   .block:last-child { margin-bottom: 0; }
@@ -103,7 +112,7 @@
     <p class="body">Maestro spawns and monitors multiple AI coding agents on the same project — live status, real costs, conflict-free worktrees — from one TUI dashboard.</p>
 
     <div class="install">
-      <p class="cmd">cargo install --git https://github.com/CarlosDanielDev/maestro</p>
+      <p class="cmd">cargo install --git https://github.com/CarlosDanielDev/maestro maestro</p>
       <p class="cmd">brew install carlosdanieldev/tap/maestro --formula</p>
       <p class="note">crates.io `maestro` is an unrelated crate — install from this repo. `--formula` because an unrelated cask named "maestro" exists in homebrew core.</p>
     </div>
@@ -135,6 +144,31 @@
 F6 Deps  F9 Pause  F10 Kill  Ctrl+X Exit</pre>
   </div>
 
+  <section class="features" id="features">
+    <p class="kicker">features</p>
+    <h2>six things it does, plainly</h2>
+    <ul>
+      <li>Multi-session pool — run up to N concurrent agent sessions with automatic queue promotion.</li>
+      <li>Git worktree per session — sessions do not step on each other's files.</li>
+      <li>Rich activity log — file paths, command previews, tool durations.</li>
+      <li>Completion gates — fmt, clippy, test, or any custom command, run after every session.</li>
+      <li>Automated PR creation — with a cost report and file list, on session completion.</li>
+      <li>Mixed providers — Claude, Codex, Qwen, OpenCode, Ollama, and MiniMax side by side in <code>[agents]</code>.</li>
+    </ul>
+  </section>
+
+  <section class="quickstart" id="quickstart">
+    <p class="kicker">quickstart</p>
+    <h2>from install to first session</h2>
+    <pre><code>maestro init                                              # interactive maestro.toml setup
+maestro init --non-interactive                            # headless GitHub defaults
+maestro doctor                                            # verify gh/az/agent CLI/git
+maestro run --prompt "Refactor the auth module to async"  # ad-hoc session
+maestro run --issue 42                                    # session for a GitHub issue
+maestro run --milestone "v1.0"                            # all open issues in a milestone
+maestro                                                   # open the TUI dashboard</code></pre>
+  </section>
+
   <section class="blocks">
     <p class="kicker">honest boundaries</p>
     <h2>three things it will not pretend to be</h2>
@@ -162,8 +196,10 @@ F6 Deps  F9 Pause  F10 Kill  Ctrl+X Exit</pre>
     <p>maestro · MIT © CarlosDanielDev</p>
     <div class="links">
       <a href="https://github.com/CarlosDanielDev/maestro">source ↗</a>
-      <a href="https://github.com/CarlosDanielDev/maestro/issues">issues ↗</a>
       <a href="https://github.com/CarlosDanielDev/maestro/releases">releases ↗</a>
+      <a href="https://github.com/CarlosDanielDev/maestro/wiki">wiki ↗</a>
+      <a href="https://github.com/CarlosDanielDev/maestro/blob/main/CHANGELOG.md">changelog ↗</a>
+      <a href="https://github.com/CarlosDanielDev/maestro/issues">issues ↗</a>
       <a href="https://discord.gg/WHsk2FuQEH">discord ↗</a>
     </div>
   </div>
