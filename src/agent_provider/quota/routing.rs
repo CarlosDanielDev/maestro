@@ -12,6 +12,11 @@ use super::types::ProviderWindows;
 /// with the least headroom. `None` when the provider is not eligible: no window
 /// reported, or any reported window is not `OnTrack`.
 fn eligible_headroom(windows: &ProviderWindows, now: DateTime<Utc>) -> Option<f64> {
+    // A stale snapshot can show an old 0%. It must never win over fresh data.
+    // A stale snapshot can show an old 0%. It must never win over fresh data.
+    if windows.stale {
+        return None;
+    }
     let reported = [
         (&windows.five_hour, pacing::FIVE_HOUR),
         (&windows.seven_day, pacing::SEVEN_DAY),
@@ -29,10 +34,11 @@ fn eligible_headroom(windows: &ProviderWindows, now: DateTime<Utc>) -> Option<f6
     binding
 }
 
-/// `candidates` are `(provider_id, windows)` in config order. Returns the id
-/// with the most headroom. Ties keep config order. A provider is eligible only
-/// when every reported window is `OnTrack` and at least one window is reported.
-/// `None` windows are never eligible and never count as 0%.
+/// `candidates` are `(provider_id, windows)`, checked in the order given.
+/// Returns the id with the most headroom. A tie keeps the earlier candidate.
+/// A provider is eligible only when its windows are fresh, every reported
+/// window is `OnTrack`, and at least one window is reported. `None` windows
+/// are never eligible and never count as 0%.
 pub fn pick<'a>(
     candidates: &[(&'a str, Option<ProviderWindows>)],
     now: DateTime<Utc>,
@@ -184,7 +190,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn quota_off_makes_no_request_and_no_read() {
+    async fn quota_off_makes_no_request() {
         let calls = CountingHttp::default();
         let (_home, _cache, fetcher) = fetcher_with_token(&calls);
 
@@ -204,6 +210,25 @@ mod tests {
 
         assert!(out.contains_key("claude"));
         assert_eq!(calls.0.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn pick_ignores_stale_windows_even_at_zero_percent() {
+        // Stale 0% has the most headroom on paper, but it is old data.
+        let mut stale = on_pace_50(0.0);
+        stale.stale = true;
+        let fresh = on_pace_50(40.0); // headroom 60, on track
+        assert_eq!(
+            pick(&[("claude", Some(stale)), ("qwen", Some(fresh))], now()),
+            Some("qwen")
+        );
+    }
+
+    #[test]
+    fn pick_returns_none_when_every_window_is_stale() {
+        let mut stale = on_pace_50(0.0);
+        stale.stale = true;
+        assert_eq!(pick(&[("claude", Some(stale))], now()), None);
     }
 
     #[test]

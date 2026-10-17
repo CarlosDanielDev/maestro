@@ -235,7 +235,7 @@ heavy_task_limit = 2
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `enabled` | bool | `false` | Off by default. When `true`, maestro reads provider usage windows and routes a launch with no explicit provider to the provider with the most headroom. When `false`, maestro makes no quota request and reads no credential file. Only Claude Code has a quota source in v1. |
+| `enabled` | bool | `false` | Reserved. No effect in this release: nothing reads this flag yet, so enabling it does nothing. Routing and quota reads are not wired to it. Only Claude Code has a quota source in v1. |
 
 *Source: `src/config/quota.rs`.*
 
