@@ -14,6 +14,7 @@ mod flags;
 mod gates;
 mod github;
 mod io;
+mod legacy_azure;
 mod migrate;
 mod models;
 mod modes;
@@ -22,6 +23,7 @@ mod overlay;
 mod overlay_dynamic;
 mod plugins;
 mod project;
+mod quota;
 mod review;
 mod runtime;
 pub mod schema;
@@ -45,12 +47,14 @@ pub use flags::FlagsConfig;
 pub use gates::{CiAutoFixConfig, GatesConfig};
 #[allow(unused_imports)]
 pub use github::{GithubConfig, MergeMethod, ProviderConfig};
+use legacy_azure::{has_legacy_azure_devops_flag, log_legacy_azure_devops_config};
 pub use migrate::run_startup_migration;
 pub use models::ModelsConfig;
 pub use modes::ModeConfig;
 pub use notifications::NotificationsConfig;
 pub use plugins::PluginConfig;
 pub use project::ProjectConfig;
+pub use quota::QuotaConfig;
 #[allow(unused_imports)]
 pub use review::{ReviewConfig, ReviewerEntry};
 pub use runtime::{ConcurrencyConfig, MonitoringConfig};
@@ -105,6 +109,8 @@ pub struct Config {
     pub agents: AgentsConfig,
     #[serde(default, skip_serializing_if = "ExperimentalConfig::is_default")]
     pub experimental: ExperimentalConfig,
+    #[serde(default, skip_serializing_if = "QuotaConfig::is_default")]
+    pub quota: QuotaConfig,
     #[serde(default)]
     pub teams: HashMap<String, crate::orchestration::team::TeamConfig>,
     #[serde(default, skip_serializing_if = "BehaviorConfig::is_default")]
@@ -357,28 +363,6 @@ impl Config {
 pub struct ResolvedAgentConfig {
     pub id: String,
     pub config: AgentConfig,
-}
-
-fn has_legacy_azure_devops_flag(content: &str) -> bool {
-    let Ok(value) = content.parse::<toml::Value>() else {
-        return false;
-    };
-    matches!(
-        value
-            .get("experimental")
-            .and_then(|experimental| experimental.get("azure_devops"))
-            .and_then(toml::Value::as_bool),
-        Some(false)
-    )
-}
-
-fn log_legacy_azure_devops_config(azure_devops: bool) {
-    if !azure_devops {
-        tracing::debug!(
-            "`experimental.azure_devops = false` is retained for backward compatibility; \
-             Azure DevOps is stable and no startup gate is applied"
-        );
-    }
 }
 
 fn valid_azure_devops_organization_url(input: &str) -> bool {

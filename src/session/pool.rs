@@ -8,10 +8,13 @@ use super::image::copy_images_to_worktree;
 use super::manager::{ManagedSession, SessionEvent};
 use super::types::{Session, SessionOrigin, SessionStatus};
 use super::worktree::WorktreeManager;
+use crate::agent_provider::quota::routing;
+use crate::agent_provider::quota::types::ProviderWindows;
 use crate::agent_provider::{AgentProvider, ClaudeProvider};
 use crate::state::file_claims::FileClaimManager;
 use crate::templates::RenderedTemplateStore;
 use crate::turboquant::adapter::TurboQuantAdapter;
+use chrono::{DateTime, Utc};
 
 pub struct SessionPool {
     max_concurrent: usize,
@@ -41,6 +44,16 @@ pub struct SessionPool {
     /// disables injection — used in unit tests that don't care about
     /// templates and as a no-op fallback when XDG cache resolution fails.
     rendered_template_store: Option<Arc<dyn RenderedTemplateStore>>,
+    /// Quota input for headroom routing (issue #1065). `None` = routing off.
+    quota_routing: Option<QuotaRouting>,
+}
+
+/// Quota windows per provider id, read at `now`. Launches with no explicit
+/// provider pick from these. Filled by the caller from cached data, never on
+/// the UI thread.
+struct QuotaRouting {
+    windows: HashMap<String, ProviderWindows>,
+    now: DateTime<Utc>,
 }
 
 impl SessionPool {
@@ -66,7 +79,17 @@ impl SessionPool {
             system_prompt_budget: 0,
             knowledge_appendix: None,
             rendered_template_store: None,
+            quota_routing: None,
         }
+    }
+
+    /// Turn headroom routing on with these windows. Off by default (issue #1065).
+    pub fn set_quota_routing(
+        &mut self,
+        windows: HashMap<String, ProviderWindows>,
+        now: DateTime<Utc>,
+    ) {
+        self.quota_routing = Some(QuotaRouting { windows, now });
     }
 
     /// Install a rendered-template lookup so HTTP-generic provider sessions
@@ -271,12 +294,37 @@ impl SessionPool {
 
     /// Resolve the provider this session will run against, honoring any
     /// `session.agent_id` override against the registered provider map.
+    /// An explicit `agent_id` always wins. Quota routing applies only when it is unset (#1065).
     fn resolve_provider(&self, session: &Session) -> &Arc<dyn AgentProvider> {
+        if session.agent_id.is_none()
+            && let Some(provider) = self.quota_routed_provider()
+        {
+            return provider;
+        }
         session
             .agent_id
             .as_ref()
             .and_then(|id| self.agent_providers.get(id))
             .unwrap_or(&self.provider)
+    }
+
+    /// The configured provider with the most window headroom among on-track
+    /// candidates. `None` when routing is off or no candidate is eligible.
+    fn quota_routed_provider(&self) -> Option<&Arc<dyn AgentProvider>> {
+        let routing = self.quota_routing.as_ref()?;
+        let default_id = self.provider.id();
+        let mut agent_ids: Vec<&String> = self.agent_providers.keys().collect();
+        agent_ids.sort();
+        let candidates: Vec<(&str, Option<ProviderWindows>)> = std::iter::once(default_id)
+            .chain(agent_ids.into_iter().map(String::as_str))
+            .map(|id| (id, routing.windows.get(id).cloned()))
+            .collect();
+        let picked = routing::pick(&candidates, routing.now)?;
+        if picked == default_id {
+            Some(&self.provider)
+        } else {
+            self.agent_providers.get(picked)
+        }
     }
 
     /// Resolve the rendered HTTP-provider template body for this session,
@@ -984,6 +1032,79 @@ mod tests {
             None,
         );
         let managed = pool.get_active_mut(id).expect("session is active");
+        assert_eq!(managed.provider_id(), "claude");
+    }
+
+    /// Five-hour window, 150 min left (50% elapsed). `util` 40 is on track,
+    /// `util` 90 is critical (see `quota::pacing`).
+    fn quota_window(util: f64) -> crate::agent_provider::quota::types::ProviderWindows {
+        use crate::agent_provider::quota::types::{ProviderWindows, QuotaWindow};
+        ProviderWindows {
+            five_hour: Some(QuotaWindow {
+                utilization_pct: util,
+                resets_at: quota_now() + chrono::Duration::minutes(150),
+            }),
+            seven_day: None,
+            seven_day_sonnet: None,
+            stale: false,
+        }
+    }
+
+    fn quota_now() -> chrono::DateTime<chrono::Utc> {
+        chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 10, 17, 12, 0, 0).unwrap()
+    }
+
+    fn pool_with_qwen_and_quota(
+        windows: std::collections::HashMap<
+            String,
+            crate::agent_provider::quota::types::ProviderWindows,
+        >,
+    ) -> SessionPool {
+        let mut pool = make_pool(4);
+        let mut providers: std::collections::HashMap<String, Arc<dyn AgentProvider>> =
+            std::collections::HashMap::new();
+        providers.insert("qwen".to_string(), Arc::new(FakeHttpProvider));
+        pool.set_agent_providers(providers);
+        pool.set_quota_routing(windows, quota_now());
+        pool
+    }
+
+    #[test]
+    fn no_explicit_provider_routes_to_on_track_candidate() {
+        // Claude is critical, qwen is on track: the launch with no agent goes to qwen.
+        let mut windows = std::collections::HashMap::new();
+        windows.insert("claude".to_string(), quota_window(90.0));
+        windows.insert("qwen".to_string(), quota_window(40.0));
+        let mut pool = pool_with_qwen_and_quota(windows);
+        pool.enqueue(make_session("routed"));
+
+        let ids = pool.try_promote();
+        let managed = pool.get_active_mut(ids[0]).expect("promoted");
+        assert_eq!(managed.provider_id(), "qwen");
+    }
+
+    #[test]
+    fn explicit_provider_always_wins_over_quota_routing() {
+        // qwen has the headroom, but the session names claude. Claude must win.
+        let mut windows = std::collections::HashMap::new();
+        windows.insert("claude".to_string(), quota_window(90.0));
+        windows.insert("qwen".to_string(), quota_window(40.0));
+        let mut pool = pool_with_qwen_and_quota(windows);
+        pool.enqueue(make_session("pinned").with_agent_id(Some("claude".to_string())));
+
+        let ids = pool.try_promote();
+        let managed = pool.get_active_mut(ids[0]).expect("promoted");
+        assert_eq!(managed.provider_id(), "claude");
+    }
+
+    #[test]
+    fn quota_routing_off_keeps_default_provider() {
+        // No routing input (feature off): the launch keeps the Claude default.
+        let mut pool = make_pool(4);
+        pool.enqueue(make_session("default"));
+
+        let ids = pool.try_promote();
+        let managed = pool.get_active_mut(ids[0]).expect("promoted");
         assert_eq!(managed.provider_id(), "claude");
     }
 
