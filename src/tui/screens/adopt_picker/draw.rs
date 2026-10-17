@@ -239,7 +239,7 @@ impl AdoptPickerScreen {
 
 /// Coarse "how long ago" for the last-active column. A future mtime
 /// (clock skew) renders as "now".
-fn relative_time(last_active: SystemTime, now: SystemTime) -> String {
+pub(crate) fn relative_time(last_active: SystemTime, now: SystemTime) -> String {
     let Ok(age) = now.duration_since(last_active) else {
         return "now".to_string();
     };

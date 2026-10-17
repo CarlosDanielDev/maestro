@@ -102,6 +102,9 @@ pub enum TuiMode {
     /// the Landing menu; adopting a row creates an adopted session in the
     /// pool and routes to the Interaction screen.
     AdoptPicker,
+    /// Fleet board (#1067): pool sessions and external transcripts on one
+    /// table. Reached from the Landing menu; scans on open.
+    FleetBoard,
 }
 
 impl TuiMode {
@@ -151,6 +154,7 @@ impl TuiMode {
             Self::BudgetPreSpawn { .. } => "Budget Alert",
             Self::CallLog(_) => "Call Log",
             Self::AdoptPicker => "Adopt",
+            Self::FleetBoard => "Fleet",
         }
     }
 }
@@ -256,6 +260,7 @@ pub struct ScreenState {
     pub ci_error_review_screen: Option<crate::tui::screens::CiErrorReviewScreen>,
     pub team_wizard_screen: Option<crate::tui::screens::TeamWizardScreen>,
     pub adopt_picker_screen: Option<crate::tui::screens::AdoptPickerScreen>,
+    pub fleet_board_screen: Option<crate::tui::screens::FleetBoardScreen>,
 }
 
 /// Effective session defaults and limits used by TUI-launched sessions.
@@ -729,6 +734,7 @@ mod tests {
             TuiMode::ConfirmKill(id),
             TuiMode::BudgetPreSpawn { session_id: id },
             TuiMode::AdoptPicker,
+            TuiMode::FleetBoard,
         ];
         for mode in variants {
             let label = mode.breadcrumb_label();

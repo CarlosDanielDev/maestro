@@ -3,7 +3,6 @@ source: src/tui/snapshot_tests/landing.rs
 expression: terminal.backend()
 ---
 "                                                  "
-"                                                  "
 "              [d]  Dashboard                      "
 "              [i]  Create Issue                   "
 "              [m]  Create Milestone               "
@@ -13,6 +12,7 @@ expression: terminal.backend()
 "              [h]  Milestone Review               "
 "              [t]  Teams                          "
 "              [a]  Adopt Session                  "
+"              [f]  Fleet Board                    "
 "              [q]  Quit                           "
 "                                                  "
 "              <q> quit  <n> notes                 "

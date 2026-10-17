@@ -766,6 +766,32 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::FleetBoard => (
+            "Fleet",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "↑/↓",
+                    action: "Select",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "Enter",
+                    action: "Open",
+                    priority: 1,
+                },
+                InlineHint {
+                    key: "Tab",
+                    action: "Sort",
+                    priority: 2,
+                },
+                InlineHint {
+                    key: "Esc",
+                    action: "Back",
+                    priority: 3,
+                },
+            ],
+        ),
         TuiMode::AdoptPicker => (
             "Adopt",
             FKeyVis::Minimal,

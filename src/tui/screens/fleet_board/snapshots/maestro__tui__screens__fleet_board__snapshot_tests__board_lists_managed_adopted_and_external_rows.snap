@@ -1,0 +1,14 @@
+---
+source: src/tui/screens/fleet_board/snapshot_tests.rs
+expression: "render(&mut screen, 110, 10)"
+---
+╔════════════════════════════════════[ Fleet Board (last active first) ]═════════════════════════════════════╗
+║Type to filter…                                                                                             ║
+║> MANAGED  maestro        wire the parser  running  just now                                                ║
+║  ADOPTED  maestro        fix parser tests  completed  2h ago                                               ║
+║  EXTERNAL api-service    add auth endpoint  external  1d ago                                               ║
+║                                                                                                            ║
+║cwd: /home/dev/maestro                                                                                      ║
+║                                                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+[↑/↓] Navigate  [Type] Filter  [Tab] Sort  [Enter] Open  [Esc] Back
