@@ -1,0 +1,14 @@
+---
+source: src/tui/screens/adopt_picker/snapshot_tests.rs
+expression: "render(&mut screen, 90, 10)"
+---
+╔═══════════════════════════════════[ Adopt Session ]════════════════════════════════════╗
+║Type to filter…                                                                         ║
+║> maestro still typing  just now  [LIVE]                                                ║
+║  api-service add auth endpoint  2h ago                                                 ║
+║  maestro docs pass  1d ago                                                             ║
+║                                                                                        ║
+║cwd: /home/dev/maestro                                                                  ║
+║                                                                                        ║
+╚════════════════════════════════════════════════════════════════════════════════════════╝
+[↑/↓] Navigate  [Type] Filter  [Enter] Adopt  [Esc] Back

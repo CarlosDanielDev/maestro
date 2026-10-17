@@ -2,6 +2,7 @@ use super::app;
 use super::screens::{self, Screen, ScreenAction};
 use crate::provider::types::Issue;
 use crate::session::transition::TransitionReason;
+use crate::util::sanitize::sanitize_log;
 use crossterm::event::Event;
 use std::collections::BTreeSet;
 
@@ -184,6 +185,7 @@ pub(super) fn dispatch_to_active_screen(app: &mut app::App, event: &Event) -> Op
         app::TuiMode::MilestoneHealth => app.screen_state.milestone_health_screen.as_mut()?,
         app::TuiMode::CiErrorReview => app.screen_state.ci_error_review_screen.as_mut()?,
         app::TuiMode::TeamWizard => app.screen_state.team_wizard_screen.as_mut()?,
+        app::TuiMode::AdoptPicker => app.screen_state.adopt_picker_screen.as_mut()?,
         _ => return None,
     };
     let mode = screen.desired_input_mode().unwrap_or(InputMode::Normal);
@@ -568,8 +570,88 @@ pub(crate) fn open_interaction_session(
     app.navigate_to(app::TuiMode::Interaction);
 }
 
+/// Surface an adoption refusal on the picker that asked for it, and in the
+/// activity log. The picker stays open so another row can be picked.
+fn refuse_adoption(app: &mut app::App, reason: String) {
+    // The reason can embed the transcript cwd, which is untrusted.
+    let message = sanitize_log(&format!("adoption refused: {reason}"));
+    app.activity_log.push_simple(
+        "ADOPT".into(),
+        message.clone(),
+        crate::tui::activity_log::LogLevel::Warn,
+    );
+    if let Some(picker) = app.screen_state.adopt_picker_screen.as_mut() {
+        picker.set_status(message);
+    }
+}
+
+/// Adopt the external conversation picked on the AdoptPicker (#1054):
+/// create the adopted session in the pool bound to the external id, open
+/// the Interaction screen on it, and navigate. The model is the app's
+/// configured default (`[sessions] default_model`) — adoption is
+/// Claude-Code-only per the #1051 council scope, so no per-agent model
+/// resolution. On a refused id the picker stays open with a warning line
+/// instead of navigating.
+fn adopt_external_session(
+    app: &mut app::App,
+    agent_session_id: String,
+    cwd: std::path::PathBuf,
+    title: Option<String>,
+) {
+    let model = app.session_config.default_model.clone();
+    let outcome = match app.pool.create_adopted_session(
+        &agent_session_id,
+        cwd.clone(),
+        title.clone(),
+        model.clone(),
+    ) {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            refuse_adoption(app, e.to_string());
+            return;
+        }
+    };
+
+    // Name the work in the header from the transcript title, falling back
+    // to the repo the conversation ran in (#738 QA convention).
+    let header_title = title.unwrap_or_else(|| {
+        cwd.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "external conversation".to_string())
+    });
+
+    let Some(managed) = app.pool.get_active_mut(outcome.session_id) else {
+        refuse_adoption(app, "session vanished before it could open".to_string());
+        return;
+    };
+    let agent_label = crate::tui::agent_badge::agent_label(managed.session.agent_id.as_deref());
+    let mut screen = screens::InteractionScreen::for_managed(managed);
+    screen.set_provider_context(agent_label, model);
+    screen.set_issue_title(header_title);
+
+    app.screen_state.interaction_screen = Some(screen);
+    app.activity_log.push_simple(
+        "ADOPT".into(),
+        format!(
+            "Adopted external session {agent_session_id} in {}",
+            sanitize_log(&cwd.display().to_string())
+        ),
+        crate::tui::activity_log::LogLevel::Info,
+    );
+    if outcome.live_warning {
+        // The #1053 warning surfaced as UI: the badge on the picker row and
+        // this line — advisory, adoption proceeds (council verdict).
+        app.activity_log.push_simple(
+            "ADOPT".into(),
+            "Transcript modified recently — the source session may still be live.".into(),
+            crate::tui::activity_log::LogLevel::Warn,
+        );
+    }
+    app.navigate_to(app::TuiMode::Interaction);
+}
+
 /// Process a ScreenAction returned by a screen's input handler.
-pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
+pub(crate) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
     match action {
         ScreenAction::None => {}
         ScreenAction::LogActivity {
@@ -694,6 +776,15 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                         .interaction_screen
                         .get_or_insert_with(screens::InteractionScreen::new);
                 }
+                app::TuiMode::AdoptPicker => {
+                    // Sync scan (the #1052 library call): a local-disk walk,
+                    // ~1s per 120 transcripts. Ceiling: a machine with
+                    // thousands of transcripts stalls this frame — move the
+                    // scan behind a TuiCommand if that ever bites.
+                    app.screen_state.adopt_picker_screen = Some(screens::AdoptPickerScreen::scan(
+                        std::time::SystemTime::now(),
+                    ));
+                }
                 app::TuiMode::MilestoneHealth => {
                     app.screen_state.milestone_health_screen =
                         Some(crate::tui::screens::milestone_health::MilestoneHealthScreen::new());
@@ -790,6 +881,9 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 }
                 app::TuiMode::MilestoneHealth => {
                     app.screen_state.milestone_health_screen = None;
+                }
+                app::TuiMode::AdoptPicker => {
+                    app.screen_state.adopt_picker_screen = None;
                 }
                 _ => {}
             }
@@ -1064,6 +1158,11 @@ pub(super) fn handle_screen_action(app: &mut app::App, action: ScreenAction) {
                 browser.open_launch_overlay_for_selected();
             }
         }
+        ScreenAction::AdoptSession {
+            agent_session_id,
+            cwd,
+            title,
+        } => adopt_external_session(app, agent_session_id, cwd, title),
         ScreenAction::QuitInteraction { issue_number } => {
             // #949 (spec §4.4): quit = terminate the unified session, THEN
             // wipe the worktree off-thread (#740 safe-gated primitive under

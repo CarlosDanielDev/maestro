@@ -558,6 +558,14 @@ impl SessionPool {
                 "invalid agent session id {agent_session_id:?} — adoption refused (the id feeds `--resume` argv)"
             ));
         }
+        // The cwd comes from an untrusted transcript. A missing dir or a
+        // file would make `--resume` fail or run in the wrong place.
+        if !cwd.is_dir() {
+            return Err(anyhow::anyhow!(
+                "adopted cwd is not a directory: {} — adoption refused",
+                cwd.display()
+            ));
+        }
         // Live-session check only AFTER the id is allowlist-validated —
         // no path is ever built from an unvalidated id (belt alongside
         // `transcript_is_live_in`'s own guard).
@@ -816,7 +824,7 @@ mod tests {
     fn create_adopted(pool: &mut SessionPool) -> crate::session::adopt::AdoptOutcome {
         pool.create_adopted_session(
             "ext-conv-1",
-            std::path::PathBuf::from("/repo/original"),
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
             Some("My external chat".to_string()),
             "opus".to_string(),
         )
@@ -830,7 +838,7 @@ mod tests {
 
         assert!(
             !outcome.live_warning,
-            "no transcript exists for (real $HOME, /repo/original, ext-conv-1) — no live warning"
+            "no transcript exists for (real $HOME, this crate dir, ext-conv-1) — no live warning"
         );
 
         let managed = must_get_active_mut(&mut pool, outcome.session_id);
@@ -845,7 +853,7 @@ mod tests {
         );
         assert_eq!(
             managed.session.adopted_cwd.as_deref(),
-            Some(std::path::Path::new("/repo/original")),
+            Some(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))),
             "session cwd must be the transcript's original cwd"
         );
         assert_eq!(
@@ -873,6 +881,25 @@ mod tests {
             .expect_err("hostile id must be refused — it feeds `--resume` argv");
 
         assert!(err.to_string().contains("invalid agent session id"));
+        assert!(
+            pool.all_sessions().is_empty(),
+            "refused adoption must not register a session"
+        );
+    }
+
+    #[test]
+    fn create_adopted_session_refuses_missing_or_non_directory_cwd() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("not-a-dir.txt");
+        std::fs::write(&file, "x").expect("write file");
+        let mut pool = make_pool(2);
+
+        for bad_cwd in [dir.path().join("gone"), file] {
+            let err = pool
+                .create_adopted_session("ext-conv-1", bad_cwd, None, "opus".to_string())
+                .expect_err("a cwd that is not a directory must be refused");
+            assert!(err.to_string().contains("not a directory"));
+        }
         assert!(
             pool.all_sessions().is_empty(),
             "refused adoption must not register a session"

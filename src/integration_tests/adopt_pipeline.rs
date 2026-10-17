@@ -19,7 +19,7 @@ use crate::session::pool::SessionPool;
 use crate::session::worktree::MockWorktreeManager;
 
 const EXTERNAL_ID: &str = "ext-conv-1";
-const ORIGINAL_CWD: &str = "/repo/original";
+const ORIGINAL_CWD: &str = env!("CARGO_MANIFEST_DIR");
 
 fn make_pool() -> (SessionPool, Arc<ScriptedProvider>) {
     let (tx, _rx) = mpsc::unbounded_channel();

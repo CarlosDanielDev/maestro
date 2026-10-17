@@ -98,6 +98,10 @@ pub enum TuiMode {
     /// `L` chord. Renders the session's persisted stream events with an
     /// optional expanded payload pane.
     CallLog(uuid::Uuid),
+    /// Global picker for external Claude Code sessions (#1054). Reached from
+    /// the Landing menu; adopting a row creates an adopted session in the
+    /// pool and routes to the Interaction screen.
+    AdoptPicker,
 }
 
 impl TuiMode {
@@ -146,6 +150,7 @@ impl TuiMode {
             Self::TeamWizard => "Teams",
             Self::BudgetPreSpawn { .. } => "Budget Alert",
             Self::CallLog(_) => "Call Log",
+            Self::AdoptPicker => "Adopt",
         }
     }
 }
@@ -250,6 +255,7 @@ pub struct ScreenState {
         Option<crate::tui::screens::milestone_health::MilestoneHealthScreen>,
     pub ci_error_review_screen: Option<crate::tui::screens::CiErrorReviewScreen>,
     pub team_wizard_screen: Option<crate::tui::screens::TeamWizardScreen>,
+    pub adopt_picker_screen: Option<crate::tui::screens::AdoptPickerScreen>,
 }
 
 /// Effective session defaults and limits used by TUI-launched sessions.
@@ -722,6 +728,7 @@ mod tests {
             TuiMode::LogViewer(id),
             TuiMode::ConfirmKill(id),
             TuiMode::BudgetPreSpawn { session_id: id },
+            TuiMode::AdoptPicker,
         ];
         for mode in variants {
             let label = mode.breadcrumb_label();

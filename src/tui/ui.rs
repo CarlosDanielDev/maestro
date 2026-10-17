@@ -309,6 +309,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 screen.draw(f, chunks[1], &app.theme);
             }
         }
+        TuiMode::AdoptPicker => {
+            if let Some(ref mut screen) = app.screen_state.adopt_picker_screen {
+                screen.draw(f, chunks[1], &app.theme);
+            }
+        }
         TuiMode::QueueExecution => {
             // Draw overview underneath
             let sessions = app.pool.all_sessions();

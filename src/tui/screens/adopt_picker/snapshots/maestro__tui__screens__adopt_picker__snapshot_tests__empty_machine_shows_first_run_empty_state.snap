@@ -1,0 +1,14 @@
+---
+source: src/tui/screens/adopt_picker/snapshot_tests.rs
+expression: "render(&mut screen, 90, 10)"
+---
+╔═══════════════════════════════════[ Adopt Session ]════════════════════════════════════╗
+║Type to filter…                                                                         ║
+║No Claude Code sessions found                                                           ║
+║Transcripts under ~/.claude/projects appear here once Claude Code has run.              ║
+║                                                                                        ║
+║                                                                                        ║
+║                                                                                        ║
+║                                                                                        ║
+╚════════════════════════════════════════════════════════════════════════════════════════╝
+[↑/↓] Navigate  [Type] Filter  [Enter] Adopt  [Esc] Back

@@ -1,5 +1,6 @@
 pub mod adapt;
 pub mod adapt_follow_up;
+pub mod adopt_picker;
 pub mod bypass_dispatch;
 pub mod bypass_warning;
 pub mod ci_error_review;
@@ -29,6 +30,7 @@ pub mod wizard_fields;
 pub mod wrap;
 
 pub use adapt_follow_up::AdaptFollowUpScreen;
+pub use adopt_picker::AdoptPickerScreen;
 pub use ci_error_review::{CiErrorReviewScreen, CiErrorReviewState, FetchPhase};
 pub use hollow_retry::HollowRetryScreen;
 pub use home::HomeScreen;
@@ -218,6 +220,15 @@ pub enum ScreenAction {
     /// active interaction session for the issue (skipping the launch dialog)
     /// or, when none exists, opens the launch dialog (#738 re-entry AC).
     ResumeOrLaunchIssue { issue_number: u64 },
+    /// Adopt the external Claude Code conversation selected on the
+    /// AdoptPicker screen (#1054). The dispatcher creates the adopted
+    /// session in the pool (`create_adopted_session`) and routes to the
+    /// Interaction screen.
+    AdoptSession {
+        agent_session_id: String,
+        cwd: std::path::PathBuf,
+        title: Option<String>,
+    },
 }
 
 /// Configuration for launching a conflict-fix session.

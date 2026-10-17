@@ -766,6 +766,27 @@ pub fn mode_keymap(
                 },
             ],
         ),
+        TuiMode::AdoptPicker => (
+            "Adopt",
+            FKeyVis::Minimal,
+            &[
+                InlineHint {
+                    key: "↑/↓",
+                    action: "Select",
+                    priority: 0,
+                },
+                InlineHint {
+                    key: "Enter",
+                    action: "Adopt",
+                    priority: 1,
+                },
+                InlineHint {
+                    key: "Esc",
+                    action: "Back",
+                    priority: 2,
+                },
+            ],
+        ),
         TuiMode::BudgetPreSpawn { .. } => (
             "Budget Alert",
             FKeyVis::Minimal,
