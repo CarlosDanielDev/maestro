@@ -103,6 +103,39 @@ pub(crate) fn leave_tui_mode<W: io::Write>(out: &mut W) -> io::Result<()> {
     )
 }
 
+/// Claim the real terminal for the dashboard. `--once` is CI/scripting mode and
+/// never draws, so it must not enter raw mode or the alternate screen (#1048).
+fn init_terminal(
+    once_mode: bool,
+) -> anyhow::Result<Option<Terminal<CrosstermBackend<io::Stdout>>>> {
+    if once_mode {
+        return Ok(None);
+    }
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    enter_tui_mode(&mut stdout)?;
+    Ok(Some(Terminal::new(CrosstermBackend::new(stdout))?))
+}
+
+/// Whether the end-of-work check runs this tick. `--once` must reach its exit
+/// even with the completion modal off, or a CI run with
+/// `modal_on_complete = false` hangs (#1048).
+fn completion_ready(app: &App, modal_on_complete: bool) -> bool {
+    (modal_on_complete || app.once_mode)
+        && app.all_done()
+        && app.continuous_mode.is_none()
+        && app.queue_executor.is_none()
+        && app.completion_summary.is_none()
+        && !app.completion_summary_dismissed
+        && !matches!(
+            app.tui_mode,
+            app::TuiMode::Dashboard
+                | app::TuiMode::IssueBrowser
+                | app::TuiMode::PromptInput
+                | app::TuiMode::CompletionSummary
+        )
+}
+
 /// Route a mouse wheel-up to the right scroll target (#988). On the
 /// Interaction screen the wheel scrolls the chat transcript; everywhere else it
 /// keeps the legacy `panel_view` behavior so no other screen regresses.
@@ -132,11 +165,7 @@ fn route_mouse_scroll_down(app: &mut App) {
 /// Run the TUI event loop.
 pub async fn run(mut app: App) -> anyhow::Result<()> {
     let no_splash = app.no_splash;
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    enter_tui_mode(&mut stdout)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = init_terminal(app.once_mode)?;
 
     // The legacy timed splash is replaced by the persistent Landing screen
     // (#290). Only intercept the Dashboard boot path — session-launching
@@ -150,9 +179,11 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 
     let result = event_loop(&mut terminal, &mut app).await;
 
-    disable_raw_mode()?;
-    leave_tui_mode(terminal.backend_mut())?;
-    terminal.show_cursor()?;
+    if let Some(terminal) = terminal.as_mut() {
+        disable_raw_mode()?;
+        leave_tui_mode(terminal.backend_mut())?;
+        terminal.show_cursor()?;
+    }
 
     app.kill_all().await;
 
@@ -170,7 +201,7 @@ pub async fn run(mut app: App) -> anyhow::Result<()> {
 }
 
 async fn event_loop(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut Option<Terminal<CrosstermBackend<io::Stdout>>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
     spawn_version_check(app.data_tx.clone());
@@ -194,7 +225,9 @@ async fn event_loop(
             app.call_log_state.reconcile_follow_tail(total);
         }
 
-        terminal.draw(|f| ui::draw(f, app))?;
+        if let Some(terminal) = terminal.as_mut() {
+            terminal.draw(|f| ui::draw(f, app))?;
+        }
 
         app.check_completions().await?;
 
@@ -207,7 +240,9 @@ async fn event_loop(
             );
         }
 
-        if event::poll(Duration::from_millis(50))? {
+        if let Some(terminal) = terminal.as_mut()
+            && event::poll(Duration::from_millis(50))?
+        {
             match event::read()? {
                 Event::Key(key) => {
                     if let crate::updater::UpgradeState::ReadyToRestart { .. } = &app.upgrade_state
@@ -242,6 +277,9 @@ async fn event_loop(
                 }
                 _ => {}
             }
+        } else if app.once_mode {
+            // --once has no screen and no keys: pace the loop without the tty.
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
         while let Ok(data_evt) = app.data_rx.try_recv() {
@@ -874,20 +912,7 @@ async fn event_loop(
             .map(|c| c.tui.modal_on_complete)
             .unwrap_or(true);
 
-        if modal_on_complete
-            && app.all_done()
-            && app.continuous_mode.is_none()
-            && app.queue_executor.is_none()
-            && app.completion_summary.is_none()
-            && !app.completion_summary_dismissed
-            && !matches!(
-                app.tui_mode,
-                app::TuiMode::Dashboard
-                    | app::TuiMode::IssueBrowser
-                    | app::TuiMode::PromptInput
-                    | app::TuiMode::CompletionSummary
-            )
-        {
+        if completion_ready(app, modal_on_complete) {
             if app.screen_state.home_screen.is_some() && app.pool.total_count() == 0 {
                 app.tui_mode = app::TuiMode::Dashboard;
                 continue;
@@ -916,6 +941,72 @@ pub(crate) fn make_test_app(name: &str) -> app::App {
         "bypassPermissions".into(),
         vec![],
     )
+}
+
+#[cfg(test)]
+mod once_mode_terminal_tests {
+    use super::*;
+
+    #[test]
+    fn once_mode_claims_no_terminal() {
+        // #1048: `--once` runs headless. Building a terminal would enter raw
+        // mode, which fails without a tty, so none may be built at all.
+        let terminal = init_terminal(true).expect("once mode must not touch the tty");
+        assert!(terminal.is_none());
+    }
+
+    use crate::work::dependencies::DependencyGraph;
+    use crate::work::executor::QueueExecutor;
+    use crate::work::queue::WorkQueue;
+
+    /// An app whose pool holds one finished session, so `all_done()` is true.
+    fn app_with_all_done() -> App {
+        let mut app = make_test_app("once-exit-test");
+        let session = crate::session::types::Session::new(
+            "prompt".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            None,
+            None,
+        );
+        let id = session.id;
+        app.pool.enqueue(session);
+        let _ = app.pool.try_promote();
+        app.pool.finalize_retain_worktree(id);
+        app
+    }
+
+    #[test]
+    fn completion_ready_runs_for_once_with_modal_off() {
+        // #1048: with the modal off, `--once` must still reach its exit.
+        let mut app = app_with_all_done();
+        app.once_mode = true;
+        assert!(completion_ready(&app, false));
+    }
+
+    #[test]
+    fn completion_ready_skips_modal_off_outside_once() {
+        let app = app_with_all_done();
+        assert!(!completion_ready(&app, false));
+    }
+
+    #[test]
+    fn completion_ready_waits_for_continuous_mode() {
+        let mut app = app_with_all_done();
+        app.once_mode = true;
+        app.continuous_mode = Some(crate::continuous::ContinuousModeState::new());
+        assert!(!completion_ready(&app, false));
+    }
+
+    #[test]
+    fn completion_ready_waits_for_queue_executor() {
+        let mut app = app_with_all_done();
+        app.once_mode = true;
+        let queue = WorkQueue::validate_selection(&[], &DependencyGraph::build(&[]))
+            .expect("empty selection is a valid queue");
+        app.queue_executor = Some(QueueExecutor::new(&queue));
+        assert!(!completion_ready(&app, false));
+    }
 }
 
 #[cfg(test)]
