@@ -144,6 +144,18 @@ impl Harness {
         self.http.tokens.lock().expect("tokens lock").len()
     }
 
+    /// Same harness, reporting failures to `sink`. Keeps the same cache dir.
+    fn with_sink(self, sink: Box<dyn super::failures::FailureSink>) -> Self {
+        let fetcher = QuotaFetcher::new(
+            self.home.clone(),
+            self.cache_dir.clone(),
+            Box::new(self.http.clone()),
+            Box::new(SharedClock(self.now.clone())),
+        )
+        .with_failure_sink(sink);
+        Self { fetcher, ..self }
+    }
+
     fn lock_path(&self) -> PathBuf {
         self.cache_dir.join("claude.quota.lock")
     }

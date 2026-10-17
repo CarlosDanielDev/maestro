@@ -46,11 +46,17 @@ use std::path::{Path, PathBuf};
 
 use crate::agent_provider::minimax::quota::{Clock, SystemClock};
 use cache::{CacheEntry, RATE_LIMIT_BACKOFF};
-use failures::{FailureLog, Level};
+use failures::{FailureLog, FailureSink};
 use fetch::{QuotaHttp, ReqwestQuotaHttp};
 use types::{ProviderWindows, TransportError};
 
 const CLAUDE_PROVIDER_ID: &str = "claude";
+
+/// Failure streak keys. A streak under one key does not affect another.
+const FETCH: &str = "fetch";
+const CACHE_DIR: &str = "cache dir";
+const CACHE_LOCK: &str = "cache lock";
+const CACHE_WRITE: &str = "cache write";
 
 /// Extra gap on top of the cache TTL. A tick that lands inside the TTL window
 /// is skipped, so the refresh loop must wait longer than the TTL.
@@ -101,9 +107,10 @@ impl QuotaFetcher {
         }
     }
 
-    /// `(warn reports, debug reports)` for failed fetches so far.
-    pub(super) fn failure_counts(&self) -> (usize, usize) {
-        self.failures.counts()
+    /// Sends failure reports to `sink` instead of tracing. Tests use this.
+    fn with_failure_sink(mut self, sink: Box<dyn FailureSink>) -> Self {
+        self.failures = FailureLog::new(sink);
+        self
     }
 
     /// Production wiring: real HTTP client and wall clock.
@@ -127,18 +134,33 @@ impl QuotaFetcher {
         let lock_file = self.cache_dir.join(format!("{provider_id}.quota.lock"));
 
         // Cache is best-effort: an unusable dir degrades to uncached fetches.
-        if let Err(err) = cache::ensure_dir(&self.cache_dir) {
-            tracing::warn!(error = %err, "failed to create quota cache dir");
+        match cache::ensure_dir(&self.cache_dir) {
+            Ok(()) => self.failures.succeeded(CACHE_DIR),
+            Err(err) => self.failures.failed(
+                CACHE_DIR,
+                &format!("failed to create quota cache dir: {err}"),
+            ),
         }
         let guard = match cache::try_lock(&lock_file) {
-            Ok(cache::LockOutcome::Acquired(guard)) => Some(guard),
+            Ok(cache::LockOutcome::Acquired(guard)) => {
+                self.failures.succeeded(CACHE_LOCK);
+                Some(guard)
+            }
             Ok(cache::LockOutcome::Busy) => {
                 // Another process is fetching. Serve what it wrote, do not poll.
+                self.failures.succeeded(CACHE_LOCK);
                 let entry = cache::load(&cache_file);
-                return entry.snapshot(entry.fresh(now).is_none());
+                let fresh = entry.fresh(now);
+                if fresh.is_some() {
+                    self.failures.succeeded(FETCH);
+                }
+                return entry.snapshot(fresh.is_none());
             }
             Err(err) => {
-                tracing::warn!(error = %err, "failed to lock quota cache; fetching unlocked");
+                self.failures.failed(
+                    CACHE_LOCK,
+                    &format!("failed to lock quota cache; fetching unlocked: {err}"),
+                );
                 None
             }
         };
@@ -146,6 +168,7 @@ impl QuotaFetcher {
 
         let mut entry = cache::load(&cache_file);
         if let Some(fresh) = entry.fresh(now) {
+            self.failures.succeeded(FETCH);
             return Some(fresh);
         }
         if entry.retry_blocked(now) {
@@ -175,7 +198,7 @@ impl QuotaFetcher {
         };
         // Only the lock holder writes. An unlocked fetch must not race the writer.
         if locked {
-            persist(&cache_file, &entry);
+            self.persist(&cache_file, &entry);
         }
         result
     }
@@ -184,7 +207,7 @@ impl QuotaFetcher {
         match self.http.get_usage(token).await {
             Ok(response) if response.status == 200 => match fetch::parse_usage(&response.body) {
                 Some(windows) => {
-                    self.failures.record_success();
+                    self.failures.succeeded(FETCH);
                     Fetched::Windows(windows)
                 }
                 None => {
@@ -206,17 +229,17 @@ impl QuotaFetcher {
 }
 
 impl QuotaFetcher {
-    /// Warn once per failure streak. Later failures log at debug.
     fn report_failure(&self, detail: &str) {
-        match self.failures.record_failure() {
-            Level::Warn => tracing::warn!(%detail, "quota fetch failed"),
-            Level::Debug => tracing::debug!(%detail, "quota fetch still failing"),
-        }
+        self.failures
+            .failed(FETCH, &format!("quota fetch failed: {detail}"));
     }
-}
 
-fn persist(path: &Path, entry: &CacheEntry) {
-    if let Err(err) = cache::store(path, entry) {
-        tracing::warn!(error = %err, "failed to write quota cache");
+    fn persist(&self, path: &Path, entry: &CacheEntry) {
+        match cache::store(path, entry) {
+            Ok(()) => self.failures.succeeded(CACHE_WRITE),
+            Err(err) => self
+                .failures
+                .failed(CACHE_WRITE, &format!("failed to write quota cache: {err}")),
+        }
     }
 }

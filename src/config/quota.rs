@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuotaConfig {
     /// Opt-in provider quota checks (#1065). When `true`, maestro polls each
-    /// provider's usage windows every 60s in the background, routes a new
+    /// provider's usage windows in the background, about every minute (the
+    /// cache TTL plus a 5 second margin), routes a new
     /// session with no explicit provider to the one with the most headroom,
     /// shows a badge per provider on the token dashboard, and alerts once when
     /// a window reaches 97% (re-arms below 90%). When `false`, no credential is

@@ -1,8 +1,10 @@
-//! Failure streaks for the usage fetch (issue #1065). A source that keeps
-//! failing (401, 5xx, offline) warns once. Later failures log at debug. A
-//! successful fetch ends the streak, so the next failure warns again.
+//! Failure reports for the quota fetch and cache (issue #1065). Each failure
+//! kind has a key. The first failure of a streak under a key is `Warn`. Later
+//! failures under that key are `Debug`. A success under the key ends the streak.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::collections::HashSet;
+use std::fmt;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 /// Log level chosen for one failed attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,37 +13,57 @@ pub(super) enum Level {
     Debug,
 }
 
-/// Tracks whether a failure streak is open. Counts reports by level, so a
-/// test can check the level without a tracing subscriber.
+/// Where reports go. Production logs with tracing. Tests record them.
+pub(super) trait FailureSink: Send + Sync + fmt::Debug {
+    fn report(&self, level: Level, key: &'static str, what: &str);
+}
+
 #[derive(Debug, Default)]
+pub(super) struct TracingSink;
+
+impl FailureSink for TracingSink {
+    fn report(&self, level: Level, _key: &'static str, what: &str) {
+        match level {
+            Level::Warn => tracing::warn!("{what}"),
+            Level::Debug => tracing::debug!("{what}"),
+        }
+    }
+}
+
+/// Open streaks per key, plus the sink that receives each report.
+#[derive(Debug)]
 pub(super) struct FailureLog {
-    in_streak: AtomicBool,
-    warns: AtomicUsize,
-    debugs: AtomicUsize,
+    open: Mutex<HashSet<&'static str>>,
+    sink: Box<dyn FailureSink>,
+}
+
+impl Default for FailureLog {
+    fn default() -> Self {
+        Self::new(Box::new(TracingSink))
+    }
 }
 
 impl FailureLog {
-    /// The first failure of a streak is `Warn`. The rest are `Debug`.
-    pub(super) fn record_failure(&self) -> Level {
-        if self.in_streak.swap(true, Ordering::Relaxed) {
-            self.debugs.fetch_add(1, Ordering::Relaxed);
-            Level::Debug
-        } else {
-            self.warns.fetch_add(1, Ordering::Relaxed);
-            Level::Warn
+    pub(super) fn new(sink: Box<dyn FailureSink>) -> Self {
+        Self {
+            open: Mutex::new(HashSet::new()),
+            sink,
         }
     }
 
-    /// A successful fetch ends the streak.
-    pub(super) fn record_success(&self) {
-        self.in_streak.store(false, Ordering::Relaxed);
+    /// Reports one failure under `key`. The first of a streak warns.
+    pub(super) fn failed(&self, key: &'static str, what: &str) {
+        let opened = self.open().insert(key);
+        let level = if opened { Level::Warn } else { Level::Debug };
+        self.sink.report(level, key, what);
     }
 
-    /// `(warn reports, debug reports)` so far.
-    pub(super) fn counts(&self) -> (usize, usize) {
-        (
-            self.warns.load(Ordering::Relaxed),
-            self.debugs.load(Ordering::Relaxed),
-        )
+    /// A success under `key` ends its streak.
+    pub(super) fn succeeded(&self, key: &'static str) {
+        self.open().remove(key);
+    }
+
+    fn open(&self) -> MutexGuard<'_, HashSet<&'static str>> {
+        self.open.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
