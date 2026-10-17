@@ -79,7 +79,11 @@ impl AdoptPickerScreen {
         );
 
         if self.confirm_pending() {
-            self.draw_confirm_modal(f, area, theme);
+            let directory = self
+                .selected_session()
+                .map(|s| s.cwd.display().to_string())
+                .unwrap_or_default();
+            draw_live_confirm(f, area, theme, &directory);
         }
     }
 
@@ -195,46 +199,48 @@ impl AdoptPickerScreen {
         ];
         f.render_widget(Paragraph::new(lines), area);
     }
+}
 
-    fn draw_confirm_modal(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let popup = centered_rect(60, 70, area);
-        f.render_widget(Clear, popup);
-        let block = theme.styled_block("Session may be live", true);
-        let inner = block.inner(popup);
-        f.render_widget(block, popup);
+/// The live-session confirm, shared by the picker and the Fleet board. The
+/// directory is untrusted transcript data, so it is sanitized here. `[y]` is
+/// the only adopt key.
+pub(crate) fn draw_live_confirm(f: &mut Frame, area: Rect, theme: &Theme, directory: &str) {
+    let popup = centered_rect(60, 70, area);
+    f.render_widget(Clear, popup);
+    let block = theme.styled_block("Session may be live", true);
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
 
-        let directory = self
-            .selected_session()
-            .map(|s| sanitize_log(&s.cwd.display().to_string()))
-            .unwrap_or_default();
-        let lines = vec![
-            Line::from(Span::styled(
-                "This transcript was modified recently.",
+    let lines = vec![
+        Line::from(Span::styled(
+            "This transcript was modified recently.",
+            Style::default().fg(theme.text_primary),
+        )),
+        Line::from(Span::styled(
+            "The session may still be running elsewhere.",
+            Style::default().fg(theme.text_primary),
+        )),
+        Line::default(),
+        Line::from(vec![
+            Span::styled("Directory: ", Style::default().fg(theme.text_muted)),
+            Span::styled(
+                sanitize_log(directory),
                 Style::default().fg(theme.text_primary),
-            )),
-            Line::from(Span::styled(
-                "The session may still be running elsewhere.",
-                Style::default().fg(theme.text_primary),
-            )),
-            Line::default(),
-            Line::from(vec![
-                Span::styled("Directory: ", Style::default().fg(theme.text_muted)),
-                Span::styled(directory, Style::default().fg(theme.text_primary)),
-            ]),
-            Line::default(),
-            Line::from(Span::styled(
-                "Adopt anyway?",
-                Style::default().fg(theme.accent_warning),
-            )),
-            Line::from(vec![
-                Span::styled("[y]", Style::default().fg(theme.accent_success)),
-                Span::raw(" Adopt   "),
-                Span::styled("[any other key]", Style::default().fg(theme.text_muted)),
-                Span::raw(" Cancel"),
-            ]),
-        ];
-        f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
-    }
+            ),
+        ]),
+        Line::default(),
+        Line::from(Span::styled(
+            "Adopt anyway?",
+            Style::default().fg(theme.accent_warning),
+        )),
+        Line::from(vec![
+            Span::styled("[y]", Style::default().fg(theme.accent_success)),
+            Span::raw(" Adopt   "),
+            Span::styled("[any other key]", Style::default().fg(theme.text_muted)),
+            Span::raw(" Cancel"),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
 /// Coarse "how long ago" for the last-active column. A future mtime

@@ -22,6 +22,8 @@ mod docs_gen;
 #[cfg(test)]
 mod doctor_run_health_check;
 #[cfg(test)]
+mod fleet_board_actions;
+#[cfg(test)]
 mod fleet_board_route;
 #[cfg(test)]
 mod gate_failure_retention;

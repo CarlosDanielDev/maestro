@@ -226,6 +226,32 @@ fn uppercase_y_adopts_the_live_row() {
     assert!(matches!(action, ScreenAction::AdoptSession { .. }));
 }
 
+/// A chord that ends in `y` is a command, not a yes: Ctrl+y and Alt+y must
+/// cancel the modal without adopting a live row.
+#[test]
+fn ctrl_and_alt_y_do_not_adopt_a_live_row() {
+    use crossterm::event::{Event, KeyEvent, KeyModifiers};
+    for mods in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+        let mut screen = screen_with(live_then_stale());
+        screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+        let chord = Event::Key(KeyEvent::new(KeyCode::Char('y'), mods));
+        let action = screen.handle_input(&chord, InputMode::Insert);
+        assert_eq!(action, ScreenAction::None, "{mods:?}+y must not adopt");
+        assert!(!screen.confirm_pending(), "{mods:?}+y closes the modal");
+    }
+}
+
+/// Shift is part of typing a capital, so Shift+y still adopts.
+#[test]
+fn shift_y_adopts_the_live_row() {
+    use crossterm::event::{Event, KeyEvent, KeyModifiers};
+    let mut screen = screen_with(live_then_stale());
+    screen.handle_input(&key_event(KeyCode::Enter), InputMode::Insert);
+    let shifted = Event::Key(KeyEvent::new(KeyCode::Char('Y'), KeyModifiers::SHIFT));
+    let action = screen.handle_input(&shifted, InputMode::Insert);
+    assert!(matches!(action, ScreenAction::AdoptSession { .. }));
+}
+
 #[test]
 fn confirm_cancel_stays_on_the_picker() {
     for cancel in [KeyCode::Char('n'), KeyCode::Esc] {

@@ -566,6 +566,19 @@ impl SessionPool {
                 cwd.display()
             ));
         }
+        // Two live sessions on one conversation would drive it twice. A
+        // finished or killed session may be adopted again. The check lives
+        // here, not in the dispatcher, so every caller gets it.
+        if let Some(open) = self
+            .all_sessions()
+            .into_iter()
+            .find(|s| s.agent_session_id.as_deref() == Some(agent_session_id) && s.status.is_live())
+        {
+            return Err(anyhow::anyhow!(
+                "{agent_session_id} is already open in session {}",
+                open.id
+            ));
+        }
         // Live-session check only AFTER the id is allowlist-validated —
         // no path is ever built from an unvalidated id (belt alongside
         // `transcript_is_live_in`'s own guard).
@@ -904,6 +917,96 @@ mod tests {
             pool.all_sessions().is_empty(),
             "refused adoption must not register a session"
         );
+    }
+
+    /// A live session already bound to the transcript blocks a second adopt:
+    /// two processes would drive one conversation.
+    #[test]
+    fn create_adopted_session_refuses_while_the_transcript_is_open() {
+        let mut pool = make_pool(2);
+        let first = create_adopted(&mut pool).session_id;
+
+        let err = pool
+            .create_adopted_session(
+                "ext-conv-1",
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+                None,
+                "opus".to_string(),
+            )
+            .expect_err("a live adopted session must block a second adopt");
+
+        assert!(err.to_string().contains("already open in session"));
+        assert!(err.to_string().contains(&first.to_string()));
+        assert_eq!(pool.all_sessions().len(), 1, "no second session");
+    }
+
+    #[test]
+    fn create_adopted_session_refuses_when_a_maestro_session_is_live_on_the_id() {
+        let mut pool = make_pool(2);
+        let mut spawned = make_session("maestro-run");
+        assert!(spawned.bind_agent_session_id("ext-conv-1"));
+        pool.enqueue(spawned);
+
+        let err = pool
+            .create_adopted_session(
+                "ext-conv-1",
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+                None,
+                "opus".to_string(),
+            )
+            .expect_err("a queued maestro session on the same id must block adoption");
+
+        assert!(err.to_string().contains("already open in session"));
+    }
+
+    /// Finished and killed sessions do not hold the conversation: adopting
+    /// again is the legitimate way back in.
+    #[test]
+    fn create_adopted_session_allows_adopting_after_completed_or_killed() {
+        for terminal in [SessionStatus::Completed, SessionStatus::Killed] {
+            let mut pool = make_pool(2);
+            let first = create_adopted(&mut pool).session_id;
+            must_get_active_mut(&mut pool, first).session.status = terminal;
+
+            let again = pool.create_adopted_session(
+                "ext-conv-1",
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+                None,
+                "opus".to_string(),
+            );
+
+            assert!(
+                again.is_ok(),
+                "a {terminal:?} session must not block adoption"
+            );
+        }
+    }
+
+    /// The status of the first adopted session decides whether the transcript
+    /// is held. Errored and FailedGates are not terminal, but no process is
+    /// attached to them, so they must not block re-adoption for good.
+    #[test]
+    fn create_adopted_session_status_decides_whether_the_transcript_is_held() {
+        use SessionStatus::*;
+        for (status, held) in [
+            (Retrying, true),
+            (Paused, true),
+            (Errored, false),
+            (FailedGates, false),
+        ] {
+            let mut pool = make_pool(2);
+            let first = create_adopted(&mut pool).session_id;
+            must_get_active_mut(&mut pool, first).session.status = status;
+
+            let again = pool.create_adopted_session(
+                "ext-conv-1",
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+                None,
+                "opus".to_string(),
+            );
+
+            assert_eq!(again.is_err(), held, "{status:?} held={held}");
+        }
     }
 
     #[test]
