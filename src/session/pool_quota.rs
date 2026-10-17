@@ -30,9 +30,20 @@ impl SessionPool {
         self.quota_routing = Some(QuotaRouting { windows, clock });
     }
 
+    /// Every provider id the pool can launch: the default plus each agent.
+    /// Sorted and unique, so badge rows and refresh order are stable.
+    pub fn quota_provider_ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = std::iter::once(self.provider.id().to_string())
+            .chain(self.agent_providers.keys().cloned())
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
     /// The configured provider with the most window headroom among on-track
     /// candidates. `None` when routing is off or no candidate is eligible.
-    pub(super) fn quota_routed_provider(&self) -> Option<&Arc<dyn AgentProvider>> {
+    pub(crate) fn quota_routed_provider(&self) -> Option<&Arc<dyn AgentProvider>> {
         let routing_input = self.quota_routing.as_ref()?;
         let now = routing_input.clock.now();
         let default_id = self.provider.id();

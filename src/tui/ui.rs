@@ -1968,24 +1968,27 @@ fn draw_token_dashboard_with_app_quota(
     area: Rect,
     theme: &crate::tui::theme::Theme,
 ) {
+    let badges = app.quota_badges();
     match &app.minimax_quota {
         Some(quota) => {
             let snapshots =
                 crate::budget::quota_snapshot::MinimaxQuotaSnapshots::new(quota.clone());
-            crate::tui::token_dashboard::draw_token_dashboard_with_quota(
+            crate::tui::token_dashboard::draw_token_dashboard_with_quota_and_badges(
                 f,
                 sessions,
                 app.total_cost,
                 &snapshots,
+                &badges,
                 area,
                 theme,
             );
         }
         None => {
-            crate::tui::token_dashboard::draw_token_dashboard(
+            crate::tui::token_dashboard::draw_token_dashboard_with_badges(
                 f,
                 sessions,
                 app.total_cost,
+                &badges,
                 area,
                 theme,
             );

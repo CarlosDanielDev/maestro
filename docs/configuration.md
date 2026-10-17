@@ -235,7 +235,16 @@ heavy_task_limit = 2
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `enabled` | bool | `false` | Reserved. No effect in this release: nothing reads this flag yet, so enabling it does nothing. Routing and quota reads are not wired to it. Only Claude Code has a quota source in v1. |
+| `enabled` | bool | `false` | Opt-in provider quota checks. When `true`, maestro polls each provider's usage windows in the background (every 65s; see below), routes a new session with no explicit provider to the one with the most headroom, shows a badge per provider on the token dashboard, and alerts once when a window reaches 97% (re-arms below 90%). When `false`, no credential is read and no request is sent. Only Claude Code has a quota source in v1. |
+
+How the quota check works when `enabled = true`:
+
+- **Credentials:** read-only, from `<home>/.claude/.credentials.json` (the file the official Claude Code CLI writes). maestro never writes or refreshes the token, and never stores it in its own files.
+- **macOS Keychain is not supported yet.** On macOS, Claude Code may keep its credentials in the Keychain instead of that file. maestro does not read the Keychain, so enabling the flag may show `no data` for every provider on macOS.
+- **Network:** the only request is `GET https://api.anthropic.com/api/oauth/usage` for the Claude provider. Nothing else is sent anywhere.
+- **Poll interval:** a background refresh every 65 seconds (the 60 second cache TTL plus 5 seconds of slack, so a tick is never skipped). A provider that keeps failing logs one warning, then debug messages, until a successful read of fresh quota data (a successful fetch, or fresh data served from the cache) re-arms the warning. HTTP 429 pauses polling for 5 minutes.
+- **Alert on startup:** if a window is already at 97% or more when maestro starts, the alert fires once on the first poll. A restart fires again while the window stays high.
+
 
 *Source: `src/config/quota.rs`.*
 

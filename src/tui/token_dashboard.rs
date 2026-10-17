@@ -53,6 +53,48 @@ pub fn draw_token_dashboard_with_quota(
     area: Rect,
     theme: &Theme,
 ) {
+    draw_token_dashboard_with_quota_and_badges(
+        f,
+        sessions,
+        total_cost,
+        quota_snapshots,
+        &[],
+        area,
+        theme,
+    );
+}
+
+/// Same as `draw_token_dashboard` but shows the live quota badges (#1065) in
+/// the per-provider block title. Badges are rendered text, one per provider.
+pub fn draw_token_dashboard_with_badges(
+    f: &mut Frame,
+    sessions: &[&Session],
+    total_cost: f64,
+    badges: &[String],
+    area: Rect,
+    theme: &Theme,
+) {
+    draw_token_dashboard_with_quota_and_badges(
+        f,
+        sessions,
+        total_cost,
+        &NoQuotaSnapshots,
+        badges,
+        area,
+        theme,
+    );
+}
+
+/// Full variant: injected quota source plus live badges (#1065).
+pub fn draw_token_dashboard_with_quota_and_badges(
+    f: &mut Frame,
+    sessions: &[&Session],
+    total_cost: f64,
+    quota_snapshots: &dyn ProviderQuotaSnapshots,
+    badges: &[String],
+    area: Rect,
+    theme: &Theme,
+) {
     let rows = build_provider_rows(sessions, quota_snapshots, provider_context_window);
     // header + N rows + 2 border lines. Minimum 4 lines so the empty-state
     // placeholder is visible inside the styled_block.
@@ -68,12 +110,18 @@ pub fn draw_token_dashboard_with_quota(
         ])
         .split(area);
 
-    draw_provider_rollup(f, &rows, chunks[0], theme);
+    draw_provider_rollup(f, &rows, badges, chunks[0], theme);
     draw_aggregate_stats(f, sessions, total_cost, chunks[1], theme);
     draw_session_tokens(f, sessions, chunks[2], theme);
 }
 
-fn draw_provider_rollup(f: &mut Frame, rows: &[ProviderRow], area: Rect, theme: &Theme) {
+fn draw_provider_rollup(
+    f: &mut Frame,
+    rows: &[ProviderRow],
+    badges: &[String],
+    area: Rect,
+    theme: &Theme,
+) {
     let narrow = area.width < 100;
     let mut lines: Vec<Line> = Vec::with_capacity(rows.len() + 1);
     let header_text = if narrow {
@@ -105,7 +153,12 @@ fn draw_provider_rollup(f: &mut Frame, rows: &[ProviderRow], area: Rect, theme: 
         }
     }
 
-    let block = theme.styled_block("Per-Provider Usage", false);
+    let title = if badges.is_empty() {
+        "Per-Provider Usage".to_string()
+    } else {
+        format!("Per-Provider Usage · {}", badges.join(" · "))
+    };
+    let block = theme.styled_block(&title, false);
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);
 }
@@ -328,58 +381,4 @@ fn draw_session_tokens(f: &mut Frame, sessions: &[&Session], area: Rect, theme: 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn with_thousands_handles_small_numbers() {
-        assert_eq!(with_thousands(0), "0");
-        assert_eq!(with_thousands(999), "999");
-    }
-
-    #[test]
-    fn with_thousands_inserts_separator_at_thousands() {
-        assert_eq!(with_thousands(1_000), "1,000");
-        assert_eq!(with_thousands(12_304), "12,304");
-        assert_eq!(with_thousands(200_000), "200,000");
-        assert_eq!(with_thousands(204_800), "204,800");
-        assert_eq!(with_thousands(1_234_567), "1,234,567");
-    }
-
-    #[test]
-    fn no_quota_snapshots_returns_none_for_any_provider() {
-        let nq = NoQuotaSnapshots;
-        assert!(nq.quota_for("minimax").is_none());
-        assert!(nq.quota_for("claude").is_none());
-        assert!(nq.quota_for("unknown").is_none());
-    }
-
-    #[test]
-    fn format_context_cell_wide_with_window() {
-        assert_eq!(
-            format_context_cell(12_304, Some(200_000), false),
-            "ctx 12,304/200,000"
-        );
-    }
-
-    #[test]
-    fn format_context_cell_wide_without_window() {
-        assert_eq!(format_context_cell(15_000, None, false), "ctx 15,000");
-    }
-
-    #[test]
-    fn format_quota_cell_wide_with_quota() {
-        let row = QuotaRow {
-            used: 247,
-            limit: 4500,
-            window_label: "5h",
-            status: QuotaBucket::Warn,
-        };
-        assert_eq!(format_quota_cell(Some(row), false), "quota 247/4500 (5h)");
-    }
-
-    #[test]
-    fn format_quota_cell_wide_none_renders_dash() {
-        assert_eq!(format_quota_cell(None, false), "-");
-    }
-}
+mod tests;

@@ -27,6 +27,7 @@ mod issue_completion;
 mod plugins;
 mod pr_retry;
 mod pushup_marker;
+mod quota_refresh;
 mod review;
 mod session_lifecycle;
 mod session_spawners;
@@ -264,6 +265,8 @@ pub struct App {
     /// instead of the `NoQuotaSnapshots` placeholder. Best-effort —
     /// stays `None` if the quota file cannot be opened.
     pub minimax_quota: Option<std::sync::Arc<crate::agent_provider::minimax::quota::MinimaxQuota>>,
+    /// Live provider quota windows, routing and alerts (#1065). Off by default.
+    pub quota: quota_refresh::QuotaRefresh,
 }
 
 impl App {
@@ -411,6 +414,7 @@ impl App {
             last_pr_marker_mtime: None,
             minimax_forced_count_5h: 0,
             minimax_quota: None,
+            quota: quota_refresh::QuotaRefresh::default(),
         };
         if let Some(error) = state_load_error {
             app.activity_log.push_simple(
@@ -581,6 +585,7 @@ impl App {
         self.pool.set_agent_providers(
             crate::commands::agent_provider_map::build_agent_provider_map(&config),
         );
+        self.quota.enabled = config.quota.enabled;
 
         // Shared adapter so fork and pool observe the same enabled state.
         let tq_adapter = if config.turboquant.enabled {
