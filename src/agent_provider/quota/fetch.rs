@@ -29,6 +29,9 @@ pub struct ReqwestQuotaHttp {
 }
 
 impl ReqwestQuotaHttp {
+    /// The ONLY place in maestro that builds a `reqwest` client for the quota
+    /// endpoint. Redirects are disabled on purpose. The bearer token must never
+    /// be forwarded to another host.
     pub fn new() -> Result<Self, TransportError> {
         let client = reqwest::Client::builder()
             // A usage endpoint has no reason to redirect. Never forward the bearer token.

@@ -20,6 +20,11 @@
 //! Providers with no quota source (Ollama, self-hosted) return `None`. The UI
 //! renders "no data" and never 0%.
 //!
+//! Known coupling: `Clock` and `SystemClock` are imported from
+//! `agent_provider::minimax::quota`. The Claude quota code depends on the
+//! MiniMax module. Moving the clock trait into a shared module is a follow-up.
+//! It is not done in this slice.
+//!
 //! Test fixture note: `tests/fixtures/claude_oauth_usage.json` is SYNTHESIZED from
 //! the shape described in issue #1064, not a live capture. The endpoint shape,
 //! the percent scale, and the required headers are unverified against the live API.

@@ -98,3 +98,33 @@ async fn fetcher_debug_smoke_omits_token() {
 
     assert!(!format!("{:?}", h.fetcher).contains(SECRET));
 }
+
+/// Only the leaf cache dir is `0o700`. Parents are created with the default mode.
+/// The parent check assumes a umask that is not 077.
+#[cfg(unix)]
+#[tokio::test]
+async fn only_the_leaf_cache_dir_is_private() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let h = Harness::new();
+    let parent = h._dir.path().join("parent");
+    let leaf = parent.join("cache");
+    let fetcher = QuotaFetcher::new(
+        h.home.clone(),
+        leaf.clone(),
+        Box::new(h.http.clone()),
+        Box::new(SharedClock(h.now.clone())),
+    );
+    h.queue(ok(FIXTURE));
+    fetcher.windows("claude").await.expect("windows");
+
+    let mode = |path: &Path| {
+        std::fs::metadata(path)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777
+    };
+    assert_eq!(mode(&leaf), 0o700, "leaf cache dir");
+    assert_ne!(mode(&parent), 0o700, "parent keeps the default mode");
+}

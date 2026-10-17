@@ -2,6 +2,14 @@
 //!
 //! Cache files hold windows and backoff times only. Never credentials.
 //! On unix the cache dir is `0o700` and the cache and lock files are `0o600`.
+//!
+//! Clock rule, applied by every gate in this file: a timestamp later than `now`
+//! (`fetched_at`, `attempted_at`) is corrupt and is treated as ABSENT. Absent
+//! means not fresh, not a recent attempt, and not a backoff, so a fetch is
+//! allowed. A backward clock jump costs at most an extra request, bounded by
+//! the size of the skew. `backoff_until` is owned by `attempted_at`. It is
+//! clamped to `attempted_at + RATE_LIMIT_BACKOFF`, and it counts only while
+//! its owner is not in the future.
 
 use std::fs::{DirBuilder, File, OpenOptions, TryLockError};
 use std::io::{self, Write};
@@ -50,13 +58,16 @@ impl CacheEntry {
             .map(|windows| ProviderWindows { stale, ..windows })
     }
 
-    /// True while polling is paused by HTTP 429. The backoff is measured from
-    /// the attempt that caused it. Anything further out than
-    /// `attempted_at + RATE_LIMIT_BACKOFF` is corrupt, so it is clamped there.
+    /// True while polling is paused by HTTP 429. The backoff is owned by the
+    /// attempt that set it. A future owner is corrupt, so there is no backoff.
+    /// A backoff further out than `attempted_at + RATE_LIMIT_BACKOFF` is clamped.
     pub(super) fn in_backoff(&self, now: DateTime<Utc>) -> bool {
         let (Some(until), Some(attempted)) = (self.backoff_until, self.attempted_at) else {
             return false;
         };
+        if attempted > now {
+            return false;
+        }
         now < until.min(attempted + RATE_LIMIT_BACKOFF)
     }
 
@@ -80,22 +91,33 @@ pub(super) fn load(path: &Path) -> CacheEntry {
 pub(super) fn store(path: &Path, entry: &CacheEntry) -> io::Result<()> {
     let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
     let raw = serde_json::to_string(entry).map_err(io::Error::other)?;
-    let mut file = private_options()
+    let written = private_options()
         .write(true)
         .create(true)
         .truncate(true)
-        .open(&tmp)?;
-    file.write_all(raw.as_bytes())?;
-    std::fs::rename(tmp, path)
+        .open(&tmp)
+        .and_then(|mut file| file.write_all(raw.as_bytes()));
+    let result = written.and_then(|()| std::fs::rename(&tmp, path));
+    if result.is_err() {
+        // Best effort. A leftover temp file is harmless, but do not keep it.
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
 }
 
-/// Creates the cache dir (and parents) with `0o700` on unix.
+/// Creates the cache dir with `0o700` on unix. Parents use the default mode.
+/// Only the leaf is private. An already existing leaf is fine.
 pub(super) fn ensure_dir(path: &Path) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let mut builder = DirBuilder::new();
-    builder.recursive(true);
     #[cfg(unix)]
     std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-    builder.create(path)
+    match builder.create(path) {
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        other => other,
+    }
 }
 
 /// Open options that create files as `0o600` on unix.

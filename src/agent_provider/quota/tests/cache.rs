@@ -307,3 +307,73 @@ async fn non_utf8_cache_file_is_treated_as_miss() {
     assert!(!windows.stale);
     assert_eq!(h.calls(), 1);
 }
+
+#[tokio::test]
+async fn future_attempt_owning_a_429_backoff_is_absent() {
+    let h = Harness::new();
+    h.seed(&store::CacheEntry {
+        fetched_at: None,
+        windows: None,
+        backoff_until: Some(at(12, 5, 0)),
+        attempted_at: Some(at(12, 0, 0)),
+    });
+    // The clock is now behind the attempt that set the backoff.
+    h.advance(Duration::hours(-1));
+    h.queue(ok(FIXTURE));
+
+    let windows = h.fetcher.windows("claude").await.expect("fetched");
+
+    assert!(!windows.stale);
+    assert_eq!(
+        h.calls(),
+        1,
+        "a future attempt owns no backoff, so a fetch is allowed"
+    );
+}
+
+#[tokio::test]
+async fn future_failed_attempt_is_absent_so_fetch_happens() {
+    let h = Harness::new();
+    h.seed(&store::CacheEntry {
+        fetched_at: Some(at(10, 0, 0)),
+        windows: Some(sample_windows()),
+        backoff_until: None,
+        attempted_at: Some(at(12, 0, 0)),
+    });
+    h.advance(Duration::hours(-1));
+    h.queue(status(500));
+
+    let windows = h.fetcher.windows("claude").await.expect("stale snapshot");
+    assert!(windows.stale);
+    assert_eq!(
+        h.calls(),
+        1,
+        "a future failed attempt does not block a fetch"
+    );
+
+    h.advance(Duration::seconds(30));
+    h.fetcher.windows("claude").await.expect("stale inside TTL");
+    assert_eq!(h.calls(), 1, "the attempt just made now gates the retry");
+}
+
+#[tokio::test]
+async fn failed_rename_leaves_no_temp_file() {
+    let h = Harness::new();
+    // A directory at the cache path makes the rename fail. Readers treat it as a miss.
+    std::fs::create_dir_all(h.cache_path()).expect("dir at cache path");
+    h.queue(ok(FIXTURE));
+
+    let windows = h.fetcher.windows("claude").await.expect("fetched");
+
+    assert!(!windows.stale);
+    let leftovers: Vec<String> = std::fs::read_dir(&h.cache_dir)
+        .expect("read cache dir")
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".tmp"))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "temp files left behind: {leftovers:?}"
+    );
+}
