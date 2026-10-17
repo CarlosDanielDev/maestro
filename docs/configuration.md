@@ -231,6 +231,14 @@ heavy_task_limit = 2
 
 *Source: `src/config/experimental.rs`.*
 
+## `[quota]`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | bool | `false` | Reserved. No effect in this release: nothing reads this flag yet, so enabling it does nothing. Routing and quota reads are not wired to it. Only Claude Code has a quota source in v1. |
+
+*Source: `src/config/quota.rs`.*
+
 ## `[flags]`
 
 Arbitrary `key = bool` entries that merge with the built-in flag defaults (see `src/flags/store.rs`). The `maestro run --enable-flag <FLAG>` and `--disable-flag <FLAG>` options layer on top with **disable wins** semantics when both are supplied for the same flag in the same invocation.

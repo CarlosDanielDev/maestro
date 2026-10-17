@@ -29,9 +29,13 @@
 //! the shape described in issue #1064, not a live capture. The endpoint shape,
 //! the percent scale, and the required headers are unverified against the live API.
 
+pub mod alert;
+pub mod badge;
 mod cache;
 mod credentials;
 pub mod fetch;
+pub mod pacing;
+pub mod routing;
 #[cfg(test)]
 mod tests;
 pub mod types;

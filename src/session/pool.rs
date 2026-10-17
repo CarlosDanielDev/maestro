@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use super::image::copy_images_to_worktree;
 use super::manager::{ManagedSession, SessionEvent};
+use super::pool_quota::QuotaRouting;
 use super::types::{Session, SessionOrigin, SessionStatus};
 use super::worktree::WorktreeManager;
 use crate::agent_provider::{AgentProvider, ClaudeProvider};
@@ -26,9 +27,9 @@ pub struct SessionPool {
     /// Allowed tools whitelist passed to Claude CLI sessions.
     allowed_tools: Vec<String>,
     /// Agent provider used for newly promoted sessions.
-    provider: Arc<dyn AgentProvider>,
+    pub(super) provider: Arc<dyn AgentProvider>,
     /// Agent providers keyed by configured `[agents.*]` id.
-    agent_providers: HashMap<String, Arc<dyn AgentProvider>>,
+    pub(super) agent_providers: HashMap<String, Arc<dyn AgentProvider>>,
     /// Guardrail prompt appended to every session's system prompt.
     guardrail_prompt: Option<String>,
     /// TurboQuant adapter used to compact the system-prompt appendix.
@@ -41,6 +42,8 @@ pub struct SessionPool {
     /// disables injection — used in unit tests that don't care about
     /// templates and as a no-op fallback when XDG cache resolution fails.
     rendered_template_store: Option<Arc<dyn RenderedTemplateStore>>,
+    /// Quota input for headroom routing (issue #1065). `None` = routing off.
+    pub(super) quota_routing: Option<QuotaRouting>,
 }
 
 impl SessionPool {
@@ -66,6 +69,7 @@ impl SessionPool {
             system_prompt_budget: 0,
             knowledge_appendix: None,
             rendered_template_store: None,
+            quota_routing: None,
         }
     }
 
@@ -271,7 +275,13 @@ impl SessionPool {
 
     /// Resolve the provider this session will run against, honoring any
     /// `session.agent_id` override against the registered provider map.
+    /// An explicit `agent_id` always wins. Quota routing applies only when it is unset (#1065).
     fn resolve_provider(&self, session: &Session) -> &Arc<dyn AgentProvider> {
+        if session.agent_id.is_none()
+            && let Some(provider) = self.quota_routed_provider()
+        {
+            return provider;
+        }
         session
             .agent_id
             .as_ref()
@@ -751,16 +761,16 @@ fn session_slug(session: &Session) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(in crate::session) mod tests {
     use super::*;
     use crate::session::worktree::MockWorktreeManager;
 
-    fn make_pool(max: usize) -> SessionPool {
+    pub(in crate::session) fn make_pool(max: usize) -> SessionPool {
         let (tx, _rx) = mpsc::unbounded_channel();
         SessionPool::new(max, Box::new(MockWorktreeManager::new()), tx)
     }
 
-    fn make_session(prompt: &str) -> Session {
+    pub(in crate::session) fn make_session(prompt: &str) -> Session {
         Session::new(
             prompt.to_string(),
             "opus".to_string(),

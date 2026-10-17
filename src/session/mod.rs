@@ -11,6 +11,7 @@ pub mod logger;
 pub mod manager;
 pub mod parser;
 pub mod pool;
+mod pool_quota;
 pub mod pr_capture;
 pub mod retry;
 pub mod role;
