@@ -7,6 +7,7 @@
 
 mod cache;
 mod parsing;
+mod retry;
 mod security;
 
 use std::collections::VecDeque;

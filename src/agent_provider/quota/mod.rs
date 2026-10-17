@@ -130,7 +130,10 @@ impl QuotaFetcher {
         }
         let token = credentials::load_claude_access_token(&self.home)?;
 
+        // Any attempt that is not a 429 must not inherit an old backoff. A fetch
+        // only runs when no valid backoff blocked it, so the old value is expired or corrupt.
         entry.attempted_at = Some(now);
+        entry.backoff_until = None;
         let result = match self.request(token.expose()).await {
             Fetched::Windows(windows) => {
                 entry = CacheEntry {
