@@ -1,6 +1,7 @@
 //! Failure reports for the quota fetch and cache (issue #1065). Each failure
 //! kind has a key. The first failure of a streak under a key is `Warn`. Later
-//! failures under that key are `Debug`. A success under the key ends the streak.
+//! failures under that key are `Debug`. A successful read of fresh data under
+//! the key (a fetch, or a fresh cache hit) ends the streak.
 
 use std::collections::HashSet;
 use std::fmt;

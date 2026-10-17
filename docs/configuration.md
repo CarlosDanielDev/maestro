@@ -242,7 +242,7 @@ How the quota check works when `enabled = true`:
 - **Credentials:** read-only, from `<home>/.claude/.credentials.json` (the file the official Claude Code CLI writes). maestro never writes or refreshes the token, and never stores it in its own files.
 - **macOS Keychain is not supported yet.** On macOS, Claude Code may keep its credentials in the Keychain instead of that file. maestro does not read the Keychain, so enabling the flag may show `no data` for every provider on macOS.
 - **Network:** the only request is `GET https://api.anthropic.com/api/oauth/usage` for the Claude provider. Nothing else is sent anywhere.
-- **Poll interval:** a background refresh every 65 seconds (the 60 second cache TTL plus 5 seconds of slack, so a tick is never skipped). A provider that keeps failing logs one warning, then debug messages until a fetch succeeds. HTTP 429 pauses polling for 5 minutes.
+- **Poll interval:** a background refresh every 65 seconds (the 60 second cache TTL plus 5 seconds of slack, so a tick is never skipped). A provider that keeps failing logs one warning, then debug messages, until a successful read of fresh quota data (a successful fetch, or fresh data served from the cache) re-arms the warning. HTTP 429 pauses polling for 5 minutes.
 - **Alert on startup:** if a window is already at 97% or more when maestro starts, the alert fires once on the first poll. A restart fires again while the window stays high.
 
 
