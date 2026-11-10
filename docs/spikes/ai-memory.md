@@ -62,6 +62,17 @@ Consequence recorded for the ADR: `--no-autowire` is not optional for maestro
 use, and any wrapper user must know that autowire scope follows
 `CLAUDE_CONFIG_DIR` (and friends), not `HOME`.
 
+Final isolation re-check, run after ALL scenarios (any residual write from any
+scenario would still be present in the file now, so one clean grep at the end
+covers the whole run):
+
+```text
+$ grep -c "aimem-sbx-1084\|aimem-bin-1084\|49731" ~/.claude/settings.json
+0   (grep exit 1 = zero matches)
+$ grep -rl "aimem-sbx-1084\|aimem-bin-1084\|49731" ~/.claude/settings.json ~/.claude-glm/.claude.json
+(no output; exit 1 = clean)
+```
+
 With `CLAUDE_CONFIG_DIR` later switched inside the sandbox, the workstream
 that had linked a session under the real store refused to resume — recorded
 verbatim under scenario 1 because it is real wrapper behavior:
@@ -366,12 +377,16 @@ ai-memory 3.4.5 (client)
     embedding: disabled
 ```
 
-Data directory path on this OS (macOS): with `AI_MEMORY_DATA_DIR` set it is
-honored exactly; the DEFAULT on macOS was observed from the owner's real
-install (the host hook commands restored in the incident section point at
-`/Users/carlos/Library/Application Support/ai-memory`) — i.e.
-`~/Library/Application Support/ai-memory`, NOT the `~/.local/share` path the
-Linux-oriented docs suggest.
+Data directory path — two scoped answers, kept separate for the ADR consumer:
+
+- Sandbox (isolation-scoped, what the ADR relies on): `AI_MEMORY_DATA_DIR` is
+  honored exactly, so every scenario wrote only to
+  `/private/tmp/aimem-sbx-1084/data` (`ai-memory status` above shows
+  `data-dir: /private/tmp/aimem-sbx-1084/data`).
+- Host default (single observation, not exercised): the owner's real install
+  resolves to `~/Library/Application Support/ai-memory` on macOS (the host
+  hook commands restored in the incident section point there) — NOT the
+  `~/.local/share` path the Linux-oriented docs suggest.
 
 5b — files one managed session creates (fresh workstream, snapshot diff of
 the whole data dir before/after): exactly one new file,
@@ -409,7 +424,7 @@ Result, observed not assumed:
 - `other [ai-memory-backfill:assistant-message]` @ 2026-11-10T20:59:05Z — Deploying. Using key [REDACTED:api_key] from your message.
 ```
 
-- The daily log page renders the same `[REDACTED:api_key]` placeholder.
+- The daily log page renders the same `[REDACTED:api_key]` marker.
 - The sanitizer therefore runs BEFORE any persistence (wiki, raw segments,
   FTS), as the docs claim.
 
@@ -508,7 +523,10 @@ harness store — with stubs the ledger honestly records the import loss.
   shim already does. Nothing in the matrix requires it.
 - (c) hooks/MCP only: no wrapper means no lease, no cross-harness workstream,
   no `continue`/handoff — the features the epic wants (scenarios 4 and 6 all
-  run through the wrapper). Capture-only, strictly less than (a).
+  run through the wrapper). It also never imports native transcripts into the
+  workstream ledger: the sanitized continuity ledger measured in scenario 5
+  (planted secret reduced to `[REDACTED:api_key]`, absent from raw/db) is a
+  wrapper-finish/backfill feature, so capture-only is strictly less than (a).
 - (d) skip: nothing in the matrix broke; skipping is not evidence-supported.
 
 Full ADR text: PR body of the spike PR for #1084.
