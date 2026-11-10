@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py attribution"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.maestro/hooks/guards.py\" attribution"
           }
         ]
       },
@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py forbidden-git"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.maestro/hooks/guards.py\" forbidden-git"
           }
         ]
       },
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py secret-read"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.maestro/hooks/guards.py\" secret-read"
           }
         ]
       },
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py dispatch-contract"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.maestro/hooks/guards.py\" dispatch-contract"
           }
         ]
       },
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py background-gate"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.maestro/hooks/guards.py\" background-gate"
           }
         ]
       }
