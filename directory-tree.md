@@ -417,7 +417,8 @@ maestro/
 │   │   ├── retry.rs                       # RetryPolicy: configurable max retries and cooldown; hollow field owns HollowRetryConfig (replaces flat hollow_max_retries); effective_max() dispatches by policy + session intent; 18 unit tests  [Phase 3, Issue #275]
 │   │   ├── cleanup.rs                     # CleanupManager: orphaned worktree detection and removal  [Phase 3]
 │   │   ├── image.rs                       # Image attachment helpers: VALID_IMAGE_EXTENSIONS constant, path validation, base64 encoding for multimodal session prompts
-│   │   ├── logger.rs                      # SessionLogger: logs ContextUpdate events; logs Thinking events with "THINKING:" prefix; per-session timestamped file logging  [Phase 3, Issue #102]
+│   │   ├── logger.rs                      # SessionLogger: logs ContextUpdate events; logs Thinking events with "THINKING:" prefix; per-session timestamped file logging; cleanup_old_logs refuses symlinked/non-dir roots and only removes old <uuid>.log files  [Phase 3, Issue #102, #1031]
+│   │   ├── logger_tests.rs                # unit tests for `logger.rs` (sibling via `#[path]`): log_event coverage, list_logs, cleanup_old_logs symlink/non-dir guards and entry filter  [Issue #1031]
 │   │   ├── context_monitor.rs             # ContextMonitor trait + ProductionContextMonitor: tracks per-session context usage, overflow and commit-prompt thresholds  [Issue #12]
 │   │   ├── fork.rs                        # SessionForker trait + ForkPolicy: auto-fork on overflow, continuation prompt builder, max depth enforcement  [Issue #12]
 │   │   ├── role.rs                        # Role enum (5 variants: Orchestrator, Implementer, Reviewer, QA, Unknown) + derive_role() keyword classifier; Session::role field (O(1) lookup at render time)  [Issue #538]
@@ -1129,7 +1130,8 @@ maestro/
 | `src/session/pool.rs` | Concurrent session pool with queue and auto-promote; guardrail_prompt merged into system prompt; `find_by_issue_mut()`; `create_interaction_session`, `clone_active_interaction`, `upsert_interaction` (with terminated-resurrection guard); `find_active_interaction_by_issue_mut()`; `#[cfg(test)] interaction_close_reason` accessor; `create_adopted_session()` binding an external conversation id with no worktree and the transcript's original cwd (Issue #40, #43, #738, #739, #1053) |
 | `src/session/worktree.rs` | Git worktree isolation per session |
 | `src/session/cleanup.rs` | Orphaned worktree detection and removal (Phase 3) |
-| `src/session/logger.rs` | Per-session file logging to .maestro/logs/ (Phase 3) |
+| `src/session/logger.rs` | Per-session file logging to .maestro/logs/ (Phase 3); `cleanup_old_logs` refuses symlinked/non-dir log roots and only removes old `<uuid>.log` files (Issue #1031) |
+| `src/session/logger_tests.rs` | Unit tests for `logger.rs` (sibling via `#[path]`): log_event coverage, list_logs, cleanup_old_logs symlink/non-dir guards and entry filter (Issue #1031) |
 | `src/session/context_monitor.rs` | ContextMonitor trait + ProductionContextMonitor: per-session context tracking (Issue #12) |
 | `src/session/fork.rs` | SessionForker trait + ForkPolicy: auto-fork on overflow, continuation prompt builder (Issue #12) |
 | `src/session/role.rs` | Role enum (5 variants) + derive_role() keyword classifier; Session::role field for O(1) render-time lookup (Issue #538); `role_for_subagent_name()` lookup mapping the 7-entry maestro subagent registry to Roles; `#[allow(dead_code)]` on `ToolMeta::subagent_name` and `role_for_subagent_name` removed now that both are consumed by the activity-log chip renderer (Issues #542, #543) |
