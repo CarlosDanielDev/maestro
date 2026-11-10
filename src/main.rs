@@ -154,6 +154,8 @@ async fn main() -> anyhow::Result<()> {
             check,
             dry_run,
         }),
+        Some(Commands::Trust { yes }) => commands::trust::cmd_trust(yes),
+        Some(Commands::Untrust) => commands::trust::cmd_untrust(),
         Some(Commands::Doctor) => cmd_doctor(),
         Some(Commands::Insight { action }) => match action {
             cli::InsightAction::Scan => insight::run_cli(std::path::Path::new(".")),
@@ -580,5 +582,77 @@ mod tests {
             !app.flags.is_enabled(crate::flags::Flag::CiAutoFix),
             "CiAutoFix must default to false"
         );
+    }
+}
+
+#[cfg(test)]
+mod workspace_trust_tests {
+    use crate::commands::setup::setup_app_from_config_with_trust;
+    use crate::config::{Config, LoadedConfig};
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+    use std::path::Path;
+
+    fn trust_app(workspace_trusted: bool) -> crate::tui::app::App {
+        let config: Config = toml::from_str(
+            r#"
+            [project]
+            repo = "owner/repo"
+            base_branch = "main"
+            [sessions]
+            [budget]
+            per_session_usd = 5.0
+            total_usd = 50.0
+            alert_threshold_pct = 80
+            [notifications]
+            [[sessions.completion_gates.commands]]
+            name = "fmt"
+            run = "echo gate-ok"
+            "#,
+        )
+        .unwrap();
+        setup_app_from_config_with_trust(
+            LoadedConfig {
+                config,
+                path: std::path::PathBuf::from("maestro.toml"),
+            },
+            StateStore::new(
+                std::env::temp_dir()
+                    .join(format!("maestro-trust-test-{}.json", uuid::Uuid::new_v4())),
+            ),
+            Box::new(MockWorktreeManager::new()),
+            None,
+            false,
+            workspace_trusted,
+        )
+    }
+
+    #[test]
+    fn workspace_trust_setup_marks_app_untrusted_and_wraps_gate_runner() {
+        let app = trust_app(false);
+        assert!(!app.workspace_trusted);
+        let gate = crate::gates::types::CompletionGate::Command {
+            name: "fmt".into(),
+            command: "echo gate-ok".into(),
+            required: true,
+        };
+        let results = app.gate_runner.run_gates(&[gate], Path::new("/tmp"));
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert!(results[0].message.contains("not trusted"));
+    }
+
+    #[test]
+    fn workspace_trust_setup_keeps_trusted_gate_runner_executing() {
+        let app = trust_app(true);
+        assert!(app.workspace_trusted);
+        let gate = crate::gates::types::CompletionGate::Command {
+            name: "fmt".into(),
+            command: "echo gate-ok".into(),
+            required: true,
+        };
+        let results = app.gate_runner.run_gates(&[gate], Path::new("/tmp"));
+        assert_eq!(results.len(), 1);
+        assert!(results[0].passed, "message: {}", results[0].message);
     }
 }

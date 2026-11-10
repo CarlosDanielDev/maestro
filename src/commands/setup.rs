@@ -29,6 +29,34 @@ pub fn setup_app_from_config_with_bypass(
     max_concurrent_override: Option<usize>,
     bypass_review: bool,
 ) -> App {
+    let workspace_trusted = matches!(
+        crate::config::trust::evaluate_with_default_store(&loaded.path, &loaded.config),
+        crate::config::trust::TrustDecision::Trusted,
+    );
+    setup_app_from_config_with_trust(
+        loaded,
+        store,
+        worktree_mgr,
+        max_concurrent_override,
+        bypass_review,
+        workspace_trusted,
+    )
+}
+
+/// [`setup_app_from_config`] with an explicit workspace trust decision
+/// (#1045). When `workspace_trusted` is false, config-supplied commands are
+/// skipped: plugins never execute, executing gates fail closed, review
+/// dispatch and session spawns with config commands are blocked. Production
+/// callers should use [`setup_app_from_config`], which reads the decision
+/// from the user's trust store.
+pub fn setup_app_from_config_with_trust(
+    loaded: LoadedConfig,
+    store: StateStore,
+    worktree_mgr: Box<dyn crate::session::worktree::WorktreeManager + Send>,
+    max_concurrent_override: Option<usize>,
+    bypass_review: bool,
+    workspace_trusted: bool,
+) -> App {
     let LoadedConfig { config, path } = loaded;
     let max_concurrent = max_concurrent_override.unwrap_or(config.sessions.max_concurrent);
 
@@ -71,10 +99,15 @@ pub fn setup_app_from_config_with_bypass(
     app.notifications = build_notification_dispatcher(&config.notifications);
 
     if !config.plugins.is_empty() {
-        app.plugin_runner = Some(crate::plugins::runner::PluginRunner::new(
+        app.plugin_runner = Some(crate::plugins::runner::PluginRunner::with_trust(
             config.plugins.clone(),
             DEFAULT_PLUGIN_TIMEOUT_SECS,
+            workspace_trusted,
         ));
+    }
+    app.workspace_trusted = workspace_trusted;
+    if !workspace_trusted {
+        app.gate_runner = Box::new(crate::gates::UntrustedGateRunner);
     }
 
     app.flags = crate::flags::store::FeatureFlags::new(

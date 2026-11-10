@@ -1,7 +1,8 @@
 use super::App;
 use super::helpers::{build_completion_gates, session_label};
 use super::types::TuiMode;
-use crate::gates::runner::{self, GateCheck, GateRunner};
+use crate::gates::runner::{GateCheck, GateRunner};
+use crate::gates::types;
 use crate::gates::types::{CompletionGate, GateResult};
 use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::retry::RetryPolicy;
@@ -64,7 +65,7 @@ impl App {
                     .zip(gates.iter().map(|g| g.is_required()))
                     .collect();
 
-                let all_required_passed = runner::all_required_gates_passed(&paired);
+                let all_required_passed = types::all_required_gates_passed(&paired);
 
                 // Log individual gate results (failed-level differs by outcome)
                 let fail_level = if all_required_passed {

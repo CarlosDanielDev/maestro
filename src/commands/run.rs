@@ -38,6 +38,11 @@ pub async fn cmd_run(
     let loaded = Config::find_and_load_with_path()?;
     let config = loaded.config.clone();
 
+    // Workspace trust gate (#1045): `run` exists to execute the configured
+    // commands — refuse outright when the repo config declares executable
+    // values and the workspace is not trusted.
+    crate::config::trust::refuse_untrusted_with_default_store(&loaded.path, &loaded.config)?;
+
     // Pre-cutoff nudge (#750): headless claude transport loses subscription
     // billing on 2026-06-15. Suppressible via MAESTRO_SILENCE_TRANSPORT_WARN=1.
     let silence_transport_warn = std::env::var("MAESTRO_SILENCE_TRANSPORT_WARN")

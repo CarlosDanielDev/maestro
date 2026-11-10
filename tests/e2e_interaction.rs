@@ -117,6 +117,27 @@ transport = "interactive"
 /// locates the stub transcript via HOME), and inherited `MAESTRO_*` vars are
 /// removed, so the developer shell cannot leak in. stdout/stderr are files,
 /// not pipes, so `cargo test` cannot hang on a full pipe.
+/// Workspace trust gate (#1045): the fixture config declares a stub
+/// `command`, so the workspace must be trusted before `maestro run` will
+/// execute it. Runs `maestro trust --yes` with the same hermetic HOME so
+/// the record lands where the run below reads it.
+fn trust_workspace(dir: &Path, home: &Path) {
+    let output = Command::new(env!("CARGO_BIN_EXE_maestro"))
+        .args(["trust", "--yes"])
+        .current_dir(dir)
+        .env("HOME", home)
+        .env("XDG_CACHE_HOME", home.join("cache"))
+        .env("XDG_DATA_HOME", home.join("data"))
+        .env("XDG_CONFIG_HOME", home.join("config"))
+        .output()
+        .expect("spawn maestro trust");
+    assert!(
+        output.status.success(),
+        "maestro trust failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn run_maestro_once(dir: &Path, home: &Path) -> ExitStatus {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_maestro"));
     cmd.args(["run", "--prompt", "hello", "--once", "--skip-doctor"])
@@ -209,6 +230,7 @@ fn run_once_completes_over_pty_transport_and_teardowns_worktree() {
     create_decoy_worktree(&work);
     let stub = install_stub(&work);
     write_config(&work, &stub);
+    trust_workspace(&work, &home);
 
     let status = run_maestro_once(&work, &home);
     let stdout = read_or_empty(&work.join("stdout.txt"));

@@ -300,6 +300,14 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Trust this workspace's maestro config so its commands may run
+    Trust {
+        /// Record consent without the interactive confirmation
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Revoke workspace trust for this directory's maestro config
+    Untrust,
 }
 
 /// Output format for TurboQuant benchmark reports.

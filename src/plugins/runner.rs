@@ -24,13 +24,24 @@ pub struct PluginResult {
 pub struct PluginRunner {
     plugins: Vec<PluginConfig>,
     timeout: Duration,
+    /// False when the workspace config is untrusted (#1045): plugin
+    /// commands are reported as skipped instead of executed.
+    trusted: bool,
 }
 
 impl PluginRunner {
     pub fn new(plugins: Vec<PluginConfig>, timeout_secs: u64) -> Self {
+        Self::with_trust(plugins, timeout_secs, true)
+    }
+
+    /// `trusted = false` makes `fire` skip every plugin run — plugin `run`
+    /// strings come from the repo config and must not execute without the
+    /// workspace trust gate (#1045).
+    pub fn with_trust(plugins: Vec<PluginConfig>, timeout_secs: u64, trusted: bool) -> Self {
         Self {
             plugins,
             timeout: Duration::from_secs(timeout_secs),
+            trusted,
         }
     }
 
@@ -59,9 +70,28 @@ impl PluginRunner {
     async fn execute_plugin(&self, plugin: &PluginConfig, ctx: &HookContext) -> PluginResult {
         let start = std::time::Instant::now();
 
+        // Workspace trust gate (#1045): plugin `run` strings come from the
+        // repo config; they are reported as skipped instead of executed
+        // while the workspace is untrusted.
+        if !self.trusted {
+            let message = "skipped: workspace config is not trusted (run `maestro trust`)";
+            return PluginResult {
+                plugin_name: plugin.name.clone(),
+                success: false,
+                output: message.to_string(),
+                exit_code: -1,
+                stdout: String::new(),
+                stderr: message.to_string(),
+                duration_ms: start.elapsed().as_millis() as u64,
+            };
+        }
+
         let result = tokio::time::timeout(self.timeout, async {
             // CWE-78: parse into argv and exec directly — no `sh -c`, so a
             // plugin `run` string can't inject via `;`, `|`, `$(...)`, etc.
+            // Residual argv[0] risk: the program name is repo-chosen. When
+            // the workspace is untrusted, `execute_plugin` skips before this
+            // point (#1045).
             let Some((program, args)) = crate::util::parse_command(&plugin.run) else {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
@@ -254,5 +284,71 @@ mod tests {
     fn hook_context_with_var_accepts_maestro_prefix() {
         let ctx = HookContext::new().with_var("MAESTRO_CUSTOM", "value");
         assert_eq!(ctx.vars.get("MAESTRO_CUSTOM").unwrap(), "value");
+    }
+}
+
+/// Workspace trust gate tests (#1045) — unix-only: marker probe is a script.
+#[cfg(all(test, unix))]
+mod workspace_trust_tests {
+    use super::*;
+
+    fn marker_workspace(tag: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join(format!("hook-{tag}.sh"));
+        let marker = dir.path().join(format!("marker-{tag}.txt"));
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\ntouch '{}'\necho hooked\n", marker.display()),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (dir, marker)
+    }
+
+    #[tokio::test]
+    async fn workspace_trust_untrusted_runner_does_not_execute_plugin() {
+        let (dir, marker) = marker_workspace("untrusted");
+        let plugin = PluginConfig {
+            name: "hook".into(),
+            on: "session_started".into(),
+            run: dir.path().join("hook-untrusted.sh").display().to_string(),
+            timeout_secs: None,
+        };
+        let runner = PluginRunner::with_trust(vec![plugin], 5, false);
+        let ctx = HookContext::new();
+
+        let results = runner.fire(HookPoint::SessionStarted, &ctx).await;
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].success);
+        assert!(
+            results[0].output.contains("not trusted"),
+            "output: {}",
+            results[0].output
+        );
+        assert!(
+            !marker.exists(),
+            "untrusted plugin run must not be executed"
+        );
+    }
+
+    #[tokio::test]
+    async fn workspace_trust_trusted_runner_executes_plugin() {
+        let (dir, marker) = marker_workspace("trusted");
+        let plugin = PluginConfig {
+            name: "hook".into(),
+            on: "session_started".into(),
+            run: dir.path().join("hook-trusted.sh").display().to_string(),
+            timeout_secs: None,
+        };
+        let runner = PluginRunner::with_trust(vec![plugin], 5, true);
+        let ctx = HookContext::new();
+
+        let results = runner.fire(HookPoint::SessionStarted, &ctx).await;
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].success, "output: {}", results[0].output);
+        assert!(marker.exists(), "trusted plugin run must execute");
     }
 }
