@@ -122,9 +122,30 @@ pub(super) fn build_args(request: &AgentRequest) -> Vec<String> {
     args
 }
 
+/// Upper bound on prompt characters per interactive turn payload, so a huge
+/// issue body cannot flood the PTY write (#1034).
+pub(super) const MAX_PROMPT_CHARS: usize = 100_000;
+
+/// Neutralize anything that could break out of the bracketed-paste wrapper
+/// (#1034): literal `ESC[200~` / `ESC[201~` sequences go first, then every
+/// control character except `\n` becomes a space (`char::is_control` covers
+/// C0 plus DEL/C1 — a superset of the C0 range named in the issue). The
+/// result is truncated to [`MAX_PROMPT_CHARS`] chars.
+pub(super) fn sanitize_prompt(prompt: &str) -> String {
+    prompt
+        .replace("\u{1b}[200~", "")
+        .replace("\u{1b}[201~", "")
+        .chars()
+        .map(|c| if c.is_control() && c != '\n' { ' ' } else { c })
+        .take(MAX_PROMPT_CHARS)
+        .collect()
+}
+
 /// Wrap the prompt in bracketed-paste markers so embedded newlines do not
 /// submit early, then submit with `\r` (spike #747: `\r` submits, `\n`
-/// inserts a newline in the composer).
+/// inserts a newline in the composer). The prompt passes through
+/// [`sanitize_prompt`] first (#1034), so the payload carries exactly the two
+/// wrapper `ESC` bytes and no submit `CR` except the trailing one.
 pub(super) fn turn_payload(prompt: &str) -> String {
-    format!("\x1b[200~{prompt}\x1b[201~\r")
+    format!("\x1b[200~{}\x1b[201~\r", sanitize_prompt(prompt))
 }
