@@ -54,6 +54,34 @@ fn extract_subagent_name(tool: &str, input: Option<&Value>) -> Option<String> {
     }
 }
 
+/// Extract the `file_path` (or `path`) field of a `tool_use` input,
+/// sanitized like [`extract_subagent_name`]: control characters are
+/// dropped and the value is truncated at a UTF-8 boundary.
+///
+/// Issue #1035: this value comes from the agent's own tool input and feeds
+/// the activity log, the file-claim pool and Critical desktop
+/// notifications, so a hostile path carrying `\n` or other C0 bytes must
+/// not reach those sinks. The cap (4 KiB, PATH_MAX scale) sits far above
+/// real paths, so file-claim keys stay stable.
+fn extract_file_path(input: Option<&Value>) -> Option<String> {
+    const MAX_FILE_PATH_LEN: usize = 4096;
+    let input = input?;
+    let raw = input
+        .get("file_path")
+        .or_else(|| input.get("path"))
+        .and_then(|p| p.as_str())?;
+    let sanitized: String = raw.chars().filter(|c| !c.is_control()).collect();
+    if sanitized.is_empty() {
+        return None;
+    }
+    if sanitized.len() <= MAX_FILE_PATH_LEN {
+        Some(sanitized)
+    } else {
+        let boundary = char_boundary(&sanitized, MAX_FILE_PATH_LEN);
+        Some(sanitized[..boundary].to_string())
+    }
+}
+
 /// Parse a single line of Claude CLI `--output-format stream-json` output.
 ///
 /// The stream-json format emits one JSON object per line. Key event types:
@@ -191,12 +219,7 @@ pub(crate) fn content_block_event(block: &Value) -> Option<StreamEvent> {
                 .unwrap_or("unknown")
                 .to_string();
             let input = block.get("input");
-            let file_path = input.and_then(|inp| {
-                inp.get("file_path")
-                    .or_else(|| inp.get("path"))
-                    .and_then(|p| p.as_str())
-                    .map(|s| s.to_string())
-            });
+            let file_path = extract_file_path(input);
             let command_preview = input.and_then(|inp| {
                 inp.get("command").and_then(|c| c.as_str()).map(|s| {
                     if s.len() > 60 {
@@ -274,12 +297,7 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
                 .unwrap_or("unknown")
                 .to_string();
             let input = msg.and_then(|m| m.get("input"));
-            let file_path = input.and_then(|inp| {
-                inp.get("file_path")
-                    .or_else(|| inp.get("path"))
-                    .and_then(|p| p.as_str())
-                    .map(|s| s.to_string())
-            });
+            let file_path = extract_file_path(input);
             let command_preview = input.and_then(|inp| {
                 inp.get("command").and_then(|c| c.as_str()).map(|s| {
                     if s.len() > 60 {
@@ -330,12 +348,7 @@ fn parse_assistant_event(v: &Value) -> StreamEvent {
                             .unwrap_or("unknown")
                             .to_string();
                         let input = block.get("input");
-                        let file_path = input.and_then(|inp| {
-                            inp.get("file_path")
-                                .or_else(|| inp.get("path"))
-                                .and_then(|p| p.as_str())
-                                .map(|s| s.to_string())
-                        });
+                        let file_path = extract_file_path(input);
                         let subagent_name = extract_subagent_name(&tool, input);
                         return StreamEvent::ToolUse {
                             tool,
@@ -901,6 +914,33 @@ mod tests {
             } => {
                 assert_eq!(tool, "Read");
                 assert_eq!(file_path, Some("/foo".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_file_path_drops_control_characters() {
+        // Issue #1035: a newline in file_path must not survive into the
+        // activity log, file-claim keys or Critical desktop notifications.
+        let line = r#"{"type":"assistant","message":{"type":"tool_use","name":"Write","input":{"file_path":"/tmp/a\u0007b\n.rs"}}}"#;
+        match first_event(line) {
+            StreamEvent::ToolUse { file_path, .. } => {
+                assert_eq!(file_path, Some("/tmp/ab.rs".to_string()));
+            }
+            other => panic!("Expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_use_file_path_caps_length() {
+        let long_path = format!("/{}", "a".repeat(5000));
+        let line = format!(
+            r#"{{"type":"assistant","message":{{"type":"tool_use","name":"Write","input":{{"file_path":"{long_path}"}}}}}}"#
+        );
+        match first_event(&line) {
+            StreamEvent::ToolUse { file_path, .. } => {
+                assert_eq!(file_path, Some(format!("/{}", "a".repeat(4095))));
             }
             other => panic!("Expected ToolUse, got {:?}", other),
         }
