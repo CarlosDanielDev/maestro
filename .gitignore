@@ -11,6 +11,8 @@ maestro-prompt-history.json
 .maestro/logs/
 .maestro/adapt-cache.json
 .maestro/prd.toml
+.maestro/notifications.conf
+.claude/notifications.conf
 # OS
 .DS_Store
 *.swp
