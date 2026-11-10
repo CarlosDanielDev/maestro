@@ -1,9 +1,11 @@
 //! Shared utility helpers, grouped by domain.
 
 pub mod formatting;
+pub mod fs_safe;
 pub mod sanitize;
 pub mod validation;
 
 // Re-export all public items so existing `use crate::util::*` call sites continue to work.
 pub use formatting::*;
+pub use fs_safe::*;
 pub use validation::*;

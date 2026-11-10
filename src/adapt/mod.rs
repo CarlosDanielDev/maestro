@@ -16,6 +16,8 @@ pub mod types;
 
 pub use command_config::{AdaptConfig, PrdConfig};
 
+use crate::util::{exists_no_follow, write_no_follow};
+
 pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
     use analyzer::{ClaudeAnalyzer, ProjectAnalyzer};
     use prd::{ClaudePrdGenerator, PrdGenerator};
@@ -24,8 +26,13 @@ pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
     let output_path = config.path.join("docs/PRD.md");
 
     // When the source is Local, preserve legacy --force behavior so we don't
-    // accidentally overwrite a hand-edited file without a flag.
-    if config.source == prd_source::PrdSource::Local && output_path.exists() && !config.force {
+    // accidentally overwrite a hand-edited file without a flag. The check
+    // must not follow symlinks: a dangling link would otherwise pass and the
+    // write below would follow it (#1033).
+    if config.source == prd_source::PrdSource::Local
+        && exists_no_follow(&output_path)
+        && !config.force
+    {
         eprintln!(
             "PRD already exists at {}. Use --force to overwrite.",
             output_path.display()
@@ -70,7 +77,7 @@ pub async fn cmd_prd(config: PrdConfig) -> anyhow::Result<()> {
         if let Some(parent) = output_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&output_path, &prd_content)?;
+        write_no_follow(&output_path, &prd_content)?;
         eprintln!("PRD written to {}", output_path.display());
     } else {
         // For remote-only sources, surface the result so the user can
@@ -140,13 +147,16 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     let prd_content = match prd_generator.generate(&profile, &report).await {
         Ok(content) => {
             let prd_path = config.path.join("docs/PRD.md");
-            if !prd_path.exists() {
+            // exists_no_follow, not Path::exists: a dangling symlink would
+            // pass the exists() check and then be followed by the write
+            // (#1033).
+            if !exists_no_follow(&prd_path) {
                 if let Some(parent) = prd_path.parent()
                     && let Err(e) = std::fs::create_dir_all(parent)
                 {
                     eprintln!("  Failed to create docs/: {}", e);
                 }
-                match std::fs::write(&prd_path, &content) {
+                match write_no_follow(&prd_path, &content) {
                     Ok(()) => eprintln!("  PRD saved to {}", prd_path.display()),
                     Err(e) => eprintln!("  Failed to write PRD: {}", e),
                 }
@@ -183,7 +193,7 @@ pub async fn cmd_adapt(config: AdaptConfig) -> anyhow::Result<()> {
     {
         eprintln!("  Failed to create .maestro/: {}", e);
     }
-    match std::fs::write(&knowledge_path, knowledge::to_markdown(&knowledge_base)) {
+    match write_no_follow(&knowledge_path, &knowledge::to_markdown(&knowledge_base)) {
         Ok(()) => eprintln!(
             "  Knowledge base saved to {} ({} sections)",
             knowledge_path.display(),
