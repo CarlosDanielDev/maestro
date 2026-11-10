@@ -139,10 +139,10 @@ Each `[agents.<id>]` table has these fields:
 | `cli_flags` | reserved | table | `{}` | Parsed and preserved for future provider-specific flags. |
 | `request_timeout_secs` | HTTP | integer | `120` | HTTP request timeout. |
 | `api_key_env` | HTTP | string | MiniMax: `MINIMAX_API_KEY`; Ollama: unset | Environment variable used for bearer auth. Must match `MINIMAX_*`, `OLLAMA_*`, or `MAESTRO_*` — a repo-supplied config may not name arbitrary secret env variables (#1030). |
-| `allow_remote_auth` | HTTP | bool | `false` | Confirms sending bearer credentials to a `base_url` host that is neither the provider default nor loopback (`localhost`, `127.0.0.1`, `::1`), and allows plain `http://` to such a host. Does not lift the `api_key_env` allowlist (#1030). |
+| `allow_remote_auth` | HTTP | bool | ignored | Parsed but inert from repo config: a cloned repo could set it itself (#1030). Remote-auth confirmation comes only from the operator env switch `MAESTRO_ALLOW_REMOTE_AUTH=1`; `maestro doctor` reports this key as ignored. Does not lift the `api_key_env` allowlist. |
 | `num_ctx` | Ollama | integer | unset | Context window in tokens passed to Ollama as `num_ctx` (#844). When unset, Ollama's per-model default applies. |
 
-Subprocess agents (`claude`, `codex`, `qwen`, `opencode`) require `command` and reject `base_url`. HTTP agents (`ollama`, `minimax`) require `base_url` and reject `command`. HTTP `base_url` must be `https://` unless the host is loopback, and bearer credentials only reach the provider default host, loopback, or a host confirmed with `allow_remote_auth = true` (#1030).
+Subprocess agents (`claude`, `codex`, `qwen`, `opencode`) require `command` and reject `base_url`. HTTP agents (`ollama`, `minimax`) require `base_url` and reject `command`. HTTP `base_url` must be `https://` unless the host is loopback, and bearer credentials only reach the provider default host, loopback, or a host confirmed by the operator switch `MAESTRO_ALLOW_REMOTE_AUTH=1` in the process environment (#1030).
 
 Per-provider walkthroughs:
 

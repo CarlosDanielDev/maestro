@@ -31,6 +31,22 @@ pub(crate) fn is_loopback_host(host: &str) -> bool {
     LOOPBACK_HOSTS.contains(&host)
 }
 
+/// Operator-side confirmation switch (judge-1105): remote-auth
+/// confirmation must live OUTSIDE the repo's control, because a cloned
+/// repo ships its own `maestro.toml` and could set `allow_remote_auth =
+/// true` itself. The repo-local key is parsed but inert; the only
+/// confirmation maestro honors is this process-env switch.
+pub(crate) fn operator_allows_remote_auth() -> bool {
+    operator_allows_remote_auth_with(|name| std::env::var(name).ok())
+}
+
+pub(crate) fn operator_allows_remote_auth_with(getenv: impl Fn(&str) -> Option<String>) -> bool {
+    getenv("MAESTRO_ALLOW_REMOTE_AUTH").is_some_and(|value| {
+        let value = value.trim();
+        value == "1" || value.eq_ignore_ascii_case("true")
+    })
+}
+
 /// Split an http(s) base_url into `(lowercase scheme, lowercase host)`.
 /// Strips userinfo, port and IPv6 brackets; `None` for anything that is
 /// not a plain http/https URL.
@@ -98,7 +114,7 @@ pub(crate) fn validate_remote_auth(
 
     if scheme != "https" && !is_loopback_host(&host) && !allow_remote_auth {
         anyhow::bail!(
-            "agents.{id}.base_url `{base_url}` uses `{scheme}://`, which sends the bearer credential in cleartext; use https:// or a loopback host (localhost, 127.0.0.1, ::1), or set `allow_remote_auth = true` to accept the risk"
+            "agents.{id}.base_url `{base_url}` uses `{scheme}://`, which sends the bearer credential in cleartext; use https:// or a loopback host (localhost, 127.0.0.1, ::1), or export MAESTRO_ALLOW_REMOTE_AUTH=1 to accept the risk (repo-local `allow_remote_auth` is ignored)"
         );
     }
 
@@ -111,7 +127,7 @@ pub(crate) fn validate_remote_auth(
     let is_default = base_url.trim_end_matches('/') == default_base_url(kind);
     if credentialed && !allow_remote_auth && !is_loopback_host(&host) && !is_default {
         anyhow::bail!(
-            "agents.{id}.base_url `{base_url}` points at remote host `{host}`; bearer credentials would be sent there. Set `allow_remote_auth = true` in [agents.{id}] if you trust this host"
+            "agents.{id}.base_url `{base_url}` points at remote host `{host}`; bearer credentials would be sent there. Export MAESTRO_ALLOW_REMOTE_AUTH=1 in your environment if you trust this host (repo-local `allow_remote_auth` is ignored)"
         );
     }
 
@@ -167,5 +183,46 @@ mod tests {
         ] {
             assert!(!is_loopback_host(host), "{host} is not loopback");
         }
+    }
+
+    #[test]
+    fn operator_switch_parses_env_value() {
+        let on = |v: &str| operator_allows_remote_auth_with(|_| Some(v.to_string()));
+        assert!(on("1"));
+        assert!(on("true"));
+        assert!(!on("0"));
+        assert!(!on("false"));
+        assert!(!on("yes"));
+        assert!(!on(""));
+        assert!(!operator_allows_remote_auth_with(|_| None));
+    }
+
+    #[test]
+    fn validate_accepts_remote_host_only_with_operator_switch() {
+        // Confirmed path lives here rather than in the Config::load tests
+        // because tests cannot (and must not) mutate the process env.
+        let minimax = |allow: bool| {
+            validate_remote_auth(
+                "x",
+                AgentKind::Minimax,
+                "https://relay.example.com/v1",
+                Some("MINIMAX_API_KEY"),
+                allow,
+            )
+        };
+        assert!(minimax(true).is_ok(), "operator switch must confirm");
+        assert!(minimax(false).is_err(), "no switch must refuse");
+
+        let cleartext = validate_remote_auth(
+            "x",
+            AgentKind::Ollama,
+            "http://collector.example/v1",
+            None,
+            true,
+        );
+        assert!(
+            cleartext.is_ok(),
+            "switch must also lift the cleartext gate"
+        );
     }
 }

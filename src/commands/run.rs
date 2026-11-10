@@ -324,7 +324,9 @@ pub(crate) fn provider_for_agent(
                     resolved.config.num_ctx,
                 )
                 .map(|provider| {
-                    provider.with_allow_remote_auth(resolved.config.allow_remote_auth == Some(true))
+                    provider.with_allow_remote_auth(
+                        crate::config::agents_remote_auth::operator_allows_remote_auth(),
+                    )
                 })
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?,
             ))
@@ -350,7 +352,9 @@ pub(crate) fn provider_for_agent(
                     .or_else(|| Some("MINIMAX_API_KEY".to_string())),
             )
             .map(|provider| {
-                provider.with_allow_remote_auth(resolved.config.allow_remote_auth == Some(true))
+                provider.with_allow_remote_auth(
+                    crate::config::agents_remote_auth::operator_allows_remote_auth(),
+                )
             })
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
             // Best-effort quota tracker: if the home dir is missing or the

@@ -79,10 +79,11 @@ pub struct AgentConfig {
     pub request_timeout_secs: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
-    /// HTTP-only: user confirmation that the configured `base_url` host
-    /// may receive bearer credentials although it is neither the provider
-    /// default nor loopback (#1030). Does NOT lift the `api_key_env`
-    /// allowlist — that one is absolute.
+    /// HTTP-only: parsed for compatibility but INERT from repo config
+    /// (judge-1105): a cloned repo could set it itself, so confirmation
+    /// only comes from the operator env switch `MAESTRO_ALLOW_REMOTE_AUTH=1`.
+    /// Kept so `maestro doctor` can name it as ignored. Does NOT lift the
+    /// `api_key_env` allowlist — that one is absolute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_remote_auth: Option<bool>,
     /// Ollama-only: context window in tokens, surfaced in the TUI's
@@ -182,7 +183,7 @@ impl AgentConfig {
                 self.kind,
                 base_url,
                 self.api_key_env.as_deref(),
-                self.allow_remote_auth == Some(true),
+                super::agents_remote_auth::operator_allows_remote_auth(),
             )?;
         }
 

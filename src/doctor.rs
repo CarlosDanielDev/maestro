@@ -2,7 +2,9 @@ use crate::agent_provider::{
     AgentProvider, ClaudeProvider, CodexProvider, MinimaxProvider, OllamaProvider,
     OpenCodeProvider, QwenProvider,
 };
-use crate::config::agents_remote_auth::{MINIMAX_DEFAULT_BASE_URL, OLLAMA_DEFAULT_BASE_URL};
+use crate::config::agents_remote_auth::{
+    MINIMAX_DEFAULT_BASE_URL, OLLAMA_DEFAULT_BASE_URL, operator_allows_remote_auth,
+};
 use crate::config::{AgentKind, Config, ProviderConfig, ResolvedAgentConfig};
 use crate::provider::types::ProviderKind;
 use std::path::{Path, PathBuf};
@@ -696,6 +698,27 @@ fn http_agent_check_name(id: &str, base_url: &str) -> String {
     format!("agent {id} ({base_url})")
 }
 
+/// Judge-1105: repo-local `allow_remote_auth = true` is inert — a cloned
+/// repo could ship the flag itself. When it is set, name it as ignored so
+/// the operator learns confirmation moved to the process env.
+fn ignored_allow_remote_auth_notice(
+    resolved: &ResolvedAgentConfig,
+    name: &str,
+    severity: CheckSeverity,
+) -> Option<CheckResult> {
+    if resolved.config.allow_remote_auth != Some(true) {
+        return None;
+    }
+    Some(CheckResult::fail(
+        name,
+        format!(
+            "agents.{}: `allow_remote_auth` is ignored from repo config (#1030); remote auth requires MAESTRO_ALLOW_REMOTE_AUTH=1 in your environment. Remove the key or export the switch",
+            resolved.id
+        ),
+        severity,
+    ))
+}
+
 fn check_agent_health(
     name: impl Into<String>,
     health: crate::agent_provider::AgentHealthCheck,
@@ -721,6 +744,10 @@ fn check_ollama_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) ->
         .unwrap_or_else(|| OLLAMA_DEFAULT_BASE_URL.to_string());
     let name = http_agent_check_name(&resolved.id, &base_url);
 
+    if let Some(result) = ignored_allow_remote_auth_notice(&resolved, &name, severity) {
+        return result;
+    }
+
     let model = match resolved
         .config
         .model
@@ -737,7 +764,6 @@ fn check_ollama_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) ->
         }
     };
 
-    let allow_remote_auth = resolved.config.allow_remote_auth == Some(true);
     let provider = match OllamaProvider::new(
         resolved.id.clone(),
         base_url,
@@ -745,7 +771,7 @@ fn check_ollama_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) ->
         2,
         resolved.config.api_key_env,
     )
-    .map(|provider| provider.with_allow_remote_auth(allow_remote_auth))
+    .map(|provider| provider.with_allow_remote_auth(operator_allows_remote_auth()))
     {
         Ok(provider) => provider,
         Err(err) => {
@@ -764,6 +790,10 @@ fn check_minimax_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) -
         .unwrap_or_else(|| MINIMAX_DEFAULT_BASE_URL.to_string());
     let name = http_agent_check_name(&resolved.id, &base_url);
 
+    if let Some(result) = ignored_allow_remote_auth_notice(&resolved, &name, severity) {
+        return result;
+    }
+
     let model = resolved
         .config
         .model
@@ -771,7 +801,6 @@ fn check_minimax_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) -
         .filter(|model| !model.trim().is_empty())
         .unwrap_or_else(|| "MiniMax-M2.7".to_string());
 
-    let allow_remote_auth = resolved.config.allow_remote_auth == Some(true);
     let provider = match MinimaxProvider::new(
         resolved.id.clone(),
         base_url,
@@ -782,7 +811,7 @@ fn check_minimax_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) -
             .api_key_env
             .or_else(|| Some("MINIMAX_API_KEY".to_string())),
     )
-    .map(|provider| provider.with_allow_remote_auth(allow_remote_auth))
+    .map(|provider| provider.with_allow_remote_auth(operator_allows_remote_auth()))
     {
         Ok(provider) => provider,
         Err(err) => {
@@ -881,6 +910,7 @@ fn check_gh_repo_accessible() -> CheckResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::AgentConfig;
 
     // CheckResult constructors
 
@@ -1392,6 +1422,39 @@ command = "missing-opencode"
         assert_eq!(
             http_agent_check_name("relay", "http://127.0.0.1:11434"),
             "agent relay (http://127.0.0.1:11434)"
+        );
+    }
+
+    #[test]
+    fn doctor_names_ignored_repo_local_allow_remote_auth() {
+        // Judge-1105: repo-local `allow_remote_auth = true` is inert; the
+        // doctor must name it as ignored instead of silently honoring it.
+        let config: AgentConfig = toml::from_str(
+            r#"
+kind = "ollama"
+base_url = "http://127.0.0.1:59999"
+model = "llama3.2"
+allow_remote_auth = true
+"#,
+        )
+        .expect("parse agent config");
+        let resolved = ResolvedAgentConfig {
+            id: "relay".to_string(),
+            config,
+        };
+
+        let result = check_ollama_agent(resolved, CheckSeverity::Optional);
+
+        assert!(!result.passed);
+        assert!(
+            result.message.contains("ignored"),
+            "expected an ignored-key notice, got: {}",
+            result.message
+        );
+        assert!(
+            result.message.contains("MAESTRO_ALLOW_REMOTE_AUTH"),
+            "expected the operator switch in the notice, got: {}",
+            result.message
         );
     }
 }

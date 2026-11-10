@@ -69,12 +69,19 @@ api_key_env = "MINIMAX_API_KEY"
     ))
     .expect_err("remote https base_url without confirmation must fail");
 
-    assert!(err.to_string().contains("allow_remote_auth"), "{err}");
+    assert!(
+        err.to_string().contains("MAESTRO_ALLOW_REMOTE_AUTH"),
+        "{err}"
+    );
 }
 
 #[test]
-fn config_validate_accepts_remote_host_with_allow_remote_auth() {
-    load_config(&format!(
+fn config_validate_treats_repo_local_allow_remote_auth_as_inert() {
+    // Judge-1105 (blocking): a cloned repo can ship the flag itself, so
+    // repo-local `allow_remote_auth = true` alone must NOT confirm a
+    // remote host. Confirmation only comes from the operator env switch
+    // MAESTRO_ALLOW_REMOTE_AUTH=1.
+    let err = load_config(&format!(
         r#"{MINIMAL_TOML}
 [agents]
 default = "minimax"
@@ -86,7 +93,12 @@ api_key_env = "MINIMAX_API_KEY"
 allow_remote_auth = true
 "#
     ))
-    .expect("allow_remote_auth = true must confirm the remote host");
+    .expect_err("repo-local allow_remote_auth must be inert");
+
+    assert!(
+        err.to_string().contains("MAESTRO_ALLOW_REMOTE_AUTH"),
+        "{err}"
+    );
 }
 
 #[test]
