@@ -109,3 +109,20 @@ v0.29.5 bundle (user authorized PR-isolation override for context budget): one P
 - Issue hygiene: closed #818/#980/#982 as already-implemented (evidence comments); corrected 6 stale bodies (#817 #820 #832 #834 #1014 #1015); milestone graphs 60/63 ✅-updated. Audits found #964–#974 all still valid (PR #1028 shipped Input foundation only — children intact).
 
 **Next-session priorities:** wave #1065 + #1050 + #1061 (three epics one item from done), then #1084 spike (ai-memory seam) → epic #1083; then the Security Audit milestone (19 disclosed, P0 #1045) as a 2-week wave; setwave release bump (plugin cache still 0.11.0; guards run from repo checkout meanwhile); README cutoff-note fix (README.md:19); ERRORS.md entry for the #1065 double-reopen pattern.
+
+---
+
+## 2026-11-10 (session 2) — October plan delivered: 4 PRs merged, 3 epics closed, engine running
+
+**Executed via setwave (fixed engine, repo-checkout script):** #1087 (e2e interaction test, closes #1050) · #1088 + #1089 (TUI demo capture: script+test on main, webm+hero embed on gh-pages; closes #1061) · #1090 (Fleet board quota badges + glyph fix, closes #1065). Epics #1047, #1059, #1063 CLOSED. 14.3 GB reclaimed. Live page serves the video hero. Every PR: verify OK, judge verdict (pass/concerns), owner OK before squash merge, ledger applied.
+
+**Decisions:**
+- setwave fixes land in ~/projects/setwave (PRs #141 #142 merged); maestro consumes guards VENDORED at `.maestro/hooks/guards.py` via `$CLAUDE_PROJECT_DIR` (no out-of-repo pin). Plugin cache (0.11.0) is stale — release bump pending.
+- Guard policy shipped through 3 security-review rounds: background/detach/reparse detection, git shim+global-option peeling, secret-read allowlist inversion. Judges false-fire on in-process subagents (no per-seat transcripts) — milestone messages are the real liveness signal; `--transcripts` only helps host-session seats.
+- Stale branch handling WITHOUT `-D` (guard refuses): `git branch -m` to `archive/<name>` frees the dispatch name, preserves squash-shadowed commits.
+
+**Still open (priority order):**
+1. ai-memory wave: dispatch #1084 (spike, seam probe at config/agents.rs + headless.rs) → then #1083 children. Epic #1083 open, nothing run since Oct 19.
+2. Security Audit milestone: 19 disclosed issues, P0 #1045 (workspace trust), untouched 2 months — next big wave.
+3. Follow-up issues to FILE: ASCII-icons debug-build TUI stall (found in #1090 PR), Fleet Board privacy note (renders real ~/.claude history — #1089 excluded it), setwave gap: `verify`/`judge` cannot diff PRs against orphan branches (gh-pages, no merge base — #1089), setwave release bump (v0.11.1+).
+4. Housekeeping: `wave cleanup --stale-days` for maestro-1065 seat (branch `story/1065-quota-badge` is pushed; local `story/1065-quota-routing` shadow reads unpushed); untracked junk at repo root (err/out-before-1075.txt, old settings backups) needs a yes to delete; README.md:19 stale billing-cutoff note.
