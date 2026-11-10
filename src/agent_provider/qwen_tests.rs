@@ -161,7 +161,7 @@ async fn run_text_filters_denylisted_env_vars_before_spawn() {
     // EXEC-4 / TRUST-2: defense in depth at the spawn site, mirroring
     // `fire_rejects_non_maestro_env_vars` in plugins/runner.rs. Even if a
     // denylisted key reached the env map without passing config validation,
-    // the spawn site must filter it before `cmd.envs(...)`.
+    // the spawn site must filter it before the `cmd.envs` call.
     let temp = tempfile::tempdir().expect("tempdir");
     let probe = temp.path().join("env-probe-1029.sh");
     std::fs::write(
