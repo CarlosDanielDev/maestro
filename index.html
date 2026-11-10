@@ -49,6 +49,8 @@
   }
   .uline { color: var(--accent); font-weight: 700; white-space: nowrap; overflow: hidden; margin: 0.75rem 0 1.5rem; }
   .hero p.body { max-width: 40rem; margin: 0 0 2rem; }
+  .demo { max-width: 46rem; margin: 0 0 2rem; border: 1px solid var(--line); background: var(--panel); }
+  .demo video { display: block; width: 100%; height: auto; }
 
   .install { background: var(--panel); border: 1px solid var(--line); padding: 1rem 1.25rem; }
   .install .cmd { margin: 0; white-space: nowrap; overflow-x: auto; }
@@ -110,6 +112,10 @@
     <h1>stop herding agents.<br>start conducting.</h1>
     <div class="uline" aria-hidden="true">========================================</div>
     <p class="body">Maestro spawns and monitors multiple AI coding agents on the same project — live status, real costs, conflict-free worktrees — from one TUI dashboard.</p>
+
+    <div class="demo">
+      <video autoplay muted loop playsinline src="docs/assets/demo.webm" aria-label="maestro TUI capture: the dashboard opens with three agent sessions running"></video>
+    </div>
 
     <div class="install">
       <p class="cmd">cargo install --git https://github.com/CarlosDanielDev/maestro maestro</p>
