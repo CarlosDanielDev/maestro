@@ -162,7 +162,7 @@ impl OpenCodeProvider {
                 cmd.args(self.build_text_args(request));
             }
         }
-        cmd.envs(&self.env);
+        super::apply_agent_env(&mut cmd, &self.env);
         if let Some(cwd) = request.cwd.as_ref() {
             cmd.current_dir(cwd);
         }

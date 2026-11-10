@@ -27,6 +27,48 @@ pub fn validate_env_var_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Env keys rejected in `[agents.<id>].env`: each one lets a config file
+/// steer a dynamic loader or interpreter (CWE-426 / CWE-454, EXEC-4 /
+/// TRUST-2).
+const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
+    "PATH",
+    "NODE_OPTIONS",
+    "PYTHONPATH",
+    "PERL5LIB",
+    "BASH_ENV",
+    "ENV",
+    "IFS",
+    "GIT_SSH_COMMAND",
+];
+
+/// Key prefixes rejected in `[agents.<id>].env` (covers LD_PRELOAD,
+/// LD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES, GIT_SSH_COMMAND, ...).
+const AGENT_ENV_DENYLIST_PREFIXES: &[&str] = &["LD_", "DYLD_", "GIT_"];
+
+/// Validate one `[agents.<id>].env` key: the shape must match
+/// `^[A-Z][A-Z0-9_]*$` and the key must not be on the loader/interpreter
+/// denylist. Called from `AgentConfig::validate` and re-checked at every
+/// spawn site (defense in depth, mirroring the plugin runner).
+pub fn validate_agent_env_key(key: &str) -> Result<()> {
+    if !ENV_VAR_NAME_RE.is_match(key) {
+        bail!(
+            "Invalid env var name: {:?} (must match ^[A-Z][A-Z0-9_]*$)",
+            key
+        );
+    }
+    if AGENT_ENV_DENYLIST_EXACT.contains(&key)
+        || AGENT_ENV_DENYLIST_PREFIXES
+            .iter()
+            .any(|p| key.starts_with(p))
+    {
+        bail!(
+            "Env var {:?} is not allowed in agent env (loader/interpreter injection risk)",
+            key
+        );
+    }
+    Ok(())
+}
+
 /// Split a command string into `(program, args)` using shell-word tokenization
 /// **without invoking a shell**. Closes CWE-78: metacharacters like `;`, `|`,
 /// `&&`, `$(...)`, and backticks are never interpreted, so a crafted completion
@@ -244,6 +286,48 @@ mod tests {
     fn env_var_rejects_non_maestro_uppercase() {
         assert!(validate_env_var_name("HOME").is_err());
         assert!(validate_env_var_name("DYLD_INSERT_LIBRARIES").is_err());
+    }
+
+    // --- validate_agent_env_key ([agents.*].env, #1029) ---
+
+    #[test]
+    fn agent_env_key_accepts_benign_names() {
+        assert!(validate_agent_env_key("ANTHROPIC_MODEL").is_ok());
+        assert!(validate_agent_env_key("MY_TOOL_API_KEY").is_ok());
+        assert!(validate_agent_env_key("X").is_ok());
+    }
+
+    #[test]
+    fn agent_env_key_rejects_denylist() {
+        for key in [
+            "PATH",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "DYLD_INSERT_LIBRARIES",
+            "NODE_OPTIONS",
+            "PYTHONPATH",
+            "PERL5LIB",
+            "BASH_ENV",
+            "ENV",
+            "IFS",
+            "GIT_SSH_COMMAND",
+            "GIT_CONFIG_COUNT",
+        ] {
+            assert!(
+                validate_agent_env_key(key).is_err(),
+                "{key} must be denied in agent env"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_env_key_rejects_malformed_shape() {
+        for key in ["path", "ld_preload", "9VAR", "_LOWER", "", "HAS-DASH"] {
+            assert!(
+                validate_agent_env_key(key).is_err(),
+                "{key:?} must be rejected by shape"
+            );
+        }
     }
 
     // --- Branch name validation ---

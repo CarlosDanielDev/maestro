@@ -1,6 +1,6 @@
 use super::*;
 
-fn load_config(toml: &str) -> anyhow::Result<Config> {
+pub(super) fn load_config(toml: &str) -> anyhow::Result<Config> {
     use std::io::Write;
 
     let mut file = tempfile::NamedTempFile::new()?;
