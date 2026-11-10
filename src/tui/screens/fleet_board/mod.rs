@@ -39,6 +39,10 @@ pub struct FleetBoardScreen {
     /// The live-session confirm is open for the selected external row. Only
     /// `y`/`Y` adopts; every other key cancels.
     confirm_live: bool,
+    /// Quota badge per provider id (#1065), rebuilt from cached windows on
+    /// every draw by the caller. Empty when quota is off, so the board
+    /// renders exactly as before.
+    quota_badges: std::collections::BTreeMap<String, String>,
 }
 
 impl FleetBoardScreen {
@@ -55,6 +59,7 @@ impl FleetBoardScreen {
             last_visible_height: 20,
             status: None,
             confirm_live: false,
+            quota_badges: std::collections::BTreeMap::new(),
         };
         screen.reapply();
         screen
@@ -98,6 +103,12 @@ impl FleetBoardScreen {
     /// Show a refusal (or other feedback) on the board itself.
     pub fn set_status(&mut self, message: String) {
         self.status = Some(message);
+    }
+
+    /// Replace the quota badge map (#1065). Called right before each draw so
+    /// a refresh while the board is open shows up on the next frame.
+    pub fn set_quota_badges(&mut self, badges: std::collections::BTreeMap<String, String>) {
+        self.quota_badges = badges;
     }
 
     /// The feedback line currently shown, if any.

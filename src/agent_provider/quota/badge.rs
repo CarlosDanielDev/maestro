@@ -7,7 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use super::pacing::{self, Pacing};
 use super::types::ProviderWindows;
 
-/// `claude 90% ↻2h30m ⇑`. The window with the highest use is the one shown.
+/// `claude 90% ↻2h30m ↓`. The window with the highest use is the one shown.
 /// `None` renders `<provider> no data`.
 pub fn badge(provider_id: &str, windows: Option<&ProviderWindows>, now: DateTime<Utc>) -> String {
     let no_data = format!("{provider_id} no data");
@@ -29,7 +29,7 @@ pub fn badge(provider_id: &str, windows: Option<&ProviderWindows>, now: DateTime
     let glyph = match pacing::classify(window, length, now) {
         Pacing::OnTrack => "→",
         Pacing::Ahead => "↑",
-        Pacing::Critical => "⇑",
+        Pacing::Critical => "↓",
     };
     let resets_in = format_resets_in(window.resets_at - now);
     let mut line = format!(
@@ -95,7 +95,7 @@ mod tests {
         .join("\n");
 
         insta::assert_snapshot!(rendered, @r"
-        claude 90% ↻2h30m ⇑
+        claude 90% ↻2h30m ↓
         qwen 40% ↻2h30m → stale
         minimax no data
         ");

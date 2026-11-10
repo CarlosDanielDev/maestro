@@ -38,6 +38,9 @@ pub struct FleetRow {
     pub title: String,
     pub status: String,
     pub cwd: Option<PathBuf>,
+    /// The pool session's agent (provider) id. Quota badges (#1065) key off
+    /// this; external transcripts have none and render without a badge.
+    pub provider: Option<String>,
     /// `None` for a pool session that never started. It sorts as the
     /// oldest activity, so it is the most neglected.
     pub last_active: Option<SystemTime>,
@@ -124,6 +127,7 @@ pub fn build_rows(
             title,
             status: session.status.label().to_string(),
             cwd,
+            provider: session.agent_id.clone(),
             last_active,
         });
     }
@@ -141,6 +145,7 @@ pub fn build_rows(
             title: transcript.title.clone(),
             status: "external".to_string(),
             cwd: Some(transcript.cwd.clone()),
+            provider: None,
             last_active: Some(transcript.last_active),
         });
     }
