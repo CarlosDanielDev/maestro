@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use std::path::Path;
+use std::path::{Component, Path};
+
+use crate::util::write_no_follow;
 
 use super::prompts;
 use super::types::{
@@ -58,17 +60,26 @@ impl ProjectScaffolder for ClaudeScaffolder {
     }
 }
 
+/// Structural path validation: every component must be `Component::Normal`.
+/// Rejects absolute paths, `..`, and `.` markers regardless of separator,
+/// where the previous lexical string check could be fooled by mixed forms.
 fn is_safe_relative_path(path: &str) -> bool {
-    !path.starts_with('/')
-        && !path.starts_with('\\')
-        && !path.contains("..")
-        && !path.contains('\0')
+    !path.contains('\0')
+        && Path::new(path)
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
 }
 
 fn write_scaffold_files(
     claude_dir: &Path,
     entries: &[ScaffoldFileEntry],
 ) -> anyhow::Result<ScaffoldResult> {
+    // Containment is re-checked per entry against the canonicalized root so a
+    // repo-planted symlinked subdirectory (`.claude/agents -> ~/elsewhere`)
+    // cannot redirect scaffold writes outside the project (#1033).
+    std::fs::create_dir_all(claude_dir)?;
+    let canonical_claude_dir = std::fs::canonicalize(claude_dir)?;
+
     let mut files = Vec::with_capacity(entries.len());
     let mut created_count = 0;
     let mut skipped_count = 0;
@@ -108,7 +119,35 @@ fn write_scaffold_files(
             continue;
         }
 
-        match std::fs::write(&target, &entry.content) {
+        let parent_canonical = match target.parent().map(std::fs::canonicalize) {
+            Some(Ok(canonical)) => canonical,
+            Some(Err(e)) => {
+                files.push(ScaffoldedFile {
+                    path: rel_display,
+                    status: ScaffoldFileStatus::Failed,
+                    reason: Some(format!("cannot resolve parent directory: {}", e)),
+                });
+                continue;
+            }
+            None => {
+                files.push(ScaffoldedFile {
+                    path: rel_display,
+                    status: ScaffoldFileStatus::Failed,
+                    reason: Some("target has no parent directory".into()),
+                });
+                continue;
+            }
+        };
+        if !parent_canonical.starts_with(&canonical_claude_dir) {
+            files.push(ScaffoldedFile {
+                path: rel_display,
+                status: ScaffoldFileStatus::Failed,
+                reason: Some("path escapes .claude/ directory (symlinked parent)".into()),
+            });
+            continue;
+        }
+
+        match write_no_follow(&target, &entry.content) {
             Ok(()) => {
                 files.push(ScaffoldedFile {
                     path: rel_display,
@@ -446,6 +485,59 @@ mod tests {
 
         let result = write_scaffold_files(&claude_dir, &entries).unwrap();
         assert_eq!(result.files[0].status, ScaffoldFileStatus::Failed);
+    }
+
+    // ── Symlink hardening (#1033) ──────────────────────────────────────
+
+    #[test]
+    fn scaffold_refuses_symlinked_subdir() {
+        let dir = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        let outside = TempDir::new().unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(outside.path(), claude_dir.join("agents")).unwrap();
+
+        let entries = vec![entry("agents/qa.md", "qa agent")];
+        let result = write_scaffold_files(&claude_dir, &entries).unwrap();
+
+        assert_eq!(result.created_count, 0);
+        assert_eq!(result.files[0].status, ScaffoldFileStatus::Failed);
+        assert!(
+            !outside.path().join("qa.md").exists(),
+            "scaffold content must not land outside .claude/ via a symlinked dir"
+        );
+    }
+
+    #[test]
+    fn scaffold_refuses_dangling_symlink_target() {
+        let dir = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        use std::os::unix::fs::symlink;
+        symlink(dir.path().join("victim.md"), claude_dir.join("CLAUDE.md")).unwrap();
+
+        let entries = vec![entry("CLAUDE.md", "pwned")];
+        let result = write_scaffold_files(&claude_dir, &entries).unwrap();
+
+        assert_eq!(result.created_count, 0);
+        assert_eq!(result.files[0].status, ScaffoldFileStatus::Failed);
+        assert!(
+            !dir.path().join("victim.md").exists(),
+            "scaffold must not write through a dangling symlink"
+        );
+    }
+
+    #[test]
+    fn write_scaffold_files_rejects_dot_component_paths() {
+        let dir = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        let entries = vec![entry("./hidden.md", "x")];
+
+        let result = write_scaffold_files(&claude_dir, &entries).unwrap();
+
+        assert_eq!(result.files[0].status, ScaffoldFileStatus::Failed);
+        assert!(!claude_dir.join("hidden.md").exists());
     }
 
     // ── MockProjectScaffolder ─────────────────────────────────────────
