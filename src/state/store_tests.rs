@@ -417,3 +417,74 @@ fn store_load_legacy_state_without_interactions_field_succeeds() {
         "team_runs must default to empty when absent from state file"
     );
 }
+
+// --- Issue #1032: planted `.tmp`/`.lock` symlinks must not be followed ---
+
+#[cfg(unix)]
+#[test]
+fn save_refuses_to_follow_planted_tmp_symlink() {
+    let (_dir, store) = make_store();
+    let victim = _dir.path().join("victim.txt");
+    std::fs::write(&victim, b"ORIGINAL").unwrap();
+    std::os::unix::fs::symlink(
+        &victim,
+        // The predictable temp name a cloned repo can plant as a symlink.
+        store.path.with_extension("json.tmp"),
+    )
+    .unwrap();
+
+    let state = MaestroState {
+        total_cost_usd: 1.0,
+        ..Default::default()
+    };
+    must(
+        store.save(&state),
+        "save should succeed without touching the planted symlink",
+    );
+
+    assert_eq!(
+        std::fs::read(&victim).unwrap(),
+        b"ORIGINAL",
+        "planted .tmp symlink target must stay untouched"
+    );
+    let loaded = must(store.load(), "state should still persist normally");
+    assert_eq!(loaded.total_cost_usd, 1.0);
+}
+
+#[cfg(unix)]
+#[test]
+fn save_refuses_to_follow_planted_lock_symlink() {
+    let (_dir, store) = make_store();
+    let victim = _dir.path().join("victim.txt");
+    std::fs::write(&victim, b"ORIGINAL").unwrap();
+    std::os::unix::fs::symlink(&victim, store.path.with_extension("json.lock")).unwrap();
+
+    let result = store.save(&MaestroState::default());
+    let err = match result {
+        Ok(_) => panic!("save must refuse a symlinked lock path"),
+        Err(e) => e,
+    };
+    assert!(
+        format!("{err:#}").contains("symlink"),
+        "lock error should mention the symlinked path, got: {err:#}"
+    );
+    assert_eq!(
+        std::fs::read(&victim).unwrap(),
+        b"ORIGINAL",
+        "planted .lock symlink target must stay untouched"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn saved_state_file_mode_is_0600() {
+    let (_dir, store) = make_store();
+    must(store.save(&MaestroState::default()), "state should save");
+
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(&store.path).unwrap().permissions().mode();
+    assert!(
+        mode & 0o077 == 0,
+        "saved state file must not be readable by group/other, got mode {mode:o}"
+    );
+}
