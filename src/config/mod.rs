@@ -6,6 +6,7 @@ use std::path::Path;
 
 mod adapt;
 mod agents;
+pub(crate) mod agents_remote_auth;
 mod agents_upgrade;
 mod behavior;
 mod budget;

@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 
 use super::types::MinimaxError;
 use crate::agent_provider::openai_compat::sse::OpenAiCompatibleSseParser;
+use crate::config::agents_remote_auth as policy;
 use crate::session::types::StreamEvent;
 
 type ApiKeyLookup = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
@@ -21,6 +22,7 @@ pub struct MinimaxClient {
     timeout: Duration,
     api_key_env: String,
     api_key_lookup: ApiKeyLookup,
+    allow_remote_auth: bool,
 }
 
 impl std::fmt::Debug for MinimaxClient {
@@ -61,10 +63,41 @@ impl MinimaxClient {
             timeout,
             api_key_env: api_key_env.into(),
             api_key_lookup: Arc::new(api_key_lookup),
+            allow_remote_auth: false,
         })
     }
 
+    /// Confirm the configured `base_url` host for bearer auth (#1030).
+    /// Without this the client attaches credentials only for the MiniMax
+    /// default host or loopback.
+    pub(crate) fn with_allow_remote_auth(mut self, allow: bool) -> Self {
+        self.allow_remote_auth = allow;
+        self
+    }
+
+    /// Request-layer re-check of the config policy (defense in depth).
+    pub(crate) fn remote_auth_allowed(&self) -> bool {
+        policy::credentials_allowed(
+            &self.base_url,
+            policy::MINIMAX_DEFAULT_BASE_URL,
+            self.allow_remote_auth,
+        )
+    }
+
+    /// Refuse credentialed requests to hosts outside {provider default,
+    /// loopback} unless `allow_remote_auth` confirmed them (#1030).
+    fn ensure_credentials_allowed(&self) -> Result<(), MinimaxError> {
+        if self.remote_auth_allowed() {
+            return Ok(());
+        }
+        let host = policy::split_base_url(&self.base_url)
+            .map(|(_, host)| host)
+            .unwrap_or_else(|| self.base_url.clone());
+        Err(MinimaxError::RemoteAuthRefused { host })
+    }
+
     pub async fn models_health(&self) -> Result<(), MinimaxError> {
+        self.ensure_credentials_allowed()?;
         let token = self.api_key()?;
         tracing::debug!(
             provider = "minimax",
@@ -82,6 +115,7 @@ impl MinimaxClient {
         model: &str,
         prompt: &str,
     ) -> Result<mpsc::Receiver<Result<StreamEvent, MinimaxError>>, MinimaxError> {
+        self.ensure_credentials_allowed()?;
         let token = self.api_key()?;
         let body = json!({
             "model": model,

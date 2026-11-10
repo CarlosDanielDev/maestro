@@ -2,6 +2,7 @@ use crate::agent_provider::{
     AgentProvider, ClaudeProvider, CodexProvider, MinimaxProvider, OllamaProvider,
     OpenCodeProvider, QwenProvider,
 };
+use crate::config::agents_remote_auth::{MINIMAX_DEFAULT_BASE_URL, OLLAMA_DEFAULT_BASE_URL};
 use crate::config::{AgentKind, Config, ProviderConfig, ResolvedAgentConfig};
 use crate::provider::types::ProviderKind;
 use std::path::{Path, PathBuf};
@@ -688,6 +689,13 @@ where
     run_agent_health_check(format!("agent {id}"), provider, severity)
 }
 
+/// HTTP agents print the target host in the check name so the doctor
+/// output shows where credentials would go before any credentialed call
+/// (#1030).
+fn http_agent_check_name(id: &str, base_url: &str) -> String {
+    format!("agent {id} ({base_url})")
+}
+
 fn check_agent_health(
     name: impl Into<String>,
     health: crate::agent_provider::AgentHealthCheck,
@@ -706,6 +714,13 @@ fn check_agent_health(
 }
 
 fn check_ollama_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) -> CheckResult {
+    let base_url = resolved
+        .config
+        .base_url
+        .clone()
+        .unwrap_or_else(|| OLLAMA_DEFAULT_BASE_URL.to_string());
+    let name = http_agent_check_name(&resolved.id, &base_url);
+
     let model = match resolved
         .config
         .model
@@ -715,34 +730,40 @@ fn check_ollama_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) ->
         Some(model) => model,
         None => {
             return CheckResult::fail(
-                format!("agent {}", resolved.id),
+                name,
                 format!("agents.{}.model is required for ollama", resolved.id),
                 severity,
             );
         }
     };
 
-    let id = resolved.id.clone();
+    let allow_remote_auth = resolved.config.allow_remote_auth == Some(true);
     let provider = match OllamaProvider::new(
-        id.clone(),
-        resolved
-            .config
-            .base_url
-            .unwrap_or_else(|| "http://localhost:11434".to_string()),
+        resolved.id.clone(),
+        base_url,
         model,
         2,
         resolved.config.api_key_env,
-    ) {
+    )
+    .map(|provider| provider.with_allow_remote_auth(allow_remote_auth))
+    {
         Ok(provider) => provider,
         Err(err) => {
-            return CheckResult::fail(format!("agent {}", resolved.id), err.to_string(), severity);
+            return CheckResult::fail(name, err.to_string(), severity);
         }
     };
 
-    run_agent_health_check(format!("agent {id}"), provider, severity)
+    run_agent_health_check(name, provider, severity)
 }
 
 fn check_minimax_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) -> CheckResult {
+    let base_url = resolved
+        .config
+        .base_url
+        .clone()
+        .unwrap_or_else(|| MINIMAX_DEFAULT_BASE_URL.to_string());
+    let name = http_agent_check_name(&resolved.id, &base_url);
+
     let model = resolved
         .config
         .model
@@ -750,27 +771,26 @@ fn check_minimax_agent(resolved: ResolvedAgentConfig, severity: CheckSeverity) -
         .filter(|model| !model.trim().is_empty())
         .unwrap_or_else(|| "MiniMax-M2.7".to_string());
 
-    let id = resolved.id.clone();
+    let allow_remote_auth = resolved.config.allow_remote_auth == Some(true);
     let provider = match MinimaxProvider::new(
-        id.clone(),
-        resolved
-            .config
-            .base_url
-            .unwrap_or_else(|| "https://api.minimax.io/v1".to_string()),
+        resolved.id.clone(),
+        base_url,
         model,
         2,
         resolved
             .config
             .api_key_env
             .or_else(|| Some("MINIMAX_API_KEY".to_string())),
-    ) {
+    )
+    .map(|provider| provider.with_allow_remote_auth(allow_remote_auth))
+    {
         Ok(provider) => provider,
         Err(err) => {
-            return CheckResult::fail(format!("agent {}", resolved.id), err.to_string(), severity);
+            return CheckResult::fail(name, err.to_string(), severity);
         }
     };
 
-    run_agent_health_check(format!("agent {id}"), provider, severity)
+    run_agent_health_check(name, provider, severity)
 }
 
 fn run_agent_health_check<P>(
@@ -1363,5 +1383,15 @@ command = "missing-opencode"
             assert_eq!(check.severity, CheckSeverity::Required);
             assert!(!check.name.starts_with("az"));
         }
+    }
+
+    #[test]
+    fn http_agent_check_name_surfaces_target_host() {
+        // #1030: the doctor output must show which host would receive
+        // credentials before any credentialed call is made.
+        assert_eq!(
+            http_agent_check_name("relay", "http://127.0.0.1:11434"),
+            "agent relay (http://127.0.0.1:11434)"
+        );
     }
 }

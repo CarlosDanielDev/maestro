@@ -32,6 +32,7 @@ fn qwen_fast_agent() -> AgentConfig {
         cli_flags: BTreeMap::new(),
         request_timeout_secs: None,
         api_key_env: None,
+        allow_remote_auth: None,
         num_ctx: None,
     }
 }
