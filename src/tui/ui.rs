@@ -315,7 +315,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             }
         }
         TuiMode::FleetBoard => {
+            let quota_badges = app.quota_badge_map();
             if let Some(ref mut screen) = app.screen_state.fleet_board_screen {
+                screen.set_quota_badges(quota_badges);
                 screen.draw(f, chunks[1], &app.theme);
             }
         }

@@ -21,6 +21,7 @@ fn pool_row(title: &str, age_secs: u64) -> FleetRow {
         title: title.to_string(),
         status: "running".to_string(),
         cwd: None,
+        provider: None,
         last_active: Some(now() - Duration::from_secs(age_secs)),
     }
 }
@@ -35,6 +36,7 @@ fn external_row(title: &str, age_secs: u64) -> FleetRow {
         title: title.to_string(),
         status: "external".to_string(),
         cwd: Some(PathBuf::from("/home/dev/api-service")),
+        provider: None,
         last_active: Some(now() - Duration::from_secs(age_secs)),
     }
 }

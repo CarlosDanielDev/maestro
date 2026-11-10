@@ -152,8 +152,12 @@ impl FleetBoardScreen {
             Some(at) => relative_time(at, self.now()),
             None => "never started".to_string(),
         };
+        let quota = row
+            .provider
+            .as_deref()
+            .and_then(|id| self.quota_badges.get(id));
 
-        Line::from(vec![
+        let mut spans = vec![
             Span::styled(prefix.to_string(), base),
             Span::styled(format!("{badge:<9}"), Style::default().fg(badge_color)),
             Span::styled(
@@ -169,7 +173,14 @@ impl FleetBoardScreen {
                 format!("  {last_active}"),
                 Style::default().fg(theme.text_muted),
             ),
-        ])
+        ];
+        if let Some(quota_badge) = quota {
+            spans.push(Span::styled(
+                format!("  {quota_badge}"),
+                Style::default().fg(theme.text_muted),
+            ));
+        }
+        Line::from(spans)
     }
 
     fn draw_empty_state(

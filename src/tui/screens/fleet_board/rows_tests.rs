@@ -38,6 +38,7 @@ fn row(title: &str, repo: &str, age_secs: Option<u64>) -> FleetRow {
         title: title.to_string(),
         status: "external".to_string(),
         cwd: None,
+        provider: None,
         last_active: age_secs.map(|s| now() - Duration::from_secs(s)),
     }
 }
@@ -207,6 +208,7 @@ fn tied(id: &str, cwd: &str) -> FleetRow {
         title: id.to_string(),
         status: "external".to_string(),
         cwd: Some(PathBuf::from(cwd)),
+        provider: None,
         last_active: Some(now() - Duration::from_secs(100)),
     }
 }

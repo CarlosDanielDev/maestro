@@ -20,6 +20,7 @@ fn managed(title: &str, repo: &str, age_secs: u64) -> FleetRow {
         title: title.to_string(),
         status: "running".to_string(),
         cwd: Some(PathBuf::from(format!("/home/dev/{repo}"))),
+        provider: None,
         last_active: Some(now() - Duration::from_secs(age_secs)),
     }
 }
@@ -34,6 +35,7 @@ fn external(title: &str, repo: &str, age_secs: u64) -> FleetRow {
         title: title.to_string(),
         status: "external".to_string(),
         cwd: Some(PathBuf::from(format!("/home/dev/{repo}"))),
+        provider: None,
         last_active: Some(now() - Duration::from_secs(age_secs)),
     }
 }
@@ -48,6 +50,7 @@ fn adopted(title: &str, repo: &str, age_secs: u64) -> FleetRow {
         title: title.to_string(),
         status: "completed".to_string(),
         cwd: Some(PathBuf::from(format!("/home/dev/{repo}"))),
+        provider: None,
         last_active: Some(now() - Duration::from_secs(age_secs)),
     }
 }
@@ -81,6 +84,28 @@ fn type_text(screen: &mut FleetBoardScreen, text: &str) {
     for c in text.chars() {
         screen.handle_input(&key_event(KeyCode::Char(c)), InputMode::Insert);
     }
+}
+
+/// Quota badges (#1065): a pool row shows its provider's badge after the
+/// last-active column. An external row has no provider and a pool row whose
+/// provider has no map entry renders without a badge; a provider with no row
+/// must not render anywhere.
+#[test]
+fn board_shows_quota_badge_per_provider() {
+    let mut rows = fixture();
+    rows[0].provider = Some("claude".to_string());
+    rows[1].provider = Some("qwen".to_string());
+    let mut screen = FleetBoardScreen::new(rows, now());
+    screen.set_quota_badges(std::collections::BTreeMap::from([
+        ("claude".to_string(), "claude 90% ↻2h30m ↓".to_string()),
+        ("minimax".to_string(), "minimax no data".to_string()),
+    ]));
+    let rendered = render(&mut screen, 110, 10);
+    insta::assert_snapshot!(rendered);
+    assert!(
+        !rendered.contains("minimax no data"),
+        "a provider with no row must not render"
+    );
 }
 
 #[test]
