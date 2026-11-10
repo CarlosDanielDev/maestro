@@ -17,6 +17,53 @@
         ],
         "matcher": ""
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py attribution"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py forbidden-git"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py secret-read"
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py dispatch-contract"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/carlos/projects/setwave/hooks/guards.py background-gate"
+          }
+        ]
+      }
     ]
   },
   "mcpServers": {

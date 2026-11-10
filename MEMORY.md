@@ -90,3 +90,22 @@ v0.29.5 bundle (user authorized PR-isolation override for context budget): one P
 - #918: shipped without syntect (AC allowed); `o` escape hatch = shell at worktree via ShellLauncher, not $EDITOR suspend.
 
 **Next-session priorities:** merge-gate PR #991 manual QA; then #947 → #948 → #949 → #950 in separate PRs; verify chat renderer sanitizes `StreamEvent::Unknown.raw` (security review informational).
+
+---
+
+## 2026-11-10 — Strategy pivot: the gated wave engine is the product; engine unblocked
+
+**Worked on:** full open-issue audit (82), t3code teardown (pingdotgg/t3code), setwave state assessment, setwave liveness fix, issue-list hygiene.
+
+**Decisions:**
+- **Pivot (center of gravity, not abandonment):** maestro stops competing with T3 Code on the multi-CLI control surface (they ship desktop+mobile+remote with a team; head-on is a losing race solo). The differentiated asset = the opinionated execution layer: DOR gates, TDD-enforced implement, merge-blocking judge, machine-checked dependency graphs — proven by setwave driving 11 merged maestro PRs (Oct 14–Nov 7). TUI work (UX Spine chain #826–#835) and the role-routing chain (#815–#821) deprioritized as commodity surface.
+- **setwave stays the GitHub execution layer; maestro owns sessions/TUI + the method templates.** `define` vs gatekeeper DOR overlap resolved in setwave's favor (machine-checked beats prose); judge (merge-blocking) beats advisory review. Fold-in of the wave loop into the maestro product is the candidate next phase, NOT a Rust port of wave.py (4.9k tested lines — shell out or keep as plugin first).
+- **Validation gate:** setwave has 1 external star. One focused attempt to get the methodology used outside Carlos's repos (publish a real wave log + sharp README); ~4–6 weeks; no external evidence → fall back to "personal tooling, fine" without guilt.
+- **Port list from t3code (evidence in their repo, ranked):** context-budget CI gate on model-facing bytes (S–M), no-flaky-test gate rules (`#[ignore]`/`sleep` need a quarantine reason) (S), replay provider from recorded stream-json transcripts (M), typed per-provider capability structs (M–L), idempotent command receipts (M–L), per-turn hidden-ref checkpoints (L).
+
+**Completed this session:**
+- setwave PR #141 merged (168e578): watchdog no longer dies on first hit (`--watch` persistent + dedup, `--once` = old exit-1 contract), PR caches refreshed every cycle, `--transcripts` counts a thinking agent as working, pushed-without-PR wake says `gh pr create`, background-gate guard (5th judge) refuses `run_in_background`/shell `&`/nohup inside seats. TDD: 5 behaviors failed first. 606/606 tests, guarantees + skill-lint green. Fixes #140 #115.
+- maestro guards: dead 0.6.1 cache pin (was blocking Bash calls, fail-open = unprotected) → repo checkout of merged main; all 5 guards active in project settings (backup `.bak-20261110T151919Z`).
+- Issue hygiene: closed #818/#980/#982 as already-implemented (evidence comments); corrected 6 stale bodies (#817 #820 #832 #834 #1014 #1015); milestone graphs 60/63 ✅-updated. Audits found #964–#974 all still valid (PR #1028 shipped Input foundation only — children intact).
+
+**Next-session priorities:** wave #1065 + #1050 + #1061 (three epics one item from done), then #1084 spike (ai-memory seam) → epic #1083; then the Security Audit milestone (19 disclosed, P0 #1045) as a 2-week wave; setwave release bump (plugin cache still 0.11.0; guards run from repo checkout meanwhile); README cutoff-note fix (README.md:19); ERRORS.md entry for the #1065 double-reopen pattern.
