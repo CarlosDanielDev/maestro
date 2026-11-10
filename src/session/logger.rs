@@ -145,8 +145,22 @@ impl SessionLogger {
     }
 
     /// Clean up logs older than the given retention period.
+    ///
+    /// #1031: the log root must be a real directory — never a symlink or a
+    /// plain file (a cloned repo can commit `.maestro/logs` as either) — and
+    /// only regular files this module writes (`<uuid>.log`) are ever removed.
+    /// Per-entry failures are logged and skipped so one bad entry cannot abort
+    /// the batch.
     pub fn cleanup_old_logs(&self, retention_days: u64) -> Result<usize> {
-        if !self.log_dir.exists() {
+        let Ok(meta) = fs::symlink_metadata(&self.log_dir) else {
+            // Missing root (or unreadable parent) — nothing to clean.
+            return Ok(0);
+        };
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            tracing::warn!(
+                "refusing to clean session logs: {} is a symlink or not a directory",
+                self.log_dir.display()
+            );
             return Ok(0);
         }
 
@@ -155,13 +169,49 @@ impl SessionLogger {
 
         let mut removed = 0;
         for entry in fs::read_dir(&self.log_dir)? {
-            let entry = entry?;
-            let metadata = entry.metadata()?;
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    tracing::warn!(
+                        "skipping unreadable entry in {}: {}",
+                        self.log_dir.display(),
+                        e
+                    );
+                    continue;
+                }
+            };
+            let path = entry.path();
+            // `DirEntry::file_type` does not traverse symlinks, so a symlinked
+            // entry fails `is_file()` and is left alone (#1031).
+            let is_own_log = entry.file_type().is_ok_and(|t| t.is_file())
+                && path.extension().is_some_and(|ext| ext == "log")
+                && path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .is_some_and(|stem| Uuid::parse_str(stem).is_ok());
+            if !is_own_log {
+                continue;
+            }
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(e) => {
+                    tracing::warn!("skipping {}: metadata unavailable: {}", path.display(), e);
+                    continue;
+                }
+            };
             if let Ok(modified) = metadata.modified()
                 && modified < cutoff
             {
-                fs::remove_file(entry.path())?;
-                removed += 1;
+                match fs::remove_file(&path) {
+                    Ok(()) => removed += 1,
+                    Err(e) => {
+                        tracing::warn!(
+                            "failed to remove old session log {}: {}",
+                            path.display(),
+                            e
+                        );
+                    }
+                }
             }
         }
 
@@ -178,114 +228,5 @@ pub struct LogSummary {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    fn make_logger() -> (SessionLogger, TempDir) {
-        let dir = TempDir::new().unwrap();
-        let logger = SessionLogger::new(dir.path().to_path_buf());
-        (logger, dir)
-    }
-
-    #[test]
-    fn log_event_creates_file() {
-        let (logger, _dir) = make_logger();
-        let id = Uuid::new_v4();
-        let event = StreamEvent::AssistantMessage {
-            text: "hello".into(),
-        };
-        logger.log_event(id, &event).unwrap();
-        assert!(logger.log_path(id).exists());
-    }
-
-    #[test]
-    fn log_event_appends_entries() {
-        let (logger, _dir) = make_logger();
-        let id = Uuid::new_v4();
-        logger
-            .log_event(
-                id,
-                &StreamEvent::AssistantMessage {
-                    text: "first".into(),
-                },
-            )
-            .unwrap();
-        logger
-            .log_event(
-                id,
-                &StreamEvent::AssistantMessage {
-                    text: "second".into(),
-                },
-            )
-            .unwrap();
-        let content = logger.read_log(id).unwrap();
-        assert!(content.contains("first"));
-        assert!(content.contains("second"));
-    }
-
-    #[test]
-    fn log_event_tool_use() {
-        let (logger, _dir) = make_logger();
-        let id = Uuid::new_v4();
-        let event = StreamEvent::ToolUse {
-            tool: "Write".into(),
-            file_path: Some("src/main.rs".into()),
-            command_preview: None,
-            subagent_name: None,
-        };
-        logger.log_event(id, &event).unwrap();
-        let content = logger.read_log(id).unwrap();
-        assert!(content.contains("TOOL: Write (src/main.rs)"));
-    }
-
-    #[test]
-    fn log_event_completed() {
-        let (logger, _dir) = make_logger();
-        let id = Uuid::new_v4();
-        let event = StreamEvent::Completed { cost_usd: 1.23 };
-        logger.log_event(id, &event).unwrap();
-        let content = logger.read_log(id).unwrap();
-        assert!(content.contains("COMPLETED: $1.23"));
-    }
-
-    #[test]
-    fn log_event_error() {
-        let (logger, _dir) = make_logger();
-        let id = Uuid::new_v4();
-        let event = StreamEvent::Error {
-            message: "something broke".into(),
-        };
-        logger.log_event(id, &event).unwrap();
-        let content = logger.read_log(id).unwrap();
-        assert!(content.contains("ERROR: something broke"));
-    }
-
-    #[test]
-    fn list_logs_returns_summaries() {
-        let (logger, _dir) = make_logger();
-        let id1 = Uuid::new_v4();
-        let id2 = Uuid::new_v4();
-        logger
-            .log_event(id1, &StreamEvent::AssistantMessage { text: "a".into() })
-            .unwrap();
-        logger
-            .log_event(id2, &StreamEvent::AssistantMessage { text: "b".into() })
-            .unwrap();
-        let logs = logger.list_logs().unwrap();
-        assert_eq!(logs.len(), 2);
-    }
-
-    #[test]
-    fn list_logs_empty_dir() {
-        let (logger, _dir) = make_logger();
-        let logs = logger.list_logs().unwrap();
-        assert!(logs.is_empty());
-    }
-
-    #[test]
-    fn read_log_nonexistent_returns_err() {
-        let (logger, _dir) = make_logger();
-        assert!(logger.read_log(Uuid::new_v4()).is_err());
-    }
-}
+#[path = "logger_tests.rs"]
+mod tests;
