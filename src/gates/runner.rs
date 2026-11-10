@@ -88,7 +88,7 @@ pub(super) fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> Ga
 
         CompletionGate::Command { name, command, .. } => {
             // CWE-78: parse into argv and exec directly — no `sh -c`, so a
-            // command string can't inject via `;`, `|`, `$(...)`, backticks,
+            // command string can't inject via `;`, `|`, command substitution, backticks,
             // etc. That leaves the residual argv[0] risk: the program name
             // itself is repo-chosen. Untrusted workspaces never reach this
             // arm — `UntrustedGateRunner` fails these gates closed (#1045).
