@@ -1,6 +1,9 @@
 #![allow(dead_code)] // Reason: notification dispatch system — to be wired into session lifecycle
+#[cfg(target_os = "linux")]
 use std::process::Command;
 
+#[cfg(target_os = "macos")]
+use super::desktop::{DesktopNotifier, OsascriptNotifier};
 use super::slack::{SlackClient, SlackEvent, level_to_slack_event};
 use super::types::{InterruptLevel, Notification};
 
@@ -130,21 +133,26 @@ fn client_check_rate_limit(client: &mut SlackClient) -> bool {
 }
 
 /// Send a desktop notification using OS-specific tools.
+///
+/// The caller has already gated on `desktop_enabled`. macOS routes through
+/// [`OsascriptNotifier`] — the hardened single sink carrying
+/// `sanitize_applescript` and the pinned `/usr/bin/osascript` — so
+/// session-derived text with newlines or quotes can no longer break out of
+/// the AppleScript string literal (issue #1035, CWE-78/94/426). Linux pins
+/// `/usr/bin/notify-send` and passes title/body after `--` so a leading
+/// `-` is never parsed as an option.
 fn send_desktop_notification(title: &str, message: &str) {
     #[cfg(target_os = "macos")]
     {
-        let script = format!(
-            "display notification \"{}\" with title \"Maestro: {}\"",
-            message.replace('"', "\\\""),
-            title.replace('"', "\\\"")
-        );
-        let _ = Command::new("osascript").args(["-e", &script]).output();
+        // Caller already checked desktop_enabled; OsascriptNotifier
+        // short-circuits on its own flag but constructs cheaply.
+        OsascriptNotifier::new(true).notify(title, message);
     }
 
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("notify-send")
-            .args([&format!("Maestro: {}", title), message])
+        let _ = Command::new("/usr/bin/notify-send")
+            .args(["--", &format!("Maestro: {}", title), message])
             .output();
     }
 }

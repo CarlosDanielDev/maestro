@@ -76,6 +76,24 @@ pub(crate) fn sanitize_applescript(input: &str) -> String {
     out
 }
 
+/// Build the `display notification` AppleScript for a title/body pair.
+///
+/// Regression seam for issue #1035: every byte of `title`/`body` must pass
+/// through [`sanitize_applescript`] and the notification length caps, so no
+/// raw newline, CR or unescaped quote from session-derived text can
+/// terminate the string literal and execute as AppleScript.
+fn build_notification_script(title: &str, body: &str) -> String {
+    let safe_title =
+        sanitize_applescript(&truncate_with_ellipsis(title, NOTIFICATION_TITLE_MAX_BYTES));
+    let safe_body =
+        sanitize_applescript(&truncate_with_ellipsis(body, NOTIFICATION_BODY_MAX_BYTES));
+    format!(
+        r#"display notification "{body}" with title "Maestro" subtitle "{title}""#,
+        body = safe_body,
+        title = safe_title,
+    )
+}
+
 pub(crate) struct OsascriptNotifier {
     enabled: bool,
     last_error: Arc<Mutex<Option<NotifyError>>>,
@@ -96,15 +114,7 @@ impl DesktopNotifier for OsascriptNotifier {
             return;
         }
 
-        let safe_title =
-            sanitize_applescript(&truncate_with_ellipsis(title, NOTIFICATION_TITLE_MAX_BYTES));
-        let safe_body =
-            sanitize_applescript(&truncate_with_ellipsis(body, NOTIFICATION_BODY_MAX_BYTES));
-        let script = format!(
-            r#"display notification "{body}" with title "Maestro" subtitle "{title}""#,
-            body = safe_body,
-            title = safe_title,
-        );
+        let script = build_notification_script(title, body);
         let last_error = Arc::clone(&self.last_error);
 
         tokio::spawn(async move {
@@ -279,6 +289,30 @@ mod tests {
         assert!(!out.contains('\n'), "raw LF must be escaped: {:?}", out);
         assert!(!out.contains('\r'), "raw CR must be escaped: {:?}", out);
         assert_eq!(out, r"ok\nmalicious\rstuff");
+    }
+
+    #[test]
+    fn build_notification_script_escapes_newline_and_quote_payload() {
+        // Issue #1035 repro: `"` followed by a raw newline would close the
+        // string literal and let the rest of the message parse as
+        // AppleScript code. The built script must carry no raw newline and
+        // only escaped content quotes.
+        let script = build_notification_script("t", "ok\"\ndisplay dialog \"pwn\"\n\"");
+
+        assert!(
+            !script.contains('\n'),
+            "raw LF must be escaped: {:?}",
+            script
+        );
+        assert!(
+            !script.contains('\r'),
+            "raw CR must be escaped: {:?}",
+            script
+        );
+        assert_eq!(
+            script,
+            r#"display notification "ok\"\ndisplay dialog \"pwn\"\n\"" with title "Maestro" subtitle "t""#
+        );
     }
 
     #[test]
