@@ -294,7 +294,7 @@ fn default_model() -> String {
 fn default_mode() -> String {
     "orchestrator".into()
 }
-fn default_permission_mode() -> String {
+pub fn default_permission_mode() -> String {
     // Default OFF: fresh installs / configs that don't set this explicitly
     // get the safe Claude permission flow (per-tool prompts). Bypass mode
     // is opt-in via the Settings toggle, the `--bypass-review` CLI flag,

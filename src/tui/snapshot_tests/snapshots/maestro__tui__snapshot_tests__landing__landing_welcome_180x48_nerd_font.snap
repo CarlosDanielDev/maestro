@@ -1,6 +1,5 @@
 ---
 source: src/tui/snapshot_tests/landing.rs
-assertion_line: 88
 expression: terminal.backend()
 ---
 "                                                            ███╗   ███╗ █████╗ ███████╗███████╗████████╗██████╗  ██████╗                                                            "
@@ -38,7 +37,7 @@ expression: terminal.backend()
 "║│███                                                                           ││              ██                                                                                │║"
 "║│███                                                                           ││      ▆▂ ▆  ▆▂██▆                                                                               │║"
 "║│█1█                                                                           ││▃     ██ █  █████▅                                                                              │║"
-"║│Add Fix Chg Per Doc                                                           ││█▇ ▅ ▇██▁█▃▃██████     ▁                                                                        │║"
+"║│Add Fix Chg Per Doc                                                           ││█▇ ▅ ▇██▁█▃▃██████     ▃                                                                        │║"
 "║└──────────────────────────────────────────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────────────────────────┘║"
 "║┌Highlights──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐║"
 "║│  [Added] **Real conflict detection in the mass-launch review.** The QueueConfirmation screen now parses each issue's `## Files to Modify` section from its cached body, so over│║"
