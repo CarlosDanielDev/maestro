@@ -12,6 +12,8 @@ mod adopt_pipeline;
 #[cfg(test)]
 mod budget_prespawn_gate;
 #[cfg(test)]
+mod build_hygiene;
+#[cfg(test)]
 mod canonical_command_specs;
 #[cfg(test)]
 mod completion_pipeline;

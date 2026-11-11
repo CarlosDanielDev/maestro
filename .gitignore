@@ -1,6 +1,5 @@
 # Rust
 /target/
-Cargo.lock
 
 # Maestro runtime
 maestro-state.json
