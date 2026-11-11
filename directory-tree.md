@@ -66,7 +66,7 @@ maestro/
 │   │   └── idea.yml                       # Idea inbox issue form — 5 required textareas (itch + Q1-Q4) + Q5 vision-alignment dropdown
 │   └── workflows/
 │       ├── ci.yml                         # GitHub Actions CI pipeline; includes `sync-templates` job that runs `cargo run --quiet -- sync-templates --check` and fails the build on template drift; includes `docs-gen` job that runs `cargo test --quiet docs_gen_no_drift --bin maestro` to guard against configuration.md autogen drift  [Issue #706, #717]
-│       ├── release.yml                    # Release automation for cross-platform builds and Homebrew tap updates
+│       ├── release.yml                    # Release automation for cross-platform builds, minisign-signed checksums, and Homebrew tap updates
 │       └── self-host.yml                  # Self-host smoke workflow: builds maestro, creates ephemeral repo, runs headlessly against a fixture issue, asserts PR is opened, deletes repo; requires MAESTRO_SELFTEST_PAT and MAESTRO_SELFTEST_OWNER secrets  [Issue #545]
 ├── .maestro/
 │   ├── hooks/                             # Canonical home for all agent-agnostic hook scripts (moved from .claude/hooks/ in #759); .claude/hooks is a symlink here for one release
@@ -816,6 +816,7 @@ maestro/
 │   │   │   ├── v0.26.0.md                 # Snapshot of v0.26.0 release notes before Issue #677 rewrite
 │   │   │   └── v0.28.0.md                 # Snapshot of v0.28.0 release notes before Issue #677 rewrite
 │   │   ├── discord-v0.26.0-announcement.md  # Discord #releases announcement copy for v0.26.0
+│   │   ├── key-rotation.md                # Release-signing key model and rotation procedures (minisign, updater trust anchors)
 │   │   ├── v0.25.0.md                     # Release notes for v0.25.0 — multi-agent foundation
 │   │   ├── v0.25.1.md                     # Release notes for v0.25.1 — reliability patch
 │   │   ├── v0.26.0.md                     # Release notes for v0.26.0 — team orchestration
@@ -961,7 +962,7 @@ maestro/
 | `.github/ISSUE_TEMPLATE/feature.yml` | Feature request issue form with DOR fields; `Blocked By` required; `Dependency Graph` textarea for epic/multi-issue ordering |
 | `.github/ISSUE_TEMPLATE/idea.yml` | Idea inbox issue form — 5 required textareas (the itch + Q1-Q4 honesty checks) + Q5 vision-alignment dropdown; auto-applies labels `idea` and `needs-triage` |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline (test, clippy, fmt, file-size, deny, audit, coverage, layers, **actionlint**) |
-| `.github/workflows/release.yml` | Release automation: cross-platform builds, GitHub Release with SHA256 checksums, Homebrew tap update, Discord `#releases` notification (`notify-discord` job; requires `DISCORD_WEBHOOK_URL` secret) |
+| `.github/workflows/release.yml` | Release automation: cross-platform builds, GitHub Release with SHA256 checksums + minisign signature (`sha256sums.txt.minisig`; requires `RELEASE_SIGNING_KEY` and `RELEASE_SIGNING_PUBLIC_KEY` secrets, see `docs/releases/key-rotation.md`), Homebrew tap update, Discord `#releases` notification (`notify-discord` job; requires `DISCORD_WEBHOOK_URL` secret) |
 | `.github/workflows/self-host.yml` | Self-host smoke workflow (manual trigger); requires `MAESTRO_SELFTEST_PAT` and `MAESTRO_SELFTEST_OWNER` secrets; creates + destroys an ephemeral sandbox repo |
 | `.claude/` | Claude Code agent configuration |
 | `.claude/agents/` | Subagent definitions |
@@ -997,6 +998,7 @@ maestro/
 | `docs/releases/v0.26.0.md` | Release notes for v0.26.0 — team orchestration |
 | `docs/releases/v0.28.0.md` | Release notes for v0.28.0 — templates sync engine |
 | `docs/releases/discord-v0.26.0-announcement.md` | Discord #releases announcement copy for v0.26.0 |
+| `docs/releases/key-rotation.md` | Release-signing trust model: minisign keys, updater fail-closed verification, provisioning and rotation procedures |
 | `docs/releases/.snapshots/` | Pre-edit snapshots of release notes before Issue #677 rewrite; kept for rollback, not published |
 | `docs/teams/` | Team orchestration preset documentation (v0.26.0+) |
 | `docs/teams/README.md` | Preset overview, three-tier resolution, five built-ins, CLI surface, headless launch, state migration; links to cookbook (Issue #675) |

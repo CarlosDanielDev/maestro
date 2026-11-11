@@ -35,6 +35,12 @@ pub enum UpdateError {
 
     #[error("internal error: {0}")]
     Internal(String),
+
+    #[error("release signature missing or invalid: {reason}")]
+    SignatureInvalid { reason: String },
+
+    #[error("update blocked: candidate version {candidate} is not newer than installed {current}")]
+    DowngradeRejected { current: String, candidate: String },
 }
 
 #[cfg(test)]
@@ -84,6 +90,33 @@ mod tests {
         assert_eq!(
             format!("{err}"),
             "update failed and rollback could not complete — please reinstall maestro manually"
+        );
+    }
+
+    #[test]
+    fn update_error_display_signature_invalid() {
+        let err = UpdateError::SignatureInvalid {
+            reason: "no trusted release key matched".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("release signature missing or invalid"),
+            "got: {msg}"
+        );
+        assert!(msg.contains("no trusted release key matched"), "got: {msg}");
+    }
+
+    #[test]
+    fn update_error_display_downgrade_rejected() {
+        let err = UpdateError::DowngradeRejected {
+            current: "0.31.5".to_string(),
+            candidate: "0.30.0".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("update blocked"), "got: {msg}");
+        assert!(
+            msg.contains("0.30.0") && msg.contains("0.31.5"),
+            "got: {msg}"
         );
     }
 

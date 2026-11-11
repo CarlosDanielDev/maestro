@@ -94,11 +94,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Needed only to build the pinned `rsign` signer below (#1046).
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
       - name: Download all artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Install rsign (pinned)
+        run: cargo install rsign2 --version 0.6.7 --locked
 
       - name: Generate checksums
         id: checksums
@@ -107,6 +113,30 @@ jobs:
           sha256sum ./*.tar.gz > sha256sums.txt
           cat sha256sums.txt
 
+      - name: Sign checksums
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          [ -n "${RELEASE_SIGNING_KEY}" ] || {
+            echo "::error::RELEASE_SIGNING_KEY secret is empty — set it in repo Settings → Secrets (see docs/releases/key-rotation.md)" >&2
+            exit 1
+          }
+          printf '%s' "${RELEASE_SIGNING_KEY}" > "${RUNNER_TEMP}/maestro-release.key"
+          # Fail closed: no release ships without a published signature.
+          rsign sign -W -s "${RUNNER_TEMP}/maestro-release.key" artifacts/sha256sums.txt
+          rm "${RUNNER_TEMP}/maestro-release.key"
+          cat artifacts/sha256sums.txt.minisig
+
+      - name: Verify checksums signature
+        env:
+          RELEASE_SIGNING_PUBLIC_KEY: ${{ secrets.RELEASE_SIGNING_PUBLIC_KEY }}
+        run: |
+          [ -n "${RELEASE_SIGNING_PUBLIC_KEY}" ] || {
+            echo "::error::RELEASE_SIGNING_PUBLIC_KEY secret is empty — set it in repo Settings → Secrets (see docs/releases/key-rotation.md)" >&2
+            exit 1
+          }
+          rsign verify -P "${RELEASE_SIGNING_PUBLIC_KEY}" artifacts/sha256sums.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
@@ -114,6 +144,7 @@ jobs:
           files: |
             artifacts/*.tar.gz
             artifacts/sha256sums.txt
+            artifacts/sha256sums.txt.minisig
 
   update-homebrew:
     name: Update Homebrew Tap
