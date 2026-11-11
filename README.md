@@ -74,6 +74,7 @@ Most deep guides live in the [project Wiki](https://github.com/CarlosDanielDev/m
 - Multi-agent runtime — Claude, Codex, Qwen, OpenCode, Ollama, and MiniMax can be configured side by side in `[agents]`
 - Subprocess providers — Claude, Codex, Qwen, and OpenCode run local CLIs
 - HTTP providers — Ollama and MiniMax stream through HTTP APIs
+- Persistent memory — wrap any subprocess provider in an ai-memory shim for durable workstream memory and cross-harness handoff ([guide](docs/guides/ai-memory.md))
 - Claude remains the default when `[agents]` is omitted
 
 → [Docs › Agent Providers](docs/agents/mod.md) · [Configuration Reference](docs/configuration.md) · [Example multi-agent config](examples/multi-agent/maestro.toml)

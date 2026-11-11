@@ -30,7 +30,7 @@ pub fn validate_env_var_name(name: &str) -> Result<()> {
 /// Env keys rejected in `[agents.<id>].env`: each one lets a config file
 /// steer a dynamic loader or interpreter (CWE-426 / CWE-454, EXEC-4 /
 /// TRUST-2).
-const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
+pub(crate) const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
     "PATH",
     "NODE_OPTIONS",
     "PYTHONPATH",
@@ -39,11 +39,61 @@ const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
     "ENV",
     "IFS",
     "GIT_SSH_COMMAND",
+    // #1107 (post-merge security review, CWE-426 / CWE-454): loader and
+    // interpreter env vars not covered by #1029's initial list.
+    "PERL5OPT",
+    "PERLLIB",
+    "PYTHONHOME",
+    "PYTHONSTARTUP",
+    "RUBYOPT",
+    "RUBYLIB",
+    "JAVA_TOOL_OPTIONS",
+    "JDK_JAVA_OPTIONS",
+    "CLASSPATH",
+    "CPATH",
+    "NODE_PATH",
+    "NODE_EXTRA_CA_CERTS",
+    "SHELLOPTS",
+    "BASHOPTS",
+    "ZDOTDIR",
+    "GEM_HOME",
+    "GEM_PATH",
+    "BUNDLE_GEMFILE",
+    // HOME and SHELL are denied even though a setup may legitimately want to
+    // redirect an agent's home or login shell: agent children inherit
+    // maestro's own environment, so that belongs in the parent environment —
+    // a repo-local toml override of HOME can hijack `$HOME/.claude/
+    // settings.json` hooks, and a forged SHELL is exec'd by `$SHELL` callers.
+    "HOME",
+    "SHELL",
+    // Parity additions (judge review on #1107): SSL_CERT_FILE / SSL_CERT_DIR
+    // swap the CA trust store for OpenSSL-based children (same effect as
+    // NODE_EXTRA_CA_CERTS); CARGO_HOME / RUSTUP_HOME redirect the Rust
+    // toolchain (config.toml rustc override, fake toolchains, same effect as
+    // GEM_HOME); NPM_CONFIG_PREFIX redirects global node module resolution;
+    // PERL5DB is the debugger startup payload for a PERL5OPT-enabled run.
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "NPM_CONFIG_PREFIX",
+    "PERL5DB",
+    // CA-trust and TLS-verification family (second judge pass on #1107):
+    // REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE / AWS_CA_BUNDLE / PIP_CERT swap
+    // the CA store for their toolchains (same class as SSL_CERT_FILE),
+    // NODE_TLS_REJECT_UNAUTHORIZED=0 disables TLS verification outright,
+    // SSLKEYLOGFILE exports TLS session keys to an attacker-readable path.
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "AWS_CA_BUNDLE",
+    "NODE_TLS_REJECT_UNAUTHORIZED",
+    "SSLKEYLOGFILE",
+    "PIP_CERT",
 ];
 
 /// Key prefixes rejected in `[agents.<id>].env` (covers LD_PRELOAD,
 /// LD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES, GIT_SSH_COMMAND, ...).
-const AGENT_ENV_DENYLIST_PREFIXES: &[&str] = &["LD_", "DYLD_", "GIT_"];
+pub(crate) const AGENT_ENV_DENYLIST_PREFIXES: &[&str] = &["LD_", "DYLD_", "GIT_"];
 
 /// Validate one `[agents.<id>].env` key: the shape must match
 /// `^[A-Z][A-Z0-9_]*$` and the key must not be on the loader/interpreter
@@ -299,22 +349,27 @@ mod tests {
 
     #[test]
     fn agent_env_key_rejects_denylist() {
-        for key in [
-            "PATH",
-            "LD_PRELOAD",
-            "LD_LIBRARY_PATH",
-            "DYLD_INSERT_LIBRARIES",
-            "NODE_OPTIONS",
-            "PYTHONPATH",
-            "PERL5LIB",
-            "BASH_ENV",
-            "ENV",
-            "IFS",
-            "GIT_SSH_COMMAND",
-            "GIT_CONFIG_COUNT",
-        ] {
+        // The denylist must only grow: a silently removed key re-opens an
+        // injection vector, and the derived tests below would stay green
+        // because they follow the const. Bump the floor only when a key is
+        // removed on purpose.
+        assert!(
+            AGENT_ENV_DENYLIST_EXACT.len() >= 40,
+            "agent env denylist unexpectedly shrank ({} entries < 40)",
+            AGENT_ENV_DENYLIST_EXACT.len()
+        );
+        // Derived from the denylist consts (single source of truth): a key
+        // added to the tables is covered here automatically.
+        for &key in AGENT_ENV_DENYLIST_EXACT {
             assert!(
                 validate_agent_env_key(key).is_err(),
+                "{key} must be denied in agent env"
+            );
+        }
+        for &prefix in AGENT_ENV_DENYLIST_PREFIXES {
+            let key = format!("{prefix}INJECTED");
+            assert!(
+                validate_agent_env_key(&key).is_err(),
                 "{key} must be denied in agent env"
             );
         }

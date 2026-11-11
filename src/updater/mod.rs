@@ -4,12 +4,28 @@ pub mod installer;
 pub mod lock;
 pub mod replace;
 pub mod restart;
+mod signature;
+#[cfg(test)]
+mod test_server;
 
 /// GitHub repository for version checks and binary downloads.
 pub const GITHUB_REPO: &str = "CarlosDanielDev/maestro";
 
 /// Trusted domains for binary downloads.
 const TRUSTED_DOWNLOAD_HOSTS: &[&str] = &["github.com", "objects.githubusercontent.com"];
+
+/// Minisign public keys trusted to sign `sha256sums.txt` (base64 keynum_pk,
+/// second line of the `minisign.pub` file).
+///
+/// Trust anchors deliberately do NOT travel through the release channel they
+/// authenticate (CWE-494): the only supported distribution is this
+/// compile-time constant. A signature is accepted when ANY key here verifies
+/// it; keep the previous key listed while a rotation is in flight. Rotation
+/// procedure: `docs/releases/key-rotation.md`.
+///
+/// Empty until the maintainer provisions the first release key — the updater
+/// then fails closed and refuses every install (`SignatureInvalid`).
+pub const TRUSTED_RELEASE_PUBLIC_KEYS: &[&str] = &[];
 
 /// Maximum binary download size (200 MB).
 pub const MAX_DOWNLOAD_SIZE: u64 = 200 * 1024 * 1024;

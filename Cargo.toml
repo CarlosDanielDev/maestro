@@ -38,21 +38,22 @@ sha2 = "0.11"
 arboard = "3.6.1"
 strip-ansi-escapes = "0.2"
 image = { version = "0.25.10", features = ["png"], default-features = false }
-pulldown-cmark = { version = "0.12", default-features = false }
+pulldown-cmark = { version = "0.13", default-features = false }
 tui-textarea = { version = "0.7", features = ["crossterm"] }
 unicode-width = "0.2"
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 rand = { version = "0.8", features = ["small_rng"] }
 sysinfo = "0.33"
-syn = { version = "2", features = ["full", "visit"] }
+syn = { version = "3", features = ["full", "visit"] }
 walkdir = "2"
 flate2 = "1"
 tar = "0.4"
 tempfile = "3"
 thiserror = "2"
 shlex = "1"
-directories = "5"
+directories = "6"
 fs2 = "0.4"
+minisign-verify = "0.3.0"
 
 [features]
 # Off-by-default for one release. When enabled, `Config::save_into_str` detects
@@ -76,6 +77,7 @@ anyhow = "1"
 insta = { version = "1", features = ["filters"] }
 proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
+minisign = "0.10.0"
 
 [[bench]]
 name = "parser"

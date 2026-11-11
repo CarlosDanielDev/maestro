@@ -1,0 +1,33 @@
+name: 'Setup yq (pinned + checksum-verified)'
+description: >-
+  Installs the Mike Farah Go-based yq binary at a pinned version and
+  verifies its SHA256 before it lands on PATH. Replaces the previous
+  wget-from-releases/latest copies in ci.yml (#1040): a moving URL with no
+  integrity check meant a compromised release artifact could ship arbitrary
+  code into the coverage and architecture-layers jobs.
+inputs:
+  yq_version:
+    description: 'yq release version (without the v prefix)'
+    required: false
+    default: '4.54.3'
+  yq_sha256:
+    description: 'SHA256 of the pinned yq_linux_amd64 binary'
+    required: false
+    default: '129534601871538efe0ba4c5e62a34fb1d5f469bcb975c4fddeb467d82974973'
+runs:
+  using: 'composite'
+  steps:
+    - name: Download yq and verify checksum
+      shell: bash
+      env:
+        YQ_VERSION: ${{ inputs.yq_version }}
+        YQ_SHA256: ${{ inputs.yq_sha256 }}
+      run: |
+        set -euo pipefail
+        ARCHIVE="yq_linux_amd64"
+        curl --fail --silent --show-error --location \
+             --output "${RUNNER_TEMP}/yq_linux_amd64" \
+             "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/${ARCHIVE}"
+        echo "${YQ_SHA256}  ${RUNNER_TEMP}/${ARCHIVE}" | sha256sum --check --status
+        sudo install -m 0755 "${RUNNER_TEMP}/${ARCHIVE}" /usr/local/bin/yq
+        yq --version

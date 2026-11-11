@@ -58,6 +58,7 @@ through their own CLI flags.
 - [OpenCode](opencode.md)
 - [Ollama](ollama.md)
 - [MiniMax](minimax.md)
+- [ai-memory shim](../guides/ai-memory.md)
 - [Configuration Reference](../configuration.md)
 - [Team Orchestration Presets](../teams/README.md)
 

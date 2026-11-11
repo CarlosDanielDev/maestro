@@ -6,6 +6,11 @@ on:
   push:
     branches: [main]
 
+# Least privilege by default (#1040): jobs that need more than read access
+# must opt in with a job-level permissions block.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -14,9 +19,9 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
       - run: cargo test --verbose --locked
       # Snapshot enforcement: fails if any insta snapshot has an unreviewed diff.
       # Run `cargo insta review` locally to approve snapshot changes before pushing.
@@ -35,11 +40,11 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
       - run: cargo clippy --locked -- -D warnings -A dead_code
 
   sync-templates:
@@ -49,9 +54,9 @@ jobs:
     name: Templates Drift
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
       - name: Check rendered templates are in sync
         run: cargo run --quiet -- sync-templates --check
 
@@ -59,9 +64,9 @@ jobs:
     name: Docs Autogen Drift
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
       - name: Check docs/configuration.md is in sync
         run: cargo test --quiet --locked docs_gen_no_drift --bin maestro
 
@@ -69,8 +74,8 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt
       - run: cargo fmt -- --check
@@ -79,7 +84,7 @@ jobs:
     name: File Size Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/check-file-size.sh
 
   # Verifies every provider entry point (.claude/CLAUDE.md, .codex/AGENTS.md,
@@ -89,7 +94,7 @@ jobs:
     name: Golden Rules Drift
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/check-rules-drift.sh
 
   deny:
@@ -99,8 +104,8 @@ jobs:
     name: Cargo Deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           command: check advisories bans licenses sources
 
@@ -120,10 +125,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: cargo install cargo-audit --locked --version 0.23.0
       - name: Run cargo audit
         run: |
           set -euo pipefail
@@ -163,21 +168,18 @@ jobs:
     name: Coverage Tiers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
       - name: Install yq (Mike Farah Go-based, not Python apt package)
         # Ubuntu's apt `yq` is the Python jq-wrapper, which has a different
         # CLI from the Go-based Mike Farah yq used by check-coverage-tiers.sh.
-        # Install the Go binary directly.
-        run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          yq --version
+        # Composite action pins the version and sha256-verifies the binary.
+        uses: ./.github/actions/setup-yq
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --locked
+        run: cargo install cargo-llvm-cov --locked --version 0.9.1
       - name: Generate lcov
         run: cargo llvm-cov --workspace --lcov --output-path coverage.lcov
       - name: Check coverage tiers
@@ -193,9 +195,9 @@ jobs:
     name: Code Duplication
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
       - name: Install cargo-dupes
         run: cargo install cargo-dupes --locked --version 0.2.1
       - name: Duplication report (baseline metrics)
@@ -209,12 +211,11 @@ jobs:
     name: Architecture Layers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install yq (Mike Farah Go-based, not Python apt package)
-        run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          yq --version
+        # Same pinned + checksum-verified binary as the coverage job above —
+        # one composite action so the two copies cannot drift.
+        uses: ./.github/actions/setup-yq
       - name: Check architecture layers
         run: bash scripts/check-layers.sh
 
@@ -227,7 +228,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions: {}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Lint job needs no GitHub API access; don't leave the token in
           # .git/config for the runner's lifetime. Defense in depth.
@@ -283,3 +284,45 @@ jobs:
             exit 1
           fi
           echo "ok: no secrets.* interpolated outside env/with keys"
+
+      - name: "Assert uses: refs are SHA-pinned and workflows declare permissions"
+        shell: bash
+        # Supply-chain structural invariant (#1040). A remote `uses:` ref is
+        # only trustworthy when it resolves to an immutable commit: tags and
+        # branches are mutable by anyone with push access, so tag-pinning is
+        # not SHA-pinning (same reasoning as the actionlint install step
+        # above). Local composite actions (./.github/actions/*) are exempt —
+        # they are versioned with the repo itself. Every workflow must also
+        # declare a top-level `permissions:` so jobs start from least
+        # privilege instead of the token's broad default, and no tool may be
+        # fetched from a moving releases/latest/ URL.
+        run: |
+          set -euo pipefail
+          mutable_uses=$(
+            grep -rnE '^[[:space:]]*(-[[:space:]]+)?uses:' .github/workflows/ \
+              | grep -vE 'uses:[[:space:]]*\./' \
+              | grep -vE '@[0-9a-f]{40}([[:space:]]+|$)' \
+              || true
+          )
+          unpinned_downloads=$(grep -rnE '(wget|curl)[^|]*releases/latest/download' .github/ || true)
+          missing_permissions=""
+          for f in .github/workflows/*.yml; do
+            grep -q '^permissions:' "${f}" || missing_permissions="${missing_permissions}${f}"$'\n'
+          done
+          if [ -n "${mutable_uses}${unpinned_downloads}${missing_permissions}" ]; then
+            echo "::error::supply-chain gate failed (CWE-829 / CWE-494 / CWE-250):"
+            if [ -n "${mutable_uses}" ]; then
+              echo "uses: refs not pinned to a 40-hex commit SHA:"
+              printf '%s\n' "${mutable_uses}"
+            fi
+            if [ -n "${unpinned_downloads}" ]; then
+              echo "downloads from a moving releases/latest/ URL:"
+              printf '%s\n' "${unpinned_downloads}"
+            fi
+            if [ -n "${missing_permissions}" ]; then
+              echo "workflows missing a top-level permissions: block:"
+              printf '%s' "${missing_permissions}"
+            fi
+            exit 1
+          fi
+          echo "ok: every remote uses: is SHA-pinned; no latest-release downloads; top-level permissions present"

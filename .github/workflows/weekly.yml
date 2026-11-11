@@ -5,6 +5,11 @@ on:
     - cron: '0 3 * * 0'
   workflow_dispatch:
 
+# Least privilege by default (#1040): the tsan job widens this to
+# issues: write for its report posting; everything else stays read-only.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -24,8 +29,8 @@ jobs:
     env:
       RUSTFLAGS: "-Zsanitizer=thread"
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: nightly
           components: rust-src
