@@ -30,7 +30,7 @@ pub fn validate_env_var_name(name: &str) -> Result<()> {
 /// Env keys rejected in `[agents.<id>].env`: each one lets a config file
 /// steer a dynamic loader or interpreter (CWE-426 / CWE-454, EXEC-4 /
 /// TRUST-2).
-const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
+pub(crate) const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
     "PATH",
     "NODE_OPTIONS",
     "PYTHONPATH",
@@ -82,7 +82,7 @@ const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
 
 /// Key prefixes rejected in `[agents.<id>].env` (covers LD_PRELOAD,
 /// LD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES, GIT_SSH_COMMAND, ...).
-const AGENT_ENV_DENYLIST_PREFIXES: &[&str] = &["LD_", "DYLD_", "GIT_"];
+pub(crate) const AGENT_ENV_DENYLIST_PREFIXES: &[&str] = &["LD_", "DYLD_", "GIT_"];
 
 /// Validate one `[agents.<id>].env` key: the shape must match
 /// `^[A-Z][A-Z0-9_]*$` and the key must not be on the loader/interpreter
@@ -338,50 +338,27 @@ mod tests {
 
     #[test]
     fn agent_env_key_rejects_denylist() {
-        for key in [
-            "PATH",
-            "LD_PRELOAD",
-            "LD_LIBRARY_PATH",
-            "DYLD_INSERT_LIBRARIES",
-            "NODE_OPTIONS",
-            "PYTHONPATH",
-            "PERL5LIB",
-            "BASH_ENV",
-            "ENV",
-            "IFS",
-            "GIT_SSH_COMMAND",
-            "GIT_CONFIG_COUNT",
-            // Extended for #1107 (post-merge security review, CWE-426 / CWE-454).
-            "PERL5OPT",
-            "PERLLIB",
-            "PYTHONHOME",
-            "PYTHONSTARTUP",
-            "RUBYOPT",
-            "RUBYLIB",
-            "JAVA_TOOL_OPTIONS",
-            "JDK_JAVA_OPTIONS",
-            "CLASSPATH",
-            "CPATH",
-            "NODE_PATH",
-            "NODE_EXTRA_CA_CERTS",
-            "SHELLOPTS",
-            "BASHOPTS",
-            "ZDOTDIR",
-            "GEM_HOME",
-            "GEM_PATH",
-            "BUNDLE_GEMFILE",
-            "HOME",
-            "SHELL",
-            // Parity additions (judge review on #1107).
-            "SSL_CERT_FILE",
-            "SSL_CERT_DIR",
-            "CARGO_HOME",
-            "RUSTUP_HOME",
-            "NPM_CONFIG_PREFIX",
-            "PERL5DB",
-        ] {
+        // The denylist must only grow: a silently removed key re-opens an
+        // injection vector, and the derived tests below would stay green
+        // because they follow the const. Bump the floor only when a key is
+        // removed on purpose.
+        assert!(
+            AGENT_ENV_DENYLIST_EXACT.len() >= 34,
+            "agent env denylist unexpectedly shrank ({} entries < 34)",
+            AGENT_ENV_DENYLIST_EXACT.len()
+        );
+        // Derived from the denylist consts (single source of truth): a key
+        // added to the tables is covered here automatically.
+        for &key in AGENT_ENV_DENYLIST_EXACT {
             assert!(
                 validate_agent_env_key(key).is_err(),
+                "{key} must be denied in agent env"
+            );
+        }
+        for &prefix in AGENT_ENV_DENYLIST_PREFIXES {
+            let key = format!("{prefix}INJECTED");
+            assert!(
+                validate_agent_env_key(&key).is_err(),
                 "{key} must be denied in agent env"
             );
         }

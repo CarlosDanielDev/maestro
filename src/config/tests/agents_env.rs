@@ -29,51 +29,18 @@ env = {{ LD_PRELOAD = "/evil-1029.so" }}
 
 #[test]
 fn config_validate_rejects_denylisted_env_keys() {
-    let denylisted = [
-        "PATH",
-        "LD_LIBRARY_PATH",
-        "DYLD_INSERT_LIBRARIES",
-        "NODE_OPTIONS",
-        "PYTHONPATH",
-        "PERL5LIB",
-        "BASH_ENV",
-        "ENV",
-        "IFS",
-        "GIT_SSH_COMMAND",
-        "GIT_CONFIG",
-        // Extended for #1107 (post-merge security review, CWE-426 / CWE-454):
-        // loader/interpreter env vars that still reached agent children.
-        "PERL5OPT",
-        "PERLLIB",
-        "PYTHONHOME",
-        "PYTHONSTARTUP",
-        "RUBYOPT",
-        "RUBYLIB",
-        "JAVA_TOOL_OPTIONS",
-        "JDK_JAVA_OPTIONS",
-        "CLASSPATH",
-        "CPATH",
-        "NODE_PATH",
-        "NODE_EXTRA_CA_CERTS",
-        "SHELLOPTS",
-        "BASHOPTS",
-        "ZDOTDIR",
-        "GEM_HOME",
-        "GEM_PATH",
-        "BUNDLE_GEMFILE",
-        "HOME",
-        "SHELL",
-        // Parity additions (judge review on #1107): CA-trust redirection
-        // (same effect as NODE_EXTRA_CA_CERTS) and toolchain-home
-        // redirection (same effect as GEM_HOME).
-        "SSL_CERT_FILE",
-        "SSL_CERT_DIR",
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "NPM_CONFIG_PREFIX",
-        "PERL5DB",
-    ];
-    for key in denylisted {
+    // Derived from the validation denylist consts (single source of truth):
+    // every exact key and one synthetic key per denied prefix must fail
+    // config load, and the error must name the key.
+    let mut denylisted: Vec<String> = crate::util::validation::AGENT_ENV_DENYLIST_EXACT
+        .iter()
+        .map(|key| key.to_string())
+        .collect();
+    for prefix in crate::util::validation::AGENT_ENV_DENYLIST_PREFIXES {
+        denylisted.push(format!("{prefix}X"));
+    }
+    for key in &denylisted {
+        let key = key.as_str();
         let toml = format!(
             r#"{MINIMAL_TOML}
 [agents]
