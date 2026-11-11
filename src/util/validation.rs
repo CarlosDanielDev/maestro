@@ -78,6 +78,17 @@ pub(crate) const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
     "RUSTUP_HOME",
     "NPM_CONFIG_PREFIX",
     "PERL5DB",
+    // CA-trust and TLS-verification family (second judge pass on #1107):
+    // REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE / AWS_CA_BUNDLE / PIP_CERT swap
+    // the CA store for their toolchains (same class as SSL_CERT_FILE),
+    // NODE_TLS_REJECT_UNAUTHORIZED=0 disables TLS verification outright,
+    // SSLKEYLOGFILE exports TLS session keys to an attacker-readable path.
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "AWS_CA_BUNDLE",
+    "NODE_TLS_REJECT_UNAUTHORIZED",
+    "SSLKEYLOGFILE",
+    "PIP_CERT",
 ];
 
 /// Key prefixes rejected in `[agents.<id>].env` (covers LD_PRELOAD,
@@ -343,8 +354,8 @@ mod tests {
         // because they follow the const. Bump the floor only when a key is
         // removed on purpose.
         assert!(
-            AGENT_ENV_DENYLIST_EXACT.len() >= 34,
-            "agent env denylist unexpectedly shrank ({} entries < 34)",
+            AGENT_ENV_DENYLIST_EXACT.len() >= 40,
+            "agent env denylist unexpectedly shrank ({} entries < 40)",
             AGENT_ENV_DENYLIST_EXACT.len()
         );
         // Derived from the denylist consts (single source of truth): a key

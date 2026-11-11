@@ -70,6 +70,32 @@ above touches the const only.
 
 ---
 
+## CA-trust and TLS family (second judge pass)
+
+- `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE` / `AWS_CA_BUNDLE` / `PIP_CERT` —
+  swap the CA store for the Python requests / curl / AWS SDK / pip
+  toolchains; same CA-injection class as `SSL_CERT_FILE` (MITM of agent API
+  traffic, credential theft).
+- `NODE_TLS_REJECT_UNAUTHORIZED` — `=0` disables TLS certificate validation
+  outright in Node children; worst of the CA family (no CA swap needed).
+- `SSLKEYLOGFILE` — writes TLS session keys to a file an attacker-readable
+  path controls; recorded traffic becomes decryptable.
+
+---
+
+## Known limit
+
+A denylist is enumerative: three review passes in a row (#1029's AC list, the
+#1107 post-merge security review, two judge passes on PR #1126) each surfaced
+sibling keys the previous list missed. The structural fix is inverting the
+gate to an allowlist of vendor prefixes plus a small explicit set — tracked
+in [#1135](https://github.com/CarlosDanielDev/maestro/issues/1135). It is
+deliberately **not** done in this PR: an inversion breaks every non-prefixed
+legit var and needs its own migration story. Until then, new dangerous keys
+are one const row away (both test tables derive from the const).
+
+---
+
 ## Consequences
 
 - 34 exact keys + 3 prefixes denied as of this ADR; new dangerous keys are a
