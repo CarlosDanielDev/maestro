@@ -10,7 +10,7 @@ sha256 = "4e1bdc9f1e5bff1a2383b5002085b8f35adc9160a4838de3e012431fb923f4cb"
 [files.".claude/commands/implement.md"]
 provider = "claude"
 command = "implement"
-sha256 = "b9251a3fb31ca266c6b3c83ebba28c964d71311bc41b789eca600b6c349d60f6"
+sha256 = "976a29e7416a51e97032ee78b8e30f75062c3e4132cbbcfa29fd13db63ee4535"
 
 [files.".claude/commands/plan-feature.md"]
 provider = "claude"
