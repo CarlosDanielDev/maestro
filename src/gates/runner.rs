@@ -21,7 +21,7 @@ impl GateCheck for GateRunner {
     }
 }
 
-fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
+pub(super) fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
     match gate {
         CompletionGate::TestsPass { command } => {
             let Some((program, args)) = crate::util::parse_command(command) else {
@@ -88,7 +88,10 @@ fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
 
         CompletionGate::Command { name, command, .. } => {
             // CWE-78: parse into argv and exec directly — no `sh -c`, so a
-            // command string can't inject via `;`, `|`, `$(...)`, backticks, etc.
+            // command string can't inject via `;`, `|`, command substitution, backticks,
+            // etc. That leaves the residual argv[0] risk: the program name
+            // itself is repo-chosen. Untrusted workspaces never reach this
+            // arm — `UntrustedGateRunner` fails these gates closed (#1045).
             let Some((program, args)) = crate::util::parse_command(command) else {
                 return GateResult::fail(name, "Empty or malformed command");
             };
@@ -116,17 +119,6 @@ fn run_single_gate(gate: &CompletionGate, worktree_path: &Path) -> GateResult {
             }
         }
     }
-}
-
-#[allow(dead_code)]
-pub fn all_gates_passed(results: &[GateResult]) -> bool {
-    results.iter().all(|r| r.passed)
-}
-
-/// Check if all *required* gate results passed.
-/// Non-required gate failures are advisory only.
-pub fn all_required_gates_passed(results: &[(GateResult, bool)]) -> bool {
-    results.iter().all(|(r, required)| r.passed || !required)
 }
 
 #[cfg(test)]
@@ -159,6 +151,7 @@ impl GateCheck for MockGateRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gates::types::{all_gates_passed, all_required_gates_passed};
     use std::fs;
 
     #[test]

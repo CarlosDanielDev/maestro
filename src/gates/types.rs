@@ -217,3 +217,14 @@ mod tests {
         assert_eq!(rt.message, "2 warnings found");
     }
 }
+
+#[allow(dead_code)]
+pub fn all_gates_passed(results: &[GateResult]) -> bool {
+    results.iter().all(|r| r.passed)
+}
+
+/// Check if all *required* gate results passed.
+/// Non-required gate failures are advisory only.
+pub fn all_required_gates_passed(results: &[(GateResult, bool)]) -> bool {
+    results.iter().all(|(r, required)| r.passed || !required)
+}

@@ -29,6 +29,21 @@ impl App {
             }
             if let Some(managed) = self.pool.get_active_mut(id) {
                 let session_label = session_label(&managed.session);
+                // Workspace trust gate (#1045): a config-supplied agent
+                // command must not execute while the workspace is untrusted.
+                if !self.workspace_trusted
+                    && self
+                        .config
+                        .as_ref()
+                        .is_some_and(crate::config::trust::has_executable_agent_config)
+                {
+                    self.activity_log.push_simple(
+                        session_label,
+                        "Spawn blocked: workspace config is not trusted and declares agent commands (run `maestro trust`)".into(),
+                        LogLevel::Error,
+                    );
+                    continue;
+                }
                 self.activity_log.push_simple(
                     session_label.clone(),
                     "Spawning session...".into(),
@@ -196,5 +211,158 @@ mod tests {
             !app.completion_summary_dismissed,
             "add_session must reset completion_summary_dismissed to false"
         );
+    }
+}
+
+/// Workspace trust gate tests (#1045) — unix-only: marker probe is a script.
+#[cfg(all(test, unix))]
+mod workspace_trust_tests {
+    use super::*;
+    use crate::commands::setup::setup_app_from_config_with_trust;
+    use crate::config::{Config, LoadedConfig};
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+    use std::path::PathBuf;
+
+    fn spawn_app(tag: &str, workspace_trusted: bool) -> (App, PathBuf, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join(format!("agent-{tag}.sh"));
+        let marker = dir.path().join(format!("marker-{tag}.txt"));
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ntouch '{}'\necho agent-ready\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let toml_body = format!(
+            r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+command = "{}"
+"#,
+            script.display()
+        );
+        let config: Config = toml::from_str(&toml_body).unwrap();
+        let app = setup_app_from_config_with_trust(
+            LoadedConfig {
+                config,
+                path: dir.path().join("maestro.toml"),
+            },
+            StateStore::new(dir.path().join(format!("state-{tag}.json"))),
+            Box::new(MockWorktreeManager::new()),
+            None,
+            false,
+            workspace_trusted,
+        );
+        (app, marker, dir)
+    }
+
+    #[tokio::test]
+    async fn workspace_trust_untrusted_spawn_with_config_command_is_blocked() {
+        let (mut app, marker, dir) = spawn_app("untrusted", false);
+        let session = crate::session::types::Session::new(
+            "probe".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(7),
+            None,
+        );
+
+        app.add_session(session).await.unwrap();
+
+        assert!(
+            !marker.exists(),
+            "untrusted config command must not be executed by session spawn"
+        );
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("Spawn blocked")),
+            "activity log must record the block"
+        );
+        let _ = dir;
+    }
+}
+
+/// Judge round (#1045): a built-in command plus repo-supplied environment
+/// additions must still gate the spawn — env reaches the child process.
+#[cfg(all(test, unix))]
+mod workspace_trust_env_tests {
+    use super::*;
+    use crate::commands::setup::setup_app_from_config_with_trust;
+    use crate::config::{Config, LoadedConfig};
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+
+    #[tokio::test]
+    async fn workspace_trust_env_only_agent_spawn_blocked_untrusted() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_body = r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "q"
+[agents.q]
+kind = "qwen"
+command = "qwen"
+env = { MAESTRO_HOSTILE = "1" }
+"#;
+        let config: Config = toml::from_str(toml_body).unwrap();
+        let mut app = setup_app_from_config_with_trust(
+            LoadedConfig {
+                config,
+                path: dir.path().join("maestro.toml"),
+            },
+            StateStore::new(dir.path().join("state.json")),
+            Box::new(MockWorktreeManager::new()),
+            None,
+            false,
+            false,
+        );
+        let session = crate::session::types::Session::new(
+            "probe".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(9),
+            None,
+        );
+
+        app.add_session(session).await.unwrap();
+
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("Spawn blocked")),
+            "env-only agent must gate the spawn: {:?}",
+            app.activity_log
+                .entries()
+                .iter()
+                .map(|e| e.message.clone())
+                .collect::<Vec<_>>()
+        );
+        let _ = dir;
     }
 }

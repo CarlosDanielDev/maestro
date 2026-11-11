@@ -4,7 +4,7 @@
 
 use super::App;
 use super::helpers::build_completion_gates;
-use crate::gates::runner;
+use crate::gates::types;
 use crate::session::types::GateResultEntry;
 use crate::tui::activity_log::LogLevel;
 use anyhow::Result;
@@ -40,7 +40,7 @@ impl App {
             .into_iter()
             .zip(gates.iter().map(|g| g.is_required()))
             .collect();
-        let all_pass = runner::all_required_gates_passed(&paired);
+        let all_pass = types::all_required_gates_passed(&paired);
 
         if let Some(s) = self.pool.get_session_mut(session_id) {
             s.gate_results = paired

@@ -34,6 +34,18 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         Err(e) if e.to_string().starts_with("No maestro.toml found") => None,
         Err(e) => return Err(e),
     };
+
+    // Workspace trust gate (#1045): before the TUI paints, show the
+    // executable-bearing config values (if any) and ask for consent. The
+    // decision is re-read from the trust store when the app is assembled
+    // below, so a just-recorded consent takes effect immediately.
+    if let Some(loaded) = &loaded {
+        crate::config::trust::ensure_interactive_consent_with_default_store(
+            &loaded.path,
+            &loaded.config,
+        );
+    }
+
     let config = loaded.as_ref().map(|l| l.config.clone());
 
     let repo_name = config

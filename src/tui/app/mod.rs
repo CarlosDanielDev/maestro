@@ -131,6 +131,11 @@ pub struct App {
     pub ci_poller: CiPoller,
     pub(crate) last_work_tick: Instant,
     pub plugin_runner: Option<PluginRunner>,
+    /// Workspace trust gate (#1045): false when the repo config declares
+    /// executable-bearing keys and the user has not trusted this workspace.
+    /// Config-supplied commands (plugins, gates, review, agent spawn) are
+    /// skipped while false; built-in defaults keep working.
+    pub workspace_trusted: bool,
     pub help_state: Option<crate::tui::help::HelpOverlayState>,
     pub cached_mode_km: Option<crate::tui::navigation::keymap::ModeKeyMap>,
     pub cached_mode_km_key: (TuiMode, Option<crate::session::types::SessionStatus>, bool),
@@ -350,6 +355,7 @@ impl App {
             ci_poller: CiPoller::default(),
             last_work_tick: Instant::now(),
             plugin_runner: None,
+            workspace_trusted: true,
             help_state: None,
             cached_mode_km: None,
             cached_mode_km_key: (TuiMode::Overview, None, false),

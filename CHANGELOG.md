@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Workspace trust gate** — maestro no longer executes commands declared by a repo-local `maestro.toml` (agent `command`/`env`/`extra_args`, `plugins[].run`, completion-gate commands, `gates.test_command`, `review` commands) until you trust that workspace. First encounter shows the values verbatim and asks for consent; the record lives in your maestro config dir (`trusted.toml`, keyed by canonical path + config hash) so a repo can never grant trust to itself, and any config change re-prompts. `maestro trust` / `maestro untrust` manage the record; untrusted workspaces skip plugins, executing gates, review dispatch, and config-supplied agent commands (`maestro doctor` still probes the built-in `claude`/`codex`/`qwen`/`opencode` binaries from PATH). (#1045)
+
 ## [0.31.5] - 2026-08-15
 
 ### Added

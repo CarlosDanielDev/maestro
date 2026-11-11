@@ -54,6 +54,20 @@ pub trait SchedulerRunner: Send + Sync {
 /// The scheduler-to-dispatch wiring itself is exercised end-to-end here.
 pub(crate) struct ProductionSchedulerRunner;
 
+/// Workspace trust gate (#1045): `maestro team launch` dispatches
+/// config-built providers headlessly, so an untrusted workspace whose
+/// config declares executable values must refuse before any dispatch.
+/// Testable seam — `run_issue` feeds it the config it just loaded.
+fn ensure_launch_config_trusted(
+    loaded: Option<&crate::config::LoadedConfig>,
+) -> Result<(), String> {
+    let Some(loaded) = loaded else {
+        return Ok(()); // no repo config: builtin defaults only
+    };
+    crate::config::trust::refuse_untrusted_with_default_store(&loaded.path, &loaded.config)
+        .map_err(|e| e.to_string())
+}
+
 #[async_trait::async_trait]
 impl SchedulerRunner for ProductionSchedulerRunner {
     async fn run_issue(
@@ -67,7 +81,12 @@ impl SchedulerRunner for ProductionSchedulerRunner {
 
         use crate::agent_provider::AgentProviderFactory;
 
-        let config = Config::find_and_load().ok().map(Arc::new);
+        // Workspace trust gate (#1045): headless dispatch drives
+        // config-built providers; refuse an untrusted workspace here,
+        // mirroring `maestro run`'s refusal.
+        let loaded = Config::find_and_load_with_path().ok();
+        ensure_launch_config_trusted(loaded.as_ref())?;
+        let config = loaded.map(|l| Arc::new(l.config));
         let default_model = config
             .as_ref()
             .map(|c| c.sessions.default_model.clone())
@@ -224,5 +243,70 @@ pub fn print_launch_outcome(outcome: &LaunchOutcome) {
     );
     for (issue, reason) in &outcome.failed {
         println!("  ✗ #{issue}: {reason}");
+    }
+}
+
+/// Workspace trust gate tests (#1045) — judge round: headless team launch
+/// must refuse an untrusted workspace whose config declares executable
+/// values, exactly like `maestro run`.
+#[cfg(test)]
+mod workspace_trust_tests {
+    use super::ensure_launch_config_trusted;
+    use crate::config::{Config, LoadedConfig};
+    use std::path::PathBuf;
+
+    fn loaded_from(toml_body: &str, tag: &str) -> (tempfile::TempDir, LoadedConfig) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("maestro.toml");
+        std::fs::write(&path, toml_body).unwrap();
+        let config: Config = toml::from_str(toml_body).unwrap();
+        let _ = tag;
+        (
+            dir,
+            LoadedConfig {
+                config,
+                path: std::path::PathBuf::from(path.display().to_string()),
+            },
+        )
+    }
+
+    #[test]
+    fn workspace_trust_team_launch_refuses_untrusted_executable_config() {
+        let body = r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+command = "./scripts/helper"
+"#;
+        let (_dir, loaded) = loaded_from(body, "untrusted");
+        let result = ensure_launch_config_trusted(Some(&loaded));
+        assert!(result.is_err(), "untrusted launch must refuse");
+        assert!(result.unwrap_err().contains("not trusted"));
+    }
+
+    #[test]
+    fn workspace_trust_team_launch_allows_trusted_or_minimal_config() {
+        let minimal = r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+"#;
+        assert!(ensure_launch_config_trusted(None).is_ok());
+        let (_dir, loaded) = loaded_from(minimal, "minimal");
+        assert!(ensure_launch_config_trusted(Some(&loaded)).is_ok());
     }
 }

@@ -90,6 +90,29 @@ pub fn run_all_checks(config: Option<&Config>) -> DoctorReport {
     run_all_checks_for_agent(config, None)
 }
 
+/// Full preflight against an explicit base dir and trust store (#1045).
+/// `base` is the directory `maestro.toml` / `.maestro/config.toml` would
+/// live in; the workspace trust decision is read from `store`. Test and
+/// embedding entrypoint — production callers use [`run_all_checks`].
+pub fn run_all_checks_with(
+    config: Option<&Config>,
+    agent_id: Option<&str>,
+    base: &std::path::Path,
+    store: &crate::config::trust::TrustStore,
+) -> DoctorReport {
+    let decision = config
+        .map(|cfg| {
+            let path = if base.join("maestro.toml").exists() {
+                base.join("maestro.toml")
+            } else {
+                base.join(".maestro/config.toml")
+            };
+            crate::config::trust::evaluate(&path, cfg, store)
+        })
+        .unwrap_or(crate::config::trust::TrustDecision::Trusted);
+    run_all_checks_for_agent_with_trust(config, agent_id, decision)
+}
+
 /// Print a formatted report to stdout.
 pub fn print_report(report: &DoctorReport) {
     println!();
@@ -173,6 +196,20 @@ pub fn validate_provider_setup_for_agent(
 }
 
 pub fn run_all_checks_for_agent(config: Option<&Config>, agent_id: Option<&str>) -> DoctorReport {
+    let decision = config
+        .map(crate::config::trust::evaluate_current_dir)
+        .unwrap_or(crate::config::trust::TrustDecision::Trusted);
+    run_all_checks_for_agent_with_trust(config, agent_id, decision)
+}
+
+/// [`run_all_checks_for_agent`] with an explicit workspace trust decision
+/// (#1045). Untrusted runs skip config-supplied agent commands instead of
+/// executing them.
+pub fn run_all_checks_for_agent_with_trust(
+    config: Option<&Config>,
+    agent_id: Option<&str>,
+    workspace_trust: crate::config::trust::TrustDecision,
+) -> DoctorReport {
     let provider_kind = config.map(|cfg| cfg.provider.kind).unwrap_or_default();
     let mut checks = vec![
         check_git_installed(),
@@ -204,9 +241,16 @@ pub fn run_all_checks_for_agent(config: Option<&Config>, agent_id: Option<&str>)
     checks.push(check_agent_config_schema());
 
     if let (Some(cfg), None) = (config, agent_id) {
-        checks.extend(check_configured_agent_runtimes(cfg));
+        checks.extend(check_configured_agent_runtimes_with_trust(
+            cfg,
+            workspace_trust,
+        ));
     } else {
-        checks.push(check_agent_runtime_for_agent(config, agent_id));
+        checks.push(check_agent_runtime_for_agent_with_trust(
+            config,
+            agent_id,
+            workspace_trust,
+        ));
     }
 
     if provider_kind == ProviderKind::Github
@@ -593,20 +637,35 @@ fn check_claude_cli() -> CheckResult {
     build_claude_cli_result(health.available, &sanitize(&version))
 }
 
-fn check_agent_runtime_for_agent(config: Option<&Config>, agent_id: Option<&str>) -> CheckResult {
+fn check_agent_runtime_for_agent_with_trust(
+    config: Option<&Config>,
+    agent_id: Option<&str>,
+    workspace_trust: crate::config::trust::TrustDecision,
+) -> CheckResult {
     let Some(config) = config else {
         return check_claude_cli();
     };
 
     match config.resolve_agent(agent_id) {
-        Ok(resolved) => check_resolved_agent_runtime(resolved, CheckSeverity::Required),
+        Ok(resolved) => check_resolved_agent_runtime_with_trust(
+            resolved,
+            CheckSeverity::Required,
+            workspace_trust,
+        ),
         Err(err) => CheckResult::fail("agent config", err.to_string(), CheckSeverity::Required),
     }
 }
 
-fn check_configured_agent_runtimes(config: &Config) -> Vec<CheckResult> {
+fn check_configured_agent_runtimes_with_trust(
+    config: &Config,
+    workspace_trust: crate::config::trust::TrustDecision,
+) -> Vec<CheckResult> {
     if config.agents.entries.is_empty() {
-        return vec![check_agent_runtime_for_agent(Some(config), None)];
+        return vec![check_agent_runtime_for_agent_with_trust(
+            Some(config),
+            None,
+            workspace_trust,
+        )];
     }
 
     config
@@ -621,7 +680,7 @@ fn check_configured_agent_runtimes(config: &Config) -> Vec<CheckResult> {
                 } else {
                     CheckSeverity::Optional
                 };
-                check_resolved_agent_runtime(resolved, severity)
+                check_resolved_agent_runtime_with_trust(resolved, severity, workspace_trust)
             }
             Err(err) => CheckResult::fail(
                 format!("agent {id}"),
@@ -636,10 +695,37 @@ fn check_configured_agent_runtimes(config: &Config) -> Vec<CheckResult> {
         .collect()
 }
 
-fn check_resolved_agent_runtime(
+fn check_resolved_agent_runtime_with_trust(
     resolved: ResolvedAgentConfig,
     severity: CheckSeverity,
+    workspace_trust: crate::config::trust::TrustDecision,
 ) -> CheckResult {
+    // Workspace trust gate (#1045): an untrusted config's own `command`
+    // override is never executed — health probes stay limited to the
+    // built-in default binary names. Path-separator commands are rejected
+    // outright as defense in depth.
+    if workspace_trust == crate::config::trust::TrustDecision::Untrusted
+        && let Some(command) = resolved
+            .config
+            .command
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+        && !crate::config::trust::is_builtin_agent_binary(command)
+    {
+        let message = if command.contains('/') || command.contains('\\') {
+            format!(
+                "rejected: config command `{command}` contains a path separator and the \
+                 workspace config is not trusted"
+            )
+        } else {
+            format!(
+                "skipped: config command `{command}` not probed; workspace config is not \
+                 trusted (run `maestro trust`)"
+            )
+        };
+        return CheckResult::fail(format!("agent {}", resolved.id), message, severity);
+    }
     match resolved.config.kind {
         AgentKind::Claude => check_agent_health(
             format!("agent {}", resolved.id),
@@ -1293,7 +1379,10 @@ command = "missing-opencode"
         .expect("write config");
         let config = Config::load(&config_path).expect("load config");
 
-        let checks = check_configured_agent_runtimes(&config);
+        let checks = check_configured_agent_runtimes_with_trust(
+            &config,
+            crate::config::trust::TrustDecision::Trusted,
+        );
 
         assert_eq!(checks.len(), 2);
         assert!(checks.iter().any(|check| check.name == "agent claude"
@@ -1455,6 +1544,134 @@ allow_remote_auth = true
             result.message.contains("MAESTRO_ALLOW_REMOTE_AUTH"),
             "expected the operator switch in the notice, got: {}",
             result.message
+        );
+    }
+}
+
+/// Workspace trust gate tests (#1045) — unix-only because the marker probe
+/// is a shell script.
+#[cfg(all(test, unix))]
+mod workspace_trust_tests {
+    use super::*;
+    use crate::config::trust::TrustStore;
+    use std::path::PathBuf;
+
+    fn workspace(tag: &str) -> (tempfile::TempDir, PathBuf, PathBuf, TrustStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let scripts = dir.path().join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        let script = scripts.join("helper");
+        let marker = dir.path().join(format!("marker-{tag}.txt"));
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\ntouch '{}'\necho helper-1.0\n", marker.display()),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let toml_body = format!(
+            r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+command = "{}"
+"#,
+            script.display()
+        );
+        let config_path = dir.path().join("maestro.toml");
+        std::fs::write(&config_path, &toml_body).unwrap();
+        let store = TrustStore::at(dir.path().join(format!("trusted-{tag}.toml")));
+        (dir, config_path, marker, store)
+    }
+
+    fn run(config: Option<&Config>, base: &std::path::Path, store: &TrustStore) -> DoctorReport {
+        run_all_checks_with(config, None, base, store)
+    }
+
+    #[test]
+    fn workspace_trust_untrusted_doctor_does_not_execute_config_command() {
+        let (dir, config_path, marker, store) = workspace("untrusted");
+        let config = Config::load(&config_path).unwrap();
+        let report = run(Some(&config), dir.path(), &store);
+
+        assert!(
+            !marker.exists(),
+            "untrusted config command must not be executed by doctor"
+        );
+        let agent_check = report
+            .checks
+            .iter()
+            .find(|c| c.name == "agent claude")
+            .expect("agent claude check must be present");
+        assert!(!agent_check.passed, "untrusted probe must not report OK");
+        assert!(
+            agent_check.message.contains("not trusted"),
+            "message: {}",
+            agent_check.message
+        );
+    }
+
+    #[test]
+    fn workspace_trust_trusted_doctor_executes_config_command() {
+        let (dir, config_path, marker, store) = workspace("trusted");
+        let config = Config::load(&config_path).unwrap();
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        store
+            .record(&config_path, &crate::config::trust::content_hash(&content))
+            .unwrap();
+
+        run(Some(&config), dir.path(), &store);
+
+        assert!(
+            marker.exists(),
+            "trusted config command must be executed by doctor (health probe)"
+        );
+    }
+
+    #[test]
+    fn workspace_trust_untrusted_builtin_default_is_still_probed() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_body = r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+command = "claude"
+"#;
+        let config_path = dir.path().join("maestro.toml");
+        std::fs::write(&config_path, toml_body).unwrap();
+        let config = Config::load(&config_path).unwrap();
+        let store = TrustStore::at(dir.path().join("trusted-builtin.toml"));
+
+        let report = run(Some(&config), dir.path(), &store);
+
+        let agent_check = report
+            .checks
+            .iter()
+            .find(|c| c.name == "agent claude")
+            .expect("agent claude check must be present");
+        assert!(
+            !agent_check.message.contains("not trusted"),
+            "built-in default binaries must still be probed: {}",
+            agent_check.message
         );
     }
 }

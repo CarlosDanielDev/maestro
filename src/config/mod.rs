@@ -31,6 +31,7 @@ pub mod schema;
 mod sessions;
 mod toml_edit_helpers;
 pub mod transport_warning;
+pub mod trust;
 mod tui;
 mod turboquant;
 mod views;

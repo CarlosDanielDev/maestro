@@ -13,6 +13,7 @@ pub mod slash;
 mod status;
 pub mod sync_templates;
 pub mod team;
+pub mod trust;
 pub mod turboquant;
 
 pub use clean::cmd_clean;

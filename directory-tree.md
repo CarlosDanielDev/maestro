@@ -141,6 +141,7 @@ maestro/
 │   │   │   ├── runner.rs                  # SyncRunner, SyncFs trait, RealFs (rejects symlinks), SyncOutcome, SyncTemplatesError; --check re-renders + diffs; --dry-run prints planned writes; OpenCode uses NullRules (skipped with tracing::warn!)
 │   │   │   └── runner_tests.rs            # FakeFs + integration tests for SyncRunner covering all flag combinations and provider filtering
 │   │   ├── turboquant.rs                  # cmd_turboquant(): run TurboQuant compression diagnostics
+│   │   ├── trust.rs                       # cmd_trust()/cmd_untrust(): workspace trust gate CLI (#1045); shows executable-bearing config values verbatim, records/revokes consent in the user-level trust store; --yes skips the prompt
 │   │   └── team.rs                        # cmd_team(): dispatch arm for all `maestro team` subcommands; SchedulerRunner trait + ProductionSchedulerRunner impl for headless `team launch --yes` execution; routes TeamAction variants to list/new/explain/manage/launch handlers; `ProductionSchedulerRunner::run_issue` now injects a factory with the populated `agent_providers` map via `agent_provider_map::build_agent_provider_map()`  [Issue #665, #1000]
 │   ├── config/                            # maestro.toml parsing — split from the former config.rs monolith  [Issue #29, #40, #41, #43, #38, #143, #275, #437, #473, #525, #710, #712, #713, #718]
 │   │   ├── mod.rs                         # Module facade; re-exports all Config types (ModelsConfig, GatesConfig, ReviewConfig, ViewsConfig, etc.); re-exports run_startup_migration() and MigrationResult from migrate.rs; find_and_load_with_path() / find_and_load_in_with_path(); legacy find_and_load() / find_and_load_in() shims; Config::save dispatches via fs::metadata (NotFound/empty → save_fresh; otherwise → save_into_existing); Config::save_into_str(&self, original_text) comment-preserving overlay merge via overlay.rs; Config::save_into_existing(path) atomic-write wrapper; Config::save_fresh(path) fast path for new installs; pub mod schema; mod toml_edit_helpers  [Issue #712, #713, #718]
@@ -195,6 +196,9 @@ maestro/
 │   │   │       ├── mod.rs                 # Registry module facade; re-exports the combined table slice
 │   │   │       ├── core.rs                # Core registry entries: adapt, agents, budget, gates, github, models, modes, notifications, plugins, project, review, runtime, sessions, tui, turboquant, views
 │   │   │       └── extras.rs              # Extended registry entries (experimental, flags)
+│   │   ├── trust.rs                       # Workspace trust gate (#1045): content_hash (SHA-256), ExecutableFinding inventory of all executable-bearing config keys (agents command/env/extra_args, plugins[].run, completion_gates, gates.test_command, review commands; built-in claude/codex/qwen/opencode binaries exempt), TrustStore (trusted.toml in the platform config dir, keyed by canonical path + content hash), evaluate()/refuse_untrusted(); consent + refusal helpers split into trust_consent.rs, tests in trust_tests.rs
+│   │   ├── trust_consent.rs               # Consent surface for the trust gate (#1045): ensure_interactive_consent() prints findings verbatim and prompts [y/N] (non-TTY fails closed), refuse_untrusted() bails with the verbatim value list; default-store wrappers resolve TrustStore::with_default_path()
+│   │   ├── trust_tests.rs                 # Sidecar tests for trust.rs + trust_consent.rs (#1045): hash stability, inventory coverage per key family, store roundtrip/revoke/replace, evaluate re-prompt on file change, refusal listing
 │   │   ├── tui.rs                         # TuiConfig (theme, mascot_style "sprite"|"ascii", default "sprite")
 │   │   └── turboquant.rs                  # TurboQuantConfig
 │   ├── continuous.rs                      # ContinuousModeState and ContinuousFailure structs; state machine for --continuous / -C flag: auto-advances to next ready issue, pauses loop on failure waiting for user decision (skip / retry / quit)  [Issue #85]
@@ -279,7 +283,9 @@ maestro/
 │   ├── gates/                             # Completion gates framework  [Phase 3, Issue #40]
 │   │   ├── mod.rs                         # Module exports
 │   │   ├── types.rs                       # Gate types: TestsPass, FileExists, FileContains, PrCreated, Command; is_required(), display_name(), from_config_entry(); GateResult derives Serialize/Deserialize for session persistence  [Issue #104]
-│   │   └── runner.rs                      # Gate evaluation runner; all_required_gates_passed(); Command match arm
+│   │   ├── runner.rs                      # Gate evaluation runner; Command match arm
+│   │   └── untrusted.rs                   # UntrustedGateRunner (#1045): fail-closed GateCheck for untrusted workspaces — TestsPass/Command gates fail with a "not trusted" message, FileExists/FileContains still run; trust-store hash sensitivity tests
+
 │   ├── provider/                          # Multi-provider abstraction layer  [Issue #29]
 │   │   ├── mod.rs                         # create_provider factory, detect_provider_from_remote
 │   │   ├── types.rs                       # ProviderKind enum; provider-agnostic Issue, PullRequest, CiStatus, CheckRun, MergeMethod, ReviewEvent types
@@ -1048,6 +1054,8 @@ maestro/
 | `src/agent_provider/types.rs` | `AgentProvider` trait + `AgentProviderId`, `AgentProviderKind`, `AgentOutputFormat`, `ParserBinding`; `AgentRequest.force` flag; `AgentProviderDefinition.num_ctx`; `template_rules()` default method returns `null_rules()`; providers with dedicated rules (e.g. Claude, Codex, HTTP-generic) override this method (Issues #701, #703, #704, #705, #774, #775) |
 | `src/agent_provider/types_tests.rs` | Provider trait unit tests; Qwen/Ollama/MiniMax moved out of inherit-NullRules list; 3 override tests assert `http_generic_rules()` returned by each provider (Issues #703, #704, #705) |
 | `src/config/transport_warning.rs` | Pre-cutoff startup warning for the headless claude transport (fires from 2026-05-15; `Clock` trait + `MockClock`; `MAESTRO_SILENCE_TRANSPORT_WARN=1` read by the caller) (Issue #750) |
+| `src/config/trust.rs` | Workspace trust gate (#1045): SHA-256 `content_hash`, `inventory()` of executable-bearing keys (agent command/env/extra_args, plugins[].run, completion gates, gates.test_command, review commands — built-in `claude`/`codex`/`qwen`/`opencode` binaries exempt), `TrustStore` persisted in the platform config dir keyed by canonical path + content hash (direnv-allow model; repo config can never self-grant), `evaluate()`/`has_config_supplied_commands()` |
+| `docs/workspace-trust.md` | Workspace trust user guide (#1045): gated key families, untrusted-mode behavior per surface, `maestro trust`/`untrust` usage, record location and re-prompt-on-change semantics |
 | `src/work/activity.rs` | `InteractionActivity` enum — pinned `[INTERACTION]`/`[TEARDOWN]` dashboard line formats + `emit_tracing()`; `ActivitySeverity`; consumed via `ActivityLog::emit_interaction` and `screens::interaction::activity_action` (Issue #742) |
 | `docs/guides/claude-transport.md` | Headless vs interactive transport user guide + 2026-06-15 cutoff migration (Issue #752) |
 | `docs/guides/interaction-sessions.md` | Interaction sessions user guide: launch combos, keymap, lifecycle, troubleshooting (Issue #743) |

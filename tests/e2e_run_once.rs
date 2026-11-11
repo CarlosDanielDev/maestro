@@ -57,6 +57,27 @@ command = {command}
     fs::write(dir.join("maestro.toml"), toml).expect("write maestro.toml");
 }
 
+/// Workspace trust gate (#1045): the fixture config declares a stub
+/// `command`, so the workspace must be trusted before `maestro run` will
+/// execute it. Runs `maestro trust --yes` with the same hermetic HOME so
+/// the record lands where the run below reads it.
+fn trust_workspace(dir: &Path, home: &Path) {
+    let output = Command::new(env!("CARGO_BIN_EXE_maestro"))
+        .args(["trust", "--yes"])
+        .current_dir(dir)
+        .env("HOME", home)
+        .env("XDG_CACHE_HOME", home.join("cache"))
+        .env("XDG_DATA_HOME", home.join("data"))
+        .env("XDG_CONFIG_HOME", home.join("config"))
+        .output()
+        .expect("spawn maestro trust");
+    assert!(
+        output.status.success(),
+        "maestro trust failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// Runs `maestro run --prompt hello --once --skip-doctor` in `dir`, killing it after `RUN_TIMEOUT`.
 ///
 /// Hermetic: HOME and XDG dirs point under `home`, and inherited `MAESTRO_*` vars are removed,
@@ -134,6 +155,7 @@ fn run_once_completes_offline_against_stub_agent() {
     let home = TempDir::new().expect("temp home dir");
     let stub = install_stub(work.path());
     write_config(work.path(), &stub);
+    trust_workspace(work.path(), home.path());
 
     let status = run_maestro_once(work.path(), home.path());
     let stdout = read_or_empty(&work.path().join("stdout.txt"));
