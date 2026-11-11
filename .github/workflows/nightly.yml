@@ -5,6 +5,11 @@ on:
     - cron: '0 3 * * *'
   workflow_dispatch:
 
+# Least privilege by default (#1040): jobs that need more than read access
+# must opt in with a job-level permissions block.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -17,15 +22,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@aa7c1c80a07a27a84c0aa76d0cef0aad3830e330 # v2.7.8
       # `taiki-e/install-action` fetches the prebuilt cargo-mutants binary
       # from its GitHub release and caches it across runs, replacing the
       # previous `cargo install cargo-mutants --locked` step that re-built
       # the binary on every nightly (~5–10 min/shard).
       - name: Install cargo-mutants
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-mutants
       # --baseline=skip is mandatory when sharding.
@@ -40,7 +45,7 @@ jobs:
         run: cargo mutants --shard ${{ matrix.shard }}/8 --no-shuffle --baseline=skip
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mutants-shard-${{ matrix.shard }}
           path: mutants.out/
@@ -49,12 +54,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: nightly
           components: miri, rust-src
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@aa7c1c80a07a27a84c0aa76d0cef0aad3830e330 # v2.7.8
       # Tests that spawn subprocesses or hit FFI need
       # #[cfg_attr(miri, ignore)] annotations — add them as miri
       # surfaces failures during warmup.
@@ -62,7 +67,7 @@ jobs:
         run: cargo miri test --package maestro --test '*' 2>&1 | tee miri.log
       - name: Upload miri log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: miri-log
           path: miri.log

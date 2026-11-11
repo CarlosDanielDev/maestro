@@ -6,6 +6,14 @@ name: Nightly Freshness
 # a weekly cadence because every PR was paying the cost of a check that
 # describes the health of `nightly.yml`, not the PR itself.
 
+# Least privilege by default (#1040): jobs that need more than read access
+# must opt in with a job-level permissions block. The freshness composite
+# lists workflow runs via the Actions API, which needs actions: read —
+# without it the scheduled run 403s (PR CI never exercises that path).
+permissions:
+  contents: read
+  actions: read
+
 on:
   schedule:
     - cron: '0 4 * * 1'
@@ -16,7 +24,7 @@ jobs:
     name: nightly-freshness
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/freshness
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
