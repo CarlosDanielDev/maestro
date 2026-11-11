@@ -63,6 +63,15 @@ fn config_validate_rejects_denylisted_env_keys() {
         "BUNDLE_GEMFILE",
         "HOME",
         "SHELL",
+        // Parity additions (judge review on #1107): CA-trust redirection
+        // (same effect as NODE_EXTRA_CA_CERTS) and toolchain-home
+        // redirection (same effect as GEM_HOME).
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "NPM_CONFIG_PREFIX",
+        "PERL5DB",
     ];
     for key in denylisted {
         let toml = format!(

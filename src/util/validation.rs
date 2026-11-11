@@ -66,6 +66,18 @@ const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
     // settings.json` hooks, and a forged SHELL is exec'd by `$SHELL` callers.
     "HOME",
     "SHELL",
+    // Parity additions (judge review on #1107): SSL_CERT_FILE / SSL_CERT_DIR
+    // swap the CA trust store for OpenSSL-based children (same effect as
+    // NODE_EXTRA_CA_CERTS); CARGO_HOME / RUSTUP_HOME redirect the Rust
+    // toolchain (config.toml rustc override, fake toolchains, same effect as
+    // GEM_HOME); NPM_CONFIG_PREFIX redirects global node module resolution;
+    // PERL5DB is the debugger startup payload for a PERL5OPT-enabled run.
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "NPM_CONFIG_PREFIX",
+    "PERL5DB",
 ];
 
 /// Key prefixes rejected in `[agents.<id>].env` (covers LD_PRELOAD,
@@ -360,6 +372,13 @@ mod tests {
             "BUNDLE_GEMFILE",
             "HOME",
             "SHELL",
+            // Parity additions (judge review on #1107).
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "CARGO_HOME",
+            "RUSTUP_HOME",
+            "NPM_CONFIG_PREFIX",
+            "PERL5DB",
         ] {
             assert!(
                 validate_agent_env_key(key).is_err(),
