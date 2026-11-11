@@ -30,7 +30,9 @@ SUPPORTED_VERSION = 1
 # downstream step reads is validated here. The parser is the first line of
 # defense; scripts/gatekeeper-remediation.sh re-checks labels at the sink.
 ALLOWED_STATUSES = frozenset({"PASS", "FAIL"})
-ALLOWED_TASK_TYPES = frozenset({"implementation", "docs", "refactor"})
+# test-only comes from the `type:test` label (subagent-gatekeeper.md) and
+# carries distinct harness semantics: QA blueprint skipped, RED/GREEN fires.
+ALLOWED_TASK_TYPES = frozenset({"implementation", "docs", "refactor", "test-only"})
 ALLOWED_LABELS = frozenset({"needs-info", "blocked", "needs-contract"})
 LABEL_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,48}$")
 COMMENT_BODY_MAX_LEN = 10000
@@ -123,6 +125,12 @@ def extract_report(text: str) -> dict:
         raise ParseError("dor must be a JSON object")
     if not isinstance(dor.get("passed"), bool):
         raise ParseError("dor.passed must be a boolean")
+
+    reasons = report.get("reasons")
+    if not isinstance(reasons, list):
+        # Consumed by the gate via `jq '.reasons[]'`; rejecting it here
+        # avoids a confusing jq error downstream.
+        raise ParseError("reasons must be a list")
 
     remediation = report.get("remediation")
     _validate_remediation(remediation)

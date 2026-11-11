@@ -106,6 +106,13 @@ class TestStrictSchema(unittest.TestCase):
         with self.assertRaises(ParseError):
             extract_report(_legacy_fence(_report(task_type="chore")))
 
+    def test_accepts_test_only_task_type(self):
+        # subagent-gatekeeper.md derives test-only from the type:test label;
+        # the harness gives it distinct semantics (QA blueprint skipped,
+        # RED/GREEN fires). The parser must not abort that flow.
+        report = extract_report(_legacy_fence(_report(task_type="test-only")))
+        self.assertEqual(report["task_type"], "test-only")
+
     def test_rejects_missing_task_type(self):
         payload = _report()
         del payload["task_type"]
@@ -120,6 +127,19 @@ class TestStrictSchema(unittest.TestCase):
 
     def test_rejects_non_bool_dor_passed(self):
         payload = _report(dor={"passed": "true"})
+        with self.assertRaises(ParseError):
+            extract_report(_legacy_fence(payload))
+
+    def test_rejects_missing_reasons(self):
+        # reasons is consumed by the gate (jq '.reasons[]'); a report without
+        # it must be rejected here, not crash jq downstream.
+        payload = _report()
+        del payload["reasons"]
+        with self.assertRaises(ParseError):
+            extract_report(_legacy_fence(payload))
+
+    def test_rejects_non_list_reasons(self):
+        payload = _report(reasons="blocker open")
         with self.assertRaises(ParseError):
             extract_report(_legacy_fence(payload))
 
@@ -203,13 +223,23 @@ class CliTests(unittest.TestCase):
         self.assertEqual(parsed["status"], "PASS")
 
     def test_cli_rejects_injection_labels(self):
-        # Exact fixture from issue #1038: flag-like and non-allowlisted labels
-        # must make the parser exit non-zero, not pass through unchanged.
+        # Valid report except labels: the injection fixture from issue #1038
+        # must be rejected at the label allowlist, not at an earlier schema
+        # check, so the fixture carries a valid status/task_type/dor.
         result = self._run(
-            _legacy_fence({"report_version": 1, "remediation": {"labels_to_add": ["--add-assignee", "x"]}})
+            _legacy_fence({
+                "report_version": 1,
+                "status": "PASS",
+                "task_type": "implementation",
+                "dor": {"passed": True},
+                "reasons": [],
+                "remediation": {"labels_to_add": ["--add-assignee", "x"]},
+            })
         )
         self.assertEqual(result.returncode, 1)
-        self.assertIn("parse-gatekeeper-report", result.stderr)
+        # "--add-assignee" fails the label pattern before the allowlist runs;
+        # asserting the label-check message proves rejection happened there.
+        self.assertIn("invalid label '--add-assignee'", result.stderr)
 
     def test_cli_reports_error_on_malformed_input(self):
         result = self._run("no fence here")
