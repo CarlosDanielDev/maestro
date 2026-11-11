@@ -2,7 +2,9 @@
 //! Moved out of `config/mod.rs` to keep that file under the 400-line cap (#1065).
 
 pub(super) fn has_legacy_azure_devops_flag(content: &str) -> bool {
-    let Ok(value) = content.parse::<toml::Value>() else {
+    // Whole-document parse: callers pass full maestro.toml files, and toml 1.x
+    // `Value::from_str` only accepts a bare value.
+    let Ok(value) = toml::from_str::<toml::Value>(content) else {
         return false;
     };
     matches!(
