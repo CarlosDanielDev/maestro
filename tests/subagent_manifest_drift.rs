@@ -36,9 +36,8 @@ fn collect_disk_slugs(dir: &Path) -> BTreeSet<String> {
 fn collect_manifest_slugs(path: &Path) -> BTreeSet<String> {
     let bytes =
         std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let value: toml::Value = bytes
-        .parse()
-        .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+    let value: toml::Value =
+        toml::from_str(&bytes).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
     let arr = value
         .get("subagents")
         .and_then(|x| x.as_array())

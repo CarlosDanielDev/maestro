@@ -97,7 +97,7 @@ fn apply_permutation(target_arr: &mut ArrayOfTables, new_arr: &ArrayOfTables, pe
                 None => continue,
             },
         };
-        table.set_position(base_position.saturating_add(offset));
+        table.set_position(Some(base_position.saturating_add(offset as isize)));
         target_arr.push(table);
     }
 }
