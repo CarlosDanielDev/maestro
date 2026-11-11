@@ -17,13 +17,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --verbose
+      - run: cargo test --verbose --locked
       # Snapshot enforcement: fails if any insta snapshot has an unreviewed diff.
       # Run `cargo insta review` locally to approve snapshot changes before pushing.
       - name: Check snapshots
         env:
           INSTA_UPDATE: "no"
-        run: cargo test --verbose 2>&1 | (! grep -q "pending snapshots")
+        run: cargo test --verbose --locked 2>&1 | (! grep -q "pending snapshots")
+      # Lockfile currency (#1039): a --locked build must leave the committed
+      # Cargo.lock untouched. Any diff means the lockfile went stale relative
+      # to the manifests, and CI would have audited/built a graph the repo
+      # never resolved.
+      - name: Check Cargo.lock is current
+        run: git diff --exit-code Cargo.lock
 
   clippy:
     name: Clippy
@@ -34,7 +40,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -- -D warnings -A dead_code
+      - run: cargo clippy --locked -- -D warnings -A dead_code
 
   sync-templates:
     # Drift gate for canonical command templates (#706).
@@ -57,7 +63,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Check docs/configuration.md is in sync
-        run: cargo test --quiet docs_gen_no_drift --bin maestro
+        run: cargo test --quiet --locked docs_gen_no_drift --bin maestro
 
   fmt:
     name: Format
@@ -103,8 +109,9 @@ jobs:
     # unmaintained advisories as deny.toml — we can't upgrade without upstream
     # ratatui / syntect / reqwest moving first.
     #
-    # Cargo.lock is .gitignored (binary-crate convention in this repo), so we
-    # generate it on the runner before the audit-check action runs.
+    # Cargo.lock is committed (#1039): cargo-audit scans the same resolved
+    # graph that ships in release binaries, not one resolved fresh on the
+    # runner.
     #
     # RUSTSEC-2026-0002 (lru "unsound") is gated by ratatui 0.29 → 0.30 bump;
     # see deny.toml for the per-advisory rationale.
@@ -115,7 +122,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo generate-lockfile
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run cargo audit

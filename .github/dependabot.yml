@@ -1,0 +1,9 @@
+# Dependabot keeps the committed Cargo.lock current (#1039): weekly cargo
+# update PRs, gated by CI's --locked checks so a refreshed lockfile must
+# still describe a buildable graph.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
