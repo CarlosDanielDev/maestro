@@ -88,7 +88,7 @@ impl PluginRunner {
 
         let result = tokio::time::timeout(self.timeout, async {
             // CWE-78: parse into argv and exec directly — no `sh -c`, so a
-            // plugin `run` string can't inject via `;`, `|`, `$(...)`, etc.
+            // plugin `run` string can't inject via `;`, `|`, command substitution, etc.
             // Residual argv[0] risk: the program name is repo-chosen. When
             // the workspace is untrusted, `execute_plugin` skips before this
             // point (#1045).
