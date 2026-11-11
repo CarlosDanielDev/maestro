@@ -39,6 +39,33 @@ const AGENT_ENV_DENYLIST_EXACT: &[&str] = &[
     "ENV",
     "IFS",
     "GIT_SSH_COMMAND",
+    // #1107 (post-merge security review, CWE-426 / CWE-454): loader and
+    // interpreter env vars not covered by #1029's initial list.
+    "PERL5OPT",
+    "PERLLIB",
+    "PYTHONHOME",
+    "PYTHONSTARTUP",
+    "RUBYOPT",
+    "RUBYLIB",
+    "JAVA_TOOL_OPTIONS",
+    "JDK_JAVA_OPTIONS",
+    "CLASSPATH",
+    "CPATH",
+    "NODE_PATH",
+    "NODE_EXTRA_CA_CERTS",
+    "SHELLOPTS",
+    "BASHOPTS",
+    "ZDOTDIR",
+    "GEM_HOME",
+    "GEM_PATH",
+    "BUNDLE_GEMFILE",
+    // HOME and SHELL are denied even though a setup may legitimately want to
+    // redirect an agent's home or login shell: agent children inherit
+    // maestro's own environment, so that belongs in the parent environment —
+    // a repo-local toml override of HOME can hijack `$HOME/.claude/
+    // settings.json` hooks, and a forged SHELL is exec'd by `$SHELL` callers.
+    "HOME",
+    "SHELL",
 ];
 
 /// Key prefixes rejected in `[agents.<id>].env` (covers LD_PRELOAD,
@@ -312,6 +339,27 @@ mod tests {
             "IFS",
             "GIT_SSH_COMMAND",
             "GIT_CONFIG_COUNT",
+            // Extended for #1107 (post-merge security review, CWE-426 / CWE-454).
+            "PERL5OPT",
+            "PERLLIB",
+            "PYTHONHOME",
+            "PYTHONSTARTUP",
+            "RUBYOPT",
+            "RUBYLIB",
+            "JAVA_TOOL_OPTIONS",
+            "JDK_JAVA_OPTIONS",
+            "CLASSPATH",
+            "CPATH",
+            "NODE_PATH",
+            "NODE_EXTRA_CA_CERTS",
+            "SHELLOPTS",
+            "BASHOPTS",
+            "ZDOTDIR",
+            "GEM_HOME",
+            "GEM_PATH",
+            "BUNDLE_GEMFILE",
+            "HOME",
+            "SHELL",
         ] {
             assert!(
                 validate_agent_env_key(key).is_err(),

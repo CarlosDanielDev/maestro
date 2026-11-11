@@ -41,6 +41,28 @@ fn config_validate_rejects_denylisted_env_keys() {
         "IFS",
         "GIT_SSH_COMMAND",
         "GIT_CONFIG",
+        // Extended for #1107 (post-merge security review, CWE-426 / CWE-454):
+        // loader/interpreter env vars that still reached agent children.
+        "PERL5OPT",
+        "PERLLIB",
+        "PYTHONHOME",
+        "PYTHONSTARTUP",
+        "RUBYOPT",
+        "RUBYLIB",
+        "JAVA_TOOL_OPTIONS",
+        "JDK_JAVA_OPTIONS",
+        "CLASSPATH",
+        "CPATH",
+        "NODE_PATH",
+        "NODE_EXTRA_CA_CERTS",
+        "SHELLOPTS",
+        "BASHOPTS",
+        "ZDOTDIR",
+        "GEM_HOME",
+        "GEM_PATH",
+        "BUNDLE_GEMFILE",
+        "HOME",
+        "SHELL",
     ];
     for key in denylisted {
         let toml = format!(
