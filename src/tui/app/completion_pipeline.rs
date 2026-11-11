@@ -450,6 +450,24 @@ impl App {
                 }
                 if let Some(managed) = self.pool.get_active_mut(id) {
                     let label = session_label(&managed.session);
+                    // Workspace trust gate (#1045): same rule as
+                    // `add_session` — this tick-path promotion funnel
+                    // spawns queued sessions once slots free, so an
+                    // untrusted workspace must not execute a config-
+                    // supplied agent command/env here either.
+                    if !self.workspace_trusted
+                        && self
+                            .config
+                            .as_ref()
+                            .is_some_and(crate::config::trust::has_executable_agent_config)
+                    {
+                        self.activity_log.push_simple(
+                            label,
+                            "Spawn blocked: workspace config is not trusted and declares agent commands (run `maestro trust`)".into(),
+                            LogLevel::Error,
+                        );
+                        continue;
+                    }
                     self.activity_log.push_simple(
                         label.clone(),
                         "Spawning session...".into(),
@@ -742,5 +760,89 @@ mod tests {
         } else {
             panic!("session must still be findable after hook fires");
         }
+    }
+}
+
+/// Workspace trust gate tests (#1045) — judge round: the tick-path
+/// promotion funnel (check_completions → try_promote → managed.spawn)
+/// must respect the gate, not only add_session.
+#[cfg(all(test, unix))]
+mod workspace_trust_tests {
+    use super::*;
+    use crate::commands::setup::setup_app_from_config_with_trust;
+    use crate::config::{Config, LoadedConfig};
+    use crate::session::types::Session;
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+
+    #[tokio::test]
+    async fn workspace_trust_tick_promotion_spawn_blocked_untrusted() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("agent.sh");
+        let marker = dir.path().join("marker.txt");
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\ntouch '{}'\necho ready\n", marker.display()),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let toml_body = format!(
+            r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+max_concurrent = 1
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+command = "{}"
+"#,
+            script.display()
+        );
+        let config: Config = toml::from_str(&toml_body).unwrap();
+        let mut app = setup_app_from_config_with_trust(
+            LoadedConfig {
+                config,
+                path: dir.path().join("maestro.toml"),
+            },
+            StateStore::new(dir.path().join("state.json")),
+            Box::new(MockWorktreeManager::new()),
+            None,
+            false,
+            false,
+        );
+        for issue in [1u64, 2] {
+            app.pool.enqueue(Session::new(
+                "probe".into(),
+                "opus".into(),
+                "orchestrator".into(),
+                Some(issue),
+                None,
+            ));
+        }
+
+        // The tick funnel itself promotes and spawns (slot 1 free): with the
+        // guard this must block and log; without it the config command runs.
+        app.check_completions().await.unwrap();
+
+        assert!(
+            !marker.exists(),
+            "tick-path promotion must not spawn an untrusted config command"
+        );
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("Spawn blocked")),
+            "tick-path block must be visible in the activity log"
+        );
+        let _ = dir;
     }
 }

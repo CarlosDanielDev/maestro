@@ -143,7 +143,7 @@ fn inventory_empty_and_has_executable_keys_false_for_minimal_config() {
 }
 
 #[test]
-fn has_config_supplied_commands_ignores_builtin_defaults() {
+fn has_executable_agent_config_ignores_builtin_defaults_and_gates_env_extra_args() {
     let builtin_only = config_from(
         r#"
             [project]
@@ -162,8 +162,51 @@ fn has_config_supplied_commands_ignores_builtin_defaults() {
             command = "claude"
             "#,
     );
-    assert!(!has_config_supplied_commands(&builtin_only));
-    assert!(has_config_supplied_commands(&executable()));
+    let env_only = config_from(
+        r#"
+            [project]
+            repo = "owner/repo"
+            base_branch = "main"
+            [sessions]
+            [budget]
+            per_session_usd = 5.0
+            total_usd = 50.0
+            alert_threshold_pct = 80
+            [notifications]
+            [agents]
+            default = "claude"
+            [agents.claude]
+            kind = "claude"
+            command = "claude"
+            [agents.claude.env]
+            TOKEN = "hostile"
+            "#,
+    );
+    let extra_args_only = config_from(
+        r#"
+            [project]
+            repo = "owner/repo"
+            base_branch = "main"
+            [sessions]
+            [budget]
+            per_session_usd = 5.0
+            total_usd = 50.0
+            alert_threshold_pct = 80
+            [notifications]
+            [agents]
+            default = "claude"
+            [agents.claude]
+            kind = "claude"
+            command = "claude"
+            extra_args = ["--dangerous"]
+            "#,
+    );
+    assert!(!has_executable_agent_config(&builtin_only));
+    // Judge round on #1045: env/extra_args reach the child even with a
+    // built-in command, so they gate the spawn on their own.
+    assert!(has_executable_agent_config(&env_only));
+    assert!(has_executable_agent_config(&extra_args_only));
+    assert!(has_executable_agent_config(&executable()));
     // Built-in names must not appear in the consent prompt either.
     assert!(
         inventory(&builtin_only)

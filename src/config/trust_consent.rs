@@ -18,10 +18,22 @@ pub fn ensure_interactive_consent(
     config: &crate::config::Config,
     store: &TrustStore,
 ) -> TrustDecision {
+    // Read the file once, up front: the recorded hash must cover exactly
+    // the content whose values are shown below, not a re-read after the
+    // prompt (judge nit on #1045). Unreadable-but-existing fails closed.
+    let shown_content = if config_path.exists() {
+        std::fs::read_to_string(config_path).ok()
+    } else {
+        None
+    };
     let decision = evaluate(config_path, config, store);
     if decision == TrustDecision::Trusted {
         return decision;
     }
+    let Some(shown_content) = shown_content else {
+        eprintln!("Cannot read the workspace config; staying untrusted.");
+        return TrustDecision::Untrusted;
+    };
     let findings = inventory(config);
     eprintln!();
     eprintln!("This workspace's maestro config declares executable commands:");
@@ -45,8 +57,7 @@ pub fn ensure_interactive_consent(
     }
     let answer = answer.trim().to_ascii_lowercase();
     if answer == "y" || answer == "yes" {
-        let content = std::fs::read_to_string(config_path).unwrap_or_default();
-        if let Err(e) = store.record(config_path, &content_hash(&content)) {
+        if let Err(e) = store.record(config_path, &content_hash(&shown_content)) {
             eprintln!("Could not record trust: {e}");
             return TrustDecision::Untrusted;
         }

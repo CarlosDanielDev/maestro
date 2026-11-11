@@ -23,6 +23,7 @@ use uuid::Uuid;
 use super::App;
 use crate::session::interaction::{TurnEvent, TurnRecord, TurnRole, TurnState};
 use crate::session::types::{SessionMode, SessionStatus, StreamEvent};
+use crate::tui::activity_log::LogLevel;
 
 impl App {
     /// Dispatch one interaction turn through the normal pipeline. First
@@ -82,6 +83,26 @@ impl App {
         );
 
         let tx = self.pool.event_tx();
+        // Workspace trust gate (#1045): interaction sessions spawn through
+        // this funnel without ever passing `add_session`, so both the first
+        // turn (spawn) and follow-ups consult the gate here.
+        if !self.workspace_trusted
+            && self
+                .config
+                .as_ref()
+                .is_some_and(crate::config::trust::has_executable_agent_config)
+        {
+            self.activity_log.push_simple(
+                format!("#{issue_number}"),
+                "Interaction blocked: workspace config is not trusted and declares agent commands (run `maestro trust`)".into(),
+                LogLevel::Error,
+            );
+            self.fail_interaction_turn(
+                issue_number,
+                "blocked: workspace config is not trusted (run `maestro trust`)".to_string(),
+            );
+            return;
+        }
         let result = match self.pool.get_active_mut(id) {
             Some(managed) if first_turn => managed.spawn(tx).await,
             Some(managed) => managed.send_followup_turn(prompt, tx),
@@ -264,4 +285,78 @@ fn streaming_agent_turn(turns: &mut [TurnRecord]) -> Option<&mut TurnRecord> {
     turns
         .last_mut()
         .filter(|t| t.role == TurnRole::Agent && t.finished_at.is_none())
+}
+
+/// Workspace trust gate tests (#1045) — judge round: interactive chat
+/// sessions spawn through dispatch_interaction_turn, which must respect
+/// the gate.
+#[cfg(all(test, unix))]
+mod workspace_trust_tests {
+    use super::*;
+    use crate::commands::setup::setup_app_from_config_with_trust;
+    use crate::config::{Config, LoadedConfig};
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+
+    #[tokio::test]
+    async fn workspace_trust_interaction_turn_blocked_untrusted() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("agent.sh");
+        let marker = dir.path().join("marker.txt");
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\ntouch '{}'\necho ready\n", marker.display()),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let toml_body = format!(
+            r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "claude"
+[agents.claude]
+kind = "claude"
+command = "{}"
+"#,
+            script.display()
+        );
+        let config: Config = toml::from_str(&toml_body).unwrap();
+        let mut app = setup_app_from_config_with_trust(
+            LoadedConfig {
+                config,
+                path: dir.path().join("maestro.toml"),
+            },
+            StateStore::new(dir.path().join("state.json")),
+            Box::new(MockWorktreeManager::new()),
+            None,
+            false,
+            false,
+        );
+        app.pool
+            .create_interaction_session(42, false, "opus".into(), "orchestrator".into(), None);
+
+        app.dispatch_interaction_turn(42, "hello".into(), "opus".into())
+            .await;
+
+        assert!(
+            !marker.exists(),
+            "interaction first turn must not spawn an untrusted config command"
+        );
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("not trusted")),
+            "block must be visible in the activity log"
+        );
+        let _ = dir;
+    }
 }

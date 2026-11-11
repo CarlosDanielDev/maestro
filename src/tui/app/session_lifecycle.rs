@@ -35,7 +35,7 @@ impl App {
                     && self
                         .config
                         .as_ref()
-                        .is_some_and(crate::config::trust::has_config_supplied_commands)
+                        .is_some_and(crate::config::trust::has_executable_agent_config)
                 {
                     self.activity_log.push_simple(
                         session_label,
@@ -295,6 +295,73 @@ command = "{}"
                 .iter()
                 .any(|e| e.message.contains("Spawn blocked")),
             "activity log must record the block"
+        );
+        let _ = dir;
+    }
+}
+
+/// Judge round (#1045): a built-in command plus repo-supplied environment
+/// additions must still gate the spawn — env reaches the child process.
+#[cfg(all(test, unix))]
+mod workspace_trust_env_tests {
+    use super::*;
+    use crate::commands::setup::setup_app_from_config_with_trust;
+    use crate::config::{Config, LoadedConfig};
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+
+    #[tokio::test]
+    async fn workspace_trust_env_only_agent_spawn_blocked_untrusted() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_body = r#"[project]
+repo = "owner/repo"
+base_branch = "main"
+[sessions]
+[budget]
+per_session_usd = 5.0
+total_usd = 50.0
+alert_threshold_pct = 80
+[notifications]
+[agents]
+default = "q"
+[agents.q]
+kind = "qwen"
+command = "qwen"
+env = { MAESTRO_HOSTILE = "1" }
+"#;
+        let config: Config = toml::from_str(toml_body).unwrap();
+        let mut app = setup_app_from_config_with_trust(
+            LoadedConfig {
+                config,
+                path: dir.path().join("maestro.toml"),
+            },
+            StateStore::new(dir.path().join("state.json")),
+            Box::new(MockWorktreeManager::new()),
+            None,
+            false,
+            false,
+        );
+        let session = crate::session::types::Session::new(
+            "probe".into(),
+            "opus".into(),
+            "orchestrator".into(),
+            Some(9),
+            None,
+        );
+
+        app.add_session(session).await.unwrap();
+
+        assert!(
+            app.activity_log
+                .entries()
+                .iter()
+                .any(|e| e.message.contains("Spawn blocked")),
+            "env-only agent must gate the spawn: {:?}",
+            app.activity_log
+                .entries()
+                .iter()
+                .map(|e| e.message.clone())
+                .collect::<Vec<_>>()
         );
         let _ = dir;
     }

@@ -12,6 +12,9 @@ pub fn cmd_trust(yes: bool) -> Result<()> {
     let store = TrustStore::with_default_path()?;
 
     let findings = inventory(&loaded.config);
+    // Hash the content as read now — the same text whose values are shown
+    // below — not a re-read after the prompt (judge nit on #1045).
+    let shown_content = std::fs::read_to_string(&loaded.path).unwrap_or_default();
     if findings.is_empty() {
         println!(
             "This workspace's maestro config declares no executable commands; nothing to trust."
@@ -42,7 +45,7 @@ pub fn cmd_trust(yes: bool) -> Result<()> {
         }
     }
 
-    let content = std::fs::read_to_string(&loaded.path).unwrap_or_default();
+    let content = shown_content;
     store.record(&loaded.path, &content_hash(&content))?;
     println!(
         "Workspace trusted. The record is stored outside this repo and is re-checked \

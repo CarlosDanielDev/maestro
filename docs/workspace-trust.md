@@ -52,3 +52,14 @@ config path plus the SHA-256 of the file content. The record:
 - is removed by `maestro untrust`.
 
 This is the same model direnv uses for `.envrc` allowances.
+
+## Scope and limitations
+
+The decision is made once per process, at startup (TUI launch, `maestro run`,
+`maestro doctor`, or `maestro team launch`). A config file that changes
+while maestro is already running is picked up on the next start — session
+spawns, plugins, gates, and review all run under the startup decision until
+then. Live re-evaluation is a deliberate non-goal for now: gates read the
+live config while the trust decision does not, so restart maestro after
+changing a repo's config you have already trusted (or after `maestro
+untrust`).

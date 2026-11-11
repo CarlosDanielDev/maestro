@@ -117,16 +117,19 @@ pub fn has_executable_keys(config: &crate::config::Config) -> bool {
     !inventory(config).is_empty()
 }
 
-/// True when any enabled agent overrides its binary with a repo-chosen
-/// command (i.e. session spawn would execute a program the config picked).
-/// Built-in default binary names are exempt (see
-/// [`is_builtin_agent_binary`]).
-pub fn has_config_supplied_commands(config: &crate::config::Config) -> bool {
+/// True when any enabled agent's config would influence a spawned child
+/// process: a repo-chosen `command`, repo-supplied environment additions,
+/// or `extra_args`. Built-in default binary names stay exempt, matching
+/// [`inventory`] — but environment/extra_args alone are enough to gate a
+/// spawn (judge round on #1045: env reaches the child even when the
+/// command is a built-in binary name).
+pub fn has_executable_agent_config(config: &crate::config::Config) -> bool {
     config.agents.entries.values().any(|agent| {
         agent.enabled
-            && agent.command.as_deref().is_some_and(|c| {
+            && (agent.command.as_deref().is_some_and(|c| {
                 !(c.trim().is_empty() || agent.kind.is_subprocess() && is_builtin_agent_binary(c))
-            })
+            }) || !agent.env.is_empty()
+                || !agent.extra_args.is_empty())
     })
 }
 
@@ -281,8 +284,13 @@ pub fn evaluate(
     if !has_executable_keys(config) {
         return TrustDecision::Trusted;
     }
-    let Ok(content) = std::fs::read_to_string(config_path) else {
+    if !config_path.exists() {
+        // No on-disk repo config — the struct came from memory (tests).
         return TrustDecision::Trusted;
+    }
+    let Ok(content) = std::fs::read_to_string(config_path) else {
+        // Exists but unreadable: fail closed (judge nit on #1045).
+        return TrustDecision::Untrusted;
     };
     if store.is_trusted(config_path, &content_hash(&content)) {
         TrustDecision::Trusted
