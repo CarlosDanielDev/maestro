@@ -131,13 +131,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         app.github_client = Some(create_provider(&provider_config)?);
         app
     } else {
-        App::new(
-            store,
-            DEFAULT_MAX_CONCURRENT,
-            worktree_mgr,
-            "bypassPermissions".into(),
-            Vec::new(),
-        )
+        no_config_app(store, worktree_mgr)
     };
 
     // Wire MiniMax quota for the token dashboard's Quota column (#769).
@@ -160,4 +154,42 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
         .push(crate::tui::app::TuiCommand::FetchSuggestionData);
 
     crate::tui::run(app).await
+}
+
+/// App for repos without a `maestro.toml` (#1036). Seeded with the serde
+/// default permission mode — bypass stays opt-in.
+fn no_config_app(
+    store: StateStore,
+    worktree_mgr: Box<dyn crate::session::worktree::WorktreeManager + Send>,
+) -> App {
+    App::new(
+        store,
+        DEFAULT_MAX_CONCURRENT,
+        worktree_mgr,
+        crate::config::default_permission_mode(),
+        Vec::new(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashboard_fallback_without_config_does_not_bypass() {
+        // #1036: with no maestro.toml, the dashboard must still start in
+        // the safe permission mode; bypass is opt-in only.
+        let tmp = std::env::temp_dir().join(format!(
+            "maestro-1036-dashboard-fallback-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let app = no_config_app(
+            StateStore::new(tmp),
+            Box::new(crate::session::worktree::MockWorktreeManager::new()),
+        );
+        assert_eq!(
+            app.session_config.permission_mode, "default",
+            "no-config fallback must not default to bypassPermissions"
+        );
+    }
 }

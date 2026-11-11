@@ -66,6 +66,7 @@ pub(crate) use sessions::default_max_prompt_history;
 pub use sessions::{
     CompletionGateEntry, CompletionGatesConfig, ConflictConfig, ConflictPolicy,
     ContextOverflowConfig, HollowRetryConfig, HollowRetryPolicy, SessionsConfig,
+    default_permission_mode,
 };
 #[allow(unused_imports)]
 pub use tui::{Density, LayoutConfig, LayoutMode, TuiConfig};

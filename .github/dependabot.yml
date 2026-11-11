@@ -7,3 +7,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # Keep the SHA pins in .github/workflows/ current (#1040): Dependabot
+  # resolves the version comment to the latest tag and updates both the
+  # commit SHA and the comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

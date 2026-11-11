@@ -48,6 +48,15 @@ if [ -z "$issue_number" ]; then
   exit 1
 fi
 
+# HOOK-3: the issue number reaches gh, file paths, and (before #1041) a
+# python -c body. Reject anything that is not digits before any of that.
+case "$issue_number" in
+  ''|*[!0-9]*)
+    echo "implement-gates: issue number must be digits-only, got: '$issue_number'" >&2
+    exit 1
+    ;;
+esac
+
 # Gate 1: must be inside a git repo.
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "implement-gates: not inside a git repository" >&2
@@ -67,8 +76,15 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 
 # Gate 4: fetch and cache the issue JSON.
-GATE_LOG_DIR="/tmp/maestro-${issue_number}-$(date +%s)"
-mkdir -p "$GATE_LOG_DIR"
+# HOOK-2: the gate dir is created with mktemp -d under $SENTINEL_DIR
+# (resolved by sentinel-path.sh away from world-writable /tmp): unpredictable
+# name, mode 0700, and mktemp never reuses an existing path.
+# shellcheck disable=SC1091
+source "$hook_dir/sentinel-path.sh"
+if ! GATE_LOG_DIR="$(mktemp -d "${SENTINEL_DIR}/maestro-${issue_number}-XXXXXX")"; then
+  echo "implement-gates: failed to create gate log dir under $SENTINEL_DIR" >&2
+  exit 1
+fi
 echo "gate log dir: $GATE_LOG_DIR"
 
 if ! gh issue view "$issue_number" \
@@ -88,7 +104,7 @@ fi
 export GATE_LOG_DIR
 
 # Gate 5: issue must not be CLOSED.
-issue_state=$(python3 -c "import json; print(json.load(open('$GATE_LOG_DIR/issue.json'))['state'])")
+issue_state=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["state"])' "$GATE_LOG_DIR/issue.json")
 if [ "$issue_state" = "CLOSED" ]; then
   echo "implement-gates: Issue #${issue_number} is CLOSED. Re-open or pick a different issue." >&2
   exit 1
@@ -232,10 +248,8 @@ fi
 
 # Sentinel: persist GATE_LOG_DIR so subsequent Bash tool calls can recover it
 # without re-exporting (each Bash call is a fresh shell). Overwritten on next
-# run. Path resolved by sentinel-path.sh into $XDG_RUNTIME_DIR or
-# $HOME/.cache/maestro to avoid the /tmp symlink-attack vector on multi-user
-# Linux. /implement Step 2 walks the same resolution chain on read.
-# shellcheck disable=SC1091
-source "$hook_dir/sentinel-path.sh"
+# run. $SENTINEL_PATH was resolved by sentinel-path.sh at Gate 4 (same
+# XDG_RUNTIME_DIR / $HOME/.cache/maestro chain that keeps the gate dir off
+# world-writable /tmp). /implement Step 2 walks the same chain on read.
 echo -n "$GATE_LOG_DIR" > "$SENTINEL_PATH"
 echo "sentinel: $SENTINEL_PATH"

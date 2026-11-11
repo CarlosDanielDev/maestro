@@ -188,3 +188,20 @@ fn cmd_init_detects_azdo_remote_and_reprompts_invalid_organization() {
     assert_eq!(loaded.provider.kind, ProviderKind::AzureDevops);
     assert!(loaded.experimental.azure_devops);
 }
+
+#[test]
+fn cmd_init_writes_default_permission_mode_not_bypass() {
+    // #1036: scaffolded projects must not ship with bypassPermissions on.
+    let dir = tempdir().unwrap();
+    let detector = FakeProjectDetector::new(vec![DetectedStack::Rust]);
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("fresh ok");
+    assert_eq!(code, 0);
+
+    let body = fs::read_to_string(dir.path().join("maestro.toml")).unwrap();
+    assert!(body.contains("permission_mode = \"default\""), "{body}");
+    assert!(
+        !body.contains("\npermission_mode = \"bypassPermissions\"")
+            && !body.starts_with("permission_mode = \"bypassPermissions\""),
+        "scaffolded maestro.toml must not assign an uncommented bypassPermissions: {body}"
+    );
+}

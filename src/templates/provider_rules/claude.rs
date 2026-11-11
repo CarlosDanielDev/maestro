@@ -43,6 +43,7 @@ impl TemplateProviderRules for ClaudeRules {
     }
 
     fn hook_gate(&self, script: &str, args: &str) -> Result<String, TemplateError> {
+        super::validate_hook_gate(script, args)?;
         if args.is_empty() {
             Ok(format!("bash .maestro/hooks/{script}"))
         } else {
@@ -104,6 +105,24 @@ mod tests {
             .hook_gate("implement-gates.sh", "$ISSUE_NUMBER")
             .expect("ok");
         assert_eq!(out, "bash .maestro/hooks/implement-gates.sh $ISSUE_NUMBER");
+    }
+
+    #[test]
+    fn hook_gate_rejects_parent_dir_script() {
+        let err = ClaudeRules.hook_gate("../evil.sh", "").unwrap_err();
+        assert!(
+            matches!(err, TemplateError::InvalidPlaceholder { .. }),
+            "expected InvalidPlaceholder, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn hook_gate_rejects_shell_metacharacters_in_args() {
+        let err = ClaudeRules.hook_gate("a.sh", "; rm -rf /").unwrap_err();
+        assert!(
+            matches!(err, TemplateError::InvalidPlaceholder { .. }),
+            "expected InvalidPlaceholder, got {err:?}"
+        );
     }
 
     #[test]

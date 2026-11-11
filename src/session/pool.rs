@@ -60,7 +60,7 @@ impl SessionPool {
             worktree_mgr,
             file_claims: FileClaimManager::new(),
             event_tx,
-            permission_mode: "bypassPermissions".to_string(),
+            permission_mode: "default".to_string(),
             allowed_tools: Vec::new(),
             provider: Arc::new(ClaudeProvider::default()),
             agent_providers: HashMap::new(),
@@ -1194,6 +1194,14 @@ pub(in crate::session) mod tests {
         assert_eq!(promoted.len(), 2);
         assert_eq!(pool.active_count(), 2);
         assert_eq!(pool.queued_count(), 0);
+    }
+
+    #[test]
+    fn new_pool_defaults_to_safe_permission_mode() {
+        // #1036: the pool's built-in default must match the serde config
+        // default ("default"); bypassPermissions is opt-in only.
+        let pool = make_pool(2);
+        assert_eq!(pool.permission_mode, "default");
     }
 
     #[test]

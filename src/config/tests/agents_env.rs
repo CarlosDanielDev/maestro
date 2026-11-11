@@ -29,20 +29,18 @@ env = {{ LD_PRELOAD = "/evil-1029.so" }}
 
 #[test]
 fn config_validate_rejects_denylisted_env_keys() {
-    let denylisted = [
-        "PATH",
-        "LD_LIBRARY_PATH",
-        "DYLD_INSERT_LIBRARIES",
-        "NODE_OPTIONS",
-        "PYTHONPATH",
-        "PERL5LIB",
-        "BASH_ENV",
-        "ENV",
-        "IFS",
-        "GIT_SSH_COMMAND",
-        "GIT_CONFIG",
-    ];
-    for key in denylisted {
+    // Derived from the validation denylist consts (single source of truth):
+    // every exact key and one synthetic key per denied prefix must fail
+    // config load, and the error must name the key.
+    let mut denylisted: Vec<String> = crate::util::validation::AGENT_ENV_DENYLIST_EXACT
+        .iter()
+        .map(|key| key.to_string())
+        .collect();
+    for prefix in crate::util::validation::AGENT_ENV_DENYLIST_PREFIXES {
+        denylisted.push(format!("{prefix}X"));
+    }
+    for key in &denylisted {
+        let key = key.as_str();
         let toml = format!(
             r#"{MINIMAL_TOML}
 [agents]

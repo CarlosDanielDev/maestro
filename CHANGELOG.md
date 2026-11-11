@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Workspace trust gate** — maestro no longer executes commands declared by a repo-local `maestro.toml` (agent `command`/`env`/`extra_args`, `plugins[].run`, completion-gate commands, `gates.test_command`, `review` commands) until you trust that workspace. First encounter shows the values verbatim and asks for consent; the record lives in your maestro config dir (`trusted.toml`, keyed by canonical path + config hash) so a repo can never grant trust to itself, and any config change re-prompts. `maestro trust` / `maestro untrust` manage the record; untrusted workspaces skip plugins, executing gates, review dispatch, and config-supplied agent commands (`maestro doctor` still probes the built-in `claude`/`codex`/`qwen`/`opencode` binaries from PATH). (#1045)
 
+### Changed
+- **New projects no longer default to `bypassPermissions`.** `maestro init` now scaffolds `permission_mode = "default"`, and the no-config dashboard fallback and the session-pool built-in default match the serde default (`default_permission_mode()`), so spawned agents ask for permission instead of suppressing every prompt. Bypass stays opt-in via the Settings toggle, `--bypass-review`, or explicit `permission_mode = "bypassPermissions"` in `maestro.toml`. (#1036)
+
 ## [0.31.5] - 2026-08-15
 
 ### Added
