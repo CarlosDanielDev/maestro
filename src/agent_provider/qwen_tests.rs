@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::qwen::QwenProvider;
 use super::qwen_parser::QwenStreamParser;
-use super::types::{AgentProvider, AgentProviderEvent, AgentRequest, AgentRunStarted};
+use super::types::{AgentError, AgentProvider, AgentProviderEvent, AgentRequest, AgentRunStarted};
 use crate::session::types::StreamEvent;
 
 fn request() -> AgentRequest {
@@ -186,10 +186,25 @@ async fn run_text_filters_denylisted_env_vars_before_spawn() {
         ]),
     );
 
-    let out = provider
-        .run_text("qwen-test", "probe", None)
-        .await
-        .expect("probe run");
+    // ETXTBSY (os error 26, ExecutableFileBusy): on Linux, exec of a
+    // just-written probe can lose a race with the filesystem's copy-up of
+    // the new file (overlayfs; seen under llvm-cov CI runners). The stub
+    // is written and closed before this point, so a short bounded retry
+    // is the documented workaround (rust-lang/rust#109217 class); the
+    // denylist assertions below are timing-independent.
+    let mut attempt = 0;
+    let out = loop {
+        match provider.run_text("qwen-test", "probe", None).await {
+            Ok(out) => break out,
+            Err(AgentError::Spawn { source, .. })
+                if source.kind() == std::io::ErrorKind::ExecutableFileBusy && attempt < 5 =>
+            {
+                attempt += 1;
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+            Err(e) => panic!("probe run: {e}"),
+        }
+    };
 
     assert!(
         out.stdout.contains("LD_PRELOAD=[]"),
