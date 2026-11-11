@@ -7,9 +7,12 @@ name: Nightly Freshness
 # describes the health of `nightly.yml`, not the PR itself.
 
 # Least privilege by default (#1040): jobs that need more than read access
-# must opt in with a job-level permissions block.
+# must opt in with a job-level permissions block. The freshness composite
+# lists workflow runs via the Actions API, which needs actions: read —
+# without it the scheduled run 403s (PR CI never exercises that path).
 permissions:
   contents: read
+  actions: read
 
 on:
   schedule:
