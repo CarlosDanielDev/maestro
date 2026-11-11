@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::util::validate_agent_env_key;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentKind {
@@ -198,6 +200,13 @@ impl AgentConfig {
         {
             validate_env_var_name(api_key_env)
                 .map_err(|msg| anyhow::anyhow!("agents.{id}.api_key_env {msg}"))?;
+        }
+
+        // EXEC-4 / TRUST-2: reject loader/interpreter env vars (LD_PRELOAD,
+        // DYLD_*, PATH, ...) before they ever reach a spawned child. The
+        // spawn sites re-check the same denylist as defense in depth.
+        for key in self.env.keys() {
+            validate_agent_env_key(key).map_err(|e| anyhow::anyhow!("agents.{id}.env {e}"))?;
         }
 
         Ok(())
