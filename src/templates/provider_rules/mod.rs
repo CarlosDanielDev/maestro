@@ -11,6 +11,7 @@
 
 mod claude;
 mod codex;
+mod hook_gate;
 mod http_generic;
 pub(super) mod subagent_list;
 
@@ -21,6 +22,7 @@ pub use http_generic::http_generic_rules;
 use std::path::{Component, Path};
 
 use crate::templates::TemplateError;
+use hook_gate::validate_hook_gate;
 
 /// Read a file under `root`, rejecting any path that escapes the sandbox.
 ///
