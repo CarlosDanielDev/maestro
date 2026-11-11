@@ -54,6 +54,14 @@ impl OllamaProvider {
             num_ctx,
         })
     }
+
+    /// Thread the remote-auth confirmation (operator env switch
+    /// `MAESTRO_ALLOW_REMOTE_AUTH=1`, judge-1105) into the HTTP client
+    /// (#1030). Composable with the constructors.
+    pub fn with_allow_remote_auth(mut self, allow: bool) -> Self {
+        self.http = self.http.with_allow_remote_auth(allow);
+        self
+    }
 }
 
 #[async_trait::async_trait]

@@ -88,6 +88,14 @@ impl MinimaxProvider {
         self
     }
 
+    /// Thread the remote-auth confirmation (operator env switch
+    /// `MAESTRO_ALLOW_REMOTE_AUTH=1`, judge-1105) into the HTTP client
+    /// (#1030). Composable with the constructors.
+    pub fn with_allow_remote_auth(mut self, allow: bool) -> Self {
+        self.http = self.http.with_allow_remote_auth(allow);
+        self
+    }
+
     #[cfg(test)]
     fn new_with_api_key_lookup(
         id: impl Into<String>,
@@ -300,3 +308,7 @@ impl AgentProvider for MinimaxProvider {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "remote_auth_tests.rs"]
+mod remote_auth_tests;

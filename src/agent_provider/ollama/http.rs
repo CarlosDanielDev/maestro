@@ -1,5 +1,6 @@
 #![deny(clippy::unwrap_used)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -10,14 +11,29 @@ use tokio::sync::mpsc;
 
 use super::types::OllamaError;
 use crate::agent_provider::openai_compat::sse::OpenAiCompatibleSseParser;
+use crate::config::agents_remote_auth as policy;
 use crate::session::types::StreamEvent;
 
-#[derive(Debug, Clone)]
+type ApiKeyLookup = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
+#[derive(Clone)]
 pub struct OllamaHttpClient {
     client: reqwest::Client,
     base_url: String,
     timeout: Duration,
     api_key_env: Option<String>,
+    api_key_lookup: ApiKeyLookup,
+    allow_remote_auth: bool,
+}
+
+impl std::fmt::Debug for OllamaHttpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OllamaHttpClient")
+            .field("base_url", &self.base_url)
+            .field("timeout", &self.timeout)
+            .field("api_key_env", &self.api_key_env)
+            .finish_non_exhaustive()
+    }
 }
 
 impl OllamaHttpClient {
@@ -25,6 +41,17 @@ impl OllamaHttpClient {
         base_url: impl Into<String>,
         timeout: Duration,
         api_key_env: Option<String>,
+    ) -> Result<Self, OllamaError> {
+        Self::with_api_key_lookup(base_url, timeout, api_key_env, |name| {
+            std::env::var(name).ok()
+        })
+    }
+
+    pub(crate) fn with_api_key_lookup(
+        base_url: impl Into<String>,
+        timeout: Duration,
+        api_key_env: Option<String>,
+        api_key_lookup: impl Fn(&str) -> Option<String> + Send + Sync + 'static,
     ) -> Result<Self, OllamaError> {
         let client = reqwest::Client::builder()
             .timeout(timeout)
@@ -36,7 +63,38 @@ impl OllamaHttpClient {
             base_url: trim_base_url(base_url.into()),
             timeout,
             api_key_env,
+            api_key_lookup: Arc::new(api_key_lookup),
+            allow_remote_auth: false,
         })
+    }
+
+    /// Confirm the configured `base_url` host for bearer auth (#1030).
+    /// Without this the client attaches credentials only for loopback
+    /// hosts.
+    pub(crate) fn with_allow_remote_auth(mut self, allow: bool) -> Self {
+        self.allow_remote_auth = allow;
+        self
+    }
+
+    /// Request-layer re-check of the config policy (defense in depth).
+    pub(crate) fn remote_auth_allowed(&self) -> bool {
+        policy::credentials_allowed(
+            &self.base_url,
+            policy::OLLAMA_DEFAULT_BASE_URL,
+            self.allow_remote_auth,
+        )
+    }
+
+    /// Refuse credentialed requests to non-loopback hosts unless
+    /// `allow_remote_auth` confirmed them (#1030).
+    fn ensure_credentials_allowed(&self) -> Result<(), OllamaError> {
+        if self.remote_auth_allowed() {
+            return Ok(());
+        }
+        let host = policy::split_base_url(&self.base_url)
+            .map(|(_, host)| host)
+            .unwrap_or_else(|| self.base_url.clone());
+        Err(OllamaError::RemoteAuthRefused { host })
     }
 
     pub async fn version(&self) -> Result<String, OllamaError> {
@@ -84,6 +142,7 @@ impl OllamaHttpClient {
             .post(self.url("/v1/chat/completions"))
             .json(&body);
         if let Some(token) = self.api_key() {
+            self.ensure_credentials_allowed()?;
             builder = builder.bearer_auth(token);
         }
 
@@ -192,7 +251,7 @@ impl OllamaHttpClient {
     fn api_key(&self) -> Option<String> {
         self.api_key_env
             .as_deref()
-            .and_then(|name| std::env::var(name).ok())
+            .and_then(|name| (self.api_key_lookup)(name))
             .filter(|value| !value.trim().is_empty())
     }
 }

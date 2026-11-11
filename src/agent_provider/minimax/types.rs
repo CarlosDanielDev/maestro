@@ -14,6 +14,10 @@ pub enum MinimaxError {
     MalformedSse(String),
     #[error("MiniMax request timed out after {seconds}s")]
     Timeout { seconds: u64 },
+    #[error(
+        "refusing to send MiniMax bearer credentials to remote host `{host}`: not the MiniMax default host and not loopback; export MAESTRO_ALLOW_REMOTE_AUTH=1 to confirm this host (repo-local `allow_remote_auth` is ignored)"
+    )]
+    RemoteAuthRefused { host: String },
     #[error("MiniMax network issue: {0}")]
     Network(String),
     #[error("MiniMax request failed: {0}")]

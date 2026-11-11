@@ -315,16 +315,19 @@ pub(crate) fn provider_for_agent(
             Ok(std::sync::Arc::new(
                 crate::agent_provider::OllamaProvider::with_num_ctx(
                     resolved.id.clone(),
-                    resolved
-                        .config
-                        .base_url
-                        .clone()
-                        .unwrap_or_else(|| "http://localhost:11434".to_string()),
+                    resolved.config.base_url.clone().unwrap_or_else(|| {
+                        crate::config::agents_remote_auth::OLLAMA_DEFAULT_BASE_URL.to_string()
+                    }),
                     model,
                     resolved.config.request_timeout_secs.unwrap_or(120),
                     resolved.config.api_key_env.clone(),
                     resolved.config.num_ctx,
                 )
+                .map(|provider| {
+                    provider.with_allow_remote_auth(
+                        crate::config::agents_remote_auth::operator_allows_remote_auth(),
+                    )
+                })
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?,
             ))
         }
@@ -337,11 +340,9 @@ pub(crate) fn provider_for_agent(
                 .unwrap_or_else(|| "MiniMax-M2.7".to_string());
             let provider = crate::agent_provider::MinimaxProvider::new(
                 resolved.id.clone(),
-                resolved
-                    .config
-                    .base_url
-                    .clone()
-                    .unwrap_or_else(|| "https://api.minimax.io/v1".to_string()),
+                resolved.config.base_url.clone().unwrap_or_else(|| {
+                    crate::config::agents_remote_auth::MINIMAX_DEFAULT_BASE_URL.to_string()
+                }),
                 model,
                 resolved.config.request_timeout_secs.unwrap_or(120),
                 resolved
@@ -350,6 +351,11 @@ pub(crate) fn provider_for_agent(
                     .clone()
                     .or_else(|| Some("MINIMAX_API_KEY".to_string())),
             )
+            .map(|provider| {
+                provider.with_allow_remote_auth(
+                    crate::config::agents_remote_auth::operator_allows_remote_auth(),
+                )
+            })
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
             // Best-effort quota tracker: if the home dir is missing or the
             // file is malformed we fall back to "no gate" rather than

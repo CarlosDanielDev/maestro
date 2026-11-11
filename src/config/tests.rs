@@ -8,6 +8,7 @@ const MINIMAL_TOML: &str = "[project]\nrepo = \"owner/repo\"\n[sessions]\n[budge
 
 mod agents;
 mod agents_env;
+mod agents_remote_auth;
 mod agents_transport;
 mod behavior;
 mod configuration_doc;

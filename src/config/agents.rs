@@ -81,6 +81,13 @@ pub struct AgentConfig {
     pub request_timeout_secs: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
+    /// HTTP-only: parsed for compatibility but INERT from repo config
+    /// (judge-1105): a cloned repo could set it itself, so confirmation
+    /// only comes from the operator env switch `MAESTRO_ALLOW_REMOTE_AUTH=1`.
+    /// Kept so `maestro doctor` can name it as ignored. Does NOT lift the
+    /// `api_key_env` allowlist — that one is absolute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_remote_auth: Option<bool>,
     /// Ollama-only: context window in tokens, surfaced in the TUI's
     /// context-fill gauge. Ignored for non-Ollama agents. Unset → gauge
     /// is hidden for that session.
@@ -113,6 +120,7 @@ impl AgentConfig {
             cli_flags: BTreeMap::new(),
             request_timeout_secs: None,
             api_key_env: None,
+            allow_remote_auth: None,
             num_ctx: None,
         }
     }
@@ -125,6 +133,12 @@ impl AgentConfig {
             if command.is_empty() {
                 anyhow::bail!(
                     "agents.{id}.command is required for {} agents",
+                    self.kind.as_str()
+                );
+            }
+            if self.allow_remote_auth == Some(true) {
+                anyhow::bail!(
+                    "agents.{id}.allow_remote_auth is only valid for HTTP agents; remove it from {} agent `{id}`",
                     self.kind.as_str()
                 );
             }
@@ -146,25 +160,13 @@ impl AgentConfig {
         }
 
         if self.kind.is_http() {
-            let base_url = self.base_url.as_deref().unwrap_or("").trim();
-            if base_url.is_empty() {
-                anyhow::bail!(
-                    "agents.{id}.base_url is required for {} agents",
-                    self.kind.as_str()
-                );
-            }
-            // Same empty-string handling as the subprocess branch.
-            let command_set = self
-                .command
-                .as_deref()
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false);
-            if command_set {
-                anyhow::bail!(
-                    "agents.{id}.command is only valid for subprocess agents; remove it from {} agent `{id}`",
-                    self.kind.as_str()
-                );
-            }
+            super::agents_remote_auth::validate_http_agent(
+                id,
+                self.kind,
+                self.base_url.as_deref(),
+                self.command.as_deref(),
+                self.api_key_env.as_deref(),
+            )?;
         }
 
         // Claude-only transport selector (#750). Same empty-string-as-unset
@@ -251,6 +253,8 @@ struct AgentConfigRaw {
     #[serde(default)]
     api_key_env: Option<String>,
     #[serde(default)]
+    allow_remote_auth: Option<bool>,
+    #[serde(default)]
     num_ctx: Option<u32>,
 }
 
@@ -299,6 +303,7 @@ impl From<AgentConfigRaw> for AgentConfig {
             cli_flags: raw.cli_flags,
             request_timeout_secs,
             api_key_env,
+            allow_remote_auth: raw.allow_remote_auth,
             num_ctx: raw.num_ctx,
         }
     }

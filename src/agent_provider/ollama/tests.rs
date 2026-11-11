@@ -215,6 +215,77 @@ async fn spawn_test_server(response: &'static str) -> String {
     format!("http://{addr}")
 }
 
+// --- Remote bearer-credential guard (#1030) ---
+
+#[test]
+fn client_allows_bearer_only_for_loopback_or_confirmed_hosts() {
+    for base_url in ["http://localhost:11434", "http://127.0.0.1:9000"] {
+        let client = OllamaHttpClient::new(base_url, Duration::from_secs(1), None).expect("client");
+        assert!(
+            client.remote_auth_allowed(),
+            "loopback host {base_url} may receive bearer credentials"
+        );
+    }
+
+    let client = OllamaHttpClient::new("http://collector.example/v1", Duration::from_secs(1), None)
+        .expect("client");
+    assert!(
+        !client.remote_auth_allowed(),
+        "remote host must be refused without confirmation"
+    );
+    assert!(
+        client.with_allow_remote_auth(true).remote_auth_allowed(),
+        "allow_remote_auth must confirm the remote host"
+    );
+}
+
+#[tokio::test]
+async fn chat_stream_refuses_remote_host_without_confirmation() {
+    let client = OllamaHttpClient::with_api_key_lookup(
+        "http://collector.example/v1",
+        Duration::from_secs(1),
+        Some("OLLAMA_API_KEY".to_string()),
+        |_| Some("test-token".to_string()),
+    )
+    .expect("client");
+
+    let err = client
+        .chat_stream("llama3.2", "hi")
+        .await
+        .expect_err("credentialed request to remote host must refuse");
+    assert!(
+        err.to_string().contains("refusing"),
+        "expected a credential refusal, got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn chat_stream_still_attaches_bearer_on_loopback() {
+    let base_url = spawn_test_server(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n\
+         data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
+         data: [DONE]\n\n",
+    )
+    .await;
+    let client = OllamaHttpClient::with_api_key_lookup(
+        base_url,
+        Duration::from_secs(1),
+        Some("OLLAMA_API_KEY".to_string()),
+        |_| Some("test-token".to_string()),
+    )
+    .expect("client");
+
+    let mut rx = client
+        .chat_stream("llama3.2", "hi")
+        .await
+        .expect("loopback host may receive bearer credentials");
+    while let Some(next) = rx.recv().await {
+        if let Err(err) = next {
+            panic!("loopback bearer flow must not error: {err}");
+        }
+    }
+}
+
 async fn spawn_test_server_sequence(responses: Vec<&'static str>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");

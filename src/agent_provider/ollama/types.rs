@@ -14,6 +14,10 @@ pub enum OllamaError {
     MalformedSse(String),
     #[error("Ollama model `{model}` is not available; run 'ollama pull {model}' to download it")]
     ModelNotPulled { model: String },
+    #[error(
+        "refusing to send Ollama bearer credentials to remote host `{host}`: not loopback; export MAESTRO_ALLOW_REMOTE_AUTH=1 to confirm this host (repo-local `allow_remote_auth` is ignored)"
+    )]
+    RemoteAuthRefused { host: String },
     #[error("Ollama request timed out after {seconds}s")]
     Timeout { seconds: u64 },
     #[error("Ollama request failed: {0}")]
