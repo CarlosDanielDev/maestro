@@ -97,7 +97,7 @@ max_concurrent = 3
 stall_timeout_secs = 300
 default_model = "opus"
 default_mode = "orchestrator"
-permission_mode = "bypassPermissions"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
+permission_mode = "default"  # Options: default, acceptEdits, bypassPermissions, dontAsk, plan, auto
 allowed_tools = []                      # Empty = all tools. Example: ["Bash", "Read", "Write", "Edit"]
 # [agents]
 # default = "claude"

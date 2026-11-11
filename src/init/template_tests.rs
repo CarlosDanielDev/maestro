@@ -142,3 +142,17 @@ fn template_render_contains_views_section_with_agent_graph_enabled() {
         "template must default agent_graph_enabled = true: {out}"
     );
 }
+
+#[test]
+fn rendered_template_has_no_uncommented_bypass_permissions() {
+    // #1036: bypass is opt-in. The scaffolded `[sessions]` block must set
+    // the safe default; `bypassPermissions` may appear only in comments
+    // (the `# Options:` hint and the commented per-agent examples).
+    let out = render(&[DetectedStack::Rust]);
+    assert!(
+        !out.contains("\npermission_mode = \"bypassPermissions\"")
+            && !out.starts_with("permission_mode = \"bypassPermissions\""),
+        "template must not assign an uncommented bypassPermissions: {out}"
+    );
+    assert!(out.contains("permission_mode = \"default\""), "{out}");
+}
