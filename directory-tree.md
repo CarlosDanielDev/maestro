@@ -868,6 +868,7 @@ maestro/
 │   ├── condense-issue.sh                  # Emit deterministic DOR-section issue-summary.md from cached gh issue JSON  [Issue #555]
 │   ├── coverage-tiers.yml                 # Coverage tier definitions
 │   ├── dor-lint.sh                        # Fast mechanical DOR lint for /implement; writes dor-lint.json and resolves blocker states  [Issue #555]
+│   ├── gatekeeper-remediation.sh          # Only gh side-effect sink for gatekeeper FAIL remediation: comment cap, label allowlist, NUL-delimited loop; fails closed  [Issue #1038]
 │   ├── pr-skeleton.sh                     # /pushup helper: emits PR body skeleton with summary placeholders, Closes line, and test plan  [Issue #556]
 │   ├── regenerate-docs.sh                 # Convenience wrapper: runs `cargo test docs_gen_regenerate -- --ignored` to regenerate all AUTOGEN blocks in docs/configuration.md from schema  [Issue #717]
 │   ├── update-milestone-graph.py          # Mechanical /pushup milestone dependency-graph updater with dry-run and post-PATCH verification  [Issue #554]
@@ -875,6 +876,7 @@ maestro/
 │       ├── test_commit_helper.bats        # bats tests for label-to-prefix precedence, missing issue, gh availability, and draft-file writes  [Issue #556]
 │       ├── test_condense_issue.bats       # bats tests for deterministic condensed issue summaries  [Issue #555]
 │       ├── test_dor_lint.bats             # bats tests for DOR lint, blocker states, contracts, and label task-type mapping  [Issue #555]
+│       ├── test_gatekeeper_remediation.bats # bats tests with a stub gh logging argv: comment/label posting, flag-like and word-split injection rejection, caps, fail-closed  [Issue #1038]
 │       ├── test_pr_skeleton.bats          # bats tests for PR skeleton rendering, placeholders, Closes substitution, and draft-file writes  [Issue #556]
 │       ├── test_update_milestone_graph.py # Unit tests for idempotency, anchored replacement, roll-up, token boundaries, dry-run, and verification failure  [Issue #554]
 │       └── fixtures/                      # Markdown milestone graph fixtures plus issue JSON fixtures for DOR lint, summary, and /pushup helper tests  [Issues #554, #555, #556]
