@@ -17,10 +17,11 @@
 //!    timeout — the post-exit chooser menu never blocks (spike scenario 3a/3g).
 //!
 //! Opt-in (`#[ignore]`): every run needs the `ai-memory` binary on PATH and a
-//! local server; CI stays green without it. Run with:
+//! local server; CI stays green without it. The gate is `#[ignore]` alone —
+//! the repo's existing opt-in convention, no env var involved. Run with:
 //!
 //! ```sh
-//! MAESTRO_AIMEM_E2E=1 cargo test --test e2e_aimem_shim aimem_shim -- --ignored
+//! cargo test --test e2e_aimem_shim aimem_shim -- --ignored
 //! ```
 //!
 //! Hermetic sandbox per test (no real harness, no provider cost, no host
