@@ -155,3 +155,50 @@ async fn run_streams_events_from_mock_qwen_cli() {
     assert!(argv.contains("--output-format\nstream-json"));
     assert!(argv.contains("--include-partial-messages"));
 }
+
+#[tokio::test]
+async fn run_text_filters_denylisted_env_vars_before_spawn() {
+    // EXEC-4 / TRUST-2: defense in depth at the spawn site, mirroring
+    // `fire_rejects_non_maestro_env_vars` in plugins/runner.rs. Even if a
+    // denylisted key reached the env map without passing config validation,
+    // the spawn site must filter it before the `cmd.envs` call.
+    let temp = tempfile::tempdir().expect("tempdir");
+    let probe = temp.path().join("env-probe-1029.sh");
+    std::fs::write(
+        &probe,
+        "#!/bin/sh\nprintf 'LD_PRELOAD=[%s]\\n' \"$LD_PRELOAD\"\nprintf 'QWEN_SAFE_VAR=[%s]\\n' \"$QWEN_SAFE_VAR\"\n",
+    )
+    .expect("write probe script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&probe).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&probe, perms).expect("chmod");
+    }
+
+    let provider = QwenProvider::with_config(
+        probe.to_string_lossy().to_string(),
+        Vec::new(),
+        BTreeMap::from([
+            ("LD_PRELOAD".to_string(), "/evil-1029.so".to_string()),
+            ("QWEN_SAFE_VAR".to_string(), "safe".to_string()),
+        ]),
+    );
+
+    let out = provider
+        .run_text("qwen-test", "probe", None)
+        .await
+        .expect("probe run");
+
+    assert!(
+        out.stdout.contains("LD_PRELOAD=[]"),
+        "denylisted LD_PRELOAD must be filtered, stdout: {}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains("QWEN_SAFE_VAR=[safe]"),
+        "benign var must pass through, stdout: {}",
+        out.stdout
+    );
+}

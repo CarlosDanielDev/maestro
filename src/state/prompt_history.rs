@@ -60,11 +60,20 @@ impl PromptHistoryStore {
     pub fn save(&self) -> Result<()> {
         let content =
             serde_json::to_string_pretty(&self.entries).context("serializing prompt history")?;
-        let tmp = self.path.with_extension("json.tmp");
-        std::fs::write(&tmp, &content)
-            .with_context(|| format!("writing prompt history to {}", tmp.display()))?;
-        std::fs::rename(&tmp, &self.path)
-            .with_context(|| format!("renaming {} to {}", tmp.display(), self.path.display()))?;
+        // NamedTempFile gives a random name with O_EXCL semantics, so a
+        // planted `<history>.json.tmp` symlink cannot redirect the write
+        // (#1098, audit finding FS-4 family); `persist` renames it
+        // atomically over the real path.
+        let parent = self.path.parent().unwrap_or(std::path::Path::new("."));
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)
+            .with_context(|| format!("creating temp file next to {}", self.path.display()))?;
+        use std::io::Write;
+        tmp.write_all(content.as_bytes())
+            .with_context(|| format!("writing prompt history to {}", tmp.path().display()))?;
+        tmp.flush()
+            .with_context(|| format!("flushing prompt history to {}", tmp.path().display()))?;
+        tmp.persist(&self.path)
+            .with_context(|| format!("persisting prompt history to {}", self.path.display()))?;
         Ok(())
     }
 
@@ -197,5 +206,34 @@ mod tests {
     fn default_path_returns_expected() {
         let path = PromptHistoryStore::default_path();
         assert_eq!(path, PathBuf::from("maestro-prompt-history.json"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_refuses_to_follow_planted_tmp_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("history.json");
+        let victim = dir.path().join("victim.txt");
+        std::fs::write(&victim, b"ORIGINAL").unwrap();
+        std::os::unix::fs::symlink(
+            &victim,
+            // The predictable temp name a cloned repo can plant as a symlink.
+            target.with_extension("json.tmp"),
+        )
+        .unwrap();
+
+        let mut store = PromptHistoryStore::new(target.clone(), 100);
+        store.push(make_entry("hello"));
+
+        assert_eq!(
+            std::fs::read(&victim).unwrap(),
+            b"ORIGINAL",
+            "planted .tmp symlink target must stay untouched"
+        );
+        let mut store2 = PromptHistoryStore::new(target, 100);
+        store2
+            .load()
+            .expect("history should still persist normally");
+        assert_eq!(store2.entries()[0].prompt, "hello");
     }
 }

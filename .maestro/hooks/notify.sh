@@ -26,6 +26,24 @@ readonly DESKTOP_MESSAGE_MAX_LENGTH=100
 # CONFIGURATION
 # =============================================================================
 
+# Config files are parsed line by line; they are NEVER sourced as bash
+# (HOOK-1: a cloned repo could ship arbitrary commands in a conf file).
+# Only the five known keys are accepted, and only with safe value shapes
+# ([A-Za-z0-9_.@-]*). Everything else is ignored.
+readonly CONFIG_LINE_RE='^(NOTIFY_DESKTOP|NOTIFY_SLACK|NOTIFY_PERMISSION_PROMPT|NOTIFY_IDLE_PROMPT|SLACK_USER_ID)=([A-Za-z0-9_.@-]*)$'
+
+apply_config_line() {
+  local line="$1"
+  [[ "$line" =~ $CONFIG_LINE_RE ]] || return 0
+  case "${BASH_REMATCH[1]}" in
+    NOTIFY_DESKTOP)           NOTIFY_DESKTOP="${BASH_REMATCH[2]}" ;;
+    NOTIFY_SLACK)             NOTIFY_SLACK="${BASH_REMATCH[2]}" ;;
+    NOTIFY_PERMISSION_PROMPT) NOTIFY_PERMISSION_PROMPT="${BASH_REMATCH[2]}" ;;
+    NOTIFY_IDLE_PROMPT)       NOTIFY_IDLE_PROMPT="${BASH_REMATCH[2]}" ;;
+    SLACK_USER_ID)            SLACK_USER_ID="${BASH_REMATCH[2]}" ;;
+  esac
+}
+
 load_config() {
   NOTIFY_DESKTOP=true
   NOTIFY_SLACK=true
@@ -34,16 +52,15 @@ load_config() {
   SLACK_USER_ID=""
 
   # Prioridade: .maestro/notifications.conf > .claude/notifications.conf (legacy) > global ~/.claude
-  if [[ -f "$CONFIG_FILE" ]]; then
-    # shellcheck source=/dev/null
-    source "$CONFIG_FILE"
-  elif [[ -f "$LEGACY_PROJECT_CONFIG_FILE" ]]; then
-    # shellcheck source=/dev/null
-    source "$LEGACY_PROJECT_CONFIG_FILE"
-  elif [[ -f "$LEGACY_CONFIG_FILE" ]]; then
-    # shellcheck source=/dev/null
-    source "$LEGACY_CONFIG_FILE"
-  fi
+  local file line
+  for file in "$CONFIG_FILE" "$LEGACY_PROJECT_CONFIG_FILE" "$LEGACY_CONFIG_FILE"; do
+    if [[ -f "$file" ]]; then
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        apply_config_line "$line"
+      done < "$file"
+      break
+    fi
+  done
 
   if [[ -z "$SLACK_USER_ID" && -f "$LEGACY_SLACK_FILE" ]]; then
     SLACK_USER_ID=$(tr -d '[:space:]' < "$LEGACY_SLACK_FILE")

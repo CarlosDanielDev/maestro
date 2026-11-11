@@ -192,7 +192,7 @@ impl AgentProvider for CodexProvider {
                 );
                 let mut preflight = Command::new(&self.binary);
                 preflight.args(self.build_stream_args(&request));
-                preflight.envs(&self.env);
+                super::apply_agent_env(&mut preflight, &self.env);
                 preflight
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
@@ -271,7 +271,7 @@ impl AgentProvider for CodexProvider {
                 cmd.args(self.build_text_args(&request));
             }
         }
-        cmd.envs(&self.env);
+        super::apply_agent_env(&mut cmd, &self.env);
         if let Some(cwd) = request.cwd.as_ref() {
             cmd.current_dir(cwd);
         }
