@@ -31,6 +31,26 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
+# Mechanical case, no subagent helper required: an empty subagent response
+# (or a failed parse) must fail closed. The parser has to exit non-zero AND
+# write nothing, so the gate's `[ -s gatekeeper.json ]` guard aborts the run
+# instead of a `>` redirect leaving an empty file that parses as an empty
+# status (issue #1038). This case cannot be red before the fix — the parser
+# already refused empty input — so it exists as a regression lock.
+tmp_report="$(mktemp "${TMPDIR:-/tmp}/gatekeeper-empty-1038.XXXXXX")"
+if echo "" | python3 "$PARSER" > "$tmp_report" 2>/dev/null; then
+  echo "FAIL: empty response parsed as a valid report (gate would fail open)" >&2
+  rm -f "$tmp_report"
+  exit 1
+fi
+if [ -s "$tmp_report" ]; then
+  echo "FAIL: parser emitted output for an empty response" >&2
+  rm -f "$tmp_report"
+  exit 1
+fi
+rm -f "$tmp_report"
+echo "  empty gatekeeper.json case: parser fails closed (non-zero, no output)"
+
 # Check for the subagent invocation tool.
 # This runner expects a helper named `invoke-gatekeeper-subagent` that
 # takes a fixture path on stdin and emits the subagent's raw response
