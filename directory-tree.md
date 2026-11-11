@@ -1059,6 +1059,7 @@ maestro/
 | `src/work/activity.rs` | `InteractionActivity` enum — pinned `[INTERACTION]`/`[TEARDOWN]` dashboard line formats + `emit_tracing()`; `ActivitySeverity`; consumed via `ActivityLog::emit_interaction` and `screens::interaction::activity_action` (Issue #742) |
 | `docs/guides/claude-transport.md` | Headless vs interactive transport user guide + 2026-06-15 cutoff migration (Issue #752) |
 | `docs/guides/interaction-sessions.md` | Interaction sessions user guide: launch combos, keymap, lifecycle, troubleshooting (Issue #743) |
+| `docs/guides/ai-memory.md` | Per-agent ai-memory shim guide: shim recipe, `maestro.toml` wiring, server prerequisite, autowire hazard, troubleshooting from the #1084 spike matrix (Issue #1111) |
 | `docs/spikes/2026-05-claude-interactive-transport.md` | Spike #747 feasibility report (GREEN): PTY drive + transcript tailing + env-scrub validation; prototype at `docs/spikes/prototypes/portable-pty-prototype.rs` |
 | `docs/spikes/ai-memory.md` | Spike #1084 scenario matrix: maestro-style sessions under `ai-memory run` 3.4.5 in a sandbox (headless passthrough, autowire footprint, PTY, leases, privacy scrubbing, handoff); evidence for the shim-seam ADR |
 | `testdata/claude-transcript/` | Canned 3-turn transcript fixture + stub `claude` REPL script for interactive-transport tests (Issue #749) |
