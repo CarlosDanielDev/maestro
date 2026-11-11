@@ -99,6 +99,44 @@ pub(crate) fn credentials_allowed(
     matches!(split_base_url(base_url), Some((_, host)) if is_loopback_host(&host))
 }
 
+/// Config-layer checks for one HTTP agent: field-shape rules (base_url
+/// required, `command` rejected) plus the remote-auth gates. Split out of
+/// `AgentConfig::validate` so the HTTP branch lives beside the auth logic
+/// it drives; called from `src/config/agents.rs`.
+pub(crate) fn validate_http_agent(
+    id: &str,
+    kind: AgentKind,
+    base_url: Option<&str>,
+    command: Option<&str>,
+    api_key_env: Option<&str>,
+) -> Result<()> {
+    let base_url = base_url.unwrap_or("").trim();
+    if base_url.is_empty() {
+        anyhow::bail!(
+            "agents.{id}.base_url is required for {} agents",
+            kind.as_str()
+        );
+    }
+    // Same empty-string handling as the subprocess branch in
+    // `AgentConfig::validate` (TUI text inputs round-trip cleared fields
+    // as `Some("")`).
+    let command_set = command.map(|s| !s.trim().is_empty()).unwrap_or(false);
+    if command_set {
+        anyhow::bail!(
+            "agents.{id}.command is only valid for subprocess agents; remove it from {} agent `{id}`",
+            kind.as_str()
+        );
+    }
+
+    validate_remote_auth(
+        id,
+        kind,
+        base_url,
+        api_key_env,
+        operator_allows_remote_auth(),
+    )
+}
+
 /// Config-layer checks for one HTTP agent. Called from
 /// `AgentConfig::validate` after the base_url non-empty check.
 pub(crate) fn validate_remote_auth(

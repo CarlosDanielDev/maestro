@@ -160,32 +160,12 @@ impl AgentConfig {
         }
 
         if self.kind.is_http() {
-            let base_url = self.base_url.as_deref().unwrap_or("").trim();
-            if base_url.is_empty() {
-                anyhow::bail!(
-                    "agents.{id}.base_url is required for {} agents",
-                    self.kind.as_str()
-                );
-            }
-            // Same empty-string handling as the subprocess branch.
-            let command_set = self
-                .command
-                .as_deref()
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false);
-            if command_set {
-                anyhow::bail!(
-                    "agents.{id}.command is only valid for subprocess agents; remove it from {} agent `{id}`",
-                    self.kind.as_str()
-                );
-            }
-
-            super::agents_remote_auth::validate_remote_auth(
+            super::agents_remote_auth::validate_http_agent(
                 id,
                 self.kind,
-                base_url,
+                self.base_url.as_deref(),
+                self.command.as_deref(),
                 self.api_key_env.as_deref(),
-                super::agents_remote_auth::operator_allows_remote_auth(),
             )?;
         }
 
