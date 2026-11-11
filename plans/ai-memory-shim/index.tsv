@@ -1,4 +1,4 @@
 # key	title	labels	parent
 aimem-shim	Adopt ai-memory via per-agent shim scripts (spike #1084 option a)	epic,type:feature	-
-aimem-shim.1	Document the per-agent ai-memory shim recipe as the memory seam	docs,type:feature	aimem-shim
-aimem-shim.2	Add opt-in stub-based E2E smoke test for the ai-memory shim path	test,type:feature	aimem-shim
+aimem-shim.1	Document the per-agent ai-memory shim recipe as the memory seam	type:docs,type:feature	aimem-shim
+aimem-shim.2	Add opt-in stub-based E2E smoke test for the ai-memory shim path	testing,type:feature	aimem-shim
