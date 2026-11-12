@@ -73,6 +73,31 @@ impl ProjectDetector for FsProjectDetector {
     }
 }
 
+/// True when the tree shows pytest configuration: a `pytest.ini`, a
+/// `conftest.py` at the root or under `tests/`, or a `[tool.pytest…]`
+/// table inside `pyproject.toml`. Marker files only — init deliberately
+/// does not probe the interpreter, so detection stays deterministic for
+/// a given tree.
+pub fn pytest_configured(root: &Path) -> bool {
+    if root.join("pytest.ini").is_file() {
+        return true;
+    }
+    if root.join("conftest.py").is_file() || root.join("tests").join("conftest.py").is_file() {
+        return true;
+    }
+    let pyproject = root.join("pyproject.toml");
+    pyproject.is_file()
+        && std::fs::read_to_string(&pyproject)
+            .map(|content| content.contains("[tool.pytest"))
+            .unwrap_or(false)
+}
+
+/// True when the conventional Python entry point `main.py` exists at the
+/// project root — the file the default `run_command` references.
+pub fn python_entry_point(root: &Path) -> bool {
+    root.join("main.py").is_file()
+}
+
 /// Test-only detector that returns a canned list of stacks.
 #[cfg(test)]
 pub struct FakeProjectDetector {
@@ -207,5 +232,73 @@ mod tests {
     #[test]
     fn detected_stack_markers_go() {
         assert_eq!(DetectedStack::Go.markers(), &["go.mod"]);
+    }
+
+    // pytest_configured
+
+    #[test]
+    fn pytest_configured_false_for_bare_python_repo() {
+        let dir = tempdir().unwrap();
+        write(dir.path(), "pyproject.toml");
+        assert!(!pytest_configured(dir.path()));
+    }
+
+    #[test]
+    fn pytest_configured_true_for_pyproject_tool_table() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"x\"\n\n[tool.pytest.ini_options]\nminversion = \"7.0\"\n",
+        )
+        .unwrap();
+        assert!(pytest_configured(dir.path()));
+    }
+
+    #[test]
+    fn pytest_configured_true_for_pytest_ini() {
+        let dir = tempdir().unwrap();
+        write(dir.path(), "pytest.ini");
+        assert!(pytest_configured(dir.path()));
+    }
+
+    #[test]
+    fn pytest_configured_true_for_root_conftest() {
+        let dir = tempdir().unwrap();
+        write(dir.path(), "conftest.py");
+        assert!(pytest_configured(dir.path()));
+    }
+
+    #[test]
+    fn pytest_configured_true_for_tests_conftest() {
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join("tests")).unwrap();
+        write(&dir.path().join("tests"), "conftest.py");
+        assert!(pytest_configured(dir.path()));
+    }
+
+    #[test]
+    fn pytest_configured_false_for_pyproject_without_tool_pytest() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"x\"\n\n[tool.black]\n",
+        )
+        .unwrap();
+        assert!(!pytest_configured(dir.path()));
+    }
+
+    // python_entry_point
+
+    #[test]
+    fn python_entry_point_true_when_main_py_exists() {
+        let dir = tempdir().unwrap();
+        write(dir.path(), "main.py");
+        assert!(python_entry_point(dir.path()));
+    }
+
+    #[test]
+    fn python_entry_point_false_when_main_py_absent() {
+        let dir = tempdir().unwrap();
+        assert!(!python_entry_point(dir.path()));
     }
 }

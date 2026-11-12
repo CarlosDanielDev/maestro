@@ -8,8 +8,8 @@ use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 use crate::init::{
-    FsProjectDetector, ProjectDetector, RenderOutcome, render_or_merge,
-    render_or_merge_with_provider,
+    FsProjectDetector, ProjectDetector, RenderOutcome, first_origin_remote_url, git_remote_verbose,
+    render_or_merge, render_or_merge_with_provider,
     scaffold::{FsScaffolder, ScaffoldAction, scaffold_templates_dir},
     template::ProviderTemplate,
     walk::find_project_root,
@@ -27,7 +27,7 @@ pub fn cmd_init(reset: bool, non_interactive: bool) -> Result<()> {
         if non_interactive || !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
             cmd_init_inner(reset, &root, &detector)?
         } else {
-            let remote_output = git_remote_verbose(&root)?;
+            let remote_output = git_remote_verbose(&root);
             let remote_url = first_origin_remote_url(&remote_output);
             let mut prompter = TerminalInitPrompter;
             cmd_init_inner_with_options(
@@ -119,7 +119,11 @@ pub fn cmd_init_inner_with_options(
     };
 
     match outcome {
-        RenderOutcome::Fresh { stacks, content } => {
+        RenderOutcome::Fresh {
+            stacks,
+            content,
+            guesses,
+        } => {
             // create_new: atomically reject if the file appeared after
             // our pre-check, instead of silently clobbering.
             match std::fs::OpenOptions::new()
@@ -155,6 +159,13 @@ pub fn cmd_init_inner_with_options(
                     "Detected: {}. Created {}",
                     names.join(", "),
                     target.display()
+                );
+            }
+            if !guesses.is_empty() {
+                // #1150: say which defaults were inferred, not confirmed.
+                println!(
+                    "Guessed defaults: {} — review them before the first run.",
+                    guesses.join(", ")
                 );
             }
             scaffold_templates_and_report(project_root)?;
@@ -217,29 +228,6 @@ fn provider_template_from_options(options: InitOptions<'_>) -> Result<ProviderTe
     }
 }
 
-pub fn first_origin_remote_url(remote_verbose: &str) -> Option<String> {
-    let mut first_origin = None;
-    for line in remote_verbose.lines() {
-        let mut parts = line.split_whitespace();
-        let name = parts.next();
-        let url = parts.next();
-        let kind = parts.next();
-        if name != Some("origin") {
-            continue;
-        }
-        let Some(url) = url else {
-            continue;
-        };
-        if first_origin.is_none() {
-            first_origin = Some(url.to_string());
-        }
-        if kind == Some("(fetch)") {
-            return Some(url.to_string());
-        }
-    }
-    first_origin
-}
-
 pub fn validate_azure_devops_organization_url(input: &str) -> bool {
     let dev_azure = Regex::new(r"^https://dev\.azure\.com/[^/]+$").expect("valid regex");
     let visualstudio = Regex::new(r"^https://[^/]+\.visualstudio\.com$").expect("valid regex");
@@ -273,20 +261,6 @@ pub fn prompt_azdo_fields(prompter: &mut dyn InitPrompter) -> Result<(String, St
     };
 
     Ok((organization, az_project))
-}
-
-fn git_remote_verbose(project_root: &Path) -> Result<String> {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(project_root)
-        .arg("remote")
-        .arg("-v")
-        .output()
-        .with_context(|| format!("running git remote -v in {}", project_root.display()))?;
-    if !output.status.success() {
-        return Ok(String::new());
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 struct TerminalInitPrompter;

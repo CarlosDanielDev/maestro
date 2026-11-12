@@ -37,6 +37,30 @@ pub fn detect_provider_from_remote(url: &str) -> ProviderKind {
     }
 }
 
+/// Extract the `owner/repo` slug from a GitHub remote URL. Accepts
+/// `https://github.com/owner/repo(.git)` and the scp-like
+/// `git@github.com:owner/repo(.git)`; returns `None` for other hosts or
+/// shapes so callers fall back to an empty `repo` key.
+pub fn github_owner_repo(url: &str) -> Option<String> {
+    let trimmed = url.trim().trim_end_matches('/');
+    let idx = trimmed.find("github.com")?;
+    let rest = &trimmed[idx + "github.com".len()..];
+    let rest = rest
+        .strip_prefix(':')
+        .or_else(|| rest.strip_prefix('/'))
+        .unwrap_or(rest);
+    let rest = rest.strip_suffix(".git").unwrap_or(rest);
+    let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() < 2 {
+        return None;
+    }
+    Some(format!(
+        "{}/{}",
+        segments[segments.len() - 2],
+        segments[segments.len() - 1]
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +118,58 @@ mod tests {
     #[test]
     fn detect_empty_remote_defaults_to_github() {
         assert_eq!(detect_provider_from_remote(""), ProviderKind::Github);
+    }
+
+    // github_owner_repo
+
+    #[test]
+    fn github_owner_repo_parses_https_url_with_git_suffix() {
+        assert_eq!(
+            github_owner_repo("https://github.com/acme/widgets.git").as_deref(),
+            Some("acme/widgets")
+        );
+    }
+
+    #[test]
+    fn github_owner_repo_parses_https_url_without_git_suffix() {
+        assert_eq!(
+            github_owner_repo("https://github.com/acme/widgets").as_deref(),
+            Some("acme/widgets")
+        );
+    }
+
+    #[test]
+    fn github_owner_repo_parses_scp_like_ssh_url() {
+        assert_eq!(
+            github_owner_repo("git@github.com:acme/widgets.git").as_deref(),
+            Some("acme/widgets")
+        );
+    }
+
+    #[test]
+    fn github_owner_repo_parses_ssh_scheme_with_userinfo() {
+        assert_eq!(
+            github_owner_repo("ssh://git@github.com/acme/widgets.git").as_deref(),
+            Some("acme/widgets")
+        );
+    }
+
+    #[test]
+    fn github_owner_repo_rejects_non_github_hosts() {
+        assert_eq!(
+            github_owner_repo("https://bitbucket.org/acme/widgets.git"),
+            None
+        );
+        assert_eq!(
+            github_owner_repo("https://dev.azure.com/org/proj/_git/repo"),
+            None
+        );
+        assert_eq!(github_owner_repo(""), None);
+    }
+
+    #[test]
+    fn github_owner_repo_rejects_single_path_segment() {
+        assert_eq!(github_owner_repo("https://github.com/acme"), None);
     }
 
     // create_provider

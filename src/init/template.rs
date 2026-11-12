@@ -79,15 +79,34 @@ impl StackDefaults {
 ///
 /// Empty `stacks` produces a generic template with commented placeholders.
 pub fn render(stacks: &[DetectedStack]) -> String {
-    render_with_provider(stacks, &ProviderTemplate::github())
+    render_with_primary(stacks, None, &ProviderTemplate::github(), None)
 }
 
 pub fn render_with_provider(stacks: &[DetectedStack], provider: &ProviderTemplate) -> String {
-    let project_block = render_project_block(stacks);
-    let gates_test_command = stacks
-        .first()
-        .map(|s| StackDefaults::for_stack(*s).test_command)
-        .unwrap_or("");
+    render_with_primary(stacks, None, provider, None)
+}
+
+/// Like [`render_with_provider`], but lets the caller override the
+/// primary stack's defaults and fill `project.repo`. `primary` replaces
+/// `StackDefaults::for_stack(stacks[0])` when present (used by
+/// `render_or_merge` to carry repo-refined Python commands); `repo` is
+/// the `owner/name` slug parsed from the `origin` remote, or `None` to
+/// leave the key empty for manual fill. An empty `run_command` on the
+/// resolved defaults emits the default as a comment instead of a key
+/// the first run would trip over.
+pub fn render_with_primary(
+    stacks: &[DetectedStack],
+    primary: Option<&StackDefaults>,
+    provider: &ProviderTemplate,
+    repo: Option<&str>,
+) -> String {
+    let project_block = render_project_block(stacks, primary, repo);
+    let gates_test_command = primary.map(|d| d.test_command).unwrap_or_else(|| {
+        stacks
+            .first()
+            .map(|s| StackDefaults::for_stack(*s).test_command)
+            .unwrap_or("")
+    });
     let provider_block = render_provider_block(provider);
 
     format!(
@@ -225,11 +244,20 @@ fn toml_basic_string(value: &str) -> String {
     out
 }
 
-fn render_project_block(stacks: &[DetectedStack]) -> String {
+fn render_project_block(
+    stacks: &[DetectedStack],
+    primary: Option<&StackDefaults>,
+    repo: Option<&str>,
+) -> String {
+    let repo_line = match repo {
+        Some(slug) => format!("repo = {}", toml_basic_string(slug)),
+        None => String::from("repo = \"\""),
+    };
+
     if stacks.is_empty() {
-        return String::from(
+        return format!(
             r#"[project]
-repo = ""
+{repo_line}
 base_branch = "main"
 # TODO: no project markers detected — fill these in manually.
 # language = "rust" | "node" | "python" | "go"
@@ -239,8 +267,9 @@ base_branch = "main"
         );
     }
 
-    let primary = StackDefaults::for_stack(stacks[0]);
-    let language_line = format!("language = \"{}\"", primary.language);
+    let fallback = StackDefaults::for_stack(stacks[0]);
+    let resolved = primary.unwrap_or(&fallback);
+    let language_line = format!("language = \"{}\"", resolved.language);
 
     let languages_line = if stacks.len() > 1 {
         let ids: Vec<String> = stacks.iter().map(|s| format!("\"{}\"", s.id())).collect();
@@ -254,16 +283,25 @@ base_branch = "main"
         String::new()
     };
 
-    let mut block = String::from("[project]\nrepo = \"\"\nbase_branch = \"main\"\n");
+    let mut block = format!("[project]\n{repo_line}\nbase_branch = \"main\"\n");
     block.push_str(&language_line);
     block.push('\n');
     if !languages_line.is_empty() {
         block.push_str(&languages_line);
         block.push('\n');
     }
-    block.push_str(&format!("build_command = \"{}\"\n", primary.build_command));
-    block.push_str(&format!("test_command = \"{}\"\n", primary.test_command));
-    block.push_str(&format!("run_command = \"{}\"\n", primary.run_command));
+    block.push_str(&format!("build_command = \"{}\"\n", resolved.build_command));
+    block.push_str(&format!("test_command = \"{}\"\n", resolved.test_command));
+    if resolved.run_command.is_empty() {
+        // Refined-away default (#1150): no entry point detected, so the
+        // command is written as a comment the user must resolve instead
+        // of a key whose first run fails.
+        block.push_str(
+            "# run_command = \"python main.py\"  # TODO: no main.py detected — fill in manually.\n",
+        );
+    } else {
+        block.push_str(&format!("run_command = \"{}\"\n", resolved.run_command));
+    }
     block
 }
 

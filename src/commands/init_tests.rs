@@ -50,6 +50,150 @@ fn init_creates_all_template_files() {
     }
 }
 
+fn git(dir: &TempDir, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir.path())
+        .output()
+        .expect("git must be available for repo tests");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn read_maestro_toml(dir: &TempDir) -> String {
+    std::fs::read_to_string(dir.path().join("maestro.toml")).expect("maestro.toml written")
+}
+
+#[test]
+fn init_python_without_pytest_config_uses_unittest_in_both_places() {
+    // #1150: `tests/test_*.py` with no pytest markers must yield
+    // `python3 -m unittest` in both `[project].test_command` and
+    // `[gates].test_command` — a stdlib project gets a runnable gate.
+    let dir = TempDir::new().expect("create tempdir");
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = \"x\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir(dir.path().join("tests")).unwrap();
+    std::fs::write(
+        dir.path().join("tests/test_sample.py"),
+        "def test_x():\n    pass\n",
+    )
+    .unwrap();
+    let detector = FsProjectDetector::new();
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("cmd_init_inner");
+    assert_eq!(code, 0);
+    let toml = read_maestro_toml(&dir);
+    assert_eq!(
+        toml.matches("test_command = \"python3 -m unittest\"")
+            .count(),
+        2,
+        "expected unittest in [project] and [gates]:\n{toml}"
+    );
+    let gates = &toml[toml.find("[gates]").expect("[gates] section")..];
+    assert!(
+        gates.contains("test_command = \"python3 -m unittest\""),
+        "gates must carry the unittest default:\n{gates}"
+    );
+    assert!(
+        !toml.contains("test_command = \"pytest\""),
+        "no pytest default without pytest config:\n{toml}"
+    );
+}
+
+#[test]
+fn init_python_with_pyproject_pytest_table_keeps_pytest() {
+    // #1150: a `[tool.pytest…]` table is a pytest marker; the default
+    // stays `pytest` in both places.
+    let dir = TempDir::new().expect("create tempdir");
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = \"x\"\n\n[tool.pytest.ini_options]\nminversion = \"7.0\"\n",
+    )
+    .unwrap();
+    let detector = FsProjectDetector::new();
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("cmd_init_inner");
+    assert_eq!(code, 0);
+    let toml = read_maestro_toml(&dir);
+    assert_eq!(
+        toml.matches("test_command = \"pytest\"").count(),
+        2,
+        "pytest config detected — keep pytest in both places:\n{toml}"
+    );
+}
+
+#[test]
+fn init_python_without_main_py_comments_run_command() {
+    // #1150: no `main.py` → the default `python main.py` is written as a
+    // comment, never as a runnable-but-broken key.
+    let dir = TempDir::new().expect("create tempdir");
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = \"x\"\n",
+    )
+    .unwrap();
+    let detector = FsProjectDetector::new();
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("cmd_init_inner");
+    assert_eq!(code, 0);
+    let toml = read_maestro_toml(&dir);
+    assert!(
+        !toml.contains("\nrun_command = "),
+        "run_command must be commented when no entry point exists:\n{toml}"
+    );
+    assert!(
+        toml.contains("# run_command = \"python main.py\""),
+        "commented default guides manual fill:\n{toml}"
+    );
+}
+
+#[test]
+fn init_python_with_main_py_keeps_uncommented_run_command() {
+    let dir = TempDir::new().expect("create tempdir");
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = \"x\"\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("main.py"), "print(\"hi\")\n").unwrap();
+    let detector = FsProjectDetector::new();
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("cmd_init_inner");
+    assert_eq!(code, 0);
+    let toml = read_maestro_toml(&dir);
+    assert!(
+        toml.contains("\nrun_command = \"python main.py\""),
+        "entry point present — keep the runnable default:\n{toml}"
+    );
+}
+
+#[test]
+fn init_fills_repo_from_github_origin() {
+    // #1150: `origin` parsing as a GitHub URL fills `project.repo` as
+    // `owner/name` instead of leaving it empty.
+    let dir = TempDir::new().expect("create tempdir");
+    git(&dir, &["init", "-q"]);
+    git(
+        &dir,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/widgets.git",
+        ],
+    );
+    let detector = FakeProjectDetector::new(vec![DetectedStack::Rust]);
+    let code = cmd_init_inner(false, dir.path(), &detector).expect("cmd_init_inner");
+    assert_eq!(code, 0);
+    let toml = read_maestro_toml(&dir);
+    assert!(
+        toml.contains("repo = \"acme/widgets\""),
+        "repo must be filled from origin:\n{toml}"
+    );
+}
+
 #[test]
 fn first_origin_remote_url_prefers_fetch_url() {
     let remote = "upstream\thttps://example.com/upstream.git (fetch)\n\
