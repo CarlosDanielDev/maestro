@@ -623,6 +623,7 @@ impl App {
 
         let guardrail = crate::prompts::resolve_guardrail(
             config.sessions.guardrail_prompt.as_deref(),
+            &config.gates.test_command,
             &std::path::PathBuf::from("."),
         );
         self.pool.set_guardrail_prompt(guardrail);
