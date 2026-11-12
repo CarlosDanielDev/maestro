@@ -385,7 +385,7 @@ async fn event_loop(
                     let tx = app.data_tx.clone();
                     let issue_numbers: Vec<u64> = config.issues.iter().map(|(n, _)| *n).collect();
                     let custom_prompt = config.custom_prompt.clone();
-                    let agent_id = config.agent_id.clone();
+                    let agent_id = config.agent_id;
                     let provider_config = provider_config_from_app(app);
                     tokio::spawn(async move {
                         let result = with_provider(provider_config, |client| async move {
@@ -482,7 +482,7 @@ async fn event_loop(
                 }
                 app::TuiCommand::RunAdaptScan(config) => {
                     let tx = app.data_tx.clone();
-                    let path = config.path.clone();
+                    let path = config.path;
                     tokio::spawn(async move {
                         use crate::adapt::scanner::{LocalProjectScanner, ProjectScanner};
                         let scanner = LocalProjectScanner::new();
