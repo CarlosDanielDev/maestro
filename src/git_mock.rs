@@ -27,6 +27,9 @@ pub struct MockGitOps {
     /// Pre-canned answer from `head_is_wip_backup`. Tests that exercise
     /// the resume path set this to `true` before injecting the mock.
     pub head_is_wip: bool,
+    /// When `true`, `backup_wip` reports `Ok(false)` (clean tree, no
+    /// commit created) instead of the dirty-tree default (#1143).
+    pub backup_skips: bool,
     pub backup_wip_calls: std::sync::Arc<std::sync::Mutex<Vec<(std::path::PathBuf, u64)>>>,
     pub amend_calls: std::sync::Arc<std::sync::Mutex<Vec<(std::path::PathBuf, String, String)>>>,
     pub commit_and_push_calls:
@@ -43,6 +46,7 @@ impl MockGitOps {
             remote_branches: Vec::new(),
             commits_ahead: false,
             head_is_wip: false,
+            backup_skips: false,
             backup_wip_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             amend_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             commit_and_push_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -68,6 +72,13 @@ impl MockGitOps {
     /// Configure `changed_files_against_merge_base` to return `files`.
     pub fn with_changed_files(mut self, files: Vec<String>) -> Self {
         self.changed_files = files;
+        self
+    }
+
+    /// Configure `backup_wip` to report the #1143 clean-tree skip
+    /// (`Ok(false)`, no commit created).
+    pub fn with_backup_skips(mut self) -> Self {
+        self.backup_skips = true;
         self
     }
 }
@@ -104,7 +115,7 @@ impl GitOps for MockGitOps {
         Ok(self.commits_ahead)
     }
 
-    fn backup_wip(&self, worktree_path: &Path, issue_number: u64) -> Result<()> {
+    fn backup_wip(&self, worktree_path: &Path, issue_number: u64) -> Result<bool> {
         if self.should_fail {
             anyhow::bail!("mock: backup_wip failed");
         }
@@ -112,7 +123,7 @@ impl GitOps for MockGitOps {
             .lock()
             .unwrap()
             .push((worktree_path.to_path_buf(), issue_number));
-        Ok(())
+        Ok(!self.backup_skips)
     }
 
     fn amend_clean_and_push(
