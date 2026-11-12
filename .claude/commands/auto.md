@@ -192,7 +192,7 @@ If `/auto` exits before Step 7, print a one-line reason + `Re-run: /auto #<n>` h
 `/auto` works without prior conversation context. A fresh session can run `/auto #<n>` on an existing branch and:
 
 - Detect the existing `feat/issue-<n>-*` branch via `/implement` Step 5's `--continue` semantics.
-- Re-create `$GATE_LOG_DIR` from the timestamped sentinel path written by `implement-gates.sh`.
+- Re-create `$GATE_LOG_DIR` from the sentinel file written by `implement-gates.sh`: read the gate log dir path (created by `mktemp -d` under `$SENTINEL_DIR`) from `maestro-current-gate-dir` in the sentinel dir.
 - Read the issue body + `## Blocked By` + `## Manual Test` sections directly via `gh issue view`.
 - Inspect the milestone dependency graph via `gh api repos/<owner>/<repo>/milestones/<n> --jq '.description'`.
 - Find any prior follow-up issues via `gh issue list --search "follow-up to #<n> in:title,body" --json number,title`.
