@@ -91,7 +91,6 @@ async fn auto_pr_logs_url_in_activity_log_on_success() {
         vec![42],
         true,
         1.23,
-        vec!["src/foo.rs".into()],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -131,7 +130,6 @@ async fn auto_pr_skips_creation_when_pr_already_exists_for_branch() {
         vec![42],
         true,
         0.5,
-        vec![],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -175,7 +173,6 @@ async fn auto_pr_does_not_double_fire_within_one_process() {
         vec![42],
         true,
         0.5,
-        vec![],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -187,7 +184,6 @@ async fn auto_pr_does_not_double_fire_within_one_process() {
         vec![42],
         true,
         0.5,
-        vec![],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -213,7 +209,6 @@ async fn auto_pr_general_error_logs_branch_and_manual_command() {
         vec![42],
         true,
         0.5,
-        vec![],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -263,7 +258,6 @@ auto_pr = false
         vec![42],
         true,
         0.5,
-        vec![],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -297,7 +291,6 @@ async fn auto_pr_no_github_client_logs_error_not_silent() {
         vec![42],
         true,
         0.5,
-        vec![],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -326,7 +319,6 @@ async fn auto_pr_no_worktree_branch_logs_error_not_silent() {
         vec![42],
         true,
         0.5,
-        vec![],
         None, // no worktree branch
         None,
         false,
@@ -363,7 +355,6 @@ async fn auto_pr_zero_commits_skips_pr_with_visible_message() {
         vec![42],
         true,
         0.5,
-        vec!["src/foo.rs".into()],
         Some("maestro/issue-42".into()),
         Some(std::path::PathBuf::from("/tmp/wt-42")),
         false,
@@ -417,7 +408,6 @@ async fn auto_pr_git_check_error_falls_through_to_create_pr() {
         vec![42],
         true,
         0.5,
-        vec![],
         Some("maestro/issue-42".into()),
         Some(std::path::PathBuf::from("/tmp/wt-42")),
         false,
@@ -448,7 +438,6 @@ async fn auto_pr_when_auth_missing_enqueues_pending_pr_for_manual_retry() {
         vec![42],
         true,
         1.0,
-        vec!["src/foo.rs".into()],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -500,7 +489,7 @@ async fn auto_pr_when_auth_missing_without_branch_skips_pending_pr() {
 
     // No worktree branch — there is no PR to retry, so the auth-skip
     // path must NOT enqueue a doomed PendingPr.
-    app.on_issue_session_completed(42, vec![42], true, 0.0, vec![], None, None, false)
+    app.on_issue_session_completed(42, vec![42], true, 0.0, None, None, false)
         .await;
 
     assert!(
@@ -521,7 +510,6 @@ async fn auto_pr_when_auth_missing_does_not_double_enqueue() {
         vec![42],
         true,
         0.0,
-        vec![],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -536,7 +524,6 @@ async fn auto_pr_when_auth_missing_does_not_double_enqueue() {
         vec![42],
         true,
         0.0,
-        vec![],
         Some("maestro/issue-42".into()),
         None,
         false,
@@ -546,5 +533,100 @@ async fn auto_pr_when_auth_missing_does_not_double_enqueue() {
         app.pending_prs.len(),
         1,
         "auth-missing path must dedupe by issue_number",
+    );
+}
+
+// --- Issue #1142: PR body must list the git diff, not files_touched ---
+
+#[tokio::test]
+async fn auto_pr_body_never_publishes_absolute_touched_paths() {
+    // #1142 repro: the session only *Read* pyproject.toml (read-only,
+    // absolute worktree path in session.files_touched) and wrote
+    // stub.txt. The PR body must never publish absolute worktree paths,
+    // and a read-only file must not appear. `/tmp/wt-42` is not a git
+    // repo, so the diff lookup itself fails — the body must then omit
+    // Files Changed entirely rather than fall back to files_touched.
+    let mock = MockGitHubClient::new();
+    mock.set_create_pr_response(101);
+    let mock_handle = mock.clone();
+
+    let mut app = make_app_with_mock(mock);
+    app.state.issue_cache.insert(42, make_issue(42));
+
+    app.on_issue_session_completed(
+        42,
+        vec![42],
+        true,
+        0.5,
+        Some("maestro/issue-42".into()),
+        Some(std::path::PathBuf::from("/tmp/wt-42")),
+        false,
+    )
+    .await;
+
+    let calls = mock_handle.create_pr_calls();
+    assert_eq!(calls.len(), 1, "PR must still be created");
+    let body = &calls[0].body;
+    assert!(
+        !body.contains("/tmp/wt-42"),
+        "PR body must not publish absolute worktree paths. Body:\n{}",
+        body
+    );
+    assert!(
+        !body.contains("pyproject.toml"),
+        "read-only file (only Read) must not appear in the PR body. Body:\n{}",
+        body
+    );
+}
+
+#[tokio::test]
+async fn auto_pr_body_lists_diff_files_not_files_touched() {
+    // #1142: Files Changed must come from the git diff (mocked here),
+    // repo-relative — never from session.files_touched. `/tmp/wt-42` is
+    // not a repo, so with a real CliGitOps this would fail; the mock
+    // pins the contract that the lookup output is what gets rendered.
+    let mock = MockGitHubClient::new();
+    mock.set_create_pr_response(101);
+    let mock_handle = mock.clone();
+
+    let git = crate::git::MockGitOps::new()
+        .with_commits_ahead(true)
+        .with_changed_files(vec!["stub.txt".into()]);
+    let mut app = make_app_with_mock(mock);
+    app = app.with_git_ops(Box::new(git));
+    app.state.issue_cache.insert(42, make_issue(42));
+
+    app.on_issue_session_completed(
+        42,
+        vec![42],
+        true,
+        0.5,
+        Some("maestro/issue-42".into()),
+        Some(std::path::PathBuf::from("/tmp/wt-42")),
+        false,
+    )
+    .await;
+
+    let calls = mock_handle.create_pr_calls();
+    assert_eq!(calls.len(), 1);
+    let body = &calls[0].body;
+    assert!(
+        body.contains("- `stub.txt`"),
+        "Files Changed must list the diff files. Body:\n{}",
+        body
+    );
+    for line in body.lines() {
+        if line.starts_with("- `") {
+            assert!(
+                !line.trim_start_matches("- `").starts_with('/'),
+                "no absolute path may appear in Files Changed, got: {}",
+                line
+            );
+        }
+    }
+    assert!(
+        body.contains("*Generated by [Maestro](https://github.com/CarlosDanielDev/maestro)*"),
+        "footer must link the project repo. Body:\n{}",
+        body
     );
 }

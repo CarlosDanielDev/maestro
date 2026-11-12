@@ -16,6 +16,9 @@ pub struct MockGitOps {
     pub should_fail: bool,
     /// Canned unified diff returned by `diff_against_merge_base` (#918).
     pub diff_text: String,
+    /// Canned repo-relative file list returned by
+    /// `changed_files_against_merge_base` (#1142).
+    pub changed_files: Vec<String>,
     /// Recorded `(worktree_path, base_branch)` args from
     /// `diff_against_merge_base` calls (#918).
     pub diff_calls: std::sync::Arc<std::sync::Mutex<Vec<(std::path::PathBuf, String)>>>,
@@ -35,6 +38,7 @@ impl MockGitOps {
         Self {
             should_fail: false,
             diff_text: String::new(),
+            changed_files: Vec::new(),
             diff_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             remote_branches: Vec::new(),
             commits_ahead: false,
@@ -58,6 +62,12 @@ impl MockGitOps {
     /// Configure `head_is_wip_backup` to return `value`.
     pub fn with_head_wip(mut self, value: bool) -> Self {
         self.head_is_wip = value;
+        self
+    }
+
+    /// Configure `changed_files_against_merge_base` to return `files`.
+    pub fn with_changed_files(mut self, files: Vec<String>) -> Self {
+        self.changed_files = files;
         self
     }
 }
@@ -138,5 +148,16 @@ impl GitOps for MockGitOps {
             .unwrap()
             .push((worktree_path.to_path_buf(), base_branch.to_string()));
         Ok(self.diff_text.clone())
+    }
+
+    fn changed_files_against_merge_base(
+        &self,
+        _worktree_path: &Path,
+        _base_branch: &str,
+    ) -> Result<Vec<String>> {
+        if self.should_fail {
+            anyhow::bail!("mock: changed_files_against_merge_base failed");
+        }
+        Ok(self.changed_files.clone())
     }
 }

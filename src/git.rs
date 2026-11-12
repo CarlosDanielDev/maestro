@@ -46,6 +46,18 @@ pub trait GitOps: Send + Sync {
     /// `merge-base(base_branch, HEAD)` — the same file set GitHub shows for
     /// the eventual PR.
     fn diff_against_merge_base(&self, worktree_path: &Path, base_branch: &str) -> Result<String>;
+
+    /// Repo-relative paths the PR will show: `git diff --name-only
+    /// merge-base(base_branch, HEAD) HEAD` — the same file set as the
+    /// PR's "Files changed" tab. Empty when the branch tip equals base.
+    /// This is the only valid source for the PR body's Files Changed
+    /// list (#1142): `session.files_touched` also records Read/Glob/Grep
+    /// with absolute worktree paths, which must never be published.
+    fn changed_files_against_merge_base(
+        &self,
+        worktree_path: &Path,
+        base_branch: &str,
+    ) -> Result<Vec<String>>;
 }
 
 /// Production implementation using git CLI commands.
@@ -323,6 +335,49 @@ impl GitOps for CliGitOps {
             );
         }
         Ok(String::from_utf8_lossy(&diff.stdout).to_string())
+    }
+
+    fn changed_files_against_merge_base(
+        &self,
+        worktree_path: &Path,
+        base_branch: &str,
+    ) -> Result<Vec<String>> {
+        crate::util::validate_gh_arg(base_branch, "base branch")?;
+        let merge_base = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .args(["merge-base", base_branch, "HEAD"])
+            .output()
+            .context("running git merge-base")?;
+        if !merge_base.status.success() {
+            anyhow::bail!(
+                "git merge-base failed: {}",
+                String::from_utf8_lossy(&merge_base.stderr).trim()
+            );
+        }
+        let base = String::from_utf8_lossy(&merge_base.stdout)
+            .trim()
+            .to_string();
+        if base.is_empty() {
+            anyhow::bail!("git merge-base returned no commit");
+        }
+        let diff = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .args(["diff", "--name-only", &base, "HEAD"])
+            .output()
+            .context("running git diff --name-only")?;
+        if !diff.status.success() {
+            anyhow::bail!(
+                "git diff --name-only failed: {}",
+                String::from_utf8_lossy(&diff.stderr).trim()
+            );
+        }
+        Ok(String::from_utf8_lossy(&diff.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
     }
 }
 
