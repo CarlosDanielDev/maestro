@@ -181,6 +181,10 @@ pub enum Commands {
         /// Show what would be cleaned without actually doing it
         #[arg(long)]
         dry_run: bool,
+        /// Remove worktrees of stale sessions: runs whose maestro process
+        /// died while the session still showed in-flight work (#1149)
+        #[arg(long)]
+        stale: bool,
     },
     /// Show session transcript logs
     Logs {

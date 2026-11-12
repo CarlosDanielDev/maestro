@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::session::pool::session_slug;
+use crate::state::types::MaestroState;
 use crate::work::worktree_teardown::wipe_worktree;
 
 /// Manages cleanup of orphaned worktrees left by crashed processes.
@@ -62,6 +64,33 @@ impl CleanupManager {
         Ok(orphans)
     }
 
+    /// Collect the worktrees of stale sessions (#1149): sessions still
+    /// claiming in-flight work whose owning maestro process is gone. The
+    /// worktree is located by the slug the pool used at creation
+    /// ([`session_slug`]) — `Session::worktree_path` is a fallback because
+    /// its primary meaning is the #560 FailedGates retention marker, and
+    /// crash-killed sessions never carry it. A session whose candidate
+    /// paths no longer exist on disk has nothing to remove and is skipped.
+    pub fn stale_worktrees(&self, state: &MaestroState) -> Vec<OrphanWorktree> {
+        state
+            .sessions
+            .iter()
+            .filter(|s| s.is_stale())
+            .filter_map(|s| {
+                let derived = self.worktree_dir.join(session_slug(s));
+                let path = if derived.exists() {
+                    derived
+                } else if let Some(p) = s.worktree_path.as_deref().filter(|p| p.exists()) {
+                    p.to_path_buf()
+                } else {
+                    return None;
+                };
+                let name = path.file_name()?.to_string_lossy().to_string();
+                Some(OrphanWorktree { path, name })
+            })
+            .collect()
+    }
+
     /// Remove orphaned worktrees. Returns the count removed.
     ///
     /// #938: each removal routes through the hardened [`wipe_worktree`]
@@ -96,6 +125,78 @@ impl CleanupManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::types::{Session, SessionStatus};
+
+    // --- Issue #1149: stale session worktrees ---
+
+    #[test]
+    fn stale_worktrees_collects_only_dead_owner_sessions_with_existing_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let wt_root = dir.path().join(".maestro/worktrees");
+        std::fs::create_dir_all(&wt_root).unwrap();
+
+        let dead = crate::system::process::testing::dead_process_pid();
+
+        // Stale session found by slug derivation alone — the crash-killed
+        // case: no `worktree_path` was ever persisted, but the pool-named
+        // dir exists under the worktree root (#1149).
+        let mut derived =
+            Session::new("d".into(), "opus".into(), "orchestrator".into(), None, None);
+        derived.status = SessionStatus::Running;
+        derived.owner_pid = Some(dead);
+        let derived_dir = wt_root.join(session_slug(&derived));
+        std::fs::create_dir_all(&derived_dir).unwrap();
+
+        // Stale session found via a recorded path (no slug-named dir).
+        let mut recorded =
+            Session::new("r".into(), "opus".into(), "orchestrator".into(), None, None);
+        recorded.status = SessionStatus::Running;
+        recorded.owner_pid = Some(dead);
+        let recorded_dir = wt_root.join("custom-retained");
+        std::fs::create_dir_all(&recorded_dir).unwrap();
+        recorded.worktree_path = Some(recorded_dir.clone());
+
+        // Live owner: never collected.
+        let mut live = Session::new("l".into(), "opus".into(), "orchestrator".into(), None, None);
+        live.status = SessionStatus::Running;
+        live.owner_pid = Some(std::process::id());
+        let live_dir = wt_root.join(session_slug(&live));
+        std::fs::create_dir_all(&live_dir).unwrap();
+
+        // Stale but its recorded worktree is already gone from disk.
+        let mut gone = Session::new("g".into(), "opus".into(), "orchestrator".into(), None, None);
+        gone.status = SessionStatus::Running;
+        gone.owner_pid = Some(dead);
+        gone.worktree_path = Some(wt_root.join("session-gone0"));
+
+        // Stale but no candidate path exists anywhere.
+        let mut no_wt = Session::new("n".into(), "opus".into(), "orchestrator".into(), None, None);
+        no_wt.status = SessionStatus::Running;
+        no_wt.owner_pid = Some(dead);
+
+        let mut state = MaestroState::default();
+        state.sessions = vec![derived, recorded, live, gone, no_wt];
+
+        let mgr = CleanupManager::new(dir.path());
+        let found = mgr.stale_worktrees(&state);
+
+        assert_eq!(
+            found.len(),
+            2,
+            "only dead-owner sessions with an existing candidate path are collected"
+        );
+        assert!(
+            found.iter().any(|o| o.path == derived_dir
+                && o.name == derived_dir.file_name().unwrap().to_string_lossy()),
+            "slug-derived worktree must be found, got: {found:?}"
+        );
+        assert!(
+            found
+                .iter()
+                .any(|o| o.path == recorded_dir && o.name == "custom-retained"),
+            "recorded-path worktree must be found, got: {found:?}"
+        );
+    }
 
     #[test]
     fn new_creates_manager_with_correct_path() {

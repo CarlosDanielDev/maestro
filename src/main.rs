@@ -138,7 +138,7 @@ async fn main() -> anyhow::Result<()> {
             reset,
             non_interactive,
         }) => cmd_init(reset, non_interactive),
-        Some(Commands::Clean { dry_run }) => cmd_clean(dry_run),
+        Some(Commands::Clean { dry_run, stale }) => cmd_clean(dry_run, stale),
         Some(Commands::Logs { session, export }) => cmd_logs(session, export),
         Some(Commands::Resume { session }) => cmd_resume(session).await,
         Some(Commands::TestSlack) => cmd_test_slack().await,
