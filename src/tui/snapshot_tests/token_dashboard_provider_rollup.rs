@@ -22,8 +22,11 @@ fn token_dashboard_rollup_three_providers_120x40() {
     let mut s_claude_2 =
         make_session_with_agent(SessionStatus::Running, Some(2), "claude", 0.20, 0.40);
     s_claude_2.id = uuid::Uuid::from_u128(2);
-    s_claude_2.token_usage.input_tokens = 0;
-    s_claude_2.token_usage.cache_read_tokens = 0;
+    // Non-zero usage so the rollup context cell (max per session, #1147)
+    // differs from the cross-session sum: max(12,000, 5,000) = 12,000,
+    // sum would be 17,000.
+    s_claude_2.token_usage.input_tokens = 2_000;
+    s_claude_2.token_usage.cache_read_tokens = 3_000;
 
     let mut s_minimax =
         make_session_with_agent(SessionStatus::Running, Some(3), "minimax", 0.05, 0.80);
