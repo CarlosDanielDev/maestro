@@ -8,6 +8,7 @@
 //! seam) so tests can inject `MockGitOps` via `App::with_git_ops`.
 
 use super::App;
+use crate::git::GitOps;
 use crate::tui::activity_log::LogLevel;
 use crate::util::sanitize::sanitize_log;
 use std::path::Path;
@@ -16,6 +17,132 @@ use std::path::Path;
 pub(super) struct CompletionGitOutcome {
     pub committed_clean: bool,
     pub error_message: Option<String>,
+}
+
+/// Activity-log line produced by a git phase that ran on the #1153
+/// completion job, replayed by the apply tick in event order.
+pub(super) type DeferredLog = (String, String, LogLevel);
+
+/// WIP-backup phase without App state (#1153). Same decisions and log
+/// lines as the pre-split `App::backup_wip_before_gates`, which now
+/// delegates here; the completion job calls this directly.
+pub(super) fn run_backup_phase(
+    git: &dyn GitOps,
+    issue_number: u64,
+    worktree_path: &Path,
+) -> (bool, Vec<DeferredLog>) {
+    let mut logs = Vec::new();
+    let head_is_wip = match git.head_is_wip_backup(worktree_path) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                issue = issue_number,
+                error = %e,
+                "WIP detection failed; proceeding to backup",
+            );
+            false
+        }
+    };
+
+    if head_is_wip {
+        tracing::info!(
+            issue = issue_number,
+            "HEAD is WIP backup from prior run; skipping new WIP commit"
+        );
+        logs.push((
+            format!("#{issue_number}"),
+            "Resuming with existing WIP backup commit".into(),
+            LogLevel::Info,
+        ));
+        return (true, logs);
+    }
+
+    let head_is_wip_after_backup = match git.backup_wip(worktree_path, issue_number) {
+        Ok(true) => {
+            tracing::info!(issue = issue_number, "WIP backup commit created");
+            logs.push((
+                format!("#{issue_number}"),
+                "WIP backup commit created before gates".into(),
+                LogLevel::Info,
+            ));
+            true
+        }
+        Ok(false) => {
+            // #1143: clean worktree — the agent already committed
+            // its own work. No WIP commit exists, so the post-gate
+            // step must push via the legacy path, not amend.
+            tracing::info!(
+                issue = issue_number,
+                "Worktree clean; skipped WIP backup commit"
+            );
+            logs.push((
+                format!("#{issue_number}"),
+                "Worktree clean; no WIP backup commit needed".into(),
+                LogLevel::Info,
+            ));
+            false
+        }
+        Err(e) => {
+            tracing::warn!(issue = issue_number, error = %e, "WIP backup failed");
+            logs.push((
+                format!("#{issue_number}"),
+                format!(
+                    "WIP backup commit failed: {} (gates will run anyway)",
+                    sanitize_log(&e.to_string())
+                ),
+                LogLevel::Warn,
+            ));
+            false
+        }
+    };
+    (head_is_wip_after_backup, logs)
+}
+
+/// Post-gate push phase without App state (#1153). Re-detects a WIP at
+/// HEAD when `head_is_wip` was not established by the backup phase
+/// (gates skipped or backup failed), then amends or commits and pushes.
+pub(super) fn run_push_phase(
+    git: &dyn GitOps,
+    worktree_path: &Path,
+    branch: &str,
+    message: &str,
+    head_is_wip: bool,
+) -> CompletionGitOutcome {
+    // Re-detect WIP at HEAD when gates were skipped (empty `gates`
+    // config) or the backup phase didn't establish it. Without this, a
+    // branch that already carries a WIP commit from a prior
+    // gates-enabled run would have its WIP subject pushed verbatim by
+    // the legacy `commit_and_push` fallback. The `||` short-circuits
+    // when we already created/detected a WIP.
+    let head_is_wip = head_is_wip || git.head_is_wip_backup(worktree_path).unwrap_or(false);
+    amend_or_commit(git, worktree_path, branch, message, head_is_wip)
+}
+
+/// Amend-or-commit-and-push core shared by the App wrapper and the
+/// job's push phase.
+fn amend_or_commit(
+    git: &dyn GitOps,
+    worktree_path: &Path,
+    branch: &str,
+    message: &str,
+    head_is_wip: bool,
+) -> CompletionGitOutcome {
+    let result = if head_is_wip {
+        git.amend_clean_and_push(worktree_path, branch, message)
+    } else {
+        git.commit_and_push(worktree_path, branch, message)
+    };
+
+    match result {
+        Ok(()) => CompletionGitOutcome {
+            committed_clean: true,
+            error_message: None,
+        },
+        Err(e) => CompletionGitOutcome {
+            committed_clean: false,
+            error_message: Some(sanitize_log(&e.to_string())),
+        },
+    }
 }
 
 impl App {
@@ -33,74 +160,20 @@ impl App {
     /// worktree (#1143) creates no WIP commit and returns `false`,
     /// routing the post-gate push through `commit_and_push` instead
     /// of the amend.
+    /// Test-only since #1153: production runs `run_backup_phase` on the
+    /// completion job.
+    #[cfg(test)]
     pub(super) fn backup_wip_before_gates(
         &mut self,
         issue_number: u64,
         worktree_path: &Path,
     ) -> bool {
-        let head_is_wip = match self.git_ops.head_is_wip_backup(worktree_path) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(
-                    issue = issue_number,
-                    error = %e,
-                    "WIP detection failed; proceeding to backup",
-                );
-                false
-            }
-        };
-
-        if head_is_wip {
-            tracing::info!(
-                issue = issue_number,
-                "HEAD is WIP backup from prior run; skipping new WIP commit"
-            );
-            self.activity_log.push_simple(
-                format!("#{}", issue_number),
-                "Resuming with existing WIP backup commit".into(),
-                LogLevel::Info,
-            );
-            return true;
+        let (head_is_wip, logs) =
+            run_backup_phase(self.git_ops.as_ref(), issue_number, worktree_path);
+        for (label, message, level) in logs {
+            self.activity_log.push_simple(label, message, level);
         }
-
-        match self.git_ops.backup_wip(worktree_path, issue_number) {
-            Ok(true) => {
-                tracing::info!(issue = issue_number, "WIP backup commit created");
-                self.activity_log.push_simple(
-                    format!("#{}", issue_number),
-                    "WIP backup commit created before gates".into(),
-                    LogLevel::Info,
-                );
-                true
-            }
-            Ok(false) => {
-                // #1143: clean worktree — the agent already committed
-                // its own work. No WIP commit exists, so the post-gate
-                // step must push via the legacy path, not amend.
-                tracing::info!(
-                    issue = issue_number,
-                    "Worktree clean; skipped WIP backup commit"
-                );
-                self.activity_log.push_simple(
-                    format!("#{}", issue_number),
-                    "Worktree clean; no WIP backup commit needed".into(),
-                    LogLevel::Info,
-                );
-                false
-            }
-            Err(e) => {
-                tracing::warn!(issue = issue_number, error = %e, "WIP backup failed");
-                self.activity_log.push_simple(
-                    format!("#{}", issue_number),
-                    format!(
-                        "WIP backup commit failed: {} (gates will run anyway)",
-                        sanitize_log(&e.to_string())
-                    ),
-                    LogLevel::Warn,
-                );
-                false
-            }
-        }
+        head_is_wip
     }
 
     /// Post-gate-success git step. When `head_is_wip` is true, replaces
@@ -112,6 +185,9 @@ impl App {
     /// `head_is_wip` comes from the return of
     /// `backup_wip_before_gates` — passing it in avoids a redundant
     /// `head_is_wip_backup` subprocess pair.
+    /// Test-only since #1153: production runs `run_push_phase` on the
+    /// completion job.
+    #[cfg(test)]
     pub(super) fn amend_or_commit_and_push(
         &self,
         worktree_path: &Path,
@@ -119,23 +195,13 @@ impl App {
         message: &str,
         head_is_wip: bool,
     ) -> CompletionGitOutcome {
-        let result = if head_is_wip {
-            self.git_ops
-                .amend_clean_and_push(worktree_path, branch, message)
-        } else {
-            self.git_ops.commit_and_push(worktree_path, branch, message)
-        };
-
-        match result {
-            Ok(()) => CompletionGitOutcome {
-                committed_clean: true,
-                error_message: None,
-            },
-            Err(e) => CompletionGitOutcome {
-                committed_clean: false,
-                error_message: Some(sanitize_log(&e.to_string())),
-            },
-        }
+        amend_or_commit(
+            self.git_ops.as_ref(),
+            worktree_path,
+            branch,
+            message,
+            head_is_wip,
+        )
     }
 }
 

@@ -56,7 +56,7 @@ fn make_app_with_mock(mock: MockGitHubClient) -> App {
     );
     app.gh_auth_ok = true;
     app.config = Some(make_test_config());
-    app.github_client = Some(Box::new(mock));
+    app.github_client = Some(std::sync::Arc::new(mock));
     app
 }
 

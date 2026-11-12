@@ -97,7 +97,7 @@ impl App {
 
     /// Check if all sessions are done.
     pub fn all_done(&self) -> bool {
-        self.pool.all_done()
+        self.pool.all_done() && self.completions_in_flight.is_empty()
     }
 
     pub fn active_count(&self) -> usize {

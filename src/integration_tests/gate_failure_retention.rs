@@ -4,6 +4,7 @@
 //! so the regression we're guarding — a real `git worktree remove --force`
 //! call landing on the gate-failure path — is covered end to end.
 
+use super::completion_ticks::drive_completion_to_apply;
 use crate::integration_tests::helpers::{init_git_repo, make_session_with_issue};
 use crate::session::pool::SessionPool;
 use crate::session::transition::TransitionReason;
@@ -164,9 +165,7 @@ async fn check_completions_tears_down_worktree_when_terminal_status_is_completed
         .transition_to(SessionStatus::Completed, TransitionReason::StreamCompleted)
         .expect("Running -> Completed");
 
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     assert!(
         !app.pool.worktree_exists("issue-558"),
@@ -265,9 +264,7 @@ async fn pipeline_sets_worktree_path_on_session_when_gates_fail() {
             is_ci_fix: false,
         });
 
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let s = app.pool.get_session(id).expect("session findable");
     assert_eq!(
@@ -314,9 +311,7 @@ async fn pipeline_does_not_set_worktree_path_when_gates_pass() {
             is_ci_fix: false,
         });
 
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let s = app.pool.get_session(id).expect("session findable");
     assert!(
@@ -357,9 +352,7 @@ async fn pipeline_gate_results_populated_only_with_failing_gates() {
             is_ci_fix: false,
         });
 
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let s = app.pool.get_session(id).expect("session findable");
     // Only one gate (TestsPass via fallback) is configured and it failed,

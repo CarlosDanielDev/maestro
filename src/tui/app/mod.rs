@@ -1,11 +1,15 @@
 mod auto_pr;
+mod auto_pr_apply;
+mod auto_pr_phase;
 mod budget;
 mod bypass;
 mod ci_error_review;
 mod ci_polling;
 mod claim_conflicts;
 pub(crate) mod clipboard_action;
+mod completion_apply;
 mod completion_git;
+mod completion_job;
 mod completion_pipeline;
 mod completion_summary;
 mod context_overflow;
@@ -97,7 +101,7 @@ pub struct App {
     pub start_time: chrono::DateTime<chrono::Utc>,
     pub event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     pub work_assignment_service: Option<WorkAssignmentService>,
-    pub github_client: Option<Box<dyn RepoProvider>>,
+    pub github_client: Option<std::sync::Arc<dyn RepoProvider>>,
     pub config: Option<Config>,
     pub config_path: Option<std::path::PathBuf>,
     pub(crate) pending_issue_completions: Vec<PendingIssueCompletion>,
@@ -247,11 +251,24 @@ pub struct App {
     /// at the GitHub layer (the only authority that ultimately matters).
     /// Memory growth is bounded by `usize` issue numbers per maestro run
     /// (8 bytes each); single-user, dozens-of-sessions threat model.
-    pub(crate) attempted_pr_issue_numbers: std::collections::HashSet<u64>,
+    /// `Arc<Mutex>` since #1153: the completion job's `pr_phase` performs
+    /// the check-and-insert on a worker task.
+    pub(crate) attempted_pr_issue_numbers:
+        std::sync::Arc<std::sync::Mutex<std::collections::HashSet<u64>>>,
     /// Git operations adapter (#520). Production wires `CliGitOps`;
     /// tests inject `MockGitOps` via `with_git_ops`. Used by the auto-PR
-    /// pipeline's zero-commit gate.
-    pub(crate) git_ops: Box<dyn crate::git::GitOps>,
+    /// pipeline's zero-commit gate. `Arc` since #1153: the completion
+    /// job clones it into the worker task.
+    pub(crate) git_ops: std::sync::Arc<dyn crate::git::GitOps>,
+    /// Finished #1153 completion jobs awaiting their apply tick. The
+    /// job task pushes its `CompletionJobOutcome` here;
+    /// `check_completions` drains and applies it on the render loop.
+    completion_jobs: std::sync::Arc<std::sync::Mutex<Vec<completion_job::CompletionJobOutcome>>>,
+    /// Completions dispatched to a #1153 job whose outcome is not yet
+    /// applied. Persisted with `pending_issue_completions` (#514) and
+    /// keeps `all_done()` false so `--once` / continuous mode never
+    /// exit or advance while a push or PR is still running.
+    pub(crate) completions_in_flight: Vec<PendingIssueCompletion>,
     /// Override for `$HOME` in tests. Production reads `std::env::var("HOME")`.
     /// Used by `pushup_marker` to find `~/.maestro/last-pr-created`.
     pub(crate) home_dir_override: Option<std::path::PathBuf>,
@@ -414,8 +431,12 @@ impl App {
             shell_launcher: Box::new(crate::tui::shell_launcher::OsShellLauncher),
             copy_toast: None,
             desktop_notifier: std::sync::Arc::new(OsascriptNotifier::new(false)),
-            attempted_pr_issue_numbers: std::collections::HashSet::new(),
-            git_ops: Box::new(crate::git::CliGitOps),
+            attempted_pr_issue_numbers: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashSet::new(),
+            )),
+            git_ops: std::sync::Arc::new(crate::git::CliGitOps),
+            completion_jobs: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            completions_in_flight: Vec::new(),
             home_dir_override: None,
             last_pr_marker_mtime: None,
             minimax_forced_count_5h: 0,
@@ -470,7 +491,7 @@ impl App {
     /// Builder for tests: swap the production git ops adapter for a fake.
     #[cfg(test)]
     pub(crate) fn with_git_ops(mut self, git_ops: Box<dyn crate::git::GitOps>) -> Self {
-        self.git_ops = git_ops;
+        self.git_ops = std::sync::Arc::from(git_ops);
         self
     }
 
@@ -845,7 +866,12 @@ impl App {
         // Mirror in-memory pending completions to persisted state so a
         // shutdown between session-end and the next check_completions tick
         // does not orphan the worktree (#514).
-        self.state.pending_completions = self.pending_issue_completions.clone();
+        self.state.pending_completions = self
+            .pending_issue_completions
+            .iter()
+            .chain(&self.completions_in_flight)
+            .cloned()
+            .collect();
         // Mirror the pending-PR retry queue so Shift+P (#521) can resurrect
         // entries after a restart — without this the in-memory queue is
         // lost on shutdown.

@@ -28,6 +28,9 @@ struct MockState {
     remove_label_error_once: Option<String>,
     add_label_attempts: u32,
     remove_label_attempts: u32,
+    /// Simulated network latency for `add_label` (#1153 tests): the
+    /// impl sleeps this many milliseconds before answering.
+    add_label_delay_ms: u64,
     create_pr_response: Option<u64>,
     create_pr_error: Option<String>,
     get_issue_errors: std::collections::HashMap<u64, String>,
@@ -139,6 +142,13 @@ impl MockGitHubClient {
 
     pub fn set_add_label_error(&self, msg: &str) {
         self.inner.lock().unwrap().add_label_error = Some(msg.to_string());
+    }
+
+    /// Simulate a slow label call (#1153): `add_label` sleeps `secs`
+    /// before answering, so tests can prove the caller is not blocked.
+    pub fn with_add_label_delay(self, secs: u64) -> Self {
+        self.inner.lock().unwrap().add_label_delay_ms = secs * 1000;
+        self
     }
 
     pub fn set_remove_label_error(&self, msg: &str) {
