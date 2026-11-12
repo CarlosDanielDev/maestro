@@ -147,3 +147,32 @@ azure_devops = false
     assert!(serialized.contains("[experimental]"), "{serialized}");
     assert!(serialized.contains("azure_devops = false"), "{serialized}");
 }
+
+#[test]
+fn has_legacy_azure_devops_flag_detects_false_in_document() {
+    let toml_str = format!(
+        r#"{MINIMAL_TOML}
+[experimental]
+azure_devops = false
+"#
+    );
+    assert!(has_legacy_azure_devops_flag(&toml_str));
+}
+
+#[test]
+fn has_legacy_azure_devops_flag_ignores_missing_or_true_flag() {
+    assert!(!has_legacy_azure_devops_flag(MINIMAL_TOML));
+    let toml_str = format!(
+        r#"{MINIMAL_TOML}
+[experimental]
+azure_devops = true
+"#
+    );
+    assert!(!has_legacy_azure_devops_flag(&toml_str));
+}
+
+#[test]
+fn has_legacy_azure_devops_flag_rejects_non_toml_content() {
+    assert!(!has_legacy_azure_devops_flag("not toml {{{"));
+    assert!(!has_legacy_azure_devops_flag(""));
+}
