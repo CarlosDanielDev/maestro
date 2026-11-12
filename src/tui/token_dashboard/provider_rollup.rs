@@ -30,7 +30,10 @@ pub struct ProviderRow {
 /// Build one `ProviderRow` per distinct `session.agent_id`. Sessions without
 /// an `agent_id` collapse into a single `"unknown"` bucket. Cost values are
 /// sanitized (NaN / negative / Infinity → 0.0) at sum-time so the renderer
-/// in #849 never sees non-finite values.
+/// in #849 never sees non-finite values. `context_used` is the largest
+/// per-session context (input + cache reads) in the group, never the
+/// cross-session sum (#1147) — summing distinct sessions against one window
+/// is not a context measure.
 ///
 /// `window_lookup` returns the per-provider context-window denominator (e.g.
 /// 200_000 for Claude 4.x). The first session's `model` field is passed to
@@ -60,9 +63,15 @@ where
             let mut context_used: u64 = 0;
             for s in &group {
                 total_cost_usd += sanitize_cost(s.cost_usd);
-                context_used = context_used
-                    .saturating_add(s.token_usage.input_tokens)
+                // Context is a per-session measure (#1147): the cell shows the
+                // largest session's input + cache reads against the window.
+                // Summing distinct sessions reads >100% of one window and is
+                // not context usage at all.
+                let session_context = s
+                    .token_usage
+                    .input_tokens
                     .saturating_add(s.token_usage.cache_read_tokens);
+                context_used = context_used.max(session_context);
             }
             let model = group.first().map(|s| s.model.as_str()).unwrap_or("");
             let context_window = window_lookup(&provider_id, model);
@@ -215,6 +224,24 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].context_window, Some(200_000));
         assert_eq!(rows[0].context_used, 15_000);
+    }
+
+    #[test]
+    fn build_provider_rows_context_used_is_max_per_session_not_sum() {
+        // Numbers from #1147: two claude sessions of 13.8k+255.9k and
+        // 27.1k+237.4k. The old sum reported 534,200 against the 200,000
+        // window; the cell must report the largest per-session context.
+        let mut s1 = make_session(Some("claude"), 0.10, "claude-opus-4-5");
+        s1.token_usage.input_tokens = 13_800;
+        s1.token_usage.cache_read_tokens = 255_900;
+        let mut s2 = make_session(Some("claude"), 0.20, "claude-opus-4-5");
+        s2.token_usage.input_tokens = 27_100;
+        s2.token_usage.cache_read_tokens = 237_400;
+        let fake = FakeProviderQuotaSnapshots::new();
+        let rows = build_provider_rows(&[&s1, &s2], &fake, provider_context_window);
+        let claude = rows.iter().find(|r| r.provider_id == "claude").unwrap();
+        assert_eq!(claude.context_used, 269_700);
+        assert_eq!(claude.context_window, Some(200_000));
     }
 
     #[test]
