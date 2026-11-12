@@ -7,7 +7,7 @@
 //! showed `GATES_RUNNING`.
 
 use crate::integration_tests::helpers::{
-    init_git_repo, make_app_with_gate, make_session_with_issue,
+    init_git_repo, make_app_with_gate, make_app_without_gates, make_session_with_issue,
 };
 use crate::session::transition::TransitionReason;
 use crate::session::types::{Session, SessionStatus, StreamEvent};
@@ -202,4 +202,50 @@ async fn pipeline_re_arms_running_session_into_gates_running() {
         .is_some(),
         "pipeline must enter GATES_RUNNING before the gates run"
     );
+}
+
+/// Fill every pool slot with a decoy session so `add_session` cannot
+/// promote (and therefore cannot spawn) the session under test. No
+/// spawn loop runs here — `pool.try_promote` only moves sessions to
+/// active.
+fn fill_pool_slots(app: &mut App) {
+    for i in 0..app.pool.max_concurrent() {
+        let decoy = make_session_with_issue(9000 + i as u64);
+        app.pool.enqueue(decoy);
+        app.pool.try_promote();
+    }
+}
+
+/// Wiring (#1144): `add_session` must flag gates-configured issue
+/// sessions via `mark_gates_pending` — the stream handler parks only
+/// flagged sessions in GATES_RUNNING.
+#[tokio::test]
+async fn add_session_flags_gated_issue_sessions() {
+    let mut app = make_app_with_gate("issue-1144-flag-yes", "true");
+    fill_pool_slots(&mut app);
+
+    app.add_session(make_session_with_issue(1144))
+        .await
+        .unwrap();
+
+    let session = find_session(&app, 1144);
+    assert!(
+        session.gates_pending,
+        "gates configured + issue number → add_session must flag the session"
+    );
+}
+
+/// Wiring (#1144), negative case: without gates configured the flag
+/// must stay off, so the stream handler keeps settling COMPLETED.
+#[tokio::test]
+async fn add_session_does_not_flag_without_gates() {
+    let mut app = make_app_without_gates("issue-1144-flag-no");
+    fill_pool_slots(&mut app);
+
+    app.add_session(make_session_with_issue(1144))
+        .await
+        .unwrap();
+
+    let session = find_session(&app, 1144);
+    assert!(!session.gates_pending);
 }
