@@ -200,3 +200,93 @@ fn assign_work_respects_available_slots_count() {
 
     assert_eq!(assignments.len(), 1);
 }
+
+// --- #1140: `run --issue` start-time label transition ---
+
+fn make_app_with_mock(mock: crate::provider::github::client::mock::MockGitHubClient) -> App {
+    use crate::session::worktree::MockWorktreeManager;
+    use crate::state::store::StateStore;
+
+    let tmp = std::env::temp_dir().join(format!(
+        "maestro-work-assigner-test-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+    let store = StateStore::new(tmp);
+    let mut app = App::new(
+        store,
+        3,
+        Box::new(MockWorktreeManager::new()),
+        "bypassPermissions".into(),
+        vec![],
+    );
+    app.gh_auth_ok = true;
+    app.config = Some(make_config());
+    app.github_client = Some(Box::new(mock));
+    app
+}
+
+#[tokio::test]
+async fn run_issue_start_marks_in_progress_and_clears_ready() {
+    use crate::provider::github::client::mock::MockGitHubClient;
+
+    let mock = MockGitHubClient::new();
+    let client = mock.clone();
+    let mut app = make_app_with_mock(mock);
+
+    app.mark_issues_in_progress(&client, &[41, 42]).await;
+
+    let adds = client.add_label_calls();
+    let removes = client.remove_label_calls();
+    for num in [41, 42] {
+        assert!(
+            adds.iter()
+                .any(|(n, l)| *n == num && l == "maestro:in-progress"),
+            "expected maestro:in-progress on #{num}"
+        );
+        assert!(
+            removes
+                .iter()
+                .any(|(n, l)| *n == num && l == "maestro:ready"),
+            "expected maestro:ready removed from #{num}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn run_issue_start_label_failure_is_logged_not_fatal() {
+    use crate::provider::github::client::mock::MockGitHubClient;
+    use crate::tui::activity_log::LogLevel;
+
+    let mock = MockGitHubClient::new();
+    mock.set_add_label_error("TLS handshake timeout");
+    let client = mock.clone();
+    let mut app = make_app_with_mock(mock);
+
+    app.mark_issues_in_progress(&client, &[41]).await;
+
+    assert!(
+        app.activity_log
+            .entries()
+            .iter()
+            .any(|e| e.level == LogLevel::Error && e.message.contains("Label update failed")),
+        "expected a Label update failed entry in the activity log"
+    );
+}
+
+#[tokio::test]
+async fn run_issue_start_skips_labels_when_gh_auth_lost() {
+    use crate::provider::github::client::mock::MockGitHubClient;
+
+    let mock = MockGitHubClient::new();
+    let client = mock.clone();
+    let mut app = make_app_with_mock(mock);
+    app.gh_auth_ok = false;
+
+    app.mark_issues_in_progress(&client, &[41]).await;
+
+    assert_eq!(
+        client.add_label_attempts(),
+        0,
+        "no label calls expected without auth"
+    );
+}

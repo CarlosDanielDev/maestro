@@ -228,6 +228,10 @@ pub async fn cmd_run(
 
             app.state.issue_cache.insert(num, gh_issue);
 
+            // Label lifecycle (#1140): apply the same ready -> in-progress
+            // transition the work-assigner path applies on assignment.
+            app.mark_issues_in_progress(client.as_ref(), &[num]).await;
+
             app.add_session(session).await?;
         }
 

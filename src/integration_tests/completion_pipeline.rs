@@ -35,9 +35,11 @@ async fn mark_done_adds_label_before_removing() {
     let removes = client.remove_label_calls();
 
     assert_eq!(adds.len(), 1);
-    assert_eq!(removes.len(), 1);
+    // #1140: mark_done clears both old lifecycle labels.
+    assert_eq!(removes.len(), 2);
     assert_eq!(adds[0].1, "maestro:done");
     assert_eq!(removes[0].1, "maestro:in-progress");
+    assert_eq!(removes[1].1, "maestro:ready");
 }
 
 #[tokio::test]

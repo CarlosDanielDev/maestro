@@ -69,6 +69,10 @@ impl RepoProvider for MockGitHubClient {
 
     async fn add_label(&self, issue: u64, label: &str) -> Result<()> {
         let mut state = self.inner.lock().unwrap();
+        state.add_label_attempts += 1;
+        if let Some(err) = state.add_label_error_once.take() {
+            anyhow::bail!("{}", err);
+        }
         if let Some(ref err) = state.add_label_error {
             anyhow::bail!("{}", err);
         }
@@ -79,6 +83,10 @@ impl RepoProvider for MockGitHubClient {
 
     async fn remove_label(&self, issue: u64, label: &str) -> Result<()> {
         let mut state = self.inner.lock().unwrap();
+        state.remove_label_attempts += 1;
+        if let Some(err) = state.remove_label_error_once.take() {
+            anyhow::bail!("{}", err);
+        }
         if let Some(ref err) = state.remove_label_error {
             anyhow::bail!("{}", err);
         }

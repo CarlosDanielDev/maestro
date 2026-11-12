@@ -23,6 +23,11 @@ struct MockState {
     milestones: Vec<Milestone>,
     add_label_error: Option<String>,
     remove_label_error: Option<String>,
+    // Fail the next call once, then succeed (#1140 retry tests).
+    add_label_error_once: Option<String>,
+    remove_label_error_once: Option<String>,
+    add_label_attempts: u32,
+    remove_label_attempts: u32,
     create_pr_response: Option<u64>,
     create_pr_error: Option<String>,
     get_issue_errors: std::collections::HashMap<u64, String>,
@@ -138,6 +143,24 @@ impl MockGitHubClient {
 
     pub fn set_remove_label_error(&self, msg: &str) {
         self.inner.lock().unwrap().remove_label_error = Some(msg.to_string());
+    }
+
+    /// Fail the next `add_label` call once, then behave normally.
+    pub fn set_add_label_error_once(&self, msg: &str) {
+        self.inner.lock().unwrap().add_label_error_once = Some(msg.to_string());
+    }
+
+    /// Fail the next `remove_label` call once, then behave normally.
+    pub fn set_remove_label_error_once(&self, msg: &str) {
+        self.inner.lock().unwrap().remove_label_error_once = Some(msg.to_string());
+    }
+
+    pub fn add_label_attempts(&self) -> u32 {
+        self.inner.lock().unwrap().add_label_attempts
+    }
+
+    pub fn remove_label_attempts(&self) -> u32 {
+        self.inner.lock().unwrap().remove_label_attempts
     }
 
     pub fn set_create_pr_response(&self, pr_number: u64) {

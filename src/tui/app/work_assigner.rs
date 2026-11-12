@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::models::ModelRouter;
 use crate::prompts::PromptBuilder;
+use crate::provider::github::client::RepoProvider;
 use crate::session::types::SessionModeConfig;
 use crate::work::assigner::WorkAssigner;
 
@@ -191,6 +192,31 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Apply the ready -> in-progress transition for issues whose sessions
+    /// start outside the work assigner (`run --issue`, #1140). Mirrors the
+    /// labeling block in `tick_work_assigner`: non-fatal on error.
+    pub async fn mark_issues_in_progress(
+        &mut self,
+        client: &dyn RepoProvider,
+        issue_numbers: &[u64],
+    ) {
+        for num in issue_numbers {
+            if !self.gh_auth_ok {
+                self.log_gh_auth_skip(*num, "label update");
+                continue;
+            }
+            let label_mgr = LabelManager::new(client);
+            if let Err(e) = label_mgr.mark_in_progress(*num).await {
+                self.check_gh_auth_error(&e);
+                self.activity_log.push_simple(
+                    format!("#{}", num),
+                    format!("Label update failed: {}", e),
+                    LogLevel::Error,
+                );
+            }
+        }
     }
 }
 
