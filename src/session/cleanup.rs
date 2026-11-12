@@ -80,10 +80,9 @@ impl CleanupManager {
                 let derived = self.worktree_dir.join(session_slug(s));
                 let path = if derived.exists() {
                     derived
-                } else if let Some(p) = s.worktree_path.as_deref().filter(|p| p.exists()) {
-                    p.to_path_buf()
                 } else {
-                    return None;
+                    let p = s.worktree_path.as_deref().filter(|p| p.exists())?;
+                    p.to_path_buf()
                 };
                 let name = path.file_name()?.to_string_lossy().to_string();
                 Some(OrphanWorktree { path, name })
