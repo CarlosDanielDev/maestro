@@ -45,6 +45,9 @@ pub struct PendingPr {
     pub issue_numbers: Vec<u64>,
     pub branch: String,
     pub base_branch: String,
+    /// Field name predates #1142: the payload is the repo-relative diff
+    /// list (`git diff --name-only merge-base(base, HEAD) HEAD`) that the
+    /// retried PR body renders — never the session's `files_touched`.
     pub files_touched: Vec<String>,
     pub cost_usd: f64,
     pub attempt: u32,

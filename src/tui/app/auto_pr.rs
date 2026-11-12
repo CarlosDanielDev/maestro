@@ -38,13 +38,11 @@ impl App {
     /// no silent failures. Idempotent within the process via
     /// `attempted_pr_issue_numbers`; cross-restart idempotency relies on
     /// the AC4 PR-already-exists preflight (#514).
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn run_auto_pr(
         &mut self,
         issue_number: u64,
         issue_numbers: Vec<u64>,
         cost_usd: f64,
-        files_touched: Vec<String>,
         worktree_branch: Option<String>,
         worktree_path: Option<PathBuf>,
         is_unified: bool,
@@ -209,7 +207,29 @@ impl App {
             return;
         };
         let client = self.github_client.as_ref().unwrap();
-        let file_refs: Vec<&str> = files_touched.iter().map(|s| s.as_str()).collect();
+        // #1142: the PR body's Files Changed list must be the real PR
+        // diff — `git diff --name-only merge-base(base, HEAD) HEAD`,
+        // repo-relative — never `session.files_touched`, which also
+        // records Read/Glob/Grep with absolute worktree paths. On lookup
+        // failure the section is omitted: publishing no list beats
+        // publishing the local directory layout.
+        let diff_files = match worktree_path.as_deref() {
+            Some(wt) => match self
+                .git_ops
+                .changed_files_against_merge_base(wt, &base_branch)
+            {
+                Ok(files) => files,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "changed_files lookup failed; PR body will omit Files Changed"
+                    );
+                    Vec::new()
+                }
+            },
+            None => Vec::new(),
+        };
+        let file_refs: Vec<&str> = diff_files.iter().map(|s| s.as_str()).collect();
         let pr_creator = PrCreator::new(client.as_ref(), base_branch.clone());
 
         let pr_result = if is_unified {
@@ -286,7 +306,9 @@ impl App {
                     issue_numbers: issue_numbers.clone(),
                     branch: branch.to_string(),
                     base_branch: base_branch.clone(),
-                    files_touched: files_touched.clone(),
+                    // Field name predates #1142; the payload is now the
+                    // repo-relative diff list the retry body renders.
+                    files_touched: diff_files.clone(),
                     cost_usd,
                     attempt: 0,
                     max_attempts: policy.max_attempts,

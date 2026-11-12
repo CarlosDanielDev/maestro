@@ -66,6 +66,8 @@ pub struct PendingIssueCompletion {
     pub issue_numbers: Vec<u64>,
     pub success: bool,
     pub cost_usd: f64,
+    /// Session telemetry only — since #1142 the PR body's Files Changed
+    /// list comes from the git diff, never from this field.
     pub files_touched: Vec<String>,
     pub worktree_branch: Option<String>,
     pub worktree_path: Option<PathBuf>,

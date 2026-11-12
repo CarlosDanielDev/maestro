@@ -4,7 +4,7 @@ use crate::provider::github::labels::LabelManager;
 use crate::provider::github::pr::PrRetryPolicy;
 use crate::provider::github::types::{PendingPr, PendingPrStatus};
 use crate::tui::activity_log::LogLevel;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 impl App {
     #[allow(clippy::too_many_arguments)]
@@ -14,7 +14,6 @@ impl App {
         issue_numbers: Vec<u64>,
         success: bool,
         cost_usd: f64,
-        files_touched: Vec<String>,
         worktree_branch: Option<String>,
         worktree_path: Option<PathBuf>,
         is_ci_fix: bool,
@@ -147,7 +146,7 @@ impl App {
                     issue_number,
                     &issue_numbers,
                     cost_usd,
-                    &files_touched,
+                    worktree_path.as_deref(),
                     worktree_branch.as_deref(),
                 );
             }
@@ -161,7 +160,6 @@ impl App {
             issue_number,
             issue_numbers,
             cost_usd,
-            files_touched,
             worktree_branch,
             worktree_path,
             is_unified,
@@ -179,7 +177,7 @@ impl App {
         issue_number: u64,
         issue_numbers: &[u64],
         cost_usd: f64,
-        files_touched: &[String],
+        worktree_path: Option<&Path>,
         worktree_branch: Option<&str>,
     ) {
         let Some(branch) = worktree_branch else {
@@ -194,6 +192,26 @@ impl App {
             .as_ref()
             .map(|c| c.project.base_branch.clone())
             .unwrap_or_else(|| "main".to_string());
+
+        // #1142: the retried PR body renders `PendingPr.files_touched`, so
+        // it must hold the repo-relative diff list, never the session's
+        // `files_touched` (absolute Read/Glob/Grep paths).
+        let diff_files = match worktree_path {
+            Some(wt) => match self
+                .git_ops
+                .changed_files_against_merge_base(wt, &base_branch)
+            {
+                Ok(files) => files,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "changed_files lookup failed; deferred PR body will omit Files Changed"
+                    );
+                    Vec::new()
+                }
+            },
+            None => Vec::new(),
+        };
 
         let already_queued = self
             .pending_prs
@@ -216,7 +234,7 @@ impl App {
             issue_numbers: issue_numbers.to_vec(),
             branch: branch.to_string(),
             base_branch,
-            files_touched: files_touched.to_vec(),
+            files_touched: diff_files,
             cost_usd,
             attempt: 0,
             max_attempts: PrRetryPolicy::default().max_attempts,

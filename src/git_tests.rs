@@ -325,3 +325,76 @@ fn cli_amend_clean_and_push_replaces_wip_subject_at_head() {
         "remote must not contain WIP commit after amend+push"
     );
 }
+
+// --- Issue #1142: changed_files_against_merge_base ---
+
+#[test]
+fn cli_changed_files_lists_merge_base_diff_repo_relative() {
+    // #1142 repro shape: a config file committed on base (the agent will
+    // only ever Read it) plus the agent's new file on the branch. Only
+    // the branch-side file is in the diff.
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    std::fs::write(tmp.path().join("pyproject.toml"), "[project]").unwrap();
+    run_git_in(tmp.path(), &["add", "pyproject.toml"]);
+    run_git_in(tmp.path(), &["commit", "-q", "-m", "config"]);
+
+    run_git_in(tmp.path(), &["checkout", "-q", "-b", "maestro/issue-3"]);
+    std::fs::write(tmp.path().join("stub.txt"), "x").unwrap();
+    run_git_in(tmp.path(), &["add", "stub.txt"]);
+    run_git_in(tmp.path(), &["commit", "-q", "-m", "feat: stub"]);
+
+    let ops = CliGitOps;
+    let files = ops
+        .changed_files_against_merge_base(tmp.path(), "main")
+        .unwrap();
+    assert_eq!(
+        files,
+        vec!["stub.txt".to_string()],
+        "must list exactly the branch-side diff, repo-relative"
+    );
+}
+
+#[test]
+fn cli_changed_files_empty_when_branch_equals_base() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+
+    let ops = CliGitOps;
+    let files = ops
+        .changed_files_against_merge_base(tmp.path(), "main")
+        .unwrap();
+    assert!(
+        files.is_empty(),
+        "no commits ahead = empty diff, got {:?}",
+        files
+    );
+}
+
+#[test]
+fn cli_changed_files_rejects_dash_prefixed_base() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+
+    let ops = CliGitOps;
+    assert!(
+        ops.changed_files_against_merge_base(tmp.path(), "--upload-pack")
+            .is_err()
+    );
+}
+
+#[test]
+fn mock_changed_files_returns_configured_and_propagates_failure() {
+    let ops = MockGitOps::new().with_changed_files(vec!["stub.txt".into()]);
+    assert_eq!(
+        ops.changed_files_against_merge_base(Path::new("/tmp"), "main")
+            .unwrap(),
+        vec!["stub.txt".to_string()]
+    );
+    assert!(
+        MockGitOps::new()
+            .with_failure()
+            .changed_files_against_merge_base(Path::new("/tmp"), "main")
+            .is_err()
+    );
+}
