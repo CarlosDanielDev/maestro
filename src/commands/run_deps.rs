@@ -60,6 +60,31 @@ pub(crate) async fn ensure_issue_unblocked(
     );
 }
 
+/// Fetch and gate every issue named in a comma-separated `--issue` list.
+/// All fetches and dependency checks complete before the list is returned,
+/// so the caller cannot enqueue (and spawn) one session and only then
+/// discover a later issue is blocked — that used to launch the earlier
+/// issues' agents and then bail before any event loop ran (#1141).
+pub(crate) async fn resolve_issue_list(
+    client: &dyn RepoProvider,
+    issue_str: &str,
+    ignore_deps: bool,
+) -> anyhow::Result<Vec<Issue>> {
+    let mut resolved = Vec::new();
+    for num_str in issue_str.split(',') {
+        let num: u64 = num_str
+            .trim()
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid issue number: {}", num_str.trim()))?;
+        let issue = client.get_issue(num).await?;
+        if !ignore_deps {
+            ensure_issue_unblocked(client, &issue).await?;
+        }
+        resolved.push(issue);
+    }
+    Ok(resolved)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,5 +212,80 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("#1"), "message was: {msg}");
         assert!(msg.contains("--ignore-deps"), "message was: {msg}");
+    }
+
+    #[tokio::test]
+    async fn gates_every_issue_before_returning_the_list() {
+        // Regression for the judge round on #1165: `run --issue 1,3` must
+        // gate BOTH issues before anything is enqueued, else #1's agent
+        // spawns and is abandoned when #3's gate fires.
+        let client = MockGitHubClient::new();
+        client.set_issues(vec![
+            issue(1, "", vec![], "open"),
+            issue(3, "blocked-by: #1", vec![], "open"),
+        ]);
+
+        let err = resolve_issue_list(&client, "1,3", false)
+            .await
+            .expect_err("blocked issue later in the list must refuse the whole run");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("#3 is blocked by #1 (open); pass --ignore-deps to run anyway"),
+            "message was: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_issue_list_skips_gate_when_ignore_deps() {
+        let client = MockGitHubClient::new();
+        client.set_issues(vec![
+            issue(1, "", vec![], "open"),
+            issue(3, "blocked-by: #1", vec![], "open"),
+        ]);
+
+        let resolved = resolve_issue_list(&client, "1,3", true)
+            .await
+            .expect("--ignore-deps must skip the gate and resolve every issue");
+        let numbers: Vec<u64> = resolved.iter().map(|i| i.number).collect();
+        assert_eq!(numbers, vec![1, 3]);
+    }
+
+    #[tokio::test]
+    async fn resolve_issue_list_returns_all_issues_when_clean() {
+        let client = MockGitHubClient::new();
+        client.set_issues(vec![
+            issue(1, "", vec![], "closed"),
+            issue(3, "blocked-by: #1", vec![], "closed"),
+        ]);
+
+        let resolved = resolve_issue_list(&client, "1,3", false)
+            .await
+            .expect("issues whose blockers are settled must resolve");
+        let numbers: Vec<u64> = resolved.iter().map(|i| i.number).collect();
+        assert_eq!(numbers, vec![1, 3]);
+    }
+
+    #[tokio::test]
+    async fn resolve_issue_list_rejects_invalid_number() {
+        let client = MockGitHubClient::new();
+
+        let err = resolve_issue_list(&client, "x", false)
+            .await
+            .expect_err("non-numeric issue number must fail");
+        assert!(
+            err.to_string().contains("Invalid issue number: x"),
+            "message was: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_issue_list_propagates_fetch_errors() {
+        let client = MockGitHubClient::new();
+        client.set_get_issue_error(3, "gh: boom");
+
+        let err = resolve_issue_list(&client, "3", false)
+            .await
+            .expect_err("fetch failure must fail the list");
+        assert!(err.to_string().contains("gh: boom"), "message was: {err}");
     }
 }
