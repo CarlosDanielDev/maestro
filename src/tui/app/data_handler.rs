@@ -211,8 +211,14 @@ impl App {
                 let (model, issue_mode, mode_config) =
                     self.resolve_model_and_mode(&gh_issue.labels, Some(&agent_id));
                 let prompt = self.build_issue_prompt_with_custom(&gh_issue, &custom_prompt);
+                let user_text = crate::session::role::user_text_from_issue(
+                    &gh_issue.title,
+                    &gh_issue.body,
+                    custom_prompt.as_deref(),
+                );
                 let issue_number = gh_issue.number;
                 let mut session = Session::new(prompt, model, issue_mode, Some(issue_number), None)
+                    .with_role_from_user_text(None, &user_text)
                     .with_mode_config(mode_config)
                     .with_agent_id(Some(agent_id));
                 session.issue_title = Some(gh_issue.title.clone());
@@ -475,9 +481,22 @@ impl App {
                         .push_str(&format!("\n\n## Additional Instructions\n\n{}", cp.trim()));
                 }
 
+                let mut user_text = gh_issues
+                    .iter()
+                    .map(|i| crate::session::role::user_text_from_issue(&i.title, &i.body, None))
+                    .collect::<Vec<_>>()
+                    .join("\n\n---\n\n");
+                if let Some(cp) = custom_prompt.as_deref()
+                    && !cp.trim().is_empty()
+                {
+                    user_text.push('\n');
+                    user_text.push_str(cp.trim());
+                }
+
                 let primary_issue = issue_numbers.first().copied();
                 let mut session =
                     Session::new(combined_prompt, model, issue_mode, primary_issue, None)
+                        .with_role_from_user_text(None, &user_text)
                         .with_mode_config(mode_config)
                         .with_agent_id(Some(agent_id));
                 session.issue_numbers = issue_numbers;

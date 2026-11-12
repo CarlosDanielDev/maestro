@@ -115,6 +115,23 @@ pub fn derive_role(prompt: &str) -> Role {
     role
 }
 
+/// Assemble the user-authored slice of an issue-driven task (#1145).
+///
+/// maestro's generated prompt (`PromptBuilder::build_issue_prompt`) wraps the
+/// issue title/body in boilerplate that contains reviewer keywords (e.g.
+/// "5. Review your changes for correctness and completeness"). Feeding that
+/// full text to [`derive_role`] classified every issue session as `Reviewer`.
+/// Only what the user wrote may reach the classifier; `extra` carries optional
+/// user-typed instructions (trimmed, skipped when blank).
+pub fn user_text_from_issue(title: &str, body: &str, extra: Option<&str>) -> String {
+    let mut text = format!("{title}\n{body}");
+    if let Some(extra) = extra.map(str::trim).filter(|e| !e.is_empty()) {
+        text.push('\n');
+        text.push_str(extra);
+    }
+    text
+}
+
 /// Look up the [`Role`] for a known maestro subagent name.
 ///
 /// The 7-entry registry mirrors `.claude/CLAUDE.md` § Subagent Registry.
@@ -444,6 +461,67 @@ mod tests {
             accuracy * 100.0,
             total,
             correct
+        );
+    }
+
+    // --- Issue #1145: classify from user-authored text, not maestro boilerplate ---
+
+    #[test]
+    fn issue_session_classifies_implementer_from_user_text_not_boilerplate() {
+        let issue = crate::provider::types::Issue {
+            number: 1,
+            title: "Add a `done` command".into(),
+            body: "Mark the current task complete when run.".into(),
+            labels: vec![],
+            state: "open".into(),
+            html_url: String::new(),
+            milestone: None,
+            assignees: vec![],
+        };
+        let config: crate::config::Config = toml::from_str(
+            r#"
+            [project]
+            repo = "owner/repo"
+            base_branch = "main"
+            [sessions]
+            [budget]
+            [github]
+            [notifications]
+            "#,
+        )
+        .unwrap();
+
+        let prompt = crate::prompts::PromptBuilder::build_issue_prompt(&issue, &config);
+        // Premise pin: the generated prompt itself still carries maestro's
+        // boilerplate reviewer keyword — it simply must not reach the classifier.
+        assert!(prompt.contains("Review your changes"));
+        assert_eq!(derive_role(&prompt), Role::Reviewer);
+
+        let session = crate::session::types::Session::new(
+            prompt,
+            "claude-opus-4-5".into(),
+            "orchestrator".into(),
+            Some(1),
+            None,
+        )
+        .with_role_from_user_text(None, &user_text_from_issue(&issue.title, &issue.body, None));
+        assert_eq!(session.role, Role::Implementer);
+    }
+
+    #[test]
+    fn user_text_from_issue_joins_title_body_and_extra_instructions() {
+        let text = user_text_from_issue("Add a `done` command", "Mark tasks complete.", None);
+        assert_eq!(text, "Add a `done` command\nMark tasks complete.");
+
+        let with_extra = user_text_from_issue(
+            "Add a `done` command",
+            "Mark tasks complete.",
+            Some("  Keep it TDD.  "),
+        );
+        assert!(with_extra.contains("Keep it TDD."));
+        assert!(
+            !with_extra.contains("  Keep it TDD.  "),
+            "extra must be trimmed"
         );
     }
 

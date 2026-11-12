@@ -225,11 +225,13 @@ pub async fn cmd_run(
             let prompt = crate::prompts::PromptBuilder::build_issue_prompt_with_images(
                 &gh_issue, &config, &images,
             );
-            let mut session =
-                Session::new(prompt, model.clone(), issue_mode, Some(num), role_override)
-                    .with_mode_config(mode_config)
-                    .with_agent_id(Some(resolved_agent.id.clone()))
-                    .with_image_paths(images.clone());
+            let user_text =
+                crate::session::role::user_text_from_issue(&gh_issue.title, &gh_issue.body, None);
+            let mut session = Session::new(prompt, model.clone(), issue_mode, Some(num), None)
+                .with_role_from_user_text(role_override, &user_text)
+                .with_mode_config(mode_config)
+                .with_agent_id(Some(resolved_agent.id.clone()))
+                .with_image_paths(images.clone());
             session.issue_title = Some(gh_issue.title.clone());
 
             app.state.issue_cache.insert(num, gh_issue);
