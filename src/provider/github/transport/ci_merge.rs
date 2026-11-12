@@ -13,7 +13,7 @@ pub(super) async fn ci_status_for_branch(client: &GhCliClient, branch: &str) -> 
         "statusCheckRollup,mergeStateStatus".to_string(),
     ];
     append_repo_arg(client, &mut argv);
-    let json_str = client.run_gh(&argv_refs(&argv)).await?;
+    let json_str = client.run_gh(&argv_refs(&argv), true).await?;
     crate::provider::github::ci::parse_ci_json(&json_str)
 }
 
@@ -26,7 +26,7 @@ pub(super) async fn ci_status_for_pr(client: &GhCliClient, pr_number: u64) -> Re
         "statusCheckRollup,mergeStateStatus".to_string(),
     ];
     append_repo_arg(client, &mut argv);
-    let json_str = client.run_gh(&argv_refs(&argv)).await?;
+    let json_str = client.run_gh(&argv_refs(&argv), true).await?;
     crate::provider::github::ci::parse_ci_json(&json_str)
 }
 
@@ -42,7 +42,7 @@ pub(super) async fn ci_check_runs_for_pr(
         "name,status,conclusion,startedAt,completedAt".to_string(),
     ];
     append_repo_arg(client, &mut argv);
-    let json_str = client.run_gh(&argv_refs(&argv)).await?;
+    let json_str = client.run_gh(&argv_refs(&argv), true).await?;
     crate::provider::github::ci::parse_check_details(&json_str)
 }
 
@@ -56,7 +56,7 @@ pub(super) async fn ci_logs_for_check(client: &GhCliClient, check_id: &str) -> R
             "--log-failed".to_string(),
         ];
         append_repo_arg(client, &mut argv);
-        let full_log = client.run_gh(&argv_refs(&argv)).await?;
+        let full_log = client.run_gh(&argv_refs(&argv), true).await?;
         return Ok(crate::provider::github::ci::truncate_log(&full_log, 4000));
     }
 
@@ -73,7 +73,7 @@ pub(super) async fn ci_logs_for_check(client: &GhCliClient, check_id: &str) -> R
         "databaseId".to_string(),
     ];
     append_repo_arg(client, &mut list_argv);
-    let runs_json = client.run_gh(&argv_refs(&list_argv)).await?;
+    let runs_json = client.run_gh(&argv_refs(&list_argv), true).await?;
     let runs: Vec<serde_json::Value> = serde_json::from_str(&runs_json)?;
     let run_id = runs
         .first()
@@ -88,7 +88,7 @@ pub(super) async fn ci_logs_for_check(client: &GhCliClient, check_id: &str) -> R
         "--log-failed".to_string(),
     ];
     append_repo_arg(client, &mut view_argv);
-    let full_log = client.run_gh(&argv_refs(&view_argv)).await?;
+    let full_log = client.run_gh(&argv_refs(&view_argv), true).await?;
     Ok(crate::provider::github::ci::truncate_log(&full_log, 4000))
 }
 
@@ -105,7 +105,7 @@ pub(super) async fn merge_pr(
         "--delete-branch".to_string(),
     ];
     append_repo_arg(client, &mut argv);
-    client.run_gh(&argv_refs(&argv)).await?;
+    client.run_gh(&argv_refs(&argv), false).await?;
     Ok(())
 }
 
