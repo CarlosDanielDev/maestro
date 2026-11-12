@@ -2142,7 +2142,11 @@ pub(in crate::session) mod tests {
         let pid_file = guard.path().join("stub-pid-1139");
         let exe = std::env::current_exe().expect("test exe");
         let status = std::process::Command::new(exe)
-            .args(["--exact", "pdeathsig_mode_a_stub_spawner", "--nocapture"])
+            // Substring filter (no `--exact`): `--exact` demands the full
+            // test path (`session::pool::tests::...`), which broke the
+            // re-exec on CI — the harness matched 0 tests and mode A never
+            // spawned the stub.
+            .args(["pdeathsig_mode_a_stub_spawner", "--nocapture"])
             .env("MAESTRO_1139_STUB", &script)
             .env("MAESTRO_1139_PID_FILE", &pid_file)
             .status()
@@ -2158,9 +2162,10 @@ pub(in crate::session) mod tests {
             .expect("parse stub pid");
 
         // The spawner is gone by now (it exited by signal); the kernel
-        // must have delivered PDEATHSIG(SIGKILL) to the agent.
+        // must have delivered PDEATHSIG(SIGKILL) to the agent. Poll up to
+        // 4 s — generous for a loaded CI VM.
         let mut gone = false;
-        for _ in 0..40 {
+        for _ in 0..80 {
             // SAFETY: kill(pid, 0) only probes the existence of our own
             // stub child.
             #[allow(unsafe_code)]
