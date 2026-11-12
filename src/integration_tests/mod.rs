@@ -17,6 +17,7 @@ mod build_hygiene;
 mod canonical_command_specs;
 #[cfg(test)]
 mod completion_pipeline;
+mod completion_ticks;
 #[cfg(test)]
 mod concurrent_sessions;
 #[cfg(test)]

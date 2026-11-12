@@ -1,13 +1,11 @@
 use super::App;
+use super::completion_job::{CompletionJob, CompletionJobOutcome};
 use super::helpers::{build_completion_gates, session_label};
 use super::types::TuiMode;
-use crate::gates::runner::{GateCheck, GateRunner};
-use crate::gates::types;
-use crate::gates::types::{CompletionGate, GateResult};
-use crate::plugins::hooks::{HookContext, HookPoint};
 use crate::session::retry::RetryPolicy;
 use crate::session::transition::TransitionReason;
 use crate::session::types::SessionStatus;
+use crate::state::types::PendingIssueCompletion;
 use crate::tui::activity_log::LogLevel;
 use std::time::{Duration, Instant};
 
@@ -25,223 +23,40 @@ impl App {
         // Process pending PR retries
         self.process_pending_pr_retries().await;
 
-        // Process pending issue completions (gates, git push, label updates, PR creation)
+        // Apply the outcomes of completion jobs that finished since the
+        // last tick (#1153). Cheap: no subprocess, no network — the job
+        // ran all of that off the render loop.
+        let outcomes: Vec<CompletionJobOutcome> = std::mem::take(
+            &mut *self
+                .completion_jobs
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()),
+        );
+        for outcome in outcomes {
+            let issue = outcome.completion.issue_number;
+            if let Some(i) = self
+                .completions_in_flight
+                .iter()
+                .position(|c| c.issue_number == issue)
+            {
+                self.completions_in_flight.remove(i);
+            }
+            self.apply_completion_outcome(outcome).await;
+        }
+
+        // Dispatch new completions to background jobs. Gates, git push,
+        // label updates and PR creation run off the render loop; the
+        // outcome lands in `completion_jobs` for a later tick.
+        // One job per issue at a time: a second completion for an issue
+        // already in flight waits here, so two jobs never run git in
+        // the same worktree at once.
         let pending = std::mem::take(&mut self.pending_issue_completions);
-
-        let gates: Vec<CompletionGate> = build_completion_gates(self.config.as_ref());
-
-        for mut completion in pending {
-            let issue_label = format!("#{}", completion.issue_number);
-            // Threaded from `backup_wip_before_gates` (pre-gate) into
-            // `amend_or_commit_and_push` (post-gate-success) so the
-            // post-gate step skips a redundant `head_is_wip_backup`
-            // detection subprocess.
-            let mut head_is_wip = false;
-
-            // Run completion gates before accepting the result
-            if completion.success
-                && !gates.is_empty()
-                && let Some(wt_path) = &completion.worktree_path
-            {
-                if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
-                    // #1144: gated sessions normally arrive here already
-                    // parked in GATES_RUNNING by the stream handler;
-                    // re-arm only when the session still sits in
-                    // RUNNING (paths that enqueue the completion
-                    // without a stream-completed event).
-                    if managed.session.status == SessionStatus::Running {
-                        checked_transition(
-                            &mut managed.session,
-                            SessionStatus::GatesRunning,
-                            TransitionReason::GatesStarted,
-                        );
-                    }
-                }
-
-                // WIP backup commit before gates run, so model edits
-                // survive any gate failure or external interruption
-                // (crash, reboot, manual rm -rf). Failures are logged
-                // but do not abort the gate run.
-                let wt_path_for_backup = wt_path.clone();
-                head_is_wip =
-                    self.backup_wip_before_gates(completion.issue_number, &wt_path_for_backup);
-
-                let gate_runner = GateRunner;
-                let results = gate_runner.run_gates(&gates, wt_path);
-
-                let paired: Vec<(GateResult, bool)> = results
-                    .into_iter()
-                    .zip(gates.iter().map(|g| g.is_required()))
-                    .collect();
-
-                let all_required_passed = types::all_required_gates_passed(&paired);
-
-                // Log individual gate results (failed-level differs by outcome)
-                let fail_level = if all_required_passed {
-                    LogLevel::Warn
-                } else {
-                    LogLevel::Error
-                };
-                for (result, _) in &paired {
-                    let level = if result.passed {
-                        LogLevel::Info
-                    } else {
-                        fail_level
-                    };
-                    self.activity_log.push_simple(
-                        issue_label.clone(),
-                        format!("Gate [{}]: {}", result.gate, result.message),
-                        level,
-                    );
-                }
-
-                if !all_required_passed {
-                    let failures: Vec<String> = paired
-                        .iter()
-                        .filter(|(r, required)| !r.passed && *required)
-                        .map(|(r, _)| r.message.clone())
-                        .collect();
-
-                    let failed_gate_results: Vec<crate::session::types::GateResultEntry> = paired
-                        .iter()
-                        .filter(|(r, _)| !r.passed)
-                        .map(|(r, _)| crate::session::types::GateResultEntry {
-                            gate: r.gate.clone(),
-                            passed: r.passed,
-                            message: r.message.clone(),
-                        })
-                        .collect();
-
-                    if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number) {
-                        managed.session.gate_results = failed_gate_results;
-                        // Persist the retained worktree path on the session so
-                        // the post-failure recovery modal (issue #560) can
-                        // surface it for [s] / [g] / [r] without piping it
-                        // through the activity log.
-                        managed.session.worktree_path = completion.worktree_path.clone();
-                        checked_transition(
-                            &mut managed.session,
-                            SessionStatus::FailedGates,
-                            TransitionReason::GatesFailed,
-                        );
-                        managed
-                            .session
-                            .log_activity(format!("Gates failed: {}", failures.join("; ")));
-                        if let Some(wt_path) = &completion.worktree_path {
-                            let retain_msg =
-                                format!("Worktree retained at {} for recovery", wt_path.display());
-                            managed.session.log_activity(retain_msg.clone());
-                            tracing::warn!(
-                                issue = completion.issue_number,
-                                worktree = %wt_path.display(),
-                                "retaining worktree after gate failure",
-                            );
-                            self.activity_log.push_simple(
-                                issue_label.clone(),
-                                retain_msg,
-                                LogLevel::Warn,
-                            );
-                        }
-                    }
-
-                    completion.success = false;
-                    let session_id = self
-                        .pool
-                        .find_by_issue_mut(completion.issue_number)
-                        .map(|m| m.session.id.to_string())
-                        .unwrap_or_default();
-                    let ctx = HookContext::new()
-                        .with_session(&session_id, Some(completion.issue_number))
-                        .with_var("MAESTRO_GATE_FAILURES", &failures.join("; "));
-                    self.fire_plugin_hook(HookPoint::TestsFailed, ctx).await;
-                } else {
-                    self.activity_log.push_simple(
-                        issue_label.clone(),
-                        "All required gates passed".into(),
-                        LogLevel::Info,
-                    );
-                    // #1144: settle COMPLETED only now — the gates ran
-                    // with the session parked in GATES_RUNNING, so
-                    // history records the documented
-                    // RUNNING → GATES_RUNNING → COMPLETED flow.
-                    if let Some(managed) = self.pool.find_by_issue_mut(completion.issue_number)
-                        && managed.session.status == SessionStatus::GatesRunning
-                    {
-                        checked_transition(
-                            &mut managed.session,
-                            SessionStatus::Completed,
-                            TransitionReason::GatesPassed,
-                        );
-                    }
-                    let session_id = self
-                        .pool
-                        .find_by_issue_mut(completion.issue_number)
-                        .map(|m| m.session.id.to_string())
-                        .unwrap_or_default();
-                    let ctx =
-                        HookContext::new().with_session(&session_id, Some(completion.issue_number));
-                    self.fire_plugin_hook(HookPoint::TestsPassed, ctx).await;
-                }
+        for completion in pending {
+            if self.is_completion_in_flight(completion.issue_number) {
+                self.pending_issue_completions.push(completion);
+            } else {
+                self.dispatch_completion_job(completion);
             }
-
-            // If successful and we have a worktree, amend the WIP
-            // backup into a clean conventional commit and push. Falls
-            // back to legacy commit_and_push when no WIP exists at
-            // HEAD (e.g. backup_wip failed earlier).
-            if completion.success
-                && let (Some(branch), Some(wt_path)) = (
-                    completion.worktree_branch.clone(),
-                    completion.worktree_path.clone(),
-                )
-            {
-                let commit_msg = if completion.issue_numbers.len() >= 2 {
-                    let refs: Vec<String> = completion
-                        .issue_numbers
-                        .iter()
-                        .map(|n| format!("#{}", n))
-                        .collect();
-                    format!("feat: implement unified changes for {}", refs.join(", "))
-                } else {
-                    format!(
-                        "feat: implement changes for issue #{}",
-                        completion.issue_number
-                    )
-                };
-                // Re-detect WIP at HEAD when gates were skipped (empty
-                // `gates` config). Without this, a branch that already
-                // carries a WIP commit from a prior gates-enabled run
-                // would have its WIP subject pushed verbatim by the
-                // legacy `commit_and_push` fallback. The `||` short-
-                // circuits when we already created/detected a WIP.
-                let head_is_wip =
-                    head_is_wip || self.git_ops.head_is_wip_backup(&wt_path).unwrap_or(false);
-                let outcome =
-                    self.amend_or_commit_and_push(&wt_path, &branch, &commit_msg, head_is_wip);
-                if outcome.committed_clean {
-                    self.activity_log.push_simple(
-                        format!("#{}", completion.issue_number),
-                        format!("Pushed to branch {}", branch),
-                        LogLevel::Info,
-                    );
-                } else if let Some(err) = outcome.error_message {
-                    self.activity_log.push_simple(
-                        format!("#{}", completion.issue_number),
-                        format!("Git push failed: {}", err),
-                        LogLevel::Error,
-                    );
-                }
-            }
-
-            self.on_issue_session_completed(
-                completion.issue_number,
-                completion.issue_numbers,
-                completion.success,
-                completion.cost_usd,
-                completion.worktree_branch,
-                completion.worktree_path,
-                completion.is_ci_fix,
-            )
-            .await;
         }
 
         // Stall detection: check for sessions that haven't produced events
@@ -436,6 +251,10 @@ impl App {
             .all_sessions()
             .iter()
             .filter(|s| s.status.is_terminal() || s.status == SessionStatus::Retrying)
+            // #1153: finalize tears COMPLETED worktrees down. Wait until
+            // the session's completion job (backup, push, PR) is applied;
+            // this same sweep finalizes it on that tick.
+            .filter(|s| !s.issue_number.is_some_and(|n| self.is_completion_in_flight(n)))
             .map(|s| s.id)
             .collect();
 
@@ -519,6 +338,66 @@ impl App {
         self.sync_state();
         Ok(())
     }
+
+    /// Whether a #1153 completion job for `issue_number` has not been
+    /// applied yet.
+    fn is_completion_in_flight(&self, issue_number: u64) -> bool {
+        self.completions_in_flight
+            .iter()
+            .any(|c| c.issue_number == issue_number)
+    }
+
+    /// Dispatch one pending completion to a background job (#1153).
+    /// Snapshots every App input the job needs, performs the cheap
+    /// GATES_RUNNING re-arm transition inline, and spawns. The heavy
+    /// work — WIP backup, gates, git push, GitHub labels, auto-PR —
+    /// runs off the render loop; `apply_completion_outcome` applies the
+    /// result on a later tick.
+    pub(crate) fn dispatch_completion_job(&mut self, completion: PendingIssueCompletion) {
+        let issue_number = completion.issue_number;
+        let gates = build_completion_gates(self.config.as_ref());
+        let gates_will_run =
+            completion.success && !gates.is_empty() && completion.worktree_path.is_some();
+
+        // #1144: gated sessions normally arrive here already parked in
+        // GATES_RUNNING by the stream handler; re-arm only when the
+        // session still sits in RUNNING (paths that enqueue the
+        // completion without a stream-completed event).
+        if gates_will_run
+            && let Some(managed) = self.pool.find_by_issue_mut(issue_number)
+            && managed.session.status == SessionStatus::Running
+        {
+            checked_transition(
+                &mut managed.session,
+                SessionStatus::GatesRunning,
+                TransitionReason::GatesStarted,
+            );
+        }
+
+        let pr_input = self.build_pr_phase_input(
+            issue_number,
+            completion.issue_numbers.clone(),
+            completion.issue_numbers.len() >= 2,
+            completion.success,
+            completion.cost_usd,
+            completion.worktree_branch.clone(),
+            completion.worktree_path.clone(),
+        );
+
+        self.completions_in_flight.push(completion.clone());
+        CompletionJob {
+            completion,
+            gates,
+            gates_will_run,
+            git: std::sync::Arc::clone(&self.git_ops),
+            github: self.github_client.clone(),
+            gh_auth_ok: self.gh_auth_ok,
+            pr_input,
+            attempted: std::sync::Arc::clone(&self.attempted_pr_issue_numbers),
+            sink: std::sync::Arc::clone(&self.completion_jobs),
+        }
+        .dispatch();
+    }
 }
 
 /// #1144: run a pipeline transition through the state machine and
@@ -527,7 +406,7 @@ impl App {
 /// COMPLETED before the gates ran); it is logged at warn with the
 /// from/to states — in structured logs and in the session's own
 /// activity log — instead of vanishing.
-fn checked_transition(
+pub(super) fn checked_transition(
     session: &mut crate::session::types::Session,
     target: SessionStatus,
     reason: TransitionReason,
@@ -549,6 +428,14 @@ fn checked_transition(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "completion_off_loop_tests.rs"]
+mod completion_off_loop_tests;
+
+#[cfg(test)]
+#[path = "completion_job_race_tests.rs"]
+mod completion_job_race_tests;
 
 #[cfg(test)]
 mod tests {

@@ -54,7 +54,7 @@ async fn poll_ci_status_uses_provider_ci_status_once_per_tick() {
     mock.set_ci_status_for_pr(123, CiStatus::Pending);
 
     let mut app = make_app();
-    app.github_client = Some(Box::new(mock.clone()));
+    app.github_client = Some(std::sync::Arc::new(mock.clone()));
     app.ci_poller.add_check(PendingPrCheck {
         pr_number: 123,
         issue_number: 42,
@@ -98,7 +98,7 @@ async fn ci_auto_fix_path_prompt_has_no_gate_clause() {
         },
     );
     mock.set_ci_logs_for_check("feat/auto", "compile error: missing semicolon");
-    app.github_client = Some(Box::new(mock));
+    app.github_client = Some(std::sync::Arc::new(mock));
 
     app.ci_poller.add_check(PendingPrCheck {
         pr_number: 5,

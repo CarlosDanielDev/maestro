@@ -68,6 +68,12 @@ impl RepoProvider for MockGitHubClient {
     }
 
     async fn add_label(&self, issue: u64, label: &str) -> Result<()> {
+        // Sleep BEFORE taking the lock so a delayed call never blocks
+        // other mock interactions (#1153 tests).
+        let delay_ms = self.inner.lock().unwrap().add_label_delay_ms;
+        if delay_ms > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        }
         let mut state = self.inner.lock().unwrap();
         state.add_label_attempts += 1;
         if let Some(err) = state.add_label_error_once.take() {

@@ -1,24 +1,82 @@
 use super::App;
+#[cfg(test)]
+use super::auto_pr_apply::PrApplyCtx;
+#[cfg(test)]
+use super::auto_pr_phase::pr_phase;
 use super::types::TuiMode;
+use crate::provider::RepoProvider;
 use crate::provider::github::labels::LabelManager;
-use crate::provider::github::pr::PrRetryPolicy;
-use crate::provider::github::types::{PendingPr, PendingPrStatus};
 use crate::tui::activity_log::LogLevel;
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::PathBuf;
+use std::sync::Arc;
+use tracing::Instrument;
+
+/// Result of the label-update phase (`labels_phase`): everything that
+/// waits on GitHub, separated from the App mutations in
+/// `apply_labels_outcome` (#1153).
+pub(super) struct LabelsOutcome {
+    /// Client present but `gh_auth_ok` false — the caller logs the skip.
+    pub auth_skipped: bool,
+    pub errors: Vec<(u64, anyhow::Error)>,
+}
+
+/// Run the label lifecycle for a completed session. Awaits GitHub for
+/// every issue; contains no App state, so the #1153 completion job can
+/// run it on a worker task and hand the outcome to a later tick.
+pub(super) async fn labels_phase(
+    client: Option<Arc<dyn RepoProvider>>,
+    gh_auth_ok: bool,
+    issues_to_label: Vec<u64>,
+    success: bool,
+) -> LabelsOutcome {
+    labels_phase_inner(client, gh_auth_ok, issues_to_label, success)
+        .instrument(tracing::info_span!("completion.labels"))
+        .await
+}
+
+async fn labels_phase_inner(
+    client: Option<Arc<dyn RepoProvider>>,
+    gh_auth_ok: bool,
+    issues_to_label: Vec<u64>,
+    success: bool,
+) -> LabelsOutcome {
+    let Some(client) = client else {
+        return LabelsOutcome {
+            auth_skipped: false,
+            errors: Vec::new(),
+        };
+    };
+    if !gh_auth_ok {
+        return LabelsOutcome {
+            auth_skipped: true,
+            errors: Vec::new(),
+        };
+    }
+    let label_mgr = LabelManager::new(client.as_ref());
+    let mut errors = Vec::new();
+    for num in issues_to_label {
+        let result = if success {
+            label_mgr.mark_done(num).await
+        } else {
+            label_mgr.mark_failed(num).await
+        };
+        if let Err(e) = result {
+            errors.push((num, e));
+        }
+    }
+    LabelsOutcome {
+        auth_skipped: false,
+        errors,
+    }
+}
 
 impl App {
-    #[allow(clippy::too_many_arguments)]
-    pub async fn on_issue_session_completed(
-        &mut self,
-        issue_number: u64,
-        issue_numbers: Vec<u64>,
-        success: bool,
-        cost_usd: f64,
-        worktree_branch: Option<String>,
-        worktree_path: Option<PathBuf>,
-        is_ci_fix: bool,
-    ) {
-        let is_unified = issue_numbers.len() >= 2;
+    /// Cheap side effects of a session completion: work-assigner
+    /// dependency graph and continuous-mode bookkeeping. Split from the
+    /// GitHub tail so the #1153 apply phase can run it inline while the
+    /// network work happens on the completion job.
+    pub(super) fn apply_issue_completion_side_effects(&mut self, issue_number: u64, success: bool) {
         // Update work assigner
         if let Some(ref mut service) = self.work_assignment_service {
             if success {
@@ -37,7 +95,7 @@ impl App {
             } else {
                 let cascaded = service.inner_mut().mark_failed_cascade(issue_number);
                 if !cascaded.is_empty() {
-                    let nums: Vec<String> = cascaded.iter().map(|n| format!("#{}", n)).collect();
+                    let nums: Vec<String> = cascaded.iter().map(|n| format!("#{n}")).collect();
                     self.activity_log.push_simple(
                         format!("#{}", issue_number),
                         format!("Cascade failed: {}", nums.join(", ")),
@@ -94,38 +152,51 @@ impl App {
                 );
             }
         }
+    }
+
+    /// Log the label-phase outcome (auth skip + per-error auth check
+    /// and activity entries). Mirrors the pre-split inline sequence.
+    pub(super) fn apply_labels_outcome(&mut self, outcome: &LabelsOutcome, issue_number: u64) {
+        if outcome.auth_skipped {
+            self.log_gh_auth_skip(issue_number, "label update");
+        }
+        for (num, e) in &outcome.errors {
+            self.check_gh_auth_error(e);
+            self.activity_log.push_simple(
+                format!("#{}", num),
+                format!("Label update failed: {}", e),
+                LogLevel::Error,
+            );
+        }
+    }
+
+    /// Inline phase → apply chain. Test-only since #1153: production
+    /// dispatches a `CompletionJob` and applies its outcome later.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn on_issue_session_completed(
+        &mut self,
+        issue_number: u64,
+        issue_numbers: Vec<u64>,
+        success: bool,
+        cost_usd: f64,
+        worktree_branch: Option<String>,
+        worktree_path: Option<PathBuf>,
+        is_ci_fix: bool,
+    ) {
+        let is_unified = issue_numbers.len() >= 2;
+        self.apply_issue_completion_side_effects(issue_number, success);
 
         // Update GitHub labels (for all issues in unified sessions)
-        if let Some(ref client) = self.github_client {
-            if !self.gh_auth_ok {
-                self.log_gh_auth_skip(issue_number, "label update");
+        if self.github_client.is_some() {
+            let client = self.github_client.clone();
+            let issues_to_label = if is_unified {
+                issue_numbers.clone()
             } else {
-                let label_mgr = LabelManager::new(client.as_ref());
-                let issues_to_label = if is_unified {
-                    issue_numbers.clone()
-                } else {
-                    vec![issue_number]
-                };
-                let mut label_errors: Vec<(u64, anyhow::Error)> = Vec::new();
-                for num in &issues_to_label {
-                    let result = if success {
-                        label_mgr.mark_done(*num).await
-                    } else {
-                        label_mgr.mark_failed(*num).await
-                    };
-                    if let Err(e) = result {
-                        label_errors.push((*num, e));
-                    }
-                }
-                for (num, e) in label_errors {
-                    self.check_gh_auth_error(&e);
-                    self.activity_log.push_simple(
-                        format!("#{}", num),
-                        format!("Label update failed: {}", e),
-                        LogLevel::Error,
-                    );
-                }
-            }
+                vec![issue_number]
+            };
+            let labels = labels_phase(client, self.gh_auth_ok, issues_to_label, success).await;
+            self.apply_labels_outcome(&labels, issue_number);
         }
 
         // CI fix sessions skip PR creation — the PR already exists
@@ -138,122 +209,37 @@ impl App {
             return;
         }
 
-        // Auto PR creation (defer if auth lost — leave a PendingPr so
-        // Shift+P recovers once `gh auth login` restores auth, #521).
-        if !self.gh_auth_ok {
-            if success {
-                self.defer_pr_for_missing_auth(
-                    issue_number,
-                    &issue_numbers,
-                    cost_usd,
-                    worktree_path.as_deref(),
-                    worktree_branch.as_deref(),
-                );
-            }
-            return;
-        }
-        if !success {
-            return;
-        }
-
-        self.run_auto_pr(
+        // Auto PR pipeline. `pr_phase` holds every `gh` call and git
+        // subprocess (including the auth-deferred diff lookup, #521);
+        // `apply_pr_outcome` mutates App state inline (#1153).
+        let input = self.build_pr_phase_input(
+            issue_number,
+            issue_numbers.clone(),
+            is_unified,
+            success,
+            cost_usd,
+            worktree_branch.clone(),
+            worktree_path,
+        );
+        let outcome = pr_phase(
+            input,
+            self.github_client.clone(),
+            self.git_ops.clone(),
+            std::sync::Arc::clone(&self.attempted_pr_issue_numbers),
+        )
+        .await;
+        let ctx = PrApplyCtx {
             issue_number,
             issue_numbers,
             cost_usd,
-            worktree_branch,
-            worktree_path,
-            is_unified,
-        )
-        .await;
-    }
-
-    /// Auth missing at PR-creation time. Log explicitly AND enqueue a
-    /// `PendingPr` in `AwaitingManualRetry` so once the user runs
-    /// `gh auth login`, Shift+P can pick the entry up and drive the
-    /// existing retry machinery. Without this, the auth-restored
-    /// recovery scenario from #521 silently drops the work.
-    fn defer_pr_for_missing_auth(
-        &mut self,
-        issue_number: u64,
-        issue_numbers: &[u64],
-        cost_usd: f64,
-        worktree_path: Option<&Path>,
-        worktree_branch: Option<&str>,
-    ) {
-        let Some(branch) = worktree_branch else {
-            // No branch = no PR is possible; preserve existing behavior:
-            // explicit auth-skip log, no PendingPr (nothing to retry).
-            self.log_gh_auth_skip(issue_number, "PR creation");
-            return;
+            branch: worktree_branch,
+            base_branch: self
+                .config
+                .as_ref()
+                .map(|c| c.project.base_branch.clone())
+                .unwrap_or_else(|| "main".to_string()),
         };
-
-        let base_branch = self
-            .config
-            .as_ref()
-            .map(|c| c.project.base_branch.clone())
-            .unwrap_or_else(|| "main".to_string());
-
-        // #1142: the retried PR body renders `PendingPr.files_touched`, so
-        // it must hold the repo-relative diff list, never the session's
-        // `files_touched` (absolute Read/Glob/Grep paths).
-        let diff_files = match worktree_path {
-            Some(wt) => match self
-                .git_ops
-                .changed_files_against_merge_base(wt, &base_branch)
-            {
-                Ok(files) => files,
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        "changed_files lookup failed; deferred PR body will omit Files Changed"
-                    );
-                    Vec::new()
-                }
-            },
-            None => Vec::new(),
-        };
-
-        let already_queued = self
-            .pending_prs
-            .iter()
-            .any(|p| p.issue_number == issue_number);
-        if already_queued {
-            // Don't double-enqueue; the existing entry is fine — Shift+P
-            // will pick it up.
-            self.log_gh_auth_skip(issue_number, "PR creation");
-            return;
-        }
-
-        let mut last_errors = std::collections::VecDeque::new();
-        last_errors.push_back(format!(
-            "GitHub auth missing. {}",
-            super::AUTH_RECOVERY_HINT
-        ));
-        let pending = PendingPr {
-            issue_number,
-            issue_numbers: issue_numbers.to_vec(),
-            branch: branch.to_string(),
-            base_branch,
-            files_touched: diff_files,
-            cost_usd,
-            attempt: 0,
-            max_attempts: PrRetryPolicy::default().max_attempts,
-            last_attempt_at: chrono::Utc::now(),
-            next_retry_at: None,
-            status: PendingPrStatus::AwaitingManualRetry,
-            last_errors,
-            manual_retry_count: 0,
-        };
-        self.pending_prs.push(pending);
-
-        self.activity_log.push_simple(
-            format!("#{}", issue_number),
-            format!(
-                "PR creation deferred — auth missing. {}",
-                super::AUTH_RECOVERY_HINT
-            ),
-            LogLevel::Warn,
-        );
+        self.apply_pr_outcome(outcome, ctx).await;
     }
 }
 

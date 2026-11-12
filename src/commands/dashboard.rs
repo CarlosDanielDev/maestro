@@ -128,7 +128,7 @@ pub async fn cmd_dashboard() -> anyhow::Result<()> {
     let mut app = if let Some(lc) = loaded {
         let provider_config = lc.config.effective_provider_config();
         let mut app = setup_app_from_config(lc, store, worktree_mgr, None);
-        app.github_client = Some(create_provider(&provider_config)?);
+        app.github_client = Some(std::sync::Arc::from(create_provider(&provider_config)?));
         app
     } else {
         no_config_app(store, worktree_mgr)

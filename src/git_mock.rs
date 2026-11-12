@@ -30,6 +30,10 @@ pub struct MockGitOps {
     /// When `true`, `backup_wip` reports `Ok(false)` (clean tree, no
     /// commit created) instead of the dirty-tree default (#1143).
     pub backup_skips: bool,
+    /// Simulated network latency for push steps (#1153 tests). The
+    /// mock sleeps this long in `commit_and_push` /
+    /// `amend_clean_and_push` before recording the call.
+    pub push_delay: Option<std::time::Duration>,
     pub backup_wip_calls: std::sync::Arc<std::sync::Mutex<Vec<(std::path::PathBuf, u64)>>>,
     pub amend_calls: std::sync::Arc<std::sync::Mutex<Vec<(std::path::PathBuf, String, String)>>>,
     pub commit_and_push_calls:
@@ -47,6 +51,7 @@ impl MockGitOps {
             commits_ahead: false,
             head_is_wip: false,
             backup_skips: false,
+            push_delay: None,
             backup_wip_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             amend_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             commit_and_push_calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -81,6 +86,19 @@ impl MockGitOps {
         self.backup_skips = true;
         self
     }
+
+    /// Simulate a slow push (#1153): both push paths sleep `secs`
+    /// before succeeding, so tests can prove the caller is not blocked.
+    pub fn with_slow_push(mut self, secs: u64) -> Self {
+        self.push_delay = Some(std::time::Duration::from_secs(secs));
+        self
+    }
+
+    fn slow_push_pause(&self) {
+        if let Some(delay) = self.push_delay {
+            std::thread::sleep(delay);
+        }
+    }
 }
 
 impl GitOps for MockGitOps {
@@ -88,6 +106,7 @@ impl GitOps for MockGitOps {
         if self.should_fail {
             anyhow::bail!("mock: git operations failed");
         }
+        self.slow_push_pause();
         self.commit_and_push_calls.lock().unwrap().push((
             worktree_path.to_path_buf(),
             branch.to_string(),
@@ -135,6 +154,7 @@ impl GitOps for MockGitOps {
         if self.should_fail {
             anyhow::bail!("mock: amend_clean_and_push failed");
         }
+        self.slow_push_pause();
         self.amend_calls.lock().unwrap().push((
             worktree_path.to_path_buf(),
             branch.to_string(),

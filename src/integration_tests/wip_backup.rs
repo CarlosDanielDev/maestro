@@ -3,6 +3,7 @@
 //! `MockGitOps`) so the WIP commit ends up as a verifiable `git log`
 //! entry — matching the AC #7 / AC #8 contracts.
 
+use super::completion_ticks::drive_completion_to_apply;
 use crate::git::{CliGitOps, GitOps, WIP_SUBJECT_PREFIX, WIP_SUBJECT_SUFFIX};
 use crate::integration_tests::helpers::{
     git_head_subject, init_git_repo, make_app_with_gate, make_app_without_gates,
@@ -110,9 +111,7 @@ async fn pipeline_wip_backup_commit_survives_gate_failure() {
         make_completion(562, "feat/issue-562", tmp.path()),
     );
 
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let subject = git_head_subject(tmp.path());
     let expected = format!("{}{}{}", WIP_SUBJECT_PREFIX, 562, WIP_SUBJECT_SUFFIX);
@@ -145,9 +144,7 @@ async fn pipeline_success_path_head_has_clean_commit_message() {
     let mut app = make_app_with_gate("issue-562-wip-pass", "true");
     arm_session_at_running(&mut app, 562, make_completion(562, branch, work.path()));
 
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let subject = git_head_subject(work.path());
     assert_eq!(
@@ -187,9 +184,7 @@ async fn pipeline_does_not_stack_wip_commits_on_second_gate_failure() {
         make_completion(562, "feat/issue-562", tmp.path()),
     );
 
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     assert_eq!(
         count_wip_commits(tmp.path()),
@@ -226,9 +221,7 @@ async fn pipeline_amends_existing_wip_when_gates_are_disabled() {
     let mut app = make_app_without_gates("issue-562-wip-gates-disabled");
     arm_session_at_running(&mut app, 562, make_completion(562, branch, work.path()));
 
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let subject = git_head_subject(work.path());
     assert_eq!(

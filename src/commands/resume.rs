@@ -61,7 +61,7 @@ pub async fn cmd_resume(session_filter: Option<String>) -> anyhow::Result<()> {
         app.add_session(new_session).await?;
     }
 
-    app.github_client = Some(create_provider(&provider_config)?);
+    app.github_client = Some(std::sync::Arc::from(create_provider(&provider_config)?));
 
     crate::tui::run(app).await
 }

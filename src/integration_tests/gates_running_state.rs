@@ -6,6 +6,7 @@
 //! `RUNNING → GATES_RUNNING → COMPLETED / FAILED_GATES` flow never
 //! showed `GATES_RUNNING`.
 
+use super::completion_ticks::drive_completion_to_apply;
 use crate::integration_tests::helpers::{
     init_git_repo, make_app_with_gate, make_app_without_gates, make_session_with_issue,
 };
@@ -87,9 +88,7 @@ async fn pipeline_records_running_to_gates_running_then_to_completed() {
 
     app.pending_issue_completions
         .push(make_completion(1144, "feat/issue-1144", tmp.path()));
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let session = find_session(&app, 1144);
     let to_gates = history_pair(
@@ -133,9 +132,7 @@ async fn failing_required_gate_ends_in_failed_gates() {
 
     app.pending_issue_completions
         .push(make_completion(1144, "feat/issue-1144", tmp.path()));
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let session = find_session(&app, 1144);
     assert_eq!(
@@ -187,9 +184,7 @@ async fn pipeline_re_arms_running_session_into_gates_running() {
 
     app.pending_issue_completions
         .push(make_completion(1144, "feat/issue-1144", tmp.path()));
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let session = find_session(&app, 1144);
     assert_eq!(session.status, SessionStatus::Completed);
@@ -333,9 +328,7 @@ async fn gated_fork_child_with_failing_gate_ends_in_failed_gates() {
     }
     app.pending_issue_completions
         .push(make_completion(1144, "feat/issue-1144", tmp.path()));
-    app.check_completions()
-        .await
-        .expect("check_completions must not error");
+    drive_completion_to_apply(&mut app).await;
 
     let child = find_session_by_id(&app, child_id);
     assert_eq!(

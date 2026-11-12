@@ -221,7 +221,7 @@ fn make_app_with_mock(mock: crate::provider::github::client::mock::MockGitHubCli
     );
     app.gh_auth_ok = true;
     app.config = Some(make_config());
-    app.github_client = Some(Box::new(mock));
+    app.github_client = Some(std::sync::Arc::new(mock));
     app
 }
 

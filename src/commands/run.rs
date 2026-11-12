@@ -193,7 +193,7 @@ pub async fn cmd_run(
         let assigner = WorkAssigner::new(items);
 
         app.work_assignment_service = Some(WorkAssignmentService::new(assigner));
-        app.github_client = Some(client);
+        app.github_client = Some(std::sync::Arc::from(client));
 
         if continuous && app.flags.is_enabled(crate::flags::Flag::ContinuousMode) {
             app.continuous_mode = Some(crate::continuous::ContinuousModeState::new());
@@ -243,7 +243,7 @@ pub async fn cmd_run(
             app.add_session(session).await?;
         }
 
-        app.github_client = Some(client);
+        app.github_client = Some(std::sync::Arc::from(client));
     } else {
         let provider_config = config.effective_provider_config();
         let client = create_provider(&provider_config)?;
@@ -261,7 +261,7 @@ pub async fn cmd_run(
         let assigner = WorkAssigner::new(items);
 
         app.work_assignment_service = Some(WorkAssignmentService::new(assigner));
-        app.github_client = Some(client);
+        app.github_client = Some(std::sync::Arc::from(client));
     }
 
     app.once_mode = once;
