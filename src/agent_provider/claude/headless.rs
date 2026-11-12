@@ -190,6 +190,39 @@ pub(super) async fn run(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+    // The agent child must never outlive maestro unnoticed (#1139): a
+    // dropped handle kills it, and on unix it leads its own process group
+    // so kill paths can reach its whole group.
+    cmd.kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
+    #[cfg(target_os = "linux")]
+    {
+        // PR_SET_PDEATHSIG closes the gap a process group cannot: when
+        // maestro dies (even via SIGKILL), the kernel SIGKILLs the agent.
+        // It is set pre-exec in the child; if the parent already died
+        // between fork and prctl, the child kills itself instead of
+        // leaking. pdeathsig tracks the forking thread, which on tokio is
+        // a long-lived worker that only exits with the whole process.
+        let parent_pid = std::process::id() as libc::pid_t;
+        // SAFETY: pre_exec installs a closure that runs in the freshly
+        // forked child before exec; the closure only calls prctl, getppid
+        // and kill — plain syscalls with no memory effects, and the
+        // self-kill only signals this child process.
+        #[allow(unsafe_code)]
+        unsafe {
+            cmd.pre_exec(move || {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::getppid() != parent_pid {
+                    libc::kill(libc::getpid(), libc::SIGKILL);
+                }
+                Ok(())
+            });
+        }
+    }
+
     let mut child = cmd.spawn().map_err(|source| AgentError::Spawn {
         provider_id: provider_id.to_string(),
         source,
@@ -253,7 +286,21 @@ pub(super) async fn run(
 
     let status = tokio::select! {
         _ = cancel.cancelled() => {
+            // #1139: the whole group goes down with the cancel — the CLI's
+            // own children (background Bash, nested processes) must not
+            // survive it.
+            #[cfg(unix)]
+            if let Some(pid) = child.id() {
+                // SAFETY: killpg on the group we created at spawn (the child
+                // leads it, so pgid == pid); ESRCH when already gone is fine
+                // to ignore.
+                #[allow(unsafe_code)]
+                unsafe {
+                    libc::killpg(pid as libc::pid_t, libc::SIGKILL);
+                }
+            }
             let _ = child.kill().await;
+            let _ = child.wait().await;
             return Err(AgentError::Cancelled {
                 provider_id: provider_id.to_string(),
             });
