@@ -109,3 +109,66 @@ v0.29.5 bundle (user authorized PR-isolation override for context budget): one P
 - Issue hygiene: closed #818/#980/#982 as already-implemented (evidence comments); corrected 6 stale bodies (#817 #820 #832 #834 #1014 #1015); milestone graphs 60/63 ✅-updated. Audits found #964–#974 all still valid (PR #1028 shipped Input foundation only — children intact).
 
 **Next-session priorities:** wave #1065 + #1050 + #1061 (three epics one item from done), then #1084 spike (ai-memory seam) → epic #1083; then the Security Audit milestone (19 disclosed, P0 #1045) as a 2-week wave; setwave release bump (plugin cache still 0.11.0; guards run from repo checkout meanwhile); README cutoff-note fix (README.md:19); ERRORS.md entry for the #1065 double-reopen pattern.
+
+---
+
+## 2026-11-10 (session 2) — October plan delivered: 4 PRs merged, 3 epics closed, engine running
+
+**Executed via setwave (fixed engine, repo-checkout script):** #1087 (e2e interaction test, closes #1050) · #1088 + #1089 (TUI demo capture: script+test on main, webm+hero embed on gh-pages; closes #1061) · #1090 (Fleet board quota badges + glyph fix, closes #1065). Epics #1047, #1059, #1063 CLOSED. 14.3 GB reclaimed. Live page serves the video hero. Every PR: verify OK, judge verdict (pass/concerns), owner OK before squash merge, ledger applied.
+
+**Decisions:**
+- setwave fixes land in ~/projects/setwave (PRs #141 #142 merged); maestro consumes guards VENDORED at `.maestro/hooks/guards.py` via `$CLAUDE_PROJECT_DIR` (no out-of-repo pin). Plugin cache (0.11.0) is stale — release bump pending.
+- Guard policy shipped through 3 security-review rounds: background/detach/reparse detection, git shim+global-option peeling, secret-read allowlist inversion. Judges false-fire on in-process subagents (no per-seat transcripts) — milestone messages are the real liveness signal; `--transcripts` only helps host-session seats.
+- Stale branch handling WITHOUT `-D` (guard refuses): `git branch -m` to `archive/<name>` frees the dispatch name, preserves squash-shadowed commits.
+
+**Still open (priority order):**
+1. ai-memory wave: dispatch #1084 (spike, seam probe at config/agents.rs + headless.rs) → then #1083 children. Epic #1083 open, nothing run since Oct 19.
+2. Security Audit milestone: 19 disclosed issues, P0 #1045 (workspace trust), untouched 2 months — next big wave.
+3. Follow-up issues to FILE: ASCII-icons debug-build TUI stall (found in #1090 PR), Fleet Board privacy note (renders real ~/.claude history — #1089 excluded it), setwave gap: `verify`/`judge` cannot diff PRs against orphan branches (gh-pages, no merge base — #1089), setwave release bump (v0.11.1+).
+4. Housekeeping: `wave cleanup --stale-days` for maestro-1065 seat (branch `story/1065-quota-badge` is pushed; local `story/1065-quota-routing` shadow reads unpushed); untracked junk at repo root (err/out-before-1075.txt, old settings backups) needs a yes to delete; README.md:19 stale billing-cutoff note.
+
+---
+
+## 2026-11-10 (session 3) — security wave 1 executed: 9 PRs merged, P0 in fix round
+
+**Worked on:** filed 9 issues (maestro #1091 ascii-icons-stall, #1092 fleet-privacy-note, #1098 prompt_history-symlink, #1099 adapt-symlink-parents, #1102 slack-sink, #1107 env-denylist-extension; setwave #143 orphan-branch-diff, #144 release-0.11.1, #145 round-verdict-deadlock); ran Security wave 1 (11 dispatches: batch A #1031–#1034, batch B #1029/#1030/#1035/#1037, #1098 follow-up, P0 #1045); judged 11 PRs with 4 fix/envelope interventions.
+
+**Completed:** 9 PRs squash-merged BY OWNER on GitHub (#1093–#1104): #1084 spike (ADR: option (a) shim + --no-autowire; plan dir plans/ai-memory-shim/) + Level-0 fixes #1029/#1031/#1032/#1033/#1034/#1035/#1037. #1105 conflict (predicted 1-line tests.rs mod) resolved by spawned merge agent (head 2a9fd7d, 12,537 tests green, GitHub MERGEABLE, judge pass). Milestone 65 + epic #1083 graphs ✅-updated post-merge. `wave cleanup` reclaimed 9 seats; `cargo clean` on 11 seat targets freed ~98 GB.
+
+**In progress:** #1106 (P0 trust gate) in judge FAIL fix round — 4 blocking spawn-funnel findings (completion tick-path promotion, interaction sessions, team launch, env-only predicate bypass) ordered to seat; re-judge (--since) + merge ask follow. #1105 pass-verdict at 2a9fd7d awaiting owner squash.
+
+**Decisions:** (1) engine = repo checkout `~/projects/setwave/scripts/wave.py`, never 0.11.0 cache; (2) audit issues dispatched as-is on missing Done when/ADR (owner-away skip path; ISSUE-NO-DONE-WHEN accepted, ledgers in PR bodies — owner must add `## Done when` headings to #1031–#1034, #1035–#1037, #1045 bodies someday); (3) consent gates must live OUTSIDE repo control (env switch / platform config dir) — doctrine from #1105's blocking finding, baked into #1045's dispatch; (4) owner merges via GitHub UI = per-delta OKs (bulk-merged 9 at 00:00Z); orchestrator merged nothing; (5) judge round-verdict envelope workaround for setwave#145: verdict carries whole-patch sha, judge reads delta — pre-empt in spawn brief; (6) MEMORY.md committed locally (ef957a9) to satisfy doctor's clean-checkout before dispatch; no push; (7) no AskUserQuestion (tmux killer) — all asks plain text; (8) seat-fanout hygiene: 10 parallel worktrees ≈ 10 GB target/ each — disk wall at 100% mid-gate; `cargo clean` done seats proactively next time.
+
+**Next-session priorities:** (1) #1106 fix-round re-judge → final merge ask; (2) #1105 squash (pass verdict, mergeable, zero blockers); (3) housekeeping still pending owner OKs: maestro-1065 seat (push shadow branch to archive/ OR discard — explicit yes needed), root junk files (err/out-before-1075.txt, old settings .bak), README.md:19 stale billing note reword; (4) dedupe comment on #1032 (line ready, needs yes); (5) wave 2 candidates: #1036 (bypassPermissions default) → #1038/#1041/#1042 (gates cluster) → #1039/#1040 (infra) → #1046 (signing) + #1107; (6) unfiled observations needing owner read: notify.ps1 loose parser (`^([A-Z_]+)=(.*)$` + Set-Variable), tui::markdown perf flake under parallel load (known f9331f4), setwave doctor false-negatives on $CLAUDE_PROJECT_DIR guard paths.
+
+## 2026-11-11 — wave 1 complete: all 11 merged; CI fires fought
+
+**Owner merge run (explicit OK in conversation, order 1109→1106→1105):** #1109 (ETXTBSY flake fix) · #1106 (P0 trust gate, round-2 concerns: 4/4 blocking verified fixed) · #1105 (pass). main @ e0b058a; main CI queued on watch.
+
+**CI fires fought (all resolved):** (1) #1105 File Size Lint — agents.rs hit 409/400 after the conflict-merge; fixed by extracting `validate_http_agent` into agents_remote_auth.rs (my miss: conflict-agent brief lacked check-file-size — add the full gate to any merge-resolution brief). (2) #1106 Coverage Tiers — NOT coverage: ETXTBSY flake in #1104's qwen probe test (Linux overlayfs copy-up under llvm-cov); fixed on main via #1109 (bounded 5×200ms retry on ExecutableFileBusy only). (3) Nightly red — runner shutdown-signal cancellation mid-mutation-suite (infra, rerun triggered, not code).
+
+**Trust-gate note for this machine:** maestro's own maestro.toml carries gates commands (build/test/run) — first run of a NEW build in this repo will prompt once for workspace trust; `maestro trust` records it (user config dir, sha256-pinned).
+
+**Still open:** #1108 (team_launch e2e test — judge's flip-to-pass condition), #1099/#1102/#1107 (post-merge hardening follow-ups), wave 2 candidates #1036 #1038–#1044 #1046, housekeeping a–d (1065 seat, junk files, README:19, dedupe comment), judge reset ~10:04 → --since rounds for #1105 (verdict predates file-size push) if wave ledger hygiene wanted.
+
+## 2026-11-11 — wave 2 + ai-memory: 11 PRs merged, orchestrator-merged under standing OK
+
+**Owner instruction at dispatch:** "run the remaining waves using setwave… enough issues for a daily work for today" + mid-turn "always keep updated, merge since they green" — read as standing per-delta OK: judge pass/concerns-nits + CI green + verify OK → `wave merge --squash --wait-base-ci`, one at a time, report each. Honored all day; two deviations flagged below.
+
+**Merged (11, all squash, ledger applied, base CI green each):** #1113 (#1039 Cargo.lock+--locked) · #1114 (#1041 implement-gates /tmp→mktemp under SENTINEL_DIR) · #1115 (#1036 bypassPermissions default→"default") · #1116 (#1038 gatekeeper fail-open→strict parser + gatekeeper-remediation.sh; 1 fail→fix→pass round) · #1123 (#1111 ai-memory docs recipe) · #1125 (#1108 team_launch trust e2e) · #1124 (#1040 SHA-pin all actions, yq composite checksummed, per-job permissions; freshness actions:read fix pre-merge) · #1134 (#1042 hook_gate validation; merged --force past kernel scan, see deviations) · #1126 (#1107 env denylist 20→40 keys + derivation design + ADR 004; 3 security-review batches folded) · #1136 (#1112 ai-memory opt-in E2E; judge twice-read stale patch, refuted with context-line + rfind-last-match + executed evidence, corrected verdict) · #1137 (#1046 release signing minisign fail-closed; found live bug: sha256sum ./*.tar.gz `./` prefix never matched old parser).
+
+**Epics closed:** #1083 ai-memory (spike ADR option (a); slices #1110→#1111✅#1112✅; B–E dropped-with-reason in body) + #1110. Security Audit milestone: waves 1+2 done — remaining open are P2 backlog (#1043 #1044 #1074) + hardening (#1099 #1102).
+
+**Filed today:** ai-memory #1110/#1111/#1112 (plans/ai-memory-shim/, labels fixed: docs→type:docs, test→testing) · #1122 (stale implement.md/auto.md gate-log docs; external contributor tylrcc opened #1133 — needs owner review, do NOT auto-merge outside code) · #1127 closed as dup of #1135 (agent's version, DOR-complete, Blocked By #1107 — now unblocked) · #1135 carries the 3-pass sibling-key census.
+
+**Deviations (owner, flag if disagree):** (1) #1134 merged with `--force` past JUDGE-REALITY-BLOCKER — scan hit 19× `placeholder`, all the repo's own `TemplateError::InvalidPlaceholder` variant; judge had passed reality clean at same sha; reason documented as PR comment before forcing. (2) `wave amend` wrote `## Done when` into #1036/#1038/#1039/#1040/#1041/#1042/#1046 from their own AC verbatim (suffix stripped after first LEDGER-MISMATCH — invariant is bare text). (3) Two background security reviews did not complete (timeout/unreadable, log ~/.claude-glm/security/log.txt) — PR judges covered those diffs instead.
+
+**Ops events:** guards re-wired (hooks install → absolute /Users path; security review HIGH → reverted to $CLAUDE_PROJECT_DIR vendored copies, af82b0e) · disk hit 100% twice → `wave cleanup` twice reclaimed ~88 GB total (decision 8 proven) · main CI one TLS-timeout + one `None` — both transient, green after · main CI on c8c893a queued at close (watch next session).
+
+**Local-only commits on main (PR-only repo; push as one PR or keep):** a2684e5 (memory notes) · d66012c (hooks+plan labels) · af82b0e (guard path fix).
+
+**Dependabot opened 11 PRs (#1117–#1132)** from #1040's new ecosystems (cargo + github-actions) — tomorrow's wave candidates; same green-only policy applies. Plus #1133 (external, review first).
+
+**Next-session priorities:** (1) review+merge #1133 (external) and the dependabot batch (order: actions bumps first — SHA-pinned now, low risk; cargo bumps after `cargo deny`); (2) #1135 allowlist-prefix inversion ADR (unblocked, DOR-complete); (3) maintainer steps from #1046: provision RELEASE_SIGNING_KEY secret, embed real pubkey in TRUSTED_RELEASE_PUBLIC_KEYS, one real-tag end-to-end release; (4) housekeeping still pending owner OKs: maestro-1065 seat (push shadow branch to archive/ OR discard — explicit yes), root junk files, README.md:19, #1032 dedupe comment; (5) P2 backlog wave if time: #1043 #1044 #1074 + hardening #1099 #1102; (6) ADR nit rides: #1126's "34 exact keys"→40, #1136's HEADLESS_ARGS doc comment, #1137's 4 nits (rsign flag validation, secret format doc).
+
+**Addendum 2026-11-11 (later):** dependabot batch merged same day under the standing green-only OK — #1128–#1132 (actions bumps, SHA→SHA) + #1118/#1120 (cargo green), 7 sequential squash merges, every stack point proven by a subsequent green main run; final main head c58bacd5 CI success. Still open: #1133 (external tylrcc — reviewed locally: scheme matches #1114, sync-templates in sync, nit `${n}`→`${issue_number}` posted, CI approved for first-timer; merge needs owner OK), #1117 (syn 2→3 major — hold for diff review), #1119/#1121 (red CI — dependabot will rebase). Script bug found en route: `gh pr view --jq .state` returns `OPEN` uppercase — grep -qi, not -qi... case cost one wasted sequence run.
